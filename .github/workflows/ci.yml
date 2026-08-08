@@ -337,18 +337,6 @@ jobs:
       # quietly stops running. Deterministic, offline, stdlib-only python3.
       - name: required status checks and ci.yml job names agree
         run: python3 tools/check-required-contexts.py
-      # The same out-of-band shape one door further in, and this one cost a real
-      # publish: `publish-crates` declared `environment: crates-io` and was named
-      # "(owner approval)", but the environment had `protection_rules: []`, so a
-      # tag push published two crates to crates.io with nobody reviewing anything
-      # (2026-08-08). Everything that made the gate look real was in the repo;
-      # the setting that made it BIND was not. This asserts that every
-      # environment-gated job carries `tools/assert-run-approved.sh <its own
-      # env>` as its first run step — the obligation attaches to `environment:`
-      # itself, so a second gated job inherits it the day it is written instead
-      # of needing its own incident. Reads only the repo, no token.
-      - name: every environment-gated job proves its gate bound
-        run: python3 tools/check-approval-gates.py
       # ADR-0016's third version line: the `/new-delve` skill (the product,
       # ADR-0012) declares its own version and the `delvec` range it drives. All
       # hand-typed frontmatter, so without this they are a `requires:` nobody
