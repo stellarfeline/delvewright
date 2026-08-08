@@ -225,6 +225,19 @@ pub mod codes {
     /// completion oracle; content carrying it could forge a passing critical-path
     /// step. The channel is reserved, not merely conventional.
     pub const MARKER_RESERVED: &str = "DW0182";
+    /// (i18n v2) A player-visible string — authored English or any sidecar
+    /// translation — contains a character from the reserved private-use block the
+    /// compiler uses to carry an l10n key from the stage docs to the text
+    /// component it is emitted into ([`crate::l10n::TR_SIGIL`]). Content carrying
+    /// it could impersonate a translation tag, or survive into the datapack and
+    /// render as a tofu box. The block is reserved, not merely conventional.
+    pub const TR_SIGIL_RESERVED: &str = "DW0183";
+    /// (i18n v2) A declared language has no entry in the Minecraft language-code
+    /// mapping table ([`crate::l10n::mc_lang_code`]), so the resource pack has no
+    /// filename to write its `assets/delvewright/lang/<code>.json` under. A
+    /// language is never silently dropped: either the code is corrected to a
+    /// mapped one, or the table gains the entry.
+    pub const LANG_CODE_UNMAPPED: &str = "DW0184";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).

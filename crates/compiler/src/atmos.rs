@@ -230,6 +230,32 @@ fn font_json() -> Vec<u8> {
         .chunks(COLS)
         .map(|row| row.iter().map(|(c, _)| *c).collect::<String>())
         .collect();
+    // i18n v2 (spec-0029): the same atlas, addressed a second time by the
+    // LOWERCASE letters. `emit_narrate` used to `to_ascii_uppercase()` an art
+    // string on its way into the title command — a transform a `{"translate": …}`
+    // component cannot express, because the client resolves the lang file after
+    // the compiler is gone. Covering lowercase in the font instead moves the
+    // fold from emission to rendering, where translation can reach it: a
+    // lowercase letter renders through its uppercase bitmap, so the banner looks
+    // exactly as it always did, in every language.
+    //
+    // A cell with no lowercase form (digits, punctuation) is `\u0000`, vanilla's
+    // "this cell is unused" marker, so the two providers never claim one char
+    // twice.
+    let lower: Vec<String> = chars
+        .iter()
+        .map(|row| {
+            row.chars()
+                .map(|c| {
+                    if c.is_ascii_uppercase() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '\u{0}'
+                    }
+                })
+                .collect()
+        })
+        .collect();
     let v = serde_json::json!({
         "providers": [
             { "type": "space", "advances": { " ": ART_SPACE_ADVANCE } },
@@ -239,6 +265,13 @@ fn font_json() -> Vec<u8> {
                 "ascent": ART_ASCENT,
                 "height": ART_HEIGHT,
                 "chars": chars
+            },
+            {
+                "type": "bitmap",
+                "file": "delve:font/art.png",
+                "ascent": ART_ASCENT,
+                "height": ART_HEIGHT,
+                "chars": lower
             }
         ]
     });
@@ -342,3 +375,77 @@ const ART_GLYPHS: &[(char, [&str; 7])] = &[
     (';', [".....", "..#..", "..#..", ".....", "..#..", "..#..", ".#..."]),
     ('?', [".###.", "#...#", "....#", "..##.", "..#..", ".....", "..#.."]),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// i18n v2 (spec-0029): the art font must render **lowercase** input, because
+    /// `emit_narrate` no longer case-folds an art string on its way into the title
+    /// command — a `{"translate": …}` component resolves in the client, long after
+    /// the compiler could uppercase anything. The fold moved into the font: a second
+    /// bitmap provider addresses the SAME atlas cells by their lowercase letters, so
+    /// `nobody` and `NOBODY` draw the same pixels, in every language.
+    ///
+    /// Without this the regression is silent and visual: a translated (or simply
+    /// lowercase-authored) art banner renders as missing-glyph boxes, and no gate
+    /// downstream looks at a texture.
+    #[test]
+    fn the_art_font_covers_lowercase_through_the_same_atlas_cells() {
+        let v: serde_json::Value = serde_json::from_slice(&font_json()).expect("font json parses");
+        let providers = v["providers"].as_array().expect("providers is a list");
+        let bitmaps: Vec<&serde_json::Value> =
+            providers.iter().filter(|p| p["type"] == "bitmap").collect();
+        assert_eq!(bitmaps.len(), 2, "uppercase + lowercase over one atlas");
+        let upper: Vec<String> = bitmaps[0]["chars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_string())
+            .collect();
+        let lower: Vec<String> = bitmaps[1]["chars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            bitmaps[0]["file"], bitmaps[1]["file"],
+            "both providers must address the same atlas — a second texture would be a \
+             second thing to keep in sync"
+        );
+        assert_eq!(upper.len(), lower.len(), "same grid");
+        let mut letters = 0usize;
+        for (u, l) in upper.iter().zip(&lower) {
+            assert_eq!(u.chars().count(), l.chars().count(), "same row width");
+            for (uc, lc) in u.chars().zip(l.chars()) {
+                if uc.is_ascii_uppercase() {
+                    assert_eq!(
+                        lc,
+                        uc.to_ascii_lowercase(),
+                        "cell {uc} must be addressable by its lowercase form"
+                    );
+                    letters += 1;
+                } else {
+                    // Vanilla's "this cell is unused" marker: a digit or a comma has
+                    // no lowercase form, and claiming one char in two providers is
+                    // exactly the ambiguity `\u{0}` exists to avoid.
+                    assert_eq!(lc, '\u{0}', "cell {uc} has no lowercase form");
+                }
+            }
+        }
+        assert_eq!(letters, 26, "binding: all 26 letters covered, not a subset");
+    }
+
+    /// The coverage check has always case-folded, so it agrees with the font rather
+    /// than with the (now removed) emit-time uppercase transform.
+    #[test]
+    fn coverage_is_case_insensitive_and_agrees_with_the_font() {
+        for ch in "abcdefghijklmnopqrstuvwxyz".chars() {
+            assert!(covers(ch), "{ch} must be covered");
+            assert_eq!(glyph_for(ch), glyph_for(ch.to_ascii_uppercase()));
+        }
+        assert!(!covers('é'));
+        assert!(!covers('海'));
+    }
+}

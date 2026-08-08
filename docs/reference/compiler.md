@@ -84,7 +84,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
-| 4 | l10n sidecar coverage + reserved marker channel | `dsl::validate_l10n`, `dsl::validate_marker_channel` | `DW0180`/`DW0181`/`DW0182` (exit 1) |
+| 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed); then read the settled draw back and report a pool that seats the same anchor-bearing prefab twice (`DW0498`, `compiler::pool`) | `compiler::solver`, `compiler::pool` | `DW030x` (exit 3); advisory `DW0498` |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
@@ -462,6 +462,65 @@ translates, so a re-run fills only the gaps. Persona rows carry voice, never plo
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See
 [i18n.md](i18n.md).
+
+### Language delivery — i18n v2 (spec-0029)
+
+**A released delve ships every declared language; the client picks its own.**
+`delvec build` (no `--lang`) emits every authored player-visible string as a
+**translatable text component**
+
+```json
+{"translate": "<l10n key>", "fallback": "<English source>"}
+```
+
+and writes one `assets/delvewright/lang/<mc_code>.json` per declared language,
+plus `en_us.json`, into the resource pack the release already ships. A client
+auto-selects the lang file matching its own locale; a locale we do not ship, a key
+a translator missed, **and a player who declined the resource-pack prompt** all
+resolve through the component's own `fallback`. That is why the fallback rides the
+component and not the pack's `en_us.json`: a declined pack has no lang files at
+all, and the delve must still be playable in English.
+
+| Piece | Behaviour |
+|---|---|
+| Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. |
+| Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. |
+| Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory; each other file is its sidecar's `content`. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
+| Language codes | Explicit table, `dsl::l10n::mc_lang_code` (`zh-cn` → `zh_cn`, `ja-jp` → `ja_jp`, …). Never a mechanical `-`→`_` rewrite: that would happily invent a filename Minecraft never loads, and a lang file under a name no client asks for is a language silently dropped. Unmapped = `DW0184`. |
+| `--lang <code>` | **Unchanged**, and still the single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
+| Art titles | `emit_narrate` no longer `to_ascii_uppercase()`s an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font now carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
+| Width gates | `DW0330`/`DW0331` already checked source **and** every declared translation. Under v2 any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. Unchanged code, raised stakes. |
+| Build inputs | Every `l10n/<code>.json` is now an input of **every** build (not just a `--lang` bake) and is hashed into `manifest.json` — the sidecar's bytes ship in the pack, so they are as much a build input as a stage document. |
+
+No DSL change and no `dsl_version` bump: this is emission only. Every campaign's
+emitted bytes change (literals become components); released delves reproduce
+through their pinned engine (`versions.toml` + OCI), per the versioning discipline.
+
+#### Named exclusions — where an authored string stays literal
+
+An authored string that does not land in a text component cannot carry a translate
+key. Every such site is named here and reads its string through
+`dsl::l10n::plain`; none of them is rendered by a client. Anything **not** on this
+list that emits an authored string outside a component fails the build with
+`DW0185`, so this table cannot silently grow.
+
+| Site | Artifact | Why it is not a component |
+|---|---|---|
+| `emit::artifact_title` | `packtest-datapack/**` test `#>` descriptions | A PackTest source is a generated test, read by the validation server and by a maintainer — never rendered to a player. |
+| `emit::emit_packtest` (dialogue-visibility test) | `packtest-datapack/**/v04_dialogue_visibility.mcfunction` | Same: the option label appears in the test's own description line. |
+| `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
+
+`delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
+tag at all: tagging happens inside `build`, after validation and analysis, so
+every other subcommand reads the campaign exactly as authored.
+
+`critical-path.json`, `validation/*.json`, `combat-plan.json` and `manifest.json`
+carry **ids**, never authored prose, so they need no exclusion — the bot contract
+was already language-neutral. A generated PackTest may still *write* a text
+component (`collect_container.mcfunction` pre-loads the stack the objective
+counts): that is emitted by the same helper the datapack uses, so the two cannot
+drift, and it is an input to the test rather than an assertion about rendered text.
+No generated PackTest asserts on rendered text at all.
 
 ---
 
@@ -2199,6 +2258,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. The inventory it demands coverage of spans **every effect root emission can lower** — including `traps[].payload` and a dialogue option's `set-checkpoint` `on_respawn` bundle (task #168); a string in either used to ship English-only in a translated build, uncovered. |
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
+| `DW0183` | (i18n v2, spec-0029) A player-visible string — authored or translated — contains a character from the reserved private-use block `U+E000..U+F8FF`. That block is how the compiler carries an l10n key from the stage docs to the text component the string is emitted into (`dsl::l10n::TR_SIGIL`), so content carrying it could impersonate a translation tag; it also has no glyph in any Minecraft font. Remove the character. |
+| `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code has no entry in the Minecraft language-file mapping table (`dsl::l10n::mc_lang_code`), so its `assets/delvewright/lang/<code>.json` has no filename a client would ever ask for and the language would ship invisible. Use a mapped code, or add the entry with the vanilla code verified against the pinned client's language list. A language is never silently dropped. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
@@ -2998,6 +3059,12 @@ every earlier campaign's removal is byte-identical.
 | Code | Meaning |
 |------|---------|
 | `DW0497` | **The compiler emitted a `function <ns>:<name>` call to a function it never emitted.** Build-tier (exit 3), `compiler::integrity::check_tree`, run last, over the finished output tree — beside the affordance-hardware self-check, and on the same principle: judge the commands that ship, not the intent behind them. **The class.** Nearly every verb compiles in two halves — the *call site*, lowered from the effect tree wherever the author put the verb, and the *machinery*, emitted from a per-feature registration walk. When those two walks disagree about what exists, the call site still emits, vanilla resolves an unknown function to nothing at all (no error, no log line, nothing a bot can observe), and the verb simply never happens. **The motivating build** is the island's round 21: `wave/storm-surf` was fired from a top-level effect chain and got its full machinery; `wave/storm-shore` and `wave/storm-fire` were fired from step 7 of a `sequence`, and the wave emitter — which resolved a wave's area only from top-level chains — produced no `spawn_…`, no census, no brand, no kill reward for either, while `seq_under_ram` shipped `function nobodys-cave-island:spawn_storm_shore` all the same. Two of three storm waves never spawned; every build-tier proof was green, and the only thing that noticed was the compiler's own generated census PackTest — which walks `waves[]` rather than the effect tree — failing on a live server four minutes into a ladder run. Landing this check surfaced a **second, independent instance** immediately: `spawn-npc` on a non-`deferred` NPC compiled `function <ns>:spawn_npc_<id>` against a function only ever emitted for `deferred` NPCs, so a character brought back after a `despawn-npc` stayed gone. **Model:** every emitted `.mcfunction` in every tree is scanned for calls in command position — bare, after `run`, after `schedule` — and each target in the campaign's own namespace must name an emitted `data/<ns>/function/**` body. Deliberately **feature-blind**: the rule is "a call has a callee", which needs no knowledge of waves or NPCs and therefore guards emitters not yet written. Scope: the campaign's own namespace only (`minecraft:…` belongs to a tree this compiler does not emit); functions, not function tags (`function #<ns>:<tag>` is skipped, tag membership being a separate artifact); and **tiered** — the shipped `datapack/` ships alone (ADR-0010) so it may only call itself, while `packtest-datapack/` and `creator-datapack/` load beside it and may call their own tier or the shipped one. PackTest `test/` bodies are callers but never callees. The message lists every dangling call with its artifact path, line number, the whole command, and the missing target. Prescription: **fix the emitter** so its call walk and its machinery walk derive from one traversal — this is a compiler defect, never content. Never silence it by deleting the call site: the call is what the author asked for. |
+
+### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
+
+| Code | Meaning |
+|------|---------|
+| `DW0185` | **An authored player-visible string reached the built tree outside a text component.** Build-tier (exit 3), `emit::check_untranslated_literals`, run last over the finished output tree — beside `DW0497` and the affordance self-check, on the same principle: judge the bytes that ship, not the intent behind them. **The class.** i18n v2 (spec-0029) makes every authored string a `{"translate": …, "fallback": …}` component so a client can render the player's own language. The risk that change carries is a string that *cannot* land in a component — it would ship as a literal no lang file can reach, silently untranslatable, which is exactly the defect v2 exists to remove. Rather than enumerate the emission sites once and trust the list to stay true, the compiler makes it an invariant: each inventoried string enters emission carrying its l10n key in a reserved private-use tag (`dsl::l10n::tag_translatables`), an emitter either lowers it through `emit::tr`/`emit::snbt_component` or reads it through `dsl::l10n::plain`, and **a tag still present in the finished tree is a site that did neither**. Deliberately feature-blind, so it guards emitters not yet written. **Scope:** every emitted file, plus the compiler-authored resource-pack assets before they are zipped. A file that is neither UTF-8 text nor a **classified** verbatim binary output (`.nbt`, `.png`, `resourcepack.zip` — byte copies of input assets the compiler writes no string into) also fails here, so a new binary artifact cannot quietly opt out of the scan. The message lists every offending artifact with the key and the line. **Prescription:** lower the string through the component helpers; or, if the site is genuinely not a component and never read by a player, read it through `dsl::l10n::plain` **and** add it to the named-exclusion table in §2 "Language delivery". Never silence it by dropping the string. |
 
 #### The branch artifacts (validation metadata)
 

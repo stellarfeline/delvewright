@@ -380,6 +380,8 @@ async function main(): Promise<number> {
       report.recordCombatCoverage(combatPlan.floorGate, actorReports);
       report.recordActorsGate(combatPlan.actorsGate);
     }
+    // spec-0029: the name-preference binding, always recorded — including a zero.
+    report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
     // Reclassify, never suppress (2026-08-06 island triage): a `despawn-actor
     // style: vanish` broadcasts the same "<name> died" line a real combat loss

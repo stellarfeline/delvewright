@@ -527,6 +527,17 @@ fn validate_loaded(
             diags.extend(delvewright_dsl::validate_marker_channel(
                 &campaign, &sidecars,
             ));
+            // The private-use block the i18n v2 translation tag is built from is
+            // reserved too (DW0183, spec-0029): a string carrying U+E000..U+F8FF
+            // could impersonate the key the compiler threads into a text
+            // component — and has no glyph in any Minecraft font anyway.
+            diags.extend(delvewright_dsl::validate_tr_sigil(&campaign, &sidecars));
+            // i18n v2: every declared language must map to a Minecraft language-file
+            // code, or its `assets/delvewright/lang/<code>.json` has no name a client
+            // would ask for and the language ships invisible (DW0184).
+            if let Err(d) = delvewright_dsl::declared_mc_codes(&campaign) {
+                diags.push(d);
+            }
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the deferred `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
@@ -1380,7 +1391,7 @@ fn run_build(
     let Validated {
         campaign,
         prefabs,
-        mut loaded,
+        loaded,
         sidecars,
         ..
     } = v;
@@ -1412,13 +1423,16 @@ fn run_build(
         // Swap every player-visible string to the target language, then record the
         // sidecar as a build input (manifest provenance) for the non-en build.
         delvewright_dsl::localize(&mut campaign, &doc.content);
-        if let Some(bytes) = loaded.l10n.get(lang) {
-            loaded
-                .inputs
-                .insert(format!("l10n/{lang}.json"), bytes.clone());
-        }
     }
     let build_lang = if is_english { None } else { Some(lang) };
+    // i18n v2 (spec-0029): the DEFAULT build ships every declared language and lets
+    // the client choose, so each authored string travels to emission carrying its
+    // l10n key and becomes `{"translate": key, "fallback": english}`. A `--lang`
+    // bake is the unchanged single-language artifact (spec-0029 §4): its strings
+    // were already swapped above, so it is emitted as literals exactly as before.
+    if is_english {
+        delvewright_dsl::tag_translatables(&mut campaign);
+    }
 
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
