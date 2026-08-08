@@ -889,8 +889,19 @@ Then:
    The first number is the MAX `dsl_version` over the campaign's six stage
    documents; the second is `delvec --version`'s, from the build that just went
    green. The line is byte-identical in every localized edition — it is a
-   version stamp, not prose; a translated gloss may follow on the next line.
-   Then prove it:
+   version stamp, not prose; a translated gloss may follow on the next line, but
+   it may not restate the numbers (a mistranslated version number is a wrong
+   version number — the island's zh-cn gloss drifted a whole minor behind the
+   stamp directly above it).
+
+   **Write no other version number anywhere in the storybook.** The marker is
+   the only one a check can keep true; every other is hand-typed and goes stale
+   in silence. The v1.1.0 island release had a correct marker and still told a
+   host to run `:v1.0.0`, because the `docker run` line and a `**vX.Y.Z**`
+   campaign stamp were bound to nothing. So: no campaign-version stamp, and the
+   host command names `:latest` — that IS this storybook's claim — with one
+   sentence sending a reader who wants an exact version to the release page,
+   where the tag is machine-written. Then prove it:
 
    ```
    python3 tools/check-storybook-version.py --campaigns campaigns/campaigns
