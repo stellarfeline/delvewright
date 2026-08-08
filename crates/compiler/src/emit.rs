@@ -437,37 +437,51 @@ pub fn build_with_warnings(
             // which this one cannot. This is the floor under both — run last,
             // over the world that actually ships.
             //
-            // WARNING TIER, for one `dsl_version` (owner ruling, 2026-08-08).
-            // This is a NEW obligation on content that was already written and
-            // already played: campaigns that declare no `horizon` and no
-            // `boundary` are bare rooms in void, and they are the ones it
-            // catches. Landing it as an error would red a campaign the owner has
-            // played, on the day it merged. So it takes the window this project
-            // already gives new obligations on existing content — `DW0188`
-            // (translation provenance) and `DW0465` (the cast ledger) both say so
-            // in their own text — and hardens after it.
+            // ERROR TIER, unwindowed (owner ruling, 2026-08-08, superseding the
+            // one-`dsl_version` warning window this branch first proposed). A
+            // reachable walkable cell one step from a bottomless column is a
+            // player who leaves the world; that is not a style note the author
+            // may carry for a version, so there is no deprecation window and the
+            // message offers none. The per-batch call inside the edit replay is
+            // an error for the same reason and stays one — it additionally names
+            // WHICH batch broke the boundary, which this floor cannot.
             //
-            // The window is the only thing softened. The proof, the model and the
-            // message are unchanged, and the per-batch call inside the edit replay
-            // is still an ERROR: an edit that strips a boundary is a regression in
-            // work the author is doing right now, not a legacy debt.
-            if let Err(e) =
-                crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan))
-            {
-                warnings.push(delvewright_dsl::Diagnostic::warning(
-                    e.code,
-                    "build",
-                    String::new(),
-                    format!(
-                        "{} — this is the one-version deprecation window: the boundary proof \
-                         now runs over every assembled world, not only over one that a stage-7 \
-                         edit script touched, and it hardens into an error after it. Declare a \
-                         `boundary` (spec-0013) so a player who walks out is returned, or give \
-                         the scene ground its own edge",
-                        e.message
-                    ),
-                ));
-            }
+            // The fix is always GEOMETRY or the world-generator premise, never a
+            // declaration: `Ambient` (spec-0013 `horizon`) states what an
+            // unmodelled column contains, and `boundary`'s return clock is a
+            // runtime rescue that this proof deliberately does not read — being
+            // teleported back after falling out is not the guarantee.
+            //
+            // OPEN FINDING (2026-08-08), the reason five `v06_trap_payloads`
+            // fixtures are red on this branch. `anchor_starts` roots reachability
+            // at EVERY resolved anchor, each snapped to the nearest standable
+            // cell within `nav::SNAP_RADIUS` (3) by squared distance and NOTHING
+            // else — the snap does not care that solid geometry stands between
+            // the anchor and the cell it lands on. So an anchor on a room's
+            // ceiling (which every `collapse` payload must declare) snaps UP
+            // through the ceiling onto the room's ROOF, a component the party can
+            // never walk to, and this proof then demands that roof have a safe
+            // edge. A free-standing prefab in a void world can never satisfy
+            // that: its roof is by construction a bare platform. Demonstrated:
+            // the twelve sibling fixtures share the identical geometry and are
+            // clean, so the interior walk region IS boundary-safe and the roof is
+            // a disconnected component; and lowering one anchor from local y=4 to
+            // y=3 (floor now nearer than roof) makes the red vanish.
+            // Neither remedy the diagnostic names reaches it — `boundary` is
+            // inert here by design (above), and `horizon: ocean` only re-files
+            // the same roof under the stranding branch. Fixing it means deciding
+            // what this proof's walk region IS (party spawn/checkpoint roots, or
+            // an anchor snap confined to the declaring piece's AABB the way
+            // `World::confined_standable_cells` already confines wave seating
+            // after the same class of leak, task #41). Both are design calls on
+            // an already-shipped helper — `anchor_starts` also roots the relight
+            // region — so they are owner-scoped, not a worker's to pick.
+            crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
 
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;

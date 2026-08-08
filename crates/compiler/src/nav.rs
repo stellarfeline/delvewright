@@ -4882,9 +4882,10 @@ fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Na
         message: format!(
             "boundary safety (spec-0017): {} reachable walkable cell(s) border a void drop over \
              {} distinct column(s) — one step off the proven ground falls out of the world:{}\n\
-             The edit stripped the physical boundary here: extend the terrain under the exposed \
-             edge (fill/morph a slope or outcrop below {first:?}) or reinstate a barrier shape; \
-             do NOT weaken this check or reroute the path to sidestep it",
+             There is no physical boundary here — either an edit stripped one or the scene ground \
+             never had an edge: extend the terrain under the exposed edge (fill/morph a slope or \
+             outcrop below {first:?}) or reinstate a barrier shape; do NOT weaken this check or \
+             reroute the path to sidestep it",
             hits.len(),
             columns.len(),
             listing,
