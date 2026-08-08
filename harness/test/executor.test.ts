@@ -138,6 +138,124 @@ test("a respawn that lands before the wait is armed is still observed", async ()
   assert.equal(executor.deathDiagnostic(), undefined, "the death latch is cleared");
 });
 
+// --- entity-tracker settle race (2026-08-06 island triage) -------------------
+
+interface FakeEntity {
+  id: number;
+  type: string;
+  name: string;
+  position: FakeVec3;
+  customName?: string;
+}
+
+class EntityTrackingFakeBot extends FakeBot {
+  entities: Record<number, FakeEntity> = {};
+}
+
+function fakeEntity(
+  id: number,
+  opts: { type?: string; name?: string; customName?: string; position?: FakeVec3 } = {},
+): FakeEntity {
+  return {
+    id,
+    type: opts.type ?? "mob",
+    name: opts.name ?? "warden",
+    customName: opts.customName,
+    position: opts.position ?? new FakeVec3(0, 64, 0),
+  };
+}
+
+test("awaitEntitySettle resolves once the non-player entity count holds steady", async () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.entities[100] = fakeEntity(100);
+  bot.entities[101] = fakeEntity(101);
+  const started = Date.now();
+  await executor.awaitEntitySettle();
+  assert.ok(
+    Date.now() - started < 2_000,
+    "settles well inside the default poll budget once the count stops changing",
+  );
+});
+
+test("awaitEntitySettle does not settle on a count that is still growing from late packets", async () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  // Packets land one at a time, the way the island's world-persisted actors did —
+  // a settle read taken too early would see a non-empty tracker and stop waiting.
+  bot.entities[200] = fakeEntity(200);
+  setTimeout(() => {
+    bot.entities[201] = fakeEntity(201);
+  }, 150);
+  setTimeout(() => {
+    bot.entities[202] = fakeEntity(202);
+  }, 350);
+  const started = Date.now();
+  await executor.awaitEntitySettle();
+  const elapsed = Date.now() - started;
+  assert.equal(Object.keys(bot.entities).length, 3, "waited for every packet, not just the first");
+  assert.ok(elapsed > 350, `resolved at ${elapsed}ms — before the last packet even landed`);
+  assert.ok(elapsed < 3_000, `took ${elapsed}ms to settle after the last packet landed`);
+});
+
+test("awaitEntitySettle gives up after its bounded timeout when nothing ever populates", async () => {
+  const bot = new EntityTrackingFakeBot(); // entities stays empty — a legitimately quiet spawn
+  const executor = attach(bot, { DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS: "250" });
+  const started = Date.now();
+  await executor.awaitEntitySettle(); // must not hang the run
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed >= 250 && elapsed < 1_500, `gave up near the 250ms bound (took ${elapsed}ms)`);
+});
+
+// --- scripted-teardown death classification (2026-08-06 island triage) -------
+
+test("a named entity's death is recorded with its last known position", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(7, { customName: "island-herdsman", position: new FakeVec3(10, -128, 9) }),
+  );
+  assert.deepEqual(executor.namedEntityDeaths(), [
+    { name: "island-herdsman", entityId: 7, position: [10, -128, 9] },
+  ]);
+});
+
+test("an unnamed mob's death is not recorded — this ledger is about actors, not every mob", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit("entityDead", fakeEntity(8, { position: new FakeVec3(5, 64, 5) })); // no customName
+  assert.deepEqual(executor.namedEntityDeaths(), []);
+});
+
+test("the bot's own death is not recorded here — onDeath owns that diagnostic", () => {
+  const bot = new EntityTrackingFakeBot();
+  (bot.entity as unknown as { id: number }).id = 1;
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(1, { type: "player", customName: "delve-bot", position: new FakeVec3(0, 64, 0) }),
+  );
+  assert.deepEqual(executor.namedEntityDeaths(), []);
+});
+
+test("multiple named-entity deaths accumulate in order, undeduplicated", () => {
+  const bot = new EntityTrackingFakeBot();
+  const executor = attach(bot);
+  bot.emit(
+    "entityDead",
+    fakeEntity(1, { customName: "Hollow Gate-Warder", position: new FakeVec3(10, 63, -4) }),
+  );
+  bot.emit(
+    "entityDead",
+    fakeEntity(4, { customName: "island-herdsman", position: new FakeVec3(10, -128, 9) }),
+  );
+  const deaths = executor.namedEntityDeaths();
+  assert.equal(deaths.length, 2);
+  assert.equal(deaths[0]!.name, "Hollow Gate-Warder");
+  assert.equal(deaths[1]!.name, "island-herdsman");
+});
+
 test("awaitCutscene waits out the cutscene and returns once control is restored", async () => {
   const bot = new FakeBot();
   bot.game.gameMode = "spectator";
@@ -1822,7 +1940,7 @@ const SELECT_CLASS_STEP: SelectClassStep = {
 
 test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
   // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
-  // The `dw.class` trigger is re-enabled for every player on every tick and
+  // The `dw.class` trigger was then re-enabled for every player on every tick and
   // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
   // post-death re-arm silently warped the bot from the checkpoint it had just
   // respawned on back to the start of the delve — 150 blocks and eight levels away
@@ -2158,11 +2276,17 @@ class BonfireFakeBot extends CombatFakeBot {
   }
 
   /** The affordance is an entity like any other, so it lives in `entities`.
-   * Re-published after every re-seat: a bonfire is rested at, never used up. */
+   * Re-published after every re-seat: a bonfire is rested at, never used up.
+   *
+   * The dimensions are the real ones — the compiler summons every affordance as
+   * `minecraft:interaction` with `width:1.0f,height:2.0f` — because the crosshair
+   * acquisition that now guards `rest` is ray-vs-hitbox: a stub with no box is a
+   * body the ray cannot meet, and a fake that cannot be aimed at proves nothing
+   * about a fire that can. */
   armBonfire(id: number, pos: FakeVec3): void {
     if (!this.affordance) return;
     this.bonfires ??= new Map();
-    this.bonfires.set(id, { id, name: "interaction", height: 0, position: pos });
+    this.bonfires.set(id, { id, name: "interaction", width: 1, height: 2, position: pos });
     this.entities[id] = this.bonfires.get(id)!;
   }
   // Declared without an initialiser on purpose: the BASE constructor calls `seat`,
@@ -2439,6 +2563,28 @@ test("a custom name is read from every shape mineflayer hands it back in", () =>
   );
   assert.equal(displayNameOf({}), undefined);
   assert.equal(displayNameOf({ displayName: {} }), undefined);
+});
+
+test("i18n v2: a translate-component name is read through its fallback", () => {
+  // spec-0029: an authored custom name ships as
+  // `{"translate": "<l10n key>", "fallback": "<English source>"}`. `fallback` is
+  // by construction the English string the plan's `actors[].name` carries, so the
+  // same-type preference heuristic keeps matching — and it must NOT depend on
+  // whether the installed prismarine-chat resolves an unknown key to its fallback
+  // or renders the raw key, which is exactly what the `toString` branch would.
+  const component = { translate: "actor.polyphemus.name", fallback: "Polyphemus" };
+  assert.equal(displayNameOf({ customName: component }), "Polyphemus");
+  assert.equal(displayNameOf({ displayName: component }), "Polyphemus");
+  // A component whose translate key resolved to the raw key string must still
+  // prefer the fallback, not the key.
+  assert.equal(
+    displayNameOf({
+      customName: { ...component, toString: () => "actor.polyphemus.name" },
+    }),
+    "Polyphemus",
+  );
+  // An empty fallback is not a name.
+  assert.equal(displayNameOf({ customName: { translate: "x", fallback: "" } }), undefined);
 });
 
 test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {

@@ -49,8 +49,10 @@ struct Spec {
     id: &'static str,
     size: [i32; 3],
     doors: Vec<Door>,
-    /// Only the shore piece authors sea; every other piece omits `waterline_y`
-    /// so `DW0344` does not demand it land at sea level (the keep RISES).
+    /// Only the pieces that author sea declare `waterline_y` — the barrow shore
+    /// and (r5) the bell tower's ferry pier, both on the shore datum. Every
+    /// other piece omits it so `DW0344` does not demand it land at sea level
+    /// (the keep RISES).
     waterline_y: Option<i32>,
     build: fn(&mut Grid, u64),
     anchors: fn() -> Vec<(&'static str, AnchorJson)>,
@@ -132,7 +134,7 @@ fn specs() -> Vec<Spec> {
             id: "tk-bell-tower",
             size: [belltower::SX, belltower::SY, belltower::SZ],
             doors: vec![(West, KEEP_FLOOR_Y, 13)],
-            waterline_y: None,
+            waterline_y: Some(SHORE_FLOOR_Y),
             build: belltower::build,
             anchors: belltower::anchors,
             light: Light::Measured(belltower::light_regions, None),

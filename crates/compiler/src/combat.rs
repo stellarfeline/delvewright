@@ -404,9 +404,10 @@ impl FloorCoverage {
 /// walked into, and that "something" is only stated here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActorBeat {
-    /// `trigger` / `quest` / `objective` / `trap`.
+    /// `trigger` / `quest` / `objective` / `trap` / `dialogue-respawn`.
     pub site: &'static str,
-    /// The owning trigger / quest / trap id.
+    /// The owning trigger / quest / trap id — or, for `dialogue-respawn`, the NPC
+    /// whose tree hosts the option.
     pub owner: String,
     /// The objective, when the site is a quest's `on_objective_complete`.
     pub objective: Option<String>,
@@ -459,8 +460,16 @@ pub struct ActorEncounter {
 /// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
 /// bundles — is descended exactly as emission descends it, and an ambush (which
 /// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// Dialogue options are deliberately not walked: `DialogueEffect` has no
-/// actor verb at all, so there is nothing there to miss.
+/// The dialogue **stage** is nonetheless a blind spot, and it is a real one
+/// (task #24 — the doc here used to argue it away). `DialogueEffect` indeed has
+/// no actor verb, but a dialogue option's `set-checkpoint` carries an
+/// `on_respawn` bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is
+/// a beat emission lowers and this index does not see. It is the fifth root
+/// [`crate::plan::for_each_effect_root`] enumerates, and
+/// [`for_each_campaign_effect`] cannot express it: its `EffectSite` has no
+/// dialogue variant, so reaching root 5 means widening that type. Until then this
+/// index covers four of the five roots — see "Known spec ↔ code drift" in
+/// `docs/reference/compiler.md`.
 fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
     let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
         .quests
@@ -483,6 +492,13 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
             EffectSite::QuestComplete { quest } => ("quest", quest.clone(), None),
             EffectSite::Trigger { trigger } => ("trigger", trigger.clone(), None),
             EffectSite::Trap { trap } => ("trap", trap.clone(), None),
+            // Effect root 5. A `spawn-actor`/`unleash-actor` nested in a dialogue
+            // option's `set-checkpoint` `on_respawn` bundle is lowered into
+            // `cp_on_respawn_<i>` and really does put a body in the world, so it is
+            // an actor beat like any other. It is ambient — re-run on death while
+            // that checkpoint is active — so, like a trigger and a trap, it has no
+            // DAG position.
+            EffectSite::DialogueRespawn { npc, .. } => ("dialogue-respawn", npc.clone(), None),
         };
         let t = (kind == "trigger")
             .then(|| triggers.get(owner.as_str()))
@@ -617,18 +633,80 @@ fn uncovered_tiered_waves<'a>(plan: &Plan<'a>) -> Vec<(usize, &'a Wave, String)>
         .collect()
 }
 
-/// One line of the floor-gate ledger: what is billed hard, and whether the gate
-/// can hold it to that.
+/// Every actor the campaign turns loose on the party, in declaration order —
+/// the campaign's own answer to "which actors are *fights*".
+///
+/// Hostility is read off the campaign's own declarations, by the SAME rule the
+/// die-retry / assist machinery uses to decide an actor is a fight at all
+/// ([`actor_coverage`]'s "unleash or nothing"): an `unleash-actor` beat replaces
+/// the puppet with a real-AI twin that swings back, and nothing short of it can
+/// damage a player — a staged puppet is `NoAI` and knockback-immune (and
+/// `Invulnerable` unless `vulnerable`), so it never attacks. Never inferred from
+/// the species: the pinned entity registry is a membership set with no
+/// mob-category data (`DW0469`'s rule), so the compiler cannot and does not ask
+/// whether `minecraft:sheep` is a monster.
+///
+/// One predicate, two consumers: the floor-gate ledger below, and the bonfire's
+/// undefeated re-seat (spec-0016 §1) — which must refresh exactly the bodies the
+/// party can be fighting when they rest, and nothing that is scenery.
+pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
+    let beats = actor_beats(c);
+    c.quests
+        .content
+        .actors
+        .iter()
+        .filter(|a| {
+            beats
+                .get(a.id.as_str())
+                .is_some_and(|(_, unleashes)| !unleashes.is_empty())
+        })
+        .collect()
+}
+
+/// Every actor the campaign turns loose on the party but never bills (task
+/// #121): `unleash-actor`ed somewhere, `tier` absent.
+///
+/// A tier declared `ordinary` is a *statement* — the author saying this fight is
+/// routine — and stays off the ledger like any other ordinary encounter. An
+/// ABSENT tier is not a statement, and that is the whole difference this
+/// function exists to keep.
+fn untiered_hostile_actors(c: &Campaign) -> Vec<&Actor> {
+    hostile_actors(c)
+        .into_iter()
+        .filter(|a| a.tier.is_none())
+        .collect()
+}
+
+/// Does this campaign turn any unbilled actor loose on the party? Emission asks,
+/// because a campaign whose only hostile is an untiered actor must still ship a
+/// ledger that says so — see [`untiered_hostile_actors`].
+pub fn has_untiered_hostile_actors(plan: &Plan) -> bool {
+    !untiered_hostile_actors(plan.campaign).is_empty()
+}
+
+/// One line of the floor-gate ledger: what the content declares, and whether the
+/// gate can hold it to that.
 struct FloorEntry {
     kind: &'static str,
     id: String,
-    tier: EncounterTier,
+    /// The declared tier, or `None` for a hostile that declared none — which is
+    /// exactly why it is on the ledger.
+    tier: Option<EncounterTier>,
     coverage: FloorCoverage,
 }
 
 /// The whole floor-gate ledger for a campaign, covered and uncovered together,
 /// in a fixed order: mandatory waves in critical-path order, then optional
-/// tiered waves in declaration order, then tiered actors in declaration order.
+/// tiered waves in declaration order, then tiered actors in declaration order,
+/// then untiered hostile actors in declaration order.
+///
+/// The last group is task #121's fix. An EMPTY ledger reads as "everything is
+/// covered" when what it actually meant was "nothing was even assessed": before
+/// this, an actor the campaign unleashes on the party without declaring a tier
+/// appeared on neither side of the ledger, and the run report printed two empty
+/// lists over a delve full of fights. Silence must not read as a pass — and an
+/// unassessed fight is silence of exactly the kind [`FloorCoverage`] exists to
+/// break.
 fn floor_ledger(
     plan: &Plan,
     mandatory: &[Encounter],
@@ -640,7 +718,7 @@ fn floor_ledger(
         .map(|e| FloorEntry {
             kind: "wave",
             id: e.wave_id.clone(),
-            tier: e.tier,
+            tier: Some(e.tier),
             coverage: FloorCoverage::Covered,
         })
         .collect();
@@ -648,7 +726,7 @@ fn floor_ledger(
         out.push(FloorEntry {
             kind: "wave",
             id: w.id.as_str().to_string(),
-            tier: w.tier.unwrap_or_default(),
+            tier: Some(w.tier.unwrap_or_default()),
             coverage: FloorCoverage::NotCovered(why),
         });
     }
@@ -656,8 +734,25 @@ fn floor_ledger(
         out.push(FloorEntry {
             kind: "actor",
             id: a.actor_id.clone(),
-            tier: a.tier,
+            tier: Some(a.tier),
             coverage: a.coverage.clone(),
+        });
+    }
+    for a in untiered_hostile_actors(plan.campaign) {
+        let id = a.id.as_str();
+        out.push(FloorEntry {
+            kind: "actor",
+            id: id.to_string(),
+            tier: None,
+            coverage: FloorCoverage::NotCovered(format!(
+                "`{id}` is UNTIERED: the campaign `unleash-actor`s it, so the party fights a \
+                 real-AI body that swings back, but nothing declares what that fight is worth — \
+                 so the inverted floor gate never assessed it at all. An untiered hostile is not \
+                 a covered fight and its absence from the findings is not a pass. Declare a \
+                 `tier`: `ordinary` if the fight is meant to be routine (which takes it off this \
+                 ledger as a statement rather than an omission), `elite`/`boss` if it is billed \
+                 hard and should be measured"
+            )),
         });
     }
     out
@@ -688,6 +783,14 @@ pub fn floor_coverage_warnings(
         let Some(why) = e.coverage.reason() else {
             continue;
         };
+        // An UNTIERED hostile (task #121) is on the ledger but is not BILLED
+        // anything, and `DW0477` is by definition about a billing the gate
+        // cannot hold — its message, its pointer (`…/tier`, a field that does
+        // not exist here) and its prescription would all be wrong. The ledger
+        // line, which the run report prints verbatim, is the whole record.
+        let Some(tier) = e.tier else {
+            continue;
+        };
         let path = match e.kind {
             "actor" => format!("/content/actors/{}/tier", index_of[e.id.as_str()]),
             _ => format!("/content/waves/{}/tier", uncovered_wave_index[&e.id]),
@@ -707,7 +810,7 @@ pub fn floor_coverage_warnings(
                  unmeasurable elite is a legitimate design (set dressing the content also chose \
                  to name) — what is not legitimate is nobody knowing.",
                 e.id,
-                e.tier.token()
+                tier.token()
             ),
         ));
     }
@@ -1177,7 +1280,13 @@ fn actor_json(a: &ActorEncounter) -> Value {
         "floor_gate": coverage_json(&a.coverage),
     });
     if let Some(name) = &a.name {
-        o["name"] = json!(name);
+        // spec-0029 named exclusion: `combat-plan.json` is the validation ladder's
+        // own artifact, read by the bot and by a maintainer, never rendered to a
+        // player — so the actor's name appears here as its English source, not as
+        // a translate key. (The name became translatable when `actors[].name`
+        // entered the l10n inventory; before that this line could not have carried
+        // a tag at all.)
+        o["name"] = json!(delvewright_dsl::l10n_plain(name));
     }
     if let Some(pos) = a.pos {
         o["pos"] = json!([pos[0], pos[1], pos[2]]);
@@ -1202,8 +1311,9 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 /// Lives under `validation/` like the waypoint export — excluded from the
 /// shipped delve image, so declaring an encounter tier or running the die-retry
 /// stage can never change a shipped byte. Emitted when the campaign has a
-/// mandatory encounter **or** a tier-declaring actor, so a combat-free delve's
-/// output is unchanged entirely.
+/// mandatory encounter, a tier-declaring actor **or** an untiered hostile actor,
+/// so a combat-free delve's output is unchanged entirely — and a delve whose
+/// only fight is an unbilled actor still ships the ledger that says so.
 ///
 /// Three arrays, deliberately separate:
 ///
@@ -1214,10 +1324,40 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 /// * `actors` — the tier-declaring stage-5 actors, with the anchor to walk to,
 ///   the tag the body wears, the beats that stage and unleash them, and the
 ///   attributes of the body that fights.
-/// * `floor_gate` — the ledger: every encounter billed `elite`/`boss`, split
-///   into what the gate covers and what it cannot, each uncovered entry naming
-///   its reason. This exists so an empty findings list can never be read as a
-///   pass over encounters that were never fought.
+/// * `floor_gate` — the ledger: every encounter billed `elite`/`boss` **plus
+///   every untiered hostile actor** (task #121), split into what the gate covers
+///   and what it cannot, each uncovered entry naming its reason. An untiered
+///   hostile carries `tier: null` and lands in `not_covered`, because a fight
+///   nothing bills is a fight nothing assessed. This exists so an empty findings
+///   list can never be read as a pass over encounters that were never fought.
+///
+/// # Binding counts (playtest-methodology.md rule 1)
+///
+/// A ledger that MATCHED zero objects and a ledger that matched several and
+/// found them all fine are indistinguishable to a reader who is not counting —
+/// the island shipped exactly that silence for nineteen rounds, on
+/// `floor_gate.covered`/`not_covered` **and** `actors[]` all empty at once,
+/// before round 20 declared the campaign's first actor `tier`. This is
+/// reporting, not diagnosis: an empty ledger is often the honest answer (an
+/// all-`ordinary` delve binds nothing, on purpose), so nothing here fails the
+/// build or mints a new DW code. What it does is say the binding count OUT
+/// LOUD, additively, on both surfaces that can go quietly empty:
+///
+/// * `floor_gate.examined` / `.unbound` / `.reason` — `examined` is
+///   `covered.len() + not_covered.len()`; `unbound` is `examined == 0`, with a
+///   `reason` present exactly then. Note this can be `unbound` even when
+///   `actors[]` is not: an actor declared `tier: "ordinary"` populates
+///   `actors[]` (any declared tier does) but never the floor ledger (only
+///   `elite`/`boss` carries a floor expectation), so an all-`ordinary` campaign
+///   is `actors[].examined > 0` and `floor_gate.unbound` at once — two
+///   different questions, two different counts.
+/// * a sibling `actors_gate` (`examined`/`unbound`/`reason`) states the same
+///   for `actors[]` itself: how many actors this build's tier machinery even
+///   tracked. `actors[]` holds every TIER-DECLARING actor, whether the floor
+///   gate covers it or not — an untiered hostile actor never appears here (it
+///   is `floor_gate.not_covered` only, task #121), so `actors_gate.unbound`
+///   does not by itself mean "no hostile actor in this campaign"; the reason
+///   text says so and points at `floor_gate.not_covered`.
 pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
     let difficulty = effective_difficulty(plan.campaign);
     let entries: Vec<Value> = encounters
@@ -1257,29 +1397,86 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
     let ledger = floor_ledger(plan, encounters, actors);
     let (covered, not_covered): (Vec<&FloorEntry>, Vec<&FloorEntry>) =
         ledger.iter().partition(|e| e.coverage.is_covered());
+    let floor_examined = covered.len() + not_covered.len();
+    let mut floor_gate = json!({
+        "covered": covered
+            .iter()
+            .map(|e| json!({
+                "kind": e.kind,
+                "id": e.id,
+                "tier": e.tier.map(EncounterTier::token),
+            }))
+            .collect::<Vec<_>>(),
+        // `tier: null` is the untiered hostile (task #121) — an explicit
+        // null rather than an omitted key, because this document's entire
+        // job is to make an absence legible.
+        "not_covered": not_covered
+            .iter()
+            .map(|e| json!({
+                "kind": e.kind,
+                "id": e.id,
+                "tier": e.tier.map(EncounterTier::token),
+                "reason": e.coverage.reason().unwrap_or_default(),
+            }))
+            .collect::<Vec<_>>(),
+        // playtest-methodology.md rule 1: the binding count, stated out loud —
+        // additive, never a substitute for `covered`/`not_covered`. `unbound`
+        // is `examined == 0`; a `reason` accompanies it exactly then, because a
+        // reader must never have to notice an empty pair of arrays to learn
+        // this ledger matched nothing.
+        "examined": floor_examined,
+        "unbound": floor_examined == 0,
+    });
+    if floor_examined == 0 {
+        floor_gate["reason"] = json!(FLOOR_GATE_UNBOUND_REASON);
+    }
+
+    let actors_examined = actors.len();
+    let mut actors_gate = json!({
+        "examined": actors_examined,
+        "unbound": actors_examined == 0,
+    });
+    if actors_examined == 0 {
+        actors_gate["reason"] = json!(ACTORS_GATE_UNBOUND_REASON);
+    }
+
     json!({
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
         "difficulty": difficulty.token(),
         "encounters": entries,
         "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
-        "floor_gate": {
-            "covered": covered
-                .iter()
-                .map(|e| json!({ "kind": e.kind, "id": e.id, "tier": e.tier.token() }))
-                .collect::<Vec<_>>(),
-            "not_covered": not_covered
-                .iter()
-                .map(|e| json!({
-                    "kind": e.kind,
-                    "id": e.id,
-                    "tier": e.tier.token(),
-                    "reason": e.coverage.reason().unwrap_or_default(),
-                }))
-                .collect::<Vec<_>>(),
-        },
+        // Sibling of `actors[]`, not a rename of anything: how many actors this
+        // build's tier machinery tracked at all. See the `combat_plan_json` doc
+        // comment for why this and `floor_gate.unbound` are different questions.
+        "actors_gate": actors_gate,
+        "floor_gate": floor_gate,
     })
 }
+
+/// `floor_gate`'s reason when `examined == 0`: the ledger holds every wave and
+/// actor billed `elite`/`boss` plus every untiered hostile actor (task #121),
+/// so an empty ledger means none of those three things exist in the campaign —
+/// a legitimate, common state (an all-`ordinary` delve) stated here so it is
+/// never mistaken for a ledger that ran and found nothing.
+const FLOOR_GATE_UNBOUND_REASON: &str = "no wave or actor in this campaign is billed \
+    `elite`/`boss`, and no hostile actor goes untiered — the floor gate's ledger has \
+    nothing to hold. This can be a legitimate build (e.g. an all-`ordinary` delve, or \
+    one whose combat never crosses this gate's weight); it is stated explicitly so an \
+    empty `covered`/`not_covered` pair is never read as a ledger that ran and passed.";
+
+/// `actors_gate`'s reason when `examined == 0`: `actors[]` holds every actor
+/// that declares ANY tier (`ordinary` included), so an empty array means no
+/// actor in the campaign declares one at all — which is not the same fact as
+/// "no hostile actor exists": an unleashed actor that never got a `tier` is
+/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead,
+/// task #121), so this reason points a reader there rather than letting the
+/// empty array read as "no actor combat".
+const ACTORS_GATE_UNBOUND_REASON: &str = "no actor in this campaign declares a `tier` \
+    (not even `ordinary`), so this build's actor-tier machinery tracked none. This is \
+    NOT the same fact as \"no hostile actor exists\": an unleashed actor that declares \
+    no tier at all does not appear here by design — check `floor_gate.not_covered` for \
+    any UNTIERED hostile actor this may be masking.";
 
 #[cfg(test)]
 mod tests {
@@ -1364,6 +1561,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, source) = mob_damage_multiplier(&mob);
         assert_eq!(multiplier, 0.0);
@@ -1382,6 +1580,7 @@ mod tests {
                 amplifier: RESISTANCE_IMMUNE_AMPLIFIER - 1,
             }],
             equipment: None,
+            drops: Vec::new(),
         };
         let (multiplier, _) = mob_damage_multiplier(&mob);
         assert!((multiplier - 0.2).abs() < 1e-9, "{multiplier}");
@@ -1414,6 +1613,7 @@ mod tests {
                 attributes: None,
                 effects,
                 equipment: None,
+                drops: Vec::new(),
             }],
             respawns_on_rest: false,
             lane: None,

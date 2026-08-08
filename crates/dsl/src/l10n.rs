@@ -25,16 +25,21 @@
 //! | `area.<area>.name` | each stage-1 area `name` |
 //! | `class.<class>.name` / `.blurb` | each stage-3 class |
 //! | `class.<class>.kit.<i>.name` | a kit item's display `name` (only if set) |
-//! | `npc.<npc>.name` | each stage-2 NPC `name` |
+//! | `npc.<npc>.name` | each stage-2 NPC `name` (see *entity display names* below) |
+//! | `actor.<actor>.name` | each stage-5 actor `name` (v0.6, only if set; see below) |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
+//! | `obj.<quest>.<obj>.item_name` | a stage-5 `collect`'s `item_name` (v0.8, only if set) |
 //! | `dlg.<npc>.<node>.text` | each stage-6 dialogue node `text` |
 //! | `dlg.<npc>.<node>.opt.<i>.label` | each dialogue option `label` |
 //! | `dlg.<npc>.<node>.opt.<i>.tooltip` | that option's hover `tooltip` (v0.8, only if set) |
 //! | `wave.<wave>.mob.<i>.name` | a wave mob's custom `name` (only if set) |
+//! | `wave.<wave>.mob.<i>.drop.<n>.name` | a declared quest-item drop's display `name` (v0.9, only if set) |
+//! | `actor.<actor>.drop.<n>.name` | an actor's declared quest-item drop `name` (v0.9, only if set) |
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
+//! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -48,6 +53,31 @@
 //! effect 0 → `fx.<quest>.oc.<obj>.0.seq.1.0.narrate`. Nesting is arbitrary-depth
 //! (a `move-actor.on_arrive` inside a `sequence` step nests both segments). Keys are
 //! purely position-derived → deterministic and stable across builds (ADR-0006).
+//!
+//! ## Entity display names are keyed by their TEXT, not by their site
+//!
+//! An NPC (`npc.<npc>.name`) and a scripted actor (`actor.<actor>.name`) are two
+//! DSL surfaces for the same thing a player reads: a nameplate over a body. One
+//! character routinely occupies both — a stage-2 NPC that stands and talks, plus
+//! one actor puppet per cutscene pose it is staged in. If each site owned its own
+//! key, a translator would be asked for `Polyphemus` five times and could answer
+//! differently each time, and the giant's name would **change as he walked into a
+//! cutscene** — a worse defect than the untranslated one, and an authored one.
+//!
+//! So the key of an entity display name is decided by its **canonical English
+//! text**: the first site (in this traversal's fixed order — NPCs before actors)
+//! declaring a given name owns the key, and every later site carrying the
+//! byte-identical name emits that same key. The inventory therefore asks for each
+//! distinct name exactly once, and two bodies a player reads as one character
+//! cannot render as two.
+//!
+//! Scope is deliberately the **entity display-name class only** (`npc.*.name`,
+//! `actor.*.name`). Prose — a narrate line, a dialogue label, an objective title —
+//! is context-bound and keeps one key per site: two English strings that happen to
+//! coincide may legitimately need different renderings. Wave-mob names
+//! (`wave.*.mob.*.name`) are the same shape and are **not** merged here: that is a
+//! generalization beyond the finding this rule closes, and it is an owner call
+//! because it retires keys live campaigns already translate.
 //!
 //! Player-visible strings only. Deliberately **excluded** (authoring context the
 //! player never sees, so translating them is pointless and out of scope): world
@@ -91,6 +121,14 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
                 f(&format!("{keybase}.save_label"), s);
             }
         }
+        // DSL v0.8: what a sealed gate answers when the party right-clicks it. Read
+        // off the actionbar exactly like a `narrate`, so it translates like one. An
+        // unauthored hint is absent from the inventory — the compiler bakes its
+        // canonical English, exactly as `world.boundary.message` does.
+        QuestEffect::CloseGate {
+            sealed_hint: Some(h),
+            ..
+        } => f(&format!("{keybase}.sealed_hint"), h),
         _ => {}
     }
 }
@@ -171,8 +209,9 @@ pub enum L10nKind {
 }
 
 /// An l10n sidecar document: `{ dsl_version, campaign_id, kind: "l10n", lang,
-/// content }`, mirroring the stage-doc envelope style. `content` is a flat map of
-/// [inventory](crate::l10n::inventory) key → translated string.
+/// content, source }`, mirroring the stage-doc envelope style. `content` is a flat
+/// map of [inventory](crate::l10n::inventory) key → translated string; `source`
+/// records the canonical English each of those translations was made **from**.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct L10nDoc {
@@ -187,6 +226,26 @@ pub struct L10nDoc {
     pub lang: String,
     /// Flat map of inventory key → translated string.
     pub content: BTreeMap<String, String>,
+    /// **Translation provenance**: inventory key → the canonical English that key
+    /// held when its [`Self::content`] row was written.
+    ///
+    /// Coverage validation proves the sidecar has a row for every key
+    /// (`DW0180`/`DW0181`), which is a statement about key SETS and says nothing
+    /// about whether a row still corresponds to the English it renders. Edit an
+    /// authored line and its translation is stale, present, applied, and wrong —
+    /// and nothing in the key sets moved. `source` is what makes that
+    /// **detectable** ([`validate_l10n_provenance`], `DW0187`) instead of audited.
+    ///
+    /// This is load-bearing for entity display names in particular, because their
+    /// key is owned by the first site declaring a given text (see the module
+    /// header): renaming ONE body can migrate a key's ownership to ANOTHER body,
+    /// so the row that goes wrong is not the row the author touched.
+    ///
+    /// Optional in the format — an older sidecar parses unchanged and simply
+    /// carries no provenance, which `DW0188` reports as an unguarded row count on
+    /// every run rather than letting it pass in silence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source: BTreeMap<String, String>,
 }
 
 /// The local part of a type-prefixed id: the segment after the first `/` (kebab
@@ -207,6 +266,13 @@ pub fn local_id(id: &str) -> &str {
 /// invoking `f(key, &mut value)` for each. The single traversal shared by
 /// [`inventory`] and [`localize`] — they cannot drift.
 pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
+    // Entity display names (a nameplate over a body) are keyed by their canonical
+    // English TEXT, not by their declaration site: canonical English → owning key.
+    // See the module header — one character routinely has one NPC identity and
+    // several actor puppets, and a per-site key would let its name be translated
+    // several ways. Filled in traversal order, so the NPC identity always owns the
+    // key and the puppets follow it.
+    let mut entity_names: BTreeMap<String, String> = BTreeMap::new();
     // Stage 1 — world title + area names.
     f("world.title", &mut c.world.content.title);
     for area in &mut c.world.content.areas {
@@ -239,9 +305,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
-    // Stage 2 — NPC names.
+    // Stage 2 — NPC names. First in the entity display-name class, so an NPC
+    // identity owns the key every actor puppet portraying it shares.
     for npc in &mut c.npcs.content.npcs {
-        let key = format!("npc.{}.name", local(npc.id.as_str()));
+        let key = entity_name_key(
+            &mut entity_names,
+            &npc.name,
+            format!("npc.{}.name", local(npc.id.as_str())),
+        );
         f(&key, &mut npc.name);
     }
     // Stage 4 — quest goals.
@@ -271,18 +342,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             {
                 f(&format!("obj.{ql}.{ol}.missing_item_hint"), m);
             }
-        }
-        // Stage 5 — v0.4 effect strings: `narrate` text + named `give-item`
-        // (deterministic: `on_objective_complete` is a BTreeMap). Empty for
-        // v0.2/v0.3 campaigns → inventory unchanged.
-        for (oid, effs) in &mut q.on_objective_complete {
-            let ol = local(oid.as_str()).to_string();
-            for (i, eff) in effs.iter_mut().enumerate() {
-                effect_strings_deep(eff, &format!("fx.{ql}.oc.{ol}.{i}"), f);
+            // Stage 5 — v0.8 `collect.item_name` (task #95): the display name the
+            // collected item carries as a `custom_name` component. A player reads
+            // it off the stack in the barrel and off their own hotbar, so it is as
+            // player-visible as a `title` and translates like one. Absent on every
+            // pre-0.8 objective → inventory unchanged.
+            if let crate::stages::Objective::Collect {
+                item_name: Some(n), ..
+            } = o
+            {
+                f(&format!("obj.{ql}.{ol}.item_name"), n);
             }
-        }
-        for (i, eff) in q.on_complete.iter_mut().enumerate() {
-            effect_strings_deep(eff, &format!("fx.{ql}.done.{i}"), f);
         }
         // Stage 5 — v0.7 cast-ledger bark lines (spec-0020). Barks are spoken
         // in-game exactly like narrate text, so they translate like it too.
@@ -299,13 +369,6 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                     f(&format!("cast.{ql}.{np}.{b}.bark.{i}"), line);
                 }
             }
-        }
-    }
-    // Stage 5 — v0.4 environment-trigger effect strings.
-    for t in &mut c.quests.content.triggers {
-        let tl = local(t.id.as_str()).to_string();
-        for (i, eff) in t.effects.iter_mut().enumerate() {
-            effect_strings_deep(eff, &format!("fx.trig.{tl}.{i}"), f);
         }
     }
     // Stage 6 — dialogue node text + option labels.
@@ -333,6 +396,35 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             if let Some(name) = mob.name.as_mut() {
                 f(&format!("wave.{wl}.mob.{i}.name"), name);
             }
+            // Stage 5 — v0.9 declared quest-item drops (task #179). The name
+            // rides the dropped stack's `custom_name`, so the player reads it off
+            // the ground and off their own hotbar: as player-visible as a wave
+            // mob's own name, and translated like one.
+            for (n, dr) in mob.drops.iter_mut().enumerate() {
+                if let Some(name) = dr.name_mut() {
+                    f(&format!("wave.{wl}.mob.{i}.drop.{n}.name"), name);
+                }
+            }
+        }
+    }
+    // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops (task
+    // #179), keyed off the actor id exactly as a wave mob's drop is keyed off its
+    // wave.
+    for a in &mut c.quests.content.actors {
+        let al = local(a.id.as_str()).to_string();
+        // The puppet's own name (v0.6 `actors[].name`). Player-visible in every
+        // frame it stands in — a nameplate and, for a cutscene mannequin, the
+        // label the party reads while the scene plays — so it is as translatable
+        // as the stage-2 NPC name it usually duplicates, and shares that NPC's key
+        // when the two texts are identical (module header).
+        if let Some(name) = a.name.as_mut() {
+            let key = entity_name_key(&mut entity_names, name, format!("actor.{al}.name"));
+            f(&key, name);
+        }
+        for (n, dr) in a.drops.iter_mut().enumerate() {
+            if let Some(name) = dr.name_mut() {
+                f(&format!("actor.{al}.drop.{n}.name"), name);
+            }
         }
     }
     // Stage 5 — loot item custom names (spec-0021), keyed like a class kit
@@ -345,6 +437,25 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
+    // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
+    // dialog, a seal's answer — over **every** root emission can lower an effect
+    // from, not just the quests stage's three ([`effect_roots_mut`], task #168).
+    // Nesting inside each root is descended by `effect_strings_deep`, so a narrate
+    // in a `sequence` step of a trap payload is inventoried like any other.
+    for (_stage, _path, keybase, eff) in effect_roots_mut(c) {
+        effect_strings_deep(eff, &keybase, f);
+    }
+}
+
+/// The key an entity display name is inventoried under: the key already claimed by
+/// an identical name earlier in the traversal, or `own` if this site is the first
+/// to carry that text (in which case it claims it for every later site).
+///
+/// The lookup is on the string as authored, captured **before** `f` may rewrite it
+/// ([`localize`] swaps the NPC's name to the target language, and the actor puppets
+/// that follow are still English at the moment they are looked up).
+fn entity_name_key(claimed: &mut BTreeMap<String, String>, text: &str, own: String) -> String {
+    claimed.entry(text.to_string()).or_insert(own).clone()
 }
 
 /// The authoritative key → canonical-English inventory derived from the stage
@@ -384,7 +495,9 @@ pub fn key_speaker(key: &str) -> Option<&str> {
 /// diagnostics), its l10n inventory key, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtNarrate {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the string was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`fx.…​.narrate`) — always present, since every
     /// `narrate` lives in an inventoried effect position.
@@ -402,9 +515,10 @@ pub struct ArtNarrate {
 /// a fully-covered sidecar.
 pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         if let Some(text) = eff.narrate_art_text() {
             out.push(ArtNarrate {
+                stage,
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
                 text: text.to_string(),
@@ -418,7 +532,9 @@ pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
 /// path, its l10n inventory key, its style, and the canonical English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScreenNarrate {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the string was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`fx.…​.narrate`).
     pub key: String,
@@ -436,9 +552,10 @@ pub struct ScreenNarrate {
 /// excluded: chat wraps and scrolls, so it has no width budget.
 pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         if let Some((style, text)) = eff.narrate_on_screen() {
             out.push(ScreenNarrate {
+                stage,
                 path: format!("{path}/text"),
                 key: format!("{keybase}.narrate"),
                 style,
@@ -454,7 +571,10 @@ pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
 /// English text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionLabel {
-    /// JSON-pointer-ish path within the `dialogue` stage doc.
+    /// The stage document the string was authored in (`dialogue` for a real
+    /// dialogue option; a bonfire's labels carry the stage they were authored in).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The l10n inventory key (`dlg.<npc>.<node>.opt.<i>.label`).
     pub key: String,
@@ -480,6 +600,7 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
             let nd = local(node.id.as_str());
             for (oi, opt) in node.options.iter().enumerate() {
                 out.push(OptionLabel {
+                    stage: "dialogue",
                     path: format!("/content/dialogues/{ti}/nodes/{ni}/options/{oi}/label"),
                     key: format!("dlg.{np}.{nd}.opt.{oi}.label"),
                     text: opt.label.clone(),
@@ -501,7 +622,7 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
 /// test rather than re-measured per campaign, since it cannot vary.
 pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, keybase, eff| {
+    each_effect_ref(c, &mut |stage, path, keybase, eff| {
         let Some(l) = eff.bonfire_labels() else {
             return;
         };
@@ -511,6 +632,7 @@ pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
         ] {
             if let Some(text) = text {
                 out.push(OptionLabel {
+                    stage,
                     path: format!("{path}/{field}"),
                     key: format!("{keybase}.{key}"),
                     text: text.to_string(),
@@ -521,54 +643,89 @@ pub fn bonfire_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     out
 }
 
-/// Visit every quest/trigger effect — **top-level and every transitively-nested**
-/// one (a `sequence` step, an `on_respawn`/`on_caught`/`on_arrive` bundle) — in the
-/// fixed inventory order, invoking `f(path, keybase, effect)`. `path` is the
-/// effect's JSON-pointer within the `quests` stage doc (for diagnostics); `keybase`
-/// is its l10n key prefix, derived by the **same** position-keying as
-/// [`each_string`]/[`effect_strings_deep`] (so an art narrate's key matches its
-/// inventory key, and a nested `play-sound`/`give-item` ref is reported at a precise
-/// path). Shared by [`art_narrates`], [`sound_refs`] and [`play_sound_actor_refs`]
-/// so the consumer checks (`DW0326`/`DW0328`/`DW0335`) descend nested effects
-/// exactly as emission and the l10n inventory already do (task: nested-effect
-/// consumer recursion). Top-level positions keep their prior path/key, so a
-/// nesting-free campaign is unaffected; nested refs are additive.
-fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestEffect)) {
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let ql = local(q.id.as_str());
-        for (oid, effs) in &q.on_objective_complete {
-            let ol = local(oid.as_str());
-            for (i, eff) in effs.iter().enumerate() {
-                effect_deep(
-                    eff,
-                    &format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    &format!("fx.{ql}.oc.{ol}.{i}"),
-                    f,
-                );
-            }
-        }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            effect_deep(
+/// The **five effect roots** the compiler can lower a quest effect from, as
+/// `(stage, json_path, l10n keybase)` for each root's `i`-th top-level effect.
+///
+/// The roots themselves are **not enumerated here**. They come from
+/// [`crate::effects::for_each_effect_root`], the one enumeration in the workspace,
+/// which this walk simply indexes into per top-level effect (`path` + `/{i}`,
+/// `key` + `.{i}`). Before that module existed this function held its own copy of
+/// the root list and [`effect_roots_mut`] held a second one, which is the
+/// arrangement that let a walk go blind to a root — twice, independently, in this
+/// file alone. The paths and keys are unchanged in both directions.
+fn effect_roots(c: &Campaign) -> Vec<EffectRoot<'_>> {
+    let mut out = Vec::new();
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        for (i, eff) in list.iter().enumerate() {
+            out.push(EffectRoot {
+                stage: site.stage,
+                path: format!("{}/{i}", site.path),
+                key: format!("{}.{i}", site.key),
                 eff,
-                &format!("/content/quests/{qi}/on_complete/{i}"),
-                &format!("fx.{ql}.done.{i}"),
-                f,
-            );
+            });
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        let tl = local(t.id.as_str());
-        for (i, eff) in t.effects.iter().enumerate() {
-            effect_deep(
+    });
+    out
+}
+
+/// One top-level effect root: where it lives, what its l10n keys hang off, and the
+/// effect itself.
+struct EffectRoot<'a> {
+    /// The stage document (`quests` / `dialogue`) this effect was authored in.
+    stage: &'static str,
+    /// JSON pointer to the effect within that document.
+    path: String,
+    /// The effect's l10n key prefix.
+    key: String,
+    /// The effect.
+    eff: &'a QuestEffect,
+}
+
+/// The **mutable mirror** of [`effect_roots`]: the identical roots, in the
+/// identical order, with the same `(stage, path, key)` descriptors, exposed
+/// mutably so [`each_string`] (and through it [`localize`]) can rewrite the
+/// player-visible strings in place.
+///
+/// Like [`effect_roots`] it enumerates nothing itself — it indexes
+/// [`crate::effects::for_each_effect_root_mut`], which is generated from the
+/// **same macro body** as the immutable walk. The two mirrors are therefore
+/// lockstep by construction rather than by a test that has to be remembered; the
+/// descriptor-equality test below now pins that property instead of establishing
+/// it.
+fn effect_roots_mut(c: &mut Campaign) -> Vec<(&'static str, String, String, &mut QuestEffect)> {
+    let mut out: Vec<(&'static str, String, String, &mut QuestEffect)> = Vec::new();
+    crate::effects::for_each_effect_root_mut(c, &mut |kind, path, key, list| {
+        for (i, eff) in list.iter_mut().enumerate() {
+            out.push((
+                kind.stage(),
+                format!("{path}/{i}"),
+                format!("{key}.{i}"),
                 eff,
-                &format!("/content/triggers/{ti}/effects/{i}"),
-                &format!("fx.trig.{tl}.{i}"),
-                f,
-            );
+            ));
         }
+    });
+    out
+}
+
+/// Visit every effect emission can lower — **top-level and every
+/// transitively-nested** one (a `sequence` step, an
+/// `on_respawn`/`on_caught`/`on_arrive` bundle) — over all five
+/// [`effect_roots`], in the fixed inventory order, invoking
+/// `f(stage, path, keybase, effect)`. `stage` names the document the effect lives
+/// in (`quests` or `dialogue`) and `path` is its JSON pointer within it, so a
+/// diagnostic can point at the real site; `keybase` is its l10n key prefix, derived
+/// by the **same** position-keying as [`each_string`]/[`effect_strings_deep`] (so an
+/// art narrate's key matches its inventory key). Shared by [`art_narrates`],
+/// [`on_screen_narrates`], [`bonfire_option_labels`], [`sound_refs`] and
+/// [`play_sound_actor_refs`], so the consumer checks
+/// (`DW0326`/`DW0328`/`DW0330`/`DW0331`/`DW0335`) see exactly the strings the
+/// inventory demands a translation for.
+fn each_effect_ref<'a>(
+    c: &'a Campaign,
+    f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),
+) {
+    for r in effect_roots(c) {
+        effect_deep(r.eff, r.stage, &r.path, &r.key, f);
     }
 }
 
@@ -578,15 +735,17 @@ fn each_effect_ref<'a>(c: &'a Campaign, f: &mut dyn FnMut(&str, &str, &'a QuestE
 /// per-effect index). The key segments match [`effect_strings_deep`] exactly.
 fn effect_deep<'a>(
     eff: &'a QuestEffect,
+    stage: &'static str,
     path: &str,
     keybase: &str,
-    f: &mut dyn FnMut(&str, &str, &'a QuestEffect),
+    f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),
 ) {
-    f(path, keybase, eff);
+    f(stage, path, keybase, eff);
     for (pseg, kseg, list) in eff.nested_effect_lists_labeled() {
         for (j, inner) in list.iter().enumerate() {
             effect_deep(
                 inner,
+                stage,
                 &format!("{path}/{pseg}/{j}"),
                 &format!("{keybase}.{kseg}.{j}"),
                 f,
@@ -599,7 +758,9 @@ fn effect_deep<'a>(
 /// referenced id, for registry validation (`DW0326`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoundRef {
-    /// JSON-pointer-ish path within the `quests` stage doc.
+    /// The stage document the reference was authored in (`quests` / `dialogue`).
+    pub stage: &'static str,
+    /// JSON-pointer-ish path within that stage doc.
     pub path: String,
     /// The referenced sound-event id (`minecraft:` prefix optional).
     pub sound: String,
@@ -610,9 +771,10 @@ pub struct SoundRef {
 /// fixed deterministic order, for `DW0326` validation.
 pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, _key, eff| {
+    each_effect_ref(c, &mut |stage, path, _key, eff| {
         for (sub, sound) in eff.sound_refs() {
             out.push(SoundRef {
+                stage,
                 path: format!("{path}/{sub}"),
                 sound: sound.to_string(),
             });
@@ -627,9 +789,10 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
 /// lands; the compiler applies that check. `SoundRef::sound` carries the actor id.
 pub fn play_sound_actor_refs(c: &Campaign) -> Vec<SoundRef> {
     let mut out = Vec::new();
-    each_effect_ref(c, &mut |path, _key, eff| {
+    each_effect_ref(c, &mut |stage, path, _key, eff| {
         if let Some(actor) = eff.play_sound_actor() {
             out.push(SoundRef {
+                stage,
                 path: format!("{path}/at/actor"),
                 sound: actor.to_string(),
             });
@@ -648,6 +811,241 @@ pub fn localize(c: &mut Campaign, translations: &BTreeMap<String, String>) {
             *value = t.clone();
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// i18n v2 — translation tags and the Minecraft language-code table (spec-0029)
+// ---------------------------------------------------------------------------
+
+/// The reserved Unicode **private-use** character that delimits a *translation
+/// tag* — the in-band form that carries an inventory key alongside its canonical
+/// English from the stage docs to the text component the compiler emits it into.
+///
+/// A tagged string is `<SIGIL><key><SIGIL><english>` ([`tag`]). It exists only
+/// between [`tag_translatables`] and emission: every emitter that lowers an
+/// authored string into a **text component** splits it back apart and emits
+/// `{"translate": key, "fallback": english}` (spec-0029 §1), and every consumer
+/// that wants the human string calls [`plain`].
+///
+/// The point of an in-band tag is that a site which *fails* to do either leaks the
+/// sigil into the built tree, where the compiler's own output scan sees it and
+/// fails the build (`DW0185`). That turns "prove every authored string lands in a
+/// component" from an audit that rots into an invariant the compiler re-proves on
+/// every build, including for emitters not yet written.
+///
+/// U+E000 is the first code point of the Basic Multilingual Plane's Private Use
+/// Area: it has no character assignment, so no authored or translated content can
+/// legitimately contain it. [`validate_tr_sigil`] (`DW0183`) reserves the whole
+/// block anyway, so the tag can never be forged or shadowed by content.
+pub const TR_SIGIL: char = '\u{E000}';
+
+/// The reserved private-use range [`TR_SIGIL`] is drawn from (`U+E000..=U+F8FF`).
+/// Reserved wholesale so a near-miss cannot be authored either.
+const PUA: std::ops::RangeInclusive<char> = '\u{E000}'..='\u{F8FF}';
+
+/// Build the translation tag for `key` over its canonical English `english`.
+pub fn tag(key: &str, english: &str) -> String {
+    format!("{TR_SIGIL}{key}{TR_SIGIL}{english}")
+}
+
+/// Split a translation tag into `(key, english)`. `None` for an untagged string —
+/// a compiler-baked literal such as the default boundary message, which has no
+/// inventory key and is translated by neither v1 nor v2.
+pub fn untag(s: &str) -> Option<(&str, &str)> {
+    let rest = s.strip_prefix(TR_SIGIL)?;
+    let (key, english) = rest.split_once(TR_SIGIL)?;
+    Some((key, english))
+}
+
+/// The human string behind `s`: its English source if `s` is a translation tag,
+/// otherwise `s` unchanged. The accessor every **non-component** consumer of an
+/// authored string uses — the build manifest, the reviewer chronicles, the bot's
+/// `critical-path.json`, the generated PackTest sources. Each such site is a named
+/// exclusion in `docs/reference/compiler.md`: it is not a text component, so it
+/// cannot carry a translate key, and it is not read by a player.
+pub fn plain(s: &str) -> &str {
+    untag(s).map(|(_, e)| e).unwrap_or(s)
+}
+
+/// Whether `s` contains any reserved private-use character — i.e. whether it is,
+/// or embeds, a translation tag. The predicate the compiler's build-output scan
+/// (`DW0185`) runs over every emitted byte.
+pub fn has_tr_sigil(s: &str) -> bool {
+    s.chars().any(|c| PUA.contains(&c))
+}
+
+/// Rewrite every inventoried player-visible string in `c` into its translation tag
+/// ([`tag`]), returning the canonical-English inventory it was derived from.
+///
+/// Runs on the exact same traversal as [`inventory`] and [`localize`]
+/// ([`each_string`]), so the tagged set and the translated set are the same set by
+/// construction — the property task #168 bought and spec-0029 keeps.
+///
+/// The campaign handed to the compiler is tagged **once**, before the plan is
+/// built; from there the tag is the compiler's only evidence that a string it is
+/// about to emit is player-visible and translatable.
+pub fn tag_translatables(c: &mut Campaign) -> BTreeMap<String, String> {
+    let mut inv = BTreeMap::new();
+    each_string(c, &mut |key, value| {
+        inv.insert(key.to_string(), value.clone());
+        *value = tag(key, value);
+    });
+    inv
+}
+
+/// Reserve the private-use block the translation tag is built from (`DW0183`): no
+/// player-visible string — authored English (the whole [`inventory`]) or any
+/// declared language's sidecar rendition — may contain a `U+E000..=U+F8FF`
+/// character. Language-independent; runs beside [`validate_marker_channel`] on
+/// every `validate` / `analyze` / `build`.
+pub fn validate_tr_sigil(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    let mut flag = |where_: String, key: &str, text: &str| {
+        let Some(bad) = text.chars().find(|ch| PUA.contains(ch)) else {
+            return;
+        };
+        d.push(Diagnostic::error(
+            codes::TR_SIGIL_RESERVED,
+            "l10n",
+            where_,
+            format!(
+                "player-visible string `{key}` contains the reserved private-use character \
+                 U+{:04X} — that block is how the compiler carries an l10n key into the text \
+                 component this string is emitted as, and it has no rendering in any \
+                 Minecraft font. Remove U+{:04X} from the line",
+                bad as u32, bad as u32
+            ),
+        ));
+    };
+    for (key, text) in inventory(c) {
+        flag(format!("#/{key}"), &key, &text);
+    }
+    for (lang, doc) in sidecars {
+        for (key, text) in &doc.content {
+            flag(format!("l10n/{lang}.json#/content/{key}"), key, text);
+        }
+    }
+    d
+}
+
+/// Every declared-language code this build knows how to write a lang file for, in
+/// declaration order, as `(declared code, minecraft code)`. `Err` names the first
+/// unmapped code (`DW0184`) — a language is never silently dropped.
+pub fn declared_mc_codes(c: &Campaign) -> Result<Vec<(String, &'static str)>, Diagnostic> {
+    let mut out = Vec::new();
+    for lang in &c.world.content.languages {
+        match crate::mclang::mc_lang_code(lang) {
+            Some(mc) => out.push((lang.clone(), mc)),
+            None => {
+                return Err(Diagnostic::error(
+                    codes::LANG_CODE_UNMAPPED,
+                    "world",
+                    format!("/content/languages/{lang}"),
+                    format!(
+                        "declared language `{lang}` has no Minecraft language-file code — the \
+                         resource pack has nowhere to write its \
+                         `assets/delvewright/lang/<code>.json`, and the language would ship \
+                         invisible. Use a code the pinned 1.21.11 client really loads \
+                         (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's own asset index) \
+                         — e.g. `zh-cn`, `ja-jp`, `de-de`"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// **Translation provenance** (`DW0187` / `DW0188`): is each sidecar row still a
+/// translation of the English it renders?
+///
+/// [`validate_l10n`] proves the sidecar's key SET equals the inventory's. That is
+/// silent about whether a row still *corresponds* to its key: rewrite an authored
+/// line and its translation is present, applied and wrong, with no key moved. The
+/// sidecar's [`L10nDoc::source`] map closes it by recording the English each row
+/// was translated from, so the compiler can compare instead of a human auditing.
+///
+/// Two findings:
+///
+/// * `DW0187` — a recorded source differs from the key's canonical English (the
+///   row is stale), or names a key the sidecar does not translate at all (the
+///   provenance itself is stale).
+/// * `DW0188` — rows with no recorded provenance, **counted**. Those rows are
+///   unguarded, and saying so on every run is what keeps an unadopted sidecar
+///   from reading like a checked one. Warning tier: `source` is additive, and
+///   this is the one-version deprecation window before it is required.
+///
+/// The entity display-name rule makes this more than hygiene. A name key belongs
+/// to the first site declaring a given text, so renaming ONE body can migrate a
+/// key to ANOTHER — the row that goes stale is not the row the author edited, and
+/// the missing-key half of the move (`DW0180`) points somewhere else entirely.
+pub fn validate_l10n_provenance(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    if c.world.content.languages.is_empty() {
+        return d;
+    }
+    let inv = inventory(c);
+    for lang in &c.world.content.languages {
+        let Some(doc) = sidecars.get(lang) else {
+            continue; // absent sidecar is DW0180's finding, not this one's.
+        };
+        for (key, was) in &doc.source {
+            match inv.get(key) {
+                Some(now) if now == was => {}
+                Some(now) => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`{key}` was translated from {was:?} but now reads {now:?} — the \
+                         translation in `content` still renders the old line and would ship \
+                         attached to the new one. Re-translate `{key}` and update its `source` \
+                         (`tools/i18n-translate.py <campaign> --lang {lang}` does both). If a \
+                         RENAME surprised you here: an entity display name's key belongs to the \
+                         first body declaring that text, so renaming one body can hand its key \
+                         to another"
+                    ),
+                )),
+                None => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`source` records `{key}`, which is not in the string inventory — the \
+                         provenance is stale even if the translation is gone. Remove `{key}` \
+                         from `source` in `l10n/{lang}.json`"
+                    ),
+                )),
+            }
+        }
+        // Every row `source` does not cover is a row DW0187 cannot see. Report the
+        // count: an unadopted sidecar must never look like a checked one.
+        let unguarded = doc
+            .content
+            .keys()
+            .filter(|k| !doc.source.contains_key(*k))
+            .count();
+        if unguarded > 0 {
+            let total = doc.content.len();
+            d.push(Diagnostic::warning(
+                codes::L10N_PROVENANCE_MISSING,
+                "l10n",
+                format!("l10n/{lang}.json"),
+                format!(
+                    "{unguarded} of {total} translated rows record no `source`, so nothing can \
+                     tell whether they still translate the English they render — an edited line \
+                     leaves its translation present, applied and wrong, and no key moves. Run \
+                     `tools/i18n-translate.py <campaign> --lang {lang}` to record provenance for \
+                     the rows it already has. This warning is the one-version deprecation \
+                     window; `source` becomes required after it"
+                ),
+            ));
+        }
+    }
+    d
 }
 
 /// Coverage + envelope validation for every declared language's l10n sidecar

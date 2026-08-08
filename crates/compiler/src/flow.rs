@@ -39,8 +39,20 @@
 //! | `set-flag` in a quest's `on_complete` | that quest completes, same gate rule |
 //! | `set-flag` on a dialogue option | the option is reachable from its tree root through takeable options, and is the world's selected alternative of its group |
 //! | `set-flag` in an environment trigger's effects | the trigger's own `requires_flags` are satisfied (a `strike`/`use`/`approach` trigger is player-initiated: ambient, no DAG position) |
+//! | `set-flag` in a `traps[].payload` | the trap's `requires_flags` are satisfied (ambient, same reasoning: the party can always walk over and spring it) |
 //! | a trap's `disarm.sets_flag` | the trap's `requires_flags` are satisfied (ambient, same reasoning) |
-//! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::continuity`] already takes) |
+//! | a timed gate's `disarm.sets_flag` | always (ambient — the jam lever is an optional player action) |
+//! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::continuity`] already takes), whether the bundle is rooted in the quests stage or hung off a dialogue option's `set-checkpoint` |
+//!
+//! Which effect **lists** those rows range over is not this module's to decide:
+//! both the producer scan in [`Flow::new`] and the reader inventory
+//! ([`gate_flags`]) walk [`crate::plan::for_each_effect_root`], the single
+//! enumeration of the five roots emission can lower an effect from. Before task
+//! #170 each of them hand-listed three, so a `set-flag` in a `traps[].payload`
+//! was not a producer *anywhere* in the proof while the emitted
+//! `trap_fire_<trap>.mcfunction` set it, and a `requires_flags` inside such a
+//! payload never entered the branch model. The table above is a **policy** per
+//! root; the roots themselves are inherited.
 //!
 //! A quest/objective is reported unreachable only when it is unreachable in
 //! **every** world, so the branch model can only ever make `DW0202`/`DW0203`
@@ -61,6 +73,47 @@
 //! objective / quest state machine and proves each step is activatable and
 //! completable *at its position*, and that `campaign-complete` fires exactly at
 //! the final step. A failure is `DW0204` naming the first incoherent step.
+//!
+//! ## Optional participation (`DW0205`, task #174)
+//!
+//! The owner's contract is that **the mainline must be completable with zero
+//! optional participation**: side content may never gate it. Two halves.
+//!
+//! The *producer* half is already discharged above. The **mainline** is the
+//! critical path [`Flow::playthrough`] exports — exactly the participation the
+//! campaign requires to reach `campaign-complete`; anything else the player may
+//! do is optional. [`Flow::replay`] credits only the mainline's own producers
+//! (the taken dialogue option's flags, on-path bundles, and ambient
+//! trigger/trap flags a player can always fire), so a mainline objective gated
+//! on a flag only an off-path quest or an unselected option sets is already
+//! `DW0204`. The participation-minimal walk is the replay.
+//!
+//! The **order** half is [`Flow::skips`]. A skip is the mirror image: content
+//! the fiction reads as elective, that the graph is load-bearing on. The emitted
+//! dialogue button that fires `complete-objective` is gated on the objective's
+//! quest being active and the objective not yet complete — and on **nothing
+//! else**. Every other objective driver goes through the emitter's
+//! `pending_guard` (quest active ∧ `after` complete ∧ `requires_flags` ∧
+//! `forbids_flags`); the dialogue button does not. So whenever such a button is
+//! already on screen at a walk state where the objective's own activation chain
+//! has not happened, the player can take it and walk past every beat in between
+//! — which is precisely the island's owner-hit softlock: "Lead on." (completing
+//! `obj/climb-out`) sat beside "We climb." (completing `obj/muster`) from
+//! campaign start, so the drowned never came out of the surf, `quest/shipwrecked`
+//! never completed, and one of three crewmen reached the cave.
+//!
+//! The walk is the same state machine as the replay — one [`Flow::advance`] —
+//! so event-driven activation (quest-complete chains, NPC arrivals, staged
+//! `sequence` steps) is *walked* under the skip, never assumed, and the offer
+//! test resolves the NPC's live [`crate::cast`] scene rather than its stage-6
+//! root: a beat retired behind a later scene is genuinely not on screen.
+//!
+//! The remedy is deliberately *not* "flag-gate the completing option": `DW0191`
+//! requires every `talk-to` to keep an **ungated** completing option, precisely
+//! so it cannot deadlock the moment it activates. The two rules meet at the
+//! **path**: gate the option that navigates to the completing node, or let the
+//! cast ledger open that tree only after the beat. The button stays ungated and
+//! is simply not on screen yet.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -68,6 +121,9 @@ use delvewright_dsl::{Campaign, DialogueEffect, Objective, QuestEffect, Trigger}
 
 /// Objective-path incoherence (the replay check).
 pub const DW_PATH_INCOHERENT: &str = "DW0204";
+
+/// Optional participation can skip a load-bearing mainline beat.
+pub const DW_OPTIONAL_GATES_MAINLINE: &str = "DW0205";
 
 /// Upper bound on enumerated branch worlds. The product of the *flag-reading*
 /// choice groups' arities; groups past the bound stay **unconstrained** (all
@@ -272,6 +328,103 @@ impl ReplayFailure {
     }
 }
 
+/// Why a beat the player can walk past is load-bearing for the mainline
+/// objective the campaign offers early — the **dependency edge** the skip breaks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SkipEdge {
+    /// The offered objective declares the beat in its (transitive) `after` chain.
+    After,
+    /// The offered objective requires a flag the beat is what produces.
+    Flag(String),
+}
+
+impl SkipEdge {
+    /// The edge, phrased for the diagnostic.
+    fn phrase(&self, objective: &str, beat: &str) -> String {
+        match self {
+            SkipEdge::After => {
+                format!("`{objective}` declares `after` on `{beat}`")
+            }
+            SkipEdge::Flag(f) => {
+                format!("`{objective}` requires `{f}`, and `{beat}` is what sets it",)
+            }
+        }
+    }
+}
+
+/// A load-bearing mainline beat that optional participation can walk past
+/// (`DW0205`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MainlineSkip {
+    /// The mainline objective whose completing dialogue button is offered early.
+    pub objective: String,
+    /// The NPC whose tree offers it.
+    pub npc: String,
+    /// The flat dialogue option index ([`PathStep::talk_option`]).
+    pub option: usize,
+    /// `objective`'s own 1-based position on the critical path.
+    pub position: usize,
+    /// The 1-based path position at which the button is already on screen
+    /// (`1` = before the campaign's first step has been played).
+    pub offered_at: usize,
+    /// The beats the skip walks past, in path order.
+    pub skipped: Vec<String>,
+    /// The one whose dependency edge the skip breaks.
+    pub beat: String,
+    /// That edge.
+    pub edge: SkipEdge,
+    /// What the skipped beats stage that the rest of the mainline consumes —
+    /// the collateral, phrased for a reader.
+    pub carries: Vec<String>,
+    /// The branch this skip was proven on, when it is branch-specific
+    /// (spec-0025); `None` for the campaign's own critical path.
+    pub branch: Option<String>,
+}
+
+impl MainlineSkip {
+    /// The `DW0205` diagnostic message.
+    pub fn message(&self) -> String {
+        let on = match &self.branch {
+            Some(b) => format!(" on branch `{b}`"),
+            None => String::new(),
+        };
+        let skipped = self
+            .skipped
+            .iter()
+            .map(|s| format!("`{s}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let carries = if self.carries.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " Skipping it costs the mainline: {}.",
+                self.carries.join("; ")
+            )
+        };
+        format!(
+            "optional participation gates the mainline{on}: `{npc}`'s dialogue already offers the \
+             option that completes mainline objective `{obj}` (critical-path step #{pos}) at step \
+             #{at} — before `{beat}` has happened, and {edge}. A player who takes the button there \
+             walks past {skipped}, which the fiction offers as elective and the quest graph is \
+             load-bearing on.{carries} A dialogue button that fires `complete-objective` is gated \
+             only on its quest being active and the objective not yet complete — never on the \
+             objective's own `after`/`requires_flags` chain, the way every other objective driver \
+             is — so nothing stops the skip. Gate the WAY to the button rather than the button \
+             itself (`DW0191` requires the completing option to stay ungated): put \
+             `requires_flags` on the option that navigates to its node, or give the NPC a `cast` \
+             scene that opens that tree only after the beat — so the mainline is completable with \
+             zero optional participation",
+            npc = self.npc,
+            obj = self.objective,
+            pos = self.position,
+            at = self.offered_at,
+            beat = self.beat,
+            edge = self.edge.phrase(&self.objective, &self.beat),
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // construction
 // ---------------------------------------------------------------------------
@@ -296,44 +449,72 @@ impl<'a> Flow<'a> {
         let trees = flatten_trees(c);
         let (groups, opt_group) = choice_groups(&trees);
         let mut ambient = Vec::new();
-        for t in &c.quests.content.triggers {
-            let gate: Vec<String> = t.requires_flags.iter().map(|f| f.as_str().into()).collect();
-            collect_flags(&t.effects, &gate, &mut ambient);
-        }
+        let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
+        let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
+        // The producer model, root by root. The roots come from
+        // `plan::for_each_effect_root` — the ONE enumeration of what emission can
+        // lower — so the proof cannot believe in fewer firings than the datapack
+        // performs (task #170). What each root means is the policy stated here,
+        // once, and the match is exhaustive: a sixth root cannot be added without
+        // this file deciding what it is.
+        let gate_of = |fs: &[delvewright_dsl::FlagId]| -> Vec<String> {
+            fs.iter().map(|f| f.as_str().into()).collect()
+        };
+        crate::plan::for_each_effect_root(c, &mut |site, effs| match site.root {
+            // Dated by the DAG: credited when that objective / quest is proven
+            // reachable, under the gates on its own effect chain.
+            crate::plan::EffectRoot::ObjectiveComplete(oid) => {
+                let mut out = Vec::new();
+                collect_flags(effs, &[], &mut out);
+                if !out.is_empty() {
+                    obj_flags.entry(oid.to_string()).or_default().extend(out);
+                }
+            }
+            crate::plan::EffectRoot::QuestComplete(q) => {
+                let mut out = Vec::new();
+                collect_flags(effs, &[], &mut out);
+                if !out.is_empty() {
+                    quest_flags.insert(q.id.as_str().to_string(), out);
+                }
+            }
+            // Ambient: player-initiated, no DAG position. A trap payload joins the
+            // environment trigger and the trap `disarm` it already sits beside —
+            // the party can always walk over and spring it, which is the same
+            // reason `strike`/`use`/`approach` are producers.
+            crate::plan::EffectRoot::Trigger(t) => {
+                collect_flags(effs, &gate_of(&t.requires_flags), &mut ambient);
+            }
+            crate::plan::EffectRoot::TrapPayload(trap) => {
+                collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
+            }
+            // A reaction bundle: it fires only when somebody dies, at a time no
+            // static model can name, so nothing inside it is a producer. Exactly
+            // what `collect_flags` already refuses for the identical bundle rooted
+            // in the quests stage — reached here, not credited here.
+            crate::plan::EffectRoot::DialogueRespawn => {}
+        });
+        // `disarm.sets_flag` is a field, not an effect list, so it has no root of
+        // its own; same ambient reasoning, same gate.
         for trap in &c.quests.content.traps {
             if let Some(d) = &trap.disarm {
                 ambient.push(GatedFlag {
                     flag: d.sets_flag.as_str().to_string(),
-                    requires: trap
-                        .requires_flags
-                        .iter()
-                        .map(|f| f.as_str().into())
-                        .collect(),
+                    requires: gate_of(&trap.requires_flags),
+                });
+            }
+        }
+        // task #184: a timed gate's disarm produces its flag the same way — an
+        // optional player action nothing orders, so it is ambient, ungated.
+        for g in &c.quests.content.timed_gates {
+            if let Some(d) = &g.disarm {
+                ambient.push(GatedFlag {
+                    flag: d.sets_flag.as_str().to_string(),
+                    requires: Vec::new(),
                 });
             }
         }
 
-        let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
-        let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
-        for q in &c.quests.content.quests {
-            for (oid, effs) in &q.on_objective_complete {
-                let mut out = Vec::new();
-                collect_flags(effs, &[], &mut out);
-                if !out.is_empty() {
-                    obj_flags
-                        .entry(oid.as_str().to_string())
-                        .or_default()
-                        .extend(out);
-                }
-            }
-            let mut out = Vec::new();
-            collect_flags(&q.on_complete, &[], &mut out);
-            if !out.is_empty() {
-                quest_flags.insert(q.id.as_str().to_string(), out);
-            }
-        }
-
-        let worlds = enumerate_worlds(&groups, &read_flags(c));
+        let worlds = enumerate_worlds(&groups, &gate_flags(c));
         Flow {
             c,
             groups,
@@ -596,6 +777,190 @@ impl<'a> Flow<'a> {
         }
     }
 
+    /// The **participation-minimal walk**: replay `p` taking only the mainline,
+    /// and at every state ask what optional participation the campaign has on
+    /// screen. Each answer that completes a LATER mainline objective is a skip;
+    /// each skip whose skipped beats carry a dependency edge into that objective
+    /// is a `DW0205`.
+    ///
+    /// Only `talk-to` objectives can be skipped into: every other driver goes
+    /// through the emitter's `pending_guard`, which enforces `after`,
+    /// `requires_flags` and `forbids_flags` at the moment of completion. The
+    /// dialogue button does not, and that asymmetry is the whole defect class.
+    ///
+    /// Deterministic: one pass over `p` in path order, BTree sets throughout.
+    pub fn skips(&self, p: &Playthrough) -> Vec<MainlineSkip> {
+        if p.degenerate {
+            return Vec::new();
+        }
+        let casts = crate::cast::npc_casts(self.c);
+        let produced = self.step_products(p);
+        let idx: BTreeMap<&str, usize> = p
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(k, s)| (s.objective.as_str(), k))
+            .collect();
+        let mut st = self.initial_state();
+        let mut complete_at: Option<(usize, String)> = None;
+        let mut out: Vec<MainlineSkip> = Vec::new();
+        let mut reported: BTreeSet<String> = BTreeSet::new();
+
+        for i in 0..p.steps.len() {
+            for (j, later) in p.steps.iter().enumerate().skip(i + 1) {
+                if reported.contains(&later.objective) {
+                    continue;
+                }
+                let Some(n) = later.talk_option else { continue };
+                let Some(npc) = self.talk_npc(&later.objective) else {
+                    continue;
+                };
+                if !self.offered(&casts, npc, n, &later.objective, &st) {
+                    continue;
+                }
+                let skipped: Vec<String> = p.steps[i..j]
+                    .iter()
+                    .map(|s| s.objective.clone())
+                    .filter(|o| !st.done_obj.contains(o))
+                    .collect();
+                let Some((beat, edge)) =
+                    self.skip_edge(&later.objective, &skipped, &st, &produced, &idx)
+                else {
+                    continue;
+                };
+                reported.insert(later.objective.clone());
+                out.push(MainlineSkip {
+                    objective: later.objective.clone(),
+                    npc: npc.to_string(),
+                    option: n,
+                    position: j + 1,
+                    offered_at: i + 1,
+                    carries: self.carries(p, &skipped, j, &produced, &idx),
+                    skipped,
+                    beat,
+                    edge,
+                    branch: None,
+                });
+            }
+            self.advance(&mut st, &p.steps[i], i + 1, &mut complete_at);
+        }
+        out
+    }
+
+    /// The flags each path step produces, by step index — taken from the journal
+    /// so the attribution is exactly the replay's own, gates and nesting included.
+    fn step_products(&self, p: &Playthrough) -> Vec<BTreeSet<String>> {
+        self.journal(p)
+            .into_iter()
+            .map(|s| s.flags_after.difference(&s.flags_before).cloned().collect())
+            .collect()
+    }
+
+    /// The dependency edge a skip breaks: the first skipped beat that lies in
+    /// `objective`'s transitive `after` chain, else the first that produces a flag
+    /// `objective` requires and does not hold yet. `None` = the skipped beats are
+    /// genuinely elective for this objective, and skipping them is legal play.
+    fn skip_edge(
+        &self,
+        objective: &str,
+        skipped: &[String],
+        st: &ReplayState,
+        produced: &[BTreeSet<String>],
+        idx: &BTreeMap<&str, usize>,
+    ) -> Option<(String, SkipEdge)> {
+        let closure = self.after_closure(objective);
+        for b in skipped {
+            if closure.contains(b) {
+                return Some((b.clone(), SkipEdge::After));
+            }
+        }
+        let obj = self.objective(objective)?;
+        for f in obj.requires_flags() {
+            let f = f.as_str();
+            if st.flags.contains(f) {
+                continue;
+            }
+            for b in skipped {
+                if idx
+                    .get(b.as_str())
+                    .and_then(|k| produced.get(*k))
+                    .is_some_and(|s| s.contains(f))
+                {
+                    return Some((b.clone(), SkipEdge::Flag(f.to_string())));
+                }
+            }
+        }
+        None
+    }
+
+    /// What the skipped beats stage that the rest of the mainline consumes: the
+    /// waves a later `kill` must slay, and the quests that only open when the
+    /// beat's own quest completes. The evidence half of the diagnostic.
+    fn carries(
+        &self,
+        p: &Playthrough,
+        skipped: &[String],
+        j: usize,
+        produced: &[BTreeSet<String>],
+        idx: &BTreeMap<&str, usize>,
+    ) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for b in skipped {
+            for w in self.waves_spawned_by(b) {
+                for later in &p.steps {
+                    if let Some(Objective::Kill { id, wave, .. }) = self.objective(&later.objective)
+                        && wave.as_str() == w
+                    {
+                        out.push(format!(
+                            "`{b}` is what spawns `{w}`, the wave `{}` has to slay",
+                            id.as_str()
+                        ));
+                    }
+                }
+            }
+            let Some(&k) = idx.get(b.as_str()) else {
+                continue;
+            };
+            for f in &produced[k] {
+                if p.steps[j..]
+                    .iter()
+                    .filter_map(|s| self.objective(&s.objective))
+                    .any(|o| o.requires_flags().iter().any(|x| x.as_str() == f))
+                {
+                    out.push(format!(
+                        "`{b}` is what sets `{f}`, which the mainline reads later"
+                    ));
+                }
+            }
+            if let Some(q) = self.objective_quest(b)
+                && p.steps
+                    .iter()
+                    .filter(|s| s.quest == q)
+                    .all(|s| idx.get(s.objective.as_str()).is_none_or(|&x| x <= k))
+            {
+                let opened: Vec<String> = self
+                    .c
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .filter(|o| matches!(&o.trigger, Trigger::QuestComplete { quest } if quest.as_str() == q))
+                    .map(|o| format!("`{}`", o.id.as_str()))
+                    .collect();
+                if !opened.is_empty() {
+                    out.push(format!(
+                        "`{b}` is the last beat of `{q}`, so the quest never completes and {} never \
+                         opens",
+                        opened.join(", ")
+                    ));
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// A concrete n-agent **division of labour** for the declared party size
     /// (spec-0018), or why none exists.
     ///
@@ -739,7 +1104,7 @@ impl<'a> Flow<'a> {
     // -- internals ---------------------------------------------------------
 
     /// The replay's starting state: campaign-start quests active, ambient
-    /// (trigger / trap-disarm) flags saturated.
+    /// (trigger / trap payload / trap-disarm) flags saturated.
     fn initial_state(&self) -> ReplayState {
         let mut st = ReplayState::default();
         for q in &self.c.quests.content.quests {
@@ -815,6 +1180,150 @@ impl<'a> Flow<'a> {
         self.saturate_ambient(&mut st.flags);
     }
 
+    /// The objective with this id, anywhere in the campaign.
+    fn objective(&self, id: &str) -> Option<&'a Objective> {
+        self.c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| &q.objectives)
+            .find(|o| o.id().as_str() == id)
+    }
+
+    /// The quest that owns `id`.
+    fn objective_quest(&self, id: &str) -> Option<&'a str> {
+        self.c
+            .quests
+            .content
+            .quests
+            .iter()
+            .find(|q| q.objectives.iter().any(|o| o.id().as_str() == id))
+            .map(|q| q.id.as_str())
+    }
+
+    /// The NPC a `talk-to` objective names, or `None` for any other kind.
+    fn talk_npc(&self, id: &str) -> Option<&'a str> {
+        match self.objective(id) {
+            Some(Objective::TalkTo { npc, .. }) => Some(npc.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The transitive `after` closure of `id` — every beat the DSL declares must
+    /// precede it.
+    fn after_closure(&self, id: &str) -> BTreeSet<String> {
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![id.to_string()];
+        while let Some(cur) = stack.pop() {
+            let Some(o) = self.objective(&cur) else {
+                continue;
+            };
+            for a in o.after() {
+                if seen.insert(a.as_str().to_string()) {
+                    stack.push(a.as_str().to_string());
+                }
+            }
+        }
+        seen
+    }
+
+    /// The waves an objective's completion bundle spawns (deep, gates ignored —
+    /// this asks what the beat is *for*, not whether one path fires it).
+    fn waves_spawned_by(&self, objective: &str) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        let Some(q) = self
+            .objective_quest(objective)
+            .and_then(|q| self.quest(q))
+            .filter(|q| q.objectives.iter().any(|o| o.id().as_str() == objective))
+        else {
+            return out;
+        };
+        if let Some(effs) = q
+            .on_objective_complete
+            .get(&delvewright_dsl::ObjectiveId(objective.to_string()))
+        {
+            for e in effs {
+                e.visit_deep(&mut |x| {
+                    if let QuestEffect::SpawnWave { wave, .. } = x {
+                        out.insert(wave.as_str().to_string());
+                    }
+                });
+            }
+        }
+        out
+    }
+
+    /// Is the button that takes option `n` of `npc` — the one completing
+    /// `objective` — on screen in state `st`? The emitted rule exactly: the NPC's
+    /// live cast scene must open a dialogue tree, the option's node must be
+    /// reachable from that scene root through options whose gates hold, the
+    /// option's own gates must hold, the objective's quest must be active and the
+    /// objective not yet complete.
+    fn offered(
+        &self,
+        casts: &BTreeMap<String, crate::cast::NpcCast>,
+        npc: &str,
+        n: usize,
+        objective: &str,
+        st: &ReplayState,
+    ) -> bool {
+        let Some(q) = self.objective_quest(objective) else {
+            return false;
+        };
+        if !st.active.contains(q) || st.done_obj.contains(objective) {
+            return false;
+        }
+        let Some(t) = self.trees.iter().find(|t| t.npc == npc) else {
+            return false;
+        };
+        let Some(root) = self.scene_root(casts, npc, t, st) else {
+            return false;
+        };
+        let takeable = |o: &OptModel| {
+            o.requires.iter().all(|f| st.flags.contains(f))
+                && !o.forbids.iter().any(|f| st.flags.contains(f))
+        };
+        let reach = reachable_from(t, &root, &takeable);
+        t.options
+            .iter()
+            .any(|o| o.n == n && reach.contains(&o.node) && takeable(o))
+    }
+
+    /// The dialogue node an NPC's right-click opens in state `st`: the last cast
+    /// clause whose quest has begun and whose branch gate holds wins (the emitter's
+    /// `dw.cast` dispatch), falling back to the stage-6 root when no clause
+    /// governs. `None` when the governing scene is a bark pool or silence — a body
+    /// with no options to press.
+    fn scene_root(
+        &self,
+        casts: &BTreeMap<String, crate::cast::NpcCast>,
+        npc: &str,
+        t: &TreeModel,
+        st: &ReplayState,
+    ) -> Option<String> {
+        let Some(cast) = casts.get(npc) else {
+            return Some(t.root.clone());
+        };
+        let mut scene: Option<u32> = None;
+        for cl in &cast.by_quest {
+            if !st.active.contains(&cl.quest)
+                || !cl.requires_flags.iter().all(|f| st.flags.contains(f))
+                || cl.forbids_flags.iter().any(|f| st.flags.contains(f))
+            {
+                continue;
+            }
+            scene = Some(cl.scene);
+        }
+        match scene {
+            None => Some(t.root.clone()),
+            Some(i) => match cast.scenes.iter().find(|s| s.index == i).map(|s| &s.action) {
+                Some(crate::cast::SceneAction::Root(r)) => Some(r.clone()),
+                _ => None,
+            },
+        }
+    }
+
     fn quest(&self, id: &str) -> Option<&'a delvewright_dsl::Quest> {
         self.c
             .quests
@@ -855,8 +1364,8 @@ impl<'a> Flow<'a> {
         })
     }
 
-    /// Add every ambient (trigger / trap-disarm) flag whose gate is satisfied,
-    /// to fixpoint.
+    /// Add every ambient (trigger / trap payload / trap-disarm) flag whose gate
+    /// is satisfied, to fixpoint.
     fn saturate_ambient(&self, flags: &mut BTreeSet<String>) {
         loop {
             let mut changed = false;
@@ -1134,8 +1643,19 @@ fn flatten_trees(c: &Campaign) -> Vec<TreeModel> {
 /// Node indices reachable from the tree root, traversing only options `takeable`
 /// admits.
 fn reachable_nodes(t: &TreeModel, takeable: &dyn Fn(&OptModel) -> bool) -> BTreeSet<usize> {
+    reachable_from(t, &t.root, takeable)
+}
+
+/// Node indices reachable from `root` (a node id of `t`), traversing only
+/// options `takeable` admits. The live [`crate::cast`] scene decides which root
+/// a right-click actually opens, which is why this is parameterized.
+fn reachable_from(
+    t: &TreeModel,
+    root: &str,
+    takeable: &dyn Fn(&OptModel) -> bool,
+) -> BTreeSet<usize> {
     let mut seen = BTreeSet::new();
-    let Some(&root) = t.index.get(&t.root) else {
+    let Some(&root) = t.index.get(root) else {
         return seen;
     };
     let mut queue: VecDeque<usize> = VecDeque::new();
@@ -1186,11 +1706,25 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
     (groups, map)
 }
 
-/// Every flag read by a gate anywhere in the campaign — objectives, effects
-/// (deep, including reaction bundles), dialogue options, triggers, traps. A
-/// choice group none of whose flags is read cannot change any reachability
-/// verdict, so it never participates in world enumeration.
-fn read_flags(c: &Campaign) -> BTreeSet<String> {
+/// Every flag read by a gate anywhere in the campaign: the `requires_flags` /
+/// `forbids_flags` of every objective, dialogue option, environment trigger and
+/// trap, plus those of **every effect the compiler can lower**, at every nesting
+/// depth.
+///
+/// A choice group none of whose flags is read cannot change any reachability
+/// verdict, so it never participates in world enumeration
+/// ([`enumerate_worlds`]) — which makes this an inventory that must be
+/// **complete or the model is imprecise**: a group whose flags are read only at a
+/// root this misses stays unconstrained, and one world then holds two mutually
+/// exclusive branch flags at once (a false green, in the union direction).
+///
+/// The effect half therefore walks [`crate::plan::for_each_effect_root`], the one
+/// enumeration of the five roots emission lowers from, rather than a second
+/// hand-maintained list of three (task #170). Unlike the producer model above
+/// this needs no per-root policy: whether a firing is guaranteed does not change
+/// whether its gate reads a flag, and the compiler emits that gate at all five
+/// roots alike.
+pub fn gate_flags(c: &Campaign) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let eat = |fs: &[delvewright_dsl::FlagId], out: &mut BTreeSet<String>| {
         for f in fs {
@@ -1202,30 +1736,10 @@ fn read_flags(c: &Campaign) -> BTreeSet<String> {
             eat(o.requires_flags(), &mut out);
             eat(o.forbids_flags(), &mut out);
         }
-        let deep = |effs: &[QuestEffect], out: &mut BTreeSet<String>| {
-            for e in effs {
-                e.visit_deep(&mut |x| {
-                    for f in x.requires_flags().iter().chain(x.forbids_flags()) {
-                        out.insert(f.as_str().to_string());
-                    }
-                });
-            }
-        };
-        for effs in q.on_objective_complete.values() {
-            deep(effs, &mut out);
-        }
-        deep(&q.on_complete, &mut out);
     }
     for t in &c.quests.content.triggers {
         eat(&t.requires_flags, &mut out);
         eat(&t.forbids_flags, &mut out);
-        for e in &t.effects {
-            e.visit_deep(&mut |x| {
-                for f in x.requires_flags().iter().chain(x.forbids_flags()) {
-                    out.insert(f.as_str().to_string());
-                }
-            });
-        }
     }
     for t in &c.quests.content.traps {
         eat(&t.requires_flags, &mut out);
@@ -1239,6 +1753,15 @@ fn read_flags(c: &Campaign) -> BTreeSet<String> {
             }
         }
     }
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for e in effs {
+            e.visit_deep(&mut |x| {
+                for f in x.requires_flags().iter().chain(x.forbids_flags()) {
+                    out.insert(f.as_str().to_string());
+                }
+            });
+        }
+    });
     out
 }
 

@@ -19,12 +19,24 @@
 //! the compiler's nav model does not model ladders or vines at all, so a climb
 //! route would be an unprovable promise. The stairs remain walkable both ways, so
 //! the model always has a proven return and nothing can strand (`DW0315`).
+//!
+//! The **tide gate + ferry pier** (r5, owner shortcut ruling): the rope room's
+//! south wall carries a sealed sea-door (`anchor/l4-tide-gate`, iron bars — the
+//! sea is visible through it from BF3, and no lever anywhere opens it) giving
+//! onto a walled sea-stair down the tower's south face to a stone ferry pier at
+//! the shore datum. The campaign's finale opens the gate; the road home after
+//! the boss is then the tower's own interior and this stair — it never re-enters
+//! the courtyard. The pier is authored sea, so the piece declares `waterline_y`
+//! and lands on the same ocean datum as the barrow shore (`DW0344`).
 
 use crate::common::*;
 
 pub const SX: i32 = 26;
 pub const SY: i32 = 44;
-pub const SZ: i32 = 26;
+/// Tower body depth. The piece is deeper (`SZ`): local z `TZ..` is the authored
+/// sea band the ferry pier stands in.
+pub const TZ: i32 = 26;
+pub const SZ: i32 = 36;
 
 const IN0: i32 = 2;
 const IN1: i32 = 23;
@@ -47,6 +59,23 @@ const S1_X0: i32 = 3;
 const S1_X1: i32 = 5;
 const S2_X0: i32 = 20;
 const S2_X1: i32 = 22;
+/// The tide gate: a 3-wide, 3-tall doorway through the rope room's south wall
+/// (z `TZ-2..TZ-1`), sealed with iron bars from world-load. The finale's
+/// `open-gate` clears exactly this region.
+const TG_X0: i32 = 12;
+const TG_X1: i32 = 14;
+/// The sea-stair outside it: one tread per z, dropping from the keep walk to the
+/// shore walk, parapet-walled on both flanks.
+const SEA_Z0: i32 = TZ;
+const SEA_Z1: i32 = 32;
+/// The ferry pier deck (walk = `SHORE_WALK`, the barrow-shore datum).
+const PIER_X0: i32 = 9;
+const PIER_X1: i32 = 17;
+const PIER_Z0: i32 = 33;
+
+fn sea_stair_walk(z: i32) -> i32 {
+    KEEP_WALK - 1 - (z - SEA_Z0)
+}
 
 fn stair1_walk(z: i32) -> i32 {
     KEEP_WALK + (15 - z)
@@ -67,9 +96,9 @@ const PERCHES: [[i32; 3]; 4] = [
 const LOFT_DOOR: [i32; 3] = [4, LOFT_WALK, 3];
 
 pub fn build(g: &mut Grid, seed: u64) {
-    // ---- 1. Solid tower -----------------------------------------------------
+    // ---- 1. Solid tower (body only: the sea band `TZ..SZ` stays open) ------
     for x in 0..SX {
-        for z in 0..SZ {
+        for z in 0..TZ {
             for y in 0..SY {
                 let name = if y < SHORE_FLOOR_Y + 4 {
                     pick(&plinth(), value_noise(seed, x, y, z, 0.14, 11))
@@ -460,7 +489,7 @@ pub fn build(g: &mut Grid, seed: u64) {
     // wants (the keeper is seen from the doorway, not discovered in the dark).
     g.carve(bx(IN0, IN1, RING_CEIL, SY - 1, IN0, IN1));
     for x in 0..SX {
-        for z in 0..SZ {
+        for z in 0..TZ {
             let rim = !(IN0..=IN1).contains(&x) || !(IN0..=IN1).contains(&z);
             if !rim {
                 continue;
@@ -500,24 +529,161 @@ pub fn build(g: &mut Grid, seed: u64) {
         g.carve(bx(0, IN0 - 1, RING_WALK, RING_WALK + 4, k, k + 1));
         g.carve(bx(IN1 + 1, SX - 1, RING_WALK, RING_WALK + 4, k, k + 1));
         g.carve(bx(k, k + 1, RING_WALK, RING_WALK + 4, 0, IN0 - 1));
-        g.carve(bx(k, k + 1, RING_WALK, RING_WALK + 4, IN1 + 1, SZ - 1));
+        g.carve(bx(k, k + 1, RING_WALK, RING_WALK + 4, IN1 + 1, TZ - 1));
         for y in RING_WALK..=(RING_WALK + 4) {
             for d in 0..2 {
                 g.blk(0, y, k + d, "minecraft:iron_bars", None);
                 g.blk(SX - 1, y, k + d, "minecraft:iron_bars", None);
                 g.blk(k + d, y, 0, "minecraft:iron_bars", None);
-                g.blk(k + d, y, SZ - 1, "minecraft:iron_bars", None);
+                g.blk(k + d, y, TZ - 1, "minecraft:iron_bars", None);
             }
         }
     }
     // a string course marks the belfry line and breaks the flat brick face
     for x in 0..SX {
-        for z in 0..SZ {
+        for z in 0..TZ {
             if !(IN0..=IN1).contains(&x) || !(IN0..=IN1).contains(&z) {
                 g.blk(x, LOFT_CEIL + 1, z, "minecraft:chiseled_stone_bricks", None);
                 g.blk(x, ANTE_CEIL + 1, z, "minecraft:chiseled_stone_bricks", None);
             }
         }
+    }
+
+    // ---- 8d. Tide gate, sea-stair, ferry pier (r5) --------------------------
+    // The road home. After the finale the party leaves through the rope room's
+    // south wall and down the tower's own face — never back across the
+    // courtyard the rest re-armed. Three parts, all inside this piece:
+    //
+    // * the **basin lip gap**: three kerb cells open toward the rope foot, so a
+    //   player who takes the rope drop steps out of the water instead of
+    //   treading it in a walled font. The nav model never routes through the
+    //   basin (water is never a floor), so this changes nothing the compiler
+    //   proves — it is the human exit the drop always needed;
+    // * the **tide gate**: a 3×3 doorway through the south wall, shipped BARRED
+    //   (iron bars — the sea reads through it from BF3, and no lever anywhere
+    //   opens it; only the finale's `open-gate` clears the region);
+    // * the **sea-stair and ferry pier**: a parapet-walled flight down the
+    //   south face to a stone pier at the shore datum, where the ferrywoman
+    //   moors for the ending.
+    for z in 12..=14 {
+        g.air(PIT0 - 1, KEEP_WALK, z);
+    }
+    for x in TG_X0..=TG_X1 {
+        for y in KEEP_WALK..=(KEEP_WALK + 2) {
+            for z in (TZ - 2)..TZ {
+                g.blk(x, y, z, "minecraft:iron_bars", None);
+            }
+        }
+    }
+    // the sea band: seabed, two courses of water to the shore datum (waterline
+    // local y=2 — the same ocean datum the barrow shore declares, `DW0344`),
+    // seagrass in the shallows
+    for x in 0..SX {
+        for z in SEA_Z0..SZ {
+            g.blk(
+                x,
+                0,
+                z,
+                pick(&plinth(), value_noise(seed, x, 0, z, 0.2, 41)),
+                None,
+            );
+            g.blk(x, 1, z, "minecraft:water", None);
+            g.blk(x, 2, z, "minecraft:water", None);
+            if value_noise(seed, x, 1, z, 0.4, 43) > 0.82 {
+                g.blk(x, 1, z, "minecraft:seagrass", None);
+            }
+        }
+    }
+    // the stair: one tread per z from the keep walk down to the shore walk,
+    // solid to the seabed, parapet-walled on both flanks (the parapet is also
+    // what `seal_stair_flanks` would otherwise have to invent)
+    for z in SEA_Z0..=SEA_Z1 {
+        let w = sea_stair_walk(z);
+        for x in TG_X0..=TG_X1 {
+            for y in 0..=(w - 2) {
+                g.blk(
+                    x,
+                    y,
+                    z,
+                    pick(&keep_wall(), value_noise(seed, x, y, z, 0.11, 45)),
+                    None,
+                );
+            }
+            stairs(g, x, w - 1, z, "minecraft:stone_brick_stairs", "north");
+        }
+        for x in [TG_X0 - 1, TG_X1 + 1] {
+            for y in 0..=(w - 1) {
+                g.blk(
+                    x,
+                    y,
+                    z,
+                    pick(&keep_wall(), value_noise(seed, x, y, z, 0.11, 47)),
+                    None,
+                );
+            }
+            g.blk(x, w, z, "minecraft:stone_brick_wall", None);
+        }
+    }
+    // the pier deck, at the barrow-shore datum (floor top = waterline)
+    for x in PIER_X0..=PIER_X1 {
+        for z in PIER_Z0..SZ {
+            for y in 0..=1 {
+                g.blk(
+                    x,
+                    y,
+                    z,
+                    pick(&plinth(), value_noise(seed, x, y, z, 0.16, 49)),
+                    None,
+                );
+            }
+            g.blk(
+                x,
+                2,
+                z,
+                pick(&keep_floor(), value_noise(seed, x, 2, z, 0.2, 51)),
+                None,
+            );
+        }
+    }
+    // parapet lanterns on the flight, mooring posts + lanterns on the deck —
+    // the walk's own light (the compiler re-measures and relights assembled,
+    // spec-0010; this keeps the authored minimum honest)
+    for z in [SEA_Z0 + 1, SEA_Z0 + 4] {
+        let w = sea_stair_walk(z);
+        for x in [TG_X0 - 1, TG_X1 + 1] {
+            g.blk(
+                x,
+                w + 1,
+                z,
+                "minecraft:lantern",
+                Some(vec![("hanging", "false")]),
+            );
+        }
+    }
+    for (px, pz) in [
+        (PIER_X0, PIER_Z0),
+        (PIER_X1, PIER_Z0),
+        (PIER_X0, SZ - 1),
+        (PIER_X1, SZ - 1),
+    ] {
+        g.blk(px, SHORE_WALK, pz, "minecraft:oak_fence", None);
+        g.blk(
+            px,
+            SHORE_WALK + 1,
+            pz,
+            "minecraft:lantern",
+            Some(vec![("hanging", "false")]),
+        );
+    }
+    // a driftwood spar beached on the deck's west end — the boat's oar-side
+    for k in 0..3 {
+        g.blk(
+            PIER_X0 + 1 + k,
+            SHORE_WALK,
+            SZ - 2,
+            "minecraft:oak_log",
+            Some(vec![("axis", "x")]),
+        );
     }
 
     // ---- 9. Socket ----------------------------------------------------------
@@ -560,6 +726,40 @@ pub fn build(g: &mut Grid, seed: u64) {
         [12, RING_WALK + 2, 22],
     ];
     assert_route_walkable("tk-bell-tower", "raised outer walk ramp", g, &outer);
+
+    // r5: the road home. The gate cells themselves ship barred, so the proof is
+    // in two halves on either side of the sealed region — the compiler's own
+    // DAG-causal nav proves the joined route once the finale opens the gate.
+    assert_route_walkable(
+        "tk-bell-tower",
+        "rope room -> tide gate (inner approach)",
+        g,
+        &[
+            [13, KEEP_WALK, 20],
+            [13, KEEP_WALK, 21],
+            [13, KEEP_WALK, 22],
+            [13, KEEP_WALK, 23],
+        ],
+    );
+    let mut sea: Vec<[i32; 3]> = Vec::new();
+    for z in SEA_Z0..=SEA_Z1 {
+        sea.push([13, sea_stair_walk(z), z]);
+    }
+    for z in PIER_Z0..SZ {
+        sea.push([13, SHORE_WALK, z]);
+    }
+    assert_route_walkable(
+        "tk-bell-tower",
+        "tide gate -> sea-stair -> ferry pier",
+        g,
+        &sea,
+    );
+    assert_route_walkable(
+        "tk-bell-tower",
+        "basin lip gap -> rope foot",
+        g,
+        &[[10, KEEP_WALK, 12], [10, KEEP_WALK, 13], [9, KEEP_WALK, 13]],
+    );
 
     for (i, p) in PERCHES.iter().enumerate() {
         assert!(
@@ -638,6 +838,15 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
             ),
         ),
         ("anchor/l4-bell-hang", a_pos([12, RING_WALK, 9], "north")),
+        (
+            "anchor/l4-tide-gate",
+            a_region(
+                [TG_X0, KEEP_WALK, TZ - 2],
+                [TG_X1, KEEP_WALK + 2, TZ - 1],
+                "minecraft:iron_bars",
+            ),
+        ),
+        ("anchor/l4-pier", a_pos([13, SHORE_WALK, SZ - 2], "north")),
     ];
     for (i, p) in PERCHES.iter().enumerate() {
         let name: &'static str = match i {
@@ -656,5 +865,15 @@ pub fn light_regions() -> Vec<[i32; 6]> {
         bx(IN0, IN1, KEEP_WALK, KEEP_WALK + 1, IN0, IN1),
         bx(IN0, IN1, LOFT_WALK, LOFT_WALK + 1, IN0, IN1),
         bx(IN0, IN1, RING_WALK, RING_WALK + 1, IN0, IN1),
+        // r5: the sea-stair treads and the ferry pier deck
+        bx(TG_X0, TG_X1, 4, KEEP_WALK - 1, SEA_Z0, SEA_Z1),
+        bx(
+            PIER_X0,
+            PIER_X1,
+            SHORE_WALK,
+            SHORE_WALK + 1,
+            PIER_Z0,
+            SZ - 1,
+        ),
     ]
 }

@@ -336,9 +336,29 @@ const SKIRT: i32 = 4;
 /// Max tile extent (the prefab library's safe template envelope, per axis).
 const TILE_XZ: i32 = 48;
 const TILE_Y: i32 = 48;
-/// Poisson-disk radius for the tree layer (blocks): grove spacing, sparse
-/// enough that crest silhouettes stay readable. The owner judges 和谐.
-const TREE_SPACING: f64 = 7.0;
+/// Poisson-disk radius for the tree layer, in blocks — the density knob, and
+/// the only one. Everything else about the flora layer is geometry.
+///
+/// Measured sweep on the `hello-room` valley fixture (task #176): canopy
+/// coverage over the surround's occupied columns, with the multi-seed sampler
+/// in place. Recorded here so the next change to this number starts from the
+/// curve instead of re-deriving it.
+///
+/// | radius | trees | canopy |
+/// |--------|-------|--------|
+/// | 7.0    |    10 |  14.8% |
+/// | 5.0    |    25 |  32.0% |
+/// | 4.0    |    47 |  50.1% |
+/// | 3.0    |    80 |  61.9% |
+/// | 2.5    |   100 |  67.4% |
+///
+/// 4.0 is a PROPOSAL, not a proof: half-covered, so the crest silhouette still
+/// reads and the grove still has gaps to walk through. Density is an aesthetic
+/// call and belongs to the owner. What bounds it mechanically is
+/// `DW_VALLEY_CLIMB`, and that stays green across this whole range — a denser
+/// canopy grows no standable staircase, proven per build by the nav flood over
+/// the emitted world rather than assumed here.
+const TREE_SPACING: f64 = 4.0;
 /// Bridson candidate attempts per active sample.
 const POISSON_K: usize = 20;
 /// Radial margin outward of the crest line that every cell of a tree's canopy
@@ -615,21 +635,6 @@ fn poisson_columns(
     let mut rng = Splitmix64::new(seed);
     let unit = |rng: &mut Splitmix64| (rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
 
-    // Deterministic first sample: scan a coarse lattice in fixed order for the
-    // first in-domain column.
-    let step = r.ceil() as i32;
-    'seed_scan: for x in (bounds.min_x..=bounds.max_x).step_by(step.max(1) as usize) {
-        for z in (bounds.min_z..=bounds.max_z).step_by(step.max(1) as usize) {
-            if domain(x, z) {
-                let p = (f64::from(x), f64::from(z));
-                grid[gidx(p.0, p.1)] = Some(p);
-                active.push(p);
-                out.push((x, z));
-                break 'seed_scan;
-            }
-        }
-    }
-
     let far_enough = |grid: &[Option<(f64, f64)>], px: f64, pz: f64| -> bool {
         let gx = ((px - f64::from(bounds.min_x)) / cell) as i32;
         let gz = ((pz - f64::from(bounds.min_z)) / cell) as i32;
@@ -645,6 +650,41 @@ fn poisson_columns(
         }
         true
     };
+
+    // Seeding: EVERY in-domain lattice column, not the first one (task #176).
+    //
+    // Bridson grows from its active list through jumps in `[r, 2r)`, so a run
+    // seeded from ONE point only ever samples the part of the domain reachable
+    // by such jumps. Both tree domains here break that assumption in two ways
+    // at once: the annulus is a RING (not simply connected — a frontier can
+    // never wrap it), and eligibility is SPECKLE (grass noise ∧ a keep hash),
+    // so the frontier dies within a few steps. Measured on the fixture valley:
+    // the crest pass had 147 eligible columns and returned **0** — its single
+    // lattice scan found no in-domain column at all and the sampler exited
+    // before its first jump — and the inner-slope pass had 481 eligible and
+    // returned **7**. Seven trees in a whole valley is what the owner saw and
+    // called a quarry (#176); the density constant was never the cause.
+    //
+    // Scanning the whole lattice in the same fixed order costs one extra
+    // domain evaluation per lattice cell and is exactly as deterministic: the
+    // order is positional, `far_enough` still enforces the spacing, and the
+    // RNG stream is untouched (seeds consume none of it). Blue-noise character
+    // is preserved — these are just more starting points for the same growth.
+    let step = r.ceil().max(1.0) as i32;
+    for x in (bounds.min_x..=bounds.max_x).step_by(step as usize) {
+        for z in (bounds.min_z..=bounds.max_z).step_by(step as usize) {
+            if !domain(x, z) {
+                continue;
+            }
+            let p = (f64::from(x), f64::from(z));
+            if !far_enough(&grid, p.0, p.1) {
+                continue;
+            }
+            grid[gidx(p.0, p.1)] = Some(p);
+            active.push(p);
+            out.push((x, z));
+        }
+    }
 
     while let Some(&(ax, az)) = active.last() {
         let mut placed = false;
@@ -1554,6 +1594,93 @@ mod tests {
         assert!(
             inner_tree_cells >= 60,
             "the inner slopes must carry visible blossom (got {inner_tree_cells} tree cells)"
+        );
+    }
+
+    /// Task #176 (owner playtest): the cherry valley "reads as a quarry".
+    ///
+    /// The test above was green throughout and could not have caught it — it
+    /// asserts that inner blossom EXISTS, and seven trees in an entire valley
+    /// do exist. This binds the QUANTITY instead: canopy coverage over the
+    /// columns the surround actually occupies. That is the measurement the
+    /// finding asked for, and the only thing that separates a grove from a
+    /// quarry with a shrub on it.
+    ///
+    /// **The scene here is deliberately SMALL, and that is the whole point.**
+    /// The defect degrades with scale: Bridson seeded from one point grows by
+    /// jumps in `[r, 2r)`, so it covers a wide annulus tolerably and collapses
+    /// on a narrow, speckled one. Measured both ways when this was written —
+    /// on the 96×96 `scene()` used by the tests above, the single-seed sampler
+    /// still produced 1050 trees / 42.9% (the fix lifts that to 1698 / 56.1%),
+    /// so a gate written against THAT fixture passes with the bug in place and
+    /// proves nothing. On THIS 24×24 fixture the same code gives 25 trees /
+    /// 7.5%, against 63 / 16.6% with the fix — and a small scene is what the
+    /// owner actually played. The floor sits between the two measurements.
+    ///
+    /// The ratio is deliberately reported against ALL surround columns, which
+    /// includes the outer face no tree may stand on, so it is a comparable
+    /// number for one fixture rather than a claim about how leafy a valley
+    /// looks. Absolute density is `TREE_SPACING`, and that is a design knob.
+    ///
+    /// A gate must bind where the failure lives, not where the numbers are
+    /// comfortable. This one WAS first written against the large scene, was
+    /// run with the defect deliberately restored, passed, and had to be moved.
+    #[test]
+    fn canopy_covers_the_valley_rather_than_speckling_it() {
+        // Small scene: the narrow annulus is where single-seed sampling dies.
+        let small = SceneRect {
+            min_x: 0,
+            min_z: 0,
+            max_x: 23,
+            max_z: 23,
+        };
+        let v = generate_valley(
+            17,
+            small,
+            62,
+            &params(Flora::Cherry, SurroundPalette::StonePetal),
+        )
+        .unwrap();
+
+        let mut leaf_columns: BTreeSet<(i32, i32)> = BTreeSet::new();
+        let mut solid_columns: BTreeSet<(i32, i32)> = BTreeSet::new();
+        let mut trunk_columns: BTreeSet<(i32, i32)> = BTreeSet::new();
+        for t in &v.tiles {
+            let d: fastnbt::Value = fastnbt::from_bytes(&gunzip(&t.bytes)).unwrap();
+            let (palette, blocks) = palette_and_blocks(&d);
+            for (pos, state) in blocks {
+                let name = &palette[state as usize];
+                let col = (t.pos[0] + pos[0], t.pos[2] + pos[2]);
+                if name != "minecraft:air" {
+                    solid_columns.insert(col);
+                }
+                if name.contains("leaves") {
+                    leaf_columns.insert(col);
+                }
+                if name.contains("_log") {
+                    trunk_columns.insert(col);
+                }
+            }
+        }
+
+        // State the binding count. A coverage ratio over zero columns is not a
+        // pass — it is a surround that failed to generate at all.
+        assert!(
+            solid_columns.len() > 500,
+            "the surround itself is missing — only {} solid columns",
+            solid_columns.len()
+        );
+
+        let pct = 100.0 * leaf_columns.len() as f64 / solid_columns.len() as f64;
+        assert!(
+            pct >= 12.0,
+            "canopy covers only {pct:.1}% of {} surround columns, from {} trees — \
+             the valley reads as a quarry (task #176). A collapse of this size is \
+             the tree SAMPLER failing to reach its own domain, not a density knob: \
+             check that `poisson_columns` still seeds from EVERY in-domain lattice \
+             column, because one seed point cannot cover a ring",
+            solid_columns.len(),
+            trunk_columns.len()
         );
     }
 

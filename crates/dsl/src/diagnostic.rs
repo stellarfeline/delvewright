@@ -171,6 +171,41 @@ pub mod codes {
     /// is a no-op and the souls loop has no consumable to spend, so this is a
     /// build error rather than a design choice.
     pub const BONFIRE_NO_FLASK: &str = "DW0476";
+    /// (spec-0016 §1, owner directive 2026-08-03) A kit item's potion `contents`
+    /// is not something 1.21.11 can pour: declared on an item that carries no
+    /// `minecraft:potion_contents` component, empty (neither a named potion nor
+    /// an effect), an unknown potion or status-effect id, an amplifier or
+    /// duration outside the field vanilla stores it in, a lasting effect with no
+    /// `duration`, an instantaneous one *with* a duration, or a malformed
+    /// `color`.
+    pub const KIT_POTION_INVALID: &str = "DW0486";
+    /// (spec-0016 §1, owner directive 2026-08-03) A potion-bearing kit item
+    /// declares no `contents` at `dsl_version` 0.8.0 — the Uncraftable Potion, a
+    /// bottle that pours nothing. The placeholder flask, as a build error.
+    pub const KIT_POTION_MISSING: &str = "DW0487";
+    /// (task #179, owner ruling 2026-08-04) A `drops[]` `slot` entry does not
+    /// name a distinct slot the same entity's `equipment` actually fills — the
+    /// slot is empty, or the same slot is declared twice. A mob can only leave
+    /// behind a piece it wears, and it can only leave it behind once.
+    pub const DROP_SLOT_UNFILLED: &str = "DW0490";
+    /// (task #179, owner ruling 2026-08-04) `drops[]` on an encounter that is
+    /// not billed `elite` or `boss`. Only a named fight leaves anything behind;
+    /// an ordinary mob's kit is never farmable (no-grind constitution), so the
+    /// declaration is refused rather than silently making rank-and-file gear
+    /// lootable.
+    pub const DROP_NOT_TIERED: &str = "DW0491";
+    /// (task #179) A `collect` `dropped_by` is not backed by the wave it names:
+    /// the wave declares no `{item}` drop of this objective's item, the count
+    /// asks for more copies than the wave's mobs can yield, or the objective
+    /// also declares a `container` (the item cannot come out of a box *and* off
+    /// a body).
+    pub const DROP_COLLECT_UNSOURCED: &str = "DW0492";
+    /// (task #179) A `collect` `dropped_by` is not ordered after the fight that
+    /// produces it: no `kill` objective for that wave precedes this collect in
+    /// the objective graph. Without that edge "kill the boss, take its key" is
+    /// an authoring intention the quest graph cannot prove, and the collect
+    /// reads as reachable from the campaign's first tick.
+    pub const DROP_COLLECT_UNORDERED: &str = "DW0493";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
@@ -190,6 +225,42 @@ pub mod codes {
     /// completion oracle; content carrying it could forge a passing critical-path
     /// step. The channel is reserved, not merely conventional.
     pub const MARKER_RESERVED: &str = "DW0182";
+    /// (i18n v2) A player-visible string — authored English or any sidecar
+    /// translation — contains a character from the reserved private-use block the
+    /// compiler uses to carry an l10n key from the stage docs to the text
+    /// component it is emitted into ([`crate::l10n::TR_SIGIL`]). Content carrying
+    /// it could impersonate a translation tag, or survive into the datapack and
+    /// render as a tofu box. The block is reserved, not merely conventional.
+    pub const TR_SIGIL_RESERVED: &str = "DW0183";
+    /// (i18n v2) A declared language has no entry in the Minecraft language-code
+    /// mapping table ([`crate::l10n::mc_lang_code`]), so the resource pack has no
+    /// filename to write its `assets/delvewright/lang/<code>.json` under. A
+    /// language is never silently dropped: either the code is corrected to a
+    /// mapped one, or the table gains the entry.
+    pub const LANG_CODE_UNMAPPED: &str = "DW0184";
+    /// (i18n v2) A campaign l10n sidecar defines a key in the reserved
+    /// `delvewright.` **chrome** namespace ([`crate::chrome`]). Those are the
+    /// engine's own on-screen strings — `New objective: `, `Choose your class`,
+    /// the default a bonfire shows — owned by the compiler, translated with it,
+    /// and authored by no campaign; a sidecar row under that prefix would be
+    /// written into the language file and silently replace product chrome for that
+    /// language. The namespace is reserved, not merely conventional.
+    pub const CHROME_RESERVED: &str = "DW0186";
+    /// (i18n v2) An l10n sidecar row was translated from English the campaign no
+    /// longer holds: its `source` entry differs from the key's canonical English.
+    /// The translation is present, applied and **wrong**, and no key-set check can
+    /// see it — `DW0180`/`DW0181` compare key SETS, and a rewritten line moves no
+    /// key. Load-bearing for entity display names, whose key belongs to the first
+    /// site declaring a given text, so renaming one body can migrate a key to
+    /// another body and the row that goes stale is not the one the author edited.
+    pub const L10N_STALE: &str = "DW0187";
+    /// (i18n v2) An l10n sidecar records provenance for only some of its rows (or
+    /// none), so `DW0187` cannot see the rest. A warning, not an error: the
+    /// `source` map is additive, and this is the one-version deprecation window
+    /// before it is required. It states the unguarded row count, so an
+    /// unadopted sidecar is a reported number on every run rather than silence
+    /// that reads like a pass.
+    pub const L10N_PROVENANCE_MISSING: &str = "DW0188";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).
@@ -280,8 +351,17 @@ pub mod codes {
     /// `closed_ticks` of 0 (a gate that never opens, or never closes — neither is
     /// a timing gate), a `phase` at or beyond the full cycle, or a gate another
     /// `timed-gate` or a `shortcut` already owns (two clocks fighting over one
-    /// region, or a clock fighting a permanent open).
+    /// region, or a clock fighting a permanent open), or a `disarm.via` anchor no
+    /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
+    /// live inside the span it stops).
     pub const TIMED_GATE_INVALID: &str = "DW0377";
+    /// (task #184) A `close-gate` effect targets the gate of a `timed-gate` that
+    /// declares a `disarm`. A disarm suppresses the clock **permanently with the
+    /// gate resting open** — a jammed portcullis stays up — so, exactly like a
+    /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
+    /// can re-arm it. Use a different gate for the beat that must re-seal, or drop
+    /// the `disarm`.
+    pub const TIMED_GATE_REARMED: &str = "DW0389";
     /// (spec-0016 §6) A wave's TD `lane` / `summon` declaration is structurally
     /// invalid or internally contradictory: an empty `waypoints` list, a
     /// waypoint anchor no area's prefab provides, a repeated consecutive
@@ -389,4 +469,21 @@ pub mod codes {
     /// not something it can verify rather than guess. Advisory (warning,
     /// exit 0) — declaring `world.difficulty` settles it either way.
     pub const DIFFICULTY_UNDECLARED_ACTORS: &str = "DW0469";
+    /// (spec-0016 §1, spec-0023, souls ruling 5/7: "stage bosses never respawn
+    /// on rest") A wave declares BOTH `tier: boss` and `respawns_on_rest: true`.
+    /// `tier` and `respawns_on_rest` are two fields on the same [`Wave`]
+    /// declaration — the only place a "boss" billing and a "re-seat on rest"
+    /// contract can land on one another; an [`Actor`] carries `tier` too but has
+    /// no `respawns_on_rest` field at all (it is killed by hand, never re-seated
+    /// by a bonfire), so this is the sole structurally expressible violation of
+    /// the ruling. A rest-respawning boss re-fight breaks the retry economy the
+    /// ruling exists to protect: a boss is the campaign's named fight, not
+    /// trash pressure the party grinds back down every rest. Validation-tier
+    /// (exit 1), `dsl::validate`. Prescription: drop `tier: boss` if the
+    /// encounter really is meant to re-seat (bill it `elite` instead), or drop
+    /// `respawns_on_rest` if it really is the boss.
+    ///
+    /// [`Wave`]: crate::stages::Wave
+    /// [`Actor`]: crate::stages::Actor
+    pub const BOSS_RESPAWNS_ON_REST: &str = "DW0499";
 }

@@ -61,7 +61,9 @@ Founding decisions live in `docs/adr/` and originate from the kickoff handoff
 CLAUDE.md            # this file
 docs/adr/            # architecture decision records (numbered, immutable once Accepted)
 docs/specs/          # owner-approved specs, one per feature
-docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md
+docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
+                     #   grammar.md + how a round is run: playtest-methodology.md
+                     #   + how a delve is generated: skill-workflow.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
 prefabs/             # .nbt library + metadata (git-lfs)
@@ -81,15 +83,78 @@ validation/          # docker compose: headless server + bot, same image as CI &
   implementation of a feature is a lower-layer hack (e.g. raycast polling where
   vanilla has no primitive), the feature is excluded until vanilla provides one.
   Applies at every layer boundary: NBT→compiler, compiler→DSL, DSL→skill.
+- **This is a general engine. Primitives are abstract, flexible and
+  configurable, and never bound to one campaign's design** (owner decision,
+  2026-08-06). A creator must be able to build **any** content with it, not a
+  second delve shaped like the first. So a primitive encodes a *mechanism* — a
+  thing a player can press, a
+  region that can be sealed, a body that can walk a route — and never a
+  *design decision* about what that mechanism is for. The genre we happen to be
+  building (souls-like, box-garden) is content, and content lives in campaigns.
+  The test, applied before any surface is added: **could a creator making an
+  entirely different game want this, and can they configure it to their own
+  fiction?** If it only makes sense inside the delve we are writing this month,
+  it is authored content wearing a primitive's clothes.
+
+  The corollary that keeps it honest: **a capability belongs to the object class
+  it acts on, not to the verb that first needed it.** `close-gate` owns
+  `sealed_hint`, which encodes *answering a player who presses this thing* — a
+  property of anything right-clickable, and nothing to do with closing a gate.
+  Built onto the verb, it left the second object that needed it with no surface,
+  and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
+  bespoke field is the defect, not the fix.** Generality is decided at the FIRST
+  site: retrofitting at the second costs a `dsl_version` bump, per-stage fences,
+  and an adoption round on every active campaign.
+
+  **Three shapes to look for in review**, hardest last:
+  1. *Keyed to the verb, not the object class.* The second consumer has no
+     surface, so the fix looks like another field. Tell: `"X, mirroring Y"` in a
+     doc comment; a hook on one variant of a sum type but not its siblings.
+  2. *A general mechanism privately re-implemented inside a verb.* `EnvTrigger`
+     (`at` + `on: strike|use` + `effects[]`) already **is** "give any scene
+     object a custom left- or right-click response, and the response is any
+     effect — prose, a sound, a sprung trap, a command". So `sealed_hint` is not
+     a missing feature; it is a private copy of a general one. Worst kind,
+     because the special case works perfectly and nothing ever looks — and every
+     proof, l10n pass and diagnostic written for the general path silently does
+     not cover the private one.
+  3. *The general mechanism exists but its binding is too narrow to reach the
+     objects it should.* A trigger's interaction body is a **point at a cell**,
+     not the clickable **shape** of the object at that anchor — so authoring the
+     island boulder's own pattern on a shortcut door compiles clean and ships a
+     box pressable only from the side the door opens from. This reads as a
+     missing feature, and the "fix" adds a fourth mechanism. Ask **"what does the
+     existing general mechanism fail to reach, and why"** before ever asking
+     "what surface is missing": the planner proposed a new stage-5 hint section
+     here — strictly weaker than the triggers it duplicated — in the very PR that
+     names this defect.
+
+  Same shape one layer down as a hand-rolled walk enumerating 3 of 5 effect roots
+  (#301/#302/#321): a defect of expressibility, not of care.
 - **Debug doctrine** (owner, 2026-07-31): a red check is information, never an
   obstacle. Never weaken a check, test, or threshold — and never reroll a seed —
   to get green; fix the root cause or escalate. Escalating a toolchain bug is
   success, not failure. Preserve every debugging lesson in the strongest
   available form, strongest first: compiler diagnostic > tooling default
   (automate the pitfall out of existence) > generator invariant > docs.
+  **An intermittent red is never re-run** (owner, 2026-08-05): it is a finding,
+  and re-running discards it. An intermittent failure is an under-specified
+  test — root-cause it. Evidence: a `grep -q` readiness probe under `pipefail`
+  failed 28 times in 30 on a server that was up, because `grep` exiting at the
+  match SIGPIPEs its producer; it read as flakiness for months, cost two owner
+  playtest stagings, and the same idiom sat under both 25565 safety guards
+  (task #173, PR #300).
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
+  **Every CI job is a required status check** (owner, 2026-08-05). It used to be
+  three of ten, so `tier 2` — datapack load plus the whole generated PackTest
+  suite — never blocked a merge, and neither did the storybook engine-version
+  marker or the prefab determinism gate. Because branch protection matches a
+  context by its NAME STRING, a renamed job blocks every PR forever, including
+  the one that would fix it: `.github/required-status-checks.txt` and
+  `tools/check-required-contexts.py` hold the names in lockstep, in both
+  directions, so a rename or a new advisory job is an ordinary red instead.
 - **PR merge policy** (owner, 2026-07-30, refined same day): two classes of PR.
   *Owner-review PRs* — docs, specs, ADRs, README, product/design definitions —
   require owner approval of the **content, given in conversation**: the planning
@@ -139,10 +204,44 @@ validation/          # docker compose: headless server + bot, same image as CI &
   upgrade is always its own explicit, proof-carrying round. Old versions keep
   compiling (per-stage fences); released delves reproduce via their pinned
   engine (`versions.toml` + OCI), not via eternal byte-stable emission.
+- **A green gate that binds to nothing is VACUOUS, not a pass** (island rounds
+  1–20). A check can be green three ways that mean nothing: *unbound* (it
+  matched zero objects — the bot's combat floor gate examined zero enemies for
+  nineteen rounds because no actor declared a tier), *unfenced* (the campaign's
+  `dsl_version` never reached the surface the gate keys off, so the proof was
+  inert), *unemitted* (declared, compiled green, never emitted). Every
+  validation artifact states its binding count; a zero binding is a finding and
+  is named in the round summary. Full derivation and the other playtest-round
+  obligations: `docs/reference/playtest-methodology.md`.
+- **A finding is not closed until its general form is a diagnostic** (island
+  r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
+  immediately found a second live instance the owner had by then hit herself).
+  Every owner finding yields two deliverables — the instance fix, and the
+  general form as a diagnostic **re-run against the current build** — or an
+  explicit record that only the instance was fixed, which is then a risk item at
+  the next staging review.
+- **A capability-gap finding blocks staging, not just the backlog** (owner
+  rebuke, island round 16). Every island finding that stayed open across more
+  than one round was blocked on a missing first-class primitive, never on a
+  forgotten task. Triage each finding as content / capability gap the day it is
+  reported; a capability gap means the engine work lands before the next
+  playtest, or the round summary tells the owner per item that it is still open
+  and not to test it. Audit the findings ledger from round 1 — never from the
+  last round — before staging any build.
+- **Execute an owner ruling at the scope it was given.** Generalizing it is a
+  design decision: propose it in one line and wait. (Round 16 turned a
+  one-beat ruling into a campaign-wide ceiling and had to be corrected.)
+  Unrequested change is a rejection cause on its own, independent of merit — a
+  worker's entire island round was rejected wholesale for carrying extras.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
-- **PR-based flow even solo.** GitHub Actions; repo is private for now, public when
-  the owner decides it's ready.
+- **PR-based flow even solo.** GitHub Actions. **Both repos are PUBLIC** —
+  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns`. This line
+  said "private for now" long after that stopped being true, and a planning
+  session reasoned from it for hours on 2026-08-06: it ruled out GitHub Releases
+  as a way to distribute `delvec` binaries, when that was exactly the right
+  answer (ADR-0017). A false premise in the file every session reads first is
+  worth more than a stale comment — it is a wrong conclusion, repeated.
 - **Docs are the only persistent memory.** End every session by writing lessons back:
   new constraints → this file; new decisions → an ADR; process learnings → the relevant
   spec. If you fought the codebase and won, record how.
@@ -159,6 +258,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
+  named in the dispatch prompt, never the main checkout — plus the content
+  symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
+  they never `--amend`, rebase or force-push a branch that has been pushed unless
+  asked by name. Three workers dispatched without the worktree line put two of
+  them in the main checkout editing one file at once, on a third party's branch;
+  nothing was lost, but one `git add -A` would have swept three authors into one
+  commit. Recovering from such a collision is **hunk-granular for every file** —
+  the file that leaked was the one a worker had been told it owned — and the
+  review asks for a full re-audit, never a targeted deletion: the planner named
+  two leaked hunks and there were three. Code leaks fail CI; doc leaks merge
+  green.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 

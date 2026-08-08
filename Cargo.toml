@@ -2,9 +2,33 @@
 resolver = "3"
 members = [
     "crates/dsl",
+    "crates/grammar",
     "crates/compiler",
     "crates/orchestrator",
     "crates/schem",
     "crates/render",
     "crates/admit",
 ]
+
+# An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
+# so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`
+# that binary takes 12m51s where the release one takes 25s — a 30x gap that reads
+# as "the compiler hung", not as "wrong profile". Two sessions lost time to it on
+# 2026-08-06 before the profile was measured rather than guessed at.
+#
+# `opt-level = 1` is the setting that makes the pitfall stop existing instead of
+# documenting it (CLAUDE.md debug doctrine: a tooling default beats a doc line).
+# It is nearly free on the loop that actually matters — an incremental rebuild of
+# `crates/compiler` costs 1.8s at opt-level 1 vs 1.9s at opt-level 0, because the
+# cost is codegen for the crate that changed, not the whole graph. `--release`
+# stays available and is still the fastest binary, but it costs 20s per
+# incremental rebuild, so it is the wrong default for an edit-compile-run loop.
+#
+#   island build   debug(0) 771s · dev(1) 46s · release(3) 25s
+#   incr. rebuild  debug(0) 1.9s · dev(1) 1.8s · release(3) 20s
+#
+# Determinism (ADR-0006) is unaffected and this is measured, not assumed: all
+# three profiles emit byte-identical output over the island's 594 files.
+# Full method + phase breakdown: docs/notes/build-profile-measurements.md.
+[profile.dev]
+opt-level = 1

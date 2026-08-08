@@ -26,9 +26,20 @@ fn fixture_dir() -> std::path::PathBuf {
 /// bonfire (the checkpoint proofs run over `plan.checkpoints`, which a bonfire
 /// joins).
 fn build_fixture() -> BuildOutput {
+    build_campaign(&fixture_campaign())
+}
+
+/// The parsed fixture campaign, for tests that vary one declaration and rebuild.
+fn fixture_campaign() -> delvewright_dsl::Campaign {
+    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    parse_campaign(&loaded.raw).expect("souls-bonfire parses")
+}
+
+/// Validate + plan + emit a (possibly modified) fixture campaign.
+fn build_campaign(campaign: &delvewright_dsl::Campaign) -> BuildOutput {
     let dir = fixture_dir();
     let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+    let campaign = campaign.clone();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
     let items = FullItemRegistry::v1_21_11();
@@ -189,17 +200,39 @@ fn the_rest_dialog_offers_exactly_two_options() {
     )
     .unwrap();
     assert_eq!(dialog["type"], "minecraft:multi_action");
-    assert_eq!(dialog["title"], "Bonfire");
+    // i18n v2 (spec-0029): every player-visible string is emitted as a text
+    // COMPONENT. The fixture authors no `prompt`/`rest_label`/`save_label`, so
+    // these three are the compiler's own CHROME — a `delvewright.ui.bonfire.*`
+    // translate key carrying the canonical English as its fallback, so a Chinese
+    // client reads them in Chinese instead of the English a bare literal froze in.
+    // An AUTHORED label would carry the campaign's own `fx.….rest_label` key.
+    use delvewright_dsl::chrome;
+    assert_eq!(dialog["title"]["translate"], chrome::BONFIRE_TITLE.key);
+    assert_eq!(dialog["title"]["fallback"], "Bonfire");
     let actions = dialog["actions"].as_array().expect("actions is a list");
     assert_eq!(actions.len(), 2, "exactly two options: {dialog:#?}");
-    assert_eq!(actions[0]["label"], "Rest and save");
+    assert_eq!(actions[0]["label"]["translate"], chrome::BONFIRE_REST.key);
+    assert_eq!(actions[0]["label"]["fallback"], "Rest and save");
     assert_eq!(actions[0]["action"]["command"], "/trigger dw.rest set 2");
-    assert_eq!(actions[1]["label"], "Save only");
+    assert_eq!(actions[1]["label"]["translate"], chrome::BONFIRE_SAVE.key);
+    assert_eq!(actions[1]["label"]["fallback"], "Save only");
     assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
-    // Both labels are captions, not sentences (#215's fixed-width button rule).
+    // Both labels are captions, not sentences (#215's fixed-width button rule) —
+    // in EVERY language the compiler ships them in, since any of them can be what
+    // the player actually reads.
     for a in actions {
-        let label = a["label"].as_str().unwrap();
-        assert!(label.chars().count() <= 20, "label too wide: `{label}`");
+        let key = a["label"]["translate"].as_str().unwrap();
+        for (code, _) in [("en_us", ()), ("zh_cn", ())] {
+            let entries = chrome::lang_entries(code);
+            let label = entries
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| a["label"]["fallback"].as_str().unwrap().to_string());
+            assert!(
+                label.chars().count() <= 20,
+                "label too wide in `{code}`: `{label}`"
+            );
+        }
     }
 }
 
@@ -328,9 +361,13 @@ fn resting_replenishes_the_flask_to_its_declared_count() {
     assert_eq!(
         flask.lines().collect::<Vec<_>>(),
         vec![
-            "execute if entity @s[tag=dw_class_warden] run clear @s minecraft:potion",
+            "execute if entity @s[tag=dw_class_warden] run clear @s \
+             minecraft:potion[potion_contents={custom_effects:[{id:\"minecraft:instant_health\",\
+             amplifier:1}],custom_color:16751664}]",
             "execute if entity @s[tag=dw_class_warden] run give @s \
-             minecraft:potion[custom_name={\"italic\":false,\"text\":\"Ashen Flask\"}] 3",
+             minecraft:potion[custom_name={\"italic\":false,\"text\":\"Ashen Flask\"},\
+             potion_contents={custom_effects:[{id:\"minecraft:instant_health\",amplifier:1}],\
+             custom_color:16751664}] 3",
         ],
         "the flask is cleared and re-given at the declared count: {flask}"
     );
@@ -626,6 +663,99 @@ fn the_two_options_are_packtested_apart() {
     assert!(
         t.trim_end().ends_with("remove dw_class_warden"),
         "the template leaves no residue for the shared batch: {t}"
+    );
+}
+
+/// The contents round-trip, on a live server (owner directive 2026-08-03): a rest
+/// must refill the flask with the **same** bottle, not with a lookalike.
+///
+/// The template counts through the flask's own item predicate, so every count in
+/// it is of potions whose `potion_contents` match exactly; the added bare-id
+/// count closes the other half. A replenish that handed over a differently-filled
+/// bottle (say the contents-less placeholder) would leave the exact-match count
+/// at the baseline 1 while the bare-id count reached 4 — each assertion catches
+/// one of the two ways that can go wrong.
+#[test]
+fn the_packtested_refill_is_the_same_bottle() {
+    let out = build_fixture();
+    let t = std::str::from_utf8(
+        out.get(&format!(
+            "packtest-datapack/data/{NS}/test/souls_bonfire_options.mcfunction"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let pred = "minecraft:potion[potion_contents={custom_effects:[{id:\"minecraft:instant_health\"\
+                ,amplifier:1}],custom_color:16751664}]";
+    assert!(
+        t.contains(&format!("run clear @a[tag=dw_bfopt,limit=1] {pred} 0")),
+        "the flask is counted through its exact components: {t}"
+    );
+    assert!(
+        t.contains("give @a[tag=dw_bfopt,limit=1] minecraft:potion[custom_name="),
+        "and the baseline bottle is filled exactly as the class kit fills it: {t}"
+    );
+    assert!(
+        t.contains("assert score #bo_any dw.sys matches 3"),
+        "no extra bottle of any other filling may be in the bag after a rest: {t}"
+    );
+}
+
+/// The two give sites — the class kit and the bonfire replenish — must emit the
+/// **identical** item, because the replenish clears by the components it gives.
+/// A drift between them does not fail loudly: the `clear` misses the bottle the
+/// player carries, the `give` adds another, and the per-rest budget quietly
+/// becomes a stockpile. One helper feeds both; this is the regression that keeps
+/// it that way.
+#[test]
+fn the_kit_give_and_the_refill_give_are_the_same_item() {
+    let out = build_fixture();
+    let kit = fn_body(&out, "class_apply_warden");
+    let flask = fn_body(&out, "bonfire_flask");
+    let stack = kit
+        .lines()
+        .find(|l| l.contains("minecraft:potion"))
+        .expect("the class kit hands out the flask")
+        .trim_start_matches("give @s ")
+        .to_string();
+    assert!(
+        flask.contains(&format!("give @s {stack}")),
+        "the refill gives the identical stack the kit does:\nkit:   {stack}\nflask: {flask}"
+    );
+    // And the clear names that same filling, so it takes the carried bottle
+    // rather than every potion in the bag.
+    let filling = stack
+        .split_once("potion_contents=")
+        .expect("the flask carries contents")
+        .1
+        .trim_end_matches(" 3")
+        .trim_end_matches(']');
+    assert!(
+        flask.contains(&format!(
+            "clear @s minecraft:potion[potion_contents={filling}]"
+        )),
+        "the clear matches the same filling it gives back: {flask}"
+    );
+}
+
+/// A **named vanilla potion** is the other half of the surface: `"potion":
+/// "minecraft:strong_healing"` compiles to the real Potion of Healing II, with no
+/// custom effect list at all.
+#[test]
+fn a_named_potion_compiles_to_the_vanilla_brew() {
+    let mut c = fixture_campaign();
+    let kit = &mut c.classes.content.classes[0].kit;
+    let f = kit.iter_mut().find(|k| k.flask).unwrap();
+    f.contents = Some(delvewright_dsl::PotionContents {
+        potion: Some("minecraft:strong_healing".to_string()),
+        effects: vec![],
+        color: None,
+    });
+    let out = build_campaign(&c);
+    assert!(
+        fn_body(&out, "bonfire_flask")
+            .contains("potion_contents={potion:\"minecraft:strong_healing\"}"),
+        "the named potion is emitted verbatim as the component's `potion` field"
     );
 }
 

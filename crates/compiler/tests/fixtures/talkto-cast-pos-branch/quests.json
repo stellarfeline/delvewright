@@ -1,0 +1,146 @@
+{
+  "dsl_version": "0.8.0",
+  "campaign_id": "talkto-cast-branch",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/decide",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "happening": {
+          "verb": "arrives",
+          "text": "The party reaches the Keeper's door with the moor at their backs.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "happening": {
+              "verb": "learns",
+              "text": "The Keeper tells them the road is drowned, and asks whether they hold or run.",
+              "subject": "npc/keeper"
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/decide": [
+            {
+              "type": "set-flag",
+              "flag": "flag/wait",
+              "requires_flags": [
+                "flag/wait"
+              ]
+            },
+            {
+              "type": "set-flag",
+              "flag": "flag/flee",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            },
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "happening": {
+                "verb": "opens",
+                "text": "The bar comes off the inner gate and it swings wide.",
+                "subject": "anchor/door"
+              }
+            },
+            {
+              "type": "move-npc",
+              "npc": "npc/keeper",
+              "to_anchor": "anchor/exit",
+              "requires_flags": [
+                "flag/flee"
+              ],
+              "happening": {
+                "verb": "arrives",
+                "text": "The Keeper walks out through the lifted gate and takes up station on the road.",
+                "subject": "npc/keeper"
+              }
+            }
+          ]
+        },
+        "on_complete": [],
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "barring the door with one arm, listening to the moor",
+              "dialogue": "dlg/greeting",
+              "forbids_flags": [
+                "flag/flee"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "doing": "already through the gate the moment the party refused the watch",
+              "dialogue": "dlg/bolt",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "quest/parley",
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/decide"
+        },
+        "happening": {
+          "verb": "survives",
+          "text": "Whatever the party chose, the Keeper has one word left to give them.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/parley",
+            "npc": "npc/keeper",
+            "happening": {
+              "verb": "learns",
+              "text": "The Keeper says his last, and the delve closes on it.",
+              "subject": "npc/keeper"
+            }
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete",
+            "happening": {
+              "verb": "gains",
+              "text": "The delve ends with the Keeper's word taken and the road open."
+            }
+          }
+        ],
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "still at his post, the gate open behind him",
+              "dialogue": "dlg/hold",
+              "requires_flags": [
+                "flag/wait"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "doing": "waiting past the lifted gate, already half on the road",
+              "dialogue": "dlg/bolt",
+              "requires_flags": [
+                "flag/flee"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

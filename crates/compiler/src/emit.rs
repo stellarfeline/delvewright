@@ -63,6 +63,18 @@ pub const DW_WAVE_NO_ROOM: &str = "DW0312";
 /// proof green.
 pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
 
+/// `DW0494`: completing ONE objective would cross into two different areas —
+/// one destination on the exported path, another on a branch (task #186).
+///
+/// The crossing is emitted into the objective's own completion bundle, so the
+/// two destinations would be two teleports in one function body, and which one
+/// the party lands on would depend on command order rather than on the branch
+/// they are actually playing. There is no runtime distinction to gate on either:
+/// the exported path's crossing is unconditional by construction. The content
+/// fix is to split the objective — one crossing objective per branch, each
+/// gated by that branch's own flags.
+pub const DW_BRANCH_TRANSPORT_DIVERGES: &str = "DW0494";
+
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
         BuildFailure::Diagnostic {
@@ -235,9 +247,15 @@ pub fn build_with_warnings(
         })?;
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
-    let mut warnings: Vec<delvewright_dsl::Diagnostic> = edit_replay
-        .as_ref()
-        .map_or_else(Vec::new, |er| er.warnings.clone());
+    // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
+    // seats the same anchor-bearing prefab twice) lead, since they describe the
+    // world every later pass reasons over, then the replay's own.
+    let mut warnings: Vec<delvewright_dsl::Diagnostic> = plan.warnings.clone();
+    warnings.extend(
+        edit_replay
+            .as_ref()
+            .map_or_else(Vec::new, |er| er.warnings.clone()),
+    );
     // spec-0016 §7 pacing lints, filled in by the nav stage below.
     let mut pacing: Vec<delvewright_dsl::Diagnostic> = Vec::new();
 
@@ -291,12 +309,23 @@ pub fn build_with_warnings(
     // the EDITED model when an edit script exists, since a stage-7 batch can
     // legitimately be what puts the barrel there. Independent of nav, because a
     // campaign may declare loot without ever walking a leg.
-    if !plan.loot.is_empty() {
+    // The same proof serves the v0.8 `collect` container adoption (DW0438, task
+    // #95): an adopted container is prefab furniture on exactly the terms a `loot`
+    // container is, so it is proven off the same assembled (or edited) world, in
+    // the same pass, rather than by a second model that could disagree with this
+    // one about what is in the room.
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
         let blocks = match &edit_replay {
             Some(er) => er.assembled.blocks.clone(),
             None => crate::assembled::assembled_blocks(plan, structures),
         };
         crate::loot::check_loot_containers(&blocks, &plan.loot).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+        crate::loot::check_collect_containers(&blocks, &plan.collect_fills).map_err(|e| {
             BuildFailure::Diagnostic {
                 code: e.code,
                 message: e.message,
@@ -339,6 +368,17 @@ pub fn build_with_warnings(
     // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
+    // spec-0025 per-branch waypoint artifacts (task #117): one
+    // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
+    // inside the world block below (they need the assembled occupancy) and
+    // emitted alongside the branch paths. Empty for a campaign with no declared
+    // branch points, so nothing moves for anybody who has not opted in.
+    let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // The traversal proof's binding ledger (`compiler::traversal`), filled inside
+    // the world block below. `None` for a campaign that assembles no world —
+    // which is not the same fact as "examined nothing", so the artifact is
+    // omitted entirely rather than emitted claiming a zero it never measured.
+    let mut traversal_gate: Option<crate::traversal::TraversalGate> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -369,7 +409,28 @@ pub fn build_with_warnings(
             message: e.message,
         }
     })?);
-    let has_waves = !plan.campaign.quests.content.waves.is_empty();
+
+    // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
+    // answer a right-click (DW0422, task #142). Same box arithmetic, same tier:
+    // two interaction entities in one cell is a ray-pick tie the client resolves
+    // by iteration order, so one of them silently stops receiving clicks.
+    crate::eclipse::check_seal_collisions(plan).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // …and no two bodies the party CLICKS may stand close enough that the
+    // crosshair cannot tell them apart (DW0489). `DW0359` above compares a body
+    // against an affordance and skips every walker; this reads the v0.7 cast
+    // ledger, which states beat by beat who is on stage together, and measures
+    // the pairs it names. It is the proof the island's terminal finding needed —
+    // two crew NPCs declared on one cell at the cave mouth.
+    warnings.extend(
+        crate::crosshair::check_crosshair_contests(plan).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?,
+    );
     let (moves, actor_moves, wave_placements, wave_rings, lane_routes, payload_plans): (
         Vec<crate::nav::MovePlan>,
         Vec<crate::nav::ActorMovePlan>,
@@ -377,7 +438,7 @@ pub fn build_with_warnings(
         WaveRings,
         crate::nav::LaneRoutes,
         PayloadPlans,
-    ) = if crate::nav::needs_world(plan) || has_waves || crate::clearance::has_bodies(plan) {
+    ) = if assembles_world(plan) {
         {
             // spec-0022 payload verbs need the block map (a `collapse` settles
             // real blocks), not just the occupancy view.
@@ -426,6 +487,15 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
+                // Task #50: refuse to place a wrong-side answer on a side the
+                // geometry does not name (DW0425) — BEFORE the route proofs. A
+                // door whose two sides are not even distinguishable is a
+                // structural problem with the declaration, and reporting it under
+                // the route proof's name (`DW0374`, "opening it must pay") would
+                // send the author looking at their level layout instead.
+                check_shortcut_sides(plan)?;
+                // …and every click trigger must land on something (DW0426).
+                check_trigger_bodies(plan)?;
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
@@ -434,11 +504,23 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
+                // task #184: the third rung. A gate's `disarm` lever must be
+                // reachable while the gate is still SHUT — a jam you can only
+                // pull after surviving the crossing disables nothing (DW0393).
+                crate::nav::check_timed_gate_disarms(plan, &world, campaign_spawn(plan))?;
+                // spec-0016 §4 addendum — hazard observability (DW0388). The
+                // dossier's strongest finding: what makes a periodic hazard fair
+                // is not its ratio but that you can stand somewhere safe and
+                // WATCH it before committing. Error tier for a souls campaign (it
+                // declares a bonfire), warning tier otherwise.
+                let unobserved =
+                    crate::nav::check_hazard_observability(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §7 pacing lints (DW0379 retry cost, DW0380 optional-
                 // elite bypass). Warning tier: both are design judgements the
                 // compiler can MEASURE but must not overrule — a long walk back
                 // can be the authored point, and the owner's QA hour decides.
                 pacing = crate::nav::pacing_lints(plan, &world);
+                pacing.extend(unobserved);
                 // Export the DW0311-proven critical-path routes as validation
                 // metadata (task #38): thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
@@ -487,6 +569,66 @@ pub fn build_with_warnings(
                     .map(|s| (s.id.clone(), s.eye_cell()))
                     .collect();
                 crate::nav::verify_pov_cameras(&world, &eyes)?;
+                // spec-0025 branch navigation, made first-class (task #117). The
+                // DW0311 proof above quantifies over the DEFAULT playthrough
+                // only, and the waypoint export followed it — so a branch run
+                // walked its fork-divergent legs with no proof behind them and
+                // no waypoints under them (single-goal navigation, which is
+                // terrain-flaky exactly where the proven path is deterministic).
+                // Here every REACHABLE branch's exported path gets both halves:
+                // its own DW0311 (each walked leg routed over this same
+                // assembled world, under the BRANCH's own causal gate seals, in
+                // its own step space — `Plan::branch_gate_model`; default-path
+                // indices belong to a different sequence and must never be
+                // inherited) and its own waypoint artifact, derived from those
+                // proven routes exactly as the critical path's is (same
+                // thinning, same DW0314 standability self-check, same JSON
+                // shape — `waypoints_json`). Deterministic: branches enumerate
+                // in declaration-order (ADR-0006).
+                let realized = crate::branch::realize(plan.campaign);
+                if !realized.is_empty() {
+                    let flow = crate::flow::Flow::new(plan.campaign);
+                    for r in &realized {
+                        let Some(widx) = r.world else { continue };
+                        let cp = plan
+                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
+                            .map_err(|e| BuildFailure::Diagnostic {
+                                code: e.code,
+                                message: format!("branch `{}`: {}", r.branch.id, e.message),
+                            })?;
+                        let (gate_events, ancestors) = plan.branch_gate_model(&cp);
+                        let ancestor = |g: usize, s: usize| {
+                            g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
+                        };
+                        let label = |e: crate::nav::NavError| crate::nav::NavError {
+                            code: e.code,
+                            message: format!("branch `{}`: {}", r.branch.id, e.message),
+                        };
+                        crate::nav::check_branch_path(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        )
+                        .map_err(label)?;
+                        let branch_routes = crate::nav::branch_path_routes(
+                            &world,
+                            &cp.steps,
+                            &cp.transport_by_step,
+                            &gate_events,
+                            &ancestor,
+                        );
+                        crate::nav::verify_exported_routes(&world, &branch_routes)
+                            .map_err(label)?;
+                        if !branch_routes.is_empty() {
+                            branch_waypoints.push((
+                                r.branch.slug.clone(),
+                                crate::waypoints::waypoints_json(plan, &branch_routes),
+                            ));
+                        }
+                    }
+                }
                 (m, am)
             } else {
                 (Vec::new(), Vec::new())
@@ -506,10 +648,41 @@ pub fn build_with_warnings(
                         message: e.message,
                     })?,
             );
+            // …and the move that got the body there must be one the body can
+            // make (DW0452/DW0453, island round 21). `clearance` proves where a
+            // body IS; this proves what it DID. The two island sightings it
+            // exists for: eight sheep walking through a closed fence gate the
+            // owner could not walk through herself, and a sheep leaving the
+            // beach fold by stepping onto its wall's full-cube course instead of
+            // using the pen's opening. Capabilities come from the entity, so a
+            // spider routed over a wall stays silent and a sheep does not.
+            let (traversal_warnings, gate) =
+                crate::traversal::check_traversal(plan, &world, &moves, &actor_moves).map_err(
+                    |e| BuildFailure::Diagnostic {
+                        code: e.code,
+                        message: e.message,
+                    },
+                )?;
+            warnings.extend(traversal_warnings);
+            traversal_gate = Some(gate);
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
+            // …and prove the sun is not going to fight the party's battle for it
+            // (DW0496, task #189). Runs HERE because it needs the seated cells:
+            // the question is whether open sky stands within one aggro radius of
+            // where the mobs actually land, on ground they can walk to — not of
+            // an anchor they stand around. The hollow-vigil gate yard is the
+            // motivating case: roof and two walls carved off, noon pinned, and
+            // two of three footmen dead to sunlight before the party could
+            // engage them, with every other proof green.
+            crate::daylight::check_daylight_staging(plan, &world, &blocks, &waves).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
             // spec-0023 §2: the winnability arithmetic. Runs here because it
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the
@@ -535,9 +708,15 @@ pub fn build_with_warnings(
             // this file: the set-piece souls fight is an actor, not a wave, and
             // a campaign whose only billed elite is an actor would otherwise
             // emit no plan at all — the exact silence spec-0023's floor gate
-            // must not be allowed to read as a pass.
+            // must not be allowed to read as a pass. An UNTIERED hostile actor
+            // (task #121) is enough for the same reason and one step further
+            // out: it is a fight nothing bills, so without the ledger line
+            // naming it there is no artifact anywhere that says it existed.
             let tiered_actors = crate::combat::actor_encounters(plan);
-            if crate::combat::has_encounters(plan) || !tiered_actors.is_empty() {
+            if crate::combat::has_encounters(plan)
+                || !tiered_actors.is_empty()
+                || crate::combat::has_untiered_hostile_actors(plan)
+            {
                 let mandatory = crate::combat::encounters(plan);
                 warnings.extend(crate::combat::floor_coverage_warnings(
                     plan,
@@ -657,9 +836,19 @@ pub fn build_with_warnings(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
+    // Task #186: the inter-area crossings that exist only on a branch. Computed
+    // here so `DW0494` fails the build before a single function is emitted.
+    let branch_transport = branch_transport_overlay(plan)?;
+
+    // spec-0029 addendum: the compiler's own on-screen strings. The default
+    // multi-language build leaves them tagged with their `delvewright.ui.…` key
+    // (the pack's lang files carry every language); a `--lang` bake, which ships no
+    // lang files, puts the baked language's text on the component instead.
+    let chrome = delvewright_dsl::Chrome::for_build(language);
 
     let functions = emit_functions(
         plan,
+        &chrome,
         &sentinels,
         &moves,
         &actor_moves,
@@ -672,6 +861,7 @@ pub fn build_with_warnings(
         }),
         &trap_gates,
         &payload_plans,
+        &branch_transport,
     );
     for (name, body) in &functions {
         insert_unique(
@@ -684,7 +874,7 @@ pub fn build_with_warnings(
     }
 
     // dialogs
-    for (name, value) in emit_dialogs(plan) {
+    for (name, value) in emit_dialogs(plan, &chrome) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/dialog/{name}.json"),
@@ -701,6 +891,18 @@ pub fn build_with_warnings(
             format!("datapack/data/{ns}/advancement/{name}.json"),
             json_bytes(&value),
             "advancement",
+            &name,
+        )?;
+    }
+
+    // death loot tables — v0.9 declared quest-item drops only; a campaign that
+    // declares none writes no `loot_table` directory (byte-identity).
+    for (name, value) in emit_drop_loot_tables(plan) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/loot_table/{name}.json"),
+            json_bytes(&value),
+            "loot table",
             &name,
         )?;
     }
@@ -776,6 +978,19 @@ pub fn build_with_warnings(
     // See `crate::affordance` for the drowned-bell soft-lock this encodes.
     crate::affordance::check(&affordances(plan), &out)?;
 
+    // ---- call-graph integrity (DW0497) ----
+    // Every `function <ns>:<name>` the compiler just wrote must point at a
+    // function the compiler wrote. Vanilla resolves an unknown function to
+    // nothing at all — no error, no log line — so an emitter whose call walk and
+    // machinery walk disagree ships a verb that simply never happens. That is
+    // exactly how the island's round-21 build lost two of its three storm waves
+    // (see `crate::integrity`). Feature-blind and last, so it guards every
+    // emitter, including ones not yet written.
+    crate::integrity::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
@@ -785,11 +1000,18 @@ pub fn build_with_warnings(
     // campaign uses the `narrate` `art` style — baked only when needed, so a
     // non-art campaign's pack is byte-identical.
     let art = crate::atmos::uses_art(plan.campaign);
-    let extra_assets = if art {
+    let mut extra_assets = if art {
         crate::atmos::art_font_assets()
     } else {
         BTreeMap::new()
     };
+    // i18n v2 (spec-0029 §2): the pack is also the language carrier. One
+    // `assets/delvewright/lang/<mc_code>.json` per declared language plus
+    // `en_us.json`, so a client that speaks one of them auto-selects it; every
+    // other client — and every player who declines the pack — reads the
+    // `fallback` English riding on each component.
+    let lang_files = lang_assets(plan, input_bytes, language)?;
+    extra_assets.extend(lang_files);
     let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
@@ -798,7 +1020,7 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art).into_bytes(),
+            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
         );
         Some(sha1)
     };
@@ -827,6 +1049,28 @@ pub fn build_with_warnings(
             &path,
         );
     }
+    // ...and each reachable branch's own waypoint artifact (task #117), derived
+    // in the world block above from the same assembled model its per-branch
+    // DW0311 proof ran over. The harness derives the name from the branch's
+    // `branch-path-<slug>.json`, so the two files are one contract.
+    for (slug, wp) in &branch_waypoints {
+        put_json(
+            &mut out,
+            &format!("validation/branch-waypoints-{slug}.json"),
+            wp,
+        );
+    }
+    // The traversal proof's binding ledger (`compiler::traversal`,
+    // playtest-methodology.md rule 1): how many legs and route cells it examined,
+    // per locomotion class, and which of its rules bind at all. A green that
+    // matched nothing must be legible as such WITHOUT the reader re-deriving it
+    // from an empty diagnostics list — and the capability axis is its own way to
+    // bind to nothing, since every class that carries an exemption is a class
+    // some rule does not examine. `gate_use.cells` counts every non-gate-opening
+    // body regardless of class, so the count itself shows that rule is total.
+    if let Some(gate) = &traversal_gate {
+        put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
@@ -839,15 +1083,217 @@ pub fn build_with_warnings(
     );
     put_json(&mut out, "manifest.json", &manifest);
 
+    // ---- untranslated-literal scan (DW0185, spec-0029) ----
+    // Feature-blind and last, exactly like the call-graph integrity check above:
+    // every authored player-visible string entered this build carrying its l10n
+    // key (`dsl::tag_translatables`), and an emitter either lowered it into a text
+    // component (`tr` / `snbt_component`) or read it as a named exclusion
+    // (`plain`). A tag still present in the finished tree is a site that did
+    // neither — a string that would ship as an untranslatable literal. This is the
+    // whole reason spec-0029's risk is an invariant rather than an audit.
+    check_untranslated_literals(&out, &extra_assets)?;
+
     warnings.extend(pacing);
     Ok((out, warnings))
+}
+
+/// The `assets/delvewright/lang/<mc_code>.json` assets this delve ships
+/// (spec-0029 §2): `en_us.json` from the campaign's own canonical-English
+/// inventory, and one file per declared language from its `l10n/<code>.json`
+/// sidecar. Empty — no lang files, no behaviour change — for a campaign that
+/// declares no languages, whose components' `fallback` already is the whole story.
+///
+/// Every file is a flat `{key: string}` map in [`BTreeMap`] order (ADR-0006), and
+/// the key sets are **equal** across languages by construction: each is checked
+/// against the same inventory, and a mismatch fails the build rather than shipping
+/// a language with a hole in it.
+/// A single-language `--lang` bake (spec-0029 §4) ships no lang files at all: its
+/// strings were swapped before emission, so there is nothing for a client to
+/// select between.
+fn lang_assets(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    language: Option<&str>,
+) -> Result<BTreeMap<String, Vec<u8>>, BuildFailure> {
+    if language.is_some_and(|l| l != delvewright_dsl::CANONICAL_LANG) {
+        return Ok(BTreeMap::new());
+    }
+    let c = plan.campaign;
+    let declared = delvewright_dsl::declared_mc_codes(c).map_err(|d| BuildFailure::Diagnostic {
+        code: delvewright_dsl::codes::LANG_CODE_UNMAPPED,
+        message: format!("{}: {}", d.path, d.message),
+    })?;
+    let mut out = BTreeMap::new();
+    if declared.is_empty() {
+        return Ok(out);
+    }
+    // The campaign reaching emission is tagged, so its inventory values are
+    // translation tags; `plain` recovers the canonical English each tag carries.
+    // Derived from the live inventory, never from a fixture (spec-0029 AC2).
+    let english: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(c)
+        .into_iter()
+        .map(|(k, v)| (k, plain(&v).to_string()))
+        .collect();
+    // Each file is the campaign's keys plus the compiler's own chrome
+    // (`dsl::chrome`, spec-0029 addendum). The two key spaces are disjoint by
+    // construction — chrome lives under the reserved `delvewright.` prefix, which
+    // the l10n key scheme cannot produce and `DW0186` forbids a sidecar from
+    // writing — so the merge can never shadow a campaign string.
+    let mut put = |mc: &str, map: &BTreeMap<String, String>, chrome: BTreeMap<String, String>| {
+        let mut merged = map.clone();
+        merged.extend(chrome);
+        let mut bytes = serde_json::to_vec_pretty(&merged).expect("lang map serializes");
+        bytes.push(b'\n');
+        out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
+    };
+    put(
+        "en_us",
+        &english,
+        delvewright_dsl::chrome::english_entries(),
+    );
+
+    for (lang, mc) in declared {
+        let path = format!("l10n/{lang}.json");
+        let Some(raw) = input_bytes.get(&path) else {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "declared language `{lang}` has no `{path}` among the build inputs, so the \
+                     resource pack cannot carry its `assets/delvewright/lang/{mc}.json` — add \
+                     the sidecar, or remove `{lang}` from `world.languages`"
+                ),
+            });
+        };
+        let doc: delvewright_dsl::L10nDoc =
+            serde_json::from_slice(raw).map_err(|e| BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!("`{path}` is not a readable l10n sidecar: {e}"),
+            })?;
+        // The key sets must be EQUAL. Validation already proved it (DW0180/DW0181),
+        // but the pack is where a hole becomes a player reading a raw key, so the
+        // emitter proves it again over the bytes it is about to write.
+        if let Some(missing) = english.keys().find(|k| !doc.content.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "`{path}` has no translation for `{missing}`, so \
+                     `assets/delvewright/lang/{mc}.json` would ship a hole a `{lang}` client \
+                     renders as a raw key — add `{missing}` to the sidecar"
+                ),
+            });
+        }
+        if let Some(orphan) = doc.content.keys().find(|k| !english.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_ORPHAN,
+                message: format!(
+                    "`{path}` carries `{orphan}`, which is not in the string inventory — remove \
+                     it, so `assets/delvewright/lang/{mc}.json` and `en_us.json` carry exactly \
+                     the same keys"
+                ),
+            });
+        }
+        // Chrome for a language the compiler has no table for is ABSENT rather
+        // than English-under-a-translated-name: the client falls through to
+        // `en_us.json` (or to the component's own fallback, for a player who
+        // declined the pack) and reads English. Honest, and never disguised.
+        put(mc, &doc.content, delvewright_dsl::chrome::lang_entries(mc));
+    }
+    Ok(out)
+}
+
+/// `DW0185`: no emitted byte may still carry a translation tag. See
+/// [`DW_UNTRANSLATED_LITERAL`] for what a hit means and how to fix it.
+///
+/// Public so the spec-0029 test suite can drive it against a synthetic tree: the
+/// only way to produce a leak from a real campaign is a defective emitter, and a
+/// red that needs a defective emitter to exist is a red nobody can re-run.
+pub fn check_untranslated_literals(
+    out: &BuildOutput,
+    pack_assets: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), BuildFailure> {
+    // EVERY offending file, not the first: a leak is usually one emitter used from
+    // several places, and a one-at-a-time diagnostic turns one fix into ten builds.
+    let mut hits: Vec<String> = Vec::new();
+    // The resource pack is scanned as its own assets rather than through the zip:
+    // the zip embeds PNG bytes, and a byte scan of compressed/binary payloads is a
+    // scan whose result depends on what a prefab happens to contain.
+    for (path, bytes) in out.iter().chain(pack_assets.iter()) {
+        // Classified, not guessed. A build output is either compiler-authored TEXT
+        // — which this check owns — or a verbatim copy of a binary input asset,
+        // which carries no authored string because the compiler never writes one
+        // into it. Anything else is an output nobody has classified: it fails
+        // here, so a new binary artifact cannot quietly opt out of the check.
+        if is_verbatim_binary_output(path) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_UNTRANSLATED_LITERAL,
+                message: format!(
+                    "`{path}` is not UTF-8 text and is not a known verbatim binary output, so \
+                     the untranslated-literal scan cannot read it. Classify it in \
+                     `emit::is_verbatim_binary_output` (and say why in \
+                     `docs/reference/compiler.md`) if it is a byte copy of an input asset"
+                ),
+            });
+        };
+        if !delvewright_dsl::has_tr_sigil(text) {
+            continue;
+        }
+        // Name the offending key and the line, so the fix is mechanical.
+        let (key, line) = text
+            .lines()
+            .find_map(|l| {
+                let i = l.find(delvewright_dsl::TR_SIGIL)?;
+                let rest = &l[i + delvewright_dsl::TR_SIGIL.len_utf8()..];
+                let k = rest.split(delvewright_dsl::TR_SIGIL).next()?;
+                let shown: String = l.chars().take(160).collect();
+                Some((k.to_string(), shown.replace(delvewright_dsl::TR_SIGIL, "⟦")))
+            })
+            .unwrap_or_else(|| ("<unknown>".to_string(), String::new()));
+        hits.push(format!("  {path}: `{key}` in: {line}"));
+    }
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let n = hits.len();
+    let shown = hits.iter().take(25).cloned().collect::<Vec<_>>().join("\n");
+    Err(BuildFailure::Diagnostic {
+        code: DW_UNTRANSLATED_LITERAL,
+        message: format!(
+            "{n} emitted file(s) carry an authored player-visible string outside a text \
+             component, so it would ship as a literal no client can translate. Lower each \
+             through `emit::tr` / `emit::snbt_component` (which emit \
+             `{{\"translate\":\"<key>\",\"fallback\":\"<English>\"}}`); if the site is genuinely \
+             not a component and not read by a player — a manifest field, a reviewer \
+             chronicle, `critical-path.json`, a generated PackTest source — read the string \
+             through `dsl::l10n::plain` and add the site to the named-exclusion table in \
+             `docs/reference/compiler.md`.\n{shown}"
+        ),
+    })
+}
+
+/// Whether a build output is a **verbatim copy of a binary input asset** rather
+/// than compiler-authored text: a prefab structure `.nbt`, an NPC-skin PNG, the
+/// art-font atlas, and the resource-pack zip that packages them (whose own
+/// compiler-authored members — the lang files, the font provider — are scanned
+/// separately, before zipping). The compiler writes no authored string into any of
+/// these, so they are outside the `DW0185` scan; everything else must be readable
+/// text, and a new output that is neither fails the scan rather than skipping it.
+fn is_verbatim_binary_output(path: &str) -> bool {
+    path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip"
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
 /// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
 /// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
 /// (spec-0014), depending on what the campaign uses.
-fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String {
+fn pack_note(
+    sha1: &str,
+    skins: &BTreeMap<String, Vec<u8>>,
+    art: bool,
+    languages: &[String],
+) -> String {
     let mut s = String::new();
     s.push_str("# Delve resource pack\n\n");
     s.push_str(
@@ -872,7 +1318,21 @@ fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String
         s.push_str(
             "Art-title font (spec-0014): `delve:art` — an original 5x7 pixel bitmap\n\
              font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
-             used by `narrate` `style: art`.\n",
+             used by `narrate` `style: art`.\n\n",
+        );
+    }
+    // The pack is the LANGUAGE CARRIER now (spec-0029), not optional dressing, and
+    // the person wiring it up is the one who needs to know what declining it costs.
+    // Host-facing prose only — no key scheme, no pipeline (CLAUDE.md audience
+    // separation).
+    if !languages.is_empty() {
+        s.push_str("Languages: this delve's in-game text ships in English plus ");
+        s.push_str(&languages.join(", "));
+        s.push_str(
+            ".\nA player's own client language is used automatically; anything else\n\
+             reads English. A player who DECLINES the resource-pack prompt reads\n\
+             English too, and the delve is fully playable that way — the pack adds\n\
+             the other languages, it is never required to finish the delve.\n",
         );
     }
     s
@@ -971,6 +1431,20 @@ fn sealing_commands(
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
+        // The delve's own machinery must not narrate itself. Dialogue options are
+        // `trigger`-type objectives (`dw.dlg_<npc>`, `dw.class`), so every option a
+        // player picks runs `/trigger` and vanilla answers it in chat — "Triggered
+        // [dw.dlg_antiphos]" beside the line the character just said (owner
+        // playtest, 2026-08-07). Command feedback is engine implementation reaching
+        // the player, which is what every other rule in this list exists to stop;
+        // it was simply missing from the seal. NOT version-gated: a campaign at any
+        // `dsl_version` wants its dialogue to stop announcing its scoreboard.
+        // rcon replies to the caller regardless of this rule, so the harness and
+        // `validation/` are unaffected, and the creator overlay's log stamp is
+        // `log_admin_commands`, a different rule. (The legacy camelCase spelling is
+        // rejected outright by 1.21.11 — the compiler's own command validator caught
+        // `sendCommandFeedback` here before it could reach a world.)
+        "gamerule send_command_feedback false".to_string(),
         format!("time set {}", time.token()),
     ];
     // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
@@ -1045,7 +1519,7 @@ fn snbt_string(s: &str) -> String {
 /// addendum). Titled markers are unchanged (byte-identical).
 fn marker_name_fields(title: Option<&str>) -> String {
     match title {
-        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
         None => String::new(),
     }
 }
@@ -1056,7 +1530,100 @@ fn marker_name_fields(title: Option<&str>) -> String {
 /// `'{"text":…}'`, which 1.21.11 renders as literal raw JSON above an entity's
 /// head (owner-verified). The generated summons carry no `'{"text"` substring.
 fn snbt_text_component(s: &str) -> String {
-    format!("{{text:{}}}", snbt_string(s))
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        None => format!("{{text:{}}}", snbt_string(s)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// i18n v2 — authored strings become translatable components (spec-0029)
+// ---------------------------------------------------------------------------
+
+/// `DW0185`: an authored player-visible string reached the built tree **outside**
+/// a text component — its translation tag ([`delvewright_dsl::TR_SIGIL`]) is still
+/// in the emitted bytes. Either the emitter must lower it through [`tr`] /
+/// [`snbt_component`] (so a client renders the player's own language), or, if the
+/// site is genuinely not player-facing and not a component (a manifest field, a
+/// reviewer chronicle, the bot's `critical-path.json`, a generated PackTest
+/// source), it must read the string through `dsl::l10n::plain` and be listed in
+/// `docs/reference/compiler.md`'s named-exclusion table.
+///
+/// Build-tier and feature-blind: it reads the finished tree, so it guards every
+/// emitter, including ones not yet written. This is the invariant that replaces
+/// "we enumerated every emission site once" with "the compiler re-proves it on
+/// every build" (spec-0029 Risks).
+pub const DW_UNTRANSLATED_LITERAL: &str = "DW0185";
+
+/// Lower an authored player-visible string into a JSON **text component**
+/// (spec-0029 §1): a translation-tagged string becomes
+/// `{"translate": "<l10n key>", "fallback": "<English source>"}`, anything else
+/// (a compiler-baked literal such as the default boundary message) stays
+/// `{"text": …}`.
+///
+/// The `fallback` rides on the component rather than on the pack's own
+/// `en_us.json` deliberately: a player who **declines** the resource-pack prompt
+/// has no lang files at all, and the delve must still be playable in English
+/// (spec-0029 §3).
+fn tr(s: &str) -> Value {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => json!({ "translate": key, "fallback": english }),
+        None => json!({ "text": s }),
+    }
+}
+
+/// [`tr`] with extra component fields (`color`, `bold`, `italic`, `font`, …)
+/// merged in. Styling is orthogonal to whether the body is a literal or a
+/// translate key, so every styled site keeps its styling verbatim.
+fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
+    let mut v = tr(s);
+    let obj = v.as_object_mut().expect("tr() builds an object");
+    for (k, val) in fields {
+        obj.insert((*k).to_string(), val.clone());
+    }
+    v
+}
+
+/// The **SNBT** form of [`tr`], for a text component living in an NBT field
+/// (`CustomName`, a mannequin `description`, an item `custom_name`). Emitted as an
+/// SNBT compound, never the stringified-JSON form, for the same reason
+/// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
+/// entity's head verbatim.
+fn snbt_component(s: &str) -> String {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        // An untagged string keeps the bare quoted-string component form 1.21.11
+        // already read it as, so a compiler-baked name stays byte-for-byte what it
+        // was before spec-0029.
+        None => snbt_string(s),
+    }
+}
+
+/// The SNBT `{fallback:…,translate:…}` compound both SNBT component forms share.
+/// Field order is alphabetical, matching the JSON components' `BTreeMap` order so
+/// the two forms read the same in a diff.
+fn snbt_translate(key: &str, english: &str) -> String {
+    format!(
+        "{{fallback:{},translate:{}}}",
+        snbt_string(english),
+        snbt_string(key)
+    )
+}
+
+/// The human string behind an authored value, for the **named exclusions**: sites
+/// that are not text components and are not read by a player. Re-exported here so
+/// every exclusion in `emit` is greppable as `plain(`.
+fn plain(s: &str) -> &str {
+    delvewright_dsl::l10n_plain(s)
+}
+
+/// The delve title for a **compiler artifact**, not for a player: the generated
+/// PackTest sources' `#>` descriptions and the reviewer render plan. These are
+/// not text components and no client ever renders them, so they carry the English
+/// source string rather than a translate key — a named exclusion, listed as such
+/// in `docs/reference/compiler.md`.
+fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
+    plain(&c.world.content.title)
 }
 
 /// The `,components:{…}` SNBT tail carrying an equipped piece's enchantments,
@@ -1144,17 +1711,124 @@ fn default_equipment(entity: &str) -> Option<String> {
     })
 }
 
+/// The drop chance a **declared** drop puts on its slot (DSL v0.9, task #179).
+///
+/// Not `1.0`. Vanilla's `DropChances` record (pinned 1.21.11 client jar, class
+/// `cgi`) has exactly two named operations here, and they say what the numbers
+/// mean:
+///
+/// * `withGuaranteedDrop(slot)` writes the constant `2.0f` — verified in the
+///   jar's bytecode (`fconst_2`), and the same value the vanilla
+///   `SaddleEquipmentSlotFix` datafixer writes for a saddle a horse always
+///   drops;
+/// * `isPreserved(slot)` is `chance > 1.0f`.
+///
+/// `Mob.dropCustomDeathLoot` (class `chn`) reads both: a slot whose chance is
+/// exactly `0.0f` is skipped outright; a **preserved** slot drops even when the
+/// killing blow was not a player's, and — the reason `1.0f` is wrong — it skips
+/// the durability randomization that a chance of `≤ 1.0` applies to a damageable
+/// item. A boss axe declared as a drop must be *the* axe, not a die-roll of its
+/// remaining durability: `2.0f` is the vanilla primitive for "always, unchanged",
+/// and it is the only value that makes a declared drop deterministic.
+const DECLARED_DROP_CHANCE: &str = "2.0f";
+
+/// The drop chance every UNDECLARED slot keeps — today's behaviour, unchanged,
+/// which is what keeps every pre-0.9 campaign byte-identical.
+const NO_DROP_CHANCE: &str = "0.0f";
+
+/// The vanilla NBT slot keys a `drops[]` list marks as guaranteed, for one
+/// entity. Quest-item entries carry no slot and are absent from the set — they
+/// ride the death loot table instead ([`drop_loot_table`]).
+fn declared_drop_slots(drops: &[delvewright_dsl::MobDrop]) -> BTreeSet<&'static str> {
+    drops
+        .iter()
+        .filter_map(|d| d.slot())
+        .map(|s| s.nbt())
+        .collect()
+}
+
+/// The chance string for `slot`, given the entity's declared drops.
+fn drop_chance_for(slot: &str, declared: &BTreeSet<&'static str>) -> &'static str {
+    if declared.contains(slot) {
+        DECLARED_DROP_CHANCE
+    } else {
+        NO_DROP_CHANCE
+    }
+}
+
+/// The datapack path (namespace-local) of the death loot table a declared
+/// quest-item drop rides on, for one actor / one wave-mob stack.
+///
+/// **Why a loot table and not another equipment slot.** The `equipment` /
+/// `drop_chances` compounds address the six worn slots and nothing else — a
+/// quest token the fight *yields* has no slot, and hanging it in an off-hand the
+/// author never dressed would be the downstream workaround the no-hack rule
+/// forbids. 1.21.11 answers the slot-less half with its own primitive: `Mob`
+/// (jar class `chn`) reads `DeathLootTable` (and `DeathLootTableSeed`) straight
+/// off summon NBT, through the `ResourceKey<LootTable>` codec, and
+/// `LivingEntity.dropAllDeathLoot` rolls it on death. The compiler already
+/// writes `DeathLootTable:"minecraft:empty"` on every actor; a declared drop
+/// simply points the same field at a table the compiler emits, with the item
+/// entry the author declared. One roll, one entry, no RNG (ADR-0006).
+fn drop_loot_path(kind: &str, id: &str) -> String {
+    format!("dw_drop/{kind}_{}", plan::safe_local(id))
+}
+
+/// The `DeathLootTable` NBT value for an entity: the emitted table when it
+/// declares a quest-item drop, else the `minecraft:empty` every actor has always
+/// carried (byte-identity for every pre-0.9 campaign).
+fn death_loot_table(ns: &str, path: Option<String>) -> String {
+    match path {
+        Some(p) => format!("{ns}:{p}"),
+        None => "minecraft:empty".to_string(),
+    }
+}
+
+/// True if this drop list contains a quest-item entry (the half that needs a
+/// death loot table).
+fn has_item_drop(drops: &[delvewright_dsl::MobDrop]) -> bool {
+    drops.iter().any(|d| d.item().is_some())
+}
+
+/// Strip a declared drop off a body the **compiler** is about to remove.
+///
+/// The invariant, stated once: a declared drop is what a *player's kill* yields.
+/// Every removal the compiler performs itself — the `unleash` that swaps a
+/// puppet for its twin, a `despawn-actor` (either style), a souls re-seat's
+/// re-caging — goes through `/kill`, and vanilla `/kill` is an ordinary death:
+/// a preserved slot (chance > 1.0) drops **even when the killer is not a
+/// player**. Without this line an elite would shed its axe every time the story
+/// moved it, and a re-seat would turn the boss into a vending machine.
+///
+/// Two intended vanilla primitives, composed: `execute as … run data merge
+/// entity @s` (single-entity by construction, which is what `data merge`
+/// requires) writing drop chance 0 on every slot and an empty death loot table.
+/// Emitted only for an actor that declares drops, so every earlier campaign's
+/// removal is byte-identical.
+fn strip_drops_line(tag: &str) -> String {
+    format!(
+        "execute as @e[tag={tag}] run data merge entity @s {{drop_chances:{{mainhand:{z},offhand:{z},head:{z},chest:{z},legs:{z},feet:{z}}},DeathLootTable:\"minecraft:empty\"}}",
+        z = NO_DROP_CHANCE
+    )
+}
+
 /// The `equipment`/`drop_chances` SNBT fragment for a wave mob (no leading
 /// comma), or `None` for a bare-handed mob. A mob without the v0.6 `equipment`
 /// field takes the [`default_equipment`] path **unchanged** (byte-identity for
 /// pre-equipment waves). With the field, explicit slots merge over the
 /// armed-mob main-hand default (an explicit `main_hand` overrides it — a
-/// helmeted skeleton keeps its bow). Every emitted slot carries drop chance 0:
-/// players must never farm wave gear (no-grind constitution). Component-era
+/// helmeted skeleton keeps its bow). Every slot the v0.9 `drops[]` list does not
+/// name carries drop chance 0: players must never farm wave gear (no-grind
+/// constitution); a named slot carries [`DECLARED_DROP_CHANCE`]. Component-era
 /// form only — see [`default_equipment`] for why legacy `ArmorItems`/
 /// `HandItems` are silently ignored by 1.21.11 `/summon`. Slot order is fixed
 /// (mainhand, offhand, head, chest, legs, feet) for ADR-0006 determinism.
-fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
+fn wave_equipment(
+    entity: &str,
+    eq: Option<&MobEquipment>,
+    drops: &[delvewright_dsl::MobDrop],
+) -> Option<String> {
+    let declared = declared_drop_slots(drops);
     let mainhand = effective_mainhand(entity, eq);
     let Some(eq) = eq else {
         return default_equipment(entity);
@@ -1196,7 +1870,7 @@ fn wave_equipment(entity: &str, eq: Option<&MobEquipment>) -> Option<String> {
         if let Some(it) = item {
             let comps = piece.map(enchantment_components).unwrap_or_default();
             items.push(format!("{slot}:{{id:\"{it}\",count:1{comps}}}"));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -1296,6 +1970,7 @@ fn chunk_span(min: [i32; 3], max: [i32; 3]) -> Vec<(i32, i32)> {
 #[allow(clippy::too_many_arguments)]
 fn emit_functions(
     plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
@@ -1306,6 +1981,7 @@ fn emit_functions(
     edit_bounds: &[([i32; 3], [i32; 3])],
     trap_gates: &BTreeMap<String, String>,
     payloads: &PayloadPlans,
+    branch_transport: &BranchTransportOverlay,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1435,10 +2111,11 @@ fn emit_functions(
         setup.push(format!("scoreboard objectives add {COLLECT_HOLD} dummy"));
     }
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
-    // `deathCount` respawn-detection scores. Emitted only when a checkpoint carries
-    // an `on_respawn` hook (the only consumer of the marker), so pre-0.6 campaigns —
-    // and checkpoint campaigns without hooks — stay byte-identical here.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` respawn-detection scores. Emitted for EVERY campaign that
+    // declares a checkpoint — the marker now also drives the respawn **re-seat**
+    // (task #145), not just the `on_respawn` dispatch. Pre-0.6 / checkpoint-free
+    // campaigns stay byte-identical here.
+    if plan.any_checkpoint() {
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
@@ -1764,7 +2441,20 @@ fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
-    tick.push("scoreboard players enable @a dw.class".to_string());
+    // The class trigger is ONE-SHOT per player (owner ruling 2026-08-04, task
+    // #121's sibling #122). `class_apply_<c>` ends in a teleport to the campaign
+    // entry point, so re-firing `/trigger dw.class` mid-run warped whoever ran
+    // it back to the start of the delve — an already-classed player included,
+    // because this line used to `enable @a` unconditionally, every tick,
+    // forever. The vanilla trigger pattern is to re-enable only what is meant to
+    // be usable, so the arming is per-player and conditional now; the guard
+    // lives inside `class_arm` rather than in this line so a PackTest can drive
+    // the real arming path as its own dummy instead of mirroring it.
+    //
+    // Per-PLAYER, not party-wide: classing is per-player (`dw.classed`), so a
+    // second player still on the class screen must keep an armed trigger while
+    // the first is sealed.
+    tick.push(format!("execute as @a run function {ns}:class_arm"));
     for npc in &plan.npcs {
         tick.push(format!(
             "scoreboard players enable @a {}",
@@ -1792,7 +2482,7 @@ fn emit_functions(
         tick.push(format!(
             "execute if score {LOBBY_COUNT} dw.sys matches ..{} as @a unless score @s dw.classed matches 1 run title @s actionbar {}",
             min_players - 1,
-            lobby_actionbar(min_players)
+            lobby_actionbar(min_players, chrome)
         ));
         format!("if score {LOBBY_COUNT} dw.sys matches {min_players}.. ")
     } else {
@@ -1805,8 +2495,12 @@ fn emit_functions(
         ),
     ));
     for class in &plan.classes {
+        // The second seal (#122). The arming above is what makes the trigger
+        // unusable after a class; this makes any score that arrives by some
+        // OTHER route inert rather than a warp. Costs one condition and closes
+        // the dispatch as well as the door.
         tick.push(format!(
-            "execute as @a[scores={{dw.class={}}}] run function {ns}:class_apply_{}",
+            "execute as @a[scores={{dw.class={}}}] unless score @s dw.classed matches 1 run function {ns}:class_apply_{}",
             class.n, class.safe
         ));
     }
@@ -1985,7 +2679,7 @@ fn emit_functions(
                         tick.push(format!(
                             "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
                             pending_guard(o, &qa),
-                            json!({ "text": hint })
+                            tr(hint)
                         ));
                     }
                     // Reset the trigger every tick so a gated attempt can be retried
@@ -2033,10 +2727,13 @@ fn emit_functions(
     // spec-0016 §2: shortcut unlock detection. Empty without a shortcut →
     // byte-identical.
     tick.extend(shortcut_tick(plan));
+    // task #184: timed-gate disarm detection. Empty without a jammable gate →
+    // byte-identical.
+    tick.extend(timed_gate_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
-    // `deathCount` criterion, dispatching the active checkpoint's `on_respawn`.
-    // Only when a checkpoint carries an `on_respawn` hook.
-    if plan.any_checkpoint_on_respawn() {
+    // `deathCount` criterion — the respawn re-seat (task #145) and the active
+    // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
+    if plan.any_checkpoint() {
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
@@ -2054,6 +2751,9 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    // --- task #50: the clickable body of each sealed shortcut door ---
+    // Empty for a campaign with no shortcut → byte-identical output.
+    fns.extend(ws_arm_fns(plan));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -2091,6 +2791,33 @@ fn emit_functions(
         ]),
     ));
 
+    // --- class_arm: the one-shot seal on the class trigger (#122) ---
+    //
+    // Run by `tick` as every player, every tick. `dw.class` is a `trigger`
+    // objective, and `class_apply_<c>` both consumes it (`reset` clears the
+    // score AND re-locks the trigger) and ends in a teleport to the campaign
+    // entry point. Re-enabling it unconditionally therefore left a live warp
+    // back to the start of the delve behind every already-classed player,
+    // usable by anything that can chat a command; the owner ratified sealing it
+    // here, at the compiler, rather than asking every caller to know not to.
+    //
+    // `unless score @s dw.classed matches 1` is the whole seal, and it is
+    // per-PLAYER by construction: `dw.classed` is per-player state, so a
+    // second player still on the class screen keeps an armed trigger while the
+    // first is sealed. It survives death and relog with the score.
+    //
+    // Its own function, rather than the condition inlined in the tick line, so
+    // the generated PackTest can drive the REAL arming path as its own dummy
+    // (`execute as <dummy> run function <ns>:class_arm`) instead of restating
+    // the guard and proving only its own copy.
+    fns.push((
+        "class_arm".to_string(),
+        lines(&[
+            "execute unless score @s dw.classed matches 1 run scoreboard players enable @s dw.class"
+                .to_string(),
+        ]),
+    ));
+
     // --- class apply ---
     let campaign_start = campaign_start_quests(c);
     for (i, class) in c.classes.content.classes.iter().enumerate() {
@@ -2098,11 +2825,12 @@ fn emit_functions(
         let mut body: Vec<String> = Vec::new();
         body.push("scoreboard players reset @s dw.class".to_string());
         for (k, item) in class.kit.iter().enumerate() {
-            let comp = match &item.name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-                None => String::new(),
-            };
-            let give = format!("give @s {}{} {}", item.item, comp, item.count);
+            let give = format!(
+                "give @s {}{} {}",
+                item.item,
+                kit_item_components(item),
+                item.count
+            );
             // A class kit is per-player gear by construction. `carrier: "one"`
             // (v0.6, spec-0018) marks a **party-unique** kit item — exactly one
             // copy enters the party, to the first player who takes this class —
@@ -2291,15 +3019,30 @@ fn emit_functions(
                 let mut ann: Vec<String> = Vec::new();
                 ann.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "New objective: ", "color": "yellow", "bold": true },
-                        { "text": title, "color": "gold" }
-                    ])
+                    // One sentence, one key: the title is a `with` argument rather
+                    // than a second component, so a translation decides where the
+                    // title sits (chrome::OBJECTIVE_NEW). `bold: false` on the
+                    // argument keeps the title unbolded now that it inherits the
+                    // prefix's style instead of standing beside it.
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_NEW),
+                        &[
+                            ("color", json!("yellow")),
+                            ("bold", json!(true)),
+                            (
+                                "with",
+                                json!([tr_with(
+                                    title,
+                                    &[("color", json!("gold")), ("bold", json!(false))]
+                                )])
+                            ),
+                        ],
+                    )
                 ));
                 if let Some(hint) = o.hint() {
                     ann.push(format!(
                         "tellraw @a {}",
-                        json!({ "text": hint, "color": "gray", "italic": true })
+                        tr_with(hint, &[("color", json!("gray")), ("italic", json!(true))])
                     ));
                 }
                 ann.push("playsound minecraft:block.note_block.pling player @a".to_string());
@@ -2342,10 +3085,16 @@ fn emit_functions(
             if v03 && let Some(title) = o.title() {
                 body.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "Objective complete: ", "color": "green" },
-                        { "text": title, "color": "white" }
-                    ])
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_COMPLETE),
+                        &[
+                            ("color", json!("green")),
+                            (
+                                "with",
+                                json!([tr_with(title, &[("color", json!("white"))])])
+                            ),
+                        ],
+                    )
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
             }
@@ -2377,6 +3126,43 @@ fn emit_functions(
             // after gate effects so the destination area is already unlocked.
             if let Some(pos) = plan.transport.get(oid) {
                 body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
+            }
+            // Task #186: a crossing that happens only on ONE branch. The exported
+            // path never walks it, so it cannot be unconditional — it is gated on
+            // exactly the flag assignment that selects its branch, the same
+            // `#party` predicate a branch-gated dialogue option uses. Prefix
+            // conditions do not rebind `@s`, so the acting player is still the
+            // one carried. Empty for every campaign whose branches cross only
+            // where the exported path already does (byte-identity).
+            let mut emitted: BTreeSet<String> = BTreeSet::new();
+            for row in branch_transport.get(oid).into_iter().flatten() {
+                let tp = format!("teleport @s {} {} {}", row.pos[0], row.pos[1], row.pos[2]);
+                let mut cmd = String::new();
+                for f in &row.set {
+                    cmd.push_str(&format!(
+                        " if score {} {} matches 1",
+                        plan::PARTY,
+                        plan::flag_score(f)
+                    ));
+                }
+                for f in &row.unset {
+                    cmd.push_str(&format!(
+                        " unless score {} {} matches 1",
+                        plan::PARTY,
+                        plan::flag_score(f)
+                    ));
+                }
+                // A branch that pins no flags at all is indistinguishable at
+                // runtime: there is nothing to condition on, so the crossing is
+                // simply unconditional.
+                let line = if cmd.is_empty() {
+                    tp
+                } else {
+                    format!("execute{cmd} run {tp}")
+                };
+                if emitted.insert(line.clone()) {
+                    body.push(line);
+                }
             }
             body.push(format!(
                 "function {ns}:check_q_{}",
@@ -2449,9 +3235,18 @@ fn emit_functions(
     cc.push(format!(
         "tellraw @a {}",
         json!([
-            { "text": format!("{title} — complete."), "color": "gold" },
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_COMPLETE),
+                &[
+                    ("color", json!("gold")),
+                    ("with", json!([tr(title)])),
+                ],
+            ),
             { "text": "\n" },
-            { "text": "A Delvewright delve.", "color": "gray" }
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_SIGNATURE),
+                &[("color", json!("gray"))],
+            )
         ])
     ));
     // v0.3 finale fanfare (M2 fix 4): the owner finished the finale and got no
@@ -2460,11 +3255,14 @@ fn emit_functions(
     if v03 {
         cc.push(format!(
             "title @a title {}",
-            json!({ "text": "Delve Complete", "color": "gold", "bold": true })
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_BANNER),
+                &[("color", json!("gold")), ("bold", json!(true))],
+            )
         ));
         cc.push(format!(
             "title @a subtitle {}",
-            json!({ "text": title, "color": "yellow" })
+            tr_with(title, &[("color", json!("yellow"))])
         ));
         cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
     }
@@ -2517,19 +3315,36 @@ fn emit_functions(
         // pre-§6 `spawn_<wave>` output is byte-identical.
         let lane = w.lane.as_ref().zip(lane_routes.get(w.id.as_str()));
         let mut idx = 0i32;
-        for mob in &w.mobs {
+        for (k, mob) in w.mobs.iter().enumerate() {
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
             // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
-                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)),
+                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)),
                 None => String::new(),
             };
             // Equipment: v0.6 explicit slots merged over the armed-mob default
             // (M2 fix 5: a summoned wither_skeleton/skeleton otherwise had no
-            // weapon and was trivial). All drop chances 0 — never lootable.
-            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref())
+            // weapon and was trivial). Every slot the v0.9 `drops[]` list does
+            // not name keeps drop chance 0 — rank-and-file gear is never
+            // lootable.
+            let equip = wave_equipment(&mob.entity, mob.equipment.as_ref(), &mob.drops)
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
+            // v0.9 (task #179): a declared quest-item drop rides the mob's own
+            // death loot table. Absent on every other mob, so a wave that
+            // declares no item drop keeps vanilla's own table and its exact
+            // pre-0.9 summon string.
+            let loot = if has_item_drop(&mob.drops) {
+                format!(
+                    ",DeathLootTable:\"{}\"",
+                    death_loot_table(
+                        ns,
+                        Some(drop_loot_path("wave", &format!("{}-{k}", w.id.as_str()))),
+                    )
+                )
+            } else {
+                String::new()
+            };
             // v0.4 attribute overrides (spec-0008 §4), emitted as 1.21.11
             // attribute components in the summon NBT. Empty for a plain mob. A
             // lane mob's `follow_range` is FORCED to the lane's `aggro_radius`:
@@ -2576,7 +3391,7 @@ fn emit_functions(
                     _ => String::new(),
                 };
                 body.push(format!(
-                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{attrs}{patrol}}}",
+                    "summon {} {} {} {} {{Tags:[\"{}\"{lead_tag}{tmp}],PersistenceRequired:1b{name}{equip}{loot}{attrs}{patrol}}}",
                     mob.entity,
                     c[0],
                     c[1],
@@ -2616,9 +3431,11 @@ fn emit_functions(
             fns.push(lane_tick_fn(ns, w, l, wps));
         }
         // spec-0016 §1: the re-seat — clear survivors, then re-run the wave's own
-        // spawn (same authored composition, same proven cells). Emitted only for a
-        // `respawns_on_rest` wave.
-        if w.respawns_on_rest {
+        // spawn (same authored composition, same proven cells). Emitted for a
+        // `respawns_on_rest` wave and for a billed elite/boss wave (whose rest
+        // dispatch is guarded on the wave still standing — the undefeated
+        // refresh), and for nothing else → byte-identical.
+        if w.respawns_on_rest || plan.undefeated_reseat_waves().iter().any(|u| u.id == w.id) {
             let safe = plan::safe_local(w.id.as_str());
             fns.push((
                 format!("wave_reseat_{safe}"),
@@ -2786,8 +3603,11 @@ fn emit_functions(
     // debris. Empty for a campaign using neither verb (byte-identical).
     fns.extend(volley_fns(plan, payloads));
     fns.extend(collapse_fns(plan, payloads));
-    fns.extend(boundary_fns(plan));
+    fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
+    // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
+    fns.extend(seal_fns(plan));
+    fns.extend(seal_hint_fns(plan, chrome));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -3246,11 +4066,26 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// the assembled world knows which anchors actually exist.
 pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
 
-/// Fail the build if any quest/trigger effect — **at any nesting depth** — names an
-/// anchor that resolves to no world position (`DW0360`). This is the single
-/// resolved-anchor-or-diagnostic seal over the whole anchor-bearing effect surface
-/// ([`QuestEffect::anchor_refs`], the nesting-aware sibling of
-/// [`QuestEffect::nested_effect_lists`]).
+/// Whether [`build`] assembles the voxel world — and therefore whether every
+/// proof that needs it actually runs, including [`plan_payload_verbs`] and its
+/// `DW0447`.
+///
+/// Extracted so the world block and [`check_effect_anchors`] read **one**
+/// predicate. A check that defers to another check must know whether that other
+/// check runs at all, and a second hand-copied answer to "does this campaign
+/// assemble a world" would be exactly the drift this task exists to end, one
+/// question further out.
+fn assembles_world(plan: &Plan) -> bool {
+    crate::nav::needs_world(plan)
+        || !plan.campaign.quests.content.waves.is_empty()
+        || crate::clearance::has_bodies(plan)
+}
+
+/// Fail the build if any campaign effect — at **every effect root**, at **any
+/// nesting depth** — names an anchor that resolves to no world position
+/// (`DW0360`). This is the single resolved-anchor-or-diagnostic seal over the
+/// whole anchor-bearing effect surface ([`QuestEffect::anchor_refs`], the
+/// nesting-aware sibling of [`QuestEffect::nested_effect_lists`]).
 ///
 /// It exists because every anchor consumer in [`emit_quest_effect`] fails *open*:
 /// `open-gate`/`close-gate` scan `plan.anchors` for a name match and simply fall
@@ -3262,17 +4097,52 @@ pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
 /// but it only sees an area's declared anchor set (pool areas and cross-area
 /// camera anchors are deferred to here), so this is the backstop that makes the
 /// rule total.
+///
+/// **Total means total** (task #24). The roots come from
+/// [`crate::plan::for_each_effect_root`] — the one enumeration
+/// [`all_campaign_effects`], the staged-walk timeline and both halves of
+/// `compiler::flow` also walk. This walk used to hand-list three of the five, so a
+/// typo'd anchor in a `traps[].payload` or a dialogue option's `set-checkpoint`
+/// `on_respawn` bundle was never asked the question at all: the build stayed
+/// green, `trap_fire_<trap>.mcfunction` shipped with the `open-gate` simply
+/// absent, and the delve the owner played had a trap that springs and does
+/// nothing. A backstop that reaches four fifths of the surface is exactly the
+/// silent-drop class it was written to end, so the roots are now inherited rather
+/// than re-listed and a sixth root cannot be forgotten here.
 fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
     let c = plan.campaign;
     // (json pointer, effect verb, anchor) for every anchor reference in the
     // campaign, deep, in deterministic content order.
     let mut refs: Vec<(String, &'static str, String)> = Vec::new();
-    let collect = |base: String, eff: &QuestEffect, refs: &mut Vec<_>| {
-        fn descend(
-            path: String,
-            eff: &QuestEffect,
-            refs: &mut Vec<(String, &'static str, String)>,
-        ) {
+    // This seal covers the verbs that fail OPEN — the ones whose anchor consumer
+    // shrugs and emits nothing. The spec-0022 payload verbs (`volley`,
+    // `collapse`) fail CLOSED instead: `plan_payload_verbs` resolves their volumes
+    // with `?` and reports `DW0447`, naming the verb, the volume and the anchor.
+    // Widening this walk to R4/R5 (task #24) put those anchors in reach of the
+    // generic message for the first time, which would have preempted the specific
+    // one for no gain — so where `DW0447` runs, the fail-closed verbs keep it.
+    //
+    // **Only where it runs.** `plan_payload_verbs` lives inside the world block,
+    // so it is reached only when the campaign assembles a world. A payload verb
+    // does NOT imply that: nothing confines `volley`/`collapse` to
+    // `traps[].payload` — `dsl::validate` reaches them via
+    // `for_each_trap_payload_deep` inside the traps loop, which validates them
+    // where they are rather than forbidding them elsewhere, and they are ordinary
+    // variants of the shared effect enum. A `volley` on a quest's `on_complete` in
+    // a campaign with no traps, no waves, no bodies and no walkable critical leg
+    // therefore reaches emission with `DW0447` unreachable. Deferring there would
+    // trade a specific message for SILENCE, so the deferral is conditional on the
+    // proof actually running and this seal keeps that corner itself.
+    let payload_verbs_are_proven = assembles_world(plan);
+    fn descend(
+        path: String,
+        eff: &QuestEffect,
+        payload_verbs_are_proven: bool,
+        refs: &mut Vec<(String, &'static str, String)>,
+    ) {
+        let defer_to_dw0447 =
+            payload_verbs_are_proven && (eff.volley().is_some() || eff.collapse().is_some());
+        if !defer_to_dw0447 {
             for (suffix, anchor) in eff.anchor_refs() {
                 refs.push((
                     format!("{path}/{suffix}"),
@@ -3280,41 +4150,28 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                     anchor.as_str().to_string(),
                 ));
             }
-            for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
-                for (j, inner) in list.iter().enumerate() {
-                    descend(format!("{path}/{pseg}/{j}"), inner, refs);
-                }
-            }
         }
-        descend(base, eff, refs);
-    };
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            for (i, eff) in effs.iter().enumerate() {
-                let base = format!(
-                    "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                    oid.as_str()
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(
+                    format!("{path}/{pseg}/{j}"),
+                    inner,
+                    payload_verbs_are_proven,
+                    refs,
                 );
-                collect(base, eff, &mut refs);
             }
         }
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            collect(
-                format!("/content/quests/{qi}/on_complete/{i}"),
+    }
+    crate::plan::for_each_effect_root(c, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            descend(
+                format!("{}/{i}", site.path),
                 eff,
+                payload_verbs_are_proven,
                 &mut refs,
             );
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        for (i, eff) in t.effects.iter().enumerate() {
-            collect(
-                format!("/content/triggers/{ti}/effects/{i}"),
-                eff,
-                &mut refs,
-            );
-        }
-    }
+    });
     for (path, verb, anchor) in refs {
         if anchor_point_any(plan, &anchor).is_some() {
             continue;
@@ -3340,21 +4197,14 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
 /// compile-time diagnostic turns that content mistake into a loud build failure
 /// instead of a missing enemy the QA hour has to notice.
 fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
-    let c = plan.campaign;
-    let effects = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| {
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete)
-        })
-        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects));
+    // `all_campaign_effects` is the emitter's own traversal — the one that decides
+    // where a `function <ns>:spawn_<wave>` call is written. Reading the spawn sites
+    // from it is what makes this check see exactly the calls that ship, including
+    // the ones nested in a `sequence` step, an `on_respawn` bundle or a trap
+    // payload. Scanning only the top-level chains, as this did, is how the island's
+    // round-21 build shipped two `spawn_…` calls with nothing behind them.
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    for e in effects {
+    for e in all_campaign_effects(plan.campaign) {
         if let Some(wave) = e.spawn_wave() {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
@@ -3512,6 +4362,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} minecraft:air replace {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // …and take the seal's answer down with the seal (task #142).
+                    // The hitboxes exist exactly while the region is solid: an
+                    // opened threshold that still says "the way is sealed" is a
+                    // lie, and an invisible box left standing in a doorway
+                    // swallows right-clicks aimed through it.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!("kill @e[tag=dw_seal_{}]", s.safe));
+                    }
                     return;
                 }
             }
@@ -3529,6 +4387,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                         "fill {} {} {} {} {} {} {}",
                         from[0], from[1], from[2], to[0], to[1], to[2], block
                     ));
+                    // Arm the seal's answer (task #142, owner island finding #34):
+                    // a wall the party walks back to and presses must say
+                    // something. Guarded on absence, so a re-fired `close-gate`
+                    // never stacks a second set of hitboxes.
+                    if let Some(s) = seal_hint_for(plan, anchor.as_str()) {
+                        body.push(format!(
+                            "execute unless entity @e[tag=dw_seal_{}] run function {ns}:{}",
+                            s.safe,
+                            seal_arm_fn(&s.safe)
+                        ));
+                    }
                     return;
                 }
             }
@@ -3540,7 +4409,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             item, count, name, ..
         } => {
             let comp = match name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+                Some(n) => format!("[custom_name={}]", tr_with(n, &[("italic", json!(false))])),
                 None => String::new(),
             };
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
@@ -3594,7 +4463,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::MoveNpc { npc, to_anchor, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                movenpc_fn(npc.as_str(), to_anchor.as_str())
+                movenpc_fn(npc.as_str(), to_anchor.as_str(), &crate::nav::gate_key(eff),)
             ));
         }
         QuestEffect::Cutscene { .. } => {
@@ -3690,14 +4559,25 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             ));
         }
         QuestEffect::DespawnActor { actor, style, .. } => {
-            emit_despawn_actor(actor.as_str(), *style, body);
+            let declares_drops = plan
+                .campaign
+                .quests
+                .content
+                .actors
+                .iter()
+                .any(|a| a.id.as_str() == actor.as_str() && !a.drops.is_empty());
+            emit_despawn_actor(actor.as_str(), *style, declares_drops, body);
         }
         QuestEffect::MoveActor {
             actor, to_anchor, ..
         } => {
             body.push(format!(
                 "function {ns}:{}",
-                moveactor_fn(actor.as_str(), to_anchor.as_str())
+                moveactor_fn(
+                    actor.as_str(),
+                    to_anchor.as_str(),
+                    &crate::nav::gate_key(eff),
+                )
             ));
         }
         QuestEffect::UnleashActor { actor, .. } => {
@@ -3733,9 +4613,22 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
 /// style is "out of sight, in place", and an actor that briefly exists at another
 /// area's coordinates is wrong data, not a detail. `execute as … at @s` is the same
 /// idiom [`emit_play_sound`] uses to make `~ ~ ~` resolve per entity.
-fn emit_despawn_actor(actor: &str, style: delvewright_dsl::DespawnStyle, body: &mut Vec<String>) {
+fn emit_despawn_actor(
+    actor: &str,
+    style: delvewright_dsl::DespawnStyle,
+    declares_drops: bool,
+    body: &mut Vec<String>,
+) {
     use delvewright_dsl::DespawnStyle;
     let safe = plan::safe_local(actor);
+    // v0.9 (task #179): a removal is not a death the player earned. Both styles
+    // end in `/kill`, and a preserved drop chance survives a non-player kill, so
+    // an elite the story re-cages (a souls re-seat) would shed its axe on every
+    // rest. Strip the declaration off the body first; emitted only when the
+    // actor declares drops, so every earlier campaign's despawn is byte-identical.
+    if declares_drops {
+        body.push(strip_drops_line(&format!("dw_actor_{safe}")));
+    }
     match style {
         DespawnStyle::Kill => body.push(format!("kill @e[tag=dw_actor_{safe}]")),
         DespawnStyle::Vanish => {
@@ -3887,7 +4780,7 @@ fn emit_set_checkpoint(
             "data modify storage dw:cp pos set value [{}, {}, {}]",
             pos[0], pos[1], pos[2]
         ));
-        if plan.any_checkpoint_on_respawn() {
+        if plan.any_checkpoint() {
             let idx = plan
                 .checkpoint_for(anchor, on_respawn)
                 .map(|c| c.index)
@@ -3895,6 +4788,15 @@ fn emit_set_checkpoint(
             body.push(format!("scoreboard players set #cp dw.sys {idx}"));
         }
     }
+}
+
+/// The centre of a block cell on a horizontal axis, as the compiler writes it into
+/// a `tp`. Vanilla's own respawn lands a player at `cell + 0.5` on X/Z, so the
+/// re-seat has to agree with it or a correct respawn would visibly twitch. Written
+/// through `f64` (not string concatenation) because `-16` centres on `-15.5`, not
+/// `-16.5`; the value is exactly representable, so the text is deterministic.
+fn center(cell: i32) -> String {
+    format!("{:.1}", cell as f64 + 0.5)
 }
 
 /// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
@@ -3906,19 +4808,59 @@ fn emit_set_checkpoint(
 fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
-    if !plan.any_checkpoint_on_respawn() {
+    if !plan.any_checkpoint() {
         return fns;
     }
     // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
+    //
+    // `deathCount` ticks up the moment the player DIES, while they are still on
+    // the death screen — a corpse, not a respawned player. Both the re-seat and
+    // the authored `on_respawn` bundle belong to the player who has actually come
+    // back, so the whole edge (fire AND acknowledge) is held until the player is
+    // alive again: a dead player reads `Health: 0.0f`, and holding the ack keeps
+    // the edge armed instead of burning it on the corpse (task #145).
+    let alive = "unless data entity @s {Health:0.0f}";
     fns.push((
         "cp_respawn_check".to_string(),
         lines(&[
             format!(
-                "execute if score @s dw.deaths > @s dw.death_ack run function {ns}:cp_respawn_fire"
+                "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
+                 {ns}:cp_respawn_fire"
             ),
-            "scoreboard players operation @s dw.death_ack = @s dw.deaths".to_string(),
+            format!(
+                "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
+            ),
         ]),
     ));
+    // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
+    //
+    // Why this exists (owner playtest, task #145). `set-checkpoint` records the
+    // party's respawn with vanilla's `spawnpoint @a <cell>`, but `/spawnpoint` is
+    // a *hint*: on death vanilla re-validates the recorded cell and, when the cell
+    // or the cell above it is solid or liquid, silently discards it and respawns
+    // the player at the WORLD spawn — the campaign entrance. Measured live on
+    // 1.21.11: a spawnpoint on a dry cell respawns at `cell + (0.5, 0.1, 0.5)`, the
+    // same spawnpoint on a water cell respawns at `setworldspawn`. Past a one-way
+    // transport that is not a lost checkpoint, it is an unrecoverable softlock.
+    //
+    // So the delve stops delegating its own promise. `#cp dw.sys` already names
+    // the checkpoint the party last armed; the re-seat teleports the respawned
+    // player onto that cell's centre unconditionally. When vanilla honoured the
+    // spawnpoint the player is already standing there and the teleport is a no-op
+    // they cannot see; when vanilla dropped it, this is the only thing that puts
+    // them back. Coordinates are compiled in — no macro, no storage read, so the
+    // re-seat cannot itself fail on a malformed mirror.
+    for c in &plan.checkpoints {
+        fns.push((
+            format!("cp_seat_{}", c.index),
+            lines(&[format!(
+                "tp @s {} {} {}",
+                center(c.pos[0]),
+                c.pos[1],
+                center(c.pos[2])
+            )]),
+        ));
+    }
     // cp_respawn_fire (as @s): dispatch on the active checkpoint.
     let reseat = bonfire_reseat_lines(plan);
     // A bonfire owes the respawning party the same scene reset a rest gives them
@@ -3928,6 +4870,14 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
     };
     let mut fire: Vec<String> = Vec::new();
+    // The re-seat runs FIRST and for every checkpoint: an `on_respawn` beat that
+    // narrates "you wake at the mark" must be read by a player who is on it.
+    for c in &plan.checkpoints {
+        fire.push(format!(
+            "execute if score #cp dw.sys matches {} run function {ns}:cp_seat_{}",
+            c.index, c.index
+        ));
+    }
     for c in &plan.checkpoints {
         if !dispatches(c) {
             continue;
@@ -3976,22 +4926,68 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
-/// clock. The gate is physically sealed by the prefab at world-load, so the
-/// clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
+/// clock, and — task #184 — summon the disarm affordance of any gate that
+/// declares one. The gate is physically sealed by the prefab at world-load, so
+/// the clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
 /// larger one holds the gate shut that many ticks first. Empty for a campaign
 /// with no timed gate → byte-identical.
+///
+/// The affordance is the same pair a shortcut unlock and a trap disarm emit: an
+/// invisible `minecraft:interaction` hitbox **plus** compiler-owned visible
+/// hardware, because a hitbox alone is a lever the player cannot see — the
+/// drowned-bell soft-lock class `DW0420` exists to make impossible.
 fn timed_gate_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.timed_gates
-        .iter()
-        .map(|g| {
-            if g.phase == 0 {
-                format!("function {ns}:tgate_open_{}", g.safe)
-            } else {
-                format!("schedule function {ns}:tgate_open_{} {}t", g.safe, g.phase)
-            }
-        })
-        .collect()
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.phase == 0 {
+            out.push(format!("function {ns}:tgate_open_{}", g.safe));
+        } else {
+            out.push(format!(
+                "schedule function {ns}:tgate_open_{} {}t",
+                g.safe, g.phase
+            ));
+        }
+    }
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let v = ent_xyz(dis.via_cell);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_tgdis_{}\"]}}",
+            v[0], v[1], v[2], g.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_tgdis_{}", g.safe),
+            "minecraft:lever",
+        ));
+    }
+    out
+}
+
+/// Per-tick disarm detection for jammable timed gates (task #184), reusing the
+/// v0.4 interaction-entity `use` primitive exactly as a trap disarm and a
+/// shortcut unlock do. The `#tgdis_<id>` sentinel makes the jam fire **once**;
+/// after it, there is nothing left to dispatch. Empty for a campaign with no
+/// disarmable gate → byte-identical.
+fn timed_gate_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        if g.disarm.is_none() {
+            continue;
+        }
+        let id = &g.safe;
+        out.push(format!(
+            "execute unless score #tgdis_{id} dw.sys matches 1 if entity @e[tag=dw_tgdis_{id},nbt={{interaction:{{}}}}] run function {ns}:tgate_disarm_{id}"
+        ));
+        out.push(format!(
+            "execute as @e[tag=dw_tgdis_{id}] run data remove entity @s interaction"
+        ));
+    }
+    out
 }
 
 /// Half-hearts dealt by a `crush: true` timed gate's closing edge (spec-0016 §4
@@ -4038,14 +5034,42 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
     for g in &plan.timed_gates {
         let id = &g.safe;
         let (from, to) = g.gate_region;
+        // task #184: the jam guard. A disarmable gate's clock lines are prefixed
+        // with `execute unless score #tgdis_<id> dw.sys matches 1` — the same
+        // score-guard shape a gated trap's payload uses. A gate with no `disarm`
+        // emits no guard at all, so its output is byte-identical to before.
+        let guard = if g.disarm.is_some() {
+            Some(format!("execute unless score #tgdis_{id} dw.sys matches 1"))
+        } else {
+            None
+        };
+        // `<guard> run <cmd>` when jammable, else `<cmd>` verbatim.
+        let guarded = |cmd: String| match &guard {
+            Some(g) => format!("{g} run {cmd}"),
+            None => cmd,
+        };
+        // …and the `execute` form, for a line that is already an `execute`: its
+        // subcommands splice straight onto the guard rather than nesting.
+        let guarded_exec = |rest: &str, cmd: &str| match &guard {
+            Some(g) => format!("{g} {rest} run {cmd}"),
+            None => format!("execute {rest} run {cmd}"),
+        };
         out.push((
             format!("tgate_open_{id}"),
             lines(&[
+                // The open itself is NEVER guarded: a jam that lands while the
+                // gate is shut leaves one already-scheduled open in flight, and
+                // that open is exactly what parks the portcullis in its resting
+                // position. Suppressing it would freeze the gate CLOSED, which
+                // is the opposite of a disarm.
                 format!(
                     "fill {} {} {} {} {} {} minecraft:air replace {}",
                     from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
                 ),
-                format!("schedule function {ns}:tgate_close_{id} {}t", g.open_ticks),
+                guarded(format!(
+                    "schedule function {ns}:tgate_close_{id} {}t",
+                    g.open_ticks
+                )),
             ]),
         ));
         let mut close = Vec::new();
@@ -4055,21 +5079,72 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
         // and vanilla's own suffocation would be the thing killing them, which
         // is slow, gear-dependent and escapable. Costs nothing per tick: this
         // rides the closing tick of the schedule ping-pong that already exists.
+        //
+        // task #184: the judgement sits INSIDE the suppressed clock, so a
+        // disarmed gate can never crush — there is no closing tick left to be
+        // caught by. That is not a second rule, it is the same guard.
         if g.crush {
-            close.push(format!(
-                "execute as @a[{}] run damage @s {CRUSH_DAMAGE} minecraft:generic",
-                region_selector(from, to)
+            close.push(guarded_exec(
+                &format!("as @a[{}]", region_selector(from, to)),
+                &format!("damage @s {CRUSH_DAMAGE} minecraft:generic"),
             ));
         }
-        close.push(format!(
+        close.push(guarded(format!(
             "fill {} {} {} {} {} {} {}",
             from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
-        ));
-        close.push(format!(
+        )));
+        close.push(guarded(format!(
             "schedule function {ns}:tgate_open_{id} {}t",
             g.closed_ticks
-        ));
+        )));
         out.push((format!("tgate_close_{id}"), lines(&close)));
+    }
+    out.extend(emit_timed_gate_disarm_functions(plan));
+    out
+}
+
+/// The `tgate_disarm_<id>` functions (task #184): jam the gate for good.
+///
+/// Four commands, and the ORDER is the semantics:
+/// 1. latch `#tgdis_<id>` — from this instant every guarded clock line is inert,
+///    including the crush;
+/// 2. raise the disarm flag party-wide, so the rest of the campaign can read
+///    "the party switched it off" (`requires_flags`, a dialogue gate, a quest);
+/// 3. clear the span **once** — the jammed portcullis comes to rest OPEN, which
+///    is what a disarm means and what a player who pulls a lever expects to see;
+/// 4. retire the affordance's visible hardware. This is the ONE function allowed
+///    to do that — `DW0421` fails the build if anything else reaches it.
+///
+/// There is deliberately **no** `schedule clear`. A close already in flight fires
+/// into the guard and does nothing — including not scheduling the next open — so
+/// the ping-pong dies of its own accord within one hop, and the gate is left open
+/// by step 3. Clearing a schedule that may not exist would be a command that
+/// fails at runtime for no gain.
+fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for g in &plan.timed_gates {
+        let Some(dis) = &g.disarm else {
+            continue;
+        };
+        let id = &g.safe;
+        let (from, to) = g.gate_region;
+        let body = vec![
+            format!("scoreboard players set #tgdis_{id} dw.sys 1"),
+            format!(
+                "scoreboard players set {} {} 1",
+                plan::PARTY,
+                plan::flag_score(&dis.sets_flag)
+            ),
+            format!(
+                "fill {} {} {} {} {} {} minecraft:air replace {}",
+                from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+            ),
+            format!(
+                "kill @e[tag={}]",
+                crate::affordance::hardware_tag(&format!("dw_tgdis_{id}"))
+            ),
+        ];
+        out.push((format!("tgate_disarm_{id}"), lines(&body)));
     }
     out
 }
@@ -4106,6 +5181,17 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
             });
         }
     }
+    for g in &plan.timed_gates {
+        if g.disarm.is_some() {
+            out.push(crate::affordance::Affordance {
+                id: g.id.clone(),
+                kind: "timed-gate disarm",
+                tag: format!("dw_tgdis_{}", g.safe),
+                // Jamming the gate spends the affordance.
+                retired_by: Some(format!("tgate_disarm_{}", g.safe)),
+            });
+        }
+    }
     for bf in plan.bonfires() {
         out.push(crate::affordance::Affordance {
             id: bf.anchor.clone(),
@@ -4134,19 +5220,31 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
 /// tileset happens to carry a lever. Proven by `DW0420`
 /// ([`crate::affordance`]).
 fn shortcut_setup(plan: &Plan) -> Vec<String> {
-    plan.shortcuts
-        .iter()
-        .flat_map(|sc| {
-            let v = ent_xyz(sc.unlock);
-            [
-                format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
-                    v[0], v[1], v[2], sc.safe
-                ),
-                affordance_hardware(v, &format!("dw_sc_{}", sc.safe), "minecraft:lever"),
-            ]
-        })
-        .collect()
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        let v = ent_xyz(sc.unlock);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+            v[0], v[1], v[2], sc.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_sc_{}", sc.safe),
+            "minecraft:lever",
+        ));
+        // Task #50: arm the door itself, so a press from the sealed side reaches
+        // something. Unlike a `close-gate` seal — which is armed by the firing
+        // that seals it — a shortcut gate is sealed by the PREFAB at world-load,
+        // so world init is the only moment its answer can go up. Guarded on
+        // absence for the same reason the close-gate arming is: a second,
+        // co-located set of hitboxes is the exact ray-pick tie `DW0422` forbids.
+        out.push(format!(
+            "execute unless entity @e[tag=dw_ws_{}] run function {ns}:ws_arm_{}",
+            sc.safe, sc.safe
+        ));
+    }
+    out
 }
 
 /// The visible hardware for a compiler-owned interact affordance: a glowing,
@@ -4166,6 +5264,335 @@ fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
         pos[2],
         crate::affordance::hardware_tag(tag)
     )
+}
+
+// ---------------------------------------------------------------------------
+// The seal answers (DSL v0.8, task #142 — owner island finding #34)
+// ---------------------------------------------------------------------------
+
+/// How far a seal's answer hitbox protrudes past the sealed block, on every side.
+///
+/// **This margin is the whole mechanism.** A `minecraft:interaction` whose box
+/// exactly coincides with the block it stands in loses the client's ray-pick:
+/// vanilla takes the entity only when it is *strictly* nearer the eye than the
+/// block hit, and a coincident box is hit at exactly the same distance. One
+/// centimetre of protrusion makes the entity strictly nearer from every approach
+/// angle, so pressing any face of the seal reaches the entity — while a hundredth
+/// of a block never reaches into a neighbouring cell's own affordances.
+pub const SEAL_MARGIN: f64 = 0.01;
+
+/// The seal-answer entity's box size, as the `width`/`height` NBT floats: one
+/// block plus [`SEAL_MARGIN`] on each side.
+const SEAL_BOX_SIZE: &str = "1.02f";
+
+/// Render a signed count of hundredths as a decimal coordinate: `6899` →
+/// `68.99`, `-4450` → `-44.5`, `700` → `7.0`. Integer-only, so the emitted text
+/// is exactly what it reads as (no binary-float rounding in the datapack).
+fn fmt_centi(v: i64) -> String {
+    let sign = if v < 0 { "-" } else { "" };
+    let a = v.unsigned_abs();
+    let (whole, frac) = (a / 100, a % 100);
+    if frac == 0 {
+        format!("{sign}{whole}.0")
+    } else if frac.is_multiple_of(10) {
+        format!("{sign}{whole}.{}", frac / 10)
+    } else {
+        format!("{sign}{whole}.{frac:02}")
+    }
+}
+
+/// The seal plan for a gate anchor, if the campaign ever seals it.
+fn seal_hint_for<'a>(plan: &'a Plan, anchor: &str) -> Option<&'a plan::SealHintPlan> {
+    plan.seal_hints.iter().find(|s| s.anchor == anchor)
+}
+
+/// The `seal_arm_<safe>` function name: what a `close-gate` calls to give the
+/// stone a voice.
+fn seal_arm_fn(safe: &str) -> String {
+    format!("seal_arm_{safe}")
+}
+
+/// The `dw_trig_<id>` tags every click trigger anchored **on this gate** rides,
+/// in campaign declaration order (deterministic).
+///
+/// The round-6 rule, one layer out: one cell, one hitbox. A `strike`/`use`
+/// trigger whose `at` is the gate anchor is asking the player to hit *the gate* —
+/// and once the gate is sealed the gate's own hitboxes are what a click reaches.
+/// Summoning the trigger a second, co-located entity is the exact ray-pick tie
+/// that made the island's boulder unshippable, so the trigger's tag rides these
+/// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
+/// also its meaning: such a trigger is live exactly while the gate is sealed.
+fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
+    use delvewright_dsl::TriggerOn;
+    plan.campaign
+        .quests
+        .content
+        .triggers
+        .iter()
+        .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
+        .filter(|t| t.at_anchor() == Some(anchor))
+        .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
+        .collect()
+}
+
+/// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
+/// clickable cell of each sealed region, so the wall answers a press wherever the
+/// party presses it.
+///
+/// Only the region's **shell** is armed ([`plan::SealHintPlan::shell_cells`]) —
+/// a cell buried inside the seal has no face a crosshair can reach. Each entity
+/// is one block plus [`SEAL_MARGIN`], positioned so its box brackets its cell on
+/// every axis; see that constant for why the margin is not cosmetic.
+///
+/// Empty for a campaign that never seals a gate → byte-identical output.
+fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for s in &plan.seal_hints {
+        let mut tags = vec![format!("dw_seal_{}", s.safe)];
+        tags.extend(seal_rider_tags(plan, &s.anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = s
+            .shell_cells()
+            .into_iter()
+            .map(|c| {
+                // Positions are built from integer hundredths, never from f64
+                // arithmetic: the datapack text is part of the byte-identity
+                // contract (ADR-0006) and `y - 0.01` in binary floating point is
+                // not the decimal `.99` a reader (or a diff) expects.
+                //
+                // x/z are the cell CENTRE (the box is width-symmetric about the
+                // position); y is the box's FLOOR, dropped one margin so the box
+                // brackets the cell below as well as above.
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((seal_arm_fn(&s.safe), lines(&body)));
+    }
+    out
+}
+
+/// The `seal_hint_<safe>` reward functions (task #142): the answer itself.
+///
+/// Dispatched by a `player_interacted_with_entity` advancement, which is the one
+/// vanilla primitive that runs a function **as the player who right-clicked** —
+/// the same criterion every `interact` objective, NPC dialogue and bonfire rest
+/// already runs on. The interaction entity's own `interaction` NBT record names
+/// no player a command could target, and reading it would also *consume* the
+/// press that a co-located `use` trigger is entitled to see (round-8: adjudicate
+/// conditionally, consume unconditionally). An advancement observes without
+/// consuming, so the seal's answer can never eat another consumer's click.
+///
+/// The advancement is revoked immediately, so the stone answers every press, not
+/// only the first.
+fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    plan.seal_hints
+        .iter()
+        .map(|s| {
+            (
+                format!("seal_hint_{}", s.safe),
+                lines(&[
+                    format!("advancement revoke @s only {ns}:seal_{}", s.safe),
+                    format!("title @s actionbar {}", tr(&chrome.rebind(&s.text))),
+                ]),
+            )
+        })
+        .collect()
+}
+
+/// Generated `v08_seal_answers` PackTest (task #142): on a live pinned server,
+/// a gate that is sealed carries the hitboxes its answer rides, arming is
+/// idempotent, and re-opening it takes them away again.
+///
+/// What this proves and what it deliberately does not: the **presence** contract
+/// is fully machine-checkable here, and it is the half that failed — the island's
+/// sealed boulder had no hitbox at all, so a press reached nothing. The
+/// press-to-actionbar half rides `player_interacted_with_entity`, which no
+/// PackTest can fire (it needs a real client's right-click); that primitive is
+/// the one every NPC dialogue and bonfire rest already runs on, and the harness
+/// bot exercises it there.
+///
+/// Batch model (#140): the fixture stages the seal itself and hands the world
+/// back exactly as it found it — region cleared, hitboxes killed.
+fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let Some(s) = plan.seal_hints.first() else {
+        return;
+    };
+    let (from, to) = s.region;
+    let n = s.shell_cells().len();
+    let tag = format!("dw_seal_{}", s.safe);
+    let count = |score: &str| {
+        format!(
+            "execute store result score #{score} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        )
+    };
+    let mut b = packtest_header(&format!(
+        "{}: the sealed gate `{}` carries an answer the party can press",
+        artifact_title(plan.campaign),
+        s.anchor
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push(
+        "# Batch model (#140): a sibling test may have driven the campaign past its".to_string(),
+    );
+    b.push("# own seal, so stage a known-OPEN gate rather than assuming one.".to_string());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push("# An open gate is nothing to press: nothing armed.".to_string());
+    b.push(count("seal_before"));
+    b.push("assert score #seal_before dw.sys matches 0".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_armed"));
+    b.push(format!("assert score #seal_armed dw.sys matches {n}"));
+    b.push("# A re-fired seal must not stack a second, co-located set.".to_string());
+    b.push(format!(
+        "execute unless entity @e[tag={tag}] run function {ns}:{}",
+        seal_arm_fn(&s.safe)
+    ));
+    b.push(count("seal_again"));
+    b.push(format!("assert score #seal_again dw.sys matches {n}"));
+    b.push("# Re-opening takes the answer down with the stone (no residue).".to_string());
+    b.push(format!(
+        "fill {} {} {} {} {} {} minecraft:air replace {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+    ));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(count("seal_after"));
+    b.push("assert score #seal_after dw.sys matches 0".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/v08_seal_answers.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The shortcut door's wrong-side answer (DSL v0.9, task #50)
+// ---------------------------------------------------------------------------
+
+/// Every shortcut door with its derived sealed side.
+///
+/// **Every** shortcut answers — the wording defaults to the compiler's canonical
+/// English — so the only shortcut missing here is one whose side did not resolve,
+/// and such a campaign never reaches emission: [`check_shortcut_sides`] fails the
+/// build first.
+fn answering_shortcuts<'a>(
+    plan: &'a Plan,
+) -> Vec<(&'a plan::ShortcutPlan, &'a crate::wrongside::SealedSide)> {
+    plan.shortcuts
+        .iter()
+        .filter_map(|sc| sc.sealed_side.as_ref().map(|s| (sc, s)))
+        .collect()
+}
+
+/// `DW0425`: a shortcut door whose sealed side the geometry does not name.
+///
+/// Build tier (exit 3), raised before any function is emitted — withhold, never
+/// invent. Placing the answer on a guessed side would tell a player standing
+/// exactly where the door DOES open that it cannot be opened from there, which is
+/// a worse failure than the silence this feature exists to end.
+fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
+    for sc in &plan.shortcuts {
+        if sc.sealed_side.is_some() {
+            continue;
+        }
+        let (lo, hi) = sc.gate_region;
+        return Err(BuildFailure::Diagnostic {
+            code: crate::wrongside::DW_SHORTCUT_SIDE_UNDECIDABLE,
+            message: format!(
+                "shortcut `{}` declares an `on_wrong_side` answer, but the compiler cannot tell \
+                 which side of its gate `{}` is the sealed one. The sealed side is derived from \
+                 the gate slab's thin axis and the side of it the `unlock` anchor `{}` stands on; \
+                 here the gate spans {lo:?}..{hi:?} and the unlock resolves to {:?}, which either \
+                 gives the region no unique thinnest axis (a cube is not a doorway) or leaves the \
+                 unlock level with the doorway rather than beyond it. An answer placed on a \
+                 guessed side would fire where the door DOES open. Prescription: put the `unlock` \
+                 clear of the gate's own span on the axis the door is thin on — which is where a \
+                 far-side bar belongs anyway — or use a gate anchor whose region is a doorway \
+                 slab rather than a volume.",
+                sc.id, sc.gate_anchor, sc.unlock_anchor, sc.unlock,
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// The `ws_arm_<safe>` functions (task #50): the **clickable body of a sealed
+/// shortcut door**.
+///
+/// A shortcut gate is a solid slab the prefab places, and nothing gave it a body.
+/// A `use`/`strike` trigger anchored on it summoned the ordinary point body — one
+/// `1.0f x 2.0f` box at the region's first cell — which for the `souls-shortcut`
+/// fixture lands at AABB `[4,65,6]..[5,67,7]` inside a slab occupying
+/// `[4,65,6]..[6,68,7]`: flush with the block on every face it touches and
+/// interior on the rest, so vanilla never finds it strictly nearer than the block
+/// and no press from any angle reaches it (see [`SEAL_MARGIN`]).
+///
+/// The body therefore stands in the **open air in front of the bars**, one cell
+/// per doorway cell, on the sealed side only
+/// ([`crate::wrongside::SealedSide::approach_cells`]). That placement is also the
+/// entire side mechanism: a near-side ray hits the body before the door, a
+/// far-side ray hits the door and stops, because vanilla bounds its entity
+/// raycast by the block hit distance. No player test, no DSL surface.
+///
+/// A click trigger the author anchors on the gate rides these — the same merge
+/// `seal_fns` performs for a `close-gate` seal — so the author's own prose and
+/// sound, gated by their own flags, are what a wrong-side press produces. The
+/// compiler supplies the body; the campaign supplies the answer.
+///
+/// Empty for a campaign with no shortcut → byte-identical output.
+fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (sc, side) in answering_shortcuts(plan) {
+        // A click trigger the author anchored on this gate rides these hitboxes
+        // rather than summoning its own co-located one — the same merge
+        // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
+        // at a gate anchor stops being a ray-pick tie.
+        let mut tags = vec![format!("dw_ws_{}", sc.safe)];
+        tags.extend(seal_rider_tags(plan, &sc.gate_anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = side
+            .approach_cells()
+            .into_iter()
+            .map(|c| {
+                // Integer hundredths, never f64 arithmetic: the datapack text is
+                // part of the byte-identity contract (ADR-0006).
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((format!("ws_arm_{}", sc.safe), lines(&body)));
+    }
+    out
 }
 
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
@@ -4210,6 +5637,12 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
+        // …and the door's own voice goes with the bars (task #50). An opened
+        // threshold that still says "this will not open" is a lie, and an
+        // invisible box left standing in a now-walkable doorway swallows
+        // right-clicks aimed through it — the same retirement `open-gate`
+        // performs for a `close-gate` seal.
+        body.push(format!("kill @e[tag=dw_ws_{id}]"));
         body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
         out.push((format!("shortcut_open_{id}"), lines(&body)));
     }
@@ -4224,12 +5657,37 @@ fn wave_seated_holder(wave_id: &str) -> String {
     format!("#wseat_{}", plan::safe_local(wave_id))
 }
 
-/// The wave re-seat lines a bonfire runs on every rest and on every respawn at
-/// it (spec-0016 §1), in content order. Empty unless the campaign declares both
-/// a bonfire and a `respawns_on_rest` wave → byte-identical.
+/// The re-seat lines a bonfire runs on every rest and on every respawn at it
+/// (spec-0016 §1), in a fixed order: the `respawns_on_rest` waves, then the
+/// **undefeated** refresh — billed elite/boss waves, then hostile actors. Empty
+/// for a campaign that declares none of that surface → byte-identical.
+///
+/// Two different questions are being asked here, and they take two different
+/// primitives.
+///
+/// * *Has the party MET this wave?* — a scoreboard sentinel
+///   ([`wave_seated_holder`]), written by the wave's own `spawn_<wave>`. A
+///   `respawns_on_rest` wave comes back whether the party beat it or fled it, so
+///   "met" is the only gate, and a wave the delve has not staged yet must not be
+///   conjured by a rest.
+/// * *Is this thing still STANDING?* — the presence of its own body
+///   (`execute if entity`). That is the undefeated test, and it needs no state at
+///   all: a boss the party killed leaves no body, so it stays dead by
+///   construction (spec-0016 §1), and one they merely chipped is still there, so
+///   it is wiped and re-seated whole. `despawn-actor` leaves none either, so a
+///   scripted vanish is equally final.
+///
+/// An actor's line asks the body question twice, because an actor has two
+/// postures and only one of them can have been damaged or dragged. A caged
+/// puppet (`dw_pup_<id>`) is `NoAI` and knockback-immune — combat cannot move it,
+/// and re-seating it would only undo authored `move-actor` staging — so it is
+/// left exactly where the campaign put it. An **unleashed twin** is the elite the
+/// party is actually fighting: it wears `dw_actor_<id>` and no puppet marker, and
+/// the rest deletes it and stands a fresh one on its origin anchor.
 fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    plan.reseat_waves()
+    let mut out: Vec<String> = plan
+        .reseat_waves()
         .iter()
         .map(|w| {
             format!(
@@ -4238,7 +5696,22 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
                 plan::safe_local(w.id.as_str())
             )
         })
-        .collect()
+        .collect();
+    for w in plan.undefeated_reseat_waves() {
+        out.push(format!(
+            "execute if entity @e[tag={}] run function {ns}:wave_reseat_{}",
+            plan::wave_tag(w.id.as_str()),
+            plan::safe_local(w.id.as_str())
+        ));
+    }
+    for a in plan.reseat_actors() {
+        let safe = plan::safe_local(a.id.as_str());
+        out.push(format!(
+            "execute unless entity @e[tag=dw_pup_{safe}] if entity @e[tag=dw_actor_{safe}] \
+             run function {ns}:actor_restand_{safe}"
+        ));
+    }
+    out
 }
 
 /// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
@@ -4304,16 +5777,105 @@ const HARMFUL_EFFECTS: &[&str] = &[
     "minecraft:wither",
 ];
 
+/// The `minecraft:potion_contents` component value of a kit item that declares
+/// potion `contents` (DSL v0.8, spec-0016 §1) — compact SNBT, field order fixed
+/// (`potion`, `custom_effects`, `custom_color`) so emission is deterministic.
+///
+/// Written straight from the DSL's fields with nothing invented: a declared
+/// `duration`/`amplifier` is emitted, an absent one is left out and takes
+/// vanilla's own default. That matters beyond tidiness — the replenish path
+/// matches the flask by these exact components ([`kit_item_predicate`]), so any
+/// value the emitter made up here would have to be re-derived identically there.
+fn potion_contents_snbt(pc: &delvewright_dsl::PotionContents) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = &pc.potion {
+        parts.push(format!("potion:\"{p}\""));
+    }
+    if !pc.effects.is_empty() {
+        let effects: Vec<String> = pc
+            .effects
+            .iter()
+            .map(|e| {
+                let mut f = vec![format!("id:\"{}\"", e.effect)];
+                if let Some(dur) = e.duration {
+                    f.push(format!("duration:{dur}"));
+                }
+                if let Some(amp) = e.amplifier {
+                    f.push(format!("amplifier:{amp}"));
+                }
+                format!("{{{}}}", f.join(","))
+            })
+            .collect();
+        parts.push(format!("custom_effects:[{}]", effects.join(",")));
+    }
+    if let Some(col) = &pc.color {
+        // `#rrggbb` → the packed int vanilla stores. Validation (`DW0486`)
+        // already proved the literal well-formed.
+        if let Ok(v) = u32::from_str_radix(col.trim_start_matches('#'), 16) {
+            parts.push(format!("custom_color:{v}"));
+        }
+    }
+    format!("{{{}}}", parts.join(","))
+}
+
+/// The component suffix a kit item's `give` carries: the display name and, for a
+/// potion-bearing item, its `potion_contents`. `""` for a plain unnamed item, so
+/// every campaign that declares neither is byte-identical.
+///
+/// One function for every place a kit item is handed out — the class kit and the
+/// bonfire replenish — because those two must produce the *same item*. When they
+/// disagree the rest does not refill the flask, it hands the player a second,
+/// subtly different one (the `clear` misses it) and the "per-rest budget"
+/// contract silently becomes a stockpile.
+fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(n) = &item.name {
+        parts.push(format!(
+            "custom_name={}",
+            tr_with(n, &[("italic", json!(false))])
+        ));
+    }
+    if let Some(pc) = &item.contents {
+        parts.push(format!("potion_contents={}", potion_contents_snbt(pc)));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", parts.join(","))
+    }
+}
+
+/// The **item predicate** that identifies this kit item for `clear` — the item id
+/// plus, when it carries potion contents, an exact `potion_contents` match.
+///
+/// Why the components belong in the predicate: a bare `clear @s minecraft:potion`
+/// takes every potion in the bag, so on a campaign whose kit holds a healing
+/// flask *and* any other brew, one rest would delete the other bottle and re-give
+/// only the flask. Matching the contents makes the clear name exactly the stack
+/// the `give` on the next line puts back.
+fn kit_item_predicate(item: &delvewright_dsl::KitItem) -> String {
+    match &item.contents {
+        Some(pc) => format!(
+            "{}[potion_contents={}]",
+            item.item,
+            potion_contents_snbt(pc)
+        ),
+        None => item.item.clone(),
+    }
+}
+
 /// The `bonfire_flask` function: refill every declared flask to its declared
 /// count, for the player it runs as.
 ///
 /// `clear` + `give` rather than `item replace`: a kit item has no fixed inventory
 /// slot (the player carries it wherever they moved it), and `item replace` needs
-/// one. Clearing by item id and re-giving the kit's exact stack is slot-free,
-/// idempotent and byte-stable — and it means "replenish to the declared count"
-/// is literally what the commands say, in both directions (a player hoarding
-/// extra flasks is brought back DOWN to the declared count, which is the souls
-/// contract: the flask is a per-rest budget, not a stockpile).
+/// one. Clearing the flask's own item predicate and re-giving the kit's exact
+/// stack is slot-free, idempotent and byte-stable — and it means "replenish to
+/// the declared count" is literally what the commands say, in both directions (a
+/// player hoarding extra flasks is brought back DOWN to the declared count, which
+/// is the souls contract: the flask is a per-rest budget, not a stockpile).
+/// Cleared and re-given through the SAME pair of helpers the class kit uses, so
+/// the refilled bottle is the poured-identical item, not a lookalike.
 ///
 /// A player's class is read off the `dw_class_<safe>` tag `class_apply_<safe>`
 /// adds — emitted only when the campaign declares a flask at all, so a campaign
@@ -4330,15 +5892,13 @@ fn emit_flask_function(plan: &Plan) -> Option<(String, String)> {
         let tag = class_tag(&plan.classes[ci].safe);
         body.push(format!(
             "execute if entity @s[tag={tag}] run clear @s {}",
-            item.item
+            kit_item_predicate(item)
         ));
-        let comp = match &item.name {
-            Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
-            None => String::new(),
-        };
         body.push(format!(
             "execute if entity @s[tag={tag}] run give @s {}{} {}",
-            item.item, comp, item.count
+            item.item,
+            kit_item_components(item),
+            item.count
         ));
     }
     Some(("bonfire_flask".to_string(), lines(&body)))
@@ -4412,7 +5972,7 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
                     pos[0], pos[1], pos[2]
                 ),
             ];
-            if plan.any_checkpoint_on_respawn() {
+            if plan.any_checkpoint() {
                 s.push(format!("scoreboard players set #cp dw.sys {i}"));
             }
             s
@@ -4563,7 +6123,7 @@ fn emit_narrate(
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::NarrateStyle;
-    let comp = json!({ "text": text });
+    let comp = tr(text);
     match style.unwrap_or(NarrateStyle::Chat) {
         NarrateStyle::Chat => body.push(format!("tellraw {who} {comp}")),
         NarrateStyle::Title => body.push(format!("title {who} title {comp}")),
@@ -4575,7 +6135,7 @@ fn emit_narrate(
         // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
         // checked at compile time, DW0328), so render uppercase.
         NarrateStyle::Art => {
-            let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
+            let art = tr_with(text, &[("font", json!("delve:art"))]);
             body.push(format!("title {who} title {art}"));
         }
     }
@@ -4659,9 +6219,9 @@ fn npc_summon_commands(
         // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
         // byte-identical.
         let cname_field = if v03 {
-            snbt_string(name)
+            snbt_component(name)
         } else {
-            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            let cname = tr(name).to_string().replace('\'', "\\'");
             format!("'{cname}'")
         };
         let pose = mannequin_pose_nbt(base);
@@ -4793,22 +6353,62 @@ fn spawn_npc_fn(npc: &str) -> String {
     format!("spawn_npc_{}", plan::safe_local(npc))
 }
 
-/// `spawn_npc_<id>` functions (DSL v0.6): one per **deferred** stage-2 NPC, the
-/// scripted-entrance dual of `despawn-npc`. Emitted only for deferred NPCs, so a
-/// campaign that declares none is byte-identical to pre-0.6.
+/// Every NPC a compiled `spawn-npc` site names — the quest/trigger/trap effect
+/// trees ([`all_campaign_effects`], nesting included) plus every dialogue option's
+/// `spawn-npc`, which the option handler compiles the very same call for.
+///
+/// This is the emitted-call set for [`spawn_npc_fns`], so the two agree by
+/// construction rather than by convention (`DW0497`).
+fn spawn_npc_sites(c: &delvewright_dsl::Campaign) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    for e in all_campaign_effects(c) {
+        if let Some(npc) = e.spawn_npc() {
+            out.insert(npc.as_str().to_string());
+        }
+    }
+    for tree in &c.dialogue.content.dialogues {
+        for node in &tree.nodes {
+            for opt in &node.options {
+                for eff in &opt.effects {
+                    if let Some(npc) = eff.spawn_npc() {
+                        out.insert(npc.as_str().to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `spawn_npc_<id>` functions (DSL v0.6): one per NPC any `spawn-npc` effect
+/// summons, the scripted-entrance dual of `despawn-npc`. A campaign that fires
+/// none and defers none emits nothing here, so it is byte-identical to pre-0.6.
+///
+/// **Not "one per deferred NPC".** `DW0197` guarantees every `deferred` NPC has a
+/// spawn site, so the deferred set is contained in the call set — but the converse
+/// was never true: `spawn-npc` on a NON-deferred NPC is legal content (it is how a
+/// character comes back after a `despawn-npc`), and it compiled a
+/// `function <ns>:spawn_npc_<id>` call against a function nobody emitted. The call
+/// loaded fine and did nothing, so the character stayed gone. That is the island's
+/// wave defect in a second emitter, and it is why the registration walk is now the
+/// call walk ([`spawn_npc_sites`]) rather than a parallel property scan. The
+/// deferred set is unioned in so ordering and output for existing campaigns are
+/// untouched.
 ///
 /// Each of the two summons is **independently** idempotent, so a re-fired
-/// `spawn-npc` never doubles an entity. Body and hitbox share the per-NPC id tag,
-/// so the guards discriminate on the body-only `dw_npc` tag: the body is guarded by
-/// `[tag=dw_npc,tag=<id>]`, the hitbox by its negation `[tag=<id>,tag=!dw_npc]` — a
-/// single `unless entity @e[tag=<id>]` guard on both lines would let the body's own
-/// summon suppress the hitbox.
+/// `spawn-npc` never doubles an entity — and so an entrance fired for an NPC
+/// already standing at its mark is exactly the no-op it reads as. Body and hitbox
+/// share the per-NPC id tag, so the guards discriminate on the body-only `dw_npc`
+/// tag: the body is guarded by `[tag=dw_npc,tag=<id>]`, the hitbox by its negation
+/// `[tag=<id>,tag=!dw_npc]` — a single `unless entity @e[tag=<id>]` guard on both
+/// lines would let the body's own summon suppress the hitbox.
 fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
     let c = plan.campaign;
     let v03 = campaign_is_v03(plan);
+    let sites = spawn_npc_sites(c);
     let mut out = Vec::new();
     for npc in &plan.npcs {
-        if !npc_is_deferred(c, &npc.npc_id) {
+        if !npc_is_deferred(c, &npc.npc_id) && !sites.contains(npc.npc_id.as_str()) {
             continue;
         }
         let cmds = npc_summon_commands(c, plan, npc, v03);
@@ -4830,9 +6430,9 @@ fn spawn_npc_fns(plan: &Plan) -> Vec<(String, String)> {
 
 /// The generated function name for a `move-npc` effect (content-derived key, so
 /// the start-caller and the generator agree without threading an index).
-fn movenpc_fn(npc: &str, to_anchor: &str) -> String {
+fn movenpc_fn(npc: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "mv_{}_{}",
+        "mv_{}_{}{gate_key}",
         plan::safe_local(npc),
         plan::safe_local(to_anchor)
     )
@@ -4949,36 +6549,24 @@ fn party_flag_gate(flags: &[delvewright_dsl::FlagId]) -> String {
         .collect()
 }
 
-/// Every quest effect in the campaign (objective-complete, quest-complete, and
-/// trigger effects), flattened through `sequence` steps and `move-actor` `on_arrive`
-/// (spec-0014) so nested lifecycle/cutscene/actor targets are collected. Pre-0.6
-/// campaigns have no nesting, so this equals the shallow list (byte-identical).
+/// Every quest effect in the campaign, flattened through `sequence` steps and
+/// `move-actor` `on_arrive` (spec-0014) so nested lifecycle/cutscene/actor targets
+/// are collected. Pre-0.6 campaigns have no nesting, so this equals the shallow
+/// list (byte-identical).
+///
+/// The roots come from [`crate::plan::for_each_effect_root`] — the one enumeration
+/// the gate scans and the staged-walk timeline also walk. What the emitter
+/// generates functions for and what the proofs check are therefore the same set by
+/// construction: a `sequence`/`cutscene`/`move-actor` in **any** root gets its
+/// generated function, and none of the four walks can quietly grow a different
+/// idea of where effects live (tasks #142, #167, #168, #169).
 fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     let mut out = Vec::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for e in effs {
             push_effect_deep(e, &mut out);
         }
-    }
-    for t in &c.quests.content.triggers {
-        for e in &t.effects {
-            push_effect_deep(e, &mut out);
-        }
-    }
-    // spec-0022: a trap `payload` is an effect root of the same standing as a
-    // quest bundle or a trigger bundle. Without this, a `sequence`/`cutscene`
-    // inside a payload would never get its generated function and the payload's
-    // `function <ns>:…` call would dangle.
-    for t in &c.quests.content.traps {
-        for e in &t.payload {
-            push_effect_deep(e, &mut out);
-        }
-    }
+    });
     out
 }
 
@@ -4998,8 +6586,8 @@ fn push_effect_deep<'a>(e: &'a QuestEffect, out: &mut Vec<&'a QuestEffect>) {
 }
 
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
-fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
-    movenpc_fn(npc, to_anchor)
+fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
+    movenpc_fn(npc, to_anchor, gate_key)
         .strip_prefix("mv_")
         .unwrap_or("move")
         .to_string()
@@ -5024,14 +6612,53 @@ fn movenpc_bare(npc: &str, to_anchor: &str) -> String {
 /// driver's **final-waypoint tick** — exactly the arrival detection `ma_tick`
 /// uses — via a generated `mv_arrive_<key>` function. A bare `move-npc` emits no
 /// arrive hook and stays byte-identical to pre-0.6 output.
+///
+/// # Supersession — one body, one live driver (task #25)
+///
+/// A driver's re-entry latch `#mrun_<bare>` is keyed per **(npc, to_anchor, gate)**:
+/// it stops a walk from restarting *itself* and knows nothing about the body's other
+/// walks. So a second `move-npc` fired at the same NPC while an earlier walk was
+/// still running used to leave **two** drivers alive, both teleporting the same
+/// entity every tick; the interleave garbled the path and whichever walk had more
+/// remaining ticks wrote the final position — the body parked at the FIRST walk's
+/// endpoint, not the last-fired one (root-caused live on the island, 2026-08-06: a
+/// 408-tick beach→mouth walk overlapped by a 21-tick walk to checkpoint-1 left the
+/// NPC 3.0 blocks off its cast-ledger cell, exactly on the harness's affordance
+/// radius).
+///
+/// The contract is now **last fired wins**, carried by a per-NPC *walk generation*
+/// score `#mgen_<npc>`: starting a walk bumps the generation and stamps it onto that
+/// driver's `#mown_<bare>`; every driver tick first checks its own stamp is still the
+/// current generation and, if not, drops its latch and returns without teleporting.
+/// The superseded driver dies on its next scheduled tick, the new walk's tp sequence
+/// runs alone from its own first waypoint (waypoints are precomputed from the walk's
+/// declared start, so the new leg snaps to that first waypoint — the same instant
+/// snap single-walk content already gets when a walk fires while its NPC stands
+/// elsewhere). The staleness test is written as the positive `if own < gen`, never as
+/// `unless own = gen`: with both scores unset — a driver invoked directly, as the
+/// `v04_move` PackTest does — a score comparison is *false*, and the `unless`
+/// spelling would read that as "stale" and cancel a walk nothing superseded.
+///
+/// A body with only one planned walk can never be superseded, so it carries none of
+/// this: campaigns whose NPCs each walk at most once stay byte-identical (ADR-0006).
 fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
+    // How many drivers each body owns, in the planner's deterministic order. Two or
+    // more ⇒ a later walk can catch an earlier one mid-flight ⇒ that body's drivers
+    // carry the generation guard.
+    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
     for m in moves {
-        let start_name = movenpc_fn(&m.npc, &m.to_anchor);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        *legs.entry(m.npc.as_str()).or_insert(0) += 1;
+    }
+    for m in moves {
+        let start_name = movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let safe = plan::safe_local(&m.npc);
         let total = m.ticks();
+        let supersedable = legs.get(m.npc.as_str()).copied().unwrap_or(0) > 1;
+        // `#mown_<bare> < #mgen_<npc>` ⇔ a later walk for this body has started.
+        let stale = format!("score #mown_{bare} dw.sys < #mgen_{safe} dw.sys");
         // The on_arrive bundle for this (npc, to_anchor) — the first-seen effect,
         // matching the planner's dedup order (mirrors `actor_fns`).
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -5049,18 +6676,42 @@ fn movenpc_fns(plan: &Plan, moves: &[crate::nav::MovePlan]) -> Vec<(String, Stri
             })
             .unwrap_or(&[]);
 
-        // start: guard re-entry, reset the tick counter, schedule the driver.
-        let start = vec![
-            format!("execute if score #mrun_{bare} dw.sys matches 1 run return fail"),
-            format!("scoreboard players set #mrun_{bare} dw.sys 1"),
-            format!("scoreboard players set #mt_{bare} dw.sys 0"),
-            format!("schedule function {ns}:mv_tick_{bare} 1t"),
-        ];
+        // start: guard re-entry, take the walk generation, reset the tick counter,
+        // schedule the driver. The re-entry refusal is generation-aware: a latch left
+        // armed by a driver this body has already superseded must not block the
+        // re-fire of that same leg (it is itself a later walk, and wins).
+        let mut start = Vec::new();
+        if supersedable {
+            start.push(format!(
+                "execute if score #mrun_{bare} dw.sys matches 1 unless {stale} run return fail"
+            ));
+            start.push(format!("scoreboard players add #mgen_{safe} dw.sys 1"));
+            start.push(format!(
+                "scoreboard players operation #mown_{bare} dw.sys = #mgen_{safe} dw.sys"
+            ));
+        } else {
+            start.push(format!(
+                "execute if score #mrun_{bare} dw.sys matches 1 run return fail"
+            ));
+        }
+        start.push(format!("scoreboard players set #mrun_{bare} dw.sys 1"));
+        start.push(format!("scoreboard players set #mt_{bare} dw.sys 0"));
+        start.push(format!("schedule function {ns}:mv_tick_{bare} 1t"));
         out.push((start_name, lines(&start)));
 
         // per-tick driver: tp both body + hitbox to waypoint[t], advance, and
         // reschedule until the path is walked; the final waypoint is the target.
         let mut tick: Vec<String> = Vec::new();
+        if supersedable {
+            // Superseded: drop the latch (so this leg can be fired again later) and
+            // stop — no teleport, no arrive hook, no reschedule. The `schedule` this
+            // driver queued before it lost the body is what brought us here; not
+            // rescheduling is what ends it.
+            tick.push(format!(
+                "execute if {stale} run scoreboard players set #mrun_{bare} dw.sys 0"
+            ));
+            tick.push(format!("execute if {stale} run return fail"));
+        }
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
             tick.push(format!(
                 "execute if score #mt_{bare} dw.sys matches {t} run tp @e[tag=dw_npc_{safe}] {} {} {} {y} 0",
@@ -5106,8 +6757,16 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// touching a real-AI twin). `Invulnerable` unless `vulnerable`; a vulnerable puppet
 /// stays knockback-immune (`knockback_resistance` 1.0) — the tower-defense creep. A
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
-fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
+fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    // v0.9 (task #179): a declared quest-item drop points the field the puppet
+    // has always carried at a table the compiler emits. `unleash` and
+    // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
+    // kill yields it.
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let p = ent_xyz(pos);
     let tags = format!("Tags:[\"dw_actor\",\"dw_actor_{safe}\",\"dw_pup_{safe}\"]");
     if let Some(skin) = &a.skin {
@@ -5129,7 +6788,7 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
         let name = a
             .name
             .as_deref()
-            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
             .unwrap_or_default();
         // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
         // damageable creep, never a shovable one), then whatever the author
@@ -5148,7 +6807,7 @@ fn actor_puppet_summon(a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> S
             .map(|e| format!(",{e}"))
             .unwrap_or_default();
         format!(
-            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"minecraft:empty\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
+            "summon {} {} {} {} {{NoAI:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Invulnerable:{inv}b,DeathLootTable:\"{loot}\",Rotation:[{yaw}f,0f],{tags}{name}{attrs}{equip}}}",
             a.entity, p[0], p[1], p[2]
         )
     }
@@ -5212,21 +6871,31 @@ fn spawn_finalize_nbt(entity: &str) -> &'static str {
     }
 }
 
-/// The `/summon` command (relative coords, run `execute at` the puppet) for an
-/// actor's real-AI twin (spec-0014 `unleash`): the real `entity` with AI enabled,
-/// same name and body tag (`dw_actor` + `dw_actor_<id>`), but **no** `dw_pup_<id>`
-/// marker — so killing the puppet by its marker leaves the twin fighting.
+/// The `/summon` command for an actor's real-AI twin (spec-0014 `unleash`): the
+/// real `entity` with AI enabled, same name and body tag (`dw_actor` +
+/// `dw_actor_<id>`), but **no** `dw_pup_<id>` marker — so killing the puppet by
+/// its marker leaves the twin fighting.
+///
+/// `at` is the position argument: `~ ~ ~` for the unleash (run `execute at` the
+/// puppet, so the twin stands up exactly where the puppet knelt), or the actor's
+/// absolute origin cell for the bonfire's undefeated re-seat, which has no puppet
+/// left to stand at. One string, so the two paths can never drift into two
+/// different bodies.
 ///
 /// The twin is the compiler's only *free-AI* summon, so it is where
 /// [`spawn_finalize_nbt`] matters: a caged puppet is `NoAI`, and a `NoAI` mob never
 /// runs `customServerAiStep`, which is why the island's herdsman warden could stand
 /// in the meadow indefinitely while the unleashed one burrowed away.
-fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
+fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let safe = plan::safe_local(a.id.as_str());
+    let loot = death_loot_table(
+        ns,
+        has_item_drop(&a.drops).then(|| drop_loot_path("actor", a.id.as_str())),
+    );
     let name = a
         .name
         .as_deref()
-        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
     let finalize = spawn_finalize_nbt(&a.entity);
@@ -5241,7 +6910,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
     // caged creep's property, not the freed elite's.
     let attrs = attributes_snbt(a.attributes.as_ref());
     format!(
-        "summon {} ~ ~ ~ {{PersistenceRequired:1b{pose},DeathLootTable:\"minecraft:empty\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
+        "summon {} {at} {{PersistenceRequired:1b{pose},DeathLootTable:\"{loot}\",Tags:[\"dw_actor\",\"dw_actor_{safe}\"]{name}{finalize}{attrs}{equip}}}",
         a.entity
     )
 }
@@ -5257,6 +6926,7 @@ fn actor_twin_summon(a: &delvewright_dsl::Actor) -> String {
 /// declared nothing.
 fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
     let eq = a.equipment.as_ref()?;
+    let declared = declared_drop_slots(&a.drops);
     let mut items: Vec<String> = Vec::new();
     let mut chances: Vec<String> = Vec::new();
     // Fixed emission order, matching the wave path (ADR-0006 determinism).
@@ -5272,7 +6942,7 @@ fn actor_equipment(a: &delvewright_dsl::Actor) -> Option<String> {
         if let Some(p) = piece {
             let comps = enchantment_components(p);
             items.push(format!("{slot}:{{id:\"{}\",count:1{comps}}}", p.item()));
-            chances.push(format!("{slot}:0.0f"));
+            chances.push(format!("{slot}:{}", drop_chance_for(slot, &declared)));
         }
     }
     if items.is_empty() {
@@ -5390,17 +7060,17 @@ fn aggro_lock_lines(entity: &str, safe: &str) -> Vec<String> {
 }
 
 /// The generated start-function name for a `move-actor` (content key).
-fn moveactor_fn(actor: &str, to_anchor: &str) -> String {
+fn moveactor_fn(actor: &str, to_anchor: &str, gate_key: &str) -> String {
     format!(
-        "ma_{}_{}",
+        "ma_{}_{}{gate_key}",
         plan::safe_local(actor),
         plan::safe_local(to_anchor)
     )
 }
 
 /// The scoreboard-safe suffix shared by a move-actor's driver functions/sentinels.
-fn moveactor_bare(actor: &str, to_anchor: &str) -> String {
-    moveactor_fn(actor, to_anchor)
+fn moveactor_bare(actor: &str, to_anchor: &str, gate_key: &str) -> String {
+    moveactor_fn(actor, to_anchor, gate_key)
         .strip_prefix("ma_")
         .unwrap_or("move")
         .to_string()
@@ -5452,6 +7122,28 @@ fn collapse_fn(eff: &QuestEffect) -> String {
 /// `unleash_<id>` (puppet → real-AI twin) per declared actor, plus a per-tick
 /// teleport driver (with tangent yaw and an `on_arrive` bundle) per planned
 /// `move-actor`. Empty for a campaign with no actors (pre-0.6 byte-identical).
+///
+/// # Supersession — one puppet, one live leg driver (task #28)
+///
+/// A `move-actor` driver carries the identical defect `move-npc` had (task #25): its
+/// re-entry latch `#arun_<bare>` is keyed per **(actor, to_anchor, gate)**, so it only
+/// ever stopped a leg from restarting *itself*. Two overlapping legs on ONE puppet left
+/// two live drivers both `tp`-ing the same body every tick; they fought, and the longer
+/// leg — outliving the shorter — wrote the final position, parking the puppet at the
+/// FIRST leg's endpoint permanently.
+///
+/// The contract is the same one `movenpc_fns` documents at length: **last fired wins**,
+/// carried by a per-puppet leg generation `#agen_<actor>` stamped onto each driver's
+/// `#aown_<bare>`. A driver whose stamp is behind the generation drops its latch and
+/// returns without teleporting, arriving, or rescheduling — so it dies on its next
+/// scheduled tick. The staleness test is the positive `if own < gen` for the same
+/// reason: with both scores unset (a driver invoked directly, as the `v06_move_actor`
+/// and `v06_arrive_handoff` PackTests do) a score comparison is *false*, so the
+/// unfired-generation case reads as "not stale" and the leg runs.
+///
+/// A puppet with only one planned leg can never be superseded and carries none of this,
+/// so pre-existing single-leg campaigns stay byte-identical (ADR-0006) — pinned
+/// verbatim by `move_supersede.rs`'s `GOLDEN_ONE_LEG`.
 fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -5465,26 +7157,73 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             format!("spawn_actor_{safe}"),
             lines(&[format!(
                 "execute unless entity @e[tag=dw_actor_{safe}] run {}",
-                actor_puppet_summon(a, pos, yaw)
+                actor_puppet_summon(ns, a, pos, yaw)
             )]),
         ));
-        let mut unleash = vec![
-            format!(
-                "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
-                actor_twin_summon(a)
-            ),
-            format!("kill @e[tag=dw_pup_{safe}]"),
-        ];
+        let mut unleash = vec![format!(
+            "execute at @e[tag=dw_pup_{safe},limit=1] run {}",
+            actor_twin_summon(ns, a, "~ ~ ~")
+        )];
+        // The unleash removes the cage by killing it, and vanilla `/kill` is an
+        // ordinary death: a puppet carrying a declared drop would shed it the
+        // moment the elite stood up. Strip first — the twin standing beside it
+        // is the body that owes the player a prize.
+        if !a.drops.is_empty() {
+            unleash.push(strip_drops_line(&format!("dw_pup_{safe}")));
+        }
+        unleash.push(format!("kill @e[tag=dw_pup_{safe}]"));
         if campaign_captures_striker(plan.campaign) {
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
         out.push((format!("unleash_{safe}"), lines(&unleash)));
+        // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat. A rest
+        // (and a death-respawn at the same fire) deletes the elite the party is
+        // still fighting and stands a FRESH body on its origin anchor: full
+        // health, no accumulated chip damage, and — the reported regression — back
+        // where it belongs instead of wherever the chase left it.
+        //
+        // Deliberately not `unleash_<id>`: there is no puppet to stand up from,
+        // and re-caging one would be worse than doing nothing, because an
+        // `unleash-actor` beat fires from a one-shot trigger the engine never
+        // re-arms — a re-caged elite would be dormant, `Invulnerable` scenery for
+        // the rest of the delve. It comes back as what it was: a freed body on its
+        // own ground.
+        //
+        // The striker aggro lock is deliberately NOT re-applied. Nobody has
+        // provoked this body yet, and spec-0016 §1's stationed rule is that
+        // nothing a rest puts back may pursue across the map: it stands on its
+        // anchor under vanilla-local AI, inside the `follow_range` `DW0478`
+        // measured the bonfire against.
+        //
+        // Emitted only for an actor the campaign unleashes AND a campaign with a
+        // bonfire ([`Plan::reseat_actors`]) → byte-identical everywhere else.
+        if plan.reseat_actors().iter().any(|r| r.id == a.id) {
+            let p = ent_xyz(pos);
+            out.push((
+                format!("actor_restand_{safe}"),
+                lines(&[
+                    format!("kill @e[tag=dw_actor_{safe}]"),
+                    actor_twin_summon(ns, a, &format!("{} {} {}", p[0], p[1], p[2])),
+                ]),
+            ));
+        }
     }
     // move-actor per-tick drivers.
+    //
+    // How many legs each puppet owns, in the planner's deterministic order. Two or
+    // more ⇒ a later leg can catch an earlier one mid-flight ⇒ that puppet's drivers
+    // carry the generation guard (see the supersession section of `movenpc_fns`).
+    let mut legs: BTreeMap<&str, usize> = BTreeMap::new();
+    for m in actor_moves {
+        *legs.entry(m.actor.as_str()).or_insert(0) += 1;
+    }
     for m in actor_moves {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
+        let supersedable = legs.get(m.actor.as_str()).copied().unwrap_or(0) > 1;
+        // `#aown_<bare> < #agen_<actor>` ⇔ a later leg for this puppet has started.
+        let stale = format!("score #aown_{bare} dw.sys < #agen_{safe} dw.sys");
         // The on_arrive bundle for this (actor, to_anchor) — the first-seen effect,
         // matching the planner's dedup order.
         let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
@@ -5502,15 +7241,43 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             })
             .unwrap_or(&[]);
 
-        let start = vec![
-            format!("execute if score #arun_{bare} dw.sys matches 1 run return fail"),
-            format!("scoreboard players set #arun_{bare} dw.sys 1"),
-            format!("scoreboard players set #at_{bare} dw.sys 0"),
-            format!("schedule function {ns}:ma_tick_{bare} 1t"),
-        ];
-        out.push((moveactor_fn(&m.actor, &m.to_anchor), lines(&start)));
+        // start: guard re-entry, take the walk generation, reset the tick counter,
+        // schedule the driver. The re-entry refusal is generation-aware: a latch left
+        // armed by a driver this puppet has already superseded must not block the
+        // re-fire of that same leg (it is itself a later leg, and wins).
+        let mut start = Vec::new();
+        if supersedable {
+            start.push(format!(
+                "execute if score #arun_{bare} dw.sys matches 1 unless {stale} run return fail"
+            ));
+            start.push(format!("scoreboard players add #agen_{safe} dw.sys 1"));
+            start.push(format!(
+                "scoreboard players operation #aown_{bare} dw.sys = #agen_{safe} dw.sys"
+            ));
+        } else {
+            start.push(format!(
+                "execute if score #arun_{bare} dw.sys matches 1 run return fail"
+            ));
+        }
+        start.push(format!("scoreboard players set #arun_{bare} dw.sys 1"));
+        start.push(format!("scoreboard players set #at_{bare} dw.sys 0"));
+        start.push(format!("schedule function {ns}:ma_tick_{bare} 1t"));
+        out.push((
+            moveactor_fn(&m.actor, &m.to_anchor, &m.gate_key),
+            lines(&start),
+        ));
 
         let mut tick: Vec<String> = Vec::new();
+        if supersedable {
+            // Superseded: drop the latch (so this leg can be fired again later) and
+            // stop — no teleport, no arrive hook, no reschedule. The `schedule` this
+            // driver queued before it lost the puppet is what brought us here; not
+            // rescheduling is what ends it.
+            tick.push(format!(
+                "execute if {stale} run scoreboard players set #arun_{bare} dw.sys 0"
+            ));
+            tick.push(format!("execute if {stale} run return fail"));
+        }
         for (t, (w, y)) in m.waypoints.iter().zip(m.yaws.iter()).enumerate() {
             tick.push(format!(
                 "execute if score #at_{bare} dw.sys matches {t} run tp @e[tag=dw_pup_{safe}] {} {} {} {y} 0",
@@ -5941,15 +7708,83 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        if let Some(p) = anchor_point_any(plan, at) {
-            let q = ent_xyz(p);
-            out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
-                q[0], q[1], q[2], plan::safe_local(t.id.as_str())
-            ));
+        // Same rule, one layer out (task #142): a click trigger anchored on a gate
+        // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
+        // summons them wearing this trigger's tag. A second entity here would be
+        // exactly co-located with them, and the ray-pick tie is what killed the
+        // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
+        let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
+        match crate::pressable::body_at(plan, at) {
+            // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
+            // this trigger's tag on those entities. One cell, one hitbox.
+            crate::pressable::Body::Rides { .. } => {}
+            // The anchor is a REGION. A point body here is buried in the solid
+            // block and reachable from nowhere (see `crate::pressable`), so the
+            // object gets the clickable shape it actually has: one protruding box
+            // per shell cell, exactly as a `close-gate` seal has always done.
+            crate::pressable::Body::Region(cells) => {
+                for c in cells {
+                    let x = fmt_centi(c[0] as i64 * 100 + 50);
+                    let y = fmt_centi(c[1] as i64 * 100 - 1);
+                    let z = fmt_centi(c[2] as i64 * 100 + 50);
+                    out.push(format!(
+                        "summon minecraft:interaction {x} {y} {z} \
+                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                    ));
+                }
+            }
+            // A point in open space: the ordinary body, byte-identical.
+            crate::pressable::Body::Point(p) => {
+                let q = ent_xyz(p);
+                out.push(format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+                    q[0], q[1], q[2]
+                ));
+            }
+            // `DW0426` has already failed the build.
+            crate::pressable::Body::Nothing => {}
         }
     }
     out
+}
+
+/// `DW0426`: every click trigger must be anchored somewhere a player can click.
+///
+/// Build tier (exit 3), raised before any function is emitted. The trigger
+/// declares an anchor, a click and a full effect bundle, and the press lands on
+/// nothing — the beat never happens and every board stays green, which is the
+/// unbound-vacuity class this whole task came out of.
+fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
+    use delvewright_dsl::TriggerOn;
+    for t in &plan.campaign.quests.content.triggers {
+        if matches!(t.on, TriggerOn::Approach { .. }) {
+            continue;
+        }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        if crate::pressable::body_at(plan, at) != crate::pressable::Body::Nothing {
+            continue;
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: crate::pressable::DW_TRIGGER_UNPRESSABLE,
+            message: format!(
+                "trigger `{}` watches a `{}` on anchor `{}`, but nothing at that anchor is \
+                 clickable: it resolves to no placed piece, so the compiler has no cell to give \
+                 the trigger a body at and the press can never land. The trigger's effects would \
+                 simply never run, with every check green. Prescription: anchor it on a place a \
+                 prefab provides (anchor names come from prefab metadata; do NOT invent one), or \
+                 drop the trigger.",
+                t.id,
+                t.on.kind(),
+                at
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
@@ -6268,34 +8103,61 @@ fn loot_setup(loot: &[crate::plan::LootPlan]) -> Vec<String> {
     for l in loot {
         let c = l.cell;
         for (slot, it) in l.items.iter().enumerate() {
-            let mut comps: Vec<String> = Vec::new();
-            if let Some(n) = &it.name {
-                comps.push(format!(
-                    "custom_name={}",
-                    json!({ "text": n, "italic": false })
-                ));
-            }
-            if !it.enchantments.is_empty() {
-                let body = it
-                    .enchantments
-                    .iter()
-                    .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                comps.push(format!("enchantments={{{body}}}"));
-            }
-            let comp = if comps.is_empty() {
-                String::new()
-            } else {
-                format!("[{}]", comps.join(","))
-            };
             out.push(format!(
-                "item replace block {} {} {} container.{slot} with {}{comp} {}",
-                c[0], c[1], c[2], it.item, it.count
+                "item replace block {} {} {} container.{slot} with {}{} {}",
+                c[0],
+                c[1],
+                c[2],
+                it.item,
+                container_stack_components(it.name.as_deref(), &it.enchantments),
+                it.count
             ));
         }
     }
     out
+}
+
+/// The `[custom_name=…,enchantments=…]` component suffix a container-fill stack
+/// carries in `item replace … with <item><suffix> <count>`, or `""` when it
+/// carries neither — which is what keeps every unnamed, unenchanted fill
+/// byte-identical to the emission that predates both fields.
+///
+/// ONE renderer for every container fill: spec-0021 `loot` and the DSL v0.8
+/// `collect` `item_name` (task #95). A quest item named on one surface and
+/// unnamed on the other would be the same defect the wave-arming table taught —
+/// two places describing one stack, drifting apart the moment either moves.
+/// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
+fn container_stack_components(
+    name: Option<&str>,
+    ench: &std::collections::BTreeMap<String, u32>,
+) -> String {
+    let mut comps: Vec<String> = Vec::new();
+    if let Some(n) = name {
+        comps.push(format!(
+            "custom_name={}",
+            tr_with(n, &[("italic", json!(false))])
+        ));
+    }
+    if !ench.is_empty() {
+        let body = ench
+            .iter()
+            .map(|(id, lvl)| format!("\"{id}\":{lvl}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        comps.push(format!("enchantments={{{body}}}"));
+    }
+    if comps.is_empty() {
+        return String::new();
+    }
+    format!("[{}]", comps.join(","))
+}
+
+/// The component suffix a v0.8 `collect` stack carries: its `item_name`, or `""`
+/// when the objective declares none. A thin alias over
+/// [`container_stack_components`] — a collect stack is a container fill, and is
+/// rendered by the container fill's renderer.
+fn item_component_tail(name: Option<&str>) -> String {
+    container_stack_components(name, &std::collections::BTreeMap::new())
 }
 
 /// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
@@ -6830,7 +8692,7 @@ const REGION_CEIL_Y: i32 = 1024;
 /// The compiler's default boundary return message (English-first, CLAUDE.md
 /// language policy). Overridable via `boundary.message`, which is then l10n
 /// inventoried under `world.boundary.message`.
-const BOUNDARY_DEFAULT_MESSAGE: &str = "The tide turns you back — the delve lies behind you.";
+const _: &str = delvewright_dsl::chrome::BOUNDARY_MESSAGE.en;
 
 /// A soft, non-alarming cue played on a boundary return.
 const BOUNDARY_SOUND: &str = "minecraft:block.amethyst_block.chime";
@@ -6898,15 +8760,21 @@ fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
 }
 
 /// The effective boundary return message (authored or the English default).
-fn boundary_message(plan: &Plan) -> String {
-    plan.campaign
+fn boundary_message(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> String {
+    match plan
+        .campaign
         .world
         .content
         .boundary
         .as_ref()
         .and_then(|b| b.message.as_deref())
-        .unwrap_or(BOUNDARY_DEFAULT_MESSAGE)
-        .to_string()
+    {
+        // Authored: an ordinary inventoried campaign string.
+        Some(m) => m.to_string(),
+        // Unauthored: the compiler's own line, which is chrome and ships
+        // translated with the compiler (spec-0029 addendum).
+        None => chrome.get(delvewright_dsl::chrome::BOUNDARY_MESSAGE),
+    }
 }
 
 /// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
@@ -6932,6 +8800,67 @@ const NIGHT_VISION_PERIOD_TICKS: u32 = 20;
 /// for other reasons.
 const NIGHT_VISION_SECONDS: u32 = 12;
 
+/// Vanilla's night-vision wind-down, in **seconds**. `GameRenderer` ramps the
+/// brightness down once the remaining duration drops below 200 ticks, so an
+/// effect that has less than this left is *already* visibly flickering even
+/// though it has not expired.
+const NIGHT_VISION_FLICKER_SECONDS: u32 = 10;
+
+/// The lease every `effect give` hands out, in seconds.
+///
+/// **The camera-coverage guarantee** (owner ruling, island round 16): a vision
+/// effect the compiler grants must outlast any authored camera it can overlap,
+/// with vanilla's flicker window to spare.
+///
+/// The mitigation is declared per area and re-applied by a 1 s clock to the
+/// players *inside that area's box*. A player who leaves the box keeps whatever
+/// is left of their lease — and the island's ending does exactly that: boarding
+/// transports the party from the mitigated island to `area/open-sea` at x=256
+/// and immediately plays a 15-second cutscene. They arrived holding at most 12 s,
+/// so the ramp began ~1.5 s in and the effect died mid-shot. Owner playtest:
+/// "the night-vision effect expires mid-ending-cutscene and flickers."
+///
+/// **Why the lease, and not a re-grant at the cutscene.** Re-applying the effect
+/// from the cutscene driver would light up *every* player in *every* cutscene,
+/// including ones who were never granted sight and cameras the author framed as
+/// bright — a spectator on a night ocean would be handed cave vision. Vanilla has
+/// no "extend only if present" primitive to do it selectively. Lengthening the
+/// lease changes **who** has the effect not at all; it only makes the lease a
+/// leaving player already holds long enough that no camera can outlive it.
+///
+/// **Why the campaign's longest camera.** The compiler cannot know which cutscene
+/// a player who steps out of a mitigated area will land in, so the only sound
+/// bound is the longest one the campaign authors. Sized to that plus the flicker
+/// window plus one clock period, so the remaining duration is still above the
+/// ramp threshold when the last shot ends.
+///
+/// The cost is stated rather than hidden: sight trails a player out of a
+/// mitigated area for this long. That is the deliberate trade the pre-existing
+/// 12 s already made for the same reason (no vanilla primitive strips an effect
+/// on region exit without also stripping effects the story granted); this only
+/// moves the number, and only for a campaign that authors a longer camera than
+/// the floor.
+fn night_vision_seconds(plan: &Plan) -> u32 {
+    // Measured from the ticks the camera driver really runs for
+    // (`camera::shot_ticks` resolves `shot_style` defaults and applies vanilla's
+    // per-shot clamp), so the bound is the emitted reality, not the authored
+    // intent. Rounded up to whole seconds, which is the unit `effect give` takes.
+    let longest_camera_ticks: i32 = all_campaign_effects(plan.campaign)
+        .into_iter()
+        .filter_map(|e| e.cutscene_shots())
+        .map(|shots| {
+            shots
+                .iter()
+                .map(|s| crate::camera::shot_ticks(s.resolved_seconds()))
+                .sum::<i32>()
+        })
+        .max()
+        .unwrap_or(0);
+    let longest_camera = (longest_camera_ticks.max(0) as u32).div_ceil(20);
+    NIGHT_VISION_SECONDS
+        .max(longest_camera + NIGHT_VISION_FLICKER_SECONDS + NIGHT_VISION_PERIOD_TICKS.div_ceil(20))
+}
+
 /// The v0.6 night-vision mitigation clock: for every area declaring
 /// `mitigation: "night-vision"`, a self-rescheduling 1 s function that gives
 /// `minecraft:night_vision` to the players inside **that area's placed bounds**.
@@ -6946,6 +8875,7 @@ const NIGHT_VISION_SECONDS: u32 = 12;
 /// no mitigation, keeping pre-0.6 output byte-identical.
 fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
+    let seconds = night_vision_seconds(plan);
     let mut gives: Vec<String> = Vec::new();
     for area in &plan.areas {
         let declared = plan
@@ -6961,7 +8891,7 @@ fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
         }
         let (min, max) = area.bounds();
         gives.push(format!(
-            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {NIGHT_VISION_SECONDS} 0 true",
+            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {seconds} 0 true",
             min[0],
             max[0] - min[0] + 1,
             min[1],
@@ -6994,13 +8924,13 @@ fn has_night_vision_areas(plan: &Plan) -> bool {
 /// plus a per-player macro return. Empty for a campaign with no `boundary`. The
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
 /// the current respawn anchor rather than a fixed point.
-fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
+fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let Some(region) = playable_region(plan) else {
         return Vec::new();
     };
     let ns = &plan.namespace;
     let sel = region.inside_selector();
-    let msg = json!({ "text": boundary_message(plan) });
+    let msg = tr(&boundary_message(plan, chrome));
 
     // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
     // every player outside the region to it, re-arm the clock. `schedule … 20t`
@@ -7124,12 +9054,23 @@ const LOBBY_COUNT: &str = "#lobby";
 /// vanilla `score` component reading [`LOBBY_COUNT`], so it updates itself
 /// without any per-count emission. English-first (CLAUDE.md language policy); a
 /// compiler default, not an authored string, so it is not l10n-inventoried.
-fn lobby_actionbar(min_players: u8) -> String {
-    json!([
-        { "text": "Waiting for the party — ", "color": "yellow" },
-        { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
-        { "text": format!(" / {min_players}"), "color": "gold" }
-    ])
+fn lobby_actionbar(min_players: u8, chrome: &delvewright_dsl::Chrome) -> String {
+    // One sentence with two `with` arguments — the live count and the size the
+    // delve requires — so a translation orders them for its own language instead
+    // of inheriting English's `<prefix> <n> / <n>`.
+    tr_with(
+        &chrome.get(delvewright_dsl::chrome::LOBBY_WAITING),
+        &[
+            ("color", json!("yellow")),
+            (
+                "with",
+                json!([
+                    { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
+                    { "text": min_players.to_string(), "color": "gold" }
+                ]),
+            ),
+        ],
+    )
     .to_string()
 }
 
@@ -7159,19 +9100,55 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
+            id,
             item,
             count,
             anchor,
+            item_name,
+            fill_count,
+            dropped_by,
             ..
         } => {
-            if let Some(pos) = plan.point(area, anchor.as_str()) {
+            // v0.9 (task #179): a drop-gated collect is provisioned by the fight,
+            // not by the world. Place nothing and fill nothing — the item exists
+            // only once the boss dies, which is exactly what makes the chain
+            // provable (`DW0493`) instead of merely intended.
+            if dropped_by.is_some() {
+                return cmds;
+            }
+            // v0.8 (task #95): an ADOPTED container is prefab furniture standing
+            // in the room already — fill it where it stands, place nothing. Absent
+            // `container`, the compiler keeps conjuring its own chest at the
+            // anchor exactly as it always has. The adopted cell comes from
+            // `plan.collect_fills`, the same resolution `DW0438` proved.
+            let adopted = plan
+                .collect_fills
+                .iter()
+                .find(|f| f.objective_id == id.as_str())
+                .map(|f| f.cell);
+            let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
+                return cmds;
+            };
+            if adopted.is_none() {
                 cmds.push(format!(
                     "setblock {} {} {} minecraft:chest",
                     pos[0], pos[1], pos[2]
                 ));
+            }
+            // The objective's own stack lands in `container.0`; each padding stack
+            // repeats it in the slots after it, so the container READS full
+            // (vanilla fullness is occupied slots, not stack size). Positional and
+            // total — no RNG, nothing to reseed (ADR-0006). A campaign with
+            // neither a name nor padding emits the single pre-0.8 line, byte for
+            // byte.
+            let stack = format!(
+                "{item}{} {count}",
+                item_component_tail(item_name.as_deref())
+            );
+            for slot in 0..=*fill_count {
                 cmds.push(format!(
-                    "item replace block {} {} {} container.0 with {} {}",
-                    pos[0], pos[1], pos[2], item, count
+                    "item replace block {} {} {} container.{slot} with {stack}",
+                    pos[0], pos[1], pos[2]
                 ));
             }
         }
@@ -7254,37 +9231,49 @@ fn completion_cleanup(o: &Objective) -> Vec<String> {
 /// The flags any `set-flag` effect produces (sorted, deduped) — quest effects,
 /// plus (DSL v0.4) dialogue `set-flag` effects and environment-trigger effects.
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
+///
+/// **This is emission, not a lint** (task #24). A `set-flag` whose `dw.f_<flag>`
+/// objective is missing from `setup` writes to nothing: vanilla answers
+/// `scoreboard players set … <undeclared> 1` with a command error and carries on,
+/// so there is no crash, nothing a bot observes, and every gate on that flag
+/// simply never opens. It is the `DW0497` shape — a call with no callee —
+/// reproduced one layer down, at the scoreboard.
+///
+/// The roots therefore come from [`crate::plan::for_each_effect_root`], the one
+/// enumeration [`all_campaign_effects`] itself walks, so the declaration walk and
+/// the write walk cannot disagree about where a `set-flag` may live. This
+/// inventory used to hand-list three of the five, and a `set-flag` in a
+/// `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle
+/// emitted its write against an objective nothing had created.
+///
+/// Depth was never the blind spot — `visit_deep` already descended `sequence`
+/// steps and lifecycle bundles — so the fix is which lists the descent starts
+/// from, and it is inherited rather than re-listed.
+///
+/// The sources below the walk are the ones that are **not** effect roots and so
+/// cannot come from it: a trap's and a timed gate's `disarm.sets_flag`, the flat
+/// `DialogueEffect::SetFlag` list (a `DialogueEffect` is not a `QuestEffect`), and
+/// the cast ledger's flag *reads*.
 fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
-    // Descend the whole effect tree: a `set-flag` nested in a `sequence` step (or an
-    // `on_respawn`/`on_caught`/`on_arrive` bundle) still emits a `dw.f_<flag>` write,
-    // so its scoreboard objective must be initialized here — else the nested
-    // `set-flag` writes to an uninitialized objective at runtime.
-    let note = |eff: &QuestEffect, out: &mut std::collections::BTreeSet<String>| {
-        eff.visit_deep(&mut |e| {
-            if let Some(f) = e.set_flag() {
-                out.insert(f.as_str().to_string());
-            }
-        });
-    };
-    for q in &c.quests.content.quests {
-        for eff in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            note(eff, &mut out);
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for eff in effs {
+            eff.visit_deep(&mut |e| {
+                if let Some(f) = e.set_flag() {
+                    out.insert(f.as_str().to_string());
+                }
+            });
         }
-    }
-    for t in &c.quests.content.triggers {
-        for eff in &t.effects {
-            note(eff, &mut out);
-        }
-    }
+    });
     // v0.6 traps (spec-0011): a disarm's `sets_flag` needs its own scoreboard.
     for t in &c.quests.content.traps {
         if let Some(dis) = &t.disarm {
+            out.insert(dis.sets_flag.as_str().to_string());
+        }
+    }
+    // task #184: a timed gate's disarm sets a flag exactly as a trap's does.
+    for g in &c.quests.content.timed_gates {
+        if let Some(dis) = &g.disarm {
             out.insert(dis.sets_flag.as_str().to_string());
         }
     }
@@ -7716,9 +9705,9 @@ fn cast_bark_fns(
         ];
         for (i, line) in pool.iter().enumerate() {
             let comp = json!([
-                { "text": name, "color": "yellow" },
+                tr_with(&name, &[("color", json!("yellow"))]),
                 { "text": ": " },
-                { "text": line, "italic": true }
+                tr_with(line, &[("italic", json!(true))])
             ]);
             body.push(format!(
                 "execute if score {holder} dw.sys matches {} run tellraw @s {comp}",
@@ -7730,7 +9719,7 @@ fn cast_bark_fns(
     out
 }
 
-fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
+fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
@@ -7742,8 +9731,8 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         .zip(&c.classes.content.classes)
         .map(|(cp, class)| {
             json!({
-                "label": class.name,
-                "tooltip": class.blurb,
+                "label": tr(&class.name),
+                "tooltip": tr(&class.blurb),
                 "action": { "type": "minecraft:run_command", "command": format!("/trigger dw.class set {}", cp.n) }
             })
         })
@@ -7752,8 +9741,9 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         "class_select".to_string(),
         json!({
             "type": "minecraft:multi_action",
-            "title": "Choose your class",
-            "body": [{ "type": "minecraft:plain_message", "contents": "Pick the kit you will carry." }],
+            "title": tr(&chrome.get(delvewright_dsl::chrome::CLASS_TITLE)),
+            "body": [{ "type": "minecraft:plain_message",
+                       "contents": tr(&chrome.get(delvewright_dsl::chrome::CLASS_BODY)) }],
             "columns": 1,
             "can_close_with_escape": false,
             "after_action": "close",
@@ -7772,14 +9762,14 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
             format!("bonfire_{i}"),
             json!({
                 "type": "minecraft:multi_action",
-                "title": bf.prompt,
+                "title": tr(&chrome.rebind(&bf.prompt)),
                 "columns": 1,
                 "can_close_with_escape": true,
                 "after_action": "close",
                 "actions": [
-                    { "label": bf.rest_label,
+                    { "label": tr(&chrome.rebind(&bf.rest_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
-                    { "label": bf.save_label,
+                    { "label": tr(&chrome.rebind(&bf.save_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
                 ]
             }),
@@ -7881,8 +9871,8 @@ fn build_node_dialog(
     if opts.is_empty() {
         json!({
             "type": "minecraft:notice",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "can_close_with_escape": true
         })
     } else {
@@ -7890,25 +9880,79 @@ fn build_node_dialog(
             .iter()
             .map(|o| {
                 let mut action = json!({
-                    "label": o.label,
+                    "label": tr(&o.label),
                     "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
                 });
                 if let Some(tip) = &o.tooltip {
-                    action["tooltip"] = json!(tip);
+                    action["tooltip"] = tr(tip);
                 }
                 action
             })
             .collect();
         json!({
             "type": "minecraft:multi_action",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "columns": 1,
             "can_close_with_escape": true,
             "after_action": "close",
             "actions": actions
         })
     }
+}
+
+/// The **death loot tables** a campaign's declared quest-item drops need (DSL
+/// v0.9, task #179), as `(namespace-local path, json)` pairs.
+///
+/// One table per declaring body, one pool, one roll, one entry per declared
+/// item: nothing here rolls a die. The entry is the vanilla `minecraft:item`
+/// form, and a declared display `name` becomes the `minecraft:set_name` function
+/// with `target: "custom_name"` — the same component a `collect`'s `item_name`
+/// writes into a container stack, so the key a boss leaves on the ground and the
+/// key a barrel hands over are the same item.
+///
+/// Emitted only for bodies that declare an `{item}` drop, so a campaign without
+/// one writes no `loot_table` directory at all and stays byte-identical.
+fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
+    let c = plan.campaign;
+    let mut out: Vec<(String, Value)> = Vec::new();
+    let table = |drops: &[delvewright_dsl::MobDrop]| {
+        let entries: Vec<Value> = drops
+            .iter()
+            .filter_map(|d| {
+                let item = d.item()?;
+                let mut entry = json!({ "type": "minecraft:item", "name": item });
+                if let Some(name) = d.name() {
+                    entry["functions"] = json!([{
+                        "function": "minecraft:set_name",
+                        "target": "custom_name",
+                        "name": { "text": name },
+                    }]);
+                }
+                Some(entry)
+            })
+            .collect();
+        json!({
+            "type": "minecraft:entity",
+            "pools": [{ "rolls": 1, "entries": entries }],
+        })
+    };
+    for a in &c.quests.content.actors {
+        if has_item_drop(&a.drops) {
+            out.push((drop_loot_path("actor", a.id.as_str()), table(&a.drops)));
+        }
+    }
+    for w in &c.quests.content.waves {
+        for (k, m) in w.mobs.iter().enumerate() {
+            if has_item_drop(&m.drops) {
+                out.push((
+                    drop_loot_path("wave", &format!("{}-{k}", w.id.as_str())),
+                    table(&m.drops),
+                ));
+            }
+        }
+    }
+    out
 }
 
 fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
@@ -7939,6 +9983,29 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                     }
                 },
                 "rewards": { "function": format!("{ns}:bonfire_open_{i}") }
+            }),
+        ));
+    }
+
+    // Task #142: one advancement per sealed gate, so a right-click on the stone
+    // runs the answer AS the player who pressed it. `seal_hint_<safe>` revokes it,
+    // so the seal answers every press — a wall is not consumed by being asked.
+    for s in &plan.seal_hints {
+        advs.push((
+            format!("seal_{}", s.safe),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_seal_{}\"]}}", s.safe)
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:seal_hint_{}", s.safe) }
             }),
         ));
     }
@@ -8049,8 +10116,8 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
             "criteria": { "granted": { "trigger": "minecraft:impossible" } },
             "display": {
                 "icon": { "id": "minecraft:iron_door" },
-                "title": c.world.content.title,
-                "description": outro,
+                "title": tr(&c.world.content.title),
+                "description": tr(&outro),
                 "frame": "goal",
                 "show_toast": true,
                 "announce_to_chat": false,
@@ -8170,7 +10237,7 @@ fn emit_packtest(
         let mut body: Vec<String> = Vec::new();
         body.push(format!(
             "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-            c.world.content.title
+            artifact_title(c)
         ));
         body.push("# @dummy".to_string());
         if tail == 0 {
@@ -8239,7 +10306,7 @@ fn emit_packtest(
     let mut sealed: Vec<String> = Vec::new();
     sealed.push(format!(
         "#> {}: environment sealed on boot (spec-0002)",
-        c.world.content.title
+        artifact_title(c)
     ));
     sealed.push("# @dummy".to_string());
     sealed.push("# @timeout 100".to_string());
@@ -8278,7 +10345,7 @@ fn emit_packtest(
         let mut df: Vec<String> = Vec::new();
         df.push(format!(
             "#> {}: the world runs at the declared difficulty `{}`",
-            c.world.content.title,
+            artifact_title(c),
             diff.token()
         ));
         df.push("# @dummy".to_string());
@@ -8320,6 +10387,14 @@ fn emit_packtest(
     // reachable. Emits nothing without such a pair.
     emit_shared_hitbox_packtest(plan, out);
 
+    // #122: the class trigger is one-shot per player. Emitted for every campaign
+    // that declares a class, i.e. every campaign.
+    emit_class_seal_packtest(plan, out);
+
+    // task #142: a sealed gate carries the hitboxes its right-click answer rides.
+    // Emits nothing for a campaign that seals no gate.
+    emit_seal_packtest(plan, out);
+
     // v0.6: boundary return / never-move-inside (spec-0013). Emits nothing without
     // a boundary.
     emit_boundary_packtest(plan, out);
@@ -8346,6 +10421,11 @@ fn emit_packtest(
     // of the previous life's feral release. Emits nothing without a bonfire and
     // a `respawns_on_rest` wave.
     emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
+    // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat — an elite
+    // the party is still fighting is deleted and stood up fresh on its origin;
+    // one they finished stays finished. Emits nothing without a bonfire and a
+    // hostile actor / billed wave.
+    emit_reseat_undefeated_packtests(plan, out);
     // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
@@ -8494,7 +10574,7 @@ fn emit_branch_campaign_packtest(
     let mut body: Vec<String> = Vec::new();
     body.push(format!(
         "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
+        artifact_title(c)
     ));
     body.push("# @dummy".to_string());
     body.push(format!("# @timeout {timeout}"));
@@ -8691,7 +10771,7 @@ fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
 
         let mut b = packtest_header(&format!(
             "{}: AND-join `{jid}` divides across {n} players (spec-0018)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         for m in 1..n {
@@ -8844,7 +10924,7 @@ fn emit_scheduled_executor_packtests(
     moves: &[crate::nav::MovePlan],
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let probe_score = plan::flag_score(SCHEDULED_PROBE_FLAG);
 
     // --- 1. the unconditional probe -------------------------------------
@@ -8912,7 +10992,7 @@ fn emit_scheduled_executor_packtests(
             })
     });
     let Some((m, flag)) = arrival else { return };
-    let bare = movenpc_bare(&m.npc, &m.to_anchor);
+    let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
     let score = plan::flag_score(&flag);
 
     // The walk is real, so the test must outlive it: the driver reschedules
@@ -8937,7 +11017,7 @@ fn emit_scheduled_executor_packtests(
     // stands still throughout; nothing here supplies it as an executor.
     t.push(format!(
         "function {ns}:{}",
-        movenpc_fn(&m.npc, &m.to_anchor)
+        movenpc_fn(&m.npc, &m.to_anchor, &m.gate_key)
     ));
     t.push(format!("await score {} {score} matches 1", plan::PARTY));
     out.insert(
@@ -8961,7 +11041,7 @@ fn emit_scheduled_executor_packtests(
 /// no terminal option (nothing to drive).
 fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
         npc.options
             .iter()
@@ -9068,7 +11148,7 @@ fn pin_cast_clause_flags(
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let casts = crate::cast::npc_casts(plan.campaign);
 
     // --- root swap: one NPC whose ledger names two different roots ----------
@@ -9246,7 +11326,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(l) = plan.loot.iter().find(|l| !l.items.is_empty()) else {
         return;
     };
@@ -9284,7 +11364,7 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// compile-time check. Emitted only for a campaign with an equipped actor.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(a) = plan
         .campaign
         .quests
@@ -9350,7 +11430,7 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// entity-tick-limited.
 fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     // Pick the first trap that has both a dispenser payload and a disarm — it
     // exercises both the fill and the empty in one test. Else the first payload trap.
@@ -9442,7 +11522,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// the tier-3 bot playthrough.
 fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &PayloadPlans) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(v) = payloads.volleys.first() {
         let base = format!("volley_{}", v.key);
@@ -9578,7 +11658,7 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
 /// documented "inactive while the flag is set" behaviour simply did not exist.
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // The first trap gated by a single forbidding flag, which is the shape that can
     // be driven from a test: set the flag → shut, clear it → open.
     let Some(t) = plan
@@ -9642,7 +11722,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (min, max) = area.bounds();
     let mid = [
         (min[0] + max[0]) / 2,
@@ -9683,6 +11763,145 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
 /// the interior cell, and is robust to teleport centering (both sides floor the
 /// same way). Emits nothing when the campaign declares no `boundary`.
+/// #122: **the class trigger is one-shot per player** — the seal, proved on a
+/// live server.
+///
+/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, so a second
+/// `/trigger dw.class` mid-run used to re-class whoever ran it AND warp them
+/// back to the start of the delve. The compiler now arms the trigger only for a
+/// player who has not classed (`class_arm`), so the seal is a property of the
+/// emitted pack rather than a rule every caller has to know.
+///
+/// The template drives the REAL arming path as its own dummy — it never restates
+/// the guard, which would prove only its own copy — and takes the one
+/// unambiguous read-back vanilla offers for "was this trigger usable": the
+/// success of the `trigger` command itself.
+///
+/// Three claims, in the order that makes them mean something:
+///
+/// 1. an UNCLASSED player's trigger is armed and works (the seal must not have
+///    weakened the first, legitimate class — a template that only proved the
+///    "no" would pass just as well against a pack where classing is broken);
+/// 2. the apply consumes the trigger and records the class;
+/// 3. after it, the arming path runs again and the trigger stays DEAD: the
+///    `trigger` command fails, `dw.class` gets no score, so the dispatch cannot
+///    fire — same class, same place, measured on the dummy's own `Pos`.
+///
+/// The dummy is parked away from the entry point before claim 3 precisely so a
+/// warp back to it would be visible.
+fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(first) = plan.classes.first() else {
+        return;
+    };
+    let Some(entry) = campaign_spawn(plan) else {
+        return;
+    };
+    // A genuinely DIFFERENT class for the second attempt when the campaign has
+    // one, so "the class did not change" is a claim about identity and not only
+    // about position.
+    let second = plan.classes.get(1).unwrap_or(first);
+    // Distinct from the entry cell by construction: this is where a warp would
+    // be visible. Reading block-x back the way `emit_boundary_packtest` does
+    // makes the assertion robust to teleport centering.
+    let probe_x = entry[0] + 32;
+
+    let mut b = packtest_header(&format!(
+        "{title}: the class trigger is one-shot — a second `/trigger dw.class` cannot re-class or \
+         warp (#122)"
+    ));
+    b.push(format!("function {ns}:setup"));
+    // Own init: the batch is one shared server, so "never set" is not 0.
+    b.push("scoreboard players reset @s dw.class".to_string());
+    b.push("scoreboard players reset @s dw.classed".to_string());
+
+    // --- 1. unclassed: the trigger is armed and the class can be taken --------
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm1 dw.sys run trigger dw.class set {}",
+        first.n
+    ));
+    b.push("assert score #cls_arm1 dw.sys matches 1".to_string());
+
+    // --- 2. the apply consumes the trigger and records the class -------------
+    b.push(format!("function {ns}:class_apply_{}", first.safe));
+    b.push(
+        "execute store success score #cls_taken dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_taken dw.sys matches 1".to_string());
+    b.push(
+        "execute store success score #cls_left dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left dw.sys matches 0".to_string());
+
+    // --- 3. the seal: arm again, and the trigger stays dead ------------------
+    // Park the dummy away from the entry the apply teleported it to, so the warp
+    // this task exists to kill would move it.
+    b.push(format!("tp @s {probe_x} {} {}", entry[1], entry[2]));
+    b.push("execute store result score #cls_x dw.sys run data get entity @s Pos[0] 1".to_string());
+    // Precondition: the park really landed where it was asked to, so a later
+    // equality is a fact about the seal and not about a teleport that no-op'd.
+    b.push(format!("assert score #cls_x dw.sys matches {probe_x}"));
+    b.push(format!("execute as @s run function {ns}:class_arm"));
+    b.push(format!(
+        "execute store success score #cls_arm2 dw.sys run trigger dw.class set {}",
+        second.n
+    ));
+    b.push("assert score #cls_arm2 dw.sys matches 0".to_string());
+    b.push(
+        "execute store success score #cls_left2 dw.sys if score @s dw.class matches -2147483648.."
+            .to_string(),
+    );
+    b.push("assert score #cls_left2 dw.sys matches 0".to_string());
+    // …so the dispatch cannot fire: same class score, same place.
+    b.push(
+        "execute store success score #cls_still dw.sys if score @s dw.classed matches 1"
+            .to_string(),
+    );
+    b.push("assert score #cls_still dw.sys matches 1".to_string());
+    b.push("execute store result score #cls_x2 dw.sys run data get entity @s Pos[0] 1".to_string());
+    b.push(format!("assert score #cls_x2 dw.sys matches {probe_x}"));
+
+    // The class the player actually wears, when the campaign tags it (the flask
+    // path): still the first class, never the second.
+    if !plan.flasks().is_empty() {
+        let worn = class_tag(&first.safe);
+        b.push(format!(
+            "execute store success score #cls_worn dw.sys if entity @s[tag={worn}]"
+        ));
+        b.push("assert score #cls_worn dw.sys matches 1".to_string());
+        if second.safe != first.safe {
+            let other = class_tag(&second.safe);
+            b.push(format!(
+                "execute store success score #cls_other dw.sys if entity @s[tag={other}]"
+            ));
+            b.push("assert score #cls_other dw.sys matches 0".to_string());
+        }
+    }
+
+    // Leave no residue for the shared batch (pin_dummy rule 3/4): the party-unique
+    // kit latches this template's apply may have taken are batch-global.
+    for (k, item) in plan.campaign.classes.content.classes[0]
+        .kit
+        .iter()
+        .enumerate()
+    {
+        if matches!(item.carrier, Some(delvewright_dsl::Carrier::One)) {
+            b.push(format!(
+                "scoreboard players reset #kit_{}_{k} dw.sys",
+                first.safe
+            ));
+        }
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/class_trigger_once.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
     let Some(region) = playable_region(plan) else {
         return;
@@ -9691,7 +11910,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // setup_finish (which writes `dw:cp`) is placement-gated and cannot run in a
     // bare PackTest, so seed the same spawn-cell value the real init would write.
     let seed_cp = format!(
@@ -9775,7 +11994,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// Emits nothing for a campaign with no wave → byte-identical.
 fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(w) = plan.campaign.quests.content.waves.first() else {
         return;
     };
@@ -9845,7 +12064,7 @@ fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -9975,7 +12194,7 @@ fn emit_reseat_stationed_packtest(
     lane_routes: &crate::nav::LaneRoutes,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -10128,6 +12347,192 @@ fn emit_reseat_stationed_packtest(
     );
 }
 
+/// spec-0016 §1 (owner ruling 2026-08-05): **an undefeated elite is put back;
+/// a defeated one stays dead.**
+///
+/// The bell's round-five playtest found the half of the souls loop nothing was
+/// driving. `respawns_on_rest` waves came back correctly — and the barrow-warden,
+/// an actor elite the party had woken, wounded and run away from, stayed exactly
+/// where the chase ended, at exactly the health the chase left it. So did the
+/// ambushers in the sewer and up in the rafters. A rest refreshed the scene
+/// around them and not them.
+///
+/// The two templates here are that scenario, run on the pinned server, in the
+/// order it happens: meet the fight, damage it, drag it off its ground, rest —
+/// then demand
+///
+/// 1. it is standing again, exactly one body / the authored count;
+/// 2. **not the same body**: every mob of the previous life is branded with a tag
+///    no summon can carry, and the brand is gone (identity, not arithmetic — the
+///    anti-chip claim);
+/// 3. it is back on its own ground, not where combat left it;
+/// 4. an actor is put back FREED, never re-caged — a re-caged elite would be
+///    dormant scenery for the rest of the delve, because the `unleash-actor` beat
+///    that woke it fires from a one-shot trigger;
+/// 5. and once actually killed, a rest does NOT bring it back.
+///
+/// Emits nothing without a bonfire, and nothing for a campaign with no hostile
+/// actor and no billed elite/boss wave → byte-identical.
+fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(bf) = plan.bonfires().next() else {
+        return;
+    };
+    let i = bf.index;
+    // A rest re-seats every MET `respawns_on_rest` wave too, so both templates own
+    // the whole re-seat board: clear each one's entities and its seated sentinel
+    // on entry and on exit (pin_dummy rule 4).
+    let board: Vec<String> = plan
+        .reseat_waves()
+        .iter()
+        .flat_map(|r| {
+            [
+                format!("kill @e[tag={}]", plan::wave_tag(r.id.as_str())),
+                format!(
+                    "scoreboard players set {} dw.sys 0",
+                    wave_seated_holder(r.id.as_str())
+                ),
+            ]
+        })
+        .collect();
+
+    // --- the actor elite (the barrow-warden's defect) ---
+    if let Some(a) = plan
+        .reseat_actors()
+        .into_iter()
+        .find(|a| anchor_point_any(plan, a.anchor.as_str()).is_some())
+    {
+        let safe = plan::safe_local(a.id.as_str());
+        let origin = ent_xyz(anchor_point_any(plan, a.anchor.as_str()).unwrap());
+        let (pin, sel) = pin_dummy("dw_rsua");
+        let mut b = packtest_header(&format!(
+            "{title}: a rest re-seats the undefeated elite `{}` at its origin, and never \
+             resurrects a defeated one (spec-0016 §1)",
+            a.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.extend(board.iter().cloned());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push("kill @e[tag=dw_rsua_brand]".to_string());
+        // Meet the fight: stage the puppet, then turn it loose exactly as the
+        // campaign's own beat does.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!("function {ns}:unleash_{safe}"));
+        b.push(format!(
+            "execute store result score #n_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #n_rsua dw.sys matches 1".to_string());
+        b.push(format!(
+            "execute store result score #q_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #q_rsua dw.sys matches 0".to_string());
+        // The fight the owner had: the elite chases the party off its ground and
+        // is chipped on the way.
+        b.push(format!(
+            "execute at {sel} run tp @e[tag=dw_actor_{safe}] ~ ~ ~"
+        ));
+        b.push(format!(
+            "data modify entity @e[tag=dw_actor_{safe},limit=1] Health set value 1.0f"
+        ));
+        b.push(format!("tag @e[tag=dw_actor_{safe}] add dw_rsua_brand"));
+        // The rest, through the REAL generated rest function.
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #a_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #a_rsua dw.sys matches 1".to_string());
+        b.push(
+            "execute store result score #b_rsua dw.sys if entity @e[tag=dw_rsua_brand]".to_string(),
+        );
+        b.push("assert score #b_rsua dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute positioned {} {} {} store result score #d_rsua dw.sys if entity \
+             @e[tag=dw_actor_{safe},distance=..2]",
+            origin[0], origin[1], origin[2]
+        ));
+        b.push("assert score #d_rsua dw.sys matches 1".to_string());
+        // Freed, not re-caged.
+        b.push(format!(
+            "execute store result score #c_rsua dw.sys if entity @e[tag=dw_pup_{safe}]"
+        ));
+        b.push("assert score #c_rsua dw.sys matches 0".to_string());
+        // Defeated stays dead: no body, nothing to put back.
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!("function {ns}:bonfire_rest_{i}"));
+        b.push(format!(
+            "execute store result score #k_rsua dw.sys if entity @e[tag=dw_actor_{safe}]"
+        ));
+        b.push("assert score #k_rsua dw.sys matches 0".to_string());
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.extend(board.iter().cloned());
+        b.push(format!("tag {sel} remove dw_rsua"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/souls_reseat_actor.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+
+    // --- the billed elite/boss wave (the anti-chip half) ---
+    let Some(w) = plan
+        .undefeated_reseat_waves()
+        .into_iter()
+        .find(|w| plan::wave_total(w) >= 1)
+    else {
+        return;
+    };
+    let safe = plan::safe_local(w.id.as_str());
+    let tag = plan::wave_tag(w.id.as_str());
+    let brand = plan::wave_brand_tag(w.id.as_str());
+    let total = plan::wave_total(w);
+    let mut b = packtest_header(&format!(
+        "{title}: a rest re-seats the undefeated boss wave `{}` whole, and never resurrects a \
+         beaten one (spec-0016 §1)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.extend(board.iter().cloned());
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    // Meet it, and grind it down to a sliver — the path the ruling forbids.
+    b.push(format!("function {ns}:spawn_{safe}"));
+    b.push(format!("function {ns}:wave_brand_{safe}"));
+    if total > 1 {
+        b.push(format!("kill @e[tag={tag},limit={}]", total - 1));
+    }
+    b.push(format!(
+        "data modify entity @e[tag={tag},limit=1] Health set value 1.0f"
+    ));
+    b.push(format!(
+        "execute store result score #s_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #s_rsuw dw.sys matches 1".to_string());
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #n_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push(format!("assert score #n_rsuw dw.sys matches {total}"));
+    b.push(format!(
+        "execute store result score #b_rsuw dw.sys if entity @e[tag={brand}]"
+    ));
+    b.push("assert score #b_rsuw dw.sys matches 0".to_string());
+    // Beaten stays beaten: the boss the party actually killed is not conjured back.
+    b.push(format!("kill @e[tag={tag}]"));
+    b.push(format!("function {ns}:bonfire_rest_{i}"));
+    b.push(format!(
+        "execute store result score #k_rsuw dw.sys if entity @e[tag={tag}]"
+    ));
+    b.push("assert score #k_rsuw dw.sys matches 0".to_string());
+    b.push(format!("function {ns}:wave_unbrand_{safe}"));
+    b.push(format!("kill @e[tag={tag}]"));
+    b.extend(board.iter().cloned());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_reseat_undefeated.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}
+
 /// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
 ///
 /// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
@@ -10151,7 +12556,7 @@ fn emit_reseat_stationed_packtest(
 /// `DW0476` makes the same thing as "no bonfire" → byte-identical.
 fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -10162,6 +12567,15 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let item = &plan.campaign.classes.content.classes[ci].kit[ki];
     let ctag = class_tag(&plan.classes[ci].safe);
     let (pin, sel) = pin_dummy("dw_bfopt");
+    // Counting predicate: the flask's own item predicate, so on a
+    // contents-bearing flask every count below is of bottles whose
+    // `potion_contents` matches EXACTLY. That is what makes this template a
+    // proof of round-trip and not merely of arithmetic — a rest that re-gave a
+    // differently-filled bottle (or the contents-less placeholder) would leave
+    // the exact-match count at 1 while the bare-id count climbed to `count + 1`,
+    // and both halves are asserted below.
+    let pred = kit_item_predicate(item);
+    let comp = kit_item_components(item);
 
     let mut b = packtest_header(&format!(
         "{title}: save-only saves and nothing else; rest refills the flask (spec-0016 §1)"
@@ -10171,9 +12585,10 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     // The dummy takes the flask's class, so `bonfire_flask`'s per-class guard
     // selects it — this is the same tag `class_apply_<class>` adds.
     b.push(format!("tag {sel} add {ctag}"));
-    // Baseline: exactly ONE flask in the bag (the party has spent the rest).
+    // Baseline: exactly ONE flask in the bag (the party has spent the rest),
+    // filled exactly as the class kit fills it.
     b.push(format!("clear {sel} {}", item.item));
-    b.push(format!("give {sel} {} 1", item.item));
+    b.push(format!("give {sel} {}{comp} 1", item.item));
 
     // --- save only: the checkpoint moves, the flask does NOT come back ---
     b.push("data modify storage dw:cp pos set value [0, 0, 0]".to_string());
@@ -10181,8 +12596,7 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_save_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_save dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_save dw.sys run clear {sel} {pred} 0"
     ));
     b.push("assert score #bo_save dw.sys matches 1".to_string());
     b.push(
@@ -10195,11 +12609,20 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
         "execute as {sel} run function {ns}:bonfire_pick_rest_{i}"
     ));
     b.push(format!(
-        "execute store result score #bo_rest dw.sys run clear {sel} {} 0",
-        item.item
+        "execute store result score #bo_rest dw.sys run clear {sel} {pred} 0"
     ));
     b.push(format!(
         "assert score #bo_rest dw.sys matches {}",
+        item.count
+    ));
+    // …and nothing ELSE of that item id is in the bag: refilling by handing over
+    // a second, differently-filled bottle is the failure this catches.
+    b.push(format!(
+        "execute store result score #bo_any dw.sys run clear {sel} {} 0",
+        item.item
+    ));
+    b.push(format!(
+        "assert score #bo_any dw.sys matches {}",
         item.count
     ));
 
@@ -10219,9 +12642,24 @@ fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// the machine-checkable half of "a deterministic clock over the gate region";
 /// the *timing* half is the compile-time `DW0378` proof, which needs no server.
 /// Emits nothing for a campaign with no timed gate.
+/// Pin the jam score a disarmable gate's clock is guarded by, so a template never
+/// runs against a jam a sibling left behind.
+///
+/// PackTest shares one server across every generated template and gives no
+/// ordering guarantee, so a persistent score is shared mutable state between
+/// tests. `souls_timed_gate_disarm` deliberately ends DISARMED — that is its
+/// subject — and any sibling that calls `tgate_close_` afterwards finds the call
+/// swallowed by the jam guard. Emitting nothing for a gate with no `disarm` keeps
+/// those campaigns byte-identical.
+fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
+    if g.disarm.is_some() {
+        b.push(format!("scoreboard players set #tgdis_{} dw.sys 0", g.safe));
+    }
+}
+
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(g) = plan.timed_gates.first() else {
         return;
     };
@@ -10238,6 +12676,13 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         "fill {} {} {} {} {} {} {}",
         from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
     ));
+    // …and un-jam, for the same reason the fill exists. `souls_timed_gate_disarm`
+    // ends with the gate DISARMED and never restores it, `#tgdis_<id>` persists on
+    // the shared server, and PackTest does not order siblings — so whenever disarm
+    // runs first, this template's `tgate_close_` is swallowed by its own jam guard
+    // and the re-seal assertion reads air. A template never inherits the state a
+    // sibling left (the flag-leak class of PR #237); it pins what it depends on.
+    pin_tgdis(&mut b, g);
     b.push(format!(
         "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
         probe[0], probe[1], probe[2], g.gate_block
@@ -10260,6 +12705,88 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
         lines(&b).into_bytes(),
     );
     emit_timed_gate_crush_packtest(plan, g, out);
+    emit_timed_gate_disarm_packtest(plan, g, out);
+}
+
+/// task #184 PackTest: a **disarmed** gate stays open across several former cycle
+/// boundaries, and its closing edge never fires again.
+///
+/// A fake player cannot wait out a `schedule`, so the template does what the
+/// timed-gate template already does — drives the REAL clock functions directly,
+/// which IS the clock's body. The proof is that after `tgate_disarm_<id>` runs,
+/// calling `tgate_close_<id>` (the exact function the schedule would have
+/// re-entered) leaves the span air, three former boundaries in a row. If the
+/// guard were missing, the very first one would re-seal it.
+///
+/// A `crush: true` gate gets the sharper form for free: the same guarded body
+/// carries the judgement, so a close that cannot fill also cannot damage — which
+/// is why the compiler unit test asserts the damage line is *inside* the guard
+/// rather than beside it.
+///
+/// Emits nothing unless the gate declares a `disarm`, so every other campaign's
+/// PackTest suite is byte-identical.
+fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
+    if g.disarm.is_none() {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let (from, to) = g.gate_region;
+    let probe = from;
+    let id = &g.safe;
+    let mut b = packtest_header(&format!(
+        "{title}: timed gate `{}` stays open once disarmed (task #184)",
+        g.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    // A sibling template shares this world: re-arm and re-seal so the fixture
+    // starts from a running, shut clock whatever ran before it.
+    b.push(format!("scoreboard players set #tgdis_{id} dw.sys 0"));
+    b.push(format!(
+        "fill {} {} {} {} {} {} {}",
+        from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+    ));
+    // The clock is still live: a close really does seal.
+    b.push(format!("function {ns}:tgate_open_{id}"));
+    b.push(format!("function {ns}:tgate_close_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_armed dw.sys if block {} {} {} {}",
+        probe[0], probe[1], probe[2], g.gate_block
+    ));
+    b.push("assert score #tgd_armed dw.sys matches 1".to_string());
+    // Pull the lever: the span clears and the sentinel latches.
+    b.push(format!("function {ns}:tgate_disarm_{id}"));
+    b.push(format!(
+        "execute store success score #tgd_jam dw.sys if block {} {} {} minecraft:air",
+        probe[0], probe[1], probe[2]
+    ));
+    b.push("assert score #tgd_jam dw.sys matches 1".to_string());
+    b.push(format!("assert score #tgdis_{id} dw.sys matches 1"));
+    // Three former cycle boundaries. The assertion lands immediately after the
+    // CLOSE — before the open half runs — because that is the only place the
+    // guard is load-bearing: an unguarded close re-seals here, and an assertion
+    // taken after the following open would be satisfied either way and prove
+    // nothing (measured: the template that asserted after the open passed
+    // against a deliberately unguarded build).
+    for n in 1..=3 {
+        b.push(format!("function {ns}:tgate_close_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_c{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_c{n} dw.sys matches 1"));
+        // …and the open half of the dead ping-pong is a harmless no-op.
+        b.push(format!("function {ns}:tgate_open_{id}"));
+        b.push(format!(
+            "execute store success score #tgd_o{n} dw.sys if block {} {} {} minecraft:air",
+            probe[0], probe[1], probe[2]
+        ));
+        b.push(format!("assert score #tgd_o{n} dw.sys matches 1"));
+    }
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/souls_timed_gate_disarm.mcfunction"),
+        lines(&b).into_bytes(),
+    );
 }
 
 /// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects
@@ -10300,7 +12827,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         return;
     }
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (from, to) = g.gate_region;
     let selector = region_selector(from, to);
     // Feet-centred on one cell of the region: provably inside the selector box.
@@ -10314,6 +12841,10 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         g.id
     ));
     b.push(format!("function {ns}:setup"));
+    // Un-jam first, for the same reason the base template does: a jam left by
+    // `souls_timed_gate_disarm` swallows the `tgate_close_` this test crushes
+    // with, and the crush that never happens reads as a lethality failure.
+    pin_tgdis(&mut b, g);
     // Open first: a mistimed crossing leaves the player standing in an open
     // gateway, which is the position the judgement must catch.
     b.push(format!("function {ns}:tgate_open_{}", g.safe));
@@ -10350,7 +12881,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
 /// on a live server). Emits nothing for a campaign with no shortcut.
 fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(sc) = plan.shortcuts.first() else {
         return;
     };
@@ -10424,7 +12955,7 @@ fn emit_td_lane_packtests(
     wave_rings: &WaveRings,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let waves = &plan.campaign.quests.content.waves;
     let mut write = |name: &str, body: Vec<String>| {
         out.insert(
@@ -10662,7 +13193,7 @@ fn emit_td_lane_packtests(
 ///   driven by teleporting the dummy in and out of the declared zone box.
 fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(cp) = plan.checkpoints.first() {
         let [x, y, z] = cp.pos;
@@ -10701,6 +13232,84 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             format!("packtest-datapack/data/{ns}/test/v06_checkpoint_respawn.mcfunction"),
             lines(&t).into_bytes(),
         );
+
+        // --- the environmental-death variant (task #145) ---
+        //
+        // The template above proves the RECORD; this one proves the LANDING, which
+        // is the half the owner's tide-mill playtest found missing. `spawnpoint` is
+        // only a hint: vanilla re-validates the recorded cell on death and silently
+        // respawns at the world spawn when it is solid or liquid. Nothing about
+        // that is specific to how the player died — a crush gate's
+        // `damage @s 1000 minecraft:generic` leaves exactly the same `deathCount`
+        // edge a mob kill does — so the test drives that edge directly, from the
+        // worst starting position (the campaign entrance, where vanilla's fallback
+        // drops them), and asserts the player ends on the checkpoint cell.
+        //
+        // Second half: the re-seat must be EDGE-triggered. A leash that re-seated
+        // every tick would pin the party to the checkpoint and make the delve
+        // unplayable, so the test walks the dummy away again, re-runs the check
+        // with no new death, and asserts it stayed away.
+        if let Some(entry) = campaign_spawn(plan) {
+            let (pin, sel) = pin_dummy("dw_t_cpseat");
+            let mut t = packtest_header(&format!(
+                "{title}: an environmental death re-seats the player ON the checkpoint, once \
+                 (spec-0012, task #145)"
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!("scoreboard players set #cp dw.sys {}", cp.index));
+            t.push(format!("scoreboard players set {sel} dw.death_ack 0"));
+            t.push(format!("scoreboard players set {sel} dw.deaths 1"));
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+                t.push(format!(
+                    "execute store result score #{axis}_cpseat dw.sys run data get entity {sel} \
+                     Pos[{i}] 100"
+                ));
+            }
+            t.push(format!(
+                "assert score #x_cpseat dw.sys matches {}",
+                cp.pos[0] * 100 + 50
+            ));
+            t.push(format!(
+                "assert score #y_cpseat dw.sys matches {}",
+                cp.pos[1] * 100
+            ));
+            t.push(format!(
+                "assert score #z_cpseat dw.sys matches {}",
+                cp.pos[2] * 100 + 50
+            ));
+            t.push(format!("assert score {sel} dw.death_ack matches 1"));
+            // …and no second re-seat without a second death.
+            t.push(format!(
+                "tp {sel} {} {} {}",
+                center(entry[0]),
+                entry[1],
+                center(entry[2])
+            ));
+            t.push(format!(
+                "execute as {sel} run function {ns}:cp_respawn_check"
+            ));
+            t.push(format!(
+                "execute store result score #x2_cpseat dw.sys run data get entity {sel} Pos[0] 100"
+            ));
+            t.push(format!(
+                "assert score #x2_cpseat dw.sys matches {}",
+                entry[0] * 100 + 50
+            ));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/v06_checkpoint_reseat.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
     }
 
     if let Some(beat) = plan.stealth_beats.first() {
@@ -10892,21 +13501,15 @@ fn first_damage_players(
             });
         }
     };
-    for q in &c.quests.content.quests {
-        for effs in q.on_objective_complete.values() {
-            for eff in effs {
-                scan(eff);
-            }
-        }
-        for eff in &q.on_complete {
+    // Every root, inherited. Strictly additive: the roots keep their order, so the
+    // "first" effect is unchanged for any campaign that has one in R1-R3 — this only
+    // ever finds a `damage-players` where the generator previously found none and
+    // emitted no damage PackTest at all.
+    crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+        for eff in effs {
             scan(eff);
         }
-    }
-    for t in &c.quests.content.triggers {
-        for eff in &t.effects {
-            scan(eff);
-        }
-    }
+    });
     found
 }
 
@@ -10955,7 +13558,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor appears; despawn kill & vanish both remove it",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -10988,7 +13591,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor is idempotent (one puppet, not two)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -11008,7 +13611,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: unleash-actor swaps the puppet for a real-AI twin",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -11039,12 +13642,12 @@ fn emit_v06_actor_packtests(
     // that same tick) and assert the puppet is at the destination cell.
     if let Some(m) = actor_moves.first() {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-actor walks its puppet to the destination cell",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -11096,7 +13699,7 @@ fn emit_v06_actor_packtests(
             .map(|n| n.tag.clone())
     {
         let safe = plan::safe_local(&m.actor);
-        let bare = moveactor_bare(&m.actor, &m.to_anchor);
+        let bare = moveactor_bare(&m.actor, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         // Every distinct gate a `close-gate` effect seals, in first-appearance
         // order (deterministic).
@@ -11118,7 +13721,7 @@ fn emit_v06_actor_packtests(
         }
         let mut b = packtest_header(&format!(
             "{}: move-actor arrival hands off to NPC `{npc_id}` with every gate sealed",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -11187,7 +13790,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             {
                 let mut b = packtest_header(&format!(
                     "{}: prop `{}` appears only when its objective activates",
-                    c.world.content.title, prop.block
+                    artifact_title(c),
+                    prop.block
                 ));
                 b.push(format!("function {ns}:setup"));
                 b.push(format!(
@@ -11227,7 +13831,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 let (pin, sel) = pin_dummy("dw_t_iclr");
                 let mut b = packtest_header(&format!(
                     "{}: completing interact `{id}` removes its interaction hitbox",
-                    c.world.content.title
+                    artifact_title(c)
                 ));
                 b.push(format!("function {ns}:setup"));
                 // Pin this test's own dummy (see `pin_dummy`): the completion runs
@@ -11257,24 +13861,30 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     }
 
     // despawn-npc removes body + interaction hitbox (both carry the id tag).
-    if let Some(npc) = c
-        .quests
-        .content
-        .quests
-        .iter()
-        .flat_map(|q| {
-            q.on_objective_complete
-                .values()
-                .flatten()
-                .chain(&q.on_complete)
-        })
-        .chain(c.quests.content.triggers.iter().flat_map(|t| &t.effects))
-        .find_map(|e| e.despawn_npc())
-    {
+    //
+    // Every root, every depth. This picked the first `despawn-npc` out of a
+    // hand-rolled three-of-five chain that was also shallow, so a campaign whose
+    // only `despawn-npc` sits in a `sequence` step, a trap payload or a dialogue
+    // `on_respawn` bundle generated no despawn PackTest at all — the verb shipped
+    // with nothing asserting it.
+    let first_despawn_npc = {
+        let mut found: Option<&delvewright_dsl::NpcId> = None;
+        crate::plan::for_each_effect_root(c, &mut |_site, effs| {
+            for e in effs {
+                e.visit_deep(&mut |x| {
+                    if found.is_none() {
+                        found = x.despawn_npc();
+                    }
+                });
+            }
+        });
+        found
+    };
+    if let Some(npc) = first_despawn_npc {
         let safe = plan::safe_local(npc.as_str());
         let mut b = packtest_header(&format!(
             "{}: despawn-npc removes body + hitbox",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -11325,7 +13935,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
         let mut b = packtest_header(&format!(
             "{}: striking NPC `{npc_id}` fires trigger `{}` exactly once",
-            c.world.content.title,
+            artifact_title(c),
             trigger.id.as_str()
         ));
         b.push(format!("function {ns}:setup"));
@@ -11414,7 +14024,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         // click (left or right) can only ever reach the dialogue-bearing entity.
         let mut b = packtest_header(&format!(
             "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -11468,12 +14078,12 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
     // is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
-        let bare = movenpc_bare(&m.npc, &m.to_anchor);
+        let bare = movenpc_bare(&m.npc, &m.to_anchor, &m.gate_key);
         let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-npc walks to its target anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -11534,7 +14144,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     let ws = plan::safe_local(wave.as_str());
                     let mut b = packtest_header(&format!(
                         "{}: kill-less spawn-wave `{wave}` spawns its mobs",
-                        c.world.content.title
+                        artifact_title(c)
                     ));
                     b.push(format!("function {ns}:setup"));
                     // Clear the wave tag first — a sibling test (`campaign` drives
@@ -11612,7 +14222,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             let (pin, sel) = pin_dummy("dw_t_dvis");
             let mut bt = packtest_header(&format!(
                 "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
-                c.world.content.title, under_test.label
+                artifact_title(c),
+                plain(&under_test.label)
             ));
             bt.push(format!("function {ns}:setup"));
             // Pin this test's own dummy (see `pin_dummy`): with one dummy PER
@@ -11832,7 +14443,7 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     let mut t = packtest_header(&format!(
         "{}: `{}` and `{}` share NPC `{npc_id}`'s hitbox — each fires on its own flags",
-        c.world.content.title,
+        artifact_title(c),
         early.id.as_str(),
         late.id.as_str()
     ));
@@ -11970,20 +14581,18 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
-/// Lines that satisfy an objective's activation guard (quest active, all `after`
-/// prerequisites set, all `requires_flags` set, and any required item given to
-/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
-/// cleared: PackTest runs the whole suite as one batch on one shared server, so
-/// "never set" does not mean 0.
+/// The guard half of [`packtest_preamble`]: every progression term an
+/// objective's activation gate READS, pinned to the value that opens (or, with
+/// `with_flags: false`, withholds) it — quest active, `after` prerequisites,
+/// `requires_flags`, and `forbids_flags` actively cleared.
 ///
-/// spec-0018: every progression term is written on the **party holder**, which is
-/// the state the generated guards actually read. The holder is batch-global —
-/// but each template is a single atomic mcfunction, so its baseline, its drive
-/// and its assert all land inside one tick with no sibling in between (the one
-/// place that stops being true is a template that `await`s, which
-/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
-/// test's own pinned dummy.
-fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+/// Split out because a template that must prove something about **how the item
+/// reaches the player** (the v0.8 named-stack collect) cannot use the preamble's
+/// own `give`: handing the plain item over first completes the objective and
+/// makes the named stack's assertion vacuous. Everything about which flags are
+/// pinned stays in one place, so no template can be written that opens a gate by
+/// hand and forgets one (PR #237's template flag hygiene).
+fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
         "scoreboard players set {party} {} 1",
@@ -12011,6 +14620,24 @@ fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str)
             plan::flag_score(f.as_str())
         ));
     }
+    p
+}
+
+/// Lines that satisfy an objective's activation guard (quest active, all `after`
+/// prerequisites set, all `requires_flags` set, and any required item given to
+/// `sel`). With `with_flags: false` the flags are not merely omitted but actively
+/// cleared: PackTest runs the whole suite as one batch on one shared server, so
+/// "never set" does not mean 0.
+///
+/// spec-0018: every progression term is written on the **party holder**, which is
+/// the state the generated guards actually read. The holder is batch-global —
+/// but each template is a single atomic mcfunction, so its baseline, its drive
+/// and its assert all land inside one tick with no sibling in between (the one
+/// place that stops being true is a template that `await`s, which
+/// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
+/// test's own pinned dummy.
+fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
+    let mut p = packtest_guards(quest_id, o, with_flags);
     match o {
         Objective::Collect { item, count, .. } => {
             p.push(format!("give {sel} {item} {count}"));
@@ -12055,6 +14682,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // milestone precisely because nothing looked. Falls back to the first kill.
     let mut first_armed_kill = None;
     let mut first_collect = None;
+    // The first `collect` that adopts a prefab container (DSL v0.8, task #95).
+    let mut first_collect_adopted = None;
     let mut first_interact = None;
     // The first `interact` that actually gates on an item — the subject of the
     // held-vs-carried test below. Distinct from `first_interact`, which may be
@@ -12101,6 +14730,12 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 }
                 _ => {}
             }
+            // v0.8 (task #95): the first `collect` that ADOPTS a prefab container.
+            // Distinct from `first_collect`, which may keep the compiler-placed
+            // chest and would make the adoption assertions vacuous.
+            if first_collect_adopted.is_none() && o.collect_container().is_some() {
+                first_collect_adopted = Some((qid, o));
+            }
             if first_flag_gated.is_none()
                 && !o.requires_flags().is_empty()
                 && matches!(o, Objective::Collect { .. } | Objective::Interact { .. })
@@ -12128,7 +14763,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vkil");
         let mut b = packtest_header(&format!(
             "{}: kill wave `{wave}` -> countdown -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive the whole chain
@@ -12193,7 +14828,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vcol");
         let mut b = packtest_header(&format!(
             "{}: collect -> reward completes objective",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -12224,7 +14859,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vint");
         let mut b = packtest_header(&format!(
             "{}: interact trigger + item -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -12266,7 +14901,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let party = plan::PARTY;
         let mut b = packtest_header(&format!(
             "{}: a click before the quest is armed is spent, not banked (task #124)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -12330,7 +14965,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let carried = "#carried_vheld";
         let mut b = packtest_header(&format!(
             "{}: `requires_item` is HELD — carried is not enough",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -12396,7 +15031,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: requires_flags gates objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -12442,7 +15077,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: forbids_flags suppresses objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -12485,7 +15120,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     if campaign_is_v03(plan) && !plan.npcs.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every NPC summon resolves to exactly one entity",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -12527,7 +15162,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_cpre");
         let mut b = packtest_header(&format!(
             "{}: collect completes for an item held before activation",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
@@ -12565,6 +15200,92 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         write("collect_preheld", b);
+    }
+
+    // v0.8 container adoption (task #95, island playtest rounds 1-2): the
+    // objective fills the barrel the PREFAB placed, pads it so it reads full, and
+    // still completes when what the player carries is the NAMED stack.
+    //
+    // Three things a compile-time test cannot reach, all of them silent failures
+    // on a live server: `item replace block … container.<n>` against the adopted
+    // cell has to actually land (it fails without output on a non-container —
+    // `DW0438` proves one is there, not that the fill took); the padding has to
+    // occupy the slots after it rather than overwrite slot 0; and the custom-name
+    // component must not change what the adjudication sees, because the
+    // completion advancement and the per-tick held check both match on ITEM ID
+    // and a component that quietly excluded the stack would leave the objective
+    // uncompletable with the item sitting in the player's hand.
+    if let Some((qid, o)) = first_collect_adopted
+        && let Objective::Collect {
+            id,
+            item,
+            count,
+            item_name,
+            fill_count,
+            ..
+        } = o
+        && let Some(fill) = plan
+            .collect_fills
+            .iter()
+            .find(|f| f.objective_id == id.as_str())
+    {
+        let (pin, sel) = pin_dummy("dw_t_cadp");
+        let cell = fill.cell;
+        let party = plan::PARTY;
+        let stack = format!(
+            "{item}{} {count}",
+            item_component_tail(item_name.as_deref())
+        );
+        let mut b = packtest_header(&format!(
+            "{}: collect `{id}` fills the adopted container and completes on the named stack",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        b.push(format!(
+            "scoreboard players set {party} {} 0",
+            obj_score(id.as_str())
+        ));
+        // Open the activation gate by hand and WITHOUT the preamble's `give`: the
+        // point of this template is which stack completes the objective, and the
+        // plain item handed over first would complete it before the named one is
+        // ever presented.
+        b.extend(packtest_guards(qid, o, true));
+        // Empty the adopted container first — `setup` may have run for a sibling
+        // template, and this objective's own activation is guarded once per world
+        // by `#act_<obj>`, so the fill is not re-run on a second call. Clearing
+        // makes the count assertion below a statement about THIS activation.
+        for slot in 0..=*fill_count {
+            b.push(format!(
+                "item replace block {} {} {} container.{slot} with minecraft:air",
+                cell[0], cell[1], cell[2]
+            ));
+        }
+        b.push(format!(
+            "function {ns}:activate_{}",
+            safe_obj_fn(id.as_str())
+        ));
+        // The fill landed, in the right number of slots: `if items block` counts
+        // matching items across the whole container, so the total is the stack
+        // repeated once per filled slot. A dropped fill reads 0; padding that
+        // overwrote slot 0 instead of following it reads one stack short.
+        let total = count * (fill_count + 1);
+        b.push(format!(
+            "execute store result score #cadp dw.sys if items block {} {} {} container.* {item}",
+            cell[0], cell[1], cell[2]
+        ));
+        b.push(format!("assert score #cadp dw.sys matches {total}"));
+        // The player takes the stack the container actually holds — components and
+        // all, the same text the fill emitted — and the objective completes.
+        b.push(format!(
+            "item replace entity {sel} inventory.0 with {stack}"
+        ));
+        b.push(format!("function {ns}:tick"));
+        b.push(format!(
+            "assert score {party} {} matches 1",
+            obj_score(id.as_str())
+        ));
+        write("collect_container", b);
     }
 }
 
@@ -12761,6 +15482,93 @@ fn rest_step_index(plan: &Plan, walked: &[plan::Step], fire_step: usize) -> Opti
 /// An unreachable branch contributes nothing: there is no world that plays it,
 /// which `DW0482` has already failed the build for; `branch-plan.json` still names
 /// it, so the harness reports it skipped rather than silently absent.
+/// One branch-only inter-area crossing: where to set the party down, and the
+/// flag assignment that identifies the branch it belongs to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BranchTransport {
+    /// Flags pinned SET on the branch this crossing belongs to.
+    pub set: BTreeSet<String>,
+    /// Flags pinned UNSET on that branch.
+    pub unset: BTreeSet<String>,
+    /// The branch's slug — the row's deterministic sort key, and the name of the
+    /// `branch-path-<slug>.json` this crossing is the datapack half of.
+    pub slug: String,
+    /// The destination area's `spawn` anchor, in world coordinates.
+    pub pos: [i32; 3],
+}
+
+/// Objective id → the branch-only crossings completing it must perform.
+pub type BranchTransportOverlay = BTreeMap<String, Vec<BranchTransport>>;
+
+/// The crossings that exist on a BRANCH but not on the exported path (task #186).
+///
+/// [`crate::plan::build_critical_path`] derives an inter-area transport map for
+/// whatever playthrough it is handed, so every branch's map already exists via
+/// [`Plan::branch_critical_path`] — and `branch-path-<slug>.json` publishes it to
+/// the harness. Emission, however, reads only `plan.transport`, the **exported**
+/// path's map. A campaign whose branch alone leaves the starting area therefore
+/// promised the harness a crossing the datapack never performed, and the branch
+/// run stranded where the teleport should have been (island round 21).
+///
+/// This is that difference, ready to be emitted as flag-gated teleports beside
+/// the unconditional one. A crossing the exported path already performs is
+/// omitted: it is emitted unconditionally, which is stronger. A crossing whose
+/// destination *contradicts* the exported path's is [`DW_BRANCH_TRANSPORT_DIVERGES`]
+/// — one objective cannot land the party in two areas.
+///
+/// Empty — so byte-identical to the pre-task emission — for a campaign with no
+/// `branch_points`, and for one whose branches cross only where the exported path
+/// already does. Deterministic: `BTreeMap` keys, rows sorted by branch slug
+/// (ADR-0006).
+pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, BuildFailure> {
+    let mut out: BranchTransportOverlay = BTreeMap::new();
+    let branches = crate::branch::realize(plan.campaign);
+    if branches.is_empty() {
+        return Ok(out);
+    }
+    let flow = crate::flow::Flow::new(plan.campaign);
+    for r in &branches {
+        // An unreachable branch has no world to walk — `DW0482` has already
+        // failed the build for it (same skip as `branch_paths`).
+        let Some(w) = r.world else { continue };
+        let cp = plan
+            .branch_critical_path(&flow, &flow.playthrough_in(w))
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: format!("branch `{}`: {}", r.branch.id, e.message),
+            })?;
+        for (oid, pos) in &cp.transport {
+            match plan.transport.get(oid) {
+                // Already emitted unconditionally by the exported path.
+                Some(d) if d == pos => continue,
+                Some(d) => {
+                    return Err(BuildFailure::Diagnostic {
+                        code: DW_BRANCH_TRANSPORT_DIVERGES,
+                        message: format!(
+                            "objective `{oid}` crosses to {d:?} on the exported path but to \
+                             {pos:?} on branch `{}`; completing it can only put the party in \
+                             one place — split the crossing into one objective per branch, \
+                             each gated by that branch's flags",
+                            r.branch.id
+                        ),
+                    });
+                }
+                None => {}
+            }
+            out.entry(oid.clone()).or_default().push(BranchTransport {
+                set: r.branch.set.clone(),
+                unset: r.branch.unset.clone(),
+                slug: r.branch.slug.clone(),
+                pos: *pos,
+            });
+        }
+    }
+    for rows in out.values_mut() {
+        rows.sort_by(|a, b| a.slug.cmp(&b.slug));
+    }
+    Ok(out)
+}
+
 fn branch_paths(
     plan: &Plan,
     moves: &[crate::nav::MovePlan],
@@ -12775,7 +15583,7 @@ fn branch_paths(
     for r in &branches {
         let Some(w) = r.world else { continue };
         let cp = plan
-            .branch_critical_path(&flow.playthrough_in(w))
+            .branch_critical_path(&flow, &flow.playthrough_in(w))
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.message),
@@ -12864,10 +15672,20 @@ fn critical_path_json(
                     "action": "kill", "objective": objective_id, "wave": wave_id,
                     "pos": pos, "tag": tag, "count": count
                 }),
-                Step::Collect { objective_id, item, count, pos } => json!({
-                    "action": "collect", "objective": objective_id, "item": item,
-                    "count": count, "pos": pos
-                }),
+                Step::Collect { objective_id, item, count, pos, dropped } => {
+                    let mut v = json!({
+                        "action": "collect", "objective": objective_id, "item": item,
+                        "count": count, "pos": pos
+                    });
+                    // v0.9: present only on a drop-gated collect, so every
+                    // pre-0.9 campaign's `critical-path.json` is byte-identical.
+                    if let Some(w) = dropped
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("dropped_by".to_string(), json!(w));
+                    }
+                    v
+                }
                 Step::Interact { objective_id, anchor_id, pos, command, requires_item } => json!({
                     "action": "interact", "objective": objective_id, "anchor": anchor_id,
                     "pos": pos, "command": command, "requires_item": requires_item
@@ -13088,6 +15906,7 @@ mod tests {
             facing: Some(delvewright_dsl::Facing::West),
             vulnerable,
             equipment: None,
+            drops: Vec::new(),
             attributes: None,
             tier: None,
         }
@@ -13096,7 +15915,7 @@ mod tests {
     #[test]
     fn puppet_summon_is_noai_no_loot_and_tagged() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_puppet_summon(&a, [10, 65, 20], facing_yaw(Some("west")));
+        let s = actor_puppet_summon("dw", &a, [10, 65, 20], facing_yaw(Some("west")));
         assert!(
             s.starts_with("summon minecraft:warden 10.5 65.0 20.5 "),
             "puppet stands at the CENTRE of its cell, not the four-column corner: {s}"
@@ -13115,7 +15934,7 @@ mod tests {
     #[test]
     fn vulnerable_puppet_is_damageable_but_knockback_immune() {
         let a = mk_actor("actor/creep", "minecraft:zombie", true);
-        let s = actor_puppet_summon(&a, [0, 64, 0], 0);
+        let s = actor_puppet_summon("dw", &a, [0, 64, 0], 0);
         assert!(
             s.contains("Invulnerable:0b"),
             "vulnerable puppet takes damage"
@@ -13133,7 +15952,7 @@ mod tests {
             texture_id: "giant-idle".to_string(),
             model: delvewright_dsl::SkinModel::Wide,
         });
-        let s = actor_puppet_summon(&a, [1, 2, 3], 180);
+        let s = actor_puppet_summon("dw", &a, [1, 2, 3], 180);
         assert!(
             s.starts_with("summon minecraft:mannequin 1.5 2.0 3.5 "),
             "mannequin stands at the centre of its cell: {s}"
@@ -13145,11 +15964,35 @@ mod tests {
     #[test]
     fn twin_summon_has_ai_and_no_puppet_marker() {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
-        let s = actor_twin_summon(&a);
+        let s = actor_twin_summon("dw", &a, "~ ~ ~");
         assert!(s.starts_with("summon minecraft:warden ~ ~ ~ "));
         assert!(!s.contains("NoAI"), "the twin has real AI");
         assert!(s.contains("dw_actor_giant") && !s.contains("dw_pup"));
         assert!(s.contains("PersistenceRequired:1b"));
+    }
+
+    /// v0.9 (task #179): a `despawn-actor` on a drop-declaring actor strips the
+    /// declaration off the body before killing it. `/kill` is an ordinary death
+    /// and a preserved slot survives a non-player kill, so without this a souls
+    /// re-seat would shower the party with the elite's own axe every rest.
+    #[test]
+    fn despawn_strips_declared_drops_first() {
+        let mut cmds = Vec::new();
+        emit_despawn_actor(
+            "actor/giant",
+            delvewright_dsl::DespawnStyle::Kill,
+            true,
+            &mut cmds,
+        );
+        assert_eq!(cmds.len(), 2, "strip then kill: {cmds:?}");
+        assert!(
+            cmds[0].starts_with("execute as @e[tag=dw_actor_giant] run data merge entity @s ")
+                && cmds[0].contains("mainhand:0.0f")
+                && cmds[0].contains("feet:0.0f")
+                && cmds[0].contains("DeathLootTable:\"minecraft:empty\""),
+            "{cmds:?}"
+        );
+        assert_eq!(cmds[1], "kill @e[tag=dw_actor_giant]");
     }
 
     #[test]
@@ -13158,6 +16001,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Kill,
+            false,
             &mut kill,
         );
         assert_eq!(kill, vec!["kill @e[tag=dw_actor_giant]".to_string()]);
@@ -13165,6 +16009,7 @@ mod tests {
         emit_despawn_actor(
             "actor/giant",
             delvewright_dsl::DespawnStyle::Vanish,
+            false,
             &mut vanish,
         );
         // The drop is relative to each ACTOR, not to the command source — see
@@ -13210,7 +16055,7 @@ mod tests {
             delvewright_dsl::DespawnStyle::Vanish,
         ] {
             let mut cmds = Vec::new();
-            emit_despawn_actor("actor/giant", style, &mut cmds);
+            emit_despawn_actor("actor/giant", style, false, &mut cmds);
             assert!(!cmds.is_empty());
             for c in &cmds {
                 assert!(
@@ -13235,7 +16080,7 @@ mod tests {
         let a = mk_actor("actor/giant", "minecraft:warden", false);
         let spawn = format!(
             "execute unless entity @e[tag=dw_actor_giant] run {}",
-            actor_puppet_summon(&a, [0, 64, 0], 0)
+            actor_puppet_summon("dw", &a, [0, 64, 0], 0)
         );
         assert!(
             spawn.starts_with("execute unless entity @e[tag=dw_actor_giant] run summon "),
@@ -13383,6 +16228,7 @@ mod loot_emit_tests {
             equipment: eq,
             attributes: None,
             tier: None,
+            drops: Vec::new(),
         }
     }
 
@@ -13416,9 +16262,9 @@ mod loot_emit_tests {
     fn an_unequipped_actor_is_byte_identical() {
         let a = actor_with(None);
         assert_eq!(actor_equipment(&a), None);
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
         assert!(!puppet.contains("equipment:"), "{puppet}");
-        assert!(!actor_twin_summon(&a).contains("equipment:"));
+        assert!(!actor_twin_summon("dw", &a, "~ ~ ~").contains("equipment:"));
     }
 
     /// The gear rides on BOTH bodies — the dormant puppet and the twin that
@@ -13426,8 +16272,8 @@ mod loot_emit_tests {
     #[test]
     fn equipment_lands_on_both_the_puppet_and_the_twin() {
         let a = actor_with(Some(full_kit()));
-        let puppet = actor_puppet_summon(&a, [1, 2, 3], 0);
-        let twin = actor_twin_summon(&a);
+        let puppet = actor_puppet_summon("dw", &a, [1, 2, 3], 0);
+        let twin = actor_twin_summon("dw", &a, "~ ~ ~");
         for s in [&puppet, &twin] {
             assert!(
                 s.contains(

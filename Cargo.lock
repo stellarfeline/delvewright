@@ -506,6 +506,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
+name = "delvec"
+version = "1.1.0"
+dependencies = [
+ "clap",
+ "crc32fast",
+ "delvewright-dsl",
+ "delvewright-grammar",
+ "fastnbt",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "delvewright-admit"
 version = "0.0.0"
 dependencies = [
@@ -519,27 +534,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "delvewright-compiler"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crc32fast",
- "delvewright-dsl",
- "fastnbt",
- "flate2",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "delvewright-dsl"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "jsonschema",
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "delvewright-grammar"
+version = "0.0.0"
+dependencies = [
+ "delvewright-schem",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

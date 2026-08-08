@@ -131,24 +131,48 @@ export interface ActorEncounter {
 export interface FloorLedgerEntry {
   readonly kind: string;
   readonly id: string;
-  readonly tier: EncounterTier;
+  /**
+   * The declared tier — `undefined` for an **untiered hostile** (task #121): an
+   * actor the campaign unleashes on the party without billing the fight at all.
+   * It is always a `not_covered` entry, because nothing declared what the gate
+   * was supposed to hold it to.
+   */
+  readonly tier?: EncounterTier;
   /** Present exactly on a not-covered entry. */
   readonly reason?: string;
 }
 
 /**
- * The floor-gate ledger: every encounter billed `elite`/`boss`, split into what
- * the gate covers and what it cannot.
+ * A gate's own statement of what it bound to (playtest-methodology.md rule 1):
+ * how many objects it examined, and — when that count is zero — why, in the
+ * compiler's own words. A ledger that matched zero objects and one that
+ * matched several and found them all fine look identical to a reader who is
+ * not counting; this is the field that tells them apart without the reader
+ * having to notice an empty array. `reason` is present exactly when `unbound`
+ * is `true` — a bound gate carries no reason to explain.
+ */
+export interface BindingCount {
+  readonly examined: number;
+  readonly unbound: boolean;
+  readonly reason?: string;
+}
+
+/**
+ * The floor-gate ledger: every encounter billed `elite`/`boss` plus every
+ * untiered hostile actor, split into what the gate covers and what it cannot.
  *
  * `present: false` means the build carried NO ledger (a plan from a delvec older
  * than #222) — deliberately distinct from a present-but-empty ledger, because
  * "this campaign bills nothing hard" and "this build cannot tell you" are
- * different facts and only one of them is reassuring.
+ * different facts and only one of them is reassuring. `binding` is undefined
+ * for the same reason `present` can be false: a plan from a delvec older than
+ * the binding-count fields simply does not carry one.
  */
 export interface FloorLedger {
   readonly present: boolean;
   readonly covered: readonly FloorLedgerEntry[];
   readonly notCovered: readonly FloorLedgerEntry[];
+  readonly binding?: BindingCount;
 }
 
 /** The parsed combat plan. */
@@ -162,6 +186,13 @@ export interface CombatPlan {
   readonly actors: readonly ActorEncounter[];
   /** The compiler's coverage ledger, printed verbatim in the run report. */
   readonly floorGate: FloorLedger;
+  /**
+   * `actors[]`'s own binding count: how many actors this build's tier
+   * machinery tracked at all (any declared tier, `ordinary` included).
+   * Undefined for a plan from a delvec that predates it — see
+   * {@link FloorLedger.binding}.
+   */
+  readonly actorsGate?: BindingCount;
 }
 
 export class CombatPlanParseError extends Error {
@@ -244,7 +275,38 @@ export function parseCombatPlan(raw: unknown): CombatPlan {
     encounters,
     actors: parseActors(raw["actors"], "/actors"),
     floorGate: parseFloorLedger(raw["floor_gate"], "/floor_gate"),
+    actorsGate: parseBindingCount(raw["actors_gate"], "/actors_gate"),
   };
+}
+
+/**
+ * A `{examined, unbound, reason?}` block (playtest-methodology.md rule 1).
+ * `undefined` input parses as `undefined` — a plan from a delvec that predates
+ * these fields carries no binding count, and that is a different fact from a
+ * present one that happens to be zero.
+ */
+function parseBindingCount(v: unknown, pointer: string): BindingCount | undefined {
+  if (v === undefined) return undefined;
+  if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
+  const examined = v["examined"];
+  if (!Number.isInteger(examined) || (examined as number) < 0) {
+    throw new CombatPlanParseError(`${pointer}/examined`, "expected a non-negative integer");
+  }
+  const unbound = v["unbound"];
+  if (typeof unbound !== "boolean") {
+    throw new CombatPlanParseError(`${pointer}/unbound`, "expected a boolean");
+  }
+  if (unbound !== (examined === 0)) {
+    throw new CombatPlanParseError(pointer, "`unbound` must be exactly `examined === 0`");
+  }
+  // A zero binding without its reason is the exact silence this field exists
+  // to end, so it is a parse error rather than a quietly-absent explanation.
+  if (unbound && (typeof v["reason"] !== "string" || (v["reason"] as string).length === 0)) {
+    throw new CombatPlanParseError(`${pointer}/reason`, "an unbound gate must state why");
+  }
+  return unbound
+    ? { examined: examined as number, unbound: true, reason: v["reason"] as string }
+    : { examined: examined as number, unbound: false };
 }
 
 /**
@@ -372,10 +434,16 @@ function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): Floo
     if (needReason && reason === undefined) {
       throw new CombatPlanParseError(`${p}/reason`, "a not-covered entry must state why");
     }
+    // `tier: null` (or absent) is the compiler saying the entry declares NO
+    // tier — the untiered hostile of task #121. Anything else present must
+    // still be a real tier, so a typo can never be read as "untiered".
+    const tier = e["tier"];
     return {
       kind: requireString(e, "kind", p),
       id: requireString(e, "id", p),
-      tier: requireTier(e["tier"], `${p}/tier`),
+      ...(tier === null || tier === undefined
+        ? {}
+        : { tier: requireTier(tier, `${p}/tier`) }),
       reason,
     };
   });
@@ -385,11 +453,22 @@ function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): Floo
 function parseFloorLedger(v: unknown, pointer: string): FloorLedger {
   if (v === undefined) return { present: false, covered: [], notCovered: [] };
   if (!isRecord(v)) throw new CombatPlanParseError(pointer, "expected an object");
-  return {
-    present: true,
-    covered: parseLedgerSide(v["covered"], `${pointer}/covered`, false),
-    notCovered: parseLedgerSide(v["not_covered"], `${pointer}/not_covered`, true),
-  };
+  const covered = parseLedgerSide(v["covered"], `${pointer}/covered`, false);
+  const notCovered = parseLedgerSide(v["not_covered"], `${pointer}/not_covered`, true);
+  const binding = parseBindingCount(
+    v["examined"] === undefined && v["unbound"] === undefined
+      ? undefined
+      : { examined: v["examined"], unbound: v["unbound"], reason: v["reason"] },
+    pointer,
+  );
+  if (binding !== undefined && binding.examined !== covered.length + notCovered.length) {
+    throw new CombatPlanParseError(
+      pointer,
+      `examined (${binding.examined}) must equal covered.length + not_covered.length ` +
+        `(${covered.length + notCovered.length})`,
+    );
+  }
+  return { present: true, covered, notCovered, binding };
 }
 
 /** Read the combat plan beside `criticalPathPath`; `undefined` when absent (a

@@ -12,17 +12,25 @@
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
 pub mod canonical;
+pub mod chrome;
 pub mod diagnostic;
+pub mod effects;
 pub mod envelope;
 pub mod ids;
 pub mod l10n;
+pub mod mclang;
 pub mod registry;
 pub mod schema;
 pub mod stages;
 pub mod validate;
 
 pub use canonical::to_canonical_string;
+pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
 pub use diagnostic::{Diagnostic, Severity, codes};
+pub use effects::{
+    EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
+    for_each_effect_root_mut,
+};
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
@@ -35,14 +43,17 @@ pub use ids::{
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
-    SoundRef, art_narrates, bonfire_option_labels, dialogue_option_labels, each_string,
-    inventory as l10n_inventory, key_speaker, local_id, localize, on_screen_narrates,
-    play_sound_actor_refs, sound_refs, validate_l10n, validate_marker_channel,
+    SoundRef, TR_SIGIL, art_narrates, bonfire_option_labels, declared_mc_codes,
+    dialogue_option_labels, each_string, has_tr_sigil, inventory as l10n_inventory, key_speaker,
+    local_id, localize, on_screen_narrates, plain as l10n_plain, play_sound_actor_refs, sound_refs,
+    tag_translatables, untag as l10n_untag, validate_l10n, validate_l10n_provenance,
+    validate_marker_channel, validate_tr_sigil,
 };
+pub use mclang::mc_lang_code;
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,
-    VendoredEntityRegistry, VendoredItemRegistry, is_technical_block,
+    VendoredEntityRegistry, VendoredItemRegistry, is_potion_id, is_technical_block,
 };
 pub use schema::stage_schema;
 pub use stages::for_each_campaign_effect;
@@ -52,14 +63,15 @@ pub use stages::{
     CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
     CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
     DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
-    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, Facing, Fixture, Happening, HappeningVerb,
-    Horizon, HorizonBase, HorizonFall, HorizonFlora, HorizonName, HorizonPalette, HorizonSpec,
-    KitItem, Lethality, Loot, LootItem, MobAttributes, MobEffect, MobEquipment, NarrateStyle, Npc,
-    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, Prop, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shortcut,
-    ShotStyle, SkinModel, SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather,
+    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Happening,
+    HappeningVerb, Horizon, HorizonBase, HorizonFall, HorizonFlora, HorizonName, HorizonPalette,
+    HorizonSpec, ItemDrop, KitItem, Lethality, Loot, LootItem, MAX_POTION_AMPLIFIER,
+    MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc,
+    NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces, PlannedQuest, PotionContents,
+    PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role,
+    SequenceStep, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, StealthZone, TimedGate, Trap,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

@@ -15,11 +15,15 @@
 # .github/workflows/*.yml.
 version = "1.21.11"
 # Mojang server jar, from piston-meta 1.21.11 (downloads.server). The jar is NEVER
-# baked into any image (ADR-0010 EULA); the itzg entrypoint fetches it at first boot
-# by version+checksum, and CI caches it (actions/cache keyed on version + sha256).
-# Provenance record only (no CI cache since 2026-07-30, see ci.yml note).
-# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes
-# and used as the CI cache key + our own integrity check.
+# baked into any image (ADR-0010 EULA).
+# sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes.
+#
+# Consumed by: validation/server-bootstrap-cache.sh (task #41), which fetches this
+# URL ONCE per job and refuses anything whose sha256 is not the pin below, then
+# hands the bytes to every server boot as a /data overlay. Before it, each of the
+# seven servers a `tier 2` run boots bootstrapped the jar live and any one blip
+# reddened a required check (PR #312). These three values are live inputs now, not
+# the provenance record they were between 2026-07-30 and 2026-08-05.
 server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
 server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
 server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
@@ -77,6 +81,18 @@ digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0
 # Fabric loader (pre-baked into the toolserver at build time; ADR-0003 tooling only).
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_LOADER_VERSION).
 loader_version = "0.19.3"
+# Fabric LAUNCHER (installer) version — the one baked into the pinned toolserver
+# image above, recorded in its /data/.fabric-manifest.json as `origin.installer`.
+# Consumed by: validation/compose.yaml (FABRIC_LAUNCHER_VERSION on the packtest
+# service). itzg defaults that variable to `LATEST`, and resolving "latest" is a
+# request to meta.fabricmc.net on EVERY boot of an already-provisioned image — one
+# more live host per PackTest suite, six per `tier 2` run (task #41). Naming the
+# baked version makes the check a local manifest match instead. The toolserver
+# Dockerfile does not pass it (the build resolved LATEST to this), so
+# validation/server-bootstrap-cache.sh asserts this value against the pinned
+# image's own manifest: a republished toolserver that moves the launcher fails
+# there rather than silently restoring the per-boot fetch.
+launcher_version = "1.1.2"
 # Fabric API mod jar (Modrinth project P7dR8mSH), required by PackTest.
 # Consumed by: validation/Dockerfile.toolserver (ARG FABRIC_API_URL / _SHA1).
 api_version = "0.141.6+1.21.11"
@@ -94,6 +110,79 @@ sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
 [harness]
 # mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
 mineflayer = "4.37.1"
+
+[engine]
+# The `delvec` ENGINE release line — ADR-0016 line 2, distributed per ADR-0017.
+# One release identity has to hold four things together or it means nothing: the
+# version compiled into the binary, the git tag, the crates.io version, and the
+# skill's `requires.delvec` window. Before this section they agreed only by
+# intention; `validation/check-versions.sh` now makes disagreement a red, and
+# `.github/workflows/engine-release.yml` refuses a `v*` tag whose name does not
+# match `version` below before it builds or publishes anything.
+#
+# Consumed by: validation/check-versions.sh (every assertion below),
+# .github/workflows/engine-release.yml (tag gate + build matrix),
+# .github/workflows/ci.yml (the cross-build shelf job),
+# tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
+# copy of any value here — they read this file, the way
+# validation/server-bootstrap-cache.sh does).
+version = "1.1.0"
+
+# crates.io identity. `cargo install` resolves by CRATE name, never by binary
+# name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
+# is the only spelling that could ever have worked and nobody would guess it.
+# The lib TARGET keeps the old name (`delvewright_compiler`) so 366 in-tree use
+# paths do not churn.
+crate = "delvec"
+
+# `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
+# crates.io first — but it is DELIBERATELY NOT on the engine version line.
+# Locking them together looks tidy and sets a trap: a publish that half-succeeds
+# burns the dsl version permanently (crates.io versions cannot be reused), and
+# under lockstep the retry would have to move `delvec` too — which would put the
+# engine version out of step with the git tag `v1.0.0` that ADR-0016 pins. With
+# an independent line, a burned dsl version costs a dsl bump and nothing else.
+# `0.x` is also the honest semver for it: it is the DSL types the engine speaks,
+# not a library anyone should depend on directly.
+dsl_crate = "delvewright-dsl"
+dsl_crate_version = "0.1.0"
+
+# The engine's `[dependencies] delvewright-dsl` requirement is `=` and exactly
+# this version, so `delvec 1.0.0` on crates.io can resolve to exactly one
+# `delvewright-dsl` build and no other.
+dsl_crate_req = "=0.1.0"
+
+# `rust-version` in both published manifests, and the channel in
+# rust-toolchain.toml. They must be the same string: a `rust-version` looser than
+# the toolchain anybody has actually built on is an untested claim, and
+# `cargo install` is where a stranger would discover it.
+rust_toolchain = "1.97.1"
+
+# THE RELEASE SHELF (ADR-0017). Every platform a creator might plausibly drive
+# Claude Code from. Before this, release `v1.0.0` existed with ZERO assets: the
+# engine pin ADR-0016 requires and the skill's `requires.delvec` window were
+# promises against an empty shelf.
+#
+# Linux is musl-STATIC on purpose. `delvec`'s whole dependency set is pure Rust
+# (flate2 uses the miniz_oxide backend, not zlib-sys), so a static binary has no
+# glibc floor, runs on Alpine and on distros older than the runner, and cannot
+# fail at the one moment a downloaded binary is expected to just work.
+#
+# Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
+# format is one extraction path for ADR-0014's future bootstrap, and a format
+# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
+#
+# `delve-render` is deliberately NOT on this shelf — see ADR-0017 §3; it needs a
+# GPU/driver stack and the EULA-gated client jar, neither of which a downloaded
+# binary can carry, so it would be a shelf item that fails for most downloaders.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
 
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
@@ -117,18 +206,39 @@ mineflayer = "4.37.1"
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# The spec-0026 **walk_y backfill** (content branch
-# `worker/spec-0026-walk-y-backfill`, one commit over content main 4992b4f):
-# every prefab metadata file declares its tileset walk-plane convention
-# (`walk_y` — keep 1, cave 2, island 3; each verified empirically from the
-# .nbt geometry), which the compiler's per-area placement datum consumes
-# (base = walk_ref_y − walk_y, spec-0026 §2, DW0367). The engine and content
-# changes land as a pair: this delvec cannot place a non-void horizon against
-# a library without walk_y. (Also advances the pin over the island set-piece
-# and terrain merges, content #11/#12, which the old pin predated.)
-# RE-PIN to the content `main` tip once the paired content PR merges (RE-PIN
-# CONVENTION above).
-sha = "a63d1a08eb9fc29945fe8405f80b582a0b25d6f9"
+# The spec-0026 **walk_y backfill** PLUS the island's declared shoreline
+# (content branch `content/island-tideline`, which contains content PR #21's
+# branch), i.e. content `main` e4c58c0f plus one additive line per prefab: every prefab metadata file declares
+# its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
+# verified empirically from the .nbt geometry, and the island set re-derived
+# over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
+# per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
+# §2, DW0367). The branch's second half is the island's `batch/tideline`
+# declaration, which spec-0030's `flood` verb consumes: without it this delvec
+# reds DW0364 on 26 standable cells at world y=62 — the ocean line — in ALREADY
+# RELEASED content, because the per-area walk_y datum is what finally lets
+# DW0364 see the banks the owner ruled intended (2026-08-06).
+#
+# This is a BRANCH sha, not a content `main` tip, and the branch pin is not a
+# shortcut — it is the ONLY pin that can exist here, because the change is
+# **atomic across two repositories and therefore has no valid merge order**.
+# Content-first is impossible: prefab metadata is `deny_unknown_fields`
+# (crates/compiler/src/registry.rs), so a `walk_y` line on content main would be
+# rejected by every delvec that predates this PR — including the released
+# v1.1.0 — and drop the prefab. Engine-first is impossible: this delvec cannot
+# place a non-void horizon against a library without `walk_y`, and content main
+# carries it on zero of its 36 prefabs. Same shape as the l10n inventory
+# widening (#317/#333); there it was one repo and folded into one PR, here it
+# spans repos and the pin is what makes the pair land together.
+#
+# The pinned sha is a strict descendant of content main e4c58c0f — the branch
+# was re-synced 2026-08-08, so the cave gravity-floor substrate regen (#10) and
+# the `campaigns/campaigns` symlink untracking (#33) are carried forward, not
+# rolled back. Verified before re-pinning: `git diff 885fd5d..main -- prefabs/`
+# is EMPTY, so no prefab geometry moved under the walk_y derivation.
+# RE-PIN to the content `main` tip the moment content #21 merges
+# (RE-PIN CONVENTION above).
+sha = "986562787c1468cea93b924856c0867b4c51994f"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
@@ -143,12 +253,17 @@ nucleation_repo = "https://github.com/Schem-at/Nucleation"
 nucleation_rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf"
 nucleation_license = "MIT"
 
-# Chunky (whole-scene path tracer, GPLv3, out-of-process — NOT bundled; run
-# headless under xvfb). 1.21.x needs a snapshot core (stable stops at 1.20.4);
-# this is the snapshot the spike verified. Fetch from chunkyupdate.lemaik.de.
-# Consumed by: crates/render (scene emission targets this scene format) + README.
+# Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
+# OFFICIAL renderer for review frames, storybook art and the release panorama
+# (owner decision 2026-08-06); invoked as a separate program, never linked.
+# 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
+# spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
+# it into ~/.chunky/lib.
+# Consumed by: crates/render (scene emission targets this scene format) + README
+# + docs/reference/tools.md §4a.
 chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
 chunky_update_url = "https://chunkyupdate.lemaik.de"
+chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
 chunky_license = "GPL-3.0"
 
 # Textures come from the pinned 1.21.11 client jar (the same MC version as

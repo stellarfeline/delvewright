@@ -6,16 +6,41 @@
 #
 #   delvec build crates/dsl/fixtures/valid/hello-world -o validation/delve-output
 #
-#   # owner hand-check — join the shipped delve image from a vanilla client:
-#   EULA=TRUE docker compose -f validation/compose.yaml --profile play up
-#
 #   # bot playthrough (the M1 proof) — server + mineflayer bot, exit code = bot result:
-#   EULA=TRUE docker compose -f validation/compose.yaml --profile validate up \
-#       --build --abort-on-container-exit --exit-code-from bot
+#   validation/bot-run.sh --project dw-<yours>
 #
 #   # PackTest suite — Fabric + PackTest, headless, exit code = number of failed tests:
-#   EULA=TRUE docker compose -f validation/compose.yaml --profile packtest up \
-#       --abort-on-container-exit --exit-code-from packtest
+#   validation/packtest-run.sh --project dw-<yours>
+#
+#   # owner hand-check — join the shipped delve image from a vanilla client.
+#   # This is the ONE path that binds host 25565, and it needs owner-play.yaml:
+#   EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+#       --profile play up
+#
+# ## Isolation by construction (task #185)
+#
+# NOTHING in this file is Docker-GLOBAL: no service pins a `container_name` and no
+# service publishes a host port. Container names and host ports are the only two
+# things `docker compose -p <project>` does NOT isolate, so keeping them out of
+# here is what makes two ladders on one host independent rather than serialized.
+# Names come from the compose project; workers reach the server over the compose
+# network or with `docker exec <id> rcon-cli`, never through localhost.
+#
+# The rule has a machine gate — `tools/check-compose-isolation.py` (CI) fails on a
+# `container_name:` or `ports:` re-entering this file. Two files may add them
+# back, both by name:
+#
+#   * `owner-play.yaml`     — the owner's fixed `127.0.0.1:25565` binding plus the
+#     pinned `delvewright-server` / `delvewright-playtest` names. The ONLY file in
+#     the repo allowed to publish 25565 (with `tools/playtest-server.sh`).
+#   * `ephemeral-port.yaml` — an EPHEMERAL loopback port, for the flows that must
+#     drive a host-side bot (`playtest-note-flow.sh`, `rehearsal-flow.sh`). Docker
+#     picks the number; two of them can never collide.
+#
+# Before this, the pinned name + fixed port made every caller aim at the same
+# container, so the whole stack was guarded by a mutex and worker ladders queued
+# on each other (an island worker waited 30+ minutes behind a holder that had zero
+# containers running). `validation/mutex.sh` now guards only 25565 itself.
 #
 # The two runtime validators are split into the `validate` (bot) and `packtest`
 # profiles so each propagates a single clean exit code (ADR-0008 CI contract);
@@ -41,7 +66,6 @@ services:
       context: ./delve-output
       dockerfile: ../Dockerfile.delve
     image: delvewright/delve:local
-    container_name: delvewright-server
     environment:
       # Never TRUE in this file — the owner must set EULA=TRUE in their environment.
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
@@ -70,11 +94,10 @@ services:
       # silently persists across runs. A NAMED volume is removed by `down -v`,
       # giving every fresh run a clean world.
       - server-data:/data
-    ports:
-      # Play profile: expose to localhost so the owner joins at localhost:25565.
-      # Bound to 127.0.0.1 so it is never world-reachable. The bot reaches the
-      # server over the internal compose network, not this mapping.
-      - "127.0.0.1:25565:25565"
+    # No `ports:` — see the isolation note in the header. The bot reaches this
+    # service over the internal compose network; a worker that needs a shell into
+    # it uses `docker exec $(docker compose -p <proj> ps -q server) rcon-cli`. The
+    # owner's `localhost:25565` binding is added by `owner-play.yaml`.
 
   # Creator playtest (spec-0006): the SAME shipped delve image as `play`, plus the
   # creator overlay mounted as an EXTRA datapack and the creator opped. The overlay
@@ -84,7 +107,11 @@ services:
   #
   #   delvec build crates/dsl/fixtures/valid/hello-world -o validation/delve-output
   #   EULA=TRUE CREATOR_NAME=<your-mc-name> \
-  #     docker compose -f validation/compose.yaml --profile playtest up --build
+  #     docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+  #       --profile playtest up --build
+  #
+  # `owner-play.yaml` is what makes it joinable at localhost:25565 — this service,
+  # like every other one here, publishes nothing on its own.
   #
   # Then join at localhost:25565, `/trigger dw.note` to mark a spot, and type your
   # note in chat. After the session, run `delve-harvest` over the captured server
@@ -95,7 +122,6 @@ services:
       context: ./delve-output
       dockerfile: ../Dockerfile.delve
     image: delvewright/delve:local
-    container_name: delvewright-playtest
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
       ONLINE_MODE: ${ONLINE_MODE:-FALSE}
@@ -113,16 +139,15 @@ services:
       - playtest-data:/data
       # The creator overlay, supplied ONLY at playtest time (never in the image).
       - ./delve-output/creator-datapack:/delve/creator-overlay:ro
-    ports:
-      # localhost only, like `play`.
-      - "127.0.0.1:25565:25565"
+    # No `ports:` — `owner-play.yaml` publishes 25565 for the owner's session, and
+    # `ephemeral-port.yaml` publishes an arbitrary free loopback port for the two
+    # note/rehearsal flows that drive a bot from the host.
 
   # The mineflayer harness (spec-0003). Reads the same build's critical-path.json,
   # drives the run, exits 0/1 — propagated as the compose/CI exit code.
   bot:
     profiles: ["validate"]
     build: ../harness
-    container_name: delvewright-bot
     depends_on:
       server:
         condition: service_healthy   # itzg base ships a healthcheck
@@ -172,7 +197,13 @@ services:
       # window with its ticks, every scripted death of the die-retry stage, and the
       # inverted floor gate's findings). Writable, unlike the read-only build mounts
       # above — this is the run's own artifact, not the build's.
-      - ./run-out:/delve/run-out
+      #
+      # `DW_BOT_OUT` scopes it per ladder: two concurrent runs from ONE checkout
+      # share this host path, and the second would overwrite the first's report
+      # (the same collision class as a shared container name, one layer up).
+      # `validation/bot-run.sh` and `branch-runs.sh` set it to `./run-out/<project>`;
+      # the bare default is unchanged.
+      - ${DW_BOT_OUT:-./run-out}:/delve/run-out
     command: ["/delve/critical-path.json"]
 
   # PackTest runner (spec-0003 PackTest tier): the delvewright-toolserver image
@@ -191,14 +222,14 @@ services:
   # cast-ledger templates (root swap, bark delivery, explicit-none) cannot exist in
   # hello-world, which is one quest and one NPC. Rather than distort hello-world —
   # bumping it to dsl 0.7.0 would churn a fixture many determinism tests pin — CI
-  # runs this profile a second time over a second build tree. `container_name` is
-  # parameterized alongside it because container names are Docker-global: `-p`
-  # isolates volumes and networks but NOT names, so two trees would collide on a
-  # leftover container from a swallowed teardown.
+  # runs this profile a second time over a second build tree, in its own compose
+  # project. There is no `container_name` and so no `PACKTEST_CONTAINER` to keep in
+  # step with it any more (task #185): the project name is the only name there is,
+  # and `validation/packtest-run.sh --project <id> --output <tree>` demands both in
+  # one place.
   packtest:
     profiles: ["packtest"]
     image: ghcr.io/stellarfeline/delvewright-toolserver@sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b
-    container_name: ${PACKTEST_CONTAINER:-delvewright-packtest}
     environment:
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
       ONLINE_MODE: "FALSE"
@@ -217,6 +248,18 @@ services:
       # of the world matches too — notably spawn-monsters=false, which matters now
       # that a wave campaign's derived difficulty is `easy`, not `peaceful`.
       DELVE_SERVER_PROPERTIES: "/packs/server/server.properties"
+      # Pin the Fabric LAUNCHER (installer) version, not just the loader (task #41).
+      # itzg defaults FABRIC_LAUNCHER_VERSION to `LATEST`, and resolving "latest"
+      # means asking meta.fabricmc.net — on EVERY boot, even though the toolserver
+      # image already bakes that exact launcher. Naming the baked version turns the
+      # resolution into a local manifest match ("Fabric launcher for minecraft
+      # 1.21.11 loader 0.19.3 is already available") and removes one live host from
+      # each of the six PackTest boots. The value is versions.toml's
+      # [fabric].launcher_version; check-versions.sh binds the two, and
+      # server-bootstrap-cache.sh asserts it against the pinned image's own
+      # .fabric-manifest.json, so a republished toolserver cannot silently
+      # re-introduce the fetch.
+      FABRIC_LAUNCHER_VERSION: "1.1.2"
       MODE: "adventure"
       FORCE_GAMEMODE: "true"
       GENERATE_STRUCTURES: "false"
@@ -239,6 +282,16 @@ services:
       # The compiler's world declaration + the shared derivation script (read-only).
       - ${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro
       - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro
+      # The server-bootstrap overlay (task #41): the pinned Mojang jar plus the
+      # Fabric launch jar and its Class-Path, fetched and sha256-verified ONCE per
+      # job by validation/server-bootstrap-cache.sh. `packtest-run.sh` COPIES this
+      # into the world volume before the server starts — a copy, never a mount of
+      # the jar itself, because itzg and Fabric both replace the jar by RENAME and a
+      # rename cannot target a bind-mounted file (the "Device or resource busy" that
+      # killed the 2026-07-30 jar cache; see the note in ci.yml). Read-only and
+      # never baked into a layer, so ADR-0010's EULA boundary is untouched. Empty
+      # (a local checkout that never ran the script) = the ordinary live bootstrap.
+      - ${DW_SERVER_CACHE:-./server-cache}:/seed:ro
 
 # Named world volumes for the itzg `/data` mounts above. Declared so
 # `docker compose -f validation/compose.yaml down -v` removes them — otherwise the

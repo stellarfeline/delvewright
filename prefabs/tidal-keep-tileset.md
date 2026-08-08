@@ -85,7 +85,7 @@ Renaming an anchor without keeping the prefix reorders the keep.
 | `tk-wall-walk` | 16×16×34 | S `[7,11,33]`, N `[7,11,0]` | `lit` 15 (sky) | L1 parapet |
 | `tk-courtyard-chapel` | 46×26×46 | S `[23,11,45]`, E `[45,11,23]` | `lit` 8 | L2 hub |
 | `tk-cistern` | 42×22×40 | W `[0,11,19]`, E `[41,11,19]` | `dim` 5 | L3 undercroft |
-| `tk-bell-tower` | 26×44×26 | W `[0,11,13]` | `lit` 7 | L4 terminal |
+| `tk-bell-tower` | 26×44×36 | W `[0,11,13]` | `lit` 7 | L4 terminal |
 
 ### `tk-barrow-field` — the shore
 
@@ -94,6 +94,15 @@ coastal bluffs (no walkable cell borders the void; the strand is climb-out-able
 from the sea, so `DW0322` has its step). Four sealed burial mounds, driftwood, a
 stone fire-ring, and a leaning banner pole beside the mound the elite sleeps
 against.
+
+**BF1 stands far down the western strand**, not beside the landing. The fire is
+where the party respawns, so `DW0478` forbids it inside any hostile's aggro
+range — and the elite kneels near the centre of the field with the documented
+16-block default reach. The tide bounds the piece at local z=33, so no cell on
+the centre line is more than 17 blocks from the kneel: clearing 16 with margin
+needs the lateral run west, and that is why the fire is where it is (19.8 blocks;
+owner ruling 2026-08-04, task #132). The driftwood spar moved off local x=11 with
+it — a log lying on the rest cell is a rest cell the anchor cannot stand on.
 
 The piece exists to stage the **optional elite**. Its legibility is geometry, not
 signage: the field is deliberately wide and empty on both flanks, and the
@@ -151,6 +160,24 @@ chapel" is true in geometry, not just in prose. Inside: the hearth (BF2, the
 regroup/dialogue stage), the cracked bell on a stone-and-timber frame with its
 spill of shattered masonry, and the altar.
 
+**BF2 sits in the south wall at the east end of the nave, beside the undercroft
+door** — the last fire before the way down. Same `DW0478` constraint as BF1, and
+here it is binding rather than comfortable: a lane's reach is its `aggro_radius`
+plus the measured 7.9-block march drift, so a fire beside a 16-block lane must
+clear its polyline by more than 23.9 blocks. The gate lane ends out in the yard,
+and the nave's two **east corners** are the only cells far enough — they top out
+near 26.9 blocks and the hearth's rest cell makes 25.7. A campaign that gives
+this piece a wider siege lane has no room left in the chapel and must move the
+lane, not the fire.
+
+Why no generator assert pins that: which anchors are hostile, and whether a
+`l2-lane-*` chain is a marched lane or an unused waypoint, is a **campaign**
+fact — this tileset ships six lane anchors and the drowned bell marches only
+three of them. A tileset-level rule would have to guess, and guessing is what
+`DW0475` forbids. `DW0478` owns the judgement because it is the layer that can
+see the campaign; the tileset's job is to keep the geometry that lets the answer
+exist.
+
 ### `tk-cistern` — the undercroft and the loop
 
 The souls loop is authored **entirely inside this piece** (see "Loops"). From the
@@ -207,7 +234,21 @@ Three stacked rooms around one vertical void.
   water basin beside the rope room's socket, one step from the courtyard. It is
   **one-way by geometry, not by script**: the shaft walls are sheer and nothing
   climbable is used. The stairs stay walkable both ways, so the model always has a
-  proven return and nothing can strand.
+  proven return and nothing can strand. The basin's kerb opens on its west side
+  (three cells, toward `anchor/l4-rope-foot`), so a player who takes the drop
+  steps out of the water instead of treading it — the nav model never routes
+  through the basin (water is never a floor), so the gap is a human exit, not a
+  modelled edge.
+- **The tide gate + ferry pier** (r5, the road home) — the rope room's south wall
+  carries `anchor/l4-tide-gate`, a 3×3 sea-door sealed with `iron_bars` from
+  world-load: the sea reads through it from BF3 and **no lever anywhere opens
+  it** — only the campaign finale's `open-gate` clears the region. Outside, a
+  parapet-walled sea-stair (one tread per cell, lanterned) descends the tower's
+  south face to a stone ferry pier at the shore datum (`anchor/l4-pier`, walk
+  y=3, the same waterline the barrow shore declares — `DW0344`). The piece is
+  26×44×**36**: local z 26+ is an authored sea band (seabed, two water courses,
+  seagrass) the pier stands in. Post-finale the road home is the tower interior
+  and this stair — it never re-enters the courtyard the rest re-armed.
 
 ## Anchors
 
@@ -263,7 +304,8 @@ above the plate so the climber walks into the fire)*, `anchor/l3-dart-lever`,
 `anchor/l4-perch-1..4`, `anchor/l4-ring-door`, `anchor/l4-boss`,
 `anchor/l4-ring-west`, `anchor/l4-ring-east`, `anchor/l4-outer-walk`,
 `anchor/l4-vantage`, `anchor/l4-rope-drop` *(region, `iron_bars`)*,
-`anchor/l4-bell-hang`.
+`anchor/l4-bell-hang`, `anchor/l4-tide-gate` *(region, `iron_bars`)*,
+`anchor/l4-pier`.
 
 ## Loops: why the fork lives inside a piece
 

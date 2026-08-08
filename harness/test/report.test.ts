@@ -125,12 +125,110 @@ test("the run report prints the compiler's floor-gate ledger, both sides, verbat
   assert.match(String(json.floor_gate.not_covered[0]!["reason"]), /never unleashed/);
 });
 
+test("an untiered hostile is printed with an explicit null tier, never a dropped key", () => {
+  // Task #121: the row exists precisely because nothing was declared, so the
+  // report must SHOW the absence. A key that vanishes from the JSON would be the
+  // same silence one layer down.
+  const report = new RunReport("souls-bonfire", "normal");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [],
+      notCovered: [
+        {
+          kind: "actor",
+          id: "actor/barrow-warden",
+          reason: "`actor/barrow-warden` is UNTIERED: the campaign `unleash-actor`s it",
+        },
+      ],
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { not_covered: Record<string, unknown>[] };
+  };
+  const row = json.floor_gate.not_covered[0]!;
+  assert.ok("tier" in row, "the tier key must be present and null");
+  assert.equal(row["tier"], null);
+  assert.match(String(row["reason"]), /UNTIERED/);
+});
+
 test("a build with no ledger reports it ABSENT, not as an empty ledger", () => {
   // "This campaign bills nothing hard" and "this build cannot tell you" are
   // different facts, and only one of them is reassuring.
   const report = new RunReport("hello-world", "peaceful");
   const json = report.toJSON() as { floor_gate: { present: boolean } };
   assert.equal(json.floor_gate.present, false);
+});
+
+test("an unbound floor gate's binding count is printed, never left to an empty pair", () => {
+  // playtest-methodology.md rule 1: the exact defect the island shipped for
+  // nineteen rounds. A reader must see `unbound: true` and the reason —
+  // never have to notice `covered`/`not_covered` are both empty to learn it.
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [],
+      notCovered: [],
+      binding: {
+        examined: 0,
+        unbound: true,
+        reason: "no wave or actor in this campaign is billed `elite`/`boss`",
+      },
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
+  };
+  assert.equal(json.floor_gate.examined, 0);
+  assert.equal(json.floor_gate.unbound, true);
+  assert.match(String(json.floor_gate.reason), /billed/);
+});
+
+test("a bound floor gate's binding count is printed with no reason", () => {
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage(
+    {
+      present: true,
+      covered: [{ kind: "wave", id: "wave/bellkeeper", tier: "boss" }],
+      notCovered: [],
+      binding: { examined: 1, unbound: false },
+    },
+    [],
+  );
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null; reason: string | null };
+  };
+  assert.equal(json.floor_gate.examined, 1);
+  assert.equal(json.floor_gate.unbound, false);
+  assert.equal(json.floor_gate.reason, null);
+});
+
+test("a plan predating the binding count reports it as null, never a fabricated zero", () => {
+  const report = new RunReport("hello-world", "peaceful");
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null; unbound: boolean | null };
+    actors_gate: unknown;
+  };
+  assert.equal(json.floor_gate.examined, null);
+  assert.equal(json.floor_gate.unbound, null);
+  assert.equal(json.actors_gate, null);
+});
+
+test("the actors[] binding count is a SEPARATE question from the floor gate's", () => {
+  // An all-`ordinary` actor binds `actors_gate` while leaving `floor_gate`
+  // empty — two different counts, and the report must not conflate them.
+  const report = new RunReport("souls-bonfire", "easy");
+  report.recordCombatCoverage({ present: true, covered: [], notCovered: [] }, []);
+  report.recordActorsGate({ examined: 1, unbound: false });
+  const json = report.toJSON() as {
+    floor_gate: { examined: number | null };
+    actors_gate: { examined: number; unbound: boolean; reason: string | null } | null;
+  };
+  assert.equal(json.floor_gate.examined, null);
+  assert.deepEqual(json.actors_gate, { examined: 1, unbound: false, reason: null });
 });
 
 test("every tiered actor gets a row — fought with its outcome, or skipped with a reason", () => {
@@ -333,4 +431,61 @@ test("a die-retry entry publishes what the settled re-engage probe saw", () => {
   assert.equal(re["carried_over"], 0);
   assert.equal(re["farthest_blocks"], 61.25, "how far a feral mob strayed is evidence");
   assert.equal(re["settle_ms"], 750);
+});
+
+test("named-entity deaths carry their scripted_teardown/combat classification, never dropped", () => {
+  // The island run's report surfaced five named-entity deaths with no way to tell
+  // which two were the compiler's despawn-actor vanishes and which three were
+  // real losses. `kind` is the fix: reclassified, both sides always present.
+  const report = new RunReport("nobodys-cave-island", "normal");
+  report.recordNamedEntityDeaths([
+    { name: "Hollow Gate-Warder", entityId: 1, position: [10, 63, -4], kind: "combat" },
+    { name: "island-herdsman", entityId: 4, position: [10, -128, 9], kind: "scripted_teardown" },
+  ]);
+  const json = report.toJSON() as { named_entity_deaths: Record<string, unknown>[] };
+  assert.equal(json["named_entity_deaths"].length, 2);
+  assert.equal(json["named_entity_deaths"][0]!["name"], "Hollow Gate-Warder");
+  assert.equal(json["named_entity_deaths"][0]!["kind"], "combat");
+  assert.equal(json["named_entity_deaths"][1]!["name"], "island-herdsman");
+  assert.equal(json["named_entity_deaths"][1]!["kind"], "scripted_teardown");
+  assert.deepEqual(json["named_entity_deaths"][1]!["position"], [10, -128, 9]);
+});
+
+test("a report with no named-entity deaths still carries an empty (not absent) array", () => {
+  // Unlike `branches`, this section is always present — its absence would have
+  // to be read as "the harness cannot see any deaths", not "there were none".
+  const report = new RunReport("hello-world", "easy");
+  const json = report.toJSON() as { named_entity_deaths: unknown[] };
+  assert.deepEqual(json["named_entity_deaths"], []);
+});
+
+test("spec-0029: the name-preference binding is always reported, zero included", () => {
+  // i18n v2 emits an authored custom name as a translate component, weakening
+  // (never breaking) the same-type preference heuristic. The spec requires the
+  // weakening be MEASURED: how many candidate-preference decisions the run made
+  // and how many had a usable name. A run that made none is `unbound: true` — a
+  // finding, not a pass.
+  const empty = new RunReport("hello-world", "easy").toJSON()["name_preference"] as Record<string, unknown>;
+  assert.deepEqual(empty, {
+    decisions: 0,
+    with_usable_name: 0,
+    candidates: 0,
+    named_candidates: 0,
+    unbound: true,
+  });
+
+  const r = new RunReport("hello-world", "easy");
+  r.recordNamePreference({
+    decisions: 3,
+    withUsableName: 3,
+    candidates: 7,
+    namedCandidates: 4,
+  });
+  assert.deepEqual(r.toJSON()["name_preference"], {
+    decisions: 3,
+    with_usable_name: 3,
+    candidates: 7,
+    named_candidates: 4,
+    unbound: false,
+  });
 });

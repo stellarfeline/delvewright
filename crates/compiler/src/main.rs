@@ -527,6 +527,30 @@ fn validate_loaded(
             diags.extend(delvewright_dsl::validate_marker_channel(
                 &campaign, &sidecars,
             ));
+            // The private-use block the i18n v2 translation tag is built from is
+            // reserved too (DW0183, spec-0029): a string carrying U+E000..U+F8FF
+            // could impersonate the key the compiler threads into a text
+            // component — and has no glyph in any Minecraft font anyway.
+            diags.extend(delvewright_dsl::validate_tr_sigil(&campaign, &sidecars));
+            // The compiler's own chrome namespace is reserved as well (DW0186):
+            // `delvewright.*` keys are the engine's on-screen strings, shipped
+            // translated with the compiler, and a sidecar row under that prefix
+            // would be written into the language file and replace product chrome.
+            diags.extend(delvewright_dsl::validate_chrome_namespace(&sidecars));
+            // Translation provenance (DW0187/DW0188): coverage proves the sidecar's
+            // key SET matches the inventory, which is silent about whether a row
+            // still translates the English it renders. `source` records what each
+            // row was translated FROM, so a rewritten line is detected rather than
+            // audited; rows with no provenance are counted, never passed over.
+            diags.extend(delvewright_dsl::validate_l10n_provenance(
+                &campaign, &sidecars,
+            ));
+            // i18n v2: every declared language must map to a Minecraft language-file
+            // code, or its `assets/delvewright/lang/<code>.json` has no name a client
+            // would ask for and the language ships invisible (DW0184).
+            if let Err(d) = delvewright_dsl::declared_mc_codes(&campaign) {
+                diags.push(d);
+            }
             // v0.6 sound + art-title surface (spec-0014): sound-event ids
             // (DW0326), the deferred `play-sound at: actor` gate (DW0335), and
             // art-title glyph coverage against the `delve:art` font over the source
@@ -555,6 +579,9 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::gates::check_close_gates(
                 &campaign, &prefabs,
             ));
+            // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
+            // wording. No-op for a campaign that authors none.
+            diags.extend(delvewright_compiler::gates::check_seal_hints(&campaign));
             // NPC location-continuity lint (DW0351). Advisory tier — a warning
             // names a staging discontinuity (an NPC materializing or vanishing
             // away from where it was last staged) but never fails the run:
@@ -786,10 +813,19 @@ fn run_snapshot(
     let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
+    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
+    // through `emit::build_with_warnings`; the view commands never emit, so they
+    // report them here — a draw that repeats an anchored piece is exactly what a
+    // reviewer is looking at in a snapshot.
+    print_diags(&plan.warnings, json);
     let structures = match read_structures(&mut plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1269,10 +1305,19 @@ fn run_blocking_chart(
     let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
     };
+    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
+    // through `emit::build_with_warnings`; the view commands never emit, so they
+    // report them here — a draw that repeats an anchored piece is exactly what a
+    // reviewer is looking at in a snapshot.
+    print_diags(&plan.warnings, json);
     let structures = match read_structures(&mut plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1373,7 +1418,7 @@ fn run_build(
     let Validated {
         campaign,
         prefabs,
-        mut loaded,
+        loaded,
         sidecars,
         ..
     } = v;
@@ -1405,17 +1450,24 @@ fn run_build(
         // Swap every player-visible string to the target language, then record the
         // sidecar as a build input (manifest provenance) for the non-en build.
         delvewright_dsl::localize(&mut campaign, &doc.content);
-        if let Some(bytes) = loaded.l10n.get(lang) {
-            loaded
-                .inputs
-                .insert(format!("l10n/{lang}.json"), bytes.clone());
-        }
     }
     let build_lang = if is_english { None } else { Some(lang) };
+    // i18n v2 (spec-0029): the DEFAULT build ships every declared language and lets
+    // the client choose, so each authored string travels to emission carrying its
+    // l10n key and becomes `{"translate": key, "fallback": english}`. A `--lang`
+    // bake is the unchanged single-language artifact (spec-0029 §4): its strings
+    // were already swapped above, so it is emitted as literals exactly as before.
+    if is_english {
+        delvewright_dsl::tag_translatables(&mut campaign);
+    }
 
     let mut plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -1659,6 +1711,10 @@ fn run_edit(
     let mut plan = match Plan::build(&v.campaign, &v.prefabs) {
         Ok(p) => p,
         Err(e) => {
+            // Advisories raised before the failure and explaining it (`DW0498`:
+            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
+            // the cause above the symptom.
+            print_diags(&e.warnings, json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }

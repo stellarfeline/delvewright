@@ -1,0 +1,45 @@
+[package]
+name = "delvewright-grammar"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# `delvewright-grammar` (spec-0027 phase 1): Box-Split Grammars — the prefab
+# back end whose input is a grammar *program* (typed JSON IR) rather than
+# freehand geometry. A deterministic interpreter subdivides an integer voxel box
+# with `split` / `reorient` / probabilistic constrained rules and fills leaves
+# with full block states.
+#
+# Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see LICENSE-GDMC25 in this
+# directory and docs/ACKNOWLEDGEMENTS.md), which implements Eger, *Box-Split
+# Grammars* (FDG '22, DOI 10.1145/3555858.3555865).
+#
+# Phases 1-2a are a library only: expansion, the ported temple/castle/church
+# rule libraries, and `.nbt` + metadata export with a provenance row. The
+# craft-rule diagnostics of spec-0027 §4 are a later phase.
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The grammar program is a typed JSON IR (spec-0027 §3), like every other DSL
+# stage. Both MIT/Apache-2.0.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Structure `.nbt` emission goes through the asset pipeline's existing writer
+# (spec-0007) rather than a second one: one place defines the 1.21.11 template
+# shape and its determinism guarantees (sorted palette, fixed cell order, gzip
+# mtime 0).
+delvewright-schem = { path = "../schem" }
+
+# The provenance row identifies a grammar program by a hash of its canonical
+# JSON bytes (spec-0027 §2). Same crate the compiler already uses for datapack
+# hashing. MIT/Apache-2.0.
+sha2 = "0.10"
+
+[dev-dependencies]
+# The export tests read the emitted `.nbt` back with the same reader the asset
+# pipeline verifies its own output with, so "the structure round-trips" means
+# the same thing on both paths.
+delvewright-schem = { path = "../schem" }

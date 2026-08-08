@@ -35,3 +35,6 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0024](spec-0024-release-pipeline.md) | Release pipeline — from green campaign branch to joinable delve | Approved |
 | [spec-0025](spec-0025-branch-complete-verification.md) | Branch-complete narrative verification | Approved |
 | [spec-0026](spec-0026-horizon-library.md) | Horizon library — five pseudo-open-world bases | Proposed |
+| [spec-0027](spec-0027-grammar-prefab-backend.md) | Box-split grammar prefab back end | Proposed |
+| [spec-0028](spec-0028-ref-image-intent-alignment.md) | Reference-image intent alignment (optional prefab-chain step) | Proposed |
+| [spec-0030](spec-0030-deliberate-shorelines.md) | Deliberate shorelines — the `flood` verb and the tideline invariant | Proposed |

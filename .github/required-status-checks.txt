@@ -1,0 +1,35 @@
+# The exact `name:` of every CI job that is a REQUIRED status check on `main`
+# (owner decision, 2026-08-05: all ten, previously three; eleven since
+# ADR-0017 added the cross-build shelf, twelve since task #44 added the
+# campaign-build gate).
+#
+# THIS FILE IS A DEADLOCK TRIPWIRE. Branch protection matches a required context
+# by its NAME STRING. Rename a job in ci.yml and its required context stops
+# reporting forever, so every PR blocks with no way to merge the fix — the fix is
+# itself a PR. `tools/check-required-contexts.py` fails the moment this file and
+# `ci.yml` disagree, in either direction, which turns that deadlock into an
+# ordinary red on the PR that would have caused it.
+#
+# Changing a job name is therefore a THREE-part change, in this order:
+#   1. add the new context to branch protection (both names required for a moment)
+#   2. merge the rename + this file's update
+#   3. drop the old context from branch protection
+# Adding a job is two parts: merge it advisory, then make it required and add the
+# line here — or add both at once and accept one blocked PR while it first runs.
+#
+# A job that is DELIBERATELY advisory goes in ADVISORY_JOBS in the checker, with
+# its reason. The list is empty on purpose: an advisory gate is one nobody has to
+# obey, which is how `tier 2` — datapack load plus the whole PackTest suite — sat
+# unenforced while it was believed to be blocking.
+rust (fmt, clippy, test)
+engine binaries (cross-build shelf)
+harness (typecheck, test)
+docs (local link check)
+manifest consistency (versions.toml)
+prefab generators (invariants + determinism)
+skin toolchain (pytest)
+i18n translation tool (pytest)
+mecha cross-check (PR only)
+campaign storybooks (engine-version marker)
+campaign builds (every campaign in the content repo)
+tier 2 (datapack load + PackTest)

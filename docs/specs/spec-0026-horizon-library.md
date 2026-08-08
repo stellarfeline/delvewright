@@ -47,9 +47,9 @@ flora:"cherry", palette:"stone-petal"}`.
 | `void` | void superflat | none | — (unchanged) |
 | `ocean` | pinned water superflat, sea level 62 | none | — (unchanged emission; placement re-datumed per §2) |
 | `sky` | the declared **backdrop** (§4) | none; scene rooms become an island archipelago (§4) | `float_y` (walk-plane world y, default 160), `fall` (`lethal` default \| `return`), `backdrop` (default `void`), `placement {x,z}` (default 0,0) |
-| `flatland` | grass superflat whose surface tops **exactly one block under the scene walk plane** (zero height difference by datum equation) | seam blend band (§3) | `blend_width` (default 6) |
+| `flatland` | grass superflat whose surface tops **exactly one block under the scene walk plane** (zero height difference by datum equation) | seam blend band (§3) | `blend_width` (1..=16, default 6 — 0 would be a hard edge, which the interpenetration ruling forbids) |
 | `valley` | void superflat below the tile skirt | mountain annulus: total footprint `ratio`× the scene's, radial ridged-noise rim, flat gap floor between scene and slopes | `ratio` (2..=3, default 2.5), `rim_height` (default 48), `flora` (default `oak`), `palette` (default `stone-grass`) |
-| `summit` | low superflat (gorge haze floor) | flat-topped plateau under the scene + surrounding range and gorges, every surround crest **below** the scene walk plane | `plateau_y` (default 208), `vista_radius` (≥ view-distance×16, default 176), `min_drop` (≥100, default 120) |
+| `summit` | low superflat (gorge haze floor) | flat-topped plateau under the scene + surrounding range and gorges, every surround crest **below** the scene walk plane | `plateau_y` (default 208), `vista_radius` (≥192, default 208 — see below), `min_drop` (≥100, default 120) |
 
 **Cherry-valley is a parameter row, not a base**: the compiler holds no
 cherry-specific code path; a fixture proves the emissions differ only in
@@ -222,8 +222,16 @@ checks **empirical geometry**, never metadata:
   clamp verified empirically; ≥1 gorge drop ≥ `min_drop` along the vista ring;
   everything within −64..320.
 - DW0366 (validation, exit 1): horizon params out of range (`ratio`, `min_drop`,
-  `vista_radius` < view-distance×16, `plateau_y` overflowing build range after
-  scene height, …).
+  `vista_radius` < 192, `blend_width` outside 1..=16, `plateau_y` overflowing
+  build range after scene height, …).
+- `vista_radius` definition (amendment 2026-08-04, resolving the W-A-reported
+  default/floor contradiction): measured **outward from the scene bounding-box
+  edge** — the guaranteed depth of generated terrain beyond any standpoint the
+  player can reach. Floor 192 = the shipped summit `view-distance` (12, §6) ×16,
+  so the fog line always lands inside generated terrain; default 208 (13 chunks,
+  one chunk of slack over the floor; perf is non-gating per §6). `blend_width`
+  1..=16: 0 would be a hard edge, which the flatland interpenetration ruling
+  forbids; 16 bounds the dither band.
 - DW0320 generalizes: any horizon whose ambient is enterable (ocean, flatland,
   valley, summit) requires `boundary`; `sky` requires it too (lateral clock).
 

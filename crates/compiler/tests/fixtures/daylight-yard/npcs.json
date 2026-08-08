@@ -1,0 +1,23 @@
+{
+  "dsl_version": "0.6.0",
+  "campaign_id": "daylight-yard",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/keep",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "See the yard held one more time before the walls finish falling."
+        }
+      }
+    ]
+  }
+}

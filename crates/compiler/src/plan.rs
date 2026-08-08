@@ -28,8 +28,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_dsl::{
-    Campaign, DialogueEffect, DialogueId, Lethality, Npc, NpcDialogue, Objective, Quest,
-    QuestEffect, TrapReset, TrapTrigger, Trigger,
+    Campaign, Diagnostic, DialogueEffect, DialogueId, EnvTrigger, Lethality, Npc, NpcDialogue,
+    Objective, Quest, QuestEffect, Trap, TrapReset, TrapTrigger, Trigger,
 };
 
 use crate::flow::objectives_in_order;
@@ -192,6 +192,100 @@ pub struct ShortcutPlan {
     pub unlock: [i32; 3],
     /// Effects fired once, when the shortcut opens.
     pub on_unlock: Vec<QuestEffect>,
+    /// The volume a presser must stand in for the press to count as coming from
+    /// the wrong side, derived from the gate slab and the `unlock` cell. `None`
+    /// when the geometry does not decide it — `DW0425`.
+    pub sealed_side: Option<crate::wrongside::SealedSide>,
+}
+
+impl ShortcutPlan {
+    /// The **shell** cells of the sealed gate: every region cell with at least
+    /// one axis-neighbour outside the region, in ascending `(x, y, z)` order —
+    /// exactly the clickable surface, and for the thin slab a doorway usually is,
+    /// the whole region.
+    ///
+    /// The same rule [`SealHintPlan::shell_cells`] applies to a `close-gate`
+    /// seal, for the same reason: a cell buried inside the door has six sealed
+    /// neighbours, so no face of it can ever be in a crosshair, and arming it
+    /// would ship an entity nothing can reach.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        shell_cells_of(self.gate_region)
+    }
+}
+
+/// The compiler's own answer a sealed gate gives a right-click when the
+/// `close-gate` authors no `sealed_hint`.
+///
+/// The owner's island finding #34: a sealed boulder answered a right-click with
+/// SILENCE. There is no such thing as a seal with nothing to say, so the answer
+/// is the compiler's obligation and the authored line is only the wording.
+///
+/// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
+/// the compiler, and not l10n-inventoried — a campaign that wants its own wording
+/// authors `sealed_hint`, which is inventoried like any other line. The plan
+/// carries the chrome default in its tagged form; `emit` rebinds it to the build's
+/// language.
+pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
+
+/// A gate anchor that some `close-gate` seals, and the line the seal answers a
+/// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
+/// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
+/// and must agree on the wording (`DW0423`).
+#[derive(Clone, Debug)]
+pub struct SealHintPlan {
+    /// The gate anchor name (`anchor/boulder`).
+    pub anchor: String,
+    /// The function/tag-safe local id, used for `dw_seal_<safe>`.
+    pub safe: String,
+    /// The gate region's inclusive corners (absolute world coords).
+    pub region: ([i32; 3], [i32; 3]),
+    /// The block the region is filled with while sealed (the generated PackTest
+    /// stages and un-stages the seal with it).
+    pub block: String,
+    /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
+    pub text: String,
+}
+
+impl SealHintPlan {
+    /// The **shell** cells of the seal: every region cell with at least one
+    /// axis-neighbour outside the region, in ascending `(x, y, z)` order.
+    ///
+    /// A cell buried inside the region has six sealed neighbours, so no face of
+    /// it can ever be in a player's crosshair — giving it a hitbox would ship an
+    /// entity nothing can reach. The shell is exactly the clickable surface, and
+    /// for the thin slab a gate anchor usually is (a doorway one block deep) it
+    /// is the whole region.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        shell_cells_of(self.region)
+    }
+}
+
+/// The **shell** cells of an inclusive region: every cell with at least one
+/// axis-neighbour outside it, in ascending `(x, y, z)` order.
+///
+/// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
+/// own answer needed the identical surface (task #50). One definition, because
+/// two copies of "which cells of a sealed slab can be clicked" would be free to
+/// drift apart, and the whole point of the geometry is that it is the same
+/// question in both places.
+fn shell_cells_of(region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
+    let (a, b) = region;
+    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let interior = (lo[0] < x && x < hi[0])
+                    && (lo[1] < y && y < hi[1])
+                    && (lo[2] < z && z < hi[2]);
+                if !interior {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
@@ -216,6 +310,22 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
+    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
+    /// `DW0377` reports that, and no half-built affordance reaches emission.
+    pub disarm: Option<TimedGateDisarmPlan>,
+}
+
+/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// trap's [`TrapDisarmPlan`] takes.
+#[derive(Clone, Debug)]
+pub struct TimedGateDisarmPlan {
+    /// The anchor name the player interacts with.
+    pub via_anchor: String,
+    /// Its resolved absolute cell.
+    pub via_cell: [i32; 3],
+    /// The flag jamming the gate sets, party-wide.
+    pub sets_flag: String,
 }
 
 /// A resolved stage-5 `ambush` (spec-0016 §3), collected in declared order —
@@ -358,6 +468,12 @@ pub struct Plan<'a> {
     pub seed: u64,
     /// Area placements, in stage-1 order.
     pub areas: Vec<AreaPlacement>,
+    /// Advisory findings the placement stage raised, in area order. Currently
+    /// `DW0498` ([`crate::pool`]): a pool draw that seats the same anchor-bearing
+    /// prefab twice, so every anchor that prefab declares has more than one
+    /// carrier. Reported by [`crate::emit::build_with_warnings`], which prepends
+    /// them to the build's own advisories; never fatal.
+    pub warnings: Vec<Diagnostic>,
     /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`.
     pub anchors: BTreeMap<(String, String), ResolvedAnchor>,
     /// Class selection plan (n starts at 1).
@@ -401,10 +517,17 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
     pub loot: Vec<LootPlan>,
+    /// Resolved `collect` container adoptions (DSL v0.8, task #95), campaign-
+    /// ordered. Empty for a campaign whose collects keep the compiler's chest.
+    pub collect_fills: Vec<CollectFillPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
     pub timed_gates: Vec<TimedGatePlan>,
+    /// One entry per gate anchor some `close-gate` seals (DSL v0.8, task #142),
+    /// in first-firing order — the seal the party can press for an answer. Empty
+    /// for a campaign that never seals a gate.
+    pub seal_hints: Vec<SealHintPlan>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -631,7 +754,8 @@ pub enum Step {
         /// Total mob count.
         count: i32,
     },
-    /// Collect `count` of `item` from a chest at `pos` (v0.3).
+    /// Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
+    /// `dropped` is set, off the ground where that wave died (DSL v0.9).
     Collect {
         /// The `obj/<id>` this step proves complete.
         objective_id: String,
@@ -639,8 +763,14 @@ pub enum Step {
         item: String,
         /// Required count.
         count: i32,
-        /// Absolute chest-anchor position.
+        /// Absolute chest-anchor position — or, for a dropped collect, the wave
+        /// anchor whose floor the item lands on.
         pos: [i32; 3],
+        /// The wave whose declared drop provides the item (DSL v0.9), when the
+        /// objective is drop-gated. There is no container at `pos`: the harness
+        /// walks the fight's ground and waits for the pickup instead of opening
+        /// a block that is not there.
+        dropped: Option<String>,
     },
     /// Interact at `pos`: goto, then chat `command` (the same `/trigger` the
     /// interaction advancement fires). `requires_item` gates completion (v0.3).
@@ -826,6 +956,26 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
         .map(|q| q.area.as_str())
 }
 
+/// Does any effect in `effs`, or anywhere in the trees nested under them, fire a
+/// `spawn-wave` for `wave_id`?
+///
+/// Descends through [`QuestEffect::visit_deep`], so `sequence` steps,
+/// `set-checkpoint` `on_respawn`, `bonfire` `on_rest`, `begin-stealth`
+/// `on_caught` and `move-npc`/`move-actor` `on_arrive` are all spawn sites — as
+/// they already are for emission. A verb the emitter compiles from a nesting site
+/// is a verb every consumer scan must see from the same site.
+fn fires_wave<'a>(effs: impl IntoIterator<Item = &'a QuestEffect>, wave_id: &str) -> bool {
+    let mut found = false;
+    for e in effs {
+        e.visit_deep(&mut |x| {
+            if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
+                found = true;
+            }
+        });
+    }
+    found
+}
+
 /// The area a wave's mobs spawn in — resolved from the wave's **spawn site**, not
 /// from any `kill` objective. A `spawn-wave` effect (on a quest step, on a quest's
 /// completion, or on an environment trigger) is what makes a wave appear; its
@@ -835,34 +985,58 @@ fn quest_area_of<'a>(campaign: &'a Campaign, quest_id: &str) -> Option<&'a str> 
 /// flock) resolves a spawn position exactly like a wave that is later slain.
 ///
 /// Resolution order: the quest that fires the `spawn-wave` (`on_objective_complete`
-/// or `on_complete`); else, in a single-area campaign, an environment trigger that
-/// fires it (triggers are global — their sole possible area is the one area); else
-/// a quest whose `kill` objective references the wave (defensive fallback for a
-/// wave declared with a kill but no explicit spawn). `None` if nothing spawns it.
+/// or `on_complete`); else, in a single-area campaign, an environment trigger or a
+/// trap payload that fires it (both are global — their sole possible area is the
+/// one area); else a quest whose `kill` objective references the wave (defensive
+/// fallback for a wave declared with a kill but no explicit spawn). `None` if
+/// nothing spawns it.
+///
+/// **Every root is walked DEEP** ([`fires_wave`]), through
+/// [`QuestEffect::nested_effect_lists`] — the DSL's single authority on effect
+/// nesting, and the same authority `emit::all_campaign_effects` walks to decide
+/// what to compile. A wave the emitter writes a `function <ns>:spawn_<wave>` call
+/// for is therefore always a wave this function resolves an area for, and so
+/// always a wave whose support machinery is emitted: the agreement is structural,
+/// not two walks that have to remember each other.
+///
+/// It used to be a shallow scan of the top-level chains only, and the island's
+/// round-21 build is what that cost: `wave/storm-shore` and `wave/storm-fire` were
+/// fired from step 7 of a `sequence`, resolved no area, got no `spawn_…`, no
+/// census, no brand and no kill reward — while `seq_under_ram` still shipped the
+/// call. Two of three storm waves never spawned (`DW0497` is now the standing
+/// proof that this class cannot ship again).
 pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
-    let spawns_wave = |e: &QuestEffect| matches!(e.spawn_wave(), Some(w) if w.as_str() == wave_id);
-    // 1. A quest whose effects fire `spawn-wave` for this wave — the true spawn site.
+    // 1. A quest whose effect TREE fires `spawn-wave` for this wave — the true
+    //    spawn site.
     for q in &campaign.quests.content.quests {
-        if q.on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-            .any(&spawns_wave)
-        {
+        if fires_wave(
+            q.on_objective_complete
+                .values()
+                .flatten()
+                .chain(&q.on_complete),
+            wave_id,
+        ) {
             return quest_area_of(campaign, q.id.as_str());
         }
     }
-    // 2. An environment trigger that fires it. Triggers are global; in a
-    //    single-area campaign the sole area is unambiguous. (Multi-area
-    //    trigger-only waves are not resolvable here and surface as a build
-    //    diagnostic rather than a silent dangling spawn.)
+    // 2. An environment trigger or trap payload that fires it. Both are global
+    //    effect roots carrying no area of their own; in a single-area campaign the
+    //    sole area is unambiguous. (Multi-area trigger-only waves are not
+    //    resolvable here and surface as a build diagnostic rather than a silent
+    //    dangling spawn.)
     if campaign.world.content.areas.len() == 1
-        && campaign
+        && (campaign
             .quests
             .content
             .triggers
             .iter()
-            .any(|t| t.effects.iter().any(&spawns_wave))
+            .any(|t| fires_wave(&t.effects, wave_id))
+            || campaign
+                .quests
+                .content
+                .traps
+                .iter()
+                .any(|t| fires_wave(&t.payload, wave_id)))
     {
         return campaign.world.content.areas.first().map(|a| a.id.as_str());
     }
@@ -886,6 +1060,12 @@ pub struct PlanError {
     pub code: &'static str,
     /// Human-readable explanation.
     pub message: String,
+    /// Advisory findings that were raised before this error stopped planning,
+    /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
+    /// anchor is usually the use-site symptom of a pool `DW0498` already
+    /// describes at the declaration, and dropping the explanation because the
+    /// build failed is exactly the silence task #187 exists to remove.
+    pub warnings: Vec<Diagnostic>,
 }
 
 impl PlanError {
@@ -894,7 +1074,14 @@ impl PlanError {
         PlanError {
             code,
             message: message.into(),
+            warnings: Vec::new(),
         }
+    }
+
+    /// The same error, carrying the advisories that explain it.
+    pub fn with_warnings(mut self, warnings: Vec<Diagnostic>) -> Self {
+        self.warnings = warnings;
+        self
     }
 }
 
@@ -1141,6 +1328,8 @@ impl<'a> Plan<'a> {
 
         // ---- placements + anchors ----
         let mut areas = Vec::new();
+        // Advisory placement findings, in area order (`DW0498`, `crate::pool`).
+        let mut warnings: Vec<Diagnostic> = Vec::new();
         let mut anchors: BTreeMap<(String, String), ResolvedAnchor> = BTreeMap::new();
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
@@ -1230,7 +1419,25 @@ impl<'a> Plan<'a> {
                     origin,
                     &mut stream,
                 )
-                .map_err(|e| PlanError::new(e.code, e.message))?;
+                .map_err(|e| {
+                    // A solver failure raised after growth (`DW0305`) carries the
+                    // draw that produced it: attach the pool-level `DW0498` so the
+                    // author reads the cause at the declaration, not just the
+                    // symptom at the use site (task #187).
+                    let mut w = warnings.clone();
+                    w.extend(crate::pool::check(
+                        prefabs,
+                        &crate::pool::PoolArea {
+                            area_id: &area_id,
+                            area_index: i,
+                            pool_id: &pool_id,
+                            pieces_min: pmin,
+                            pieces_max: pmax,
+                        },
+                        e.placed.iter().map(String::as_str),
+                    ));
+                    PlanError::new(e.code, e.message).with_warnings(w)
+                })?;
                 // Stage-7 L2 massing (spec-0017 PR 3): apply the edit script's
                 // massing batches for this area over the solved layout, so
                 // everything downstream — anchor resolution just below, the
@@ -1245,6 +1452,27 @@ impl<'a> Plan<'a> {
                 if !massing_out.severed.is_empty() {
                     severed.insert(area_id.clone(), massing_out.severed);
                 }
+
+                // `DW0498` (task #187): the draw is settled — read it back and say
+                // so ONCE, here at the declaration, if it seats the same
+                // anchor-bearing prefab more than once. Every anchor that prefab
+                // declares now has more than one carrier; the `or_insert_with`
+                // resolution just below silently keeps the first, and the solver's
+                // `DW0305` will fail the build at whichever campaign-referenced
+                // anchor happens to be the first use site. Advisory: a repeat with
+                // no such use is legal, and shipping campaigns rely on it. Read
+                // AFTER massing so the reported draw is the one the player gets.
+                warnings.extend(crate::pool::check(
+                    prefabs,
+                    &crate::pool::PoolArea {
+                        area_id: &area_id,
+                        area_index: i,
+                        pool_id: &pool_id,
+                        pieces_min: pmin,
+                        pieces_max: pmax,
+                    },
+                    layout.pieces.iter().map(|p| p.prefab_id.as_str()),
+                ));
 
                 let mut pieces = Vec::new();
                 for placed in &layout.pieces {
@@ -1362,12 +1590,8 @@ impl<'a> Plan<'a> {
             .collect::<Vec<_>>();
 
         // ---- critical path + inter-area transport ----
-        let cp = build_critical_path(
-            campaign,
-            &anchors,
-            &npcs,
-            &crate::flow::Flow::new(campaign).playthrough(),
-        )?;
+        let flow = crate::flow::Flow::new(campaign);
+        let cp = build_critical_path(campaign, &anchors, &npcs, &flow, &flow.playthrough())?;
 
         // ---- v0.6 checkpoints + stealth beats (spec-0012 / spec-0014) ----
         let (checkpoints, stealth_beats) = collect_v06_effects(campaign, &anchors, &cp.obj_step);
@@ -1381,6 +1605,9 @@ impl<'a> Plan<'a> {
 
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
+
+        // ---- `collect` container adoption (DSL v0.8, task #95) ----
+        let collect_fills = collect_collect_fills(campaign, &anchors);
 
         // ---- ambushes (spec-0016 §3) ----
         let ambushes = collect_ambushes(campaign, &anchors);
@@ -1403,9 +1630,19 @@ impl<'a> Plan<'a> {
                     closed_ticks: g.closed_ticks,
                     phase: g.phase,
                     crush: g.crush,
+                    disarm: g.disarm.as_ref().and_then(|dis| {
+                        point_any(&anchors, dis.via.as_str()).map(|via_cell| TimedGateDisarmPlan {
+                            via_anchor: dis.via.as_str().to_string(),
+                            via_cell,
+                            sets_flag: dis.sets_flag.as_str().to_string(),
+                        })
+                    }),
                 })
             })
             .collect();
+
+        // ---- v0.8 seal hints (task #142): what a sealed gate answers ----
+        let seal_hints = collect_seal_hints(campaign, &anchors);
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
@@ -1429,6 +1666,7 @@ impl<'a> Plan<'a> {
             namespace,
             seed,
             areas,
+            warnings,
             anchors,
             classes,
             npcs,
@@ -1443,8 +1681,10 @@ impl<'a> Plan<'a> {
             traps,
             shortcuts,
             loot,
+            collect_fills,
             ambushes,
             timed_gates,
+            seal_hints,
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
@@ -1531,11 +1771,46 @@ impl<'a> Plan<'a> {
     ///
     /// Not called for an unreachable branch: there is no world to walk, and
     /// `DW0482` has already failed the build.
+    ///
+    /// `flow` is the model `path` came out of: the builder reads the flag state
+    /// this branch holds at each step from its journal, which is how a `talk-to`
+    /// step lands on the cast row THIS branch declares (`crate::cast::station`).
     pub fn branch_critical_path(
         &self,
+        flow: &crate::flow::Flow<'_>,
         path: &crate::flow::Playthrough,
     ) -> Result<CriticalPath, PlanError> {
-        build_critical_path(self.campaign, &self.anchors, &self.npcs, path)
+        build_critical_path(self.campaign, &self.anchors, &self.npcs, flow, path)
+    }
+
+    /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
+    /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
+    /// the **branch path's own step space**, plus the strict DAG-ancestor relation
+    /// over that space — exactly the model [`Plan::build`] computes for the
+    /// exported path (`gate_events` / `strict_ancestor_steps`), driven by the
+    /// branch's own objective→step map instead of the default playthrough's.
+    ///
+    /// A branch path is a *different sequence* of steps, so the default path's
+    /// step indices cannot be carried across (the same trap `rest_step_index`
+    /// documents for bonfires): a seal attributed through the default indices
+    /// would inherit another branch's ordering. Shortcut gates are sealed from
+    /// world-load (`fire_step: 0`) here for the same reason they are in
+    /// [`Plan::build`] — the branch must be walkable the long way too.
+    ///
+    /// Deterministic: both halves are pure functions of the campaign and the
+    /// branch's own `CriticalPath` (ADR-0006).
+    pub fn branch_gate_model(
+        &self,
+        cp: &CriticalPath,
+    ) -> (Vec<GateEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+        let mut gate_events = collect_gate_events(self.campaign, &self.anchors, &cp.obj_step);
+        gate_events.extend(self.shortcuts.iter().map(|sc| GateEvent {
+            region: sc.gate_region,
+            closes: true,
+            fire_step: 0,
+        }));
+        let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
+        (gate_events, ancestors)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -1619,7 +1894,20 @@ impl<'a> Plan<'a> {
     /// vanilla respawn-detection machinery so checkpoint-free / hook-free campaigns
     /// stay byte-identical (DSL v0.6, spec-0012).
     pub fn any_checkpoint_on_respawn(&self) -> bool {
-        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty()) || !self.reseat_waves().is_empty()
+        self.checkpoints.iter().any(|c| !c.on_respawn.is_empty())
+            || !self.reseat_waves().is_empty()
+            || !self.undefeated_reseat_waves().is_empty()
+            || !self.reseat_actors().is_empty()
+    }
+
+    /// Whether the campaign declares **any** checkpoint at all (spec-0012 /
+    /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
+    /// promise is "die and resume at the last checkpoint", and vanilla's
+    /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
+    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
+    pub fn any_checkpoint(&self) -> bool {
+        !self.checkpoints.is_empty()
     }
 
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
@@ -1638,6 +1926,53 @@ impl<'a> Plan<'a> {
             .iter()
             .filter(|w| w.respawns_on_rest)
             .collect()
+    }
+
+    /// The waves a bonfire refreshes **only while they are undefeated**
+    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// that does NOT declare `respawns_on_rest`, in content order.
+    ///
+    /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
+    /// `respawns_on_rest` wave comes back *whether or not* the party beat it —
+    /// the fire is not a progress ratchet. A billed elite/boss does not: beat it
+    /// and it stays beaten (spec-0016 §1, "stage bosses never respawn on rest").
+    /// But while it is still standing, chipping it down one hit per life is never
+    /// a valid path, so a rest wipes what is left of it and re-seats the authored
+    /// wave at full count and full health. The two sets are disjoint by
+    /// construction here, so no wave can be re-seated twice by one rest;
+    /// `DW0499` forbids the `boss` + `respawns_on_rest` combination outright.
+    ///
+    /// Empty without a bonfire, and empty for every campaign that bills no
+    /// encounter → byte-identical emission.
+    pub fn undefeated_reseat_waves(&self) -> Vec<&delvewright_dsl::Wave> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        self.campaign
+            .quests
+            .content
+            .waves
+            .iter()
+            .filter(|w| !w.respawns_on_rest)
+            .filter(|w| {
+                w.tier
+                    .is_some_and(delvewright_dsl::EncounterTier::has_floor_expectation)
+            })
+            .collect()
+    }
+
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
+    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// `unleash-actor`s — the compiler's one definition of an actor that is a
+    /// *fight* ([`crate::combat::hostile_actors`]).
+    ///
+    /// Empty without a bonfire, and empty for every campaign whose actors are all
+    /// scenery → byte-identical emission.
+    pub fn reseat_actors(&self) -> Vec<&delvewright_dsl::Actor> {
+        if !self.checkpoints.iter().any(|c| c.rest) {
+            return Vec::new();
+        }
+        crate::combat::hostile_actors(self.campaign)
     }
 
     /// The collected checkpoint matching a `set-checkpoint` effect (by anchor +
@@ -1776,6 +2111,13 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 // by the `spawn-wave` effect (the true spawn site) rather than the
                 // `kill` objective — so a kill-less live-threat wave is placed too.
                 Objective::Kill { .. } | Objective::TalkTo { .. } => {}
+            }
+            // v0.8 (task #95): an adopted container is a piece of hardware the
+            // objective cannot do without — a pool draw that omits its carrier
+            // leaves the collect with nothing to fill, so it joins the required
+            // set exactly as a lane waypoint does. Absent field adds nothing.
+            if let Some(cont) = o.collect_container() {
+                set.insert(cont.as_str().to_string());
             }
         }
         for e in q
@@ -1992,6 +2334,7 @@ fn build_critical_path(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     npcs: &[NpcPlan],
+    flow: &crate::flow::Flow<'_>,
     path: &crate::flow::Playthrough,
 ) -> Result<CriticalPath, PlanError> {
     let mut steps = Vec::new();
@@ -2030,7 +2373,19 @@ fn build_critical_path(
         .map(|q| (q.id.as_str(), q))
         .collect();
 
-    for st in &path.steps {
+    // The flag state the party holds as it walks up to each step, and the quests
+    // this playthrough ever activates. Together they are what selects a `talk-to`
+    // NPC's cast row — the same journal `crate::branch`'s `DW0483` reads, so the
+    // placement the ladder walks to and the placement the proofs check are chosen
+    // by ONE model (see [`crate::cast::station`]).
+    let flags_at: Vec<BTreeSet<String>> = flow
+        .journal(path)
+        .into_iter()
+        .map(|s| s.flags_before)
+        .collect();
+    let begun: BTreeSet<String> = path.quests.iter().cloned().collect();
+
+    for (si, st) in path.steps.iter().enumerate() {
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
             continue;
@@ -2087,35 +2442,75 @@ fn build_critical_path(
                                  stop and escalate"
                             ))
                         })?;
-                    // NPC position: its declared anchor within its area.
-                    let npc_anchor = campaign
+                    // NPC position: where the CAST LEDGER stations the body for
+                    // THIS beat, on THIS path — not the stage-2 anchor.
+                    //
+                    // The stage-2 anchor is only where the NPC is first summoned;
+                    // a `move-npc` walks him away from it and the ledger records
+                    // where he then stands (`DW0461` proves the record equals the
+                    // effect history). Reading the anchor here made the bot
+                    // contract a second, staler source of truth: on the island,
+                    // `npc/perimedes` is declared at `anchor/mouth` and cast at
+                    // `anchor/alcove-2` for his stone beat, and the eye-ray bot
+                    // walked to the mouth — where the sealed boulder region's
+                    // wall of interaction entities stands — and could not acquire
+                    // him. The emitted cast was right the whole time.
+                    let decl = campaign
                         .npcs
                         .content
                         .npcs
                         .iter()
-                        .find(|nn| nn.id.as_str() == npc.as_str())
-                        .map(|nn| nn.anchor.as_str())
-                        .unwrap_or("");
-                    let npc_area = campaign
-                        .npcs
-                        .content
-                        .npcs
-                        .iter()
-                        .find(|nn| nn.id.as_str() == npc.as_str())
-                        .map(|nn| nn.area.as_str())
-                        .unwrap_or(area);
-                    let pos = point_of(anchors, npc_area, npc_anchor)?;
+                        .find(|nn| nn.id.as_str() == npc.as_str());
+                    let home_area = decl.map(|nn| nn.area.as_str()).unwrap_or(area);
+                    let (npc_area, pos) = match crate::cast::station(
+                        campaign,
+                        npc.as_str(),
+                        qid,
+                        &begun,
+                        flags_at.get(si).unwrap_or(&BTreeSet::new()),
+                    ) {
+                        Some(crate::cast::Station::At(anchor)) => {
+                            cast_point(anchors, home_area, anchor).ok_or_else(|| {
+                                PlanError::new(
+                                    DW_BUILD,
+                                    format!(
+                                        "internal invariant violation: quest `{qid}` casts npc \
+                                     `{npc}` at `{anchor}`, which resolves to no world position \
+                                     at build time — `DW0464` (dangling cast anchor) / `DW0142` \
+                                     should have named it in validation. This is a compiler bug; \
+                                     stop and escalate"
+                                    ),
+                                )
+                            })?
+                        }
+                        Some(crate::cast::Station::Absent(kind)) => {
+                            return Err(PlanError::new(
+                                DW_BUILD,
+                                format!(
+                                    "internal invariant violation: `talk-to` objective `{id}` needs a \
+                                 body to click, but quest `{qid}`'s cast ledger declares npc \
+                                 `{npc}` `\"{}\"` for this beat — `DW0195` (talk-to on an NPC a \
+                                 prerequisite despawned) / `DW0461` (a declared absence that \
+                                 contradicts the effect history) should have refused this in \
+                                 validation. This is a compiler bug; stop and escalate",
+                                    kind.token()
+                                ),
+                            ));
+                        }
+                        // No ledger row anywhere up to this beat: a pre-0.7
+                        // campaign. Keep the stage-2 anchor, byte for byte.
+                        None => {
+                            let anchor = decl.map(|nn| nn.anchor.as_str()).unwrap_or("");
+                            (home_area.to_string(), point_of(anchors, home_area, anchor)?)
+                        }
+                    };
                     steps.push(Step::TalkTo {
                         objective_id: id.as_str().to_string(),
                         npc_id: npc.as_str().to_string(),
                         pos,
                         command: format!("/trigger {} set {}", npc_plan.trigger_objective, opt.n),
                     });
-                    obj_areas.push((
-                        id.as_str().to_string(),
-                        npc_area.to_string(),
-                        steps.len() - 1,
-                    ));
+                    obj_areas.push((id.as_str().to_string(), npc_area, steps.len() - 1));
                 }
                 Objective::ReachAnchor {
                     id, anchor, radius, ..
@@ -2156,14 +2551,44 @@ fn build_critical_path(
                     item,
                     count,
                     anchor,
+                    container,
+                    dropped_by,
                     ..
                 } => {
-                    let pos = point_of(anchors, area, anchor.as_str())?;
+                    // The step position is the CONTAINER the bot opens: the
+                    // adopted prefab chest/barrel when the objective declares one
+                    // (DSL v0.8), else the chest the compiler places at `anchor`.
+                    // The harness walks to this cell and opens the block standing
+                    // there, so pointing it at the objective anchor while the items
+                    // sit in a barrel three blocks away is a guaranteed bot stall.
+                    // An unresolvable container anchor falls back to the objective
+                    // anchor; the DSL tier reports it (`DW0142`).
+                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // all — the item is on the floor the wave died on, so the
+                    // step points at that wave's own anchor.
+                    let dropped_at = dropped_by.as_ref().and_then(|w| {
+                        campaign
+                            .quests
+                            .content
+                            .waves
+                            .iter()
+                            .find(|wv| wv.id.as_str() == w.as_str())
+                            .and_then(|wv| point_any(anchors, wv.anchor.as_str()))
+                    });
+                    let pos = match dropped_at.or_else(|| {
+                        container
+                            .as_ref()
+                            .and_then(|cont| point_any(anchors, cont.as_str()))
+                    }) {
+                        Some(cell) => cell,
+                        None => point_of(anchors, area, anchor.as_str())?,
+                    };
                     steps.push(Step::Collect {
                         objective_id: id.as_str().to_string(),
                         item: item.clone(),
                         count: *count as i32,
                         pos,
+                        dropped: dropped_by.as_ref().map(|w| w.as_str().to_string()),
                     });
                     obj_areas.push((id.as_str().to_string(), area.to_string(), steps.len() - 1));
                 }
@@ -2246,6 +2671,32 @@ fn build_critical_path(
         cutscene_by_step,
         obj_step,
     })
+}
+
+/// Resolve a **cast-ledger** anchor to `(area, cell)`: the NPC's own area first,
+/// then by name across areas.
+///
+/// The two-step lookup is [`crate::crosshair`]'s, over the same ledger and for
+/// the same reason: a `move-npc` may station a body in an area the NPC was never
+/// declared in, and the ledger is allowed to say so. Returning the area the
+/// anchor actually resolved in — not the NPC's home area — is what keeps the
+/// inter-area transport map coherent with the position the step now carries.
+fn cast_point(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    home_area: &str,
+    anchor: &str,
+) -> Option<(String, [i32; 3])> {
+    let cell = |r: &ResolvedAnchor| match r {
+        ResolvedAnchor::Point { pos, .. } => *pos,
+        ResolvedAnchor::Gate { from, .. } => *from,
+    };
+    if let Some(r) = anchors.get(&(home_area.to_string(), anchor.to_string())) {
+        return Some((home_area.to_string(), cell(r)));
+    }
+    anchors
+        .iter()
+        .find(|((_, n), _)| n == anchor)
+        .map(|((a, _), r)| (a.clone(), cell(r)))
 }
 
 /// Resolve an anchor name to a point cell by scanning every area's resolved
@@ -2401,6 +2852,11 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+            // Task #50: which half of the doorway is the sealed one, from the
+            // slab's thin axis and the side the unlock stands on. `None` is not
+            // an error here — `emit` raises `DW0425` only if an answer was
+            // actually authored for a side the geometry does not name.
+            sealed_side: crate::wrongside::derive((from, to), unlock),
         });
     }
     out
@@ -2441,6 +2897,187 @@ fn collect_ambushes(
     out
 }
 
+/// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
+/// v0.8, task #142), in first-firing order.
+///
+/// A repeat of an anchor already collected is dropped: the seal is a **place**,
+/// so its hitboxes and its answer belong to the anchor, not to each firing. When
+/// two firings disagree about the wording, `gates::check_seal_hints` (`DW0423`)
+/// has already rejected the campaign — here the first-firing text wins.
+///
+/// A `close-gate` whose anchor is not a resolvable gate region carries no entry
+/// (`DW0343` owns that).
+fn collect_seal_hints(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<SealHintPlan> {
+    let mut out: Vec<SealHintPlan> = Vec::new();
+    for_each_gate_effect(campaign, &mut |_site, e| {
+        let Some(anchor) = e.close_gate_anchor() else {
+            return;
+        };
+        let name = anchor.as_str();
+        if out.iter().any(|s| s.anchor == name) {
+            return;
+        }
+        let Some((from, to, block)) = gate_region_block_any(anchors, name) else {
+            return;
+        };
+        out.push(SealHintPlan {
+            anchor: name.to_string(),
+            safe: safe_local(name),
+            region: (from, to),
+            block,
+            text: match e.close_gate_sealed_hint() {
+                Some(h) => h.to_string(),
+                None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            },
+        });
+    });
+    out
+}
+
+/// Which of the five effect roots a visited effect hangs off — the part of a
+/// site that decides **when** the firing happens, **whether the player is
+/// forced to cause it**, and **what gates the firing as a whole**, which is all
+/// the completability model needs on top of the effect itself.
+///
+/// The three roots that have an owner carry it: a consumer that must gate or
+/// date a firing reads the owner off the site instead of re-deriving it from a
+/// second, drift-prone walk (that is the whole point of the enumeration).
+#[derive(Clone, Copy)]
+pub(crate) enum EffectRoot<'a> {
+    /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
+    /// `critical_path` step. Forced: completing the objective is the mainline.
+    ObjectiveComplete(&'a str),
+    /// A quest's `on_complete` — fires at the quest's completion step. Forced.
+    QuestComplete(&'a Quest),
+    /// An environment `triggers[].effects` — proximity/interaction-fired, so it has
+    /// no step of its own; conservatively rooted at step 0. Carries the trigger,
+    /// whose `requires_flags` gate the whole bundle.
+    Trigger(&'a EnvTrigger),
+    /// A `traps[].payload` (spec-0022) — proximity/interaction-fired exactly like a
+    /// trigger, and **optional**: the party may never trip it. Carries the trap,
+    /// whose `requires_flags` gate the whole payload.
+    TrapPayload(&'a Trap),
+    /// A dialogue option's `set-checkpoint` `on_respawn` bundle — re-run on death
+    /// while that checkpoint is active, so it is optional too (nobody is forced to
+    /// die).
+    DialogueRespawn,
+}
+
+/// Where an effect was declared: which stage document, the JSON pointer inside it,
+/// and which root it hangs off. Carried so a diagnostic can name the exact firing
+/// site and so a consumer can reason about *when* the firing happens.
+pub(crate) struct GateSite<'a> {
+    /// The stage document the effect lives in (`quests` or `dialogue`).
+    pub stage: &'static str,
+    /// JSON pointer to the effect within that document.
+    pub path: String,
+    /// The effect root this firing hangs off.
+    pub root: EffectRoot<'a>,
+}
+
+/// Where a top-level effect **list** was declared: which stage document, the JSON
+/// pointer to the list itself, and which root it is.
+pub(crate) struct EffectRootSite<'a> {
+    /// The stage document the list lives in (`quests` or `dialogue`).
+    pub stage: &'static str,
+    /// JSON pointer to the **list** within that document (an element's pointer is
+    /// this plus `/<index>`).
+    pub path: String,
+    /// Which root this list is.
+    pub root: EffectRoot<'a>,
+}
+
+/// Visit **every top-level effect list the compiler can lower**, in one fixed
+/// deterministic order.
+///
+/// A thin adapter over [`delvewright_dsl::for_each_effect_root`], which is the
+/// single enumeration of effect roots in the workspace. It exists to re-present
+/// the DSL's [`delvewright_dsl::EffectRootOwner`] as this crate's [`EffectRoot`],
+/// which carries the same owners plus the completability model's reading of them
+/// (see [`collect_gate_events`]); it enumerates nothing itself.
+///
+/// A list is a root if `emit::emit_quest_effect` can reach it, not if the quests
+/// stage happens to own it. Five lists are. Their order, and the reasoning, live
+/// with the enumeration in `delvewright_dsl::effects`.
+///
+/// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
+/// and the completability model), [`crate::timeline::walk_campaign`] (→ the
+/// `DW0410` staged-walk model and, defined as it, `nav::all_effects`),
+/// `emit::all_campaign_effects` (→ the generated functions themselves),
+/// `emit::check_effect_anchors` (→ `DW0360`), `emit::declared_flags` (→ the
+/// `dw.f_<flag>` scoreboard objectives), `rehearsal::bundles` (→ the
+/// `dw:rehearsal` inventory) and both halves of [`crate::flow`].
+pub(crate) fn for_each_effect_root<'a>(
+    campaign: &'a Campaign,
+    f: &mut dyn FnMut(&EffectRootSite<'a>, &'a [QuestEffect]),
+) -> delvewright_dsl::RootBinding {
+    delvewright_dsl::for_each_effect_root(campaign, &mut |site, list| {
+        let root = match site.owner {
+            delvewright_dsl::EffectRootOwner::ObjectiveComplete { objective, .. } => {
+                EffectRoot::ObjectiveComplete(objective)
+            }
+            delvewright_dsl::EffectRootOwner::QuestComplete { quest } => {
+                EffectRoot::QuestComplete(quest)
+            }
+            delvewright_dsl::EffectRootOwner::Trigger(t) => EffectRoot::Trigger(t),
+            delvewright_dsl::EffectRootOwner::TrapPayload(t) => EffectRoot::TrapPayload(t),
+            delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
+        };
+        f(
+            &EffectRootSite {
+                stage: site.stage,
+                path: site.path.clone(),
+                root,
+            },
+            list,
+        );
+    })
+}
+
+/// Visit **every effect the compiler can lower to a gate command**, at every
+/// nesting depth: [`for_each_effect_root`] flattened, each root's list walked in
+/// declaration order and each effect yielded ahead of its own nested lists.
+///
+/// Every consumer that reasons about emitted gate commands walks THIS: the seal
+/// planner ([`collect_seal_hints`]), the wording check (`gates::check_seal_hints`,
+/// `DW0423`) and the completability model ([`collect_gate_events`], which feeds
+/// `DW0311`/`DW0315`/`DW0342`/`DW0410`). Sharing the traversal is what makes the
+/// checks and the emission unable to disagree about which firings exist.
+pub(crate) fn for_each_gate_effect<'a>(
+    campaign: &'a Campaign,
+    f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
+) {
+    fn deep<'a>(
+        eff: &'a QuestEffect,
+        stage: &'static str,
+        path: &str,
+        root: EffectRoot<'a>,
+        f: &mut dyn FnMut(&GateSite<'a>, &'a QuestEffect),
+    ) {
+        f(
+            &GateSite {
+                stage,
+                path: path.to_string(),
+                root,
+            },
+            eff,
+        );
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                deep(inner, stage, &format!("{path}/{pseg}/{j}"), root, f);
+            }
+        }
+    }
+    for_each_effect_root(campaign, &mut |site, effs| {
+        for (i, eff) in effs.iter().enumerate() {
+            deep(eff, site.stage, &format!("{}/{i}", site.path), site.root, f);
+        }
+    });
+}
+
 /// The absolute gate region **and fill block** a gate anchor resolves to. `None`
 /// if the anchor is not a gate region.
 fn gate_region_block_any(
@@ -2473,57 +3110,70 @@ fn gate_region_any(
     None
 }
 
-/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) in deterministic
-/// content order — quest `on_objective_complete`, then `on_complete`, then
-/// environment triggers (conservative fire step 0, like `collect_v06_effects`),
-/// then dialogue options — resolving each anchor to its gate region and rooting it
-/// at its firing step. Descends every nested effect list so a gate effect inside a
-/// `sequence` step / lifecycle bundle is registered at the same firing step. An
-/// effect whose anchor is not a resolvable gate is skipped (a point anchor / bad
-/// close-gate is a validation concern, `DW0142`/`DW0343`). Feeds the `close-gate`
-/// completability model in `crate::nav`. Gates are a quest/trigger-effect surface
-/// only (the `DialogueEffect` enum carries no gate verb), so dialogue is not
-/// scanned.
+/// Collect every `open-gate` / `close-gate` firing (DSL v0.6) that emission can
+/// lower, resolving each anchor to its gate region and rooting it at its firing
+/// step. Feeds the `close-gate` completability model in `crate::nav`
+/// (`DW0311`/`DW0315`/`DW0342`/`DW0410`).
+///
+/// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner and
+/// `gates::check_seal_hints` walk — so the model and the emission cannot disagree
+/// about which firings exist (task #167; before this, the model saw three of the
+/// five roots emission reaches, and a `close-gate` in a `traps[].payload` or a
+/// dialogue option's `on_respawn` bundle was filled in the datapack while every nav
+/// proof believed the wall was open). Nesting is descended by that traversal, so a
+/// gate effect inside a `sequence` step / lifecycle bundle is registered at its
+/// root's firing step. An effect whose anchor is not a resolvable gate is skipped
+/// (a point anchor / bad close-gate is a validation concern, `DW0142`/`DW0343`).
+///
+/// **When** a firing happens is read off the site's [`EffectRoot`]:
+///
+/// - a quest `on_objective_complete` fires at that objective's step, an
+///   `on_complete` at the quest's completion step — the player is *forced* through
+///   both, so both directions are modelled;
+/// - an environment trigger, a trap payload and a dialogue-hosted `on_respawn`
+///   bundle have no step of their own (proximity, a sprung trap, a death), so all
+///   three are rooted conservatively at step 0, which precedes every leg.
+///
+/// The two **optional** roots — a trap the party may never trip, a death nobody is
+/// forced to suffer — register their `close-gate`s only. An unguaranteed firing may
+/// be assumed to have happened exactly when assuming so is conservative: it can
+/// seal a region (the proof must survive the seal), it can never unseal one (the
+/// proof may not lean on a wall the player might never open). That is the same rule
+/// a shortcut gate already obeys — sealed for the whole model, because the delve
+/// must be finishable the long way. Environment triggers keep their older
+/// both-directions treatment unchanged; narrowing that is a different proof's
+/// verdict and is not this function's call to make.
 fn collect_gate_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
 ) -> Vec<GateEvent> {
     let mut out = Vec::new();
-    let handle = |eff: &QuestEffect, fire_step: usize, out: &mut Vec<GateEvent>| {
-        eff.visit_deep(&mut |e| {
-            let gate = e
-                .open_gate_anchor()
-                .map(|a| (a, false))
-                .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
-            if let Some((anchor, closes)) = gate
-                && let Some(region) = gate_region_any(anchors, anchor.as_str())
-            {
-                out.push(GateEvent {
-                    region,
-                    closes,
-                    fire_step,
-                });
-            }
-        });
-    };
-    for q in &campaign.quests.content.quests {
-        for (obj_id, effs) in &q.on_objective_complete {
-            let step = obj_step.get(obj_id.as_str()).copied().unwrap_or(0);
-            for eff in effs {
-                handle(eff, step, &mut out);
-            }
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let (fire_step, forced) = match site.root {
+            EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
+            EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
+            EffectRoot::Trigger(_) => (0, true),
+            EffectRoot::TrapPayload(_) | EffectRoot::DialogueRespawn => (0, false),
+        };
+        let gate = e
+            .open_gate_anchor()
+            .map(|a| (a, false))
+            .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
+        let Some((anchor, closes)) = gate else {
+            return;
+        };
+        if !closes && !forced {
+            return; // an optional firing may seal, never unseal
         }
-        let done_step = quest_complete_step(q, obj_step);
-        for eff in &q.on_complete {
-            handle(eff, done_step, &mut out);
+        if let Some(region) = gate_region_any(anchors, anchor.as_str()) {
+            out.push(GateEvent {
+                region,
+                closes,
+                fire_step,
+            });
         }
-    }
-    for t in &campaign.quests.content.triggers {
-        for eff in &t.effects {
-            handle(eff, 0, &mut out);
-        }
-    }
+    });
     out
 }
 
@@ -2656,6 +3306,54 @@ pub struct LootItemPlan {
     pub enchantments: BTreeMap<String, u32>,
 }
 
+/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8, task
+/// #95), resolved to the container's world cell.
+///
+/// One resolution, one cell: the build-tier container proof (`DW0438`), the
+/// activation-time fill and the critical-path step the bot opens all read THIS
+/// value, so the cell the compiler proves is provably the cell it fills and the
+/// cell the bot walks to. Resolving the anchor separately at each site is how a
+/// proof and its emission drift apart.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollectFillPlan {
+    /// The `collect` objective's id.
+    pub objective_id: String,
+    /// The anchor named by `container`.
+    pub anchor: String,
+    /// The world cell of the container to fill.
+    pub cell: [i32; 3],
+    /// How many slots the fill occupies: the objective's own stack plus
+    /// `fill_count` padding stacks.
+    pub slots: usize,
+}
+
+/// Resolve every `collect` objective's adopted `container` (DSL v0.8) to a world
+/// cell, in campaign order. An unresolvable anchor is skipped here and reported
+/// by the DSL tier (`DW0142`) — the same policy [`collect_loot`] follows.
+fn collect_collect_fills(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<CollectFillPlan> {
+    let mut out = Vec::new();
+    for q in &campaign.quests.content.quests {
+        for o in &q.objectives {
+            let Some(cont) = o.collect_container() else {
+                continue;
+            };
+            let Some(cell) = point_any(anchors, cont.as_str()) else {
+                continue;
+            };
+            out.push(CollectFillPlan {
+                objective_id: o.id().as_str().to_string(),
+                anchor: cont.as_str().to_string(),
+                cell,
+                slots: 1 + o.collect_fill_count() as usize,
+            });
+        }
+    }
+    out
+}
+
 /// Resolve every stage-5 `loot` declaration to a world cell. An unresolvable
 /// anchor is skipped here and reported by the DSL tier (`DW0142`).
 fn collect_loot(
@@ -2771,9 +3469,21 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
-                prompt: labels.prompt_or_default().to_string(),
-                rest_label: labels.rest_or_default().to_string(),
-                save_label: labels.save_or_default().to_string(),
+                // Authored strings are ordinary inventoried campaign text; an
+                // unauthored one takes the compiler's chrome default in its tagged
+                // form, which `emit` rebinds to the build's language.
+                prompt: labels
+                    .prompt
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_TITLE.tagged()),
+                rest_label: labels
+                    .rest_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_REST.tagged()),
+                save_label: labels
+                    .save_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
             });
         }
     }

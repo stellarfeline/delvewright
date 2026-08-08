@@ -104,6 +104,70 @@ test("an unknown tier is a parse failure, never a silent 'ordinary'", () => {
   assert.throws(() => parseCombatPlan(raw), /tier/);
 });
 
+// --- binding counts (playtest-methodology.md rule 1) ------------------------
+
+test("a plan without floor_gate/actors_gate parses with no binding count", () => {
+  // A plan from a delvec older than this task carries neither field — that is
+  // a DIFFERENT fact from a present-but-zero binding, and must parse as
+  // `undefined`, never as a fabricated zero.
+  const plan = parseCombatPlan(PLAN);
+  assert.equal(plan.floorGate.present, false);
+  assert.equal(plan.floorGate.binding, undefined);
+  assert.equal(plan.actorsGate, undefined);
+});
+
+test("an unbound floor gate parses its examined count and reason", () => {
+  const raw = {
+    ...PLAN,
+    floor_gate: { covered: [], not_covered: [], examined: 0, unbound: true, reason: "nothing billed" },
+    actors_gate: { examined: 0, unbound: true, reason: "no actor declares a tier" },
+  };
+  const plan = parseCombatPlan(raw);
+  assert.equal(plan.floorGate.present, true);
+  assert.deepEqual(plan.floorGate.binding, { examined: 0, unbound: true, reason: "nothing billed" });
+  assert.deepEqual(plan.actorsGate, { examined: 0, unbound: true, reason: "no actor declares a tier" });
+});
+
+test("a bound floor gate carries no reason", () => {
+  const raw = {
+    ...PLAN,
+    floor_gate: {
+      covered: [{ kind: "wave", id: "wave/gate-assault", tier: "elite" }],
+      not_covered: [],
+      examined: 1,
+      unbound: false,
+    },
+  };
+  const plan = parseCombatPlan(raw);
+  assert.deepEqual(plan.floorGate.binding, { examined: 1, unbound: false });
+});
+
+test("an unbound gate missing its reason is a parse failure, never a silent zero", () => {
+  const raw = { ...PLAN, floor_gate: { covered: [], not_covered: [], examined: 0, unbound: true } };
+  assert.throws(() => parseCombatPlan(raw), /reason/);
+});
+
+test("`unbound` must agree with `examined === 0`, or the plan is refused", () => {
+  const raw = {
+    ...PLAN,
+    floor_gate: { covered: [], not_covered: [], examined: 1, unbound: true, reason: "wrong" },
+  };
+  assert.throws(() => parseCombatPlan(raw), /unbound/);
+});
+
+test("`examined` must equal covered.length + not_covered.length", () => {
+  const raw = {
+    ...PLAN,
+    floor_gate: {
+      covered: [{ kind: "wave", id: "wave/gate-assault", tier: "elite" }],
+      not_covered: [],
+      examined: 2,
+      unbound: false,
+    },
+  };
+  assert.throws(() => parseCombatPlan(raw), /examined/);
+});
+
 // --- combat assist (spec-0023 §3) -------------------------------------------
 
 test("the assist is Resistance III, not immunity", () => {

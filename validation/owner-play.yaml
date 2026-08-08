@@ -1,0 +1,33 @@
+# The owner's play binding — the ONE compose file that publishes host 25565.
+#
+#   EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+#       --profile play up
+#   EULA=TRUE CREATOR_NAME=<mc-name> \
+#     docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+#       --profile playtest up --build
+#
+# `compose.yaml` is Docker-global-free by construction (task #185): no pinned
+# container name, no published port, so any number of worker ladders run beside
+# each other without a lock. The owner's client, however, needs exactly one fixed
+# address — `localhost:25565` — and that is a genuinely shared resource. It lives
+# here, alone, so that:
+#
+#   * a worker cannot take it by accident: reaching it means naming THIS file;
+#   * `validation/mutex.sh` has exactly one resource to guard (25565 /
+#     `owner-play-session`) instead of the whole validation stack;
+#   * the container is findable by name while a human is in it — which is how
+#     `dw_mutex_release_named` refuses to free `owner-play-session` under a live
+#     session, and how `docker logs delvewright-server` works for the owner.
+#
+# The other sanctioned 25565 binding is `tools/playtest-server.sh` (a throwaway
+# `docker run`, owner-facing, and it takes the same mutex). Nothing else, ever.
+services:
+  server:
+    container_name: delvewright-server
+    ports:
+      # 127.0.0.1 only — never world-reachable.
+      - "127.0.0.1:25565:25565"
+  playtest:
+    container_name: delvewright-playtest
+    ports:
+      - "127.0.0.1:25565:25565"

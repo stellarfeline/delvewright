@@ -8,6 +8,16 @@ description: >
 
   The content repo is PUBLIC (owner, 2026-07-30), so the checkout is tokenless.
 
+inputs:
+  lfs:
+    description: >
+      Materialize the git-lfs payloads (the prefab `.nbt` bodies). Default true —
+      anything that BUILDS needs them. A job that only reads the content repo's
+      text (campaign JSON, storybook markdown) sets this to "false" and gets LFS
+      pointers instead, which is the same text at a fraction of the transfer.
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -17,7 +27,8 @@ runs:
       shell: bash
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
-        import tomllib
+        import sys, tomllib
+        sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
         c = tomllib.load(open("versions.toml", "rb"))["content"]
         print(f"repo={c['repo']}")
         print(f"sha={c['sha']}")
@@ -33,4 +44,4 @@ runs:
         repository: ${{ steps.pin.outputs.repo }}
         ref: ${{ steps.pin.outputs.sha }}
         path: campaigns
-        lfs: true
+        lfs: ${{ inputs.lfs == 'true' }}

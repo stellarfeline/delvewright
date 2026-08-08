@@ -29,9 +29,16 @@ fn version_line() {
     let out = delvec(&["--version"]);
     assert_eq!(code(&out), 0);
     let s = String::from_utf8_lossy(&out.stdout);
-    assert!(s.contains("delvec 0.1.0"), "{s}");
-    // spec-0026 raised the implemented DSL to 0.9.0 (the horizon library's
-    // stage-1 object form + new bases over spec-0025's 0.8.0 surface).
+    assert!(
+        s.contains(&format!("delvec {}", env!("CARGO_PKG_VERSION"))),
+        "{s}"
+    );
+    // DSL 0.9.0 carries two independent surfaces, on two stages: task #179's
+    // declared drops on an elite/boss (`drops[]` + the `collect` `dropped_by`
+    // that sources a quest item off a body instead of out of a box), and
+    // spec-0026's stage-1 horizon library (the `horizon` object form + the new
+    // bases). Either one alone raises the implemented DSL to 0.9.0; the line
+    // below is what `--version` reports for both.
     assert!(s.contains("dsl 0.9.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
@@ -650,13 +657,27 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
         assert_eq!(b, &zh2[p], "zh-cn double-build mismatch in {p}");
     }
 
-    // Same file set; the difference is confined to string-bearing files + manifest.
+    // i18n v2 (spec-0029): the DEFAULT build additionally ships the language
+    // carrier — a resource pack holding one lang file per declared language plus
+    // `en_us.json` — while a `--lang` bake, whose strings are already swapped,
+    // ships none. keep-trial has no skins, so before v2 neither build had a pack.
+    let pack_only = ["resourcepack.zip", "SKINS.md"];
+    for p in pack_only {
+        assert!(en_t.contains_key(p), "the default build must ship `{p}`");
+        assert!(
+            !zh.contains_key(p),
+            "a `--lang` bake must ship no `{p}`: its strings are already baked"
+        );
+    }
     assert_eq!(
-        en_t.keys().collect::<Vec<_>>(),
+        en_t.keys()
+            .filter(|p| !pack_only.contains(&p.as_str()))
+            .collect::<Vec<_>>(),
         zh.keys().collect::<Vec<_>>()
     );
     let differing: Vec<&String> = en_t
         .iter()
+        .filter(|(p, _)| !pack_only.contains(&p.as_str()))
         .filter(|(p, b)| *b != &zh[*p])
         .map(|(p, _)| p)
         .collect();
@@ -1300,6 +1321,13 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
         "actionbar message missing: {ret}"
     );
 
+    // The render layer must be TOLD the horizon, never guess it from blocks:
+    // an ocean-horizon delve's frames need Chunky's ambient water plane, and its
+    // height is the compiler's sea-level datum.
+    let rp: serde_json::Value = serde_json::from_slice(&a["render-plan.json"]).unwrap();
+    assert_eq!(rp["horizon"]["kind"], "ocean", "render plan horizon: {rp}");
+    assert_eq!(rp["horizon"]["sea_level"], 62);
+
     // Boundary PackTests emitted.
     assert!(
         a.contains_key("packtest-datapack/data/hello-world/test/v06_boundary_return.mcfunction"),
@@ -1342,6 +1370,10 @@ fn v06_absent_fields_keep_void_output_unchanged() {
         !tree.contains_key("datapack/data/hello-world/function/boundary_tick.mcfunction"),
         "no boundary function without a declared boundary"
     );
+    // A void horizon emits no `horizon` key at all, so the render plan of a
+    // campaign that declares nothing stays byte-identical.
+    let rp: serde_json::Value = serde_json::from_slice(&tree["render-plan.json"]).unwrap();
+    assert!(rp.get("horizon").is_none(), "void must not stamp a horizon");
 }
 
 /// A routable v0.6 campaign (patched hello-world) builds cleanly and the emitted
@@ -1998,6 +2030,116 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     for f in [
         "validation/branch-path-hold.json",
         "validation/branch-path-bolt.json",
+    ] {
+        assert!(
+            manifest["outputs"].as_object().unwrap().contains_key(f),
+            "manifest does not hash {f}"
+        );
+    }
+    assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
+}
+
+/// task #117: every REACHABLE branch gets its own waypoint artifact
+/// (`validation/branch-waypoints-<slug>.json`) in the `critical-path-waypoints`
+/// shape, derived from the branch's OWN path over the same assembled world its
+/// per-branch DW0311 proof ran over.
+///
+/// Two identities pin the derivation: the branch the exported path already walks
+/// gets **byte-identical** waypoints (same routes, same thinning), and a
+/// fork-divergent sibling gets waypoints whose leg destinations are ITS OWN step
+/// positions — never the exported path's, which is a different sequence whose
+/// origins/indices must not be inherited (the same trap `Plan::branch_gate_model`
+/// documents for gate fire-steps).
+#[test]
+fn each_reachable_branch_gets_its_own_waypoint_artifact() {
+    let fx = common::compiler_fixtures_dir().join("branch-two-endings");
+    let pf = common::prefabs_dir();
+    let out = tmp("branch-waypoints");
+    let r = delvec(&[
+        "build",
+        fx.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
+    let tree = read_tree(&out);
+
+    // The branch the exported path walks: same routes, same bytes.
+    assert_eq!(
+        tree["validation/branch-waypoints-hold.json"],
+        tree["validation/critical-path-waypoints.json"],
+        "the branch the critical path already walks must get identical waypoints"
+    );
+
+    // The fork-divergent sibling: its legs follow ITS path, not the exported one.
+    assert_ne!(
+        tree["validation/branch-waypoints-bolt.json"],
+        tree["validation/critical-path-waypoints.json"],
+        "a fork-divergent branch must not inherit the exported path's legs"
+    );
+    let leg_destinations = |wp: &serde_json::Value| -> Vec<Vec<i64>> {
+        wp["legs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| {
+                l["to"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.as_i64().unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+    let step_positions = |cp: &serde_json::Value| -> Vec<Vec<i64>> {
+        cp["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|s| s.get("pos"))
+            .map(|p| {
+                p.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|n| n.as_i64().unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+    for slug in ["hold", "bolt"] {
+        let wp: serde_json::Value =
+            serde_json::from_slice(&tree[&format!("validation/branch-waypoints-{slug}.json")])
+                .unwrap();
+        let cp: serde_json::Value =
+            serde_json::from_slice(&tree[&format!("validation/branch-path-{slug}.json")]).unwrap();
+        assert_eq!(wp["campaign_id"], "hello-world");
+        let legs = leg_destinations(&wp);
+        assert!(
+            !legs.is_empty(),
+            "{slug}: a branch with walked legs exports them"
+        );
+        let positions = step_positions(&cp);
+        for to in &legs {
+            assert!(
+                positions.contains(to),
+                "{slug}: leg destination {to:?} is not one of ITS OWN path's step \
+                 positions {positions:?} — the legs must follow the branch's own path"
+            );
+        }
+        // Every leg carries a non-empty proven polyline (the harness contract).
+        for l in wp["legs"].as_array().unwrap() {
+            assert!(!l["waypoints"].as_array().unwrap().is_empty());
+        }
+    }
+
+    // Validation metadata, hashed like the rest — never shipped gameplay.
+    let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
+    for f in [
+        "validation/branch-waypoints-hold.json",
+        "validation/branch-waypoints-bolt.json",
     ] {
         assert!(
             manifest["outputs"].as_object().unwrap().contains_key(f),

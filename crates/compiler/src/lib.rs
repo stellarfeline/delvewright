@@ -19,7 +19,13 @@
 //! - [`clearance`]: the body-vs-block proof (`DW0450`/`DW0451`) — no NPC or actor
 //!   body may occupy the same space as block geometry, at its spawn anchor or at
 //!   any tick of any walked leg.
+//! - [`traversal`]: the route-vs-capability proof (`DW0452`/`DW0453`) — a walked
+//!   leg may only contain moves the BODY walking it can make, derived from its
+//!   entity (a spider climbs, a ghast flies, nothing opens a fence gate).
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`integrity`]: the emitted call graph is closed (`DW0497`) — a
+//!   `function <ns>:<name>` the compiler writes must point at a function the
+//!   compiler wrote, whatever feature emitted either half.
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
@@ -52,12 +58,15 @@ pub mod combat;
 pub mod commands;
 pub mod continuity;
 pub mod creator;
+pub mod crosshair;
+pub mod daylight;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
 pub mod flow;
 pub mod gates;
 pub mod horizon;
+pub mod integrity;
 pub mod light;
 pub mod load;
 pub mod loot;
@@ -65,6 +74,8 @@ pub mod massing;
 pub mod nav;
 pub mod plan;
 pub mod png;
+pub mod pool;
+pub mod pressable;
 pub mod raster;
 pub mod registry;
 pub mod rehearsal;
@@ -76,10 +87,18 @@ pub mod stairs;
 pub mod surround;
 pub mod textfit;
 pub mod timeline;
+pub mod traversal;
 pub mod waypoints;
+pub mod wrongside;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).
-pub const DELVEC_VERSION: &str = "0.1.0";
+///
+/// Derived from `crates/compiler/Cargo.toml`'s `[package] version` at compile
+/// time — the crate manifest is the one source of truth, so this can never
+/// drift from the release identity the way a hand-typed literal did (PR #290
+/// bumped `Cargo.toml` to 1.0.0 but left this constant a hard-coded "0.1.0",
+/// so the 1.0.0 release identity never reached a single emitted artifact).
+pub const DELVEC_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The pinned Minecraft version (ADR-0009).
 pub const MC_VERSION: &str = "1.21.11";
