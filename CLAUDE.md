@@ -233,6 +233,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   one-beat ruling into a campaign-wide ceiling and had to be corrected.)
   Unrequested change is a rejection cause on its own, independent of merit — a
   worker's entire island round was rejected wholesale for carrying extras.
+- **A settled ruling is never re-asked. Search the record first** (owner rebuke,
+  2026-08-08). Two questions put to the owner that day had already been answered
+  and written down: the actor/NPC `traversal` override was ruled in an earlier
+  session, and "are traps redstone or commands" is the title of
+  `spec-0022-traps-v2-command-driven.md` — her own directive of 2026-08-03,
+  sitting in the repo. Re-asking spends the scarcest resource in the project on
+  something a grep would have answered, and it reads as ignoring the answer.
+  Before any question: the specs and ADRs, `docs/reference/`, the private
+  handoff notes, then prior session transcripts. Ask only what none of them
+  contain.
+- **A release is built from a frozen approved tree, never from a moving branch**
+  (owner ruling, 2026-08-08). A release names the exact tree the owner accepted;
+  only files that cannot reach the shipped artifact (release plumbing) may be
+  added on top, and each is named in the release request. Tagging `main` at
+  release time is what shipped a package the owner had not approved and could
+  not have detected: the pipeline had no place to ask "is this the thing that
+  was accepted", so nothing asked. A release refuses when the campaign tree
+  differs from the approved baseline by anything unnamed.
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions. **Both repos are PUBLIC** —
