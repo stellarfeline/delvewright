@@ -26,6 +26,7 @@ BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 # --- pull every value we assert on out of the manifest in one shot --------------
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 d = tomllib.load(open(sys.argv[1], "rb"))
 def emit(k, v): print(f'{k}={v!r}'.replace("'", '"'))
 emit("MC_VERSION",        d["minecraft"]["version"])
@@ -161,6 +162,7 @@ echo "== Engine release line ([engine], ADR-0016 / ADR-0017) =="
 eng_report_file="$(mktemp)"
 python3 - "$MANIFEST" "$ROOT" > "$eng_report_file" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 from pathlib import Path
 
 manifest, root = Path(sys.argv[1]), Path(sys.argv[2])

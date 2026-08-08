@@ -84,14 +84,14 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
-| 4 | l10n sidecar coverage + reserved marker channel | `dsl::validate_l10n`, `dsl::validate_marker_channel` | `DW0180`/`DW0181`/`DW0182` (exit 1) |
+| 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed); then read the settled draw back and report a pool that seats the same anchor-bearing prefab twice (`DW0498`, `compiler::pool`) | `compiler::solver`, `compiler::pool` | `DW030x` (exit 3); advisory `DW0498` |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space (task #117); talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
-| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0489`/`DW0496` (exit 3); advisory `DW0451`/`DW0489` |
+| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 | 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), and the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) | `compiler::affordance` + `compiler::integrity` | `DW0420`/`DW0421`/`DW0497` (exit 3) |
 
@@ -154,7 +154,9 @@ geometry the compiler has no data for; `DW0489`'s barks tier, where two bodies
 really are ambiguous but the campaign has declared that neither right-click
 carries a consequence — or on authorial judgement the compiler
 may measure but must not overrule (`DW0351`, `DW0353`, `DW0354`'s decoration
-tier, `DW0379`, `DW0380`, and `DW0498`, where a pool repeating an anchored piece
+tier, `DW0379`, `DW0380`, `DW0453`, where a one-block course of a wall line may
+be a decorative kerb, a deliberate stile or an enclosure that was meant to hold,
+and `DW0498`, where a pool repeating an anchored piece
 is a legal shape shipping content relies on).
 
 ---
@@ -408,10 +410,12 @@ from l10n (no stage-7 string is player-visible).
 
 ### l10n sidecars (`l10n/<code>.json`)
 
-Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
-**stable key → translated string**. Key inventory derived from stage docs
+Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content,source?}`; `content` =
+flat **stable key → translated string**, `source` = the same keys → the canonical
+English each row was translated **from**. Key inventory derived from stage docs
 (`world.title`, `world.outro`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
-`npc.<n>.name`, `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
+`npc.<n>.name`, `actor.<a>.name` (a scripted puppet's nameplate, only when set),
+`quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
 `obj.<q>.<o>.missing_item_hint` (v0.7) and `obj.<q>.<o>.item_name` (a `collect`'s
 collected-item display name, v0.8, only when authored),
 `dlg.<n>.<node>.text/.opt.<i>.label/.opt.<i>.tooltip` (the tooltip v0.8, only when
@@ -439,8 +443,46 @@ under a position-derived child key = parent `fx.…` key + a stable segment
 (`seq.<step>` for a sequence step; `respawn`/`caught`/`arrive` for the bundles) +
 the effect's list index + leaf, e.g. `fx.<q>.oc.<o>.0.seq.1.0.narrate` (nesting is
 arbitrary-depth). Keys are purely position-derived → deterministic + byte-stable.
-Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
+**Entity display names are keyed by their TEXT, not by their site.** An NPC
+(`npc.<n>.name`) and a scripted actor (`actor.<a>.name`) are two DSL surfaces for
+one thing a player reads — a nameplate over a body — and one character routinely
+occupies both: a stage-2 NPC that stands and talks, plus one actor puppet per
+cutscene pose. Per-site keys would ask a translator for `Polyphemus` five times and
+let it be answered five ways, so **the first site (NPCs before actors) declaring a
+given name owns the key and every later site carrying the byte-identical name
+emits that same key**. The inventory asks once; two bodies a player reads as one
+character cannot render as two. Deliberately scoped to that class: prose keeps one
+key per site (two coinciding English strings may legitimately need different
+renderings), and `wave.<w>.mob.<i>.name` is **not** merged — same shape, but
+merging it retires keys live campaigns already translate, which is an owner call.
+
+Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`;
+a key in the compiler's reserved `delvewright.` chrome namespace → `DW0186`.
 Excludes authoring context (theme/premise/persona).
+
+**Coverage is about key SETS, and that is not the same as being up to date.**
+Rewrite an authored line and its translation is present, applied and **wrong**,
+with no key moved and every coverage check green. `source` closes that: it records
+the English each row was translated from, so the compiler compares
+(`DW0187`) instead of a human auditing. It is load-bearing for entity display
+names in particular — their key belongs to the first site declaring a given text,
+so renaming ONE body migrates the key to ANOTHER, and the row that goes stale is
+not the row the author edited (`DW0180` points at the newly-required key, which is
+somewhere else entirely). `source` is additive: an older sidecar parses unchanged
+and its unguarded rows are **counted** by `DW0188` on every run, so an unadopted
+sidecar never reads like a checked one. `tools/i18n-translate.py` writes it, so
+adoption is a re-run with no retranslation.
+
+**Every string field in the DSL is classified, or CI is red.** `DW0185` proves that
+a string the inventory *knows about* reaches a component; it cannot see one the
+inventory never met, which ships English silently — how `actors[].name` survived
+twenty playtest rounds. `crates/dsl/tests/l10n_surface.rs` closes that half: it
+enumerates every string-valued property of the seven stage schemas (derived from
+the Rust types, so complete by construction — **78** today) and requires each to
+be classified `Inventoried` / `Reference` / `Machine` / `NotPlayerVisible(<why>)`,
+in both directions. A new `String` anywhere in the DSL fails it until somebody
+records whether a player reads it. It is a test, not a `DW` code, because the
+defect is in the compiler: no campaign input can produce it.
 
 **`delvec l10n-inventory <dir> [--lang <code>]`** emits that inventory as one JSON
 document on stdout — the work list a translator (in-agent, human, or an external
@@ -462,6 +504,101 @@ translates, so a re-run fills only the gaps. Persona rows carry voice, never plo
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See
 [i18n.md](i18n.md).
+
+### Language delivery — i18n v2 (spec-0029)
+
+**A released delve ships every declared language; the client picks its own.**
+`delvec build` (no `--lang`) emits every authored player-visible string as a
+**translatable text component**
+
+```json
+{"translate": "<l10n key>", "fallback": "<English source>"}
+```
+
+and writes one `assets/delvewright/lang/<mc_code>.json` per declared language,
+plus `en_us.json`, into the resource pack the release already ships. A client
+auto-selects the lang file matching its own locale; a locale we do not ship, a key
+a translator missed, **and a player who declined the resource-pack prompt** all
+resolve through the component's own `fallback`. That is why the fallback rides the
+component and not the pack's `en_us.json`: a declined pack has no lang files at
+all, and the delve must still be playable in English.
+
+| Piece | Behaviour |
+|---|---|
+| Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. |
+| Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. |
+| Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory; each other file is its sidecar's `content`. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
+| Language codes | `dsl::mclang::mc_lang_code` normalises (lowercase, `-`→`_`) and then **checks membership against the pinned client's own language set** — `CLIENT_LANGS`, 143 stems **derived** from Mojang's 1.21.11 asset index (`tools/derive-client-langs.py`; digests in the module header), never transcribed. The membership check is what makes normalisation safe: a bare rewrite alone would invent `de` from `de`, a filename no client asks for, and a lang file nobody loads is a language silently dropped. A bare language resolves to `<lang>_<lang>` if the client ships one, else to its sole file; ambiguous (`zh`, `sr`, `be`) and unknown codes are `DW0184`. Baked into the source — the compiler never reaches the network during a build (ADR-0006). |
+| `--lang <code>` | **Unchanged**, and still the single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
+| Art titles | `emit_narrate` no longer `to_ascii_uppercase()`s an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font now carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
+| Width gates | `DW0330`/`DW0331` already checked source **and** every declared translation. Under v2 any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. Unchanged code, raised stakes. |
+| Build inputs | Every `l10n/<code>.json` is now an input of **every** build (not just a `--lang` bake) and is hashed into `manifest.json` — the sidecar's bytes ship in the pack, so they are as much a build input as a stage document. |
+
+No DSL change and no `dsl_version` bump: this is emission only. Every campaign's
+emitted bytes change (literals become components); released delves reproduce
+through their pinned engine (`versions.toml` + OCI), per the versioning discipline.
+
+#### Compiler chrome — the strings the compiler writes itself
+
+*Owner ruling 2026-08-06.* A delve's on-screen text has two authors. Everything
+above concerns the **campaign's** strings. The compiler writes thirteen of its own
+— `New objective: `, `Delve Complete`, `Choose your class`, the default a bonfire
+shows when the campaign authors no label — and until this they had no key and no
+override, so a player reading a fully translated delve still saw English chrome
+wrapped around it.
+
+They are **compiler-owned end to end** (`dsl::chrome`): the keys, the English, and
+every translation live with the engine, and a campaign authors nothing. Eight of
+them are *product chrome* (`objective.new`, `objective.complete`,
+`campaign.complete`, `campaign.signature`, `campaign.banner`, `lobby.waiting`,
+`class.title`, `class.body`) — no campaign author wants to write those, which is
+why the answer is not to give them an override; that would move the engine's
+maintenance cost onto content. The other five are *diegetic defaults*
+(`boundary.message`, `gate.sealed`, `bonfire.title|rest|save`) whose authored
+overrides already exist, are unchanged, and still win — what lives in `chrome` is
+only what the compiler bakes when nothing is authored.
+
+| Piece | Behaviour |
+|---|---|
+| Key space | `delvewright.ui.<area>.<name>`. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186`. |
+| Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. |
+| Sentences, not fragments | Four chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
+| Lang files | Chrome is written into `en_us.json` and into each **declared** language's file — never into languages the delve does not already ship, or a French client on a Chinese-only campaign would read French chrome around English story. Partial-by-language reads as broken; uniform English does not. |
+| The honest fallback | A language the compiler has no chrome table for gets **no chrome rows at all**: the client resolves through `en_us.json` (or, for a player who declined the pack, the component's own `fallback`) and reads English. Absent, never English written into `fr_fr.json` under a translated name. |
+| Coverage | `dsl::chrome::TABLES` maps a client language stem to a table. Today: **30 tables covering 47 of the client's 143 locales**, plus the 5 English locales that need none. The rest render English. |
+| `--lang` bake | A bake ships no lang files, so the fallback IS what the player reads: `Chrome::for_build` puts the baked language's text there, falling back to English. `%s` still substitutes — vanilla formats the fallback with the same `with` arguments. |
+
+**The translations are unreviewed.** They are machine-produced from the canonical
+English and have not been checked by native speakers; that is recorded in
+`dsl::chrome`'s module header so nobody mistakes them for reviewed work, and a
+correction is a one-line table edit. English stays canonical.
+
+#### Named exclusions — where an authored string stays literal
+
+An authored string that does not land in a text component cannot carry a translate
+key. Every such site is named here and reads its string through
+`dsl::l10n::plain`; none of them is rendered by a client. Anything **not** on this
+list that emits an authored string outside a component fails the build with
+`DW0185`, so this table cannot silently grow.
+
+| Site | Artifact | Why it is not a component |
+|---|---|---|
+| `emit::artifact_title` | `packtest-datapack/**` test `#>` descriptions | A PackTest source is a generated test, read by the validation server and by a maintainer — never rendered to a player. |
+| `emit::emit_packtest` (dialogue-visibility test) | `packtest-datapack/**/v04_dialogue_visibility.mcfunction` | Same: the option label appears in the test's own description line. |
+| `combat::actor_json` (an actor's `name`) | `validation/combat-plan.json` | The validation ladder's own artifact, read by the bot and by a maintainer. It could not carry a tag before `actors[].name` was inventoried; now that it can, it reads the English through `plain`. |
+| `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
+
+`delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
+tag at all: tagging happens inside `build`, after validation and analysis, so
+every other subcommand reads the campaign exactly as authored.
+
+`critical-path.json`, `validation/*.json`, `combat-plan.json` and `manifest.json`
+carry **ids**, never authored prose, so they need no exclusion — the bot contract
+was already language-neutral. A generated PackTest may still *write* a text
+component (`collect_container.mcfunction` pre-loads the stack the objective
+counts): that is emitted by the same helper the datapack uses, so the two cannot
+drift, and it is an input to the test rather than an assertion about rendered text.
+No generated PackTest asserts on rendered text at all.
 
 ---
 
@@ -1256,6 +1393,33 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   no-stranding (`DW0315`/`DW0316`), stealth (`DW0327`/`DW0355`), traps
   (`DW0342`), shortcuts/ambush/timed-gate (`DW0373`–`DW0378`, `DW0388`), stair
   orientation (`DW0430`) — these still run on the default path only.
+- `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
+  ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
+  the traversal proof actually examined — `legs`, `route_cells`, and
+  `legs_by_class` per `Locomotion` (`ground`/`climber`/`flier`/`aquatic`) — plus,
+  per rule, the objects it bound to (`gate_use.cells`, `surmount.rises`), and
+  `unbound` with a `reason` when the campaign plans no walked leg at all. The
+  per-class count is the point: every class that carries an exemption is a class
+  the proof does not examine, so a total alone would report green over exactly
+  the bodies it understands least. **`Locomotion` membership follows one stated
+  rule**: `Ground` is the default AND the checked class, so every id vanilla data
+  does not positively answer lands there (unrecognised ids included, and
+  `minecraft:breeze` deliberately — it hops, it does not fly); a class may carry
+  an exemption only when its membership is vanilla's own answer (`Aquatic` =
+  `#minecraft:aquatic`, which exempts nothing at all) or a closed, cited list
+  whose exemption is advisory-tier (`Climber` = vanilla's `Spider` and its
+  subclasses, `DW0453` only). There is no flier class on purpose: this compiler
+  routes every body with the same ground A* (`nav::plan_actor_moves` has no
+  flight handling), so a flying body walks the same route a sheep would and is
+  exactly as checkable — the class bought nothing and cost a blanket error-tier
+  exemption. `rules.jump_reach`
+  is carried **declared-unbound on purpose**: per-entity `JUMP_STRENGTH` is
+  server-code attribute data rather than registry data the compiler reads, so
+  every rise is measured against the *player's* apex (`nav::MAX_JUMP_RISE_16`)
+  for every body, and the ledger says so rather than leaving a reader to infer
+  it from silence. Emitted only when the campaign assembles a world — "assembled
+  nothing" and "examined nothing" are different facts, so the artifact is
+  omitted rather than emitted claiming a zero it never measured.
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table — one entry per **mandatory** encounter (a wave a `kill` step on the
   compiled critical path names), in path order, carrying `wave`, `objective`,
@@ -1529,7 +1693,7 @@ classified:
 | solid | every other non-air block (full-cube, the conservative default) | no | yes |
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
 | use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
-| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette), trap triggers, thin decoration (< 8/16 collision) | yes | no |
+| passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
 | flooded | water reach | no | no |
 | partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
 
@@ -1564,10 +1728,23 @@ impassable (now `DW0311`). A tall/gate cell is never valid floor, which also
 models the barrier's upper half blocking same-level walk-overs for free. Closed
 fence gates are **use-gate** edges: walkable for the player (adventure-legal
 right-click, the same action a human performs), exported first-class per leg (see
-`use_gates` above) — and walkable for scripted `move-npc`/`move-actor` tp
-polylines, whose firing beat's fiction controls the gate (the island ram walks
-out through the pen gate the player just opened — through the threshold, no
-longer teleport-hopping the fence-top). Autonomous placement (`spawn-wave`
+`use_gates` above). They remain routable edges for scripted `move-npc`/`move-actor`
+tp polylines too — but **that is no longer taken on trust** (island round 21):
+routing a puppet over a player-only edge is now a build error, `DW0452`, because
+a tp'd puppet performs no interaction and no runtime verb ever opens a gate, so
+"the firing beat's fiction controls the gate" was an assumption nothing proved.
+The island's pen gate shipped `open=false` with sixteen legs through it. The edge
+stays available so the diagnostic can name the cell and the reason rather than
+degenerating into an unroutable `DW0307`.
+
+**A stage-7 edit can author an open gate** (same round). `Assembled::open_gates`
+— the side set `occupancy_of` reads to tell a closed gate from an open one — was
+populated only by the prefab palette read, and `edit::write_cell` cleared it on
+every write. So an edit could write `minecraft:oak_fence_gate[open=true]`, ship
+exactly that block in the world, and still have every proof downstream model the
+cell as shut: the model contradicting the bytes it emitted, and the one available
+fix for `DW0452` was unauthorable. `write_cell` now re-derives the marking from
+the blockstate it just wrote. Autonomous placement (`spawn-wave`
 seating) uses the no-gate-use view (`World::without_gate_use`): a spawned mob is
 never seated in a gate threshold and the seating flood never spills through a
 closed gate. Cutscene dolly clipping (`DW0308`) treats fence, wall, and gate
@@ -2199,6 +2376,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. The inventory it demands coverage of spans **every effect root emission can lower** — including `traps[].payload` and a dialogue option's `set-checkpoint` `on_respawn` bundle (task #168); a string in either used to ship English-only in a translated build, uncovered. |
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
+| `DW0183` | (i18n v2, spec-0029) A player-visible string — authored or translated — contains a character from the reserved private-use block `U+E000..U+F8FF`. That block is how the compiler carries an l10n key from the stage docs to the text component the string is emitted into (`dsl::l10n::TR_SIGIL`), so content carrying it could impersonate a translation tag; it also has no glyph in any Minecraft font. Remove the character. |
+| `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code does not resolve to a language file the **pinned client actually loads** (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's 1.21.11 asset index), so its `assets/delvewright/lang/<code>.json` would sit under a filename no client ever asks for and the language would ship invisible. Also fires on an ambiguous bare code (`zh`, `sr`, `be` — several regions, no `<lang>_<lang>`), because guessing the region is how a language ships invisible. Use a code the client loads. A language is never silently dropped. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
@@ -2758,6 +2937,8 @@ does not occupy the same space as an *affordance*.
 |------|---------|
 | `DW0450` | An NPC or actor **body is inside solid block geometry** — at the anchor it is summoned on, or at some tick of a walked leg. Build-tier (exit 3), `compiler::clearance`. The owner's island rounds 8/10/11 defect class, in its clearest instance: `actor/polyphemus-walker`, a `minecraft:warden` (0.9 × 2.9 blocks), is `spawn-actor`ed at `anchor/mouth-side`, which resolves to `[6, 69, -45]` — and `[6, 69, -45]`, `[6, 70, -45]`, `[6, 71, -45]` are all `minecraft:cobblestone`, the cliff face beside the cave mouth. The emitted command is `summon minecraft:warden 6.5 69.0 -44.5`, straight into the rock, and every other proof was green. **The asymmetry this closes**: a *walked* destination was already safe by construction — `move-npc`/`move-actor` snap their endpoints to a standable cell (`SNAP_RADIUS`) and A* only steps through passable cells — but a *placed* body was proven only to have an anchor that RESOLVES (`DW0325`), and `summon` does no snapping, so the anchor is exactly where the body lands. Model: the entity's standing hitbox from `nav::entity_dims` (the one dims table, shared with `DW0359` and actor-footprint routing), centred on the position, rising `height` from the feet; intersected against each cell's true collision volume (`nav::World::solid_top_16` — a bottom slab is `y..y+0.5`, a `dirt_path` `y..y+15/16`), over the same assembled world every other geometry proof reads (settled, sealed, stage-7-edited, relight fixtures in). Water is not geometry and is excluded. Positions checked: every NPC anchor (incl. `deferred`), every actor anchor (incl. spawn-and-unleash), and **every emitted waypoint of every planned leg** — the exact per-tick `tp` coordinates the datapack ships. A leg reports its first offending tick only (a body dragged through twenty blocks of rock is one defect); all error-tier violations are named in one message so a single build gives the whole fix list. Prescription: move the anchor to a cell with real clearance (the message states how many cells of headroom the body needs), or give the leg a corridor the body fits. Do **not** shrink the body: `move-npc` plans on the *player* footprint by construction, so a warden-bodied NPC walked down a 2-high corridor is a route that was never sized for it — fix the route or the body, never the dims table. |
 | `DW0451` | Advisory (exit 0), same module: the hitbox is clear, but the body will still read as clipping. Two cases, both measurements the compiler can state and must not adjudicate. **(1) Model overhang** — a solid block lies within `MODEL_MARGIN` (0.2 blocks) of the hitbox horizontally, for a body **at rest** only. Vanilla mob models render past their collision box (a warden's arms, an iron golem's, a ravager's horns, a sheep's wool), so a flush body *looks* embedded although nothing overlaps; the true per-model extent is client render geometry the compiler has no data for, hence a named margin rather than a verdict. The margin is also what makes the tier discriminating: a body leaves `(1-width)/2` of its cell free per side, so 0.2 fires for a 0.9-wide warden or sheep (0.05 free) and stays silent for a 0.6-wide player-model humanoid (0.2 free) — an NPC standing against a wall, the most ordinary staging there is, produces nothing. It is restricted to bodies at rest deliberately: a body at rest is a composed pose the party looks at, while a walker in a one-block corridor is within a fraction of a block of both walls by construction, so flagging legs would report the map's dimensions once per leg. **(2) 1.5-tall barriers** — a fence, wall or closed fence-gate cell falls inside the body volume. Those fill their cell for pathing but are a narrow post or panel in reality, so whether the body interpenetrates depends on sub-block shape the occupancy model does not carry. Prescription: give the body a cell of clearance, or confirm the framing in playtest. |
+| `DW0452` | A walked leg's route contains a **move the body walking it cannot make**. Build-tier (exit 3), `compiler::traversal`. The owner's island round-21 finding B: `[18, 73, -63]` shipped `minecraft:oak_fence_gate[facing=east,open=false]` in the mountain pen's south fence line, and sixteen `move-npc`/`move-actor` legs walked straight through it — while the owner's own character could not, and had to offset to squeeze past the leaf. **Why nothing stopped it**: `nav::World::is_occupied` deliberately excludes `use_gates`, because a closed fence gate *is* passable — for the PLAYER, who opens it with an adventure-legal right-click (`World::without_gate_use` exists precisely because an autonomous mob cannot), and scripted walks were routed on the player's rules on the stated ground that "the beat's fiction controls the gate". Nothing proved that fiction. A scripted walk is a compiler-emitted `tp` polyline whose puppet performs no interaction at all, and **no runtime verb changes a fence gate's block state**, so a gate that ships `open=false` is shut for the whole delve. Model: capabilities come from the entity (`traversal::Traversal::of_entity`) rather than from a global rule — `opens_gates` is false for every mob, since no vanilla mob opens a fence gate (villagers open *doors*). Routing itself is unchanged: the edge stays available and the build now fails on it, which names the cell and the reason instead of turning it into an unroutable `DW0307`. **No locomotion class is exempt from this rule** (owner correction, round 21). `DW0452` is a COLLISION-AND-INTERACTION question, not a locomotion one: the gate leaf spans the full cell across one axis, the planned route runs down the cell's centre line, and the puppet performs no right-click — and not one of those three facts changes because the body has wings or claws. A flying body may skip the *climbing/surmounting* checks; the *collision* check it still owes. The only thing that can excuse this rule is `Traversal::opens_gates`, which is why that is a per-body field and not a constant, and why the exemption is expressed **per rule** rather than as an early skip over the whole body — an earlier draft did the latter and let a flier walk through a closed gate in silence. A leg reports its first offending cell only, and all violations land in one message. Prescription: ship the gate OPEN (a stage-7 `world-edits` fill writing `open=true` on the cell — an open fence gate has no collision at all, so the same route becomes honest for puppet and player alike), or seal the threshold and let the route take the way a body can. |
+| `DW0453` | Advisory (exit 0), same module: a walked leg goes **over a barrier line, across a full-cube course of it**. The route steps up onto a cell whose support is a full cube standing level with, and orthogonally beside, a 1.5-tall fence/wall cell, and comes back down within `traversal::SURMOUNT_WINDOW` (4) route steps — i.e. the body crossed a line the same line refuses to let it walk through. The owner's island round-21 finding A: the beach fold's ring is `minecraft:cobblestone_wall` down the east and west sides and at the north corners but full-cube `minecraft:mossy_cobblestone` along the middle of the north and south edges, so the model sees an enclosure at nine cells and an ordinary one-block ledge at five; the flock's shortest way out ran up the east face at `[7, 63, -9]`, over the north wall's top at `[7, 64, -10]` and down into the meadow, and the pen's real opening at `[6, 63, -6]` was never used. Twelve legs, all naming the same course. With `nav::resample`'s L-shaped step-up — a vertical translation in place, which is what keeps a body out of the step block's corner — this renders as an animal sliding up a stone wall. **Advisory, not an error**: the move itself is legal (a one-block rise is inside the player-class jump every body in the dims table has), and the compiler cannot tell a decorative kerb or a deliberate stile from an enclosure that was meant to hold. A partial floor (slab, `dirt_path`) beside a fence is never a course — that is floor detail, not a wall. **This is the rule locomotion legitimately governs**, and the only one: a `Locomotion::Climber` is exempt because going over is what a climber does, and a `Locomotion::Flier` because it makes no ground step-up in the first place. This advisory tier is also the only tier a hand-listed class is permitted to gate, so a misclassified species costs a missed advisory and never a missed error. Prescription: build the line out of ONE material so the model's barrier and the player's eye agree, and let the route use the opening. |
 ### DW0489 — crosshair disambiguation (`compiler::crosshair`; error + advisory)
 
 | Code | Meaning |
@@ -3000,6 +3181,15 @@ every earlier campaign's removal is byte-identical.
 | Code | Meaning |
 |------|---------|
 | `DW0497` | **The compiler emitted a `function <ns>:<name>` call to a function it never emitted.** Build-tier (exit 3), `compiler::integrity::check_tree`, run last, over the finished output tree — beside the affordance-hardware self-check, and on the same principle: judge the commands that ship, not the intent behind them. **The class.** Nearly every verb compiles in two halves — the *call site*, lowered from the effect tree wherever the author put the verb, and the *machinery*, emitted from a per-feature registration walk. When those two walks disagree about what exists, the call site still emits, vanilla resolves an unknown function to nothing at all (no error, no log line, nothing a bot can observe), and the verb simply never happens. **The motivating build** is the island's round 21: `wave/storm-surf` was fired from a top-level effect chain and got its full machinery; `wave/storm-shore` and `wave/storm-fire` were fired from step 7 of a `sequence`, and the wave emitter — which resolved a wave's area only from top-level chains — produced no `spawn_…`, no census, no brand, no kill reward for either, while `seq_under_ram` shipped `function nobodys-cave-island:spawn_storm_shore` all the same. Two of three storm waves never spawned; every build-tier proof was green, and the only thing that noticed was the compiler's own generated census PackTest — which walks `waves[]` rather than the effect tree — failing on a live server four minutes into a ladder run. Landing this check surfaced a **second, independent instance** immediately: `spawn-npc` on a non-`deferred` NPC compiled `function <ns>:spawn_npc_<id>` against a function only ever emitted for `deferred` NPCs, so a character brought back after a `despawn-npc` stayed gone. **Model:** every emitted `.mcfunction` in every tree is scanned for calls in command position — bare, after `run`, after `schedule` — and each target in the campaign's own namespace must name an emitted `data/<ns>/function/**` body. Deliberately **feature-blind**: the rule is "a call has a callee", which needs no knowledge of waves or NPCs and therefore guards emitters not yet written. Scope: the campaign's own namespace only (`minecraft:…` belongs to a tree this compiler does not emit); functions, not function tags (`function #<ns>:<tag>` is skipped, tag membership being a separate artifact); and **tiered** — the shipped `datapack/` ships alone (ADR-0010) so it may only call itself, while `packtest-datapack/` and `creator-datapack/` load beside it and may call their own tier or the shipped one. PackTest `test/` bodies are callers but never callees. The message lists every dangling call with its artifact path, line number, the whole command, and the missing target. Prescription: **fix the emitter** so its call walk and its machinery walk derive from one traversal — this is a compiler defect, never content. Never silence it by deleting the call site: the call is what the author asked for. |
+
+### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
+
+| Code | Meaning |
+|------|---------|
+| `DW0185` | **An authored player-visible string reached the built tree outside a text component.** Build-tier (exit 3), `emit::check_untranslated_literals`, run last over the finished output tree — beside `DW0497` and the affordance self-check, on the same principle: judge the bytes that ship, not the intent behind them. **The class.** i18n v2 (spec-0029) makes every authored string a `{"translate": …, "fallback": …}` component so a client can render the player's own language. The risk that change carries is a string that *cannot* land in a component — it would ship as a literal no lang file can reach, silently untranslatable, which is exactly the defect v2 exists to remove. Rather than enumerate the emission sites once and trust the list to stay true, the compiler makes it an invariant: each inventoried string enters emission carrying its l10n key in a reserved private-use tag (`dsl::l10n::tag_translatables`), an emitter either lowers it through `emit::tr`/`emit::snbt_component` or reads it through `dsl::l10n::plain`, and **a tag still present in the finished tree is a site that did neither**. Deliberately feature-blind, so it guards emitters not yet written. **Scope:** every emitted file, plus the compiler-authored resource-pack assets before they are zipped. A file that is neither UTF-8 text nor a **classified** verbatim binary output (`.nbt`, `.png`, `resourcepack.zip` — byte copies of input assets the compiler writes no string into) also fails here, so a new binary artifact cannot quietly opt out of the scan. The message lists every offending artifact with the key and the line. **Prescription:** lower the string through the component helpers; or, if the site is genuinely not a component and never read by a player, read it through `dsl::l10n::plain` **and** add it to the named-exclusion table in §2 "Language delivery". Never silence it by dropping the string. |
+| `DW0186` | (i18n v2 addendum) A campaign l10n sidecar defines a key in the reserved `delvewright.` **chrome** namespace. Those are the engine's own on-screen strings — `New objective: `, `Choose your class`, a bonfire's default labels — owned by the compiler, shipped translated with it, authored by no campaign; a sidecar row under that prefix would be written into the language file and silently replace product chrome for that language. `DW0181` also flags it as an orphan; this names the reason. |
+| `DW0187` | (i18n v2) An l10n sidecar row was translated from English the campaign no longer holds: its `source` entry differs from the key's canonical English (or names a key the sidecar does not translate). The translation is present, applied and wrong, and no key-set check can see it — `DW0180`/`DW0181` compare key SETS and a rewritten line moves no key. Load-bearing for entity display names, whose key belongs to the first site declaring a given text: renaming one body hands its key to another, so the stale row is not the one the author edited. Fix by re-translating the key and updating its `source` — `tools/i18n-translate.py` does both. |
+| `DW0188` | (i18n v2) An l10n sidecar records `source` provenance for only some of its rows, or none, so `DW0187` cannot see the rest. **Warning tier**, stating the unguarded row count: `source` is additive and this is the one-version deprecation window before it is required. The count exists so an unadopted sidecar is a reported number on every run rather than a silence that reads like a pass. Adopt by re-running `tools/i18n-translate.py` — it records provenance for rows it already has, and retranslates nothing. |
 
 #### The branch artifacts (validation metadata)
 

@@ -2565,6 +2565,28 @@ test("a custom name is read from every shape mineflayer hands it back in", () =>
   assert.equal(displayNameOf({ displayName: {} }), undefined);
 });
 
+test("i18n v2: a translate-component name is read through its fallback", () => {
+  // spec-0029: an authored custom name ships as
+  // `{"translate": "<l10n key>", "fallback": "<English source>"}`. `fallback` is
+  // by construction the English string the plan's `actors[].name` carries, so the
+  // same-type preference heuristic keeps matching — and it must NOT depend on
+  // whether the installed prismarine-chat resolves an unknown key to its fallback
+  // or renders the raw key, which is exactly what the `toString` branch would.
+  const component = { translate: "actor.polyphemus.name", fallback: "Polyphemus" };
+  assert.equal(displayNameOf({ customName: component }), "Polyphemus");
+  assert.equal(displayNameOf({ displayName: component }), "Polyphemus");
+  // A component whose translate key resolved to the raw key string must still
+  // prefer the fallback, not the key.
+  assert.equal(
+    displayNameOf({
+      customName: { ...component, toString: () => "actor.polyphemus.name" },
+    }),
+    "Polyphemus",
+  );
+  // An empty fallback is not a name.
+  assert.equal(displayNameOf({ customName: { translate: "x", fallback: "" } }), undefined);
+});
+
 test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
   // Post-#223 (`fire_step < i`) souls-bonfire's encounter truthfully reports no
   // governing checkpoint: the only fire is armed by the very kill this encounter

@@ -127,6 +127,7 @@ assert "$REPORT" '"pointer": "/content/quests/0/on_complete/0"' "shot 1 DSL poin
 #   path 3,67,8;7,67,8 --dw.mark--> exactly one waypoint, the bot's own eye cell
 python3 - "$REPORT" "$MARKED" <<'PY'
 import json, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 report, marked = sys.argv[1], [int(v) for v in sys.argv[2].split(",")]
 shots = {s["shot"]: s for s in json.load(open(report))["shots"]}
 assert set(shots) == {1, 2}, f"expected both shots stamped, got {sorted(shots)}"
@@ -154,6 +155,7 @@ echo "---------------------------"
 
 python3 - "$PATCH" "$OUT/creator-datapack/layout.json" "$MARKED" <<'PY'
 import json, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 patch, layout, marked = sys.argv[1], sys.argv[2], [int(v) for v in sys.argv[3].split(",")]
 p = json.load(open(patch))
 assert not p["unsnappable"], f"every proposal must snap in a one-room fixture: {p['unsnappable']}"

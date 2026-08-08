@@ -638,3 +638,60 @@ def test_incomplete_reply_fails_loudly(tmp_path, monkeypatch, capsys):
     assert rc == 1
     assert "omitted" in capsys.readouterr().err
     assert not t.sidecar_path(tmp_path, "zh-cn").exists(), "no partial sidecar is written"
+
+
+def test_write_sidecar_records_what_each_row_was_translated_from(tmp_path):
+    """`source` is what lets the compiler DETECT a stale translation (DW0187):
+    coverage compares key sets, and rewriting an authored line moves no key."""
+    inv = t.Inventory(
+        campaign_id="demo",
+        dsl_version="0.9.0",
+        lang="zh-cn",
+        declared=True,
+        sidecar_present=False,
+        world_title="Trial of the Keep",
+        entries=[
+            t.Entry(key="world.title", en="Trial of the Keep"),
+            t.Entry(key="npc.keeper.name", en="The Keeper"),
+        ],
+    )
+    path = tmp_path / "l10n" / "zh-cn.json"
+    t.write_sidecar(path, inv, {"world.title": "\u8981\u585e\u7684\u8bd5\u70bc"})
+    doc = json.loads(path.read_text("utf-8"))
+
+    # Exactly the rows `content` carries — a row with no translation records no
+    # provenance, so the two maps cannot disagree about what was translated.
+    assert doc["source"] == {"world.title": "Trial of the Keep"}
+    assert set(doc["source"]) == set(doc["content"])
+
+
+def test_rerunning_over_an_old_sidecar_adopts_provenance_without_retranslating(tmp_path):
+    """Adoption is a re-run: every row already present is recorded against the
+    English the inventory holds, and no translation changes."""
+    inv = t.Inventory(
+        campaign_id="demo",
+        dsl_version="0.9.0",
+        lang="zh-cn",
+        declared=True,
+        sidecar_present=True,
+        world_title="Trial of the Keep",
+        entries=[t.Entry(key="world.title", en="Trial of the Keep", existing="\u8981\u585e")],
+    )
+    path = tmp_path / "l10n" / "zh-cn.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "dsl_version": "0.9.0",
+                "campaign_id": "demo",
+                "kind": "l10n",
+                "lang": "zh-cn",
+                "content": {"world.title": "\u8981\u585e"},
+            }
+        ),
+        "utf-8",
+    )
+    t.write_sidecar(path, inv, t.merge_content(inv, {}))
+    doc = json.loads(path.read_text("utf-8"))
+    assert doc["content"] == {"world.title": "\u8981\u585e"}, "no retranslation"
+    assert doc["source"] == {"world.title": "Trial of the Keep"}, "provenance adopted"

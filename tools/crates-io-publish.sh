@@ -60,6 +60,7 @@ case "$MODE" in --plan|--publish) ;; *) echo "usage: ${BASH_SOURCE[0]} (--plan|-
 
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
@@ -75,6 +76,7 @@ POLL_INTERVAL=5    # seconds
 index_path() { # <crate-name>
   python3 - "$1" <<'PY'
 import sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 n = sys.argv[1].lower()
 print({1: f"1/{n}", 2: f"2/{n}", 3: f"3/{n[0]}/{n}"}.get(len(n), f"{n[0:2]}/{n[2:4]}/{n}"))
 PY
@@ -98,6 +100,7 @@ index_cksum() { # <crate-name> <version>
   if [ "$rc" -ne 0 ]; then rm -f "$body_file"; printf ''; return 0; fi
   python3 - "$body_file" "$2" <<'PY'
 import json, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 path, want = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as fh:
     for line in fh:

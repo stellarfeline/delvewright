@@ -142,6 +142,7 @@ fn sidecar_for(c: &Campaign) -> BTreeMap<String, L10nDoc> {
         kind: L10nKind::L10n,
         lang: "zh-cn".to_string(),
         content,
+        source: Default::default(),
     };
     BTreeMap::from([("zh-cn".to_string(), doc)])
 }
