@@ -126,7 +126,7 @@ mineflayer = "4.37.1"
 # tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
 # copy of any value here — they read this file, the way
 # validation/server-bootstrap-cache.sh does).
-version = "1.0.0"
+version = "1.1.0"
 
 # crates.io identity. `cargo install` resolves by CRATE name, never by binary
 # name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
