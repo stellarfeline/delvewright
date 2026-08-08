@@ -198,6 +198,31 @@ checks **empirical geometry**, never metadata:
 - Valley: gap floor between scene and slopes is walkable ambient terrain
   inside the region margin; inner slopes are proven un-climbable by nav (no
   standable staircase from gap floor to crest), not by slope-angle promise.
+- **Annulus band floor** (amendment, owner ruling 2026-08-04): the surround
+  band width never scales below what the rim physically needs. Per axis:
+  band = max((ratio−1)/2 × scene_axis, gap + slope) — a hard floor of 30
+  columns at the pinned tables. A legal surround always contains a full
+  gap + slope rim on every axis; `ratio` controls spaciousness above that
+  floor, never below it. The valley simply grows to contain any scene shape
+  (a 94×27 scene gets the floor on its short axis while the long axis keeps
+  its proportional band — asymmetry accepted and expected); the one rim
+  profile runs unchanged on every axis, a band-floored axis ends full-height
+  at its tile edge (no walkable shelf over the void), and DW0322/DW0369 hold
+  purely by construction.
+- **Scene-rect interior continuity** (amendment, task #157 rounds 3–4 —
+  planner ruling): scene-rect columns no piece FLOORS receive ambient
+  gap-floor ground at the gap-floor level with the gap floor's surface
+  treatment, so the box-garden floor is continuous from gap floor to every
+  piece footprint (the rect is the layout's bounding box, not its footprint —
+  an irregular blob otherwise leaves a void moat inside its own rect).
+  A column is floored when a piece authors a block there **at or below the
+  gap-floor top**; floored columns are untouched (pieces own their ground,
+  holes and basements included). Round 4 correction: a column whose piece
+  content is entirely ABOVE the gap floor is NOT floored and IS filled — a
+  vertical scene lifts later pieces above the datum, and the round-3 reading
+  ("any authored block anywhere in the column") left the gap-floor plane void
+  under every elevated footprint. The empirical containment proofs run over
+  the filled cells.
 - Summit ("一览众山小"): max surround surface y < scene walk plane y is a hard
   clamp verified empirically; ≥1 gorge drop ≥ `min_drop` along the vista ring;
   everything within −64..320.

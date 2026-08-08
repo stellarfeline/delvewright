@@ -544,6 +544,30 @@ pub struct Plan<'a> {
     /// causal descendant of the gate's firing objective — not a parallel branch the
     /// lineariser merely interleaved ahead of it.
     pub strict_ancestor_steps: BTreeMap<usize, BTreeSet<usize>>,
+    /// The horizon's compiler-generated surround (spec-0026 §5): prefab tiles
+    /// dressed around the scene. `None` for every surround-less base. The
+    /// tiles are DELIBERATELY not an [`AreaPlacement`]: `plan.areas` drives
+    /// boundary-region derivation, lighting scope, anchors and analysis —
+    /// surround tiles are excluded from all of those by construction, and the
+    /// placement/model sites (emit, assembled, nav) opt in explicitly.
+    pub surround: Option<SurroundPlan>,
+}
+
+/// A compiler-generated horizon surround, planned (spec-0026 §5).
+pub struct SurroundPlan {
+    /// The tiles as placed pieces (`rotation: None`, fixed compiler-chosen
+    /// positions). They ride the same `place template` bootstrap as scene
+    /// pieces and enter the assembled voxel model.
+    pub pieces: Vec<PiecePlacement>,
+    /// Generated structure bytes, keyed by the pieces' `structure_file`. These
+    /// files never exist on disk — `read_structures` merges this map.
+    pub structures: BTreeMap<String, Vec<u8>>,
+    /// Bootstrap `/fillbiome` rectangles (the vanilla-native tint/ambience
+    /// channel; spec-0026 §1 biome layer).
+    pub biome: Vec<crate::surround::BiomeRect>,
+    /// The valley model behind the tiles — the un-climbability proof
+    /// (`DW0369`) and the establishing-vista camera read it.
+    pub valley: crate::surround::ValleySurround,
 }
 
 /// A placed area: one or more pieces plus their socket seals.
@@ -1177,6 +1201,86 @@ fn check_ocean_waterline(
 /// declaration on every placed piece keeps the tileset migration honest and
 /// gives the empirical proofs (`DW0344`/`DW0364`) the datum term their
 /// messages name.
+/// Build the valley surround (spec-0026 §1 valley row, §5): the mountain
+/// annulus around the union XZ footprint of every placed area, as
+/// compiler-generated prefab tiles. `None` for every other base.
+///
+/// Seeded from the campaign seed via the named stream `horizon/valley`
+/// (ADR-0006). Errors surface as `DW0366` (the validation layer has already
+/// fenced the declared ranges; what remains here is the build-range
+/// re-statement — e.g. a rim that would leave −64..320).
+fn build_valley_surround(
+    campaign: &Campaign,
+    seed: u64,
+    areas: &[AreaPlacement],
+) -> Result<Option<SurroundPlan>, PlanError> {
+    use crate::surround::{self, Flora, SurroundPalette, ValleyParams};
+    let h = crate::horizon::of_campaign(campaign);
+    if h.base != delvewright_dsl::HorizonBase::Valley {
+        return Ok(None);
+    }
+    // The scene rectangle: union XZ bounds of every placed piece. Inter-area
+    // void gaps (areas sit `AREA_SPACING` apart) stay inside this rectangle
+    // and are deliberately NOT filled — the surround rings the delve, it does
+    // not carpet it.
+    let mut scene = surround::SceneRect {
+        min_x: i32::MAX,
+        min_z: i32::MAX,
+        max_x: i32::MIN,
+        max_z: i32::MIN,
+    };
+    for area in areas {
+        let (min, max) = area.bounds();
+        scene.min_x = scene.min_x.min(min[0]);
+        scene.min_z = scene.min_z.min(min[2]);
+        scene.max_x = scene.max_x.max(max[0]);
+        scene.max_z = scene.max_z.max(max[2]);
+    }
+    let params = ValleyParams {
+        ratio: h.ratio,
+        rim_height: h.rim_height,
+        flora: match h.flora {
+            delvewright_dsl::HorizonFlora::Oak => Flora::Oak,
+            delvewright_dsl::HorizonFlora::Cherry => Flora::Cherry,
+        },
+        palette: match h.palette {
+            delvewright_dsl::HorizonPalette::StoneGrass => SurroundPalette::StoneGrass,
+            delvewright_dsl::HorizonPalette::StonePetal => SurroundPalette::StonePetal,
+        },
+    };
+    let valley = surround::generate_valley(
+        solver::stream_seed(seed, "horizon/valley"),
+        scene,
+        crate::horizon::VALLEY_GAP_FLOOR_TOP_Y,
+        &params,
+    )
+    // Build-time re-statement of the validation-layer range fence — the SAME
+    // code (`DW0366`), one number one rule, referencing the DSL's constant so
+    // the uniqueness gate can prove it.
+    .map_err(|m| PlanError::new(delvewright_dsl::diagnostic::codes::HORIZON_PARAM, m))?;
+    let mut pieces = Vec::new();
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for tile in &valley.tiles {
+        let file = format!("{}.nbt", tile.structure_id);
+        pieces.push(PiecePlacement {
+            prefab_id: "surround/valley".to_string(),
+            structure_id: tile.structure_id.clone(),
+            structure_file: file.clone(),
+            pos: tile.pos,
+            size: tile.size,
+            rotation: Rotation::None,
+        });
+        structures.insert(file, tile.bytes.clone());
+    }
+    let biome = valley.biome.clone();
+    Ok(Some(SurroundPlan {
+        pieces,
+        structures,
+        biome,
+        valley,
+    }))
+}
+
 fn check_walk_y_declared(
     campaign: &Campaign,
     areas: &[AreaPlacement],
@@ -1450,6 +1554,9 @@ impl<'a> Plan<'a> {
         // ---- ocean waterline invariant (DW0344) ----
         check_ocean_waterline(campaign, &areas, prefabs)?;
 
+        // ---- horizon surround generation (spec-0026 §5) ----
+        let surround = build_valley_surround(campaign, seed, &areas)?;
+
         // ---- classes ----
         let classes = campaign
             .classes
@@ -1581,7 +1688,113 @@ impl<'a> Plan<'a> {
             gate_events,
             strict_ancestor_steps,
             massing_bounds,
+            surround,
         })
+    }
+
+    /// Attach the valley MOAT (spec-0026 amendment, task #157 rounds 3–4):
+    /// fill every scene-rect column that carries no piece-authored GROUND with
+    /// ambient gap-floor ground, so the box-garden floor is continuous from
+    /// the gap floor to every piece footprint (the #157 walls-down probe
+    /// found DW0322 void exposure INSIDE the scene rect — the rect is the
+    /// blob's bounding box, not its footprint). Needs the structure bytes, so
+    /// it runs at the `read_structures` choke point every subcommand funnels
+    /// through — build, snapshot, blocking and the render plan all see the
+    /// same completed surround. Idempotent; a no-op for surround-less plans
+    /// and for scenes whose pieces floor every rect column.
+    pub fn attach_valley_moat(&mut self, structures: &BTreeMap<String, Vec<u8>>) {
+        let Some(surround) = &self.surround else {
+            return;
+        };
+        if surround
+            .pieces
+            .iter()
+            .any(|p| p.prefab_id == "surround/valley-moat")
+        {
+            return; // already attached (idempotence across repeated reads)
+        }
+        let floor_top_y = surround.valley.floor_top_y;
+        let mut authored: BTreeSet<(i32, i32)> = BTreeSet::new();
+        for area in &self.areas {
+            for piece in &area.pieces {
+                let Some(bytes) = structures.get(&piece.structure_file) else {
+                    continue;
+                };
+                authored.extend(Self::ground_columns(
+                    crate::assembled::structure_cells(bytes)
+                        .into_iter()
+                        .map(|(local, _, _)| local),
+                    piece.pos,
+                    piece.rotation,
+                    floor_top_y,
+                ));
+            }
+        }
+        let surround = self.surround.as_mut().expect("checked above");
+        let (tiles, starts) = surround.valley.moat(&authored);
+        for tile in tiles {
+            let file = format!("{}.nbt", tile.structure_id);
+            surround.pieces.push(PiecePlacement {
+                prefab_id: "surround/valley-moat".to_string(),
+                structure_id: tile.structure_id,
+                structure_file: file.clone(),
+                pos: tile.pos,
+                size: tile.size,
+                rotation: Rotation::None,
+            });
+            surround.structures.insert(file, tile.bytes);
+        }
+        surround.valley.gap_floor_starts.extend(starts);
+    }
+
+    /// The columns a placed piece FLOORS: the world `(x, z)` of every authored
+    /// cell that lands at or below the gap-floor top, rotated exactly the way
+    /// [`crate::assembled`] rotates the same cells into the voxel model (and
+    /// the way vanilla's `place template … <rotation>` rotates them about the
+    /// `pos` pivot).
+    ///
+    /// The `y` predicate is the whole point (task #157 round 4). Round 3 asked
+    /// "does the piece author ANY block in this column", which reads a
+    /// **vertical** scene wrong: a keep whose stairs lift later corridors 4, 8,
+    /// 12, 16 blocks above the datum authors nothing at gap-floor level under
+    /// those corridors, yet claimed their columns — so the moat skipped them
+    /// and the gap-floor plane stayed void under the entire elevated footprint
+    /// (hollow-vigil: 476 such columns, 159 of them bordering filled ground →
+    /// `DW0322`). A piece that never reaches the floor band has said nothing
+    /// about the ground there; the valley floor runs on underneath it, exactly
+    /// as it does under a column no piece mentions at all.
+    ///
+    /// Conversely a piece that authors anything at or below `floor_top_y` owns
+    /// that column's ground — floor, doorway, basement or a deliberate hole —
+    /// and the moat never writes into it. That is also what keeps the fill
+    /// non-destructive: the moat's tiles are placed after the scene pieces, so
+    /// every cell it writes (`y ≤ floor_top_y`) must be one no piece claimed.
+    fn ground_columns(
+        cells: impl Iterator<Item = [i32; 3]>,
+        pos: [i32; 3],
+        rotation: Rotation,
+        floor_top_y: i32,
+    ) -> BTreeSet<(i32, i32)> {
+        let mut out = BTreeSet::new();
+        for local in cells {
+            let t = rotation.transform(local);
+            if pos[1] + t[1] <= floor_top_y {
+                out.insert((pos[0] + t[0], pos[2] + t[2]));
+            }
+        }
+        out
+    }
+
+    /// Every piece the bootstrap must place and the world model must contain:
+    /// area pieces in plan order, then the horizon surround tiles (spec-0026
+    /// §5). The **placement/model** iterator — sites that derive regions,
+    /// lighting scope, anchors or analysis keep reading `plan.areas` and never
+    /// see the surround.
+    pub fn placed_pieces(&self) -> impl Iterator<Item = &PiecePlacement> {
+        self.areas
+            .iter()
+            .flat_map(|a| a.pieces.iter())
+            .chain(self.surround.iter().flat_map(|s| s.pieces.iter()))
     }
 
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -3918,4 +4131,85 @@ pub fn campaign_start_quests(campaign: &Campaign) -> Vec<&str> {
         .filter(|q| matches!(q.trigger, Trigger::CampaignStart))
         .map(|q| q.id.as_str())
         .collect()
+}
+
+#[cfg(test)]
+mod moat_tests {
+    use super::*;
+
+    /// One 3×3 footprint's worth of local cells at a chosen local y.
+    fn plate(y: i32) -> Vec<[i32; 3]> {
+        (0..3)
+            .flat_map(move |x| (0..3).map(move |z| [x, y, z]))
+            .collect()
+    }
+
+    /// The moat's authored-column bookkeeping is rotation-aware, and it agrees
+    /// with the world model: `Rotation::transform` about the `pos` pivot is the
+    /// same transform [`crate::assembled`] applies to the same cells, and the
+    /// same one vanilla's `place template … <rotation>` applies (pivot ZERO).
+    /// Asserted for every rotation, on a footprint that is NOT square in the
+    /// axis sense (3 wide, 5 deep) so an axis swap cannot hide.
+    #[test]
+    fn ground_columns_follow_the_placement_rotation() {
+        let cells: Vec<[i32; 3]> = (0..3)
+            .flat_map(|x| (0..5).map(move |z| [x, 0, z]))
+            .collect();
+        let cases = [
+            (Rotation::None, (10, 12), (30, 34)),
+            (Rotation::Cw90, (6, 10), (30, 32)),
+            (Rotation::Cw180, (8, 10), (26, 30)),
+            (Rotation::Ccw90, (10, 14), (28, 30)),
+        ];
+        for (rot, (min_x, max_x), (min_z, max_z)) in cases {
+            let got = Plan::ground_columns(cells.iter().copied(), [10, 63, 30], rot, 63);
+            let xs: Vec<i32> = got.iter().map(|c| c.0).collect();
+            let zs: Vec<i32> = got.iter().map(|c| c.1).collect();
+            assert_eq!(got.len(), 15, "{rot:?} keeps the whole 3×5 footprint");
+            assert_eq!(
+                (
+                    *xs.iter().min().unwrap(),
+                    *xs.iter().max().unwrap(),
+                    *zs.iter().min().unwrap(),
+                    *zs.iter().max().unwrap()
+                ),
+                (min_x, max_x, min_z, max_z),
+                "{rot:?} footprint"
+            );
+        }
+    }
+
+    /// Task #157 round 4: a piece whose cells all sit ABOVE the gap-floor top
+    /// floors nothing — the moat must be free to run the valley floor under it.
+    /// Rotated, because the vertical keep's elevated corridors are.
+    #[test]
+    fn an_elevated_storey_floors_no_column() {
+        for rot in Rotation::ALL {
+            assert!(
+                Plan::ground_columns(plate(4).into_iter(), [38, 67, 14], rot, 63).is_empty(),
+                "{rot:?}: a storey four blocks over the datum claims no ground"
+            );
+        }
+    }
+
+    /// The complement: a piece that reaches the floor band owns those columns,
+    /// and only those. A pillar authored from y = 63 up, plus a canopy at the
+    /// top that overhangs by one column, floors the pillar's footprint only —
+    /// the overhang is void at ground level and belongs to the moat.
+    #[test]
+    fn only_columns_reaching_the_floor_band_are_floored() {
+        let mut cells: Vec<[i32; 3]> = (0..4).map(|y| [0, y, 0]).collect(); // pillar
+        cells.extend((0..3).map(|x| [x, 4, 0])); // canopy, overhanging x = 1, 2
+        let got = Plan::ground_columns(cells.into_iter(), [5, 63, 9], Rotation::None, 63);
+        assert_eq!(got, [(5, 9)].into_iter().collect::<BTreeSet<_>>());
+    }
+
+    /// A basement column — authored BELOW the gap-floor top and nowhere in it —
+    /// is floored too: the moat would otherwise cap it with grass, burying
+    /// authored geometry under a plane it never asked for.
+    #[test]
+    fn a_column_authored_below_the_datum_is_floored() {
+        let got = Plan::ground_columns(plate(0).into_iter(), [0, 55, 0], Rotation::None, 63);
+        assert_eq!(got.len(), 9, "sub-datum cells still claim their columns");
+    }
 }

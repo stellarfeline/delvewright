@@ -121,16 +121,15 @@ fn flatland_without_boundary_is_dw0320() {
     );
 }
 
-/// `valley`/`summit`/`sky` parse at 0.9.0 but their surround generators have
-/// not landed in this slice: reserved (`DW0141`), never silently mis-emitted.
+/// `summit`/`sky` parse at 0.9.0 but their surround generators have not
+/// landed in this slice: reserved (`DW0141`), never silently mis-emitted.
+/// `valley`/`cherry-valley` landed with the W-B slice and are NOT reserved —
+/// asserted here so the arm's deletion is itself pinned by a test.
 #[test]
 fn unlanded_bases_are_reserved_at_0_9() {
     for h in [
-        "\"valley\"",
-        "\"cherry-valley\"",
         "\"summit\"",
         "\"sky\"",
-        "{ \"base\": \"valley\" }",
         "{ \"base\": \"summit\" }",
         "{ \"base\": \"sky\" }",
     ] {
@@ -138,6 +137,17 @@ fn unlanded_bases_are_reserved_at_0_9() {
         assert!(
             diags.iter().any(|d| d.code == "DW0141"),
             "{h} must be reserved-not-implemented (DW0141): {diags:#?}"
+        );
+    }
+    for h in [
+        "\"valley\"",
+        "\"cherry-valley\"",
+        "{ \"base\": \"valley\" }",
+    ] {
+        let diags = diags_for("0.9.0", h, true);
+        assert!(
+            !diags.iter().any(|d| d.code == "DW0141"),
+            "{h} landed with the valley slice and must not be reserved: {diags:#?}"
         );
     }
 }
@@ -153,8 +163,15 @@ fn out_of_range_params_are_dw0366() {
         "{ \"base\": \"summit\", \"min_drop\": 80 }",
         // summit plateau overflowing the build range after the gorge drop
         "{ \"base\": \"summit\", \"plateau_y\": 400 }",
+        // summit vista shorter than the shipped view distance (12 × 16 = 192,
+        // measured outward from the scene bounding-box edge; PR #261)
+        "{ \"base\": \"summit\", \"vista_radius\": 176 }",
         // sky walk plane outside the build range
         "{ \"base\": \"sky\", \"float_y\": 400 }",
+        // flatland blend band: 0 is a hard material wall (PR #261)…
+        "{ \"base\": \"flatland\", \"blend_width\": 0 }",
+        // …and past 16 the dither outgrows the seam
+        "{ \"base\": \"flatland\", \"blend_width\": 17 }",
     ] {
         let diags = diags_for("0.9.0", h, true);
         assert!(

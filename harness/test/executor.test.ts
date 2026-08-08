@@ -1733,7 +1733,25 @@ class CombatFakeBot extends InteractFakeBot {
     // world could never reproduce the drowned bell's belfry, where a husk's death
     // was credited to the Bellkeeper's wave.
     if (ent) this.emit("entityGone", ent);
+    // task #178: and the DELVE answers too. A wave whose members have all left
+    // the world drives its `kill` objective's completion marker — that is the
+    // whole of what the compiler's per-tick liveness census does, and it is now
+    // the only thing that proves a `kill` step. Modelled here so every fixture
+    // below is a fake SERVER rather than a fake fight: a test that wins the fight
+    // and gets no marker is telling the truth about a delve that soft-locked.
+    if (this.announcesWaveComplete && this.waveMobs().length === 0) {
+      this.emit("messagestr", `[dw:complete ${this.campaign} ${KILL_STEP.objective}]`);
+    }
   }
+
+  /** The campaign the fake delve announces under. Must match what the executor
+   * was told (`useCampaign`), or its markers are correctly ignored as another
+   * delve's. */
+  campaign = "the-drowned-bell";
+  /** Off = a delve whose `kill` objective never completes however the fight goes:
+   * hollow-vigil's shipped countdown, which only moved on a player-credited kill
+   * and could not see a wave that had burned in daylight. */
+  announcesWaveComplete = true;
 
   /** A death the harness did NOT script, delivered the way a server delivers it:
    * the death, then a fast auto-respawn. */
@@ -2118,6 +2136,36 @@ test("a wave already beaten before the death records cleared-before-retry, and p
   );
 });
 
+test("a kill step is proven by the delve's own marker, never by winning the fight", async () => {
+  // task #178, the hollow-vigil divergence in one fixture. The bot walks in, kills
+  // the whole wave with its own sword and every mob-side terminal condition is
+  // satisfied — and the delve still does not consider the objective done. That is
+  // not a hypothetical: the shipped countdown only moved on a player-credited
+  // kill, the party's wave had burned in the daylight of a roofless yard, and the
+  // campaign stopped there. A ladder that grades this green is grading a different
+  // game from the one the party plays.
+  const stuck = new CombatFakeBot();
+  stuck.seat(1);
+  stuck.announcesWaveComplete = false;
+  const red = attach(stuck);
+  red.useCampaign("the-drowned-bell");
+  await assert.rejects(
+    () => red.kill(KILL_STEP),
+    /objective obj\/hold-the-gate did not complete/,
+  );
+  assert.ok(
+    stuck.calls.includes("attack"),
+    "…and it reds having genuinely won the fight — winning was never the question",
+  );
+
+  // Control: the same fixture against a delve that DOES adjudicate the wave.
+  const sound = new CombatFakeBot();
+  sound.seat(1);
+  const green = attach(sound);
+  green.useCampaign("the-drowned-bell");
+  await green.kill(KILL_STEP);
+});
+
 test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly", async () => {
   // The failure the stage exists to catch, and the one the old uniform
   // "did not re-engage" red could not tell apart from a won fight: the party can
@@ -2130,7 +2178,17 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   executor.useCombatPlan(combatPlan(1, false), true);
   // …and no completion marker for obj/hold-the-gate ever arrives.
 
-  await executor.kill(KILL_STEP);
+  // task #178: and the STEP itself reds now, not merely the die-retry stage.
+  // This is the same shape as the hollow-vigil softlock the owner hit: the wave
+  // is gone from the world and the objective is open forever. Before, `kill`
+  // resolved here — the run walked on to a `collect` whose chest the campaign had
+  // never placed and failed there, or (with the old kill-credit countdown) simply
+  // recorded findings and passed. The bot now refuses to call an encounter proven
+  // that the delve does not consider finished.
+  await assert.rejects(
+    () => executor.kill(KILL_STEP),
+    /objective obj\/hold-the-gate did not complete/,
+  );
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -2146,11 +2204,24 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
 
 // --- re-seat fidelity + the wandered-mob false negative (task #108) ----------
 
-async function dieRetryAgainst(bot: CombatFakeBot, count: number): Promise<MineflayerExecutor> {
+async function dieRetryAgainst(
+  bot: CombatFakeBot,
+  count: number,
+  // task #178: `kill` now ends on the delve's own completion marker, so a fixture
+  // whose wave the fake bot can never actually reach reds the STEP even though the
+  // die-retry stage — this helper's subject — ran and reported perfectly well. Set
+  // this where that is the fixture's whole point, and the trials stay assertable.
+  opts: { stepReds?: boolean } = {},
+): Promise<MineflayerExecutor> {
   const executor = attach(bot);
   executor.useCampaign("the-drowned-bell");
   executor.useCombatPlan(combatPlan(count, true), true);
-  await executor.kill({ ...KILL_STEP, count });
+  const run = executor.kill({ ...KILL_STEP, count });
+  if (opts.stepReds) {
+    await assert.rejects(() => run, /objective obj\/hold-the-gate did not complete/);
+  } else {
+    await run;
+  }
   return executor;
 }
 
@@ -2228,7 +2299,12 @@ test("wave mobs that WANDERED off the anchor are re-engaged, never stranded", as
   const bot = new CombatFakeBot();
   bot.seat(3, { distance: 60 });
   bot.reSeat = { count: 3, distance: 60 };
-  const executor = await dieRetryAgainst(bot, 3);
+  // The fixture's mobs stay 60 blocks out and this fake bot cannot walk, so the
+  // fight is never actually won here — the harness says so ("leaving the fight
+  // unfinished rather than claiming it won") and, since #178, the step reds on it
+  // instead of returning. That is the point being separated: the RE-ENGAGE PROBE
+  // still reads the wandered wave correctly, which is what the trials below pin.
+  const executor = await dieRetryAgainst(bot, 3, { stepReds: true });
 
   const trials = executor.deathTrials();
   assert.deepEqual(
@@ -2600,6 +2676,7 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   // judgement the compiler's DW0379/DW0315 rules own, not this stage's.
   const bot = new CombatFakeBot();
   bot.seat(1);
+  bot.campaign = "souls-bonfire"; // the fake delve must announce under the id the executor adopts
   const executor = attach(bot);
   executor.useCampaign("souls-bonfire");
   const plan = combatPlan(1, false);

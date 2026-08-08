@@ -2083,7 +2083,7 @@ fn coalesce_commands(writes: &BTreeMap<[i32; 3], String>) -> Vec<String> {
 const DEFAULT_NOISE_SCALE: f64 = 0.35;
 
 /// splitmix64 finalizer (the generators' `mix64`).
-fn mix64(mut z: u64) -> u64 {
+pub(crate) fn mix64(mut z: u64) -> u64 {
     z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
@@ -2092,7 +2092,7 @@ fn mix64(mut z: u64) -> u64 {
 
 /// White noise in `[0, 1)` at an integer lattice point (the generators'
 /// `hash01`, verbatim).
-fn hash01(seed: u64, x: i32, y: i32, z: i32, salt: u64) -> f64 {
+pub(crate) fn hash01(seed: u64, x: i32, y: i32, z: i32, salt: u64) -> f64 {
     let mut h = seed ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     h = mix64(h ^ (x as i64 as u64).wrapping_mul(0x0000_0100_0000_01B3));
     h = mix64(h ^ (y as i64 as u64).wrapping_mul(0xFF51_AFD7_ED55_8CCD));
@@ -2101,7 +2101,7 @@ fn hash01(seed: u64, x: i32, y: i32, z: i32, salt: u64) -> f64 {
 }
 
 /// Smoothstep fade.
-fn fade(t: f64) -> f64 {
+pub(crate) fn fade(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
@@ -2112,7 +2112,7 @@ fn lerp(a: f64, b: f64, t: f64) -> f64 {
 
 /// Trilinearly-interpolated value noise in `[0, 1]` — smooth, so palette picks
 /// cluster into patches (the generators' `value_noise`, verbatim).
-fn value_noise(seed: u64, x: i32, y: i32, z: i32, freq: f64, salt: u64) -> f64 {
+pub(crate) fn value_noise(seed: u64, x: i32, y: i32, z: i32, freq: f64, salt: u64) -> f64 {
     let (fx, fy, fz) = (x as f64 * freq, y as f64 * freq, z as f64 * freq);
     let (x0, y0, z0) = (fx.floor(), fy.floor(), fz.floor());
     let (tx, ty, tz) = (fade(fx - x0), fade(fy - y0), fade(fz - z0));

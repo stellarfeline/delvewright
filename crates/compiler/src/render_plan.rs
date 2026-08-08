@@ -500,6 +500,34 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
         }));
     }
 
+    // --- establishing vista (spec-0026 §6): scene edge looking outward -----
+    // One per horizon build with a surround: from the scene's +X edge across
+    // the gap floor at the rim, so the owner sees exactly what a player at the
+    // boundary sees (for cherry-valley: the blossom line crowning the crest).
+    // Absent for surround-less horizons → shot list byte-identical.
+    if let Some(surround) = &plan.surround {
+        // Eye at the campaign spawn (a walkable interior cell by
+        // construction), pitched up over the nearest scene edge so the frame
+        // composes gap floor → blossomed slope → crest → sky (task #157
+        // round 2: the old edge-hugging camera framed a wall).
+        let spawn_cell = spawn_of(plan).map(|(_, pos, _)| pos);
+        let (eye, look, fov) = surround.valley.vista_camera(spawn_cell);
+        shots.push(json!({
+            "id": "vista",
+            "kind": "vista",
+            // Per-shot vertical FOV (task #157 round 3): derived from the rim
+            // geometry so floor + crest + sky share the frame; the Chunky
+            // scene emission honors `camera.fov` (delve-render `scene.rs`).
+            "camera": pov_camera(eye, look, fov),
+            "expect": [
+                "gap floor reads as walkable ground between scene edge and slope foot",
+                "no walkable ramp to the crest: the same terraced rim on every axis (a band-floored axis ends full-height at its tile edge)",
+                "blossom in frame: trees on the inner slope and crest (cherry: blossoms AND sky together)",
+                "no tile seams, floating blocks or void gaps across the surround",
+            ],
+        }));
+    }
+
     // --- per-area interiors + seams ---------------------------------------
     for area in &plan.areas {
         for (pi, piece) in area.pieces.iter().enumerate() {

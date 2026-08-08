@@ -650,6 +650,42 @@ mod tests {
         assert!((o["pitch"].as_f64().unwrap() + std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
+    /// A per-shot `camera.fov` (the vista shot's derived vertical FOV, task
+    /// #157 round 3) reaches the Chunky scene verbatim; a shot without one
+    /// keeps the default — the field is never silently dropped.
+    #[test]
+    fn per_shot_fov_reaches_the_chunky_scene() {
+        let plan = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
+          "shots":[
+            {"id":"vista","kind":"vista","camera":{"pos":[7.5,68.62,10.5],
+             "yaw":0.0,"pitch":-20.0,"look_at":[47.5,87.0,10.5],"fov":92.75}},
+            {"id":"spawn","kind":"spawn","camera":{"pos":[7.5,68.62,10.5],
+             "yaw":0.0,"pitch":0.0,"look_at":[8.5,68.62,10.5]}}
+          ]}"#;
+        let scenes = scenes_from_plan(plan, &SceneOptions::default(), &[]).unwrap();
+        // Ask `scene_file_stem` for the name rather than spelling it out: this
+        // test was written when a scene file was `<shot>.json`, and the
+        // one-stem-per-scene change (campaign-qualified, so two campaigns'
+        // caches cannot collide) renamed it to `<campaign>_<shot>.json`. The
+        // two landed on different branches and git merged them without a
+        // conflict — the production code from one side, this assertion from
+        // the other — so the only thing that noticed was the test itself.
+        // Deriving the name means the next rename cannot repeat that.
+        let get_fov = |shot: &str| -> f64 {
+            let want = format!("{}.json", scene_file_stem("c", shot));
+            let (_, bytes) = scenes.iter().find(|(n, _)| *n == want).unwrap_or_else(|| {
+                panic!(
+                    "no scene named `{want}` among {:?}",
+                    scenes.iter().map(|(n, _)| n).collect::<Vec<_>>()
+                )
+            });
+            let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+            v["camera"]["fov"].as_f64().unwrap()
+        };
+        assert_eq!(get_fov("vista"), 92.75);
+        assert_eq!(get_fov("spawn"), DEFAULT_FOV_DEG);
+    }
+
     /// A two-shot plan: one dark-with-night-vision POV (emulated) and one lit
     /// interior (never emulated), sharing one layout.
     const DARK_PLAN: &[u8] =
