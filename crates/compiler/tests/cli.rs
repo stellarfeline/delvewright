@@ -657,13 +657,27 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
         assert_eq!(b, &zh2[p], "zh-cn double-build mismatch in {p}");
     }
 
-    // Same file set; the difference is confined to string-bearing files + manifest.
+    // i18n v2 (spec-0029): the DEFAULT build additionally ships the language
+    // carrier — a resource pack holding one lang file per declared language plus
+    // `en_us.json` — while a `--lang` bake, whose strings are already swapped,
+    // ships none. keep-trial has no skins, so before v2 neither build had a pack.
+    let pack_only = ["resourcepack.zip", "SKINS.md"];
+    for p in pack_only {
+        assert!(en_t.contains_key(p), "the default build must ship `{p}`");
+        assert!(
+            !zh.contains_key(p),
+            "a `--lang` bake must ship no `{p}`: its strings are already baked"
+        );
+    }
     assert_eq!(
-        en_t.keys().collect::<Vec<_>>(),
+        en_t.keys()
+            .filter(|p| !pack_only.contains(&p.as_str()))
+            .collect::<Vec<_>>(),
         zh.keys().collect::<Vec<_>>()
     );
     let differing: Vec<&String> = en_t
         .iter()
+        .filter(|(p, _)| !pack_only.contains(&p.as_str()))
         .filter(|(p, b)| *b != &zh[*p])
         .map(|(p, _)| p)
         .collect();

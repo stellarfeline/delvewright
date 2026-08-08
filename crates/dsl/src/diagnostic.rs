@@ -225,6 +225,42 @@ pub mod codes {
     /// completion oracle; content carrying it could forge a passing critical-path
     /// step. The channel is reserved, not merely conventional.
     pub const MARKER_RESERVED: &str = "DW0182";
+    /// (i18n v2) A player-visible string — authored English or any sidecar
+    /// translation — contains a character from the reserved private-use block the
+    /// compiler uses to carry an l10n key from the stage docs to the text
+    /// component it is emitted into ([`crate::l10n::TR_SIGIL`]). Content carrying
+    /// it could impersonate a translation tag, or survive into the datapack and
+    /// render as a tofu box. The block is reserved, not merely conventional.
+    pub const TR_SIGIL_RESERVED: &str = "DW0183";
+    /// (i18n v2) A declared language has no entry in the Minecraft language-code
+    /// mapping table ([`crate::l10n::mc_lang_code`]), so the resource pack has no
+    /// filename to write its `assets/delvewright/lang/<code>.json` under. A
+    /// language is never silently dropped: either the code is corrected to a
+    /// mapped one, or the table gains the entry.
+    pub const LANG_CODE_UNMAPPED: &str = "DW0184";
+    /// (i18n v2) A campaign l10n sidecar defines a key in the reserved
+    /// `delvewright.` **chrome** namespace ([`crate::chrome`]). Those are the
+    /// engine's own on-screen strings — `New objective: `, `Choose your class`,
+    /// the default a bonfire shows — owned by the compiler, translated with it,
+    /// and authored by no campaign; a sidecar row under that prefix would be
+    /// written into the language file and silently replace product chrome for that
+    /// language. The namespace is reserved, not merely conventional.
+    pub const CHROME_RESERVED: &str = "DW0186";
+    /// (i18n v2) An l10n sidecar row was translated from English the campaign no
+    /// longer holds: its `source` entry differs from the key's canonical English.
+    /// The translation is present, applied and **wrong**, and no key-set check can
+    /// see it — `DW0180`/`DW0181` compare key SETS, and a rewritten line moves no
+    /// key. Load-bearing for entity display names, whose key belongs to the first
+    /// site declaring a given text, so renaming one body can migrate a key to
+    /// another body and the row that goes stale is not the one the author edited.
+    pub const L10N_STALE: &str = "DW0187";
+    /// (i18n v2) An l10n sidecar records provenance for only some of its rows (or
+    /// none), so `DW0187` cannot see the rest. A warning, not an error: the
+    /// `source` map is additive, and this is the one-version deprecation window
+    /// before it is required. It states the unguarded row count, so an
+    /// unadopted sidecar is a reported number on every run rather than silence
+    /// that reads like a pass.
+    pub const L10N_PROVENANCE_MISSING: &str = "DW0188";
     /// (v0.4) A mannequin NPC `skin.texture_id` is malformed (not a bare kebab
     /// token) or duplicated across NPCs (spec-0009). A missing `model` is a
     /// schema error (`DW0100`); a missing PNG is a build error (`DW0309`).

@@ -192,17 +192,40 @@ pub struct ShortcutPlan {
     pub unlock: [i32; 3],
     /// Effects fired once, when the shortcut opens.
     pub on_unlock: Vec<QuestEffect>,
+    /// The volume a presser must stand in for the press to count as coming from
+    /// the wrong side, derived from the gate slab and the `unlock` cell. `None`
+    /// when the geometry does not decide it — `DW0425`.
+    pub sealed_side: Option<crate::wrongside::SealedSide>,
 }
 
-/// The compiler's canonical English answer a sealed gate gives a right-click
-/// when the `close-gate` authors no `sealed_hint` (English-first, CLAUDE.md
-/// language policy — baked at emit time exactly as the boundary return message
-/// is, so it is not l10n-inventoried).
+impl ShortcutPlan {
+    /// The **shell** cells of the sealed gate: every region cell with at least
+    /// one axis-neighbour outside the region, in ascending `(x, y, z)` order —
+    /// exactly the clickable surface, and for the thin slab a doorway usually is,
+    /// the whole region.
+    ///
+    /// The same rule [`SealHintPlan::shell_cells`] applies to a `close-gate`
+    /// seal, for the same reason: a cell buried inside the door has six sealed
+    /// neighbours, so no face of it can ever be in a crosshair, and arming it
+    /// would ship an entity nothing can reach.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        shell_cells_of(self.gate_region)
+    }
+}
+
+/// The compiler's own answer a sealed gate gives a right-click when the
+/// `close-gate` authors no `sealed_hint`.
 ///
 /// The owner's island finding #34: a sealed boulder answered a right-click with
 /// SILENCE. There is no such thing as a seal with nothing to say, so the answer
 /// is the compiler's obligation and the authored line is only the wording.
-pub const SEAL_HINT_DEFAULT: &str = "The way is sealed.";
+///
+/// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
+/// the compiler, and not l10n-inventoried — a campaign that wants its own wording
+/// authors `sealed_hint`, which is inventoried like any other line. The plan
+/// carries the chrome default in its tagged form; `emit` rebinds it to the build's
+/// language.
+pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
 
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
 /// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
@@ -233,24 +256,36 @@ impl SealHintPlan {
     /// for the thin slab a gate anchor usually is (a doorway one block deep) it
     /// is the whole region.
     pub fn shell_cells(&self) -> Vec<[i32; 3]> {
-        let (a, b) = self.region;
-        let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-        let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-        let mut out = Vec::new();
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let interior = (lo[0] < x && x < hi[0])
-                        && (lo[1] < y && y < hi[1])
-                        && (lo[2] < z && z < hi[2]);
-                    if !interior {
-                        out.push([x, y, z]);
-                    }
+        shell_cells_of(self.region)
+    }
+}
+
+/// The **shell** cells of an inclusive region: every cell with at least one
+/// axis-neighbour outside it, in ascending `(x, y, z)` order.
+///
+/// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
+/// own answer needed the identical surface (task #50). One definition, because
+/// two copies of "which cells of a sealed slab can be clicked" would be free to
+/// drift apart, and the whole point of the geometry is that it is the same
+/// question in both places.
+fn shell_cells_of(region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
+    let (a, b) = region;
+    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let interior = (lo[0] < x && x < hi[0])
+                    && (lo[1] < y && y < hi[1])
+                    && (lo[2] < z && z < hi[2]);
+                if !interior {
+                    out.push([x, y, z]);
                 }
             }
         }
-        out
     }
+    out
 }
 
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
@@ -2644,6 +2679,11 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+            // Task #50: which half of the doorway is the sealed one, from the
+            // slab's thin axis and the side the unlock stands on. `None` is not
+            // an error here — `emit` raises `DW0425` only if an answer was
+            // actually authored for a side the geometry does not name.
+            sealed_side: crate::wrongside::derive((from, to), unlock),
         });
     }
     out
@@ -2715,10 +2755,10 @@ fn collect_seal_hints(
             safe: safe_local(name),
             region: (from, to),
             block,
-            text: e
-                .close_gate_sealed_hint()
-                .unwrap_or(SEAL_HINT_DEFAULT)
-                .to_string(),
+            text: match e.close_gate_sealed_hint() {
+                Some(h) => h.to_string(),
+                None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            },
         });
     });
     out
@@ -2778,109 +2818,50 @@ pub(crate) struct EffectRootSite<'a> {
 }
 
 /// Visit **every top-level effect list the compiler can lower**, in one fixed
-/// deterministic order. This is the single enumeration of effect roots; every
-/// walk that claims to see "what emission sees" is defined in terms of it, so no
-/// two of them can disagree about which roots exist.
+/// deterministic order.
 ///
-/// It is deliberately wider than `dsl::for_each_campaign_effect`, and the width is
-/// the point: a list is a root if `emit::emit_quest_effect` can reach it, not if
-/// the quests stage happens to own it. Five roots do:
+/// A thin adapter over [`delvewright_dsl::for_each_effect_root`], which is the
+/// single enumeration of effect roots in the workspace. It exists to re-present
+/// the DSL's [`delvewright_dsl::EffectRootOwner`] as this crate's [`EffectRoot`],
+/// which carries the same owners plus the completability model's reading of them
+/// (see [`collect_gate_events`]); it enumerates nothing itself.
 ///
-/// 1. quest `on_objective_complete` (a `BTreeMap`, so key-ordered), then
-/// 2. quest `on_complete`,
-/// 3. environment `triggers[].effects`,
-/// 4. `traps[].payload` (spec-0022 — a payload is an effect root),
-/// 5. and a **dialogue option's** `set-checkpoint` `on_respawn` bundle, which is
-///    a plain `Vec<QuestEffect>` hanging off the dialogue stage. `DialogueEffect`
-///    itself carries no gate or movement verb, which is why the older scans stop
-///    at the quests stage — but that reasoning misses this bundle, and what is
-///    inside it really is lowered (into `cp_on_respawn_<i>`).
-///
-/// Each visit carries an [`EffectRoot`] naming which of the five it is, so a
-/// consumer that needs *when* a firing happens (the completability model) reads it
-/// off the site instead of re-deriving it from a second, drift-prone walk.
-///
-/// Roots 1–3 keep their prior order, so every consumer's output on a campaign that
-/// uses only them is unchanged; 4 and 5 are additive.
+/// A list is a root if `emit::emit_quest_effect` can reach it, not if the quests
+/// stage happens to own it. Five lists are. Their order, and the reasoning, live
+/// with the enumeration in `delvewright_dsl::effects`.
 ///
 /// Consumers: [`for_each_gate_effect`] (→ the seal planner, `gates::check_seal_hints`
 /// and the completability model), [`crate::timeline::walk_campaign`] (→ the
 /// `DW0410` staged-walk model and, defined as it, `nav::all_effects`),
 /// `emit::all_campaign_effects` (→ the generated functions themselves),
-/// `emit::check_effect_anchors` (→ `DW0360`, the resolved-anchor seal over what
-/// those functions emit), `emit::declared_flags` (→ the `dw.f_<flag>` scoreboard
-/// objectives `setup` creates for the writes those functions perform) and both
-/// halves of [`crate::flow`] — the producer scan in `Flow::new` and the
-/// gate-flag inventory [`crate::flow::gate_flags`] (→
-/// `DW0201`/`DW0202`/`DW0203`/`DW0204`/`DW0205` and the exported critical path).
-/// The three-of-five drift this class kept re-growing (tasks #142, #167, #168,
-/// #169, #170, #24) was exactly these walks enumerating roots by hand, one copy
-/// each. It is **not** finished: seven further campaign-wide walk sites (thirteen
-/// distinct walkers) still enumerate three or four roots — though both of the
-/// LATENT emission/runtime defects among them are now closed, so what remains is
-/// imprecise proofs rather than shipped defects. See "Known spec ↔ code drift" in
-/// `docs/reference/compiler.md` for the list and what each feeds.
+/// `emit::check_effect_anchors` (→ `DW0360`), `emit::declared_flags` (→ the
+/// `dw.f_<flag>` scoreboard objectives), `rehearsal::bundles` (→ the
+/// `dw:rehearsal` inventory) and both halves of [`crate::flow`].
 pub(crate) fn for_each_effect_root<'a>(
     campaign: &'a Campaign,
     f: &mut dyn FnMut(&EffectRootSite<'a>, &'a [QuestEffect]),
-) {
-    let mut visit = |stage, path: String, root, effs: &'a [QuestEffect]| {
-        f(&EffectRootSite { stage, path, root }, effs);
-    };
-    for (qi, q) in campaign.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            visit(
-                "quests",
-                format!(
-                    "/content/quests/{qi}/on_objective_complete/{}",
-                    oid.as_str()
-                ),
-                EffectRoot::ObjectiveComplete(oid.as_str()),
-                effs,
-            );
-        }
-        visit(
-            "quests",
-            format!("/content/quests/{qi}/on_complete"),
-            EffectRoot::QuestComplete(q),
-            &q.on_complete,
-        );
-    }
-    for (ti, t) in campaign.quests.content.triggers.iter().enumerate() {
-        visit(
-            "quests",
-            format!("/content/triggers/{ti}/effects"),
-            EffectRoot::Trigger(t),
-            &t.effects,
-        );
-    }
-    for (pi, trap) in campaign.quests.content.traps.iter().enumerate() {
-        visit(
-            "quests",
-            format!("/content/traps/{pi}/payload"),
-            EffectRoot::TrapPayload(trap),
-            &trap.payload,
-        );
-    }
-    for (di, tree) in campaign.dialogue.content.dialogues.iter().enumerate() {
-        for (ni, node) in tree.nodes.iter().enumerate() {
-            for (oi, opt) in node.options.iter().enumerate() {
-                for (ei, de) in opt.effects.iter().enumerate() {
-                    let Some((_anchor, on_respawn)) = de.set_checkpoint() else {
-                        continue;
-                    };
-                    visit(
-                        "dialogue",
-                        format!(
-                            "/content/dialogues/{di}/nodes/{ni}/options/{oi}/effects/{ei}/on_respawn"
-                        ),
-                        EffectRoot::DialogueRespawn,
-                        on_respawn,
-                    );
-                }
+) -> delvewright_dsl::RootBinding {
+    delvewright_dsl::for_each_effect_root(campaign, &mut |site, list| {
+        let root = match site.owner {
+            delvewright_dsl::EffectRootOwner::ObjectiveComplete { objective, .. } => {
+                EffectRoot::ObjectiveComplete(objective)
             }
-        }
-    }
+            delvewright_dsl::EffectRootOwner::QuestComplete { quest } => {
+                EffectRoot::QuestComplete(quest)
+            }
+            delvewright_dsl::EffectRootOwner::Trigger(t) => EffectRoot::Trigger(t),
+            delvewright_dsl::EffectRootOwner::TrapPayload(t) => EffectRoot::TrapPayload(t),
+            delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
+        };
+        f(
+            &EffectRootSite {
+                stage: site.stage,
+                path: site.path.clone(),
+                root,
+            },
+            list,
+        );
+    })
 }
 
 /// Visit **every effect the compiler can lower to a gate command**, at every
@@ -3315,9 +3296,21 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
-                prompt: labels.prompt_or_default().to_string(),
-                rest_label: labels.rest_or_default().to_string(),
-                save_label: labels.save_or_default().to_string(),
+                // Authored strings are ordinary inventoried campaign text; an
+                // unauthored one takes the compiler's chrome default in its tagged
+                // form, which `emit` rebinds to the build's language.
+                prompt: labels
+                    .prompt
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_TITLE.tagged()),
+                rest_label: labels
+                    .rest_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_REST.tagged()),
+                save_label: labels
+                    .save_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
             });
         }
     }

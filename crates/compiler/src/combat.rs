@@ -404,9 +404,10 @@ impl FloorCoverage {
 /// walked into, and that "something" is only stated here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActorBeat {
-    /// `trigger` / `quest` / `objective` / `trap`.
+    /// `trigger` / `quest` / `objective` / `trap` / `dialogue-respawn`.
     pub site: &'static str,
-    /// The owning trigger / quest / trap id.
+    /// The owning trigger / quest / trap id — or, for `dialogue-respawn`, the NPC
+    /// whose tree hosts the option.
     pub owner: String,
     /// The objective, when the site is a quest's `on_objective_complete`.
     pub objective: Option<String>,
@@ -491,6 +492,13 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
             EffectSite::QuestComplete { quest } => ("quest", quest.clone(), None),
             EffectSite::Trigger { trigger } => ("trigger", trigger.clone(), None),
             EffectSite::Trap { trap } => ("trap", trap.clone(), None),
+            // Effect root 5. A `spawn-actor`/`unleash-actor` nested in a dialogue
+            // option's `set-checkpoint` `on_respawn` bundle is lowered into
+            // `cp_on_respawn_<i>` and really does put a body in the world, so it is
+            // an actor beat like any other. It is ambient — re-run on death while
+            // that checkpoint is active — so, like a trigger and a trap, it has no
+            // DAG position.
+            EffectSite::DialogueRespawn { npc, .. } => ("dialogue-respawn", npc.clone(), None),
         };
         let t = (kind == "trigger")
             .then(|| triggers.get(owner.as_str()))
@@ -1272,7 +1280,13 @@ fn actor_json(a: &ActorEncounter) -> Value {
         "floor_gate": coverage_json(&a.coverage),
     });
     if let Some(name) = &a.name {
-        o["name"] = json!(name);
+        // spec-0029 named exclusion: `combat-plan.json` is the validation ladder's
+        // own artifact, read by the bot and by a maintainer, never rendered to a
+        // player — so the actor's name appears here as its English source, not as
+        // a translate key. (The name became translatable when `actors[].name`
+        // entered the l10n inventory; before that this line could not have carried
+        // a tag at all.)
+        o["name"] = json!(delvewright_dsl::l10n_plain(name));
     }
     if let Some(pos) = a.pos {
         o["pos"] = json!([pos[0], pos[1], pos[2]]);

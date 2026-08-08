@@ -202,15 +202,22 @@ fn an_environment_trigger_is_the_precedent_the_payload_follows() {
 /// the same as crediting it. This is the pin that would catch the widening
 /// over-reaching into root 5.
 ///
-/// This fixture also does NOT validate cleanly, and the reason is a **finding**
-/// rather than a fixture slip, so it is pinned here rather than papered over:
-/// `DW0172`'s own producer inventory (`dsl::validate`) has the same root-5 blind
-/// spot this PR closes in `flow` — a `set-flag` in a dialogue-hosted `on_respawn`
-/// bundle looks to it like a flag nothing declares. Widening the DSL layer is a
-/// separate change with its own campaign audit; until it lands, this assertion
-/// is the record. See §4 of `docs/reference/compiler.md`.
+/// The fixture used to also fail validation with a `DW0172`, and that assertion
+/// was carried here as the **record of a second, separate blind spot**: the DSL
+/// layer's own producer inventory (`dsl::validate`) enumerated four of the five
+/// roots, so a `set-flag` in a dialogue-hosted `on_respawn` bundle looked to it
+/// like a flag nothing declares. The effect-root sweep closed that one, so the
+/// fixture now validates clean — and this assertion is the red→green
+/// demonstration of it, kept as an equality (not a `!contains`) so a regression
+/// there is a named failure rather than a silent one.
+///
+/// **The two halves say different things and must not be collapsed.** Validating
+/// clean means the DSL layer now SEES the root. The `DW0203`/`DW0201` below mean
+/// `flow` sees it and deliberately does not CREDIT it. Seeing a root and crediting
+/// it are different decisions, and this is the pin that keeps the second from
+/// riding along with the first.
 #[test]
-fn a_dialogue_respawn_bundle_is_still_never_a_producer() {
+fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
     let c = parse_hw(
         &quests_doc("", EXIT_NEEDS_ALARM),
         Some(ALARM_FROM_DIALOGUE_RESPAWN),
@@ -224,14 +231,16 @@ fn a_dialogue_respawn_bundle_is_still_never_a_producer() {
             .collect();
     assert_eq!(
         validation,
-        vec!["DW0172"],
-        "the only thing wrong with this fixture is the DSL layer's own root-5 blind spot"
+        Vec::<String>::new(),
+        "the DSL producer inventory reaches root 5 now: a `set-flag` in a dialogue \
+         `on_respawn` bundle is a declared flag, not a `DW0172`"
     );
 
     let got = codes(&c);
     assert!(
         got.contains(&"DW0203".to_string()) && got.contains(&"DW0201".to_string()),
-        "an `on_respawn` bundle is not a producer: {got:?}"
+        "an `on_respawn` bundle is SEEN by the root walk but is still not a producer \
+         — reaction bundles fire at statically unknowable times: {got:?}"
     );
 }
 

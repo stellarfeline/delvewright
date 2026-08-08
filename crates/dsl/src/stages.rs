@@ -1047,6 +1047,18 @@ impl DialogueEffect {
         }
     }
 
+    /// The `on_respawn` bundle of a v0.6 `set-checkpoint` dialogue effect —
+    /// **effect root 5** ([`crate::effects`]). Named separately from
+    /// [`Self::set_checkpoint`] so the root walk and its mutable mirror name the
+    /// same accessor modulo mutability, which is what lets one macro body generate
+    /// both.
+    pub fn set_checkpoint_on_respawn(&self) -> Option<&[QuestEffect]> {
+        match self {
+            DialogueEffect::SetCheckpoint { on_respawn, .. } => Some(on_respawn.as_slice()),
+            _ => None,
+        }
+    }
+
     /// The `on_respawn` bundle of a v0.6 `set-checkpoint` dialogue effect, exposed
     /// mutably so the localization pass can rewrite the player-visible strings
     /// nested inside it. Lockstep sibling of [`Self::set_checkpoint`] — the bundle
@@ -6029,6 +6041,22 @@ pub enum EffectSite {
         /// The trap id.
         trap: String,
     },
+    /// A **dialogue option's** `set-checkpoint` `on_respawn` bundle — ambient, no
+    /// DAG position, and the only site that does not live in the quests stage.
+    ///
+    /// This variant did not exist until the effect-root sweep, and its absence was
+    /// load-bearing: `EffectSite` had no way to *represent* a dialogue-hosted
+    /// bundle, so the four proofs that walk [`for_each_campaign_effect`]
+    /// (`combat::actor_beats`, `validate::difficulty_checks`,
+    /// `daylight::fightable_actor`, `nav::actor_fights`) could not have seen root 5
+    /// even if their authors had thought of it. Widening the type is what let the
+    /// walk widen.
+    DialogueRespawn {
+        /// The NPC whose dialogue tree hosts the option.
+        npc: String,
+        /// The node the option sits under.
+        node: String,
+    },
 }
 
 impl EffectSite {
@@ -6038,75 +6066,60 @@ impl EffectSite {
             EffectSite::Objective { quest, .. } | EffectSite::QuestComplete { quest } => {
                 Some(quest)
             }
-            EffectSite::Trigger { .. } | EffectSite::Trap { .. } => None,
+            EffectSite::Trigger { .. }
+            | EffectSite::Trap { .. }
+            | EffectSite::DialogueRespawn { .. } => None,
         }
     }
 }
 
-/// Visit **every** quest / trigger / trap-payload effect in the campaign,
-/// top-level and transitively nested, in a fixed deterministic order, invoking
-/// `f(json_pointer, site, effect)`.
+/// Visit **every** effect the compiler can lower — at every one of the five
+/// effect roots, top-level and transitively nested — in a fixed deterministic
+/// order, invoking `f(json_pointer, site, effect)`.
 ///
-/// The shared traversal spec-0025's proofs, the `DW0141` v0.8 fence and the
-/// branch chronicle all walk, so none of them can drift from what emission does:
-/// nesting is descended through the one
-/// [`QuestEffect::nested_effect_lists_labeled`] authority, exactly like the l10n
-/// inventory and the consumer-ref scans.
+/// The roots come from [`crate::effects::for_each_effect_root`], the single
+/// enumeration; nesting is descended through the single
+/// [`QuestEffect::nested_effect_lists_labeled`] authority. Neither axis is
+/// enumerated here, which is the point: this walk used to hand-list four of the
+/// five roots (it had no `EffectSite` variant for the fifth), so every proof
+/// defined in terms of it inherited that blind spot.
 pub fn for_each_campaign_effect<'a>(
     c: &'a crate::envelope::Campaign,
     f: &mut dyn FnMut(&str, &EffectSite, &'a QuestEffect),
 ) {
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        for (oid, effs) in &q.on_objective_complete {
-            let site = EffectSite::Objective {
-                quest: q.id.as_str().to_string(),
-                objective: oid.as_str().to_string(),
-            };
-            for (i, eff) in effs.iter().enumerate() {
-                campaign_effect_deep(
-                    eff,
-                    &format!(
-                        "/content/quests/{qi}/on_objective_complete/{}/{i}",
-                        oid.as_str()
-                    ),
-                    &site,
-                    f,
-                );
+    crate::effects::for_each_effect_root(c, &mut |root, list| {
+        let site = match root.owner {
+            crate::effects::EffectRootOwner::ObjectiveComplete { quest, objective } => {
+                EffectSite::Objective {
+                    quest: quest.id.as_str().to_string(),
+                    objective: objective.to_string(),
+                }
             }
-        }
-        let site = EffectSite::QuestComplete {
-            quest: q.id.as_str().to_string(),
+            crate::effects::EffectRootOwner::QuestComplete { quest } => EffectSite::QuestComplete {
+                quest: quest.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::Trigger(t) => EffectSite::Trigger {
+                trigger: t.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::TrapPayload(t) => EffectSite::Trap {
+                trap: t.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::DialogueRespawn => {
+                // The npc and node are in the root's path; parse them back rather
+                // than widening the root walk's owner for one consumer.
+                let seg = |n: usize| -> String {
+                    root.path.split('/').nth(n).unwrap_or_default().to_string()
+                };
+                EffectSite::DialogueRespawn {
+                    npc: seg(3),
+                    node: seg(5),
+                }
+            }
         };
-        for (i, eff) in q.on_complete.iter().enumerate() {
-            campaign_effect_deep(
-                eff,
-                &format!("/content/quests/{qi}/on_complete/{i}"),
-                &site,
-                f,
-            );
+        for (i, eff) in list.iter().enumerate() {
+            campaign_effect_deep(eff, &format!("{}/{i}", root.path), &site, f);
         }
-    }
-    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
-        let site = EffectSite::Trigger {
-            trigger: t.id.as_str().to_string(),
-        };
-        for (i, eff) in t.effects.iter().enumerate() {
-            campaign_effect_deep(
-                eff,
-                &format!("/content/triggers/{ti}/effects/{i}"),
-                &site,
-                f,
-            );
-        }
-    }
-    for (pi, trap) in c.quests.content.traps.iter().enumerate() {
-        let site = EffectSite::Trap {
-            trap: trap.id.as_str().to_string(),
-        };
-        for (i, eff) in trap.payload.iter().enumerate() {
-            campaign_effect_deep(eff, &format!("/content/traps/{pi}/payload/{i}"), &site, f);
-        }
-    }
+    });
 }
 
 fn campaign_effect_deep<'a>(

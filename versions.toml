@@ -111,6 +111,79 @@ sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
 # mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
 mineflayer = "4.37.1"
 
+[engine]
+# The `delvec` ENGINE release line — ADR-0016 line 2, distributed per ADR-0017.
+# One release identity has to hold four things together or it means nothing: the
+# version compiled into the binary, the git tag, the crates.io version, and the
+# skill's `requires.delvec` window. Before this section they agreed only by
+# intention; `validation/check-versions.sh` now makes disagreement a red, and
+# `.github/workflows/engine-release.yml` refuses a `v*` tag whose name does not
+# match `version` below before it builds or publishes anything.
+#
+# Consumed by: validation/check-versions.sh (every assertion below),
+# .github/workflows/engine-release.yml (tag gate + build matrix),
+# .github/workflows/ci.yml (the cross-build shelf job),
+# tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
+# copy of any value here — they read this file, the way
+# validation/server-bootstrap-cache.sh does).
+version = "1.1.0"
+
+# crates.io identity. `cargo install` resolves by CRATE name, never by binary
+# name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
+# is the only spelling that could ever have worked and nobody would guess it.
+# The lib TARGET keeps the old name (`delvewright_compiler`) so 366 in-tree use
+# paths do not churn.
+crate = "delvec"
+
+# `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
+# crates.io first — but it is DELIBERATELY NOT on the engine version line.
+# Locking them together looks tidy and sets a trap: a publish that half-succeeds
+# burns the dsl version permanently (crates.io versions cannot be reused), and
+# under lockstep the retry would have to move `delvec` too — which would put the
+# engine version out of step with the git tag `v1.0.0` that ADR-0016 pins. With
+# an independent line, a burned dsl version costs a dsl bump and nothing else.
+# `0.x` is also the honest semver for it: it is the DSL types the engine speaks,
+# not a library anyone should depend on directly.
+dsl_crate = "delvewright-dsl"
+dsl_crate_version = "0.1.0"
+
+# The engine's `[dependencies] delvewright-dsl` requirement is `=` and exactly
+# this version, so `delvec 1.0.0` on crates.io can resolve to exactly one
+# `delvewright-dsl` build and no other.
+dsl_crate_req = "=0.1.0"
+
+# `rust-version` in both published manifests, and the channel in
+# rust-toolchain.toml. They must be the same string: a `rust-version` looser than
+# the toolchain anybody has actually built on is an untested claim, and
+# `cargo install` is where a stranger would discover it.
+rust_toolchain = "1.97.1"
+
+# THE RELEASE SHELF (ADR-0017). Every platform a creator might plausibly drive
+# Claude Code from. Before this, release `v1.0.0` existed with ZERO assets: the
+# engine pin ADR-0016 requires and the skill's `requires.delvec` window were
+# promises against an empty shelf.
+#
+# Linux is musl-STATIC on purpose. `delvec`'s whole dependency set is pure Rust
+# (flate2 uses the miniz_oxide backend, not zlib-sys), so a static binary has no
+# glibc floor, runs on Alpine and on distros older than the runner, and cannot
+# fail at the one moment a downloaded binary is expected to just work.
+#
+# Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
+# format is one extraction path for ADR-0014's future bootstrap, and a format
+# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
+#
+# `delve-render` is deliberately NOT on this shelf — see ADR-0017 §3; it needs a
+# GPU/driver stack and the EULA-gated client jar, neither of which a downloaded
+# binary can carry, so it would be a shelf item that fails for most downloaders.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
 # sources live here, not in this GPL repo (ADR-0007). Determinism (ADR-0006):
@@ -135,22 +208,33 @@ mineflayer = "4.37.1"
 repo = "stellarfeline/delvewright-campaigns"
 # The spec-0026 **walk_y backfill** (content branch
 # `worker/spec-0026-walk-y-backfill`, content PR #21), which is content `main`
-# 885fd5d plus one additive line per prefab: every prefab metadata file declares
+# e4c58c0f plus one additive line per prefab: every prefab metadata file declares
 # its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
 # verified empirically from the .nbt geometry, and the island set re-derived
 # over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
 # per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
-# §2, DW0367). The engine and content changes land as a pair: this delvec
-# cannot place a non-void horizon against a library without walk_y, and content
-# main carries walk_y on zero of its 36 prefabs.
+# §2, DW0367).
 #
-# This is a BRANCH sha, not a content `main` tip, and it is the only kind of pin
-# that satisfies both constraints at once — it is a strict descendant of content
-# main (nothing this branch's own re-pins landed, up to and including the island
-# storybook marker and the v1.0.0 engine re-pin, is rolled back), and it carries
-# the metadata this engine requires. RE-PIN to the content `main` tip the moment
-# content #21 merges (RE-PIN CONVENTION above).
-sha = "5a23d902419e18ff6f0836eb32dd2af3fc987670"
+# This is a BRANCH sha, not a content `main` tip, and the branch pin is not a
+# shortcut — it is the ONLY pin that can exist here, because the change is
+# **atomic across two repositories and therefore has no valid merge order**.
+# Content-first is impossible: prefab metadata is `deny_unknown_fields`
+# (crates/compiler/src/registry.rs), so a `walk_y` line on content main would be
+# rejected by every delvec that predates this PR — including the released
+# v1.1.0 — and drop the prefab. Engine-first is impossible: this delvec cannot
+# place a non-void horizon against a library without `walk_y`, and content main
+# carries it on zero of its 36 prefabs. Same shape as the l10n inventory
+# widening (#317/#333); there it was one repo and folded into one PR, here it
+# spans repos and the pin is what makes the pair land together.
+#
+# The pinned sha is a strict descendant of content main e4c58c0f — the branch
+# was re-synced 2026-08-08, so the cave gravity-floor substrate regen (#10) and
+# the `campaigns/campaigns` symlink untracking (#33) are carried forward, not
+# rolled back. Verified before re-pinning: `git diff 885fd5d..main -- prefabs/`
+# is EMPTY, so no prefab geometry moved under the walk_y derivation.
+# RE-PIN to the content `main` tip the moment content #21 merges
+# (RE-PIN CONVENTION above).
+sha = "1319414c704f839b48e9a31a7246e28240117d34"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

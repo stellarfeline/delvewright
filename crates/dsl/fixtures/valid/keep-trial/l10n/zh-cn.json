@@ -25,5 +25,28 @@
     "dlg.keeper.lore.text": "丢了这地方的队长。我仍守着这道门，因为我离不开它。做得比我当年好些。",
     "dlg.keeper.lore.opt.0.label": "返回。",
     "wave.guards.mob.0.name": "要塞哨卫"
+  },
+  "source": {
+    "area.keep.name": "The Stone Keep",
+    "class.warden.blurb": "Iron sword and mail — made for the front rank.",
+    "class.warden.name": "Warden",
+    "dlg.keeper.greet.opt.0.label": "Who are you?",
+    "dlg.keeper.greet.opt.1.label": "I'll clear the keep.",
+    "dlg.keeper.greet.text": "You came. Good. The moor raised a guard in the hall — put it down, take the key it kept, and unbar the inner door. The shrine lies past it.",
+    "dlg.keeper.lore.opt.0.label": "Back.",
+    "dlg.keeper.lore.text": "The captain who lost this place. I hold the gate still, because I cannot leave it. Do better than I did.",
+    "npc.keeper.name": "The Keeper",
+    "obj.trial.door.hint": "The barred door stands in the corner room; use the old key on it.",
+    "obj.trial.door.title": "Unbar the Inner Door",
+    "obj.trial.key.hint": "The key sits in a chest in the small room off the hall.",
+    "obj.trial.key.title": "Take the Old Key",
+    "obj.trial.shrine.hint": "Pass the opened gate and step onto the shrine at the hall's end.",
+    "obj.trial.shrine.title": "Reach the Shrine",
+    "obj.trial.slay.hint": "The guard rises around you as the Keeper speaks — cut every one of them down.",
+    "obj.trial.slay.title": "Clear the Guard",
+    "quest.greet.goal": "Take the Keeper's charge and raise the guard.",
+    "quest.trial.goal": "Clear the guard, take the key, open the door, reach the shrine.",
+    "wave.guards.mob.0.name": "Keep Guard",
+    "world.title": "Trial of the Keep"
   }
 }

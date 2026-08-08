@@ -1,15 +1,51 @@
 [package]
-name = "delvewright-compiler"
-version = "1.0.0"
+# The PACKAGE is `delvec` because `cargo install` resolves by CRATE name, never
+# by binary name: `cargo install delvewright-compiler` is the only spelling that
+# could ever have worked, and nobody would guess it. ADR-0016 names the engine
+# `delvec`; this makes the registry agree with the ADR.
+#
+# The LIBRARY target keeps the old name (`[lib] name` below) so the 366 in-tree
+# `use delvewright_compiler::…` paths do not churn for zero behavioural gain. A
+# package whose lib target is named differently from the package is ordinary
+# Cargo; an external dependent would write
+# `delvec = "1"` + `use delvewright_compiler::…`, which is why the README says so.
+name = "delvec"
+# ADR-0016's engine version line. Single source: `DELVEC_VERSION` is
+# `env!("CARGO_PKG_VERSION")` (src/lib.rs), which reaches manifest.json, the
+# storybook markers and the skill's `verified_with`. check-versions.sh binds it
+# to `[engine] version` in versions.toml, and release.yml refuses a `v*` tag
+# whose name disagrees with it.
+version = "1.1.0"
 edition = "2024"
-publish = false
+# See the note in crates/dsl/Cargo.toml: the toolchain we actually build on.
+rust-version = "1.97.1"
+description = "Deterministic compiler that turns staged Delvewright DSL documents into a vanilla Minecraft adventure-map datapack."
+license = "GPL-3.0-only"
+repository = "https://github.com/stellarfeline/delvewright"
+readme = "README.md"
+keywords = ["minecraft", "datapack", "compiler", "adventure"]
+categories = ["command-line-utilities", "game-development"]
+# `cargo package` ships everything git tracks unless excluded. `tests/` and
+# `examples/` are 1.9 MB of fixtures that a `cargo install delvec` never
+# compiles; `data/` is NOT excludable — src/registry.rs `include_str!`s it.
+exclude = ["tests/", "examples/"]
+
+[lib]
+# Deliberately not the package name — see the [package] note above.
+name = "delvewright_compiler"
+path = "src/lib.rs"
 
 [[bin]]
 name = "delvec"
 path = "src/main.rs"
 
 [dependencies]
-delvewright-dsl = { path = "../dsl" }
+# `version` is REQUIRED for publication: a path-only dependency cannot be
+# packaged (`cargo package` refuses it, by name), and crates.io drops the `path`
+# key — so on the registry this requirement is the ONLY thing left standing. `=`
+# so that `delvec 1.0.0` resolves to exactly one `delvewright-dsl` build and no
+# other; bound to `[engine] dsl_crate_req` in versions.toml.
+delvewright-dsl = { path = "../dsl", version = "=0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }

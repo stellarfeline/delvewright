@@ -407,30 +407,49 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
         }
     }
 
-    for q in &c.quests.content.quests {
-        for effs in q.on_objective_complete.values() {
+    // Every effect root, inherited from the single enumeration. Which roots have a
+    // DAG position is the whole question this function asks, so it is answered
+    // per-root off the site rather than by re-deriving it from a second walk — and
+    // a root added later gets an answer here or fails to compile.
+    //
+    // This walk used to name three of the five. `traps[].payload` and a dialogue
+    // option's `set-checkpoint` `on_respawn` bundle are the two sources with the
+    // LEAST static position of any — the party may never spring the trap and nobody
+    // is forced to die — so missing them made the lint under-exclude, which is the
+    // direction that WARNS on a history the compiler cannot order.
+    delvewright_dsl::for_each_effect_root(c, &mut |site, effs| match site.owner {
+        delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
+        | delvewright_dsl::EffectRootOwner::QuestComplete { .. } => {
             scan(effs, false, &mut out);
         }
-        scan(&q.on_complete, false, &mut out);
-    }
-    // Trigger-fired lifecycle events have no DAG position at all.
-    for t in &c.quests.content.triggers {
-        fn scan_all(effs: &[QuestEffect], out: &mut BTreeMap<String, &'static str>) {
+        // No DAG position at all: the whole bundle is unordered, so every
+        // lifecycle effect in it is excluded regardless of depth.
+        delvewright_dsl::EffectRootOwner::Trigger(_)
+        | delvewright_dsl::EffectRootOwner::TrapPayload(_)
+        | delvewright_dsl::EffectRootOwner::DialogueRespawn => {
+            let reason = match site.owner {
+                delvewright_dsl::EffectRootOwner::Trigger(_) => {
+                    "its lifecycle is driven from an environment trigger, which the \
+                     player may fire at any time (or never)"
+                }
+                delvewright_dsl::EffectRootOwner::TrapPayload(_) => {
+                    "its lifecycle is driven from a trap payload, which the party may \
+                     spring at any time (or never)"
+                }
+                _ => {
+                    "its lifecycle is driven from a dialogue option's `on_respawn` \
+                     bundle, which fires only on a death nobody is forced to take"
+                }
+            };
             for e in effs {
                 e.visit_deep(&mut |x| {
                     if let Some(npc) = lifecycle_npc(x) {
-                        note(
-                            out,
-                            npc,
-                            "its lifecycle is driven from an environment trigger, which the \
-                             player may fire at any time (or never)",
-                        );
+                        note(&mut out, npc, reason);
                     }
                 });
             }
         }
-        scan_all(&t.effects, &mut out);
-    }
+    });
     // Dialogue-fired spawns likewise (the only dialogue lifecycle verb).
     for tree in &c.dialogue.content.dialogues {
         for node in &tree.nodes {
