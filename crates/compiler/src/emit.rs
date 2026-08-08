@@ -441,6 +441,15 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
+                // Task #50: refuse to place a wrong-side answer on a side the
+                // geometry does not name (DW0425) — BEFORE the route proofs. A
+                // door whose two sides are not even distinguishable is a
+                // structural problem with the declaration, and reporting it under
+                // the route proof's name (`DW0374`, "opening it must pay") would
+                // send the author looking at their level layout instead.
+                check_shortcut_sides(plan)?;
+                // …and every click trigger must land on something (DW0426).
+                check_trigger_bodies(plan)?;
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
@@ -2664,6 +2673,9 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    // --- task #50: the clickable body of each sealed shortcut door ---
+    // Empty for a campaign with no shortcut → byte-identical output.
+    fns.extend(ws_arm_fns(plan));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -5130,19 +5142,31 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
 /// tileset happens to carry a lever. Proven by `DW0420`
 /// ([`crate::affordance`]).
 fn shortcut_setup(plan: &Plan) -> Vec<String> {
-    plan.shortcuts
-        .iter()
-        .flat_map(|sc| {
-            let v = ent_xyz(sc.unlock);
-            [
-                format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
-                    v[0], v[1], v[2], sc.safe
-                ),
-                affordance_hardware(v, &format!("dw_sc_{}", sc.safe), "minecraft:lever"),
-            ]
-        })
-        .collect()
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        let v = ent_xyz(sc.unlock);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+            v[0], v[1], v[2], sc.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_sc_{}", sc.safe),
+            "minecraft:lever",
+        ));
+        // Task #50: arm the door itself, so a press from the sealed side reaches
+        // something. Unlike a `close-gate` seal — which is armed by the firing
+        // that seals it — a shortcut gate is sealed by the PREFAB at world-load,
+        // so world init is the only moment its answer can go up. Guarded on
+        // absence for the same reason the close-gate arming is: a second,
+        // co-located set of hitboxes is the exact ray-pick tie `DW0422` forbids.
+        out.push(format!(
+            "execute unless entity @e[tag=dw_ws_{}] run function {ns}:ws_arm_{}",
+            sc.safe, sc.safe
+        ));
+    }
+    out
 }
 
 /// The visible hardware for a compiler-owned interact affordance: a glowing,
@@ -5231,11 +5255,6 @@ fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
         .filter(|t| t.at_anchor() == Some(anchor))
         .map(|t| format!("dw_trig_{}", plan::safe_local(t.id.as_str())))
         .collect()
-}
-
-/// Whether this trigger rides a seal's hitboxes rather than summoning its own.
-fn trigger_rides_seal(plan: &Plan, at: &str) -> bool {
-    plan.seal_hints.iter().any(|s| s.anchor == at)
 }
 
 /// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
@@ -5389,6 +5408,115 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The shortcut door's wrong-side answer (DSL v0.9, task #50)
+// ---------------------------------------------------------------------------
+
+/// Every shortcut door with its derived sealed side.
+///
+/// **Every** shortcut answers — the wording defaults to the compiler's canonical
+/// English — so the only shortcut missing here is one whose side did not resolve,
+/// and such a campaign never reaches emission: [`check_shortcut_sides`] fails the
+/// build first.
+fn answering_shortcuts<'a>(
+    plan: &'a Plan,
+) -> Vec<(&'a plan::ShortcutPlan, &'a crate::wrongside::SealedSide)> {
+    plan.shortcuts
+        .iter()
+        .filter_map(|sc| sc.sealed_side.as_ref().map(|s| (sc, s)))
+        .collect()
+}
+
+/// `DW0425`: a shortcut door whose sealed side the geometry does not name.
+///
+/// Build tier (exit 3), raised before any function is emitted — withhold, never
+/// invent. Placing the answer on a guessed side would tell a player standing
+/// exactly where the door DOES open that it cannot be opened from there, which is
+/// a worse failure than the silence this feature exists to end.
+fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
+    for sc in &plan.shortcuts {
+        if sc.sealed_side.is_some() {
+            continue;
+        }
+        let (lo, hi) = sc.gate_region;
+        return Err(BuildFailure::Diagnostic {
+            code: crate::wrongside::DW_SHORTCUT_SIDE_UNDECIDABLE,
+            message: format!(
+                "shortcut `{}` declares an `on_wrong_side` answer, but the compiler cannot tell \
+                 which side of its gate `{}` is the sealed one. The sealed side is derived from \
+                 the gate slab's thin axis and the side of it the `unlock` anchor `{}` stands on; \
+                 here the gate spans {lo:?}..{hi:?} and the unlock resolves to {:?}, which either \
+                 gives the region no unique thinnest axis (a cube is not a doorway) or leaves the \
+                 unlock level with the doorway rather than beyond it. An answer placed on a \
+                 guessed side would fire where the door DOES open. Prescription: put the `unlock` \
+                 clear of the gate's own span on the axis the door is thin on — which is where a \
+                 far-side bar belongs anyway — or use a gate anchor whose region is a doorway \
+                 slab rather than a volume.",
+                sc.id, sc.gate_anchor, sc.unlock_anchor, sc.unlock,
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// The `ws_arm_<safe>` functions (task #50): the **clickable body of a sealed
+/// shortcut door**.
+///
+/// A shortcut gate is a solid slab the prefab places, and nothing gave it a body.
+/// A `use`/`strike` trigger anchored on it summoned the ordinary point body — one
+/// `1.0f x 2.0f` box at the region's first cell — which for the `souls-shortcut`
+/// fixture lands at AABB `[4,65,6]..[5,67,7]` inside a slab occupying
+/// `[4,65,6]..[6,68,7]`: flush with the block on every face it touches and
+/// interior on the rest, so vanilla never finds it strictly nearer than the block
+/// and no press from any angle reaches it (see [`SEAL_MARGIN`]).
+///
+/// The body therefore stands in the **open air in front of the bars**, one cell
+/// per doorway cell, on the sealed side only
+/// ([`crate::wrongside::SealedSide::approach_cells`]). That placement is also the
+/// entire side mechanism: a near-side ray hits the body before the door, a
+/// far-side ray hits the door and stops, because vanilla bounds its entity
+/// raycast by the block hit distance. No player test, no DSL surface.
+///
+/// A click trigger the author anchors on the gate rides these — the same merge
+/// `seal_fns` performs for a `close-gate` seal — so the author's own prose and
+/// sound, gated by their own flags, are what a wrong-side press produces. The
+/// compiler supplies the body; the campaign supplies the answer.
+///
+/// Empty for a campaign with no shortcut → byte-identical output.
+fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (sc, side) in answering_shortcuts(plan) {
+        // A click trigger the author anchored on this gate rides these hitboxes
+        // rather than summoning its own co-located one — the same merge
+        // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
+        // at a gate anchor stops being a ray-pick tie.
+        let mut tags = vec![format!("dw_ws_{}", sc.safe)];
+        tags.extend(seal_rider_tags(plan, &sc.gate_anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = side
+            .approach_cells()
+            .into_iter()
+            .map(|c| {
+                // Integer hundredths, never f64 arithmetic: the datapack text is
+                // part of the byte-identity contract (ADR-0006).
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((format!("ws_arm_{}", sc.safe), lines(&body)));
+    }
+    out
+}
+
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
@@ -5431,6 +5559,12 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
+        // …and the door's own voice goes with the bars (task #50). An opened
+        // threshold that still says "this will not open" is a lie, and an
+        // invisible box left standing in a now-walkable doorway swallows
+        // right-clicks aimed through it — the same retirement `open-gate`
+        // performs for a `close-gate` seal.
+        body.push(format!("kill @e[tag=dw_ws_{id}]"));
         body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
         out.push((format!("shortcut_open_{id}"), lines(&body)));
     }
@@ -7501,18 +7635,78 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         // summons them wearing this trigger's tag. A second entity here would be
         // exactly co-located with them, and the ray-pick tie is what killed the
         // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
-        if trigger_rides_seal(plan, at) {
-            continue;
-        }
-        if let Some(p) = anchor_point_any(plan, at) {
-            let q = ent_xyz(p);
-            out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
-                q[0], q[1], q[2], plan::safe_local(t.id.as_str())
-            ));
+        let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
+        match crate::pressable::body_at(plan, at) {
+            // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
+            // this trigger's tag on those entities. One cell, one hitbox.
+            crate::pressable::Body::Rides { .. } => {}
+            // The anchor is a REGION. A point body here is buried in the solid
+            // block and reachable from nowhere (see `crate::pressable`), so the
+            // object gets the clickable shape it actually has: one protruding box
+            // per shell cell, exactly as a `close-gate` seal has always done.
+            crate::pressable::Body::Region(cells) => {
+                for c in cells {
+                    let x = fmt_centi(c[0] as i64 * 100 + 50);
+                    let y = fmt_centi(c[1] as i64 * 100 - 1);
+                    let z = fmt_centi(c[2] as i64 * 100 + 50);
+                    out.push(format!(
+                        "summon minecraft:interaction {x} {y} {z} \
+                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                    ));
+                }
+            }
+            // A point in open space: the ordinary body, byte-identical.
+            crate::pressable::Body::Point(p) => {
+                let q = ent_xyz(p);
+                out.push(format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+                    q[0], q[1], q[2]
+                ));
+            }
+            // `DW0426` has already failed the build.
+            crate::pressable::Body::Nothing => {}
         }
     }
     out
+}
+
+/// `DW0426`: every click trigger must be anchored somewhere a player can click.
+///
+/// Build tier (exit 3), raised before any function is emitted. The trigger
+/// declares an anchor, a click and a full effect bundle, and the press lands on
+/// nothing — the beat never happens and every board stays green, which is the
+/// unbound-vacuity class this whole task came out of.
+fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
+    use delvewright_dsl::TriggerOn;
+    for t in &plan.campaign.quests.content.triggers {
+        if matches!(t.on, TriggerOn::Approach { .. }) {
+            continue;
+        }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        if crate::pressable::body_at(plan, at) != crate::pressable::Body::Nothing {
+            continue;
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: crate::pressable::DW_TRIGGER_UNPRESSABLE,
+            message: format!(
+                "trigger `{}` watches a `{}` on anchor `{}`, but nothing at that anchor is \
+                 clickable: it resolves to no placed piece, so the compiler has no cell to give \
+                 the trigger a body at and the press can never land. The trigger's effects would \
+                 simply never run, with every check green. Prescription: anchor it on a place a \
+                 prefab provides (anchor names come from prefab metadata; do NOT invent one), or \
+                 drop the trigger.",
+                t.id,
+                t.on.kind(),
+                at
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a

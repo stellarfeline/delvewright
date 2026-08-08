@@ -134,6 +134,25 @@ pub struct ShortcutPlan {
     pub unlock: [i32; 3],
     /// Effects fired once, when the shortcut opens.
     pub on_unlock: Vec<QuestEffect>,
+    /// The volume a presser must stand in for the press to count as coming from
+    /// the wrong side, derived from the gate slab and the `unlock` cell. `None`
+    /// when the geometry does not decide it — `DW0425`.
+    pub sealed_side: Option<crate::wrongside::SealedSide>,
+}
+
+impl ShortcutPlan {
+    /// The **shell** cells of the sealed gate: every region cell with at least
+    /// one axis-neighbour outside the region, in ascending `(x, y, z)` order —
+    /// exactly the clickable surface, and for the thin slab a doorway usually is,
+    /// the whole region.
+    ///
+    /// The same rule [`SealHintPlan::shell_cells`] applies to a `close-gate`
+    /// seal, for the same reason: a cell buried inside the door has six sealed
+    /// neighbours, so no face of it can ever be in a crosshair, and arming it
+    /// would ship an entity nothing can reach.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        shell_cells_of(self.gate_region)
+    }
 }
 
 /// The compiler's own answer a sealed gate gives a right-click when the
@@ -179,24 +198,36 @@ impl SealHintPlan {
     /// for the thin slab a gate anchor usually is (a doorway one block deep) it
     /// is the whole region.
     pub fn shell_cells(&self) -> Vec<[i32; 3]> {
-        let (a, b) = self.region;
-        let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-        let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-        let mut out = Vec::new();
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let interior = (lo[0] < x && x < hi[0])
-                        && (lo[1] < y && y < hi[1])
-                        && (lo[2] < z && z < hi[2]);
-                    if !interior {
-                        out.push([x, y, z]);
-                    }
+        shell_cells_of(self.region)
+    }
+}
+
+/// The **shell** cells of an inclusive region: every cell with at least one
+/// axis-neighbour outside it, in ascending `(x, y, z)` order.
+///
+/// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
+/// own answer needed the identical surface (task #50). One definition, because
+/// two copies of "which cells of a sealed slab can be clicked" would be free to
+/// drift apart, and the whole point of the geometry is that it is the same
+/// question in both places.
+fn shell_cells_of(region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
+    let (a, b) = region;
+    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let interior = (lo[0] < x && x < hi[0])
+                    && (lo[1] < y && y < hi[1])
+                    && (lo[2] < z && z < hi[2]);
+                if !interior {
+                    out.push([x, y, z]);
                 }
             }
         }
-        out
     }
+    out
 }
 
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
@@ -2529,6 +2560,11 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+            // Task #50: which half of the doorway is the sealed one, from the
+            // slab's thin axis and the side the unlock stands on. `None` is not
+            // an error here — `emit` raises `DW0425` only if an answer was
+            // actually authored for a side the geometry does not name.
+            sealed_side: crate::wrongside::derive((from, to), unlock),
         });
     }
     out

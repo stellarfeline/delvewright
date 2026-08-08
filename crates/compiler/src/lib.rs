@@ -74,6 +74,7 @@ pub mod nav;
 pub mod plan;
 pub mod png;
 pub mod pool;
+pub mod pressable;
 pub mod raster;
 pub mod registry;
 pub mod rehearsal;
@@ -86,6 +87,7 @@ pub mod textfit;
 pub mod timeline;
 pub mod traversal;
 pub mod waypoints;
+pub mod wrongside;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).
 ///
