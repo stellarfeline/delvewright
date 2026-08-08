@@ -407,12 +407,42 @@ pub fn build_with_warnings(
                         &er.assembled.open_gates,
                     );
                     occ.solid.extend(relight.extra_solid.iter().copied());
+                    // The ambient is the world-generator PREMISE (spec-0013), not
+                    // geometry, and `from_occupancy` defaults it to `Void`. The
+                    // sibling arm gets it for free through `from_plan`; this arm
+                    // has to say it, or an `ocean` campaign's proofs would run
+                    // against a void world that does not exist. Harmless while
+                    // nothing here read it — `verify_boundary_safety` below now
+                    // does.
                     crate::nav::World::from_occupancy(occ)
+                        .with_ambient(crate::nav::Ambient::of_plan(plan))
                 }
                 None => {
                     crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
                 }
             };
+
+            // DW0322 over the FINISHED world, for every campaign that assembles
+            // one (task #170).
+            //
+            // This proof had exactly one call site: inside the stage-7 edit
+            // replay, once per batch. Stage 8 is skipped entirely for a campaign
+            // with no edits — so a campaign that only places pieces never had its
+            // boundary proven at all, and could ship a reachable walkable cell
+            // one step from a void drop. The guarantee is a property of the
+            // ASSEMBLED WORLD, not of having edited it; keying it to the edit
+            // script bound it to the wrong thing.
+            //
+            // The per-batch call stays: it names WHICH batch broke the boundary,
+            // which this one cannot. This is the floor under both — run last,
+            // over the world that actually ships.
+            crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
+
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
