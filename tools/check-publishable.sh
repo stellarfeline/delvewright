@@ -63,6 +63,7 @@ DIRTY_FLAG=()
 
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 e = tomllib.load(open(sys.argv[1], "rb"))["engine"]
 for k in ("version", "crate", "dsl_crate", "dsl_crate_version", "dsl_crate_req"):
     print(f'{k.upper()}={e[k]!r}'.replace("'", '"'))
@@ -73,14 +74,44 @@ fails=0
 pass() { printf '  ok   %s\n' "$1"; }
 fail() { printf '  FAIL %s\n' "$1"; fails=$((fails + 1)); }
 
+# AN ERROR PATH MUST NOT DEPEND ON AN ARTIFACT THE ERROR MAY HAVE PREVENTED FROM
+# EXISTING (v1.0.0 release run, 2026-08-06).
+#
+# `cmd >"$LOG" 2>&1` is opened by the SHELL, before `cmd` is executed. On a
+# runner with no build cache there was no `target/` directory at all, so the
+# redirect failed, `cargo package` NEVER RAN, and the else-branch then `sed`ed a
+# file whose absence was the actual finding. The report was not merely unhelpful,
+# it was wrong about what happened: it said "cargo package failed" about a
+# command that had not been executed.
+#
+# Two things are needed and neither substitutes for the other:
+#   * the directory is guaranteed before any redirect into it
+#     (`tools/check-shell-redirect-dirs.py` now requires that of every script);
+#   * the report is honest when the log is missing or empty, so the next such
+#     failure names itself instead of impersonating a different one.
+emit_log() { # <log-path> <what-was-being-run>
+  if [ ! -f "$1" ]; then
+    printf '       (no log at %s — the redirect never opened it, so `%s` DID NOT RUN)\n' "$1" "$2" >&2
+  elif [ ! -s "$1" ]; then
+    printf '       (the log at %s is empty — `%s` ran and wrote nothing)\n' "$1" "$2" >&2
+  else
+    sed 's/^/       /' "$1" >&2
+  fi
+}
+
 echo "== 1. both crates package =="
 echo "   ($CRATE v$VERSION, $DSL_CRATE v$DSL_CRATE_VERSION)"
+mkdir -p "$ROOT/target"
 rm -rf "$ROOT/target/package"
-if (cd "$ROOT" && cargo package -p "$DSL_CRATE" -p "$CRATE" "${DIRTY_FLAG[@]}" \
-      >"$ROOT/target/package-log.txt" 2>&1); then
+PKG_LOG="$ROOT/target/package-log.txt"
+rm -f "$PKG_LOG"
+rc=0
+(cd "$ROOT" && cargo package -p "$DSL_CRATE" -p "$CRATE" "${DIRTY_FLAG[@]}" \
+      >"$PKG_LOG" 2>&1) || rc=$?
+if [ "$rc" -eq 0 ]; then
   pass "cargo package -p $DSL_CRATE -p $CRATE"
 else
-  fail "cargo package failed:"; sed 's/^/       /' "$ROOT/target/package-log.txt" >&2
+  fail "cargo package exited $rc:"; emit_log "$PKG_LOG" "cargo package"
   echo; echo "check-publishable: 1 finding" >&2; exit 1
 fi
 
@@ -108,6 +139,7 @@ for name in "$CRATE" "$DSL_CRATE"; do
   # count the ones that sit under a `[*dependencies*]` table.
   n_dep_path="$(python3 - "$gen" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 m = tomllib.load(open(sys.argv[1], "rb"))
 n = 0
 for key, tbl in m.items():
@@ -137,6 +169,7 @@ done
 # gone, so it is asserted against versions.toml rather than eyeballed.
 got_req="$(python3 - "$CRATE_DIR/Cargo.toml" "$DSL_CRATE" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 m = tomllib.load(open(sys.argv[1], "rb"))
 spec = m.get("dependencies", {}).get(sys.argv[2])
 print(spec if isinstance(spec, str) else (spec or {}).get("version", "<absent>"))
@@ -175,12 +208,19 @@ cat > "$STANDALONE/.cargo/config.toml" <<EOF
 [patch.crates-io]
 $DSL_CRATE = { path = "../$DSL_CRATE-$DSL_CRATE_VERSION" }
 EOF
-if (cd "$STANDALONE" && cargo build --release --bin delvec \
-      >"$SCRATCH/build-log.txt" 2>&1); then
+# Same shape as check 1, and therefore the same treatment: `$SCRATCH` is a
+# `mktemp -d` so the directory is guaranteed here, but the else-branch must still
+# be honest about a log that does not exist or is empty (a failed `cd`, a full
+# disk) rather than reporting a build failure that never happened.
+BUILD_LOG="$SCRATCH/build-log.txt"
+rc=0
+(cd "$STANDALONE" && cargo build --release --bin delvec \
+      >"$BUILD_LOG" 2>&1) || rc=$?
+if [ "$rc" -eq 0 ]; then
   pass "extracted $CRATE-$VERSION.crate builds \`delvec\` with no workspace and no path dep"
 else
-  fail "the packaged tarball does not build standing alone:"
-  sed 's/^/       /' "$SCRATCH/build-log.txt" >&2
+  fail "the packaged tarball does not build standing alone (cargo build exited $rc):"
+  emit_log "$BUILD_LOG" "cargo build"
 fi
 if [ -x "$STANDALONE/target/release/delvec" ]; then
   reported="$("$STANDALONE/target/release/delvec" --version)"

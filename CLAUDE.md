@@ -83,6 +83,54 @@ validation/          # docker compose: headless server + bot, same image as CI &
   implementation of a feature is a lower-layer hack (e.g. raycast polling where
   vanilla has no primitive), the feature is excluded until vanilla provides one.
   Applies at every layer boundary: NBT→compiler, compiler→DSL, DSL→skill.
+- **This is a general engine. Primitives are abstract, flexible and
+  configurable, and never bound to one campaign's design** (owner decision,
+  2026-08-06). A creator must be able to build **any** content with it, not a
+  second delve shaped like the first. So a primitive encodes a *mechanism* — a
+  thing a player can press, a
+  region that can be sealed, a body that can walk a route — and never a
+  *design decision* about what that mechanism is for. The genre we happen to be
+  building (souls-like, box-garden) is content, and content lives in campaigns.
+  The test, applied before any surface is added: **could a creator making an
+  entirely different game want this, and can they configure it to their own
+  fiction?** If it only makes sense inside the delve we are writing this month,
+  it is authored content wearing a primitive's clothes.
+
+  The corollary that keeps it honest: **a capability belongs to the object class
+  it acts on, not to the verb that first needed it.** `close-gate` owns
+  `sealed_hint`, which encodes *answering a player who presses this thing* — a
+  property of anything right-clickable, and nothing to do with closing a gate.
+  Built onto the verb, it left the second object that needed it with no surface,
+  and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
+  bespoke field is the defect, not the fix.** Generality is decided at the FIRST
+  site: retrofitting at the second costs a `dsl_version` bump, per-stage fences,
+  and an adoption round on every active campaign.
+
+  **Three shapes to look for in review**, hardest last:
+  1. *Keyed to the verb, not the object class.* The second consumer has no
+     surface, so the fix looks like another field. Tell: `"X, mirroring Y"` in a
+     doc comment; a hook on one variant of a sum type but not its siblings.
+  2. *A general mechanism privately re-implemented inside a verb.* `EnvTrigger`
+     (`at` + `on: strike|use` + `effects[]`) already **is** "give any scene
+     object a custom left- or right-click response, and the response is any
+     effect — prose, a sound, a sprung trap, a command". So `sealed_hint` is not
+     a missing feature; it is a private copy of a general one. Worst kind,
+     because the special case works perfectly and nothing ever looks — and every
+     proof, l10n pass and diagnostic written for the general path silently does
+     not cover the private one.
+  3. *The general mechanism exists but its binding is too narrow to reach the
+     objects it should.* A trigger's interaction body is a **point at a cell**,
+     not the clickable **shape** of the object at that anchor — so authoring the
+     island boulder's own pattern on a shortcut door compiles clean and ships a
+     box pressable only from the side the door opens from. This reads as a
+     missing feature, and the "fix" adds a fourth mechanism. Ask **"what does the
+     existing general mechanism fail to reach, and why"** before ever asking
+     "what surface is missing": the planner proposed a new stage-5 hint section
+     here — strictly weaker than the triggers it duplicated — in the very PR that
+     names this defect.
+
+  Same shape one layer down as a hand-rolled walk enumerating 3 of 5 effect roots
+  (#301/#302/#321): a defect of expressibility, not of care.
 - **Debug doctrine** (owner, 2026-07-31): a red check is information, never an
   obstacle. Never weaken a check, test, or threshold — and never reroll a seed —
   to get green; fix the root cause or escalate. Escalating a toolchain bug is
