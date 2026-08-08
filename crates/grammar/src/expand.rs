@@ -306,7 +306,9 @@ impl fmt::Display for ExpandError {
                 f,
                 "the anchor {anchor:?} is declared twice: first by rule {first:?}, then by rule \
                  {second:?}. One name is one place; use an indexed mark if the rule is meant to \
-                 declare an anchor per expansion"
+                 declare an anchor per expansion, or — if these are two composed pieces that \
+                 happen to share a stem — give one of them a name of its own with \
+                 `compose::include_renaming`"
             ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }

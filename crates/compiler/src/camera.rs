@@ -903,17 +903,14 @@ pub fn cutscene_units(
             }
         }
     }
+    // Every root starts a fresh (empty) move scope, so the roots are inherited from
+    // the single enumeration rather than listed here — this walk used to name three
+    // of the five while asserting in prose that it walked "in the order `emit`
+    // walks them".
     let mut out = Vec::new();
-    let c = campaign;
-    for q in &c.quests.content.quests {
-        for effs in q.on_objective_complete.values() {
-            scan(effs, &[], &mut out);
-        }
-        scan(&q.on_complete, &[], &mut out);
-    }
-    for t in &c.quests.content.triggers {
-        scan(&t.effects, &[], &mut out);
-    }
+    crate::plan::for_each_effect_root(campaign, &mut |_site, list| {
+        scan(list, &[], &mut out);
+    });
     out
 }
 

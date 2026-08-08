@@ -131,6 +131,38 @@ campaign never declared: the shipped image booting a `horizon: ocean` delve as a
 void, and the PackTest runner testing a void superflat while the delve shipped an
 ocean one.
 
+## Server bootstrap: one fetch per job, not one per boot (task #41)
+
+The Mojang server jar is never baked into any image (ADR-0010, EULA), so a server on
+a fresh `/data` volume bootstraps it live at first boot. Isolation gives every ladder
+its own fresh volume — which is right — but it also meant every boot ran its own live
+bootstrap, and a `tier 2` run boots **seven** servers (the datapack-load check plus
+six PackTest suites). Seven independent chances for one Mojang blip to red a required
+status check for a reason with nothing to do with the delve. PR #312 died exactly
+there, on the 5th of 6 suites, before any datapack was evaluated.
+
+`validation/server-bootstrap-cache.sh` performs **one** fetch per job into
+`validation/server-cache/` (gitignored), refuses anything whose sha256 is not
+`versions.toml`'s `server_jar_sha256`, and materialises the Fabric bootstrap beside
+it. `packtest-run.sh` calls it (idempotent — a warm cache fetches nothing) and copies
+the overlay into that project's world volume before booting. Measured: with the
+overlay in place both server types reach `Done (` and the whole PackTest suite passes
+under `--network none`.
+
+Three properties worth keeping when touching this:
+
+* **A copy, never a bind mount of the jar.** itzg and Fabric both replace the jar by
+  rename, and a rename cannot target a bind-mounted file ("Device or resource busy") —
+  the failure that killed the 2026-07-30 jar cache. The overlay is mounted read-only
+  at `/seed` and copied into `/data`.
+* **The gate keeps its teeth.** Retries are bounded and scoped to the bootstrap fetch
+  alone. Nothing here can turn a server that genuinely will not start, or a datapack
+  that genuinely fails, into a pass — a network outage reds a step named `bootstrap`,
+  before any server boots.
+* **The seed states its binding.** `packtest-run.sh` asserts on the boot log that the
+  seed was actually used, and reds if it was not. A seed that silently missed would
+  leave the ladder as fragile as before while reporting success.
+
 ## One command (owner)
 
 EULA acceptance is **your** action and is never hardcoded in this repo. Pass it in

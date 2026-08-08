@@ -62,8 +62,12 @@
 //! A `call` reaches only rules of its own program, so a program built out of
 //! other programs needs them copied in: [`compose::include`] does that under a
 //! prefix, rewriting every rule, parameter and role reference and deliberately
-//! leaving anchor names alone. [`library::bell`] is what it exists for — one
-//! grammar program per campaign zone, composed from the staging vocabulary.
+//! leaving anchor names alone — an anchor name is the campaign's contract, not
+//! the program's. Moving one is an explicit, per-anchor decision written at the
+//! include site ([`compose::include_renaming`]), which is how two pieces that
+//! happen to share a stem are composed into one zone. [`library::bell`] is what
+//! it all exists for — one grammar program per campaign zone, composed from the
+//! staging vocabulary.
 //!
 //! # Not built yet
 //!
@@ -89,7 +93,7 @@ pub mod rng;
 pub mod split;
 
 pub use block::BlockState;
-pub use compose::{ComposeError, entry, include};
+pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
 pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,

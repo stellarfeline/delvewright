@@ -14,7 +14,15 @@ if [ ! -f "$props" ]; then
   echo "refusing to boot a world that is not this campaign's." >&2
   exit 1
 fi
-prop() { sed -n "s/^$1=//p" "$props" | head -1; }
+# First match wins, and `sed` stops by itself rather than being cut off by a
+# reader. It used to be `sed -n "s/^$1=//p" "$props" | head -1`, which is the
+# SIGPIPE+pipefail shape (task #173): `head` exits at line one, `sed` dies of
+# SIGPIPE, and a pipeline status of 141 becomes the function's. This script sets
+# `set -e` WITHOUT `pipefail`, so that was latent rather than live — which is
+# exactly why it is worth removing. Adding one `set -o pipefail` here would have
+# turned every property read on the player-facing boot path into a coin flip,
+# and nothing about the change would have looked dangerous.
+prop() { sed -n "/^$1=/{s///;p;q;}" "$props"; }
 # Difficulty. v0.6: `world.difficulty` is DECLARED by the campaign (easy/normal/
 # hard) and the compiler writes it here; absent, it derives easy for a wave
 # campaign and peaceful for a wave-free one (peaceful removes summoned mobs).
