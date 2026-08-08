@@ -84,12 +84,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="$(python3 -c 'import tomllib;print(tomllib.load(open("versions.toml","rb"))["engine"]["version"])')"
+          VERSION="$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(tomllib.load(open("versions.toml","rb"))["engine"]["version"])')"
           echo "tag=$TAG"          >> "$GITHUB_OUTPUT"
           echo "version=$VERSION"  >> "$GITHUB_OUTPUT"
           # A compact JSON array of the shelf, so the build matrix cannot carry a
           # second copy of the target list.
-          TARGETS="$(python3 -c 'import json,tomllib;print(json.dumps(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')"
+          TARGETS="$(python3 -c 'import json,sys,tomllib;sys.stdout.reconfigure(newline="\n");print(json.dumps(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')"
           echo "targets=$TARGETS"  >> "$GITHUB_OUTPUT"
           echo "shelf: $TARGETS"
           if [ "$TAG" != "v$VERSION" ]; then
@@ -181,7 +181,7 @@ jobs:
           # checksum a user is told to trust must describe the bytes this job is
           # about to upload, not the bytes some other runner once had.
           sha256sum -c SHA256SUMS
-          n_expected=$(python3 -c 'import tomllib;print(len(tomllib.load(open("../versions.toml","rb"))["engine"]["targets"]))')
+          n_expected=$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(len(tomllib.load(open("../versions.toml","rb"))["engine"]["targets"]))')
           n_got=$(ls -1 ./*.tar.gz | wc -l | tr -d ' ')
           echo "shelf: $n_got archive(s), expected $n_expected"
           if [ "$n_got" -ne "$n_expected" ]; then
@@ -217,7 +217,7 @@ jobs:
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort > /tmp/have.txt
           cat /tmp/have.txt
           n_archives=$(grep -c '\.tar\.gz$' /tmp/have.txt || true)
-          n_expected=$(python3 -c 'import tomllib;print(len(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')
+          n_expected=$(python3 -c 'import sys,tomllib;sys.stdout.reconfigure(newline="\n");print(len(tomllib.load(open("versions.toml","rb"))["engine"]["targets"]))')
           n_sums=$(grep -c '^SHA256SUMS$' /tmp/have.txt || true)
           echo "release $TAG: $n_archives archive(s) + $n_sums SHA256SUMS (expected $n_expected + 1)"
           if [ "$n_archives" -ne "$n_expected" ] || [ "$n_sums" -ne 1 ]; then

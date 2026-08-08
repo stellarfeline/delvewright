@@ -17,13 +17,19 @@
 //!
 //! # This is a partial zone, and here is exactly what is missing
 //!
-//! REMAKE §3 gives Z2 six more things, every one of which is a rule the
-//! vocabulary does not have yet: the boulder stair with its worn-tread lane
-//! (**W**), the safe pockets along it (**S**), the boulder jam (**D**), the
+//! REMAKE §3 gives Z2 six more things: the boulder stair with its worn-tread
+//! lane (**W**), the safe pockets along it (**S**), the boulder jam (**D**), the
 //! sally-port far-side bar (**F**), the spill shaft down to BF2 (**L**), and the
 //! boss-threshold motif (**M**). What is composed here is the zone's *spine* —
 //! the route in, the hazard that cannot be walked round, and the door at the end
 //! of it. The rest is named, not faked.
+//!
+//! **Five of those six are built rules** — `boulder_stair` carries both **W**
+//! and **S**, and `far_side_bar`, `drop_shaft` and `threshold_motif` are **F**,
+//! **L** and **M**. (This note previously said none of them existed; they landed
+//! in the W3/W4 families, and the claim was already stale when it was written.)
+//! What Z2 waits on is a zone-program round composing them, not vocabulary. Only
+//! the boulder jam (**D**) has no rule.
 //!
 //! # Gates (`tests/zones.rs`)
 //!
