@@ -25,7 +25,8 @@
 //! | `area.<area>.name` | each stage-1 area `name` |
 //! | `class.<class>.name` / `.blurb` | each stage-3 class |
 //! | `class.<class>.kit.<i>.name` | a kit item's display `name` (only if set) |
-//! | `npc.<npc>.name` | each stage-2 NPC `name` |
+//! | `npc.<npc>.name` | each stage-2 NPC `name` (see *entity display names* below) |
+//! | `actor.<actor>.name` | each stage-5 actor `name` (v0.6, only if set; see below) |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
@@ -52,6 +53,31 @@
 //! effect 0 → `fx.<quest>.oc.<obj>.0.seq.1.0.narrate`. Nesting is arbitrary-depth
 //! (a `move-actor.on_arrive` inside a `sequence` step nests both segments). Keys are
 //! purely position-derived → deterministic and stable across builds (ADR-0006).
+//!
+//! ## Entity display names are keyed by their TEXT, not by their site
+//!
+//! An NPC (`npc.<npc>.name`) and a scripted actor (`actor.<actor>.name`) are two
+//! DSL surfaces for the same thing a player reads: a nameplate over a body. One
+//! character routinely occupies both — a stage-2 NPC that stands and talks, plus
+//! one actor puppet per cutscene pose it is staged in. If each site owned its own
+//! key, a translator would be asked for `Polyphemus` five times and could answer
+//! differently each time, and the giant's name would **change as he walked into a
+//! cutscene** — a worse defect than the untranslated one, and an authored one.
+//!
+//! So the key of an entity display name is decided by its **canonical English
+//! text**: the first site (in this traversal's fixed order — NPCs before actors)
+//! declaring a given name owns the key, and every later site carrying the
+//! byte-identical name emits that same key. The inventory therefore asks for each
+//! distinct name exactly once, and two bodies a player reads as one character
+//! cannot render as two.
+//!
+//! Scope is deliberately the **entity display-name class only** (`npc.*.name`,
+//! `actor.*.name`). Prose — a narrate line, a dialogue label, an objective title —
+//! is context-bound and keeps one key per site: two English strings that happen to
+//! coincide may legitimately need different renderings. Wave-mob names
+//! (`wave.*.mob.*.name`) are the same shape and are **not** merged here: that is a
+//! generalization beyond the finding this rule closes, and it is an owner call
+//! because it retires keys live campaigns already translate.
 //!
 //! Player-visible strings only. Deliberately **excluded** (authoring context the
 //! player never sees, so translating them is pointless and out of scope): world
@@ -183,8 +209,9 @@ pub enum L10nKind {
 }
 
 /// An l10n sidecar document: `{ dsl_version, campaign_id, kind: "l10n", lang,
-/// content }`, mirroring the stage-doc envelope style. `content` is a flat map of
-/// [inventory](crate::l10n::inventory) key → translated string.
+/// content, source }`, mirroring the stage-doc envelope style. `content` is a flat
+/// map of [inventory](crate::l10n::inventory) key → translated string; `source`
+/// records the canonical English each of those translations was made **from**.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct L10nDoc {
@@ -199,6 +226,26 @@ pub struct L10nDoc {
     pub lang: String,
     /// Flat map of inventory key → translated string.
     pub content: BTreeMap<String, String>,
+    /// **Translation provenance**: inventory key → the canonical English that key
+    /// held when its [`Self::content`] row was written.
+    ///
+    /// Coverage validation proves the sidecar has a row for every key
+    /// (`DW0180`/`DW0181`), which is a statement about key SETS and says nothing
+    /// about whether a row still corresponds to the English it renders. Edit an
+    /// authored line and its translation is stale, present, applied, and wrong —
+    /// and nothing in the key sets moved. `source` is what makes that
+    /// **detectable** ([`validate_l10n_provenance`], `DW0187`) instead of audited.
+    ///
+    /// This is load-bearing for entity display names in particular, because their
+    /// key is owned by the first site declaring a given text (see the module
+    /// header): renaming ONE body can migrate a key's ownership to ANOTHER body,
+    /// so the row that goes wrong is not the row the author touched.
+    ///
+    /// Optional in the format — an older sidecar parses unchanged and simply
+    /// carries no provenance, which `DW0188` reports as an unguarded row count on
+    /// every run rather than letting it pass in silence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source: BTreeMap<String, String>,
 }
 
 /// The local part of a type-prefixed id: the segment after the first `/` (kebab
@@ -219,6 +266,13 @@ pub fn local_id(id: &str) -> &str {
 /// invoking `f(key, &mut value)` for each. The single traversal shared by
 /// [`inventory`] and [`localize`] — they cannot drift.
 pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
+    // Entity display names (a nameplate over a body) are keyed by their canonical
+    // English TEXT, not by their declaration site: canonical English → owning key.
+    // See the module header — one character routinely has one NPC identity and
+    // several actor puppets, and a per-site key would let its name be translated
+    // several ways. Filled in traversal order, so the NPC identity always owns the
+    // key and the puppets follow it.
+    let mut entity_names: BTreeMap<String, String> = BTreeMap::new();
     // Stage 1 — world title + area names.
     f("world.title", &mut c.world.content.title);
     for area in &mut c.world.content.areas {
@@ -251,9 +305,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
-    // Stage 2 — NPC names.
+    // Stage 2 — NPC names. First in the entity display-name class, so an NPC
+    // identity owns the key every actor puppet portraying it shares.
     for npc in &mut c.npcs.content.npcs {
-        let key = format!("npc.{}.name", local(npc.id.as_str()));
+        let key = entity_name_key(
+            &mut entity_names,
+            &npc.name,
+            format!("npc.{}.name", local(npc.id.as_str())),
+        );
         f(&key, &mut npc.name);
     }
     // Stage 4 — quest goals.
@@ -348,10 +407,20 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
-    // Stage 5 — v0.9 actor drops (task #179), keyed off the actor id exactly as
-    // a wave mob's drop is keyed off its wave.
+    // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops (task
+    // #179), keyed off the actor id exactly as a wave mob's drop is keyed off its
+    // wave.
     for a in &mut c.quests.content.actors {
         let al = local(a.id.as_str()).to_string();
+        // The puppet's own name (v0.6 `actors[].name`). Player-visible in every
+        // frame it stands in — a nameplate and, for a cutscene mannequin, the
+        // label the party reads while the scene plays — so it is as translatable
+        // as the stage-2 NPC name it usually duplicates, and shares that NPC's key
+        // when the two texts are identical (module header).
+        if let Some(name) = a.name.as_mut() {
+            let key = entity_name_key(&mut entity_names, name, format!("actor.{al}.name"));
+            f(&key, name);
+        }
         for (n, dr) in a.drops.iter_mut().enumerate() {
             if let Some(name) = dr.name_mut() {
                 f(&format!("actor.{al}.drop.{n}.name"), name);
@@ -376,6 +445,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     for (_stage, _path, keybase, eff) in effect_roots_mut(c) {
         effect_strings_deep(eff, &keybase, f);
     }
+}
+
+/// The key an entity display name is inventoried under: the key already claimed by
+/// an identical name earlier in the traversal, or `own` if this site is the first
+/// to carry that text (in which case it claims it for every later site).
+///
+/// The lookup is on the string as authored, captured **before** `f` may rewrite it
+/// ([`localize`] swaps the NPC's name to the target language, and the actor puppets
+/// that follow are still English at the moment they are looked up).
+fn entity_name_key(claimed: &mut BTreeMap<String, String>, text: &str, own: String) -> String {
+    claimed.entry(text.to_string()).or_insert(own).clone()
 }
 
 /// The authoritative key → canonical-English inventory derived from the stage
@@ -848,57 +928,13 @@ pub fn validate_tr_sigil(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> 
     d
 }
 
-/// The Minecraft language-file code for a declared language code — the
-/// `assets/delvewright/lang/<code>.json` filename stem the client loads for its own
-/// locale (spec-0029 §5).
-///
-/// Our codes are BCP-47-ish (`zh-cn`); Minecraft's are lowercase
-/// `<language>_<region>` (`zh_cn`). The mapping is an **explicit table**, never a
-/// mechanical `-`→`_` rewrite: a rewrite would happily invent `de_de` from `de-de`
-/// and equally happily invent a filename Minecraft never loads (`de` → `de`), and a
-/// lang file under a name no client asks for is a language silently dropped. An
-/// unmapped code is `DW0184`, a compile error naming this table.
-///
-/// Entries are the codes a delve has shipped or has been asked for, plus the major
-/// vanilla locales; extend the table (with the vanilla code verified against the
-/// client's own language list) rather than working around it.
-pub fn mc_lang_code(code: &str) -> Option<&'static str> {
-    Some(match code {
-        "en" | "en-us" => "en_us",
-        "en-gb" => "en_gb",
-        "zh-cn" => "zh_cn",
-        "zh-tw" => "zh_tw",
-        "zh-hk" => "zh_hk",
-        "ja" | "ja-jp" => "ja_jp",
-        "ko" | "ko-kr" => "ko_kr",
-        "de" | "de-de" => "de_de",
-        "fr" | "fr-fr" => "fr_fr",
-        "es" | "es-es" => "es_es",
-        "es-mx" => "es_mx",
-        "pt-br" => "pt_br",
-        "pt" | "pt-pt" => "pt_pt",
-        "ru" | "ru-ru" => "ru_ru",
-        "it" | "it-it" => "it_it",
-        "pl" | "pl-pl" => "pl_pl",
-        "nl" | "nl-nl" => "nl_nl",
-        "tr" | "tr-tr" => "tr_tr",
-        "uk" | "uk-ua" => "uk_ua",
-        "cs" | "cs-cz" => "cs_cz",
-        "sv" | "sv-se" => "sv_se",
-        "th" | "th-th" => "th_th",
-        "vi" | "vi-vn" => "vi_vn",
-        "id" | "id-id" => "id_id",
-        _ => return None,
-    })
-}
-
 /// Every declared-language code this build knows how to write a lang file for, in
 /// declaration order, as `(declared code, minecraft code)`. `Err` names the first
 /// unmapped code (`DW0184`) — a language is never silently dropped.
 pub fn declared_mc_codes(c: &Campaign) -> Result<Vec<(String, &'static str)>, Diagnostic> {
     let mut out = Vec::new();
     for lang in &c.world.content.languages {
-        match mc_lang_code(lang) {
+        match crate::mclang::mc_lang_code(lang) {
             Some(mc) => out.push((lang.clone(), mc)),
             None => {
                 return Err(Diagnostic::error(
@@ -909,15 +945,107 @@ pub fn declared_mc_codes(c: &Campaign) -> Result<Vec<(String, &'static str)>, Di
                         "declared language `{lang}` has no Minecraft language-file code — the \
                          resource pack has nowhere to write its \
                          `assets/delvewright/lang/<code>.json`, and the language would ship \
-                         invisible. Use a code in `dsl::l10n::mc_lang_code`'s table (e.g. \
-                         `zh-cn`, `ja-jp`, `de-de`), or add `{lang}` to that table with the \
-                         vanilla code verified against the 1.21.11 client's language list"
+                         invisible. Use a code the pinned 1.21.11 client really loads \
+                         (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's own asset index) \
+                         — e.g. `zh-cn`, `ja-jp`, `de-de`"
                     ),
                 ));
             }
         }
     }
     Ok(out)
+}
+
+/// **Translation provenance** (`DW0187` / `DW0188`): is each sidecar row still a
+/// translation of the English it renders?
+///
+/// [`validate_l10n`] proves the sidecar's key SET equals the inventory's. That is
+/// silent about whether a row still *corresponds* to its key: rewrite an authored
+/// line and its translation is present, applied and wrong, with no key moved. The
+/// sidecar's [`L10nDoc::source`] map closes it by recording the English each row
+/// was translated from, so the compiler can compare instead of a human auditing.
+///
+/// Two findings:
+///
+/// * `DW0187` — a recorded source differs from the key's canonical English (the
+///   row is stale), or names a key the sidecar does not translate at all (the
+///   provenance itself is stale).
+/// * `DW0188` — rows with no recorded provenance, **counted**. Those rows are
+///   unguarded, and saying so on every run is what keeps an unadopted sidecar
+///   from reading like a checked one. Warning tier: `source` is additive, and
+///   this is the one-version deprecation window before it is required.
+///
+/// The entity display-name rule makes this more than hygiene. A name key belongs
+/// to the first site declaring a given text, so renaming ONE body can migrate a
+/// key to ANOTHER — the row that goes stale is not the row the author edited, and
+/// the missing-key half of the move (`DW0180`) points somewhere else entirely.
+pub fn validate_l10n_provenance(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    if c.world.content.languages.is_empty() {
+        return d;
+    }
+    let inv = inventory(c);
+    for lang in &c.world.content.languages {
+        let Some(doc) = sidecars.get(lang) else {
+            continue; // absent sidecar is DW0180's finding, not this one's.
+        };
+        for (key, was) in &doc.source {
+            match inv.get(key) {
+                Some(now) if now == was => {}
+                Some(now) => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`{key}` was translated from {was:?} but now reads {now:?} — the \
+                         translation in `content` still renders the old line and would ship \
+                         attached to the new one. Re-translate `{key}` and update its `source` \
+                         (`tools/i18n-translate.py <campaign> --lang {lang}` does both). If a \
+                         RENAME surprised you here: an entity display name's key belongs to the \
+                         first body declaring that text, so renaming one body can hand its key \
+                         to another"
+                    ),
+                )),
+                None => d.push(Diagnostic::error(
+                    codes::L10N_STALE,
+                    "l10n",
+                    format!("l10n/{lang}.json#/source/{key}"),
+                    format!(
+                        "`source` records `{key}`, which is not in the string inventory — the \
+                         provenance is stale even if the translation is gone. Remove `{key}` \
+                         from `source` in `l10n/{lang}.json`"
+                    ),
+                )),
+            }
+        }
+        // Every row `source` does not cover is a row DW0187 cannot see. Report the
+        // count: an unadopted sidecar must never look like a checked one.
+        let unguarded = doc
+            .content
+            .keys()
+            .filter(|k| !doc.source.contains_key(*k))
+            .count();
+        if unguarded > 0 {
+            let total = doc.content.len();
+            d.push(Diagnostic::warning(
+                codes::L10N_PROVENANCE_MISSING,
+                "l10n",
+                format!("l10n/{lang}.json"),
+                format!(
+                    "{unguarded} of {total} translated rows record no `source`, so nothing can \
+                     tell whether they still translate the English they render — an edited line \
+                     leaves its translation present, applied and wrong, and no key moves. Run \
+                     `tools/i18n-translate.py <campaign> --lang {lang}` to record provenance for \
+                     the rows it already has. This warning is the one-version deprecation \
+                     window; `source` becomes required after it"
+                ),
+            ));
+        }
+    }
+    d
 }
 
 /// Coverage + envelope validation for every declared language's l10n sidecar

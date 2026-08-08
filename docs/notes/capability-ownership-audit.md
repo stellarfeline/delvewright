@@ -128,7 +128,7 @@ Recorded with the mechanism/decision test answered. **Distinguish a naming findi
 | 20 | `bonfire` | The **mechanism** is "a save-and-restore point with configurable side effects": it moves a checkpoint, runs an `on_rest` bundle, re-seats declared waves. All of that is general. The *name*, and the baked English `Bonfire`/`Rest and save`/`Save only`, are the genre decision. | **Naming + defaults, not structure.** Cheap. Its private dialog (#8) is the structural half. |
 | 21 | `shortcuts[]` | The mechanism is "a barrier openable once, permanently, from one side, with a reachability obligation". General and genuinely useful to any game. The souls framing is in the doc comment, not the shape. | **Correctly general, genre-flavoured name.** Cheap or leave. |
 | 22 | `Wave.respawns_on_rest`, `EncounterTier::{Elite,Boss}` | `respawns_on_rest` is a mechanism (re-seat on restore). `EncounterTier` is a *billing declaration* consumed by the validation ladder — but `boss`/`elite` are genre words for what is really "the tier the content claims, which the bot must測 against". | Naming. Low priority. |
-| 23 | Baked English defaults — `SEAL_HINT_DEFAULT`, `BOUNDARY_DEFAULT_MESSAGE`, `BONFIRE_PROMPT_EN`, `BONFIRE_REST_LABEL_EN`, `BONFIRE_SAVE_LABEL_EN`, plus unnamed literals (`"Waiting for the party — "`, `"New objective: "`, `"Objective complete: "`, `"Delve Complete"`, the `"NPC"` name fallback). | A creator cannot replace these, and a **baked default is not l10n-inventoried** — so a non-English delve ships English sentences unless every site is authored by hand. | **Structural, and a real S4 instance.** The generality test fails: another game cannot re-word them. |
+| 23 | Baked English defaults — ~~`SEAL_HINT_DEFAULT`~~, ~~`BOUNDARY_DEFAULT_MESSAGE`~~ (**both closed by spec-0029: they now read from `dsl::chrome`, which is inventoried**), `BONFIRE_PROMPT_EN`, `BONFIRE_REST_LABEL_EN`, `BONFIRE_SAVE_LABEL_EN`, plus unnamed literals (`"Waiting for the party — "`, `"New objective: "`, `"Objective complete: "`, `"Delve Complete"`, the `"NPC"` name fallback). | A creator cannot replace these, and a **baked default is not l10n-inventoried** — so a non-English delve ships English sentences unless every site is authored by hand. | **Structural, and a real S4 instance.** The generality test fails: another game cannot re-word them. |
 | 24 | `crates/grammar/src/library/bell/` — `barrow_shore.rs`, `chapel_ward.rs`, `cliff_road.rs`, `gate_ward.rs`, `hall_keep.rs`, `cistern_deep.rs` (1131 lines): **the zone programs of one specific campaign, inside the engine crate.** | By the owner's principle this is the largest open instance: one campaign's design compiled into the engine. | **Recorded, not judged.** This may well be deliberate — the grammar back end's first production workload. **A call for the owner. No move proposed.** |
 
 ## Process root cause, and why adoption is cheaper than it looks
@@ -220,7 +220,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 | Check | Binds today |
 |---|---|
 | A — every `summon minecraft:interaction`, keyed by enclosing fn | 9 sites |
-| B — every compiler-baked player-facing English string | 5 constants |
+| B — every compiler-baked player-facing English string | 3 constants (was 5; spec-0029 closed two) |
 | C — DSL structs declared separately with an identical field set | 2 groups |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 6 (enum, field) pairs |
 | E — every `Vec<QuestEffect>` bundle is reachable by some enumeration | 10 fields |
@@ -229,6 +229,12 @@ Demonstrated firing on the live instances: with `seal_fns` and
 `SEAL_HINT_DEFAULT` removed from the ledger — i.e. simulating `sealed_hint` being
 introduced today — A and B both go red and name it; with `on_unlock` removed, E
 goes red and names it. See the PR body for the transcripts.
+
+That transcript is now **historical for B**: spec-0029 moved `SEAL_HINT_DEFAULT`
+and `BOUNDARY_DEFAULT_MESSAGE` behind `dsl::chrome`, so neither is a baked literal
+any more and the ledger entries were dropped — the checker demanded it by name, which
+is the stale-exemption guard working on its first real occasion. The same demo
+reproduces today against any surviving entry (`BONFIRE_PROMPT_EN`).
 
 Check E is the one that would have caught #16b, and is the answer to "why did
 `check-effect-roots.py` not catch this": that gate greps for the five roots it

@@ -154,20 +154,6 @@ TEST_MOD = re.compile(r"^\s*mod tests\b")
 # ---------------------------------------------------------------------------
 
 BAKED_STRINGS = {
-    "SEAL_HINT_DEFAULT": (
-        "OPEN FINDING — the live instance. `close-gate`'s reply, baked in "
-        "`plan.rs`. Deliberately NOT l10n-inventoried (a compiler default is not a "
-        "translatable string), which means a delve shipping in another language "
-        "gets an English sentence on its boulder unless every `close-gate` authors "
-        "`sealed_hint` by hand. The general path — a `narrate` effect — is "
-        "inventoried by construction."
-    ),
-    "BOUNDARY_DEFAULT_MESSAGE": (
-        "OPEN FINDING. `world.boundary`'s return line. Same shape, same l10n "
-        "consequence, different verb. This is the precedent `sealed_hint`'s own doc "
-        "comment cites for baking a default — the pattern propagated by being "
-        "documented as correct."
-    ),
     "BONFIRE_PROMPT_EN": (
         "OPEN FINDING. Title of the bonfire's private rest dialog (see check A, "
         "`emit_quest_effect`)."

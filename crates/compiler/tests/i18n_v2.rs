@@ -157,11 +157,15 @@ fn ac1_a_declared_language_ships_its_lang_file_beside_english() {
     assert_eq!(en, zh, "a key in one language and not the other");
 }
 
-/// AC2 — every `en_us.json` value equals the English source for that key, as
-/// produced by `each_string`. Compared against a FRESH inventory of the stage
-/// docs, not against a fixture.
+/// AC2 — `en_us.json` is exactly the campaign's live inventory PLUS the
+/// compiler's own chrome, each half compared against its live source rather than
+/// a fixture: the inventory from a fresh `each_string` walk, the chrome from
+/// `dsl::chrome::english_entries`. The two halves are disjoint by construction
+/// (chrome lives under the reserved `delvewright.` prefix), and the test proves
+/// that too — a campaign key leaking into the chrome namespace, or chrome
+/// shadowing a campaign key, would show up here first.
 #[test]
-fn ac2_english_lang_file_is_the_live_inventory() {
+fn ac2_english_lang_file_is_the_live_inventory_plus_chrome() {
     let out = tmp("i18n-ac2");
     let dir = common::keep_trial_dir();
     build(&dir, &out, &[]);
@@ -169,9 +173,31 @@ fn ac2_english_lang_file_is_the_live_inventory() {
     let langs = lang_files(tree.get("resourcepack.zip").expect("resource pack"));
     let en = &langs["assets/delvewright/lang/en_us.json"];
     let inv = fresh_inventory(&dir);
+    let chrome = delvewright_dsl::chrome::english_entries();
     assert!(!inv.is_empty(), "AC2 binding: the inventory is empty");
-    println!("AC2 binding: {} inventory keys compared", inv.len());
-    assert_eq!(en, &inv, "en_us.json must BE the inventory, key and value");
+    assert!(!chrome.is_empty(), "AC2 binding: no chrome string binds");
+    println!(
+        "AC2 binding: {} inventory keys + {} chrome keys compared",
+        inv.len(),
+        chrome.len()
+    );
+    let prefix = delvewright_dsl::chrome::RESERVED_PREFIX;
+    let (campaign_half, chrome_half): (BTreeMap<_, _>, BTreeMap<_, _>) = en
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .partition(|(k, _)| !k.starts_with(prefix));
+    assert_eq!(
+        campaign_half, inv,
+        "the campaign half of en_us.json must BE the inventory, key and value"
+    );
+    assert_eq!(
+        chrome_half, chrome,
+        "the chrome half of en_us.json must BE the compiler's own English"
+    );
+    assert!(
+        inv.keys().all(|k| !k.starts_with(prefix)),
+        "no campaign l10n key may enter the reserved chrome namespace"
+    );
 }
 
 /// AC3 + AC4 — over EVERY shipped fixture: no authored string appears in the
@@ -325,8 +351,8 @@ fn ac5_an_unmappable_language_is_dw0184() {
         "the diagnostic names the language: {s}"
     );
     assert!(
-        s.contains("mc_lang_code"),
-        "the diagnostic names the mapping table: {s}"
+        s.contains("CLIENT_LANGS"),
+        "the diagnostic names the derived client language set: {s}"
     );
 }
 
@@ -538,4 +564,389 @@ fn a_lang_bake_ships_no_language_carrier() {
     }
     assert!(checked > 0, "binding: zero files checked");
     println!("bake binding: {checked} files checked for translate keys");
+}
+
+// ---------------------------------------------------------------------------
+// Compiler chrome (spec-0029 addendum, owner ruling 2026-08-06)
+// ---------------------------------------------------------------------------
+
+/// **The chrome hole, closed.** Every string the compiler writes itself — the
+/// eight product-chrome lines that never had an authored override, plus the five
+/// diegetic defaults it bakes when a campaign authors none — is emitted as a
+/// `{"translate": "delvewright.ui.…", "fallback": <English>}` component, and the
+/// English literal appears nowhere in the datapack outside such a fallback.
+///
+/// Before this, a player reading a delve in Chinese got `New objective: ` in
+/// English wrapped around a translated title.
+#[test]
+fn chrome_ships_as_components_not_literals() {
+    let out = tmp("i18n-chrome");
+    build(&common::keep_trial_dir(), &out, &[]);
+    let tree = read_tree(&out);
+
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    let mut literals = Vec::new();
+    for (path, bytes) in &tree {
+        if !path.starts_with("datapack/") {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes);
+        for c in delvewright_dsl::chrome::ALL {
+            if text.contains(c.key) {
+                seen.insert(c.key);
+            }
+            // The English may appear ONLY as a `fallback`. Any other occurrence is
+            // a literal a client cannot translate. Both the compact JSON the
+            // functions carry and the pretty-printed dialog JSON are stripped, so
+            // the assertion is about the VALUE's position, not about formatting.
+            let quoted = serde_json::to_string(c.en).unwrap();
+            let mut stripped = text.to_string();
+            for form in [
+                format!("\"fallback\": {quoted}"),
+                format!("\"fallback\":{quoted}"),
+                format!("fallback:{quoted}"),
+            ] {
+                stripped = stripped.replace(&form, "");
+            }
+            if stripped.contains(c.en) {
+                literals.push(format!("{path}: {:?}", c.en));
+            }
+        }
+    }
+    assert!(
+        literals.is_empty(),
+        "compiler chrome still ships as an untranslatable literal: {literals:#?}"
+    );
+    assert!(
+        !seen.is_empty(),
+        "chrome binding: zero chrome keys reached the datapack — an unbound pass"
+    );
+    println!(
+        "chrome binding: {} of {} chrome keys emitted by the keep-trial fixture",
+        seen.len(),
+        delvewright_dsl::chrome::ALL.len()
+    );
+    // The four the owner named, plus the two the fixture's own shape guarantees.
+    for c in [
+        delvewright_dsl::chrome::OBJECTIVE_NEW,
+        delvewright_dsl::chrome::OBJECTIVE_COMPLETE,
+        delvewright_dsl::chrome::CAMPAIGN_COMPLETE,
+        delvewright_dsl::chrome::CAMPAIGN_SIGNATURE,
+        delvewright_dsl::chrome::CAMPAIGN_BANNER,
+        delvewright_dsl::chrome::CLASS_TITLE,
+        delvewright_dsl::chrome::CLASS_BODY,
+    ] {
+        assert!(seen.contains(c.key), "`{}` was never emitted", c.key);
+    }
+}
+
+/// A framed value is **one key with `%s`**, carried by `with`, not a key
+/// concatenated with a component: word order belongs to the translator. This pins
+/// the three-part shape — key, fallback, arguments — on the objective toast, and
+/// that the argument is itself the objective's own translatable title.
+#[test]
+fn framed_chrome_uses_placeholders_and_with_arguments() {
+    let out = tmp("i18n-chrome-args");
+    build(&common::keep_trial_dir(), &out, &[]);
+    let tree = read_tree(&out);
+    let announce = tree
+        .iter()
+        .find(|(p, _)| p.contains("/function/announce_"))
+        .map(|(_, b)| String::from_utf8_lossy(b).to_string())
+        .expect("a titled objective announces itself");
+    let line = announce
+        .lines()
+        .find(|l| l.starts_with("tellraw"))
+        .expect("the announcement is a tellraw");
+    let comp: Value =
+        serde_json::from_str(line.trim_start_matches("tellraw @a ")).expect("one component");
+
+    assert_eq!(
+        comp["translate"],
+        delvewright_dsl::chrome::OBJECTIVE_NEW.key
+    );
+    assert_eq!(comp["fallback"], "New objective: %s");
+    let with = comp["with"].as_array().expect("the title rides in `with`");
+    assert_eq!(with.len(), 1, "one argument for one placeholder");
+    assert!(
+        with[0]["translate"]
+            .as_str()
+            .is_some_and(|k| k.starts_with("obj.") && k.ends_with(".title")),
+        "the argument is the objective's own translatable title: {comp}"
+    );
+    // The prefix and the title are ONE component now, so the title's own style
+    // must survive the merge (it was never bold beside the prefix).
+    assert_eq!(comp["bold"], true);
+    assert_eq!(with[0]["bold"], false);
+}
+
+/// Chrome is written into the language files the delve already ships, and only
+/// those. `en_us` carries every chrome key; a declared language carries the ones
+/// the compiler can really translate.
+#[test]
+fn chrome_rides_the_language_files_the_delve_ships() {
+    let out = tmp("i18n-chrome-lang");
+    build(&common::keep_trial_dir(), &out, &[]);
+    let langs = lang_files(read_tree(&out).get("resourcepack.zip").expect("pack"));
+    let prefix = delvewright_dsl::chrome::RESERVED_PREFIX;
+    let chrome_of = |file: &str| -> BTreeMap<String, String> {
+        langs[file]
+            .iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    };
+    let en = chrome_of("assets/delvewright/lang/en_us.json");
+    let zh = chrome_of("assets/delvewright/lang/zh_cn.json");
+    assert_eq!(en, delvewright_dsl::chrome::english_entries());
+    assert_eq!(zh, delvewright_dsl::chrome::lang_entries("zh_cn"));
+    assert_eq!(
+        zh.len(),
+        delvewright_dsl::chrome::ALL.len(),
+        "chrome binding: zh_cn must carry every chrome string, got {}",
+        zh.len()
+    );
+    println!(
+        "chrome lang binding: en_us {} keys, zh_cn {} keys",
+        en.len(),
+        zh.len()
+    );
+    // A `%s` in the English is a `%s` in the translation — a dropped placeholder
+    // is an objective title that never appears on screen.
+    for c in delvewright_dsl::chrome::ALL {
+        assert_eq!(
+            zh[c.key].matches("%s").count(),
+            c.args,
+            "`{}` loses a placeholder in zh_cn",
+            c.key
+        );
+    }
+}
+
+/// **`DW0186`** — a campaign sidecar may not define a chrome key. Chrome is
+/// compiler-owned end to end; a sidecar row under the reserved prefix would be
+/// written into the language file and silently replace product chrome.
+#[test]
+fn a_sidecar_may_not_define_a_chrome_key_dw0186() {
+    let dir = tmp("i18n-chrome-shadow");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let side = dir.join("l10n/zh-cn.json");
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&side).unwrap()).unwrap();
+    doc["content"][delvewright_dsl::chrome::CLASS_TITLE.key] = serde_json::json!("我的标题");
+    std::fs::write(&side, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+
+    let pf = common::prefabs_dir();
+    let r = Command::new(BIN)
+        .args([
+            "validate",
+            dir.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run delvec");
+    let s = String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr);
+    assert_eq!(
+        r.status.code(),
+        Some(1),
+        "a shadowed chrome key must fail: {s}"
+    );
+    assert!(s.contains("DW0186"), "{s}");
+    assert!(
+        s.contains(delvewright_dsl::chrome::CLASS_TITLE.key),
+        "the diagnostic names the offending key: {s}"
+    );
+}
+
+/// The control for `DW0186`: the same campaign, untouched, is clean. A guard that
+/// fires on everything proves nothing about the case it was written for.
+#[test]
+fn an_untouched_sidecar_raises_no_dw0186() {
+    let pf = common::prefabs_dir();
+    let r = Command::new(BIN)
+        .args([
+            "validate",
+            common::keep_trial_dir().to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run delvec");
+    let s = String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr);
+    assert!(!s.contains("DW0186"), "control campaign must be clean: {s}");
+}
+
+// ---------------------------------------------------------------------------
+// Translation provenance — DW0187 / DW0188
+// ---------------------------------------------------------------------------
+
+/// Read a campaign's sidecar, hand it to `f`, write it back.
+fn edit_sidecar(dir: &Path, f: impl FnOnce(&mut Value)) {
+    let p = dir.join("l10n/zh-cn.json");
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    f(&mut doc);
+    std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+}
+
+fn validate(dir: &Path) -> String {
+    let pf = common::prefabs_dir();
+    let r = Command::new(BIN)
+        .args([
+            "validate",
+            dir.to_str().unwrap(),
+            "--prefabs",
+            pf.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run delvec");
+    String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr)
+}
+
+/// **The general case.** Coverage proves the sidecar's key SET matches the
+/// inventory; it is silent about whether a row still translates the English it
+/// renders. Rewrite an authored line and the translation is present, applied and
+/// wrong, with no key moved — `DW0187` is what sees it.
+#[test]
+fn an_edited_line_makes_its_translation_stale_dw0187() {
+    let dir = tmp("i18n-stale-general");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let world = dir.join("world.json");
+    let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&world).unwrap()).unwrap();
+    doc["content"]["title"] = serde_json::json!("Trial of the Stone Keep");
+    std::fs::write(&world, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "an edited line must be caught: {s}");
+    assert!(
+        s.contains("world.title"),
+        "the diagnostic names the key: {s}"
+    );
+    assert!(
+        s.contains("Trial of the Stone Keep"),
+        "the diagnostic names what the line now reads: {s}"
+    );
+}
+
+/// **The ownership-migration case**, which the text-owned key scheme introduces:
+/// rename ONE body and the key migrates to ANOTHER body, so the row that goes
+/// stale is not the row the author touched. `DW0180` points at the newly-required
+/// key — somewhere else entirely — while `DW0187` points at the row that is
+/// actually wrong.
+#[test]
+fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
+    let dir = tmp("i18n-stale-migration");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+
+    // Two puppets with one name: the first owns the key, the second follows it.
+    let quests = dir.join("quests.json");
+    let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
+    q["dsl_version"] = serde_json::json!("0.9.0");
+    q["content"]["actors"] = serde_json::json!([
+        { "id": "actor/ram-a", "entity": "minecraft:sheep",
+          "name": "Ram of the Cave", "anchor": "anchor/hall" },
+        { "id": "actor/ram-b", "entity": "minecraft:sheep",
+          "name": "Ram of the Cave", "anchor": "anchor/hall" },
+    ]);
+    std::fs::write(&quests, serde_json::to_string_pretty(&q).unwrap()).unwrap();
+    edit_sidecar(&dir, |doc| {
+        doc["content"]["actor.ram-a.name"] = serde_json::json!("洞中公羊");
+        doc["source"]["actor.ram-a.name"] = serde_json::json!("Ram of the Cave");
+    });
+    assert!(
+        !validate(&dir).contains("DW0187"),
+        "control: the shared key is sound before the rename"
+    );
+
+    // Rename ONLY the first. Its key now holds the NEW text; the translation of
+    // the old text is still sitting on it, and `ram-b` needs a key of its own.
+    let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
+    q["content"]["actors"][0]["name"] = serde_json::json!("Bellwether of the Cave");
+    std::fs::write(&quests, serde_json::to_string_pretty(&q).unwrap()).unwrap();
+
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "the migrated key must be caught: {s}");
+    assert!(
+        s.contains("actor.ram-a.name") && s.contains("Bellwether of the Cave"),
+        "the diagnostic names the row that is wrong, not the one that is missing: {s}"
+    );
+    assert!(
+        s.contains("DW0180") && s.contains("actor.ram-b.name"),
+        "and the newly-required key is still reported: {s}"
+    );
+}
+
+/// Provenance that names a key the campaign no longer has is itself stale.
+#[test]
+fn provenance_for_a_vanished_key_is_dw0187() {
+    let dir = tmp("i18n-stale-orphan-source");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    edit_sidecar(&dir, |doc| {
+        doc["source"]["obj.trial.gone.title"] = serde_json::json!("Something Removed");
+    });
+    let s = validate(&dir);
+    assert!(s.contains("DW0187"), "{s}");
+    assert!(s.contains("obj.trial.gone.title"), "{s}");
+}
+
+/// **`DW0188` states the unguarded count.** A sidecar with no `source` is not
+/// checked by `DW0187`, and the point of the warning is that this can never be
+/// mistaken for a pass: it is a number, on every run, naming how many rows are
+/// unguarded out of how many exist.
+#[test]
+fn a_sidecar_without_provenance_reports_its_unguarded_count_dw0188() {
+    let dir = tmp("i18n-unguarded");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let rows = {
+        let p = dir.join("l10n/zh-cn.json");
+        let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let n = doc["content"].as_object().unwrap().len();
+        doc.as_object_mut().unwrap().remove("source");
+        std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+        n
+    };
+    assert!(rows > 0, "binding: the fixture sidecar translates nothing");
+
+    let s = validate(&dir);
+    assert!(
+        s.contains("DW0188"),
+        "an unguarded sidecar must say so: {s}"
+    );
+    assert!(
+        s.contains(&format!("{rows} of {rows} translated rows")),
+        "the warning states the count ({rows} rows): {s}"
+    );
+    println!("DW0188 binding: {rows} unguarded rows reported");
+}
+
+/// The control, and the binding count for `DW0187`: the shipped fixture records
+/// provenance for every row, so the guard really compares them and finds nothing.
+/// A sidecar that compared **zero** rows would be a green that binds to nothing.
+#[test]
+fn the_fixture_sidecar_is_fully_guarded_and_clean() {
+    let p = common::keep_trial_dir().join("l10n/zh-cn.json");
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+    let content = doc["content"].as_object().expect("content");
+    let source = doc["source"]
+        .as_object()
+        .expect("the fixture records provenance");
+    assert!(
+        !content.is_empty(),
+        "binding: the fixture translates nothing"
+    );
+    assert_eq!(
+        source.len(),
+        content.len(),
+        "DW0187 binding: every translated row must record what it came from"
+    );
+    println!(
+        "DW0187 binding: {} rows compared against the inventory",
+        source.len()
+    );
+
+    let s = validate(&common::keep_trial_dir());
+    assert!(!s.contains("DW0187"), "control campaign must be clean: {s}");
+    assert!(
+        !s.contains("DW0188"),
+        "control campaign must be fully guarded: {s}"
+    );
 }
