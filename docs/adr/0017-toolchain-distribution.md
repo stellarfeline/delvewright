@@ -189,9 +189,13 @@ So §4 now has a repository-side realisation, and the obligation is keyed to
 - `tools/assert-run-approved.sh` is the first step of any environment-gated job.
   It reads the run's own approval history and refuses when no approval names the
   environment. A run that was never held records none.
-- `tools/check-approval-gates.py` (CI, required) fails any environment-gated job
-  that lacks that assertion, asserts a *different* environment than it declares,
-  runs anything before it, or omits `actions: read`.
+A CI checker enforcing that assertion on every environment-gated job was built
+and then deliberately dropped (owner call, same day, on testability grounds: it
+would have policed a rule with exactly one instance). So the assertion is held
+by convention, not by construction — which is the thing this very section is
+about. It is recorded here rather than left to folklore: **if a second
+environment-gated job is ever added, it inherits nothing, and the checker is the
+work to redo.**
 
 ## Revisit triggers
 
