@@ -218,7 +218,19 @@ repo = "stellarfeline/delvewright-campaigns"
 # (substrate is `stone`, audit-clean). Deterministic (byte-identical regen);
 # `nobodys-cave` builds green (DW0313/DW0311/DW0312 clear) with the flock on solid
 # floor. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "e4c58c0f78f2e0e949c625697c3f5b04df125aff"
+#
+# Re-pinned to content `main` after content #39 — the island storybook stops
+# carrying numbers nothing can keep true. Required by the new version-literal
+# clauses in `tools/check-storybook-version.py`: at the previous pin those
+# clauses reported six real findings across the two island editions (a stale
+# campaign-version stamp in each, a `docker run` line naming `:v1.0.0` in each,
+# and two translated version numbers in the zh-cn gloss), which is the v1.1.0
+# release defect reproducing. No prefab, catalog or stage document moved in this
+# range — the diff is the two READMEs plus a new `l10n/zh-cn.json` sidecar — so
+# every built world and datapack is unchanged apart from `manifest.json`'s
+# recorded `content_sha`. Bump on future content merges per the RE-PIN
+# CONVENTION.
+sha = "e0498b34c905a7615dde1bdb33d61e449b91e139"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
