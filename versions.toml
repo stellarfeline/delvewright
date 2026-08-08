@@ -225,11 +225,15 @@ repo = "stellarfeline/delvewright-campaigns"
 # clauses reported six real findings across the two island editions (a stale
 # campaign-version stamp in each, a `docker run` line naming `:v1.0.0` in each,
 # and two translated version numbers in the zh-cn gloss), which is the v1.1.0
-# release defect reproducing. No prefab, catalog or stage document moved in this
-# range — the diff is the two READMEs plus a new `l10n/zh-cn.json` sidecar — so
-# every built world and datapack is unchanged apart from `manifest.json`'s
-# recorded `content_sha`. Bump on future content merges per the RE-PIN
-# CONVENTION.
+# release defect reproducing. The range is five files: the two READMEs, a new
+# `source` provenance map appended to `l10n/zh-cn.json` (content #34 — 436 added
+# lines, no `content` row touched), the content repo's own `release.yml`
+# (content #37/#38: the engine package is `delvec` now, and the release stopped
+# baking one language), and its `versions.toml`. No prefab, catalog or stage
+# document moved, and `source` is read only by `DW0187`/`DW0188` — never by
+# emission — so every built world and datapack is unchanged apart from
+# `manifest.json`'s recorded `content_sha`. Nothing here reads the content
+# repo's workflows. Bump on future content merges per the RE-PIN CONVENTION.
 sha = "e0498b34c905a7615dde1bdb33d61e449b91e139"
 
 [render]
