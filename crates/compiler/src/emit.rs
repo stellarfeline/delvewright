@@ -436,12 +436,38 @@ pub fn build_with_warnings(
             // The per-batch call stays: it names WHICH batch broke the boundary,
             // which this one cannot. This is the floor under both — run last,
             // over the world that actually ships.
-            crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
-                |e| BuildFailure::Diagnostic {
-                    code: e.code,
-                    message: e.message,
-                },
-            )?;
+            //
+            // WARNING TIER, for one `dsl_version` (owner ruling, 2026-08-08).
+            // This is a NEW obligation on content that was already written and
+            // already played: campaigns that declare no `horizon` and no
+            // `boundary` are bare rooms in void, and they are the ones it
+            // catches. Landing it as an error would red a campaign the owner has
+            // played, on the day it merged. So it takes the window this project
+            // already gives new obligations on existing content — `DW0188`
+            // (translation provenance) and `DW0465` (the cast ledger) both say so
+            // in their own text — and hardens after it.
+            //
+            // The window is the only thing softened. The proof, the model and the
+            // message are unchanged, and the per-batch call inside the edit replay
+            // is still an ERROR: an edit that strips a boundary is a regression in
+            // work the author is doing right now, not a legacy debt.
+            if let Err(e) =
+                crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan))
+            {
+                warnings.push(delvewright_dsl::Diagnostic::warning(
+                    e.code,
+                    "build",
+                    String::new(),
+                    format!(
+                        "{} — this is the one-version deprecation window: the boundary proof \
+                         now runs over every assembled world, not only over one that a stage-7 \
+                         edit script touched, and it hardens into an error after it. Declare a \
+                         `boundary` (spec-0013) so a player who walks out is returned, or give \
+                         the scene ground its own edge",
+                        e.message
+                    ),
+                ));
+            }
 
             let (moves, actor_moves) = if crate::nav::needs_world(plan) {
                 let m = crate::nav::plan_moves(plan, &world)?;
