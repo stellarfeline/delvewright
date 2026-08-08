@@ -49,10 +49,24 @@
 # The provider name carries CAPABILITY, not just wire format. A provider that
 # cannot accept a style anchor must fail loudly rather than silently drop it.
 #
+# A provider that cannot honour a flag REFUSES it — `--seed` on a seedless
+# provider is an error, never a dropped parameter.
+#
 # [refimg]
-# provider = "ideogram-v3"                     # only supported value today
-# model = "ideogram-v3"
-# api_key_env = "DELVEWRIGHT_REFIMG_API_KEY"
-# rendering_speed = "TURBO"                    # TURBO | DEFAULT | QUALITY
-# resolution = "1344x768"                      # optional, provider-validated
+# provider = "gemini-native"                   # "gemini-native" | "ideogram-v3"
+# model = "gemini-3.1-flash-image"
+# api_key_env = "DELVEWRIGHT_GEMINI_API_KEY"   # one var per provider, not one shared
+# image_size = "2K"                            # gemini: 0.5K | 1K | 2K | 4K
+# aspect_ratio = "16:9"
 # timeout_seconds = 180                        # optional (default 180)
+#
+# Ideogram instead — it is the one with a `seed` and a style-CODE anchor, but its
+# anchored model (3.0) sits far below the Gemini line on blind-preference
+# leaderboards, and its generate response was MEASURED not to return a style code,
+# so the code has to be read off the web UI:
+#
+# provider = "ideogram-v3"
+# model = "ideogram-v3"
+# api_key_env = "DELVEWRIGHT_IDEOGRAM_API_KEY"
+# rendering_speed = "TURBO"                    # TURBO | DEFAULT | QUALITY
+# resolution = "1344x768"
