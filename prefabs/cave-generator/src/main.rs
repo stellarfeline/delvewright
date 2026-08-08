@@ -478,11 +478,19 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// The cave tileset walk-plane convention (spec-0026 §2): substrate + floor
+    /// top local y=1, feet at local y=2 — the `cave:socket` datum. Consumed by
+    /// the compiler's per-area placement datum (`walk_ref_y − walk_y`; missing
+    /// in a non-void horizon is `DW0367`).
+    walk_y: i32,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
     license: LicenseJson,
 }
+
+/// The cave walk plane (feet cell) local y — see [`MetaJson::walk_y`].
+const WALK_Y: i32 = 2;
 
 fn a_pos(pos: [i32; 3], facing: Option<&str>) -> AnchorJson {
     AnchorJson {
@@ -1655,6 +1663,7 @@ fn write_piece(out: &Path, spec: &Spec) {
 
     let meta = MetaJson {
         prefab_id: format!("prefab/{}", spec.id),
+        walk_y: WALK_Y,
         structure: StructureJson {
             file: format!("{}.nbt", spec.id),
             id: spec.id.into(),

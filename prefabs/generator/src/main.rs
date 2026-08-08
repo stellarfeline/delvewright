@@ -177,11 +177,19 @@ struct LicenseJson {
 struct MetaJson {
     prefab_id: String,
     structure: StructureJson,
+    /// The keep tileset walk-plane convention (spec-0026 §2): floor top local
+    /// y=0, feet at local y=1 — the socket datum every keep piece is authored
+    /// against. Consumed by the compiler's per-area placement datum
+    /// (`walk_ref_y − walk_y`; missing in a non-void horizon is `DW0367`).
+    walk_y: i32,
     anchors: BTreeMap<String, AnchorJson>,
     connectors: Vec<ConnectorJson>,
     lighting: LightingJson,
     license: LicenseJson,
 }
+
+/// The keep walk plane (feet cell) local y — see [`MetaJson::walk_y`].
+const WALK_Y: i32 = 1;
 
 /// Declarative piece spec.
 struct Spec {
@@ -449,6 +457,7 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
+        walk_y: WALK_Y,
         anchors,
         connectors,
         lighting: LightingJson {

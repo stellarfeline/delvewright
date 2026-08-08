@@ -20,6 +20,11 @@ whole library:
 | `final_state` | `minecraft:air`  |
 | `joint`       | `aligned`        |
 
+**Walk-plane datum (spec-0026 §2)**: the keep convention is floor top local
+y=0, feet at local **y=1** — declared as `walk_y: 1` in every piece's metadata
+(generator-emitted). The compiler places a non-void-horizon area at
+`walk_ref_y − walk_y` and refuses a piece without the declaration (`DW0367`).
+
 - **Symmetric.** `name == target == keep:socket`, so every socket is both a
   receiver and an initiator: any two sockets connect. Which sockets expand (draw
   a new piece) vs. which are consumed as the incoming connection is decided by

@@ -245,6 +245,16 @@ fn write_piece(out: &Path, spec: &Spec) {
             data_version: DATA_VERSION,
             generator: GENERATOR.into(),
         },
+        // The piece's walk-plane datum = its lowest socket floor + 1 (the
+        // convention the empirical spec-0026 probe verified: shore 3, plinth
+        // 11; the gatehouse carries both datums and declares its shore side).
+        walk_y: spec
+            .doors
+            .iter()
+            .map(|d| d.1)
+            .min()
+            .expect("piece has doors")
+            + 1,
         waterline_y: spec.waterline_y,
         anchors,
         connectors,

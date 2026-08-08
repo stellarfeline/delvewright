@@ -92,6 +92,22 @@ pub const DW_EDIT_GATE_REGION: &str = "DW0353";
 /// placed (a declared minimum-light guarantee, not decoration).
 pub const DW_EDIT_SUPPORT: &str = "DW0354";
 
+/// A `flood` envelope the ambient water never enters (spec-0030): the horizon
+/// has no ambient water at all, or the declared region holds no cell the sea
+/// can reach — every cell of it sits above the flood level, is already solid,
+/// or is walled off from the sea. The declaration binds nothing, so it proves
+/// nothing: an unbound gate is a finding, never a pass (CLAUDE.md). Build-tier
+/// (exit 3).
+pub const DW_FLOOD_INERT: &str = "DW0394";
+
+/// The water a `flood` admitted does not stop inside the declared envelope
+/// (spec-0030): from a wetted cell it flows on — sideways at the same level, or
+/// down — into an air cell of a **placed piece** that no `flood` region covers,
+/// at or below the flood level. The shoreline is then not where the author said
+/// it is, and the model would ship dry ground the sea takes. Build-tier
+/// (exit 3).
+pub const DW_FLOOD_ESCAPES: &str = "DW0395";
+
 /// A failed edit replay: a stable diagnostic code plus a message that names the
 /// offending batch.
 #[derive(Debug)]
@@ -185,6 +201,13 @@ fn replay_with(
     // cells a `relight` verb placed (those are declared lighting, error tier).
     let mut support_watch: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut fixture_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+    // spec-0030 tideline bookkeeping, cumulative across batches: every `flood`
+    // declaration (batch, region, envelope cells) and the union of their
+    // envelopes. The tideline invariant re-proves over ALL of them after every
+    // batch, so a later batch that re-cuts the bank — opening a new channel or
+    // drying a wetted cell — is red where it happened, not silently shipped.
+    let mut flood_decls: Vec<(String, String, BTreeSet<[i32; 3]>)> = Vec::new();
+    let mut flood_envelopes: BTreeSet<[i32; 3]> = BTreeSet::new();
 
     for batch in &env.content.batches {
         let bid = batch.id.as_str();
@@ -253,6 +276,49 @@ fn replay_with(
                     let cells = used_region(bid, &regions, region.as_str())?;
                     for &cell in cells {
                         write_cell(&mut assembled, &mut batch_writes, cell, "minecraft:air");
+                    }
+                }
+                WorldEdit::Flood { region } => {
+                    let cells = used_region(bid, &regions, region.as_str())?.clone();
+                    // No ambient water anywhere in this world — the verb has
+                    // nothing to admit, and a no-op declaration is a finding.
+                    let tide = Tide::of_plan(plan).ok_or_else(|| EditError {
+                        code: DW_FLOOD_INERT,
+                        message: format!(
+                            "world-edits batch `{bid}`: `flood` on region `{region}` in a world \
+                             whose `horizon` has no ambient water at all — there is no sea to \
+                             admit, so the declaration binds nothing. `flood` states that a \
+                             stretch of ground is deliberately at the waterline; a world with \
+                             no waterline cannot host one. Declare an ocean `horizon`, or drop \
+                             the verb"
+                        ),
+                    })?;
+                    let wet = flood_reach(&tide, &assembled.blocks, &cells);
+                    if wet.is_empty() {
+                        let above = cells.iter().filter(|c| c[1] > tide.flood).count();
+                        return Err(EditError {
+                            code: DW_FLOOD_INERT,
+                            message: format!(
+                                "world-edits batch `{bid}`: `flood` on region `{region}` admits \
+                                 the sea into NO cell — the declaration binds nothing, so it \
+                                 proves nothing (a zero binding is a finding, never a pass). Of \
+                                 its {} cell(s), {above} sit above the flood level (y={}) where \
+                                 water never rises, and the rest are outside every placed piece \
+                                 (where the generator's sea already is), already solid, or \
+                                 walled off from the ambient water. `flood` does not place \
+                                 water: it admits the sea and the compiler computes the reach. \
+                                 Extend the envelope down to the shoreline the sea actually \
+                                 touches, or drop the verb — do NOT reach for it to quiet an \
+                                 unrelated diagnostic",
+                                cells.len(),
+                                tide.flood,
+                            ),
+                        });
+                    }
+                    flood_envelopes.extend(cells.iter().copied());
+                    flood_decls.push((bid.to_string(), region.as_str().to_string(), cells));
+                    for &cell in &wet {
+                        write_cell(&mut assembled, &mut batch_writes, cell, "minecraft:water");
                     }
                 }
                 WorldEdit::Morph { region, op } => {
@@ -385,6 +451,7 @@ fn replay_with(
         // relight re-entry (spec-0010), walkability re-proof, boundary safety
         // (spec-0017). Each failure names the batch.
         if enforce {
+            check_tideline(plan, &assembled, bid, &flood_decls, &flood_envelopes)?;
             check_batch_invariants(plan, &assembled, bid, &batch_writes)?;
             check_support(
                 &assembled,
@@ -411,6 +478,80 @@ fn replay_with(
         batches,
         warnings,
     }))
+}
+
+/// **The tideline invariant** (spec-0030), re-proved after every batch over
+/// every `flood` declaration made so far.
+///
+/// A `flood` is a claim about the delivered world — *the sea comes in exactly
+/// here* — and the claim has to survive the rest of the script. Two halves:
+///
+/// 1. **The water is where the model says it is.** Every cell the ambient sea
+///    reaches inside a declared envelope holds water in the current model. The
+///    verb materialized them; a later batch that filled one back in with rock
+///    without shrinking the envelope has changed the shoreline, and this is
+///    where that shows up.
+/// 2. **The water stops where the author said.** No wetted cell has a
+///    downstream air neighbour, at or below the flood level, inside a placed
+///    piece and outside every declared envelope ([`DW_FLOOD_ESCAPES`]).
+///
+/// Runs only for a script that declares at least one `flood`: an ocean campaign
+/// that declares none keeps `DW0364`'s absolute rule and its exact pre-spec-0030
+/// output. This is deliberate — the strict default is that no standable cell may
+/// sit under the waterline at all, and `flood` is the only way to trade a piece
+/// of that ground for water, at the price of these two proofs.
+fn check_tideline(
+    plan: &Plan,
+    assembled: &Assembled,
+    bid: &str,
+    decls: &[(String, String, BTreeSet<[i32; 3]>)],
+    envelopes: &BTreeSet<[i32; 3]>,
+) -> Result<(), EditError> {
+    if decls.is_empty() {
+        return Ok(());
+    }
+    let Some(tide) = Tide::of_plan(plan) else {
+        return Ok(()); // unreachable: the verb itself rejects a waterless world
+    };
+    for (decl_batch, region, envelope) in decls {
+        let wet = flood_reach(&tide, &assembled.blocks, envelope);
+        if let Some(dry) = wet.iter().find(|c| {
+            !assembled
+                .blocks
+                .get(*c)
+                .is_some_and(|b| assembled::is_water(b))
+        }) {
+            return Err(EditError {
+                code: DW_FLOOD_ESCAPES,
+                message: format!(
+                    "after world-edits batch `{bid}`: the sea reaches [{}, {}, {}] inside the \
+                     `flood` envelope `{region}` (declared in batch `{decl_batch}`) but the \
+                     model has no water there — a later batch changed the shoreline out from \
+                     under the declaration. Re-cut the bank before the `flood`, or move the \
+                     `flood` after it: a tideline the script contradicts is exactly the \
+                     model-says-dry divergence `DW0364` exists to refuse",
+                    dry[0], dry[1], dry[2]
+                ),
+            });
+        }
+        if let Some(leak) = flood_escape(&tide, &assembled.blocks, &wet, envelopes) {
+            return Err(EditError {
+                code: DW_FLOOD_ESCAPES,
+                message: format!(
+                    "after world-edits batch `{bid}`: the water admitted by `flood` on region \
+                     `{region}` (batch `{decl_batch}`) does not stop inside it — it flows on \
+                     into [{}, {}, {}], an air cell of a placed piece at or below the flood \
+                     level (y={}) that no `flood` envelope covers. The delivered world wets \
+                     that cell while every compile-time proof reads it as dry air (the #149 \
+                     class, `DW0364`). A `flood` envelope is a claim about where the shoreline \
+                     ENDS: widen it to the cells the sea really takes, or dam the channel — \
+                     never leave the overflow undeclared",
+                    leak[0], leak[1], leak[2], tide.flood
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Re-prove the post-edit invariants over the current assembled world, naming
@@ -775,6 +916,163 @@ pub fn anchor_starts(plan: &Plan) -> Vec<[i32; 3]> {
 /// removes the cell (absent = air) and always clears any open-gate marking; a
 /// non-air write over an authored open gate likewise closes it (the runtime
 /// `setblock` replaces the whole block, state included).
+/// The ambient-water geometry a `flood` verb reasons against (spec-0030): the
+/// horizon's flood level, the lowest ambient water layer, and the placed-piece
+/// AABBs `/place template` overwrites (inside a box the piece decides what is
+/// there — outside it, and below it, the generator's water does).
+///
+/// `None` for a horizon with no ambient water (`void`, `flatland`): there is no
+/// sea to admit, which is why `flood` in such a world is `DW0394` rather than a
+/// silent no-op.
+struct Tide {
+    /// Y of the topmost ambient water block (`crate::horizon::SEA_LEVEL`).
+    flood: i32,
+    /// Y of the topmost ambient solid block; water occupies `floor_top+1..=flood`.
+    floor_top: i32,
+    /// Inclusive world AABBs of every placed piece, in plan order.
+    boxes: Vec<([i32; 3], [i32; 3])>,
+}
+
+impl Tide {
+    fn of_plan(plan: &Plan) -> Option<Tide> {
+        let h = crate::horizon::of_campaign(plan.campaign);
+        let flood = crate::horizon::flood_level(&h)?;
+        Some(Tide {
+            flood,
+            floor_top: crate::horizon::SEA_FLOOR_TOP_Y,
+            boxes: plan
+                .areas
+                .iter()
+                .flat_map(|a| a.pieces.iter().map(|p| p.bbox()))
+                .collect(),
+        })
+    }
+
+    /// Whether `c` falls inside a placed piece's AABB.
+    fn covered(&self, c: [i32; 3]) -> bool {
+        self.boxes
+            .iter()
+            .any(|(lo, hi)| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
+    }
+
+    /// Whether water can occupy `c` at all: the cell holds no block, or holds
+    /// water already (a cell an earlier `flood`, or the prefab itself,
+    /// authored). Every other block dams the flow, exactly as vanilla has it
+    /// ([`assembled::occupancy_of`]).
+    fn waterable(&self, blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
+        blocks.get(&c).is_none_or(|b| assembled::is_water(b))
+    }
+
+    /// Whether `c` is **ambient** water: inside the generator's water layers and
+    /// not inside a placed piece's box.
+    fn ambient_water(&self, blocks: &BTreeMap<[i32; 3], String>, c: [i32; 3]) -> bool {
+        c[1] > self.floor_top && c[1] <= self.flood && !self.covered(c) && self.waterable(blocks, c)
+    }
+
+    /// The cells water at `c` flows **into**: the four cardinal neighbours at the
+    /// same level, and the cell directly below. (Vanilla's drop-seeking
+    /// direction preference is omitted — spreading every way only ever wets
+    /// more, which is the safe direction, exactly as [`assembled`]'s flood
+    /// model argues.)
+    fn downstream(c: [i32; 3]) -> [[i32; 3]; 5] {
+        [
+            [c[0] - 1, c[1], c[2]],
+            [c[0] + 1, c[1], c[2]],
+            [c[0], c[1], c[2] - 1],
+            [c[0], c[1], c[2] + 1],
+            [c[0], c[1] - 1, c[2]],
+        ]
+    }
+
+    /// The cells water can arrive at `c` **from**: the four cardinal neighbours
+    /// at the same level, and the cell directly above (the inverse of
+    /// [`Tide::downstream`]).
+    fn upstream(c: [i32; 3]) -> [[i32; 3]; 5] {
+        [
+            [c[0] - 1, c[1], c[2]],
+            [c[0] + 1, c[1], c[2]],
+            [c[0], c[1], c[2] - 1],
+            [c[0], c[1], c[2] + 1],
+            [c[0], c[1] + 1, c[2]],
+        ]
+    }
+}
+
+/// Which cells of `envelope` the ambient sea reaches (spec-0030) — the
+/// **computed** half of a `flood` declaration: the author names an envelope, the
+/// compiler answers what the water does inside it.
+///
+/// Seeded from ambient water bordering the envelope, propagated through
+/// waterable envelope cells at or below the flood level, cardinal-sideways and
+/// downward. Deterministic (`BTreeSet` frontier, fixed neighbour order).
+///
+/// Confined to the envelope **by design**: the author's declaration is the
+/// bound, and water that would carry on past it is not silently swallowed — it
+/// is [`DW_FLOOD_ESCAPES`].
+fn flood_reach(
+    tide: &Tide,
+    blocks: &BTreeMap<[i32; 3], String>,
+    envelope: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    // Only cells a placed piece TOOK from the sea are in play: outside every
+    // piece box, below the flood level, the generator already puts water there
+    // and no model of ours claims otherwise. That is also exactly `DW0364`'s
+    // domain, so `flood` governs precisely the cells `DW0364` guards — never a
+    // cell more.
+    let admits = |c: [i32; 3]| {
+        c[1] <= tide.flood && envelope.contains(&c) && tide.covered(c) && tide.waterable(blocks, c)
+    };
+    let mut wet: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
+    for &c in envelope {
+        if !admits(c) {
+            continue;
+        }
+        if Tide::upstream(c)
+            .iter()
+            .any(|&n| tide.ambient_water(blocks, n))
+            && wet.insert(c)
+        {
+            queue.push_back(c);
+        }
+    }
+    while let Some(c) = queue.pop_front() {
+        for n in Tide::downstream(c) {
+            if admits(n) && wet.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    wet
+}
+
+/// The first cell (deterministic order) the admitted water would flow on into
+/// **outside** every declared envelope while still inside a placed piece, at or
+/// below the flood level ([`DW_FLOOD_ESCAPES`]).
+///
+/// Cells outside every piece box are not escapes: below the flood level they
+/// *are* the ambient sea, which is where the water came from.
+fn flood_escape(
+    tide: &Tide,
+    blocks: &BTreeMap<[i32; 3], String>,
+    wet: &BTreeSet<[i32; 3]>,
+    declared: &BTreeSet<[i32; 3]>,
+) -> Option<[i32; 3]> {
+    let mut leaks: BTreeSet<[i32; 3]> = BTreeSet::new();
+    for &c in wet {
+        for n in Tide::downstream(c) {
+            if n[1] <= tide.flood
+                && !declared.contains(&n)
+                && tide.covered(n)
+                && blocks.get(&n).is_none()
+            {
+                leaks.insert(n);
+            }
+        }
+    }
+    leaks.into_iter().next()
+}
+
 fn write_cell(
     assembled: &mut Assembled,
     batch_writes: &mut BTreeMap<[i32; 3], String>,

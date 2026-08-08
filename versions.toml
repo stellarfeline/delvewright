@@ -206,19 +206,24 @@ targets = [
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the cave **gravity-floor substrate** regen (content #10)
-# — the tileset half of task #42, pairing with the compiler's gravity-settled model
-# (#75) and the DW0313 despawn gate (#77). Every enclosed cave piece now lays a
-# hidden non-falling `stone` substrate under each sand/gravel floor cell, so the
-# sand/gravel surface (a first-class content need) survives the `the_void` world
-# instead of despawning. The substrate lifts each piece +1 (size, socket, anchor
-# Ys shift together; the solver's mating absorbs the offset). `cave-den`'s
-# `anchor/wave` is removed (its interior is all corridor) and `cave-cavern` gains
-# one in a valid east alcove; every enclosed `.nbt` body changes, palette unchanged
-# (substrate is `stone`, audit-clean). Deterministic (byte-identical regen);
-# `nobodys-cave` builds green (DW0313/DW0311/DW0312 clear) with the flock on solid
-# floor. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "87a8ade1412b6961e1c67081a5c8f9fdbacf6b2e"
+# The spec-0026 **walk_y backfill** (content branch
+# `worker/spec-0026-walk-y-backfill`, content PR #21), which is content `main`
+# 885fd5d plus one additive line per prefab: every prefab metadata file declares
+# its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
+# verified empirically from the .nbt geometry, and the island set re-derived
+# over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
+# per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
+# §2, DW0367). The engine and content changes land as a pair: this delvec
+# cannot place a non-void horizon against a library without walk_y, and content
+# main carries walk_y on zero of its 36 prefabs.
+#
+# This is a BRANCH sha, not a content `main` tip, and it is the only kind of pin
+# that satisfies both constraints at once — it is a strict descendant of content
+# main (nothing this branch's own re-pins landed, up to and including the island
+# storybook marker and the v1.0.0 engine re-pin, is rolled back), and it carries
+# the metadata this engine requires. RE-PIN to the content `main` tip the moment
+# content #21 merges (RE-PIN CONVENTION above).
+sha = "5a23d902419e18ff6f0836eb32dd2af3fc987670"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
