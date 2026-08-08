@@ -494,6 +494,15 @@ actually reviews in. She does not read long documents (CLAUDE.md PR policy); a
 design she cannot see is a design she cannot approve, and every problem it would
 have caught gets paid for twice once stages 5–6 are written against it.
 
+- **Which images these are** (owner correction, 2026-08-07): at THIS gate they are
+  **reference images** — concept art drawn from the scene description *before any
+  prefab exists*, so she is confirming the design, not a build. A **render** is a
+  candidate prefab imaged by `delve-render`, and belongs to contact-sheet curation
+  later. Two stages, two producers; building prefabs first and rendering them
+  inverts the gate. `tools/refimg.py` draws reference images when a provider is
+  configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
+  human in the loop for prompt iteration.
+
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
 - Prefer the **player-POV** shots (below) for near view. An orbit render answers
