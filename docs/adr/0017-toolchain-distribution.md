@@ -154,6 +154,45 @@ count.
 - ADR-0014's M4 bootstrap has the shelf it was written against, in the shape it
   described.
 
+### What happened in practice — 2026-08-08, first release (v1.1.0)
+
+The Decision above is unchanged and stands; this records where its **realisation**
+diverged, because §4's phrase "prevented **by construction**, not by convention"
+turned out to describe two halves with very different footing.
+
+The containment half held exactly as written: `CARGO_REGISTRY_TOKEN` existed only
+as an environment secret, the repository had no repository-level secrets, and
+exactly one job in the whole repository declared an environment — so no other job
+could ever obtain the token.
+
+The approval half did not exist. The `crates-io` environment had been created to
+hold the secret, but its required-reviewer rule was never saved
+(`protection_rules: []`). Nothing paused. A `v1.1.0` tag push published
+`delvewright-dsl 0.1.0` and `delvec 1.1.0` to crates.io with no review, through a
+job named "publish to crates.io (owner approval)". The artifacts were verified
+correct afterwards — published tree byte-identical to the tag, both distribution
+channels compiling the island campaign identically — so the payload was right and
+only the control failed. crates.io versions cannot be deleted, so v1.1.0 stands
+and the tag must not be re-cut.
+
+The generalisable part is not "someone forgot a checkbox". It is that **every
+element that made this gate look real lived in the repository, and the single
+element that made it bind did not** — the same out-of-band shape that
+`tools/check-required-contexts.py` exists for one door further out. A gate whose
+binding no artifact can observe is indistinguishable from a vacuous one, and this
+project's own doctrine already says a green gate that binds to nothing is not a
+pass.
+
+So §4 now has a repository-side realisation, and the obligation is keyed to
+`environment:` — the object class — rather than to the job that was burned:
+
+- `tools/assert-run-approved.sh` is the first step of any environment-gated job.
+  It reads the run's own approval history and refuses when no approval names the
+  environment. A run that was never held records none.
+- `tools/check-approval-gates.py` (CI, required) fails any environment-gated job
+  that lacks that assertion, asserts a *different* environment than it declares,
+  runs anything before it, or omits `actions: read`.
+
 ## Revisit triggers
 
 - `delve-render` gains a self-contained runtime story (see §3).
