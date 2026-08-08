@@ -167,44 +167,19 @@ pub struct DaylightError {
     pub message: String,
 }
 
-/// The vendored `entity_type` tag table: tag id → its member entity ids.
-fn entity_tags() -> &'static BTreeMap<String, BTreeSet<String>> {
-    static TAGS: std::sync::LazyLock<BTreeMap<String, BTreeSet<String>>> =
-        std::sync::LazyLock::new(|| {
-            let raw = include_str!("../data/entity-tags-1.21.11.json");
-            let parsed: BTreeMap<String, Vec<String>> =
-                serde_json::from_str(raw).expect("vendored entity-type tags are valid JSON");
-            parsed
-                .into_iter()
-                .map(|(k, v)| (k, v.into_iter().collect()))
-                .collect()
-        });
-    &TAGS
-}
-
-/// Normalize a DSL entity id to its namespaced form (`zombie` → `minecraft:zombie`),
-/// which is how the vendored tags spell every member.
-fn namespaced(entity: &str) -> String {
-    if entity.contains(':') {
-        entity.to_string()
-    } else {
-        format!("minecraft:{entity}")
-    }
-}
-
 /// Whether vanilla burns this entity type in daylight: in
 /// `#minecraft:burn_in_daylight` and not [`FIRE_IMMUNE`].
+///
+/// The vendored tag table now lives in [`crate::registry`] — it is vanilla
+/// registry data, and `DW0452`/`DW0453` read it too.
 pub fn burns_in_daylight(entity: &str) -> bool {
-    let id = namespaced(entity);
-    !FIRE_IMMUNE.contains(&id.as_str())
-        && entity_tags()
-            .get(BURN_IN_DAYLIGHT_TAG)
-            .is_some_and(|members| members.contains(&id))
+    !FIRE_IMMUNE.contains(&crate::registry::namespaced_entity(entity).as_str())
+        && crate::registry::entity_in_tag(entity, BURN_IN_DAYLIGHT_TAG)
 }
 
 /// Whether a helmet stops this entity type's burn (everything except a phantom).
 fn helmet_helps(entity: &str) -> bool {
-    !HELMET_PROOF.contains(&namespaced(entity).as_str())
+    !HELMET_PROOF.contains(&crate::registry::namespaced_entity(entity).as_str())
 }
 
 /// Whether a `(time, weather)` state runs the sun-burn tick at a sky-open cell.

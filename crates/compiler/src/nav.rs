@@ -556,6 +556,12 @@ pub struct MovePlan {
     pub to_anchor: String,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
+    /// The A* **cell** path this leg walks, start to target inclusive — the route
+    /// before [`resample`] turns it into per-tick positions. Kept because the
+    /// per-tick positions answer *where the body is* while a traversal proof
+    /// ([`crate::traversal`]) must ask *what move the body made*: which cell it
+    /// entered, and which cell it stepped up onto.
+    pub cells: Vec<[i32; 3]>,
     /// Per-tick world positions along the walked path.
     pub waypoints: Vec<[f64; 3]>,
     /// Per-waypoint yaw (degrees), the bearing of the segment the body is walking
@@ -800,7 +806,8 @@ impl World {
     /// fence: the use-gate cells are folded into the tall-barrier set, and the
     /// seating flood neither seats a mob in a gate threshold nor spills through
     /// one. Scripted walks (`move-npc` / `move-actor`) deliberately do NOT use
-    /// this view — see [`plan_moves`]. A world with no use-gates is returned
+    /// this view — see [`plan_moves`], and [`crate::traversal`]'s `DW0452` for
+    /// the proof that keeps that choice honest. A world with no use-gates is returned
     /// unchanged in content (call sites skip the clone via
     /// [`World::has_use_gates`]).
     pub fn without_gate_use(&self) -> World {
@@ -1584,14 +1591,21 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 /// content-keyed driver, planned from the first occurrence's origin (documented
 /// limitation of the content key).
 ///
-/// **Use-gate cells are walkable edges here** (task #59): a scripted walk is a
-/// compiler-emitted, supervised tp polyline fired by a campaign beat, and the
-/// beat's fiction controls the gate (the island ram leaves its pen only after the
-/// player has opened the pen gate to reach it). Routing through the openable
-/// threshold is strictly more faithful than the old full-solid model, which
-/// "proved" the same legs by hopping the body over a fence-top. Only autonomous
-/// placement (wave seating) uses the no-gate-use view — a spawned mob really
-/// cannot pass a closed gate on its own.
+/// **Use-gate cells are walkable edges here** (task #59): routing through the
+/// openable threshold is strictly more faithful than the old full-solid model,
+/// which "proved" the same legs by hopping the body over a fence-top. Only
+/// autonomous placement (wave seating) uses the no-gate-use view — a spawned mob
+/// really cannot pass a closed gate on its own.
+///
+/// This edge used to be justified by "the beat's fiction controls the gate" (the
+/// island ram leaves its pen only after the player has opened the pen gate to
+/// reach it). **Nothing proved that fiction**, and island round 21 is what it
+/// cost: the mountain pen's gate shipped `open=false` and sixteen legs walked
+/// through it, in a cell the owner herself had to squeeze around. The edge is
+/// still available here — a route that names the offending cell is a better
+/// diagnostic than an unroutable [`DW_MOVE_UNROUTABLE`] — but
+/// [`crate::traversal`] now fails the build on it (`DW0452`) unless the gate is
+/// genuinely open in the world the delve ships.
 pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError> {
     let mut out = Vec::new();
     let mut seen: BTreeSet<(String, String, String)> = BTreeSet::new();
@@ -1779,6 +1793,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, NavError>
             npc: npc.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
             target,
+            cells,
             waypoints,
             yaws,
             gate_key: gkey,
@@ -1823,6 +1838,9 @@ pub struct ActorMovePlan {
     pub to_anchor: String,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
+    /// The A* **cell** path this leg walks, start to target inclusive — see
+    /// [`MovePlan::cells`].
+    pub cells: Vec<[i32; 3]>,
     /// Per-tick world positions along the walked path.
     pub waypoints: Vec<[f64; 3]>,
     /// Per-waypoint yaw (degrees), tangent to the path (facing the next step).
@@ -2219,6 +2237,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
             actor: actor.as_str().to_string(),
             to_anchor: to_anchor.as_str().to_string(),
             target,
+            cells,
             waypoints,
             yaws,
             gate_key: gkey,
