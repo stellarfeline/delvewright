@@ -452,30 +452,18 @@ pub fn build_with_warnings(
             // runtime rescue that this proof deliberately does not read — being
             // teleported back after falling out is not the guarantee.
             //
-            // OPEN FINDING (2026-08-08), the reason five `v06_trap_payloads`
-            // fixtures are red on this branch. `anchor_starts` roots reachability
-            // at EVERY resolved anchor, each snapped to the nearest standable
-            // cell within `nav::SNAP_RADIUS` (3) by squared distance and NOTHING
-            // else — the snap does not care that solid geometry stands between
-            // the anchor and the cell it lands on. So an anchor on a room's
-            // ceiling (which every `collapse` payload must declare) snaps UP
-            // through the ceiling onto the room's ROOF, a component the party can
-            // never walk to, and this proof then demands that roof have a safe
-            // edge. A free-standing prefab in a void world can never satisfy
-            // that: its roof is by construction a bare platform. Demonstrated:
-            // the twelve sibling fixtures share the identical geometry and are
-            // clean, so the interior walk region IS boundary-safe and the roof is
-            // a disconnected component; and lowering one anchor from local y=4 to
-            // y=3 (floor now nearer than roof) makes the red vanish.
-            // Neither remedy the diagnostic names reaches it — `boundary` is
-            // inert here by design (above), and `horizon: ocean` only re-files
-            // the same roof under the stranding branch. Fixing it means deciding
-            // what this proof's walk region IS (party spawn/checkpoint roots, or
-            // an anchor snap confined to the declaring piece's AABB the way
-            // `World::confined_standable_cells` already confines wave seating
-            // after the same class of leak, task #41). Both are design calls on
-            // an already-shipped helper — `anchor_starts` also roots the relight
-            // region — so they are owner-scoped, not a worker's to pick.
+            // The walk region this proof examines is rooted at every resolved
+            // anchor, SEATED INSIDE THE PIECE THAT DECLARES IT
+            // (`crate::nav::AnchorRoot`). That confinement is load-bearing here
+            // and was the finding this call site was born with: an unconfined
+            // nearest-standable snap ignores solid geometry, so an anchor a
+            // `collapse` payload must declare in the ceiling snapped UP through
+            // it onto the room's ROOF — and this proof then demanded a safe edge
+            // on a bare platform in a void world, which no free-standing prefab
+            // can satisfy. Five `v06_trap_payloads` fixtures were red for exactly
+            // that, while their twelve siblings — identical geometry, anchors one
+            // block lower — were green, which is what proved the interior walk
+            // region boundary-safe and the roof a disconnected component.
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
                     code: e.code,
@@ -3796,7 +3784,9 @@ fn plan_wave_spawns(
             rings.insert(w.id.as_str().to_string(), centre);
             continue;
         }
-        let bounds = wave_piece_bounds(plan, area, anchor);
+        // The room the wave's mobs must stay inside, so the placement flood-fill
+        // never crosses a socket seam (task #41).
+        let bounds = plan.piece_bounds(area, anchor);
         let cells = world.confined_standable_cells(anchor, bounds);
         if cells.len() < need {
             return Err(BuildFailure::Diagnostic {
@@ -3908,23 +3898,6 @@ fn plan_aggro_edge_spawns(
         cells.extend(picked);
     }
     Ok((cells, centre))
-}
-
-/// The AABB of the assembled piece carrying a wave's spawn anchor — the room the
-/// wave's mobs must stay inside, so the placement flood-fill never crosses a socket
-/// seam. Falls back to the whole area's bounds if the anchor sits in no single
-/// piece box (defensive; a single-prefab area has exactly one piece == the area).
-fn wave_piece_bounds(plan: &Plan, area_id: &str, anchor: [i32; 3]) -> ([i32; 3], [i32; 3]) {
-    let Some(area) = plan.areas.iter().find(|a| a.area_id == area_id) else {
-        return (anchor, anchor);
-    };
-    for piece in &area.pieces {
-        let (lo, hi) = piece.bbox();
-        if (0..3).all(|i| lo[i] <= anchor[i] && anchor[i] <= hi[i]) {
-            return (lo, hi);
-        }
-    }
-    area.bounds()
 }
 
 /// The absolute spawn position of a wave: the world coords of its `anchor`,
