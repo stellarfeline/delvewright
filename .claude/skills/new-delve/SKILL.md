@@ -4,7 +4,7 @@ description: Generate a complete playable Minecraft delve from a creative prompt
 version: 1.1.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
-verified_with: 1.0.0
+verified_with: 1.1.0
 ---
 
 # /new-delve — the Delvewright generation front-end (ADR-0012)

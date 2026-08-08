@@ -15,7 +15,7 @@ name = "delvec"
 # storybook markers and the skill's `verified_with`. check-versions.sh binds it
 # to `[engine] version` in versions.toml, and release.yml refuses a `v*` tag
 # whose name disagrees with it.
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 # See the note in crates/dsl/Cargo.toml: the toolchain we actually build on.
 rust-version = "1.97.1"
