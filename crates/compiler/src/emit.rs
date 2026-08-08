@@ -328,6 +328,11 @@ pub fn build_with_warnings(
     // emitted alongside the branch paths. Empty for a campaign with no declared
     // branch points, so nothing moves for anybody who has not opted in.
     let mut branch_waypoints: Vec<(String, Value)> = Vec::new();
+    // The traversal proof's binding ledger (`compiler::traversal`), filled inside
+    // the world block below. `None` for a campaign that assembles no world —
+    // which is not the same fact as "examined nothing", so the artifact is
+    // omitted entirely rather than emitted claiming a zero it never measured.
+    let mut traversal_gate: Option<crate::traversal::TraversalGate> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -436,6 +441,15 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
+                // Task #50: refuse to place a wrong-side answer on a side the
+                // geometry does not name (DW0425) — BEFORE the route proofs. A
+                // door whose two sides are not even distinguishable is a
+                // structural problem with the declaration, and reporting it under
+                // the route proof's name (`DW0374`, "opening it must pay") would
+                // send the author looking at their level layout instead.
+                check_shortcut_sides(plan)?;
+                // …and every click trigger must land on something (DW0426).
+                check_trigger_bodies(plan)?;
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
@@ -588,6 +602,23 @@ pub fn build_with_warnings(
                         message: e.message,
                     })?,
             );
+            // …and the move that got the body there must be one the body can
+            // make (DW0452/DW0453, island round 21). `clearance` proves where a
+            // body IS; this proves what it DID. The two island sightings it
+            // exists for: eight sheep walking through a closed fence gate the
+            // owner could not walk through herself, and a sheep leaving the
+            // beach fold by stepping onto its wall's full-cube course instead of
+            // using the pen's opening. Capabilities come from the entity, so a
+            // spider routed over a wall stays silent and a sheep does not.
+            let (traversal_warnings, gate) =
+                crate::traversal::check_traversal(plan, &world, &moves, &actor_moves).map_err(
+                    |e| BuildFailure::Diagnostic {
+                        code: e.code,
+                        message: e.message,
+                    },
+                )?;
+            warnings.extend(traversal_warnings);
+            traversal_gate = Some(gate);
             // Seat each wave mob on a validated standable cell near its anchor, in
             // room only (DW0312 if the room lacks the footing) — or, for a
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
@@ -766,8 +797,15 @@ pub fn build_with_warnings(
     // here so `DW0494` fails the build before a single function is emitted.
     let branch_transport = branch_transport_overlay(plan)?;
 
+    // spec-0029 addendum: the compiler's own on-screen strings. The default
+    // multi-language build leaves them tagged with their `delvewright.ui.…` key
+    // (the pack's lang files carry every language); a `--lang` bake, which ships no
+    // lang files, puts the baked language's text on the component instead.
+    let chrome = delvewright_dsl::Chrome::for_build(language);
+
     let functions = emit_functions(
         plan,
+        &chrome,
         &sentinels,
         &moves,
         &actor_moves,
@@ -793,7 +831,7 @@ pub fn build_with_warnings(
     }
 
     // dialogs
-    for (name, value) in emit_dialogs(plan) {
+    for (name, value) in emit_dialogs(plan, &chrome) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/dialog/{name}.json"),
@@ -919,11 +957,18 @@ pub fn build_with_warnings(
     // campaign uses the `narrate` `art` style — baked only when needed, so a
     // non-art campaign's pack is byte-identical.
     let art = crate::atmos::uses_art(plan.campaign);
-    let extra_assets = if art {
+    let mut extra_assets = if art {
         crate::atmos::art_font_assets()
     } else {
         BTreeMap::new()
     };
+    // i18n v2 (spec-0029 §2): the pack is also the language carrier. One
+    // `assets/delvewright/lang/<mc_code>.json` per declared language plus
+    // `en_us.json`, so a client that speaks one of them auto-selects it; every
+    // other client — and every player who declines the pack — reads the
+    // `fallback` English riding on each component.
+    let lang_files = lang_assets(plan, input_bytes, language)?;
+    extra_assets.extend(lang_files);
     let resource_pack_sha1 = if skins.is_empty() && extra_assets.is_empty() {
         None
     } else {
@@ -932,7 +977,7 @@ pub fn build_with_warnings(
         out.insert("resourcepack.zip".to_string(), zip);
         out.insert(
             "SKINS.md".to_string(),
-            pack_note(&sha1, skins, art).into_bytes(),
+            pack_note(&sha1, skins, art, &plan.campaign.world.content.languages).into_bytes(),
         );
         Some(sha1)
     };
@@ -972,6 +1017,17 @@ pub fn build_with_warnings(
             wp,
         );
     }
+    // The traversal proof's binding ledger (`compiler::traversal`,
+    // playtest-methodology.md rule 1): how many legs and route cells it examined,
+    // per locomotion class, and which of its rules bind at all. A green that
+    // matched nothing must be legible as such WITHOUT the reader re-deriving it
+    // from an empty diagnostics list — and the capability axis is its own way to
+    // bind to nothing, since every class that carries an exemption is a class
+    // some rule does not examine. `gate_use.cells` counts every non-gate-opening
+    // body regardless of class, so the count itself shows that rule is total.
+    if let Some(gate) = &traversal_gate {
+        put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
     let manifest = emit_manifest(
@@ -984,15 +1040,217 @@ pub fn build_with_warnings(
     );
     put_json(&mut out, "manifest.json", &manifest);
 
+    // ---- untranslated-literal scan (DW0185, spec-0029) ----
+    // Feature-blind and last, exactly like the call-graph integrity check above:
+    // every authored player-visible string entered this build carrying its l10n
+    // key (`dsl::tag_translatables`), and an emitter either lowered it into a text
+    // component (`tr` / `snbt_component`) or read it as a named exclusion
+    // (`plain`). A tag still present in the finished tree is a site that did
+    // neither — a string that would ship as an untranslatable literal. This is the
+    // whole reason spec-0029's risk is an invariant rather than an audit.
+    check_untranslated_literals(&out, &extra_assets)?;
+
     warnings.extend(pacing);
     Ok((out, warnings))
+}
+
+/// The `assets/delvewright/lang/<mc_code>.json` assets this delve ships
+/// (spec-0029 §2): `en_us.json` from the campaign's own canonical-English
+/// inventory, and one file per declared language from its `l10n/<code>.json`
+/// sidecar. Empty — no lang files, no behaviour change — for a campaign that
+/// declares no languages, whose components' `fallback` already is the whole story.
+///
+/// Every file is a flat `{key: string}` map in [`BTreeMap`] order (ADR-0006), and
+/// the key sets are **equal** across languages by construction: each is checked
+/// against the same inventory, and a mismatch fails the build rather than shipping
+/// a language with a hole in it.
+/// A single-language `--lang` bake (spec-0029 §4) ships no lang files at all: its
+/// strings were swapped before emission, so there is nothing for a client to
+/// select between.
+fn lang_assets(
+    plan: &Plan,
+    input_bytes: &BTreeMap<String, Vec<u8>>,
+    language: Option<&str>,
+) -> Result<BTreeMap<String, Vec<u8>>, BuildFailure> {
+    if language.is_some_and(|l| l != delvewright_dsl::CANONICAL_LANG) {
+        return Ok(BTreeMap::new());
+    }
+    let c = plan.campaign;
+    let declared = delvewright_dsl::declared_mc_codes(c).map_err(|d| BuildFailure::Diagnostic {
+        code: delvewright_dsl::codes::LANG_CODE_UNMAPPED,
+        message: format!("{}: {}", d.path, d.message),
+    })?;
+    let mut out = BTreeMap::new();
+    if declared.is_empty() {
+        return Ok(out);
+    }
+    // The campaign reaching emission is tagged, so its inventory values are
+    // translation tags; `plain` recovers the canonical English each tag carries.
+    // Derived from the live inventory, never from a fixture (spec-0029 AC2).
+    let english: BTreeMap<String, String> = delvewright_dsl::l10n_inventory(c)
+        .into_iter()
+        .map(|(k, v)| (k, plain(&v).to_string()))
+        .collect();
+    // Each file is the campaign's keys plus the compiler's own chrome
+    // (`dsl::chrome`, spec-0029 addendum). The two key spaces are disjoint by
+    // construction — chrome lives under the reserved `delvewright.` prefix, which
+    // the l10n key scheme cannot produce and `DW0186` forbids a sidecar from
+    // writing — so the merge can never shadow a campaign string.
+    let mut put = |mc: &str, map: &BTreeMap<String, String>, chrome: BTreeMap<String, String>| {
+        let mut merged = map.clone();
+        merged.extend(chrome);
+        let mut bytes = serde_json::to_vec_pretty(&merged).expect("lang map serializes");
+        bytes.push(b'\n');
+        out.insert(format!("assets/delvewright/lang/{mc}.json"), bytes);
+    };
+    put(
+        "en_us",
+        &english,
+        delvewright_dsl::chrome::english_entries(),
+    );
+
+    for (lang, mc) in declared {
+        let path = format!("l10n/{lang}.json");
+        let Some(raw) = input_bytes.get(&path) else {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "declared language `{lang}` has no `{path}` among the build inputs, so the \
+                     resource pack cannot carry its `assets/delvewright/lang/{mc}.json` — add \
+                     the sidecar, or remove `{lang}` from `world.languages`"
+                ),
+            });
+        };
+        let doc: delvewright_dsl::L10nDoc =
+            serde_json::from_slice(raw).map_err(|e| BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!("`{path}` is not a readable l10n sidecar: {e}"),
+            })?;
+        // The key sets must be EQUAL. Validation already proved it (DW0180/DW0181),
+        // but the pack is where a hole becomes a player reading a raw key, so the
+        // emitter proves it again over the bytes it is about to write.
+        if let Some(missing) = english.keys().find(|k| !doc.content.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_MISSING,
+                message: format!(
+                    "`{path}` has no translation for `{missing}`, so \
+                     `assets/delvewright/lang/{mc}.json` would ship a hole a `{lang}` client \
+                     renders as a raw key — add `{missing}` to the sidecar"
+                ),
+            });
+        }
+        if let Some(orphan) = doc.content.keys().find(|k| !english.contains_key(*k)) {
+            return Err(BuildFailure::Diagnostic {
+                code: delvewright_dsl::codes::L10N_ORPHAN,
+                message: format!(
+                    "`{path}` carries `{orphan}`, which is not in the string inventory — remove \
+                     it, so `assets/delvewright/lang/{mc}.json` and `en_us.json` carry exactly \
+                     the same keys"
+                ),
+            });
+        }
+        // Chrome for a language the compiler has no table for is ABSENT rather
+        // than English-under-a-translated-name: the client falls through to
+        // `en_us.json` (or to the component's own fallback, for a player who
+        // declined the pack) and reads English. Honest, and never disguised.
+        put(mc, &doc.content, delvewright_dsl::chrome::lang_entries(mc));
+    }
+    Ok(out)
+}
+
+/// `DW0185`: no emitted byte may still carry a translation tag. See
+/// [`DW_UNTRANSLATED_LITERAL`] for what a hit means and how to fix it.
+///
+/// Public so the spec-0029 test suite can drive it against a synthetic tree: the
+/// only way to produce a leak from a real campaign is a defective emitter, and a
+/// red that needs a defective emitter to exist is a red nobody can re-run.
+pub fn check_untranslated_literals(
+    out: &BuildOutput,
+    pack_assets: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), BuildFailure> {
+    // EVERY offending file, not the first: a leak is usually one emitter used from
+    // several places, and a one-at-a-time diagnostic turns one fix into ten builds.
+    let mut hits: Vec<String> = Vec::new();
+    // The resource pack is scanned as its own assets rather than through the zip:
+    // the zip embeds PNG bytes, and a byte scan of compressed/binary payloads is a
+    // scan whose result depends on what a prefab happens to contain.
+    for (path, bytes) in out.iter().chain(pack_assets.iter()) {
+        // Classified, not guessed. A build output is either compiler-authored TEXT
+        // — which this check owns — or a verbatim copy of a binary input asset,
+        // which carries no authored string because the compiler never writes one
+        // into it. Anything else is an output nobody has classified: it fails
+        // here, so a new binary artifact cannot quietly opt out of the check.
+        if is_verbatim_binary_output(path) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Err(BuildFailure::Diagnostic {
+                code: DW_UNTRANSLATED_LITERAL,
+                message: format!(
+                    "`{path}` is not UTF-8 text and is not a known verbatim binary output, so \
+                     the untranslated-literal scan cannot read it. Classify it in \
+                     `emit::is_verbatim_binary_output` (and say why in \
+                     `docs/reference/compiler.md`) if it is a byte copy of an input asset"
+                ),
+            });
+        };
+        if !delvewright_dsl::has_tr_sigil(text) {
+            continue;
+        }
+        // Name the offending key and the line, so the fix is mechanical.
+        let (key, line) = text
+            .lines()
+            .find_map(|l| {
+                let i = l.find(delvewright_dsl::TR_SIGIL)?;
+                let rest = &l[i + delvewright_dsl::TR_SIGIL.len_utf8()..];
+                let k = rest.split(delvewright_dsl::TR_SIGIL).next()?;
+                let shown: String = l.chars().take(160).collect();
+                Some((k.to_string(), shown.replace(delvewright_dsl::TR_SIGIL, "⟦")))
+            })
+            .unwrap_or_else(|| ("<unknown>".to_string(), String::new()));
+        hits.push(format!("  {path}: `{key}` in: {line}"));
+    }
+    if hits.is_empty() {
+        return Ok(());
+    }
+    let n = hits.len();
+    let shown = hits.iter().take(25).cloned().collect::<Vec<_>>().join("\n");
+    Err(BuildFailure::Diagnostic {
+        code: DW_UNTRANSLATED_LITERAL,
+        message: format!(
+            "{n} emitted file(s) carry an authored player-visible string outside a text \
+             component, so it would ship as a literal no client can translate. Lower each \
+             through `emit::tr` / `emit::snbt_component` (which emit \
+             `{{\"translate\":\"<key>\",\"fallback\":\"<English>\"}}`); if the site is genuinely \
+             not a component and not read by a player — a manifest field, a reviewer \
+             chronicle, `critical-path.json`, a generated PackTest source — read the string \
+             through `dsl::l10n::plain` and add the site to the named-exclusion table in \
+             `docs/reference/compiler.md`.\n{shown}"
+        ),
+    })
+}
+
+/// Whether a build output is a **verbatim copy of a binary input asset** rather
+/// than compiler-authored text: a prefab structure `.nbt`, an NPC-skin PNG, the
+/// art-font atlas, and the resource-pack zip that packages them (whose own
+/// compiler-authored members — the lang files, the font provider — are scanned
+/// separately, before zipping). The compiler writes no authored string into any of
+/// these, so they are outside the `DW0185` scan; everything else must be readable
+/// text, and a new output that is neither fails the scan rather than skipping it.
+fn is_verbatim_binary_output(path: &str) -> bool {
+    path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip"
 }
 
 /// The `SKINS.md` build-output note: how the packaging task wires the emitted
 /// resource pack into the delve image (itzg env), plus the pack SHA-1. The pack
 /// carries the mannequin NPC skins (spec-0009) and/or the `delve:art` title font
 /// (spec-0014), depending on what the campaign uses.
-fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String {
+fn pack_note(
+    sha1: &str,
+    skins: &BTreeMap<String, Vec<u8>>,
+    art: bool,
+    languages: &[String],
+) -> String {
     let mut s = String::new();
     s.push_str("# Delve resource pack\n\n");
     s.push_str(
@@ -1017,7 +1275,21 @@ fn pack_note(sha1: &str, skins: &BTreeMap<String, Vec<u8>>, art: bool) -> String
         s.push_str(
             "Art-title font (spec-0014): `delve:art` — an original 5x7 pixel bitmap\n\
              font at `assets/delve/font/art.json` (+ `assets/delve/textures/font/art.png`),\n\
-             used by `narrate` `style: art`.\n",
+             used by `narrate` `style: art`.\n\n",
+        );
+    }
+    // The pack is the LANGUAGE CARRIER now (spec-0029), not optional dressing, and
+    // the person wiring it up is the one who needs to know what declining it costs.
+    // Host-facing prose only — no key scheme, no pipeline (CLAUDE.md audience
+    // separation).
+    if !languages.is_empty() {
+        s.push_str("Languages: this delve's in-game text ships in English plus ");
+        s.push_str(&languages.join(", "));
+        s.push_str(
+            ".\nA player's own client language is used automatically; anything else\n\
+             reads English. A player who DECLINES the resource-pack prompt reads\n\
+             English too, and the delve is fully playable that way — the pack adds\n\
+             the other languages, it is never required to finish the delve.\n",
         );
     }
     s
@@ -1116,6 +1388,20 @@ fn sealing_commands(
         // Box-garden death policy: dying must never cost quest items (a dropped
         // trial key despawns in 5 minutes = softlock for a human player).
         "gamerule keep_inventory true".to_string(),
+        // The delve's own machinery must not narrate itself. Dialogue options are
+        // `trigger`-type objectives (`dw.dlg_<npc>`, `dw.class`), so every option a
+        // player picks runs `/trigger` and vanilla answers it in chat — "Triggered
+        // [dw.dlg_antiphos]" beside the line the character just said (owner
+        // playtest, 2026-08-07). Command feedback is engine implementation reaching
+        // the player, which is what every other rule in this list exists to stop;
+        // it was simply missing from the seal. NOT version-gated: a campaign at any
+        // `dsl_version` wants its dialogue to stop announcing its scoreboard.
+        // rcon replies to the caller regardless of this rule, so the harness and
+        // `validation/` are unaffected, and the creator overlay's log stamp is
+        // `log_admin_commands`, a different rule. (The legacy camelCase spelling is
+        // rejected outright by 1.21.11 — the compiler's own command validator caught
+        // `sendCommandFeedback` here before it could reach a world.)
+        "gamerule send_command_feedback false".to_string(),
         format!("time set {}", time.token()),
     ];
     // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
@@ -1190,7 +1476,7 @@ fn snbt_string(s: &str) -> String {
 /// addendum). Titled markers are unchanged (byte-identical).
 fn marker_name_fields(title: Option<&str>) -> String {
     match title {
-        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_string(t)),
+        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
         None => String::new(),
     }
 }
@@ -1201,7 +1487,100 @@ fn marker_name_fields(title: Option<&str>) -> String {
 /// `'{"text":…}'`, which 1.21.11 renders as literal raw JSON above an entity's
 /// head (owner-verified). The generated summons carry no `'{"text"` substring.
 fn snbt_text_component(s: &str) -> String {
-    format!("{{text:{}}}", snbt_string(s))
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        None => format!("{{text:{}}}", snbt_string(s)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// i18n v2 — authored strings become translatable components (spec-0029)
+// ---------------------------------------------------------------------------
+
+/// `DW0185`: an authored player-visible string reached the built tree **outside**
+/// a text component — its translation tag ([`delvewright_dsl::TR_SIGIL`]) is still
+/// in the emitted bytes. Either the emitter must lower it through [`tr`] /
+/// [`snbt_component`] (so a client renders the player's own language), or, if the
+/// site is genuinely not player-facing and not a component (a manifest field, a
+/// reviewer chronicle, the bot's `critical-path.json`, a generated PackTest
+/// source), it must read the string through `dsl::l10n::plain` and be listed in
+/// `docs/reference/compiler.md`'s named-exclusion table.
+///
+/// Build-tier and feature-blind: it reads the finished tree, so it guards every
+/// emitter, including ones not yet written. This is the invariant that replaces
+/// "we enumerated every emission site once" with "the compiler re-proves it on
+/// every build" (spec-0029 Risks).
+pub const DW_UNTRANSLATED_LITERAL: &str = "DW0185";
+
+/// Lower an authored player-visible string into a JSON **text component**
+/// (spec-0029 §1): a translation-tagged string becomes
+/// `{"translate": "<l10n key>", "fallback": "<English source>"}`, anything else
+/// (a compiler-baked literal such as the default boundary message) stays
+/// `{"text": …}`.
+///
+/// The `fallback` rides on the component rather than on the pack's own
+/// `en_us.json` deliberately: a player who **declines** the resource-pack prompt
+/// has no lang files at all, and the delve must still be playable in English
+/// (spec-0029 §3).
+fn tr(s: &str) -> Value {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => json!({ "translate": key, "fallback": english }),
+        None => json!({ "text": s }),
+    }
+}
+
+/// [`tr`] with extra component fields (`color`, `bold`, `italic`, `font`, …)
+/// merged in. Styling is orthogonal to whether the body is a literal or a
+/// translate key, so every styled site keeps its styling verbatim.
+fn tr_with(s: &str, fields: &[(&str, Value)]) -> Value {
+    let mut v = tr(s);
+    let obj = v.as_object_mut().expect("tr() builds an object");
+    for (k, val) in fields {
+        obj.insert((*k).to_string(), val.clone());
+    }
+    v
+}
+
+/// The **SNBT** form of [`tr`], for a text component living in an NBT field
+/// (`CustomName`, a mannequin `description`, an item `custom_name`). Emitted as an
+/// SNBT compound, never the stringified-JSON form, for the same reason
+/// [`snbt_text_component`] always was: 1.21.11 renders `'{"text":…}'` above an
+/// entity's head verbatim.
+fn snbt_component(s: &str) -> String {
+    match delvewright_dsl::l10n_untag(s) {
+        Some((key, english)) => snbt_translate(key, english),
+        // An untagged string keeps the bare quoted-string component form 1.21.11
+        // already read it as, so a compiler-baked name stays byte-for-byte what it
+        // was before spec-0029.
+        None => snbt_string(s),
+    }
+}
+
+/// The SNBT `{fallback:…,translate:…}` compound both SNBT component forms share.
+/// Field order is alphabetical, matching the JSON components' `BTreeMap` order so
+/// the two forms read the same in a diff.
+fn snbt_translate(key: &str, english: &str) -> String {
+    format!(
+        "{{fallback:{},translate:{}}}",
+        snbt_string(english),
+        snbt_string(key)
+    )
+}
+
+/// The human string behind an authored value, for the **named exclusions**: sites
+/// that are not text components and are not read by a player. Re-exported here so
+/// every exclusion in `emit` is greppable as `plain(`.
+fn plain(s: &str) -> &str {
+    delvewright_dsl::l10n_plain(s)
+}
+
+/// The delve title for a **compiler artifact**, not for a player: the generated
+/// PackTest sources' `#>` descriptions and the reviewer render plan. These are
+/// not text components and no client ever renders them, so they carry the English
+/// source string rather than a translate key — a named exclusion, listed as such
+/// in `docs/reference/compiler.md`.
+fn artifact_title(c: &delvewright_dsl::Campaign) -> &str {
+    plain(&c.world.content.title)
 }
 
 /// The `,components:{…}` SNBT tail carrying an equipped piece's enchantments,
@@ -1548,6 +1927,7 @@ fn chunk_span(min: [i32; 3], max: [i32; 3]) -> Vec<(i32, i32)> {
 #[allow(clippy::too_many_arguments)]
 fn emit_functions(
     plan: &Plan,
+    chrome: &delvewright_dsl::Chrome,
     sentinels: &Sentinels,
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
@@ -2038,7 +2418,7 @@ fn emit_functions(
         tick.push(format!(
             "execute if score {LOBBY_COUNT} dw.sys matches ..{} as @a unless score @s dw.classed matches 1 run title @s actionbar {}",
             min_players - 1,
-            lobby_actionbar(min_players)
+            lobby_actionbar(min_players, chrome)
         ));
         format!("if score {LOBBY_COUNT} dw.sys matches {min_players}.. ")
     } else {
@@ -2235,7 +2615,7 @@ fn emit_functions(
                         tick.push(format!(
                             "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
                             pending_guard(o, &qa),
-                            json!({ "text": hint })
+                            tr(hint)
                         ));
                     }
                     // Reset the trigger every tick so a gated attempt can be retried
@@ -2307,6 +2687,9 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
+    // --- task #50: the clickable body of each sealed shortcut door ---
+    // Empty for a campaign with no shortcut → byte-identical output.
+    fns.extend(ws_arm_fns(plan));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -2572,15 +2955,30 @@ fn emit_functions(
                 let mut ann: Vec<String> = Vec::new();
                 ann.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "New objective: ", "color": "yellow", "bold": true },
-                        { "text": title, "color": "gold" }
-                    ])
+                    // One sentence, one key: the title is a `with` argument rather
+                    // than a second component, so a translation decides where the
+                    // title sits (chrome::OBJECTIVE_NEW). `bold: false` on the
+                    // argument keeps the title unbolded now that it inherits the
+                    // prefix's style instead of standing beside it.
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_NEW),
+                        &[
+                            ("color", json!("yellow")),
+                            ("bold", json!(true)),
+                            (
+                                "with",
+                                json!([tr_with(
+                                    title,
+                                    &[("color", json!("gold")), ("bold", json!(false))]
+                                )])
+                            ),
+                        ],
+                    )
                 ));
                 if let Some(hint) = o.hint() {
                     ann.push(format!(
                         "tellraw @a {}",
-                        json!({ "text": hint, "color": "gray", "italic": true })
+                        tr_with(hint, &[("color", json!("gray")), ("italic", json!(true))])
                     ));
                 }
                 ann.push("playsound minecraft:block.note_block.pling player @a".to_string());
@@ -2623,10 +3021,16 @@ fn emit_functions(
             if v03 && let Some(title) = o.title() {
                 body.push(format!(
                     "tellraw @a {}",
-                    json!([
-                        { "text": "Objective complete: ", "color": "green" },
-                        { "text": title, "color": "white" }
-                    ])
+                    tr_with(
+                        &chrome.get(delvewright_dsl::chrome::OBJECTIVE_COMPLETE),
+                        &[
+                            ("color", json!("green")),
+                            (
+                                "with",
+                                json!([tr_with(title, &[("color", json!("white"))])])
+                            ),
+                        ],
+                    )
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
             }
@@ -2767,9 +3171,18 @@ fn emit_functions(
     cc.push(format!(
         "tellraw @a {}",
         json!([
-            { "text": format!("{title} — complete."), "color": "gold" },
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_COMPLETE),
+                &[
+                    ("color", json!("gold")),
+                    ("with", json!([tr(title)])),
+                ],
+            ),
             { "text": "\n" },
-            { "text": "A Delvewright delve.", "color": "gray" }
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_SIGNATURE),
+                &[("color", json!("gray"))],
+            )
         ])
     ));
     // v0.3 finale fanfare (M2 fix 4): the owner finished the finale and got no
@@ -2778,11 +3191,14 @@ fn emit_functions(
     if v03 {
         cc.push(format!(
             "title @a title {}",
-            json!({ "text": "Delve Complete", "color": "gold", "bold": true })
+            tr_with(
+                &chrome.get(delvewright_dsl::chrome::CAMPAIGN_BANNER),
+                &[("color", json!("gold")), ("bold", json!(true))],
+            )
         ));
         cc.push(format!(
             "title @a subtitle {}",
-            json!({ "text": title, "color": "yellow" })
+            tr_with(title, &[("color", json!("yellow"))])
         ));
         cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
     }
@@ -2839,7 +3255,7 @@ fn emit_functions(
             // CustomName as a plain SNBT text component (M2 fix 1). Waves are
             // v0.3-only, so no v0.2 byte-identity concern.
             let name = match &mob.name {
-                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)),
+                Some(n) => format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)),
                 None => String::new(),
             };
             // Equipment: v0.6 explicit slots merged over the armed-mob default
@@ -3123,11 +3539,11 @@ fn emit_functions(
     // debris. Empty for a campaign using neither verb (byte-identical).
     fns.extend(volley_fns(plan, payloads));
     fns.extend(collapse_fns(plan, payloads));
-    fns.extend(boundary_fns(plan));
+    fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
     fns.extend(seal_fns(plan));
-    fns.extend(seal_hint_fns(plan));
+    fns.extend(seal_hint_fns(plan, chrome));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -3929,7 +4345,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
             item, count, name, ..
         } => {
             let comp = match name {
-                Some(n) => format!("[custom_name={}]", json!({ "text": n, "italic": false })),
+                Some(n) => format!("[custom_name={}]", tr_with(n, &[("italic", json!(false))])),
                 None => String::new(),
             };
             // spec-0018: a quest beat arms the whole party (`@a`) unless the item
@@ -4740,19 +5156,31 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
 /// tileset happens to carry a lever. Proven by `DW0420`
 /// ([`crate::affordance`]).
 fn shortcut_setup(plan: &Plan) -> Vec<String> {
-    plan.shortcuts
-        .iter()
-        .flat_map(|sc| {
-            let v = ent_xyz(sc.unlock);
-            [
-                format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
-                    v[0], v[1], v[2], sc.safe
-                ),
-                affordance_hardware(v, &format!("dw_sc_{}", sc.safe), "minecraft:lever"),
-            ]
-        })
-        .collect()
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for sc in &plan.shortcuts {
+        let v = ent_xyz(sc.unlock);
+        out.push(format!(
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+            v[0], v[1], v[2], sc.safe
+        ));
+        out.push(affordance_hardware(
+            v,
+            &format!("dw_sc_{}", sc.safe),
+            "minecraft:lever",
+        ));
+        // Task #50: arm the door itself, so a press from the sealed side reaches
+        // something. Unlike a `close-gate` seal — which is armed by the firing
+        // that seals it — a shortcut gate is sealed by the PREFAB at world-load,
+        // so world init is the only moment its answer can go up. Guarded on
+        // absence for the same reason the close-gate arming is: a second,
+        // co-located set of hitboxes is the exact ray-pick tie `DW0422` forbids.
+        out.push(format!(
+            "execute unless entity @e[tag=dw_ws_{}] run function {ns}:ws_arm_{}",
+            sc.safe, sc.safe
+        ));
+    }
+    out
 }
 
 /// The visible hardware for a compiler-owned interact affordance: a glowing,
@@ -4843,11 +5271,6 @@ fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
         .collect()
 }
 
-/// Whether this trigger rides a seal's hitboxes rather than summoning its own.
-fn trigger_rides_seal(plan: &Plan, at: &str) -> bool {
-    plan.seal_hints.iter().any(|s| s.anchor == at)
-}
-
 /// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
 /// clickable cell of each sealed region, so the wall answers a press wherever the
 /// party presses it.
@@ -4907,7 +5330,7 @@ fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
 ///
 /// The advancement is revoked immediately, so the stone answers every press, not
 /// only the first.
-fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
+fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     plan.seal_hints
         .iter()
@@ -4916,7 +5339,7 @@ fn seal_hint_fns(plan: &Plan) -> Vec<(String, String)> {
                 format!("seal_hint_{}", s.safe),
                 lines(&[
                     format!("advancement revoke @s only {ns}:seal_{}", s.safe),
-                    format!("title @s actionbar {}", json!({ "text": s.text.clone() })),
+                    format!("title @s actionbar {}", tr(&chrome.rebind(&s.text))),
                 ]),
             )
         })
@@ -4952,7 +5375,8 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     };
     let mut b = packtest_header(&format!(
         "{}: the sealed gate `{}` carries an answer the party can press",
-        plan.campaign.world.content.title, s.anchor
+        artifact_title(plan.campaign),
+        s.anchor
     ));
     b.push(format!("function {ns}:setup"));
     b.push(
@@ -4998,6 +5422,115 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The shortcut door's wrong-side answer (DSL v0.9, task #50)
+// ---------------------------------------------------------------------------
+
+/// Every shortcut door with its derived sealed side.
+///
+/// **Every** shortcut answers — the wording defaults to the compiler's canonical
+/// English — so the only shortcut missing here is one whose side did not resolve,
+/// and such a campaign never reaches emission: [`check_shortcut_sides`] fails the
+/// build first.
+fn answering_shortcuts<'a>(
+    plan: &'a Plan,
+) -> Vec<(&'a plan::ShortcutPlan, &'a crate::wrongside::SealedSide)> {
+    plan.shortcuts
+        .iter()
+        .filter_map(|sc| sc.sealed_side.as_ref().map(|s| (sc, s)))
+        .collect()
+}
+
+/// `DW0425`: a shortcut door whose sealed side the geometry does not name.
+///
+/// Build tier (exit 3), raised before any function is emitted — withhold, never
+/// invent. Placing the answer on a guessed side would tell a player standing
+/// exactly where the door DOES open that it cannot be opened from there, which is
+/// a worse failure than the silence this feature exists to end.
+fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
+    for sc in &plan.shortcuts {
+        if sc.sealed_side.is_some() {
+            continue;
+        }
+        let (lo, hi) = sc.gate_region;
+        return Err(BuildFailure::Diagnostic {
+            code: crate::wrongside::DW_SHORTCUT_SIDE_UNDECIDABLE,
+            message: format!(
+                "shortcut `{}` declares an `on_wrong_side` answer, but the compiler cannot tell \
+                 which side of its gate `{}` is the sealed one. The sealed side is derived from \
+                 the gate slab's thin axis and the side of it the `unlock` anchor `{}` stands on; \
+                 here the gate spans {lo:?}..{hi:?} and the unlock resolves to {:?}, which either \
+                 gives the region no unique thinnest axis (a cube is not a doorway) or leaves the \
+                 unlock level with the doorway rather than beyond it. An answer placed on a \
+                 guessed side would fire where the door DOES open. Prescription: put the `unlock` \
+                 clear of the gate's own span on the axis the door is thin on — which is where a \
+                 far-side bar belongs anyway — or use a gate anchor whose region is a doorway \
+                 slab rather than a volume.",
+                sc.id, sc.gate_anchor, sc.unlock_anchor, sc.unlock,
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// The `ws_arm_<safe>` functions (task #50): the **clickable body of a sealed
+/// shortcut door**.
+///
+/// A shortcut gate is a solid slab the prefab places, and nothing gave it a body.
+/// A `use`/`strike` trigger anchored on it summoned the ordinary point body — one
+/// `1.0f x 2.0f` box at the region's first cell — which for the `souls-shortcut`
+/// fixture lands at AABB `[4,65,6]..[5,67,7]` inside a slab occupying
+/// `[4,65,6]..[6,68,7]`: flush with the block on every face it touches and
+/// interior on the rest, so vanilla never finds it strictly nearer than the block
+/// and no press from any angle reaches it (see [`SEAL_MARGIN`]).
+///
+/// The body therefore stands in the **open air in front of the bars**, one cell
+/// per doorway cell, on the sealed side only
+/// ([`crate::wrongside::SealedSide::approach_cells`]). That placement is also the
+/// entire side mechanism: a near-side ray hits the body before the door, a
+/// far-side ray hits the door and stops, because vanilla bounds its entity
+/// raycast by the block hit distance. No player test, no DSL surface.
+///
+/// A click trigger the author anchors on the gate rides these — the same merge
+/// `seal_fns` performs for a `close-gate` seal — so the author's own prose and
+/// sound, gated by their own flags, are what a wrong-side press produces. The
+/// compiler supplies the body; the campaign supplies the answer.
+///
+/// Empty for a campaign with no shortcut → byte-identical output.
+fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (sc, side) in answering_shortcuts(plan) {
+        // A click trigger the author anchored on this gate rides these hitboxes
+        // rather than summoning its own co-located one — the same merge
+        // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
+        // at a gate anchor stops being a ray-pick tie.
+        let mut tags = vec![format!("dw_ws_{}", sc.safe)];
+        tags.extend(seal_rider_tags(plan, &sc.gate_anchor));
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body: Vec<String> = side
+            .approach_cells()
+            .into_iter()
+            .map(|c| {
+                // Integer hundredths, never f64 arithmetic: the datapack text is
+                // part of the byte-identity contract (ADR-0006).
+                let x = fmt_centi(c[0] as i64 * 100 + 50);
+                let y = fmt_centi(c[1] as i64 * 100 - 1);
+                let z = fmt_centi(c[2] as i64 * 100 + 50);
+                format!(
+                    "summon minecraft:interaction {x} {y} {z} \
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                )
+            })
+            .collect();
+        out.push((format!("ws_arm_{}", sc.safe), lines(&body)));
+    }
+    out
+}
+
 /// Per-tick shortcut unlock detection (spec-0016 §2). Fires **once** — the
 /// `#sc_<id>` sentinel is the structural expression of permanence: after the open
 /// there is nothing left to fire, and no verb anywhere can put the gate back
@@ -5040,6 +5573,12 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
+        // …and the door's own voice goes with the bars (task #50). An opened
+        // threshold that still says "this will not open" is a lie, and an
+        // invisible box left standing in a now-walkable doorway swallows
+        // right-clicks aimed through it — the same retirement `open-gate`
+        // performs for a `close-gate` seal.
+        body.push(format!("kill @e[tag=dw_ws_{id}]"));
         body.extend(emit_effect_bundle(plan, &sc.on_unlock, Audience::Scheduled));
         out.push((format!("shortcut_open_{id}"), lines(&body)));
     }
@@ -5229,7 +5768,7 @@ fn kit_item_components(item: &delvewright_dsl::KitItem) -> String {
     if let Some(n) = &item.name {
         parts.push(format!(
             "custom_name={}",
-            json!({ "text": n, "italic": false })
+            tr_with(n, &[("italic", json!(false))])
         ));
     }
     if let Some(pc) = &item.contents {
@@ -5520,7 +6059,7 @@ fn emit_narrate(
     body: &mut Vec<String>,
 ) {
     use delvewright_dsl::NarrateStyle;
-    let comp = json!({ "text": text });
+    let comp = tr(text);
     match style.unwrap_or(NarrateStyle::Chat) {
         NarrateStyle::Chat => body.push(format!("tellraw {who} {comp}")),
         NarrateStyle::Title => body.push(format!("title {who} title {comp}")),
@@ -5532,7 +6071,7 @@ fn emit_narrate(
         // (`delve:art`, DSL v0.6). The font is uppercase-only (glyph coverage is
         // checked at compile time, DW0328), so render uppercase.
         NarrateStyle::Art => {
-            let art = json!({ "text": text.to_ascii_uppercase(), "font": "delve:art" });
+            let art = tr_with(text, &[("font", json!("delve:art"))]);
             body.push(format!("title {who} title {art}"));
         }
     }
@@ -5616,9 +6155,9 @@ fn npc_summon_commands(
         // keeps the legacy `'{"text":…}'` form so hello-world / keep-crawl stay
         // byte-identical.
         let cname_field = if v03 {
-            snbt_string(name)
+            snbt_component(name)
         } else {
-            let cname = json!({ "text": name }).to_string().replace('\'', "\\'");
+            let cname = tr(name).to_string().replace('\'', "\\'");
             format!("'{cname}'")
         };
         let pose = mannequin_pose_nbt(base);
@@ -6185,7 +6724,7 @@ fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw:
         let name = a
             .name
             .as_deref()
-            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+            .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
             .unwrap_or_default();
         // Compiler-owned knockback-immunity first (a `vulnerable` puppet is a
         // damageable creep, never a shovable one), then whatever the author
@@ -6292,7 +6831,7 @@ fn actor_twin_summon(ns: &str, a: &delvewright_dsl::Actor, at: &str) -> String {
     let name = a
         .name
         .as_deref()
-        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_string(n)))
+        .map(|n| format!(",CustomName:{},CustomNameVisible:1b", snbt_component(n)))
         .unwrap_or_default();
     let pose = mannequin_pose_nbt(&a.entity);
     let finalize = spawn_finalize_nbt(&a.entity);
@@ -7110,18 +7649,78 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         // summons them wearing this trigger's tag. A second entity here would be
         // exactly co-located with them, and the ray-pick tie is what killed the
         // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
-        if trigger_rides_seal(plan, at) {
-            continue;
-        }
-        if let Some(p) = anchor_point_any(plan, at) {
-            let q = ent_xyz(p);
-            out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trig_{}\"]}}",
-                q[0], q[1], q[2], plan::safe_local(t.id.as_str())
-            ));
+        let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
+        match crate::pressable::body_at(plan, at) {
+            // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
+            // this trigger's tag on those entities. One cell, one hitbox.
+            crate::pressable::Body::Rides { .. } => {}
+            // The anchor is a REGION. A point body here is buried in the solid
+            // block and reachable from nowhere (see `crate::pressable`), so the
+            // object gets the clickable shape it actually has: one protruding box
+            // per shell cell, exactly as a `close-gate` seal has always done.
+            crate::pressable::Body::Region(cells) => {
+                for c in cells {
+                    let x = fmt_centi(c[0] as i64 * 100 + 50);
+                    let y = fmt_centi(c[1] as i64 * 100 - 1);
+                    let z = fmt_centi(c[2] as i64 * 100 + 50);
+                    out.push(format!(
+                        "summon minecraft:interaction {x} {y} {z} \
+                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                    ));
+                }
+            }
+            // A point in open space: the ordinary body, byte-identical.
+            crate::pressable::Body::Point(p) => {
+                let q = ent_xyz(p);
+                out.push(format!(
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+                    q[0], q[1], q[2]
+                ));
+            }
+            // `DW0426` has already failed the build.
+            crate::pressable::Body::Nothing => {}
         }
     }
     out
+}
+
+/// `DW0426`: every click trigger must be anchored somewhere a player can click.
+///
+/// Build tier (exit 3), raised before any function is emitted. The trigger
+/// declares an anchor, a click and a full effect bundle, and the press lands on
+/// nothing — the beat never happens and every board stays green, which is the
+/// unbound-vacuity class this whole task came out of.
+fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
+    use delvewright_dsl::TriggerOn;
+    for t in &plan.campaign.quests.content.triggers {
+        if matches!(t.on, TriggerOn::Approach { .. }) {
+            continue;
+        }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            continue;
+        }
+        if crate::pressable::body_at(plan, at) != crate::pressable::Body::Nothing {
+            continue;
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: crate::pressable::DW_TRIGGER_UNPRESSABLE,
+            message: format!(
+                "trigger `{}` watches a `{}` on anchor `{}`, but nothing at that anchor is \
+                 clickable: it resolves to no placed piece, so the compiler has no cell to give \
+                 the trigger a body at and the press can never land. The trigger's effects would \
+                 simply never run, with every check green. Prescription: anchor it on a place a \
+                 prefab provides (anchor names come from prefab metadata; do NOT invent one), or \
+                 drop the trigger.",
+                t.id,
+                t.on.kind(),
+                at
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
@@ -7472,7 +8071,7 @@ fn container_stack_components(
     if let Some(n) = name {
         comps.push(format!(
             "custom_name={}",
-            json!({ "text": n, "italic": false })
+            tr_with(n, &[("italic", json!(false))])
         ));
     }
     if !ench.is_empty() {
@@ -8029,7 +8628,7 @@ const REGION_CEIL_Y: i32 = 1024;
 /// The compiler's default boundary return message (English-first, CLAUDE.md
 /// language policy). Overridable via `boundary.message`, which is then l10n
 /// inventoried under `world.boundary.message`.
-const BOUNDARY_DEFAULT_MESSAGE: &str = "The tide turns you back — the delve lies behind you.";
+const _: &str = delvewright_dsl::chrome::BOUNDARY_MESSAGE.en;
 
 /// A soft, non-alarming cue played on a boundary return.
 const BOUNDARY_SOUND: &str = "minecraft:block.amethyst_block.chime";
@@ -8097,15 +8696,21 @@ fn playable_region(plan: &Plan) -> Option<PlayableRegion> {
 }
 
 /// The effective boundary return message (authored or the English default).
-fn boundary_message(plan: &Plan) -> String {
-    plan.campaign
+fn boundary_message(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> String {
+    match plan
+        .campaign
         .world
         .content
         .boundary
         .as_ref()
         .and_then(|b| b.message.as_deref())
-        .unwrap_or(BOUNDARY_DEFAULT_MESSAGE)
-        .to_string()
+    {
+        // Authored: an ordinary inventoried campaign string.
+        Some(m) => m.to_string(),
+        // Unauthored: the compiler's own line, which is chrome and ships
+        // translated with the compiler (spec-0029 addendum).
+        None => chrome.get(delvewright_dsl::chrome::BOUNDARY_MESSAGE),
+    }
 }
 
 /// Whether the emitted setup must initialize the `dw:cp` last-checkpoint storage
@@ -8255,13 +8860,13 @@ fn has_night_vision_areas(plan: &Plan) -> bool {
 /// plus a per-player macro return. Empty for a campaign with no `boundary`. The
 /// return teleports via `dw:cp` (the last checkpoint), so wanderers always land on
 /// the current respawn anchor rather than a fixed point.
-fn boundary_fns(plan: &Plan) -> Vec<(String, String)> {
+fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let Some(region) = playable_region(plan) else {
         return Vec::new();
     };
     let ns = &plan.namespace;
     let sel = region.inside_selector();
-    let msg = json!({ "text": boundary_message(plan) });
+    let msg = tr(&boundary_message(plan, chrome));
 
     // boundary_tick: snapshot the live checkpoint into a scratch compound, eject
     // every player outside the region to it, re-arm the clock. `schedule … 20t`
@@ -8385,12 +8990,23 @@ const LOBBY_COUNT: &str = "#lobby";
 /// vanilla `score` component reading [`LOBBY_COUNT`], so it updates itself
 /// without any per-count emission. English-first (CLAUDE.md language policy); a
 /// compiler default, not an authored string, so it is not l10n-inventoried.
-fn lobby_actionbar(min_players: u8) -> String {
-    json!([
-        { "text": "Waiting for the party — ", "color": "yellow" },
-        { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
-        { "text": format!(" / {min_players}"), "color": "gold" }
-    ])
+fn lobby_actionbar(min_players: u8, chrome: &delvewright_dsl::Chrome) -> String {
+    // One sentence with two `with` arguments — the live count and the size the
+    // delve requires — so a translation orders them for its own language instead
+    // of inheriting English's `<prefix> <n> / <n>`.
+    tr_with(
+        &chrome.get(delvewright_dsl::chrome::LOBBY_WAITING),
+        &[
+            ("color", json!("yellow")),
+            (
+                "with",
+                json!([
+                    { "score": { "name": LOBBY_COUNT, "objective": "dw.sys" }, "color": "gold" },
+                    { "text": min_players.to_string(), "color": "gold" }
+                ]),
+            ),
+        ],
+    )
     .to_string()
 }
 
@@ -9025,9 +9641,9 @@ fn cast_bark_fns(
         ];
         for (i, line) in pool.iter().enumerate() {
             let comp = json!([
-                { "text": name, "color": "yellow" },
+                tr_with(&name, &[("color", json!("yellow"))]),
                 { "text": ": " },
-                { "text": line, "italic": true }
+                tr_with(line, &[("italic", json!(true))])
             ]);
             body.push(format!(
                 "execute if score {holder} dw.sys matches {} run tellraw @s {comp}",
@@ -9039,7 +9655,7 @@ fn cast_bark_fns(
     out
 }
 
-fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
+fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let c = plan.campaign;
     let v04 = campaign_is_v04(plan);
     let mut dialogs = Vec::new();
@@ -9051,8 +9667,8 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         .zip(&c.classes.content.classes)
         .map(|(cp, class)| {
             json!({
-                "label": class.name,
-                "tooltip": class.blurb,
+                "label": tr(&class.name),
+                "tooltip": tr(&class.blurb),
                 "action": { "type": "minecraft:run_command", "command": format!("/trigger dw.class set {}", cp.n) }
             })
         })
@@ -9061,8 +9677,9 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
         "class_select".to_string(),
         json!({
             "type": "minecraft:multi_action",
-            "title": "Choose your class",
-            "body": [{ "type": "minecraft:plain_message", "contents": "Pick the kit you will carry." }],
+            "title": tr(&chrome.get(delvewright_dsl::chrome::CLASS_TITLE)),
+            "body": [{ "type": "minecraft:plain_message",
+                       "contents": tr(&chrome.get(delvewright_dsl::chrome::CLASS_BODY)) }],
             "columns": 1,
             "can_close_with_escape": false,
             "after_action": "close",
@@ -9081,14 +9698,14 @@ fn emit_dialogs(plan: &Plan) -> Vec<(String, Value)> {
             format!("bonfire_{i}"),
             json!({
                 "type": "minecraft:multi_action",
-                "title": bf.prompt,
+                "title": tr(&chrome.rebind(&bf.prompt)),
                 "columns": 1,
                 "can_close_with_escape": true,
                 "after_action": "close",
                 "actions": [
-                    { "label": bf.rest_label,
+                    { "label": tr(&chrome.rebind(&bf.rest_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 2" } },
-                    { "label": bf.save_label,
+                    { "label": tr(&chrome.rebind(&bf.save_label)),
                       "action": { "type": "minecraft:run_command", "command": "/trigger dw.rest set 1" } }
                 ]
             }),
@@ -9190,8 +9807,8 @@ fn build_node_dialog(
     if opts.is_empty() {
         json!({
             "type": "minecraft:notice",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "can_close_with_escape": true
         })
     } else {
@@ -9199,19 +9816,19 @@ fn build_node_dialog(
             .iter()
             .map(|o| {
                 let mut action = json!({
-                    "label": o.label,
+                    "label": tr(&o.label),
                     "action": { "type": "minecraft:run_command", "command": format!("/trigger {trigger_objective} set {}", o.n) }
                 });
                 if let Some(tip) = &o.tooltip {
-                    action["tooltip"] = json!(tip);
+                    action["tooltip"] = tr(tip);
                 }
                 action
             })
             .collect();
         json!({
             "type": "minecraft:multi_action",
-            "title": npc_name,
-            "body": [{ "type": "minecraft:plain_message", "contents": text }],
+            "title": tr(npc_name),
+            "body": [{ "type": "minecraft:plain_message", "contents": tr(text) }],
             "columns": 1,
             "can_close_with_escape": true,
             "after_action": "close",
@@ -9435,8 +10052,8 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
             "criteria": { "granted": { "trigger": "minecraft:impossible" } },
             "display": {
                 "icon": { "id": "minecraft:iron_door" },
-                "title": c.world.content.title,
-                "description": outro,
+                "title": tr(&c.world.content.title),
+                "description": tr(&outro),
                 "frame": "goal",
                 "show_toast": true,
                 "announce_to_chat": false,
@@ -9556,7 +10173,7 @@ fn emit_packtest(
         let mut body: Vec<String> = Vec::new();
         body.push(format!(
             "#> {}: objective completions set {comp_obj} (Delvewright mechanism test)",
-            c.world.content.title
+            artifact_title(c)
         ));
         body.push("# @dummy".to_string());
         if tail == 0 {
@@ -9625,7 +10242,7 @@ fn emit_packtest(
     let mut sealed: Vec<String> = Vec::new();
     sealed.push(format!(
         "#> {}: environment sealed on boot (spec-0002)",
-        c.world.content.title
+        artifact_title(c)
     ));
     sealed.push("# @dummy".to_string());
     sealed.push("# @timeout 100".to_string());
@@ -9664,7 +10281,7 @@ fn emit_packtest(
         let mut df: Vec<String> = Vec::new();
         df.push(format!(
             "#> {}: the world runs at the declared difficulty `{}`",
-            c.world.content.title,
+            artifact_title(c),
             diff.token()
         ));
         df.push("# @dummy".to_string());
@@ -9893,7 +10510,7 @@ fn emit_branch_campaign_packtest(
     let mut body: Vec<String> = Vec::new();
     body.push(format!(
         "#> {}: each branch's coherent path sets {comp_obj} (Delvewright mechanism test)",
-        c.world.content.title
+        artifact_title(c)
     ));
     body.push("# @dummy".to_string());
     body.push(format!("# @timeout {timeout}"));
@@ -10090,7 +10707,7 @@ fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
 
         let mut b = packtest_header(&format!(
             "{}: AND-join `{jid}` divides across {n} players (spec-0018)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         for m in 1..n {
@@ -10243,7 +10860,7 @@ fn emit_scheduled_executor_packtests(
     moves: &[crate::nav::MovePlan],
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let probe_score = plan::flag_score(SCHEDULED_PROBE_FLAG);
 
     // --- 1. the unconditional probe -------------------------------------
@@ -10360,7 +10977,7 @@ fn emit_scheduled_executor_packtests(
 /// no terminal option (nothing to drive).
 fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some((npc, opt)) = plan.npcs.iter().find_map(|npc| {
         npc.options
             .iter()
@@ -10467,7 +11084,7 @@ fn pin_cast_clause_flags(
 fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
     use crate::cast::SceneAction;
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let casts = crate::cast::npc_casts(plan.campaign);
 
     // --- root swap: one NPC whose ledger names two different roots ----------
@@ -10645,7 +11262,7 @@ fn emit_cast_packtests(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(l) = plan.loot.iter().find(|l| !l.items.is_empty()) else {
         return;
     };
@@ -10683,7 +11300,7 @@ fn emit_loot_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// compile-time check. Emitted only for a campaign with an equipped actor.
 fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(a) = plan
         .campaign
         .quests
@@ -10749,7 +11366,7 @@ fn emit_actor_equipment_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// entity-tick-limited.
 fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     // Pick the first trap that has both a dispenser payload and a disarm — it
     // exercises both the fill and the empty in one test. Else the first payload trap.
@@ -10841,7 +11458,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// the tier-3 bot playthrough.
 fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &PayloadPlans) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(v) = payloads.volleys.first() {
         let base = format!("volley_{}", v.key);
@@ -10977,7 +11594,7 @@ fn emit_payload_packtests(plan: &Plan, out: &mut BuildOutput, payloads: &Payload
 /// documented "inactive while the flag is set" behaviour simply did not exist.
 fn emit_trap_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // The first trap gated by a single forbidding flag, which is the shape that can
     // be driven from a test: set the flag → shut, clear it → open.
     let Some(t) = plan
@@ -11041,7 +11658,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (min, max) = area.bounds();
     let mid = [
         (min[0] + max[0]) / 2,
@@ -11110,7 +11727,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// warp back to it would be visible.
 fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(first) = plan.classes.first() else {
         return;
     };
@@ -11229,7 +11846,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
         return;
     };
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     // setup_finish (which writes `dw:cp`) is placement-gated and cannot run in a
     // bare PackTest, so seed the same spawn-cell value the real init would write.
     let seed_cp = format!(
@@ -11313,7 +11930,7 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// Emits nothing for a campaign with no wave → byte-identical.
 fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(w) = plan.campaign.quests.content.waves.first() else {
         return;
     };
@@ -11383,7 +12000,7 @@ fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
 
 fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11513,7 +12130,7 @@ fn emit_reseat_stationed_packtest(
     lane_routes: &crate::nav::LaneRoutes,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11694,7 +12311,7 @@ fn emit_reseat_stationed_packtest(
 /// actor and no billed elite/boss wave → byte-identical.
 fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11875,7 +12492,7 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// `DW0476` makes the same thing as "no bonfire" → byte-identical.
 fn emit_bonfire_option_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(bf) = plan.bonfires().next() else {
         return;
     };
@@ -11978,7 +12595,7 @@ fn pin_tgdis(b: &mut Vec<String>, g: &crate::plan::TimedGatePlan) {
 
 fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(g) = plan.timed_gates.first() else {
         return;
     };
@@ -12049,7 +12666,7 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
         return;
     }
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (from, to) = g.gate_region;
     let probe = from;
     let id = &g.safe;
@@ -12146,7 +12763,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
         return;
     }
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let (from, to) = g.gate_region;
     let selector = region_selector(from, to);
     // Feet-centred on one cell of the region: provably inside the selector box.
@@ -12200,7 +12817,7 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
 /// on a live server). Emits nothing for a campaign with no shortcut.
 fn emit_shortcut_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let Some(sc) = plan.shortcuts.first() else {
         return;
     };
@@ -12274,7 +12891,7 @@ fn emit_td_lane_packtests(
     wave_rings: &WaveRings,
 ) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
     let waves = &plan.campaign.quests.content.waves;
     let mut write = |name: &str, body: Vec<String>| {
         out.insert(
@@ -12512,7 +13129,7 @@ fn emit_td_lane_packtests(
 ///   driven by teleporting the dummy in and out of the declared zone box.
 fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
-    let title = &plan.campaign.world.content.title;
+    let title = artifact_title(plan.campaign);
 
     if let Some(cp) = plan.checkpoints.first() {
         let [x, y, z] = cp.pos;
@@ -12877,7 +13494,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor appears; despawn kill & vanish both remove it",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12910,7 +13527,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: spawn-actor is idempotent (one puppet, not two)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12930,7 +13547,7 @@ fn emit_v06_actor_packtests(
         let safe = plan::safe_local(a.id.as_str());
         let mut b = packtest_header(&format!(
             "{}: unleash-actor swaps the puppet for a real-AI twin",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -12966,7 +13583,7 @@ fn emit_v06_actor_packtests(
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-actor walks its puppet to the destination cell",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -13040,7 +13657,7 @@ fn emit_v06_actor_packtests(
         }
         let mut b = packtest_header(&format!(
             "{}: move-actor arrival hands off to NPC `{npc_id}` with every gate sealed",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
@@ -13109,7 +13726,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             {
                 let mut b = packtest_header(&format!(
                     "{}: prop `{}` appears only when its objective activates",
-                    c.world.content.title, prop.block
+                    artifact_title(c),
+                    prop.block
                 ));
                 b.push(format!("function {ns}:setup"));
                 b.push(format!(
@@ -13149,7 +13767,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                 let (pin, sel) = pin_dummy("dw_t_iclr");
                 let mut b = packtest_header(&format!(
                     "{}: completing interact `{id}` removes its interaction hitbox",
-                    c.world.content.title
+                    artifact_title(c)
                 ));
                 b.push(format!("function {ns}:setup"));
                 // Pin this test's own dummy (see `pin_dummy`): the completion runs
@@ -13202,7 +13820,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let safe = plan::safe_local(npc.as_str());
         let mut b = packtest_header(&format!(
             "{}: despawn-npc removes body + hitbox",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13253,7 +13871,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let hitbox = format!("@e[type=minecraft:interaction,tag={npc_tag},limit=1]");
         let mut b = packtest_header(&format!(
             "{}: striking NPC `{npc_id}` fires trigger `{}` exactly once",
-            c.world.content.title,
+            artifact_title(c),
             trigger.id.as_str()
         ));
         b.push(format!("function {ns}:setup"));
@@ -13342,7 +13960,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         // click (left or right) can only ever reach the dialogue-bearing entity.
         let mut b = packtest_header(&format!(
             "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13401,7 +14019,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-npc walks to its target anchor",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -13462,7 +14080,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
                     let ws = plan::safe_local(wave.as_str());
                     let mut b = packtest_header(&format!(
                         "{}: kill-less spawn-wave `{wave}` spawns its mobs",
-                        c.world.content.title
+                        artifact_title(c)
                     ));
                     b.push(format!("function {ns}:setup"));
                     // Clear the wave tag first — a sibling test (`campaign` drives
@@ -13540,7 +14158,8 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             let (pin, sel) = pin_dummy("dw_t_dvis");
             let mut bt = packtest_header(&format!(
                 "{}: dialogue option `{}` is displayed only while its objective `{obj}` is active",
-                c.world.content.title, under_test.label
+                artifact_title(c),
+                plain(&under_test.label)
             ));
             bt.push(format!("function {ns}:setup"));
             // Pin this test's own dummy (see `pin_dummy`): with one dummy PER
@@ -13760,7 +14379,7 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     let mut t = packtest_header(&format!(
         "{}: `{}` and `{}` share NPC `{npc_id}`'s hitbox — each fires on its own flags",
-        c.world.content.title,
+        artifact_title(c),
         early.id.as_str(),
         late.id.as_str()
     ));
@@ -14080,7 +14699,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vkil");
         let mut b = packtest_header(&format!(
             "{}: kill wave `{wave}` -> countdown -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive the whole chain
@@ -14145,7 +14764,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vcol");
         let mut b = packtest_header(&format!(
             "{}: collect -> reward completes objective",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -14176,7 +14795,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_vint");
         let mut b = packtest_header(&format!(
             "{}: interact trigger + item -> complete",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
@@ -14218,7 +14837,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let party = plan::PARTY;
         let mut b = packtest_header(&format!(
             "{}: a click before the quest is armed is spent, not banked (task #124)",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -14282,7 +14901,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let carried = "#carried_vheld";
         let mut b = packtest_header(&format!(
             "{}: `requires_item` is HELD — carried is not enough",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);
@@ -14348,7 +14967,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: requires_flags gates objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -14394,7 +15013,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         };
         let mut b = packtest_header(&format!(
             "{}: forbids_flags suppresses objective `{id}`",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin.clone());
@@ -14437,7 +15056,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     if campaign_is_v03(plan) && !plan.npcs.is_empty() {
         let mut b = packtest_header(&format!(
             "{}: every NPC summon resolves to exactly one entity",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push("scoreboard players set #placed dw.sys 1".to_string());
@@ -14479,7 +15098,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let (pin, sel) = pin_dummy("dw_t_cpre");
         let mut b = packtest_header(&format!(
             "{}: collect completes for an item held before activation",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it alone.
@@ -14555,7 +15174,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         );
         let mut b = packtest_header(&format!(
             "{}: collect `{id}` fills the adopted container and completes on the named stack",
-            c.world.content.title
+            artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
         b.push(pin);

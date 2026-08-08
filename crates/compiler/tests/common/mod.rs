@@ -167,3 +167,15 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
         }
     }
 }
+
+/// The build-input map for a campaign directory: the stage documents and, under
+/// i18n v2 (spec-0029), every `l10n/<code>.json` sidecar — the resource pack now
+/// carries a lang file per declared language, so a build of a multilingual
+/// campaign that is handed no sidecars fails (`DW0180`) rather than silently
+/// shipping one language. A test that builds a campaign declaring `languages`
+/// must pass this instead of an empty map.
+pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    delvewright_compiler::load::load_campaign_dir(dir)
+        .expect("campaign dir loads")
+        .inputs
+}

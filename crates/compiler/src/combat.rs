@@ -1280,7 +1280,13 @@ fn actor_json(a: &ActorEncounter) -> Value {
         "floor_gate": coverage_json(&a.coverage),
     });
     if let Some(name) = &a.name {
-        o["name"] = json!(name);
+        // spec-0029 named exclusion: `combat-plan.json` is the validation ladder's
+        // own artifact, read by the bot and by a maintainer, never rendered to a
+        // player — so the actor's name appears here as its English source, not as
+        // a translate key. (The name became translatable when `actors[].name`
+        // entered the l10n inventory; before that this line could not have carried
+        // a tag at all.)
+        o["name"] = json!(delvewright_dsl::l10n_plain(name));
     }
     if let Some(pos) = a.pos {
         o["pos"] = json!([pos[0], pos[1], pos[2]]);

@@ -220,7 +220,60 @@ the same font-pixel measurement `DW0330` uses. Until it lands the rule is
 enforced here, by you, at authoring time — and when it lands it will be telling
 you the same thing this section does.
 
-### D. Plain-prose baseline (Strunk 1918, public domain)
+### D. HARD RULE — a name spelled the same way IS the same name
+
+Owner ruling, 2026-08-06, after playing a delve in Chinese. Every name you write
+over a body is translated, and **whether two bodies share one translation is
+decided by whether you spelled them identically** — not by whether you meant the
+same character. Apply this while you are naming, because it is unrecoverable
+later: by the time a translator sees the list, your intent is gone and only the
+spelling is left.
+
+**Bodies that are one character: spell the name byte-identically.** A character
+usually occupies more than one declaration — an NPC that stands and talks, plus
+one actor puppet per cutscene pose it is staged in. Written identically, all of
+them are one name: the translator is asked once and every body renders the same
+way, in every language.
+
+```
+GOOD  npc/polyphemus            "Polyphemus"
+      actor/polyphemus-walker   "Polyphemus"      ← same character, same spelling
+      actor/polyphemus-roused   "Polyphemus"
+      actor/polyphemus-blinded  "Polyphemus"
+
+BAD   npc/polyphemus            "Polyphemus"
+      actor/polyphemus-roused   "Polyphemus "     ← a trailing space is a second
+      actor/polyphemus-blinded  "polyphemus"        character, and the giant is
+                                                    renamed mid-cutscene
+```
+
+Differ by a space, a case, or a `the` and the player meets two characters — one
+of whom may be called something else entirely in Chinese. Copy the NPC's name;
+do not retype it.
+
+**Bodies that are genuinely different: spell them differently.** The rule runs
+both ways. Two unrelated NPCs you both called `Guard` are one name and will be
+translated once, so if they must read as two people, write two names.
+
+**Wave mobs are the exception, and it is the one to plan around.** A wave mob's
+name is *not* pooled with anything: three waves whose mobs you both named
+`Drowned of Poseidon` are three separate names, asked of the translator three
+times, and free to come back as three different Chinese strings — the same squad
+under three names, in one delve. So:
+
+- If several waves really are **one creature**, still write the identical string
+  — it is the honest source, and the localization stage carries a glossary that
+  holds proper nouns steady across batches. Then **say so in the campaign's
+  posture note**, so the localization stage knows those rows must agree.
+- If they are **not** one creature, give them names that differ. Do not reuse a
+  name for flavour across waves that the fiction treats as distinct — you get the
+  cost of a shared name with none of the benefit.
+
+Fewer distinct names is the cheaper delve in every language. A name you reuse
+deliberately is free; a name you reuse accidentally is a defect the English build
+can never show you.
+
+### E. Plain-prose baseline (Strunk 1918, public domain)
 
 Two rules carry most of the load for text rendered into a chat line:
 
@@ -591,6 +644,9 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
 
 1. Declare the codes in `world.json`: `"languages": ["zh-cn", …]` (BCP-47-style;
    `en` is implicit/canonical and is **never** listed). Stage docs stay English.
+   Each code must be one the compiler can map to a Minecraft lang-file name
+   (`zh-cn` → `zh_cn`); an unmapped code is `DW0184` at validate time, never a
+   language quietly missing from the shipped pack.
 2. **Who translates** — if the repo's `delvewright.toml`/`delvewright.local.toml`
    has an `[i18n]` section AND the env var it names (`api_key_env`) is set, run
    `python3 tools/i18n-translate.py <campaign-dir> --lang <code> --reflect`
@@ -611,9 +667,15 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
    revise — leaving lines that were already right byte-identical. Write
    `l10n/<code>.json`:
    `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
-4. Re-`validate` until zero `DW0180`/`DW0181`. The default build stays English;
-   `delvec build --lang <code>` emits the localized delve (same layout, strings
-   swapped; `critical-path.json` is language-neutral so the ladder is unchanged).
+4. Re-`validate` until zero `DW0180`/`DW0181`. **The default build ships every
+   declared language and the client picks its own** (i18n v2): `delvec build`
+   emits each authored string as `{"translate": key, "fallback": English}` and
+   writes `assets/delvewright/lang/<mc_code>.json` per language into the delve's
+   resource pack. A player whose locale you do not ship — or who declines the
+   resource-pack prompt — reads the English fallback. Nothing extra to run.
+   `delvec build --lang <code>` still produces the single-language bake for local
+   dev; the release path does not use it. `critical-path.json` is language-neutral
+   either way, so the ladder is unchanged.
 
 Then:
 
