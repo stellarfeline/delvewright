@@ -1,10 +1,18 @@
-"""The storybook engine-version gate (`tools/check-storybook-version.py`).
+"""The storybook version gate (`tools/check-storybook-version.py`).
 
 The drift this pins (owner directive, task #147): a campaign's storybook is what
 a server host reads before running the delve, and the one internal fact it is
 allowed to carry — which engine the delve needs — is a hand-typed number. Hand-
 typed numbers go stale the moment a campaign adopts a new `dsl_version`, and a
 stale one is worse than none: it tells a host on an old engine to go ahead.
+
+The second half is the general form of that, found the hard way: the v1.1.0
+island release shipped a storybook whose marker was correct and whose OTHER
+three version literals were not — a campaign-version stamp, a `docker run` line
+naming the tag v1.1.0 had just replaced, and a localized gloss carrying its own
+translated copy of the delvec number. Checking the marker harder would never
+have caught any of them. So a storybook may carry NO version literal but the
+marker, and these tests hold each of those three shapes red.
 
 These tests drive the gate over synthetic campaign trees rather than the live
 content repo, so they keep failing for the right reason as real campaigns come
@@ -211,6 +219,194 @@ def test_the_marker_is_byte_identical_across_editions(gate):
     assert run(gate) == 0
 
 
+# --- no OTHER version literal (the v1.1.0 island release) -------------------
+#
+# The marker being true was never enough: the v1.1.0 island storybook shipped
+# three version literals and only the marker was bound to anything. It told a
+# host to run `:v1.0.0` — the version it had just replaced.
+
+
+def test_a_campaign_version_stamp_beside_the_marker_is_RED(gate, capsys):
+    """Literal 2: `**v1.0.0** (exact engine pin: …)` — read by nothing, and a lie
+    by construction between releases, since `main` is not a released version."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    body = "\n".join(
+        [
+            "# The Test Delve",
+            "",
+            "**v1.0.0** (exact engine pin: `versions.toml`)",
+            "",
+            marker,
+            "",
+        ]
+    )
+    make_campaign(gate, "stamped", readmes={"README.md": body})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "README.md:3 carries the version literal `v1.0.0`" in err
+    assert "which nothing binds" in err
+
+
+def test_a_pinned_image_tag_in_the_host_command_is_RED(gate, capsys):
+    """Literal 3, the one that actually hurt: a host copy-pastes this line."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    body = "\n".join(
+        [
+            "# The Test Delve",
+            "",
+            marker,
+            "",
+            "```sh",
+            "docker run -d --name delve -p 25565:25565 -v delve-data:/data \\",
+            "  -e EULA=TRUE ghcr.io/stellarfeline/delve-the-test-delve:v1.0.0",
+            "```",
+            "",
+        ]
+    )
+    make_campaign(gate, "pinned-tag", readmes={"README.md": body})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "README.md:7 pins an image tag:" in err
+    assert "ghcr.io/stellarfeline/delve-the-test-delve:v1.0.0" in err
+    assert "Name `:latest` here" in err
+
+
+def test_a_pinned_image_tag_is_reported_ONCE_not_also_as_a_bare_literal(gate, capsys):
+    """One line, one finding: the tag's own version is inside the image span, so
+    the actionable message ("name `:latest`") is not buried under a duplicate."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    body = "\n".join(
+        ["# The Test Delve", "", marker, "", "ghcr.io/x/delve-y:v1.0.0", ""]
+    )
+    make_campaign(gate, "once", readmes={"README.md": body})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert err.count("README.md:5") == 1
+    assert "carries the version literal" not in err
+
+
+def test_the_host_command_naming_latest_is_green(gate, capsys):
+    """`:latest` IS the storybook's claim — this is the current delve. The port
+    mapping, the volume and `localhost:25565` on the same lines are not tags."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    body = "\n".join(
+        [
+            "# The Test Delve",
+            "",
+            marker,
+            "",
+            "Then Multiplayer → Direct Connect to `localhost:25565`:",
+            "",
+            "```sh",
+            "docker run -d --name delve -p 25565:25565 -v delve-data:/data \\",
+            "  -e EULA=TRUE ghcr.io/stellarfeline/delve-the-test-delve:latest",
+            "```",
+            "",
+            "To hold one exact version, take the `:vX.Y.Z` tag off a release page.",
+            "",
+            "| **Licence** | CC BY-SA 4.0 |",
+            "",
+        ]
+    )
+    make_campaign(gate, "unpinned", readmes={"README.md": body})
+    assert run(gate) == 0
+    out = capsys.readouterr().out
+    assert "1 storybook file(s) scanned for unbound version literals" in out
+
+
+def test_a_localized_gloss_restating_the_markers_numbers_is_RED(gate, capsys):
+    """Literal 4: the zh gloss carried a TRANSLATED copy of the delvec number and
+    drifted to 1.0.0 while the untranslated stamp one line above said 1.1.0."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    gloss = (
+        "> 需要 delve 引擎 0.9.0 或更高版本 — "
+        f"最近一次通过验证的 delvec 版本为 {ENGINE_DELVEC}。"
+    )
+    make_campaign(
+        gate,
+        "glossed",
+        languages=["zh-cn"],
+        readmes={
+            "README.md": storybook(marker),
+            "README.zh-cn.md": "\n".join(["# 试炼之地", "", marker, gloss, ""]),
+        },
+    )
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "README.zh-cn.md:4 carries the version literal `0.9.0`" in err
+    assert "the stamp is not translated" in err
+
+
+def test_a_localized_gloss_carrying_NO_number_is_green(gate):
+    """A gloss may say what the untranslated line above it means — just not in
+    numbers, which is the fix content PR #39 shipped."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    gloss = "> (上一行是版本印记,不翻译:它声明本战役需要的引擎版本。)"
+    make_campaign(
+        gate,
+        "glossed-ok",
+        languages=["zh-cn"],
+        readmes={
+            "README.md": storybook(marker),
+            "README.zh-cn.md": "\n".join(["# 试炼之地", "", marker, gloss, ""]),
+        },
+    )
+    assert run(gate) == 0
+
+
+def test_a_two_component_number_is_NOT_a_version_literal(gate):
+    """`CC BY-SA 4.0` and `GPL-3.0` are licences a storybook names legitimately."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    body = "\n".join(
+        [
+            "# The Test Delve",
+            "",
+            marker,
+            "",
+            "| **Licence** | CC BY-SA 4.0 |",
+            "",
+            "Code is GPL-3.0; the prose is CC BY 4.0.",
+            "",
+        ]
+    )
+    make_campaign(gate, "licensed", readmes={"README.md": body})
+    assert run(gate) == 0
+
+
+def test_an_unbound_literal_is_RED_even_with_no_marker_at_all(gate, capsys):
+    """The two clauses are independent: a storybook nobody stamped can still be
+    handing hosts a dead image tag, and both findings must arrive together."""
+    body = "\n".join(
+        ["# The Test Delve", "", "ghcr.io/stellarfeline/delve-x:v1.0.0", ""]
+    )
+    make_campaign(gate, "unstamped-and-pinned", readmes={"README.md": body})
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "pins an image tag" in err
+    assert "carries NO engine-version marker" in err
+
+
+def test_the_marker_line_itself_is_never_read_as_an_unbound_literal(gate):
+    """The marker holds two version numbers by design — it is the bound one."""
+    marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
+    make_campaign(gate, "just-the-marker", readmes={"README.md": storybook(marker)})
+    assert run(gate) == 0
+
+
+def test_a_malformed_marker_attempt_is_not_ALSO_an_unbound_literal(gate, capsys):
+    """A broken marker is one finding, reported by the marker clause that owns
+    it — not a second one about the numbers inside it."""
+    make_campaign(
+        gate,
+        "sloppy-numbers",
+        readmes={"README.md": storybook("Requires delve engine 0.9.0.")},
+    )
+    assert run(gate) == 1
+    err = capsys.readouterr().err
+    assert "the marker is MALFORMED" in err
+    assert "carries the version literal" not in err
+
+
 # --- the allowlist ----------------------------------------------------------
 
 
@@ -254,6 +450,17 @@ def test_an_allowlist_entry_for_an_absent_campaign_is_RED(gate, capsys, monkeypa
 
 
 # --- the gate may never pass vacuously --------------------------------------
+
+
+def test_zero_storybook_files_scanned_is_RED_even_with_campaigns_present(
+    gate, capsys, monkeypatch
+):
+    """The literal clauses' own binding count. Allowlist the only campaign that
+    ships a storybook and they examine nothing — green, and proving nothing."""
+    monkeypatch.setattr(gate, "ALLOWLIST", {"only": "blocked by content PR #22"})
+    make_campaign(gate, "only", readmes={"README.md": storybook(None)})
+    assert run(gate) == 1
+    assert "ZERO storybook files were read" in capsys.readouterr().err
 
 
 def test_an_empty_campaigns_root_is_RED_not_a_silent_pass(gate, capsys):
