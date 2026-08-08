@@ -161,6 +161,7 @@ echo "==> merging per-branch reports into $MERGED"
 DW_INFRA="$(printf '%s\n' ${infra[@]+"${infra[@]}"})" \
 python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
 import json, os, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 
 merged_path, plan_path, *report_paths = sys.argv[1:]
 plan = json.load(open(plan_path))

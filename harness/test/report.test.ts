@@ -458,3 +458,34 @@ test("a report with no named-entity deaths still carries an empty (not absent) a
   const json = report.toJSON() as { named_entity_deaths: unknown[] };
   assert.deepEqual(json["named_entity_deaths"], []);
 });
+
+test("spec-0029: the name-preference binding is always reported, zero included", () => {
+  // i18n v2 emits an authored custom name as a translate component, weakening
+  // (never breaking) the same-type preference heuristic. The spec requires the
+  // weakening be MEASURED: how many candidate-preference decisions the run made
+  // and how many had a usable name. A run that made none is `unbound: true` — a
+  // finding, not a pass.
+  const empty = new RunReport("hello-world", "easy").toJSON()["name_preference"] as Record<string, unknown>;
+  assert.deepEqual(empty, {
+    decisions: 0,
+    with_usable_name: 0,
+    candidates: 0,
+    named_candidates: 0,
+    unbound: true,
+  });
+
+  const r = new RunReport("hello-world", "easy");
+  r.recordNamePreference({
+    decisions: 3,
+    withUsableName: 3,
+    candidates: 7,
+    namedCandidates: 4,
+  });
+  assert.deepEqual(r.toJSON()["name_preference"], {
+    decisions: 3,
+    with_usable_name: 3,
+    candidates: 7,
+    named_candidates: 4,
+    unbound: false,
+  });
+});

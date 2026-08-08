@@ -12,7 +12,7 @@
 //! Run from the repo root:
 //!
 //! ```text
-//! cargo run -p delvewright-compiler --example gen_hello_room
+//! cargo run -p delvec --example gen_hello_room
 //! ```
 //!
 //! The anchors this structure provides are declared in `prefabs/hello-room.json`

@@ -200,17 +200,39 @@ fn the_rest_dialog_offers_exactly_two_options() {
     )
     .unwrap();
     assert_eq!(dialog["type"], "minecraft:multi_action");
-    assert_eq!(dialog["title"], "Bonfire");
+    // i18n v2 (spec-0029): every player-visible string is emitted as a text
+    // COMPONENT. The fixture authors no `prompt`/`rest_label`/`save_label`, so
+    // these three are the compiler's own CHROME — a `delvewright.ui.bonfire.*`
+    // translate key carrying the canonical English as its fallback, so a Chinese
+    // client reads them in Chinese instead of the English a bare literal froze in.
+    // An AUTHORED label would carry the campaign's own `fx.….rest_label` key.
+    use delvewright_dsl::chrome;
+    assert_eq!(dialog["title"]["translate"], chrome::BONFIRE_TITLE.key);
+    assert_eq!(dialog["title"]["fallback"], "Bonfire");
     let actions = dialog["actions"].as_array().expect("actions is a list");
     assert_eq!(actions.len(), 2, "exactly two options: {dialog:#?}");
-    assert_eq!(actions[0]["label"], "Rest and save");
+    assert_eq!(actions[0]["label"]["translate"], chrome::BONFIRE_REST.key);
+    assert_eq!(actions[0]["label"]["fallback"], "Rest and save");
     assert_eq!(actions[0]["action"]["command"], "/trigger dw.rest set 2");
-    assert_eq!(actions[1]["label"], "Save only");
+    assert_eq!(actions[1]["label"]["translate"], chrome::BONFIRE_SAVE.key);
+    assert_eq!(actions[1]["label"]["fallback"], "Save only");
     assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
-    // Both labels are captions, not sentences (#215's fixed-width button rule).
+    // Both labels are captions, not sentences (#215's fixed-width button rule) —
+    // in EVERY language the compiler ships them in, since any of them can be what
+    // the player actually reads.
     for a in actions {
-        let label = a["label"].as_str().unwrap();
-        assert!(label.chars().count() <= 20, "label too wide: `{label}`");
+        let key = a["label"]["translate"].as_str().unwrap();
+        for (code, _) in [("en_us", ()), ("zh_cn", ())] {
+            let entries = chrome::lang_entries(code);
+            let label = entries
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| a["label"]["fallback"].as_str().unwrap().to_string());
+            assert!(
+                label.chars().count() <= 20,
+                "label too wide in `{code}`: `{label}`"
+            );
+        }
     }
 }
 

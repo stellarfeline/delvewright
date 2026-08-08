@@ -20,6 +20,9 @@ edit. Template at the bottom.
 | [0013](0013-prefab-license-allowlist.md) | Expanded prefab license allowlist (+MIT/Apache/GPL) | Accepted |
 | [0014](0014-creator-distribution.md) | Creator distribution: plugin install, content repo as workdir | Accepted (M4) |
 | [0015](0015-schema-promotion-policy.md) | Schema promotion: composition first; native only via second-campaign or machine-proof gate | Accepted |
+| [0016](0016-three-layer-versioning.md) | Three-layer versioning: format, engine, skill | Accepted |
+| [0017](0017-toolchain-distribution.md) | Toolchain distribution: `cargo install delvec`, release shelf, CI-only publishing | Accepted |
+| [0018](0018-creator-toolchain-and-the-ir-hatch.md) | Creator toolchain: cargo as a prerequisite, one authoring crate, the escape hatch at the grammar IR | Accepted |
 
 ## Template
 

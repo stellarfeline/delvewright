@@ -90,12 +90,16 @@ fn an_authored_tooltip_rides_its_own_button() {
     let dlg = greeting_dialog(&build_campaign_dir(&dir));
     assert_eq!(dlg["type"], "minecraft:multi_action");
     let actions = dlg["actions"].as_array().unwrap();
+    // i18n v2 (spec-0029): a caption/tooltip is emitted as a text COMPONENT. This
+    // campaign is built straight from its stage docs (no translation tagging), so
+    // the component is the literal `{"text": …}` form; the shipped `delvec build`
+    // path emits `{"translate": …, "fallback": …}` for the same strings.
     assert_eq!(
-        actions[0]["label"], "Who are you?",
+        actions[0]["label"]["text"], "Who are you?",
         "the caption is untouched"
     );
     assert_eq!(
-        actions[0]["tooltip"], FULL_LINE,
+        actions[0]["tooltip"]["text"], FULL_LINE,
         "the full line rides the same button as a `tooltip`"
     );
     // The button still does what it did: the tooltip is decoration on the action,
@@ -148,7 +152,7 @@ fn class_select_has_always_shipped_a_button_tooltip() {
     .unwrap();
     for action in dlg["actions"].as_array().unwrap() {
         assert!(
-            action["tooltip"].is_string(),
+            action["tooltip"]["text"].is_string(),
             "every class button carries its blurb as a tooltip: {action:#?}"
         );
     }

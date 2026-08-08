@@ -111,6 +111,79 @@ sha1 = "7c9f83f1673209abb1d5262dd69583e61c85cbd2"
 # mineflayer bot pin (spec-0003). Consumed by: harness/package.json.
 mineflayer = "4.37.1"
 
+[engine]
+# The `delvec` ENGINE release line — ADR-0016 line 2, distributed per ADR-0017.
+# One release identity has to hold four things together or it means nothing: the
+# version compiled into the binary, the git tag, the crates.io version, and the
+# skill's `requires.delvec` window. Before this section they agreed only by
+# intention; `validation/check-versions.sh` now makes disagreement a red, and
+# `.github/workflows/engine-release.yml` refuses a `v*` tag whose name does not
+# match `version` below before it builds or publishes anything.
+#
+# Consumed by: validation/check-versions.sh (every assertion below),
+# .github/workflows/engine-release.yml (tag gate + build matrix),
+# .github/workflows/ci.yml (the cross-build shelf job),
+# tools/build-release-binaries.sh + tools/check-publishable.sh (which hold NO
+# copy of any value here — they read this file, the way
+# validation/server-bootstrap-cache.sh does).
+version = "1.0.0"
+
+# crates.io identity. `cargo install` resolves by CRATE name, never by binary
+# name, so the package had to BE `delvec` — `cargo install delvewright-compiler`
+# is the only spelling that could ever have worked and nobody would guess it.
+# The lib TARGET keeps the old name (`delvewright_compiler`) so 366 in-tree use
+# paths do not churn.
+crate = "delvec"
+
+# `delvewright-dsl` is a real dependency of `delvec`, so it must exist on
+# crates.io first — but it is DELIBERATELY NOT on the engine version line.
+# Locking them together looks tidy and sets a trap: a publish that half-succeeds
+# burns the dsl version permanently (crates.io versions cannot be reused), and
+# under lockstep the retry would have to move `delvec` too — which would put the
+# engine version out of step with the git tag `v1.0.0` that ADR-0016 pins. With
+# an independent line, a burned dsl version costs a dsl bump and nothing else.
+# `0.x` is also the honest semver for it: it is the DSL types the engine speaks,
+# not a library anyone should depend on directly.
+dsl_crate = "delvewright-dsl"
+dsl_crate_version = "0.1.0"
+
+# The engine's `[dependencies] delvewright-dsl` requirement is `=` and exactly
+# this version, so `delvec 1.0.0` on crates.io can resolve to exactly one
+# `delvewright-dsl` build and no other.
+dsl_crate_req = "=0.1.0"
+
+# `rust-version` in both published manifests, and the channel in
+# rust-toolchain.toml. They must be the same string: a `rust-version` looser than
+# the toolchain anybody has actually built on is an untested claim, and
+# `cargo install` is where a stranger would discover it.
+rust_toolchain = "1.97.1"
+
+# THE RELEASE SHELF (ADR-0017). Every platform a creator might plausibly drive
+# Claude Code from. Before this, release `v1.0.0` existed with ZERO assets: the
+# engine pin ADR-0016 requires and the skill's `requires.delvec` window were
+# promises against an empty shelf.
+#
+# Linux is musl-STATIC on purpose. `delvec`'s whole dependency set is pure Rust
+# (flate2 uses the miniz_oxide backend, not zlib-sys), so a static binary has no
+# glibc floor, runs on Alpine and on distros older than the runner, and cannot
+# fail at the one moment a downloaded binary is expected to just work.
+#
+# Windows ships `.tar.gz` like everything else rather than `.zip`: one archive
+# format is one extraction path for ADR-0014's future bootstrap, and a format
+# branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
+# bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
+#
+# `delve-render` is deliberately NOT on this shelf — see ADR-0017 §3; it needs a
+# GPU/driver stack and the EULA-gated client jar, neither of which a downloaded
+# binary can carry, so it would be a shelf item that fails for most downloaders.
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
 [content]
 # The pinned content repo (spec-0007 Step 0): the prefab library + campaign
 # sources live here, not in this GPL repo (ADR-0007). Determinism (ADR-0006):
@@ -145,7 +218,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # (substrate is `stone`, audit-clean). Deterministic (byte-identical regen);
 # `nobodys-cave` builds green (DW0313/DW0311/DW0312 clear) with the flock on solid
 # floor. Bump on future content merges per the RE-PIN CONVENTION.
-sha = "87a8ade1412b6961e1c67081a5c8f9fdbacf6b2e"
+sha = "e4c58c0f78f2e0e949c625697c3f5b04df125aff"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

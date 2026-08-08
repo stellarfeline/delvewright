@@ -50,7 +50,7 @@ cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || 
 trap cleanup EXIT
 
 echo "==> building the delve output (datapack + creator overlay)"
-cargo run -q -p delvewright-compiler --bin delvec -- \
+cargo run -q -p delvec --bin delvec -- \
   build "$CAMPAIGN" -o "$OUT" --prefabs campaigns/prefabs
 
 echo "==> the compiled proposal defaults the overlay will seed"
@@ -127,6 +127,7 @@ assert "$REPORT" '"pointer": "/content/quests/0/on_complete/0"' "shot 1 DSL poin
 #   path 3,67,8;7,67,8 --dw.mark--> exactly one waypoint, the bot's own eye cell
 python3 - "$REPORT" "$MARKED" <<'PY'
 import json, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 report, marked = sys.argv[1], [int(v) for v in sys.argv[2].split(",")]
 shots = {s["shot"]: s for s in json.load(open(report))["shots"]}
 assert set(shots) == {1, 2}, f"expected both shots stamped, got {sorted(shots)}"
@@ -145,7 +146,7 @@ print("report matches the adjusted values")
 PY
 
 echo "==> converting the harvest back into a DSL patch"
-cargo run -q -p delvewright-compiler --bin delvec -- \
+cargo run -q -p delvec --bin delvec -- \
   calibrate "$REPORT" --layout "$OUT/creator-datapack/layout.json" -o "$PATCH"
 
 echo "----- shot-patch.json -----"
@@ -154,6 +155,7 @@ echo "---------------------------"
 
 python3 - "$PATCH" "$OUT/creator-datapack/layout.json" "$MARKED" <<'PY'
 import json, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 patch, layout, marked = sys.argv[1], sys.argv[2], [int(v) for v in sys.argv[3].split(",")]
 p = json.load(open(patch))
 assert not p["unsnappable"], f"every proposal must snap in a one-room fixture: {p['unsnappable']}"

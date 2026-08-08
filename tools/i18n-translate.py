@@ -582,7 +582,17 @@ def sidecar_path(campaign_dir: Path, lang: str) -> Path:
 
 def write_sidecar(path: Path, inv: Inventory, content: dict[str, str]) -> None:
     """Write `l10n/<code>.json`. An existing sidecar's `dsl_version` is preserved
-    (it is a supported-version claim about the sidecar, not about this run)."""
+    (it is a supported-version claim about the sidecar, not about this run).
+
+    `source` records the canonical English each translated row was made from, which
+    is what lets the compiler DETECT a stale translation (`DW0187`) instead of
+    trusting an audit: coverage checks compare key sets, and rewriting an authored
+    line moves no key. It is written for exactly the rows `content` carries, from
+    the same inventory those rows were keyed by, so the two cannot drift.
+
+    Re-running the tool over a sidecar that predates `source` therefore adopts the
+    guard with no retranslation: every row it already had is recorded against the
+    English the inventory holds today (`DW0188` counts the rows still unguarded)."""
     dsl_version = inv.dsl_version
     if path.is_file():
         try:
@@ -595,6 +605,7 @@ def write_sidecar(path: Path, inv: Inventory, content: dict[str, str]) -> None:
         "kind": "l10n",
         "lang": inv.lang,
         "content": dict(sorted(content.items())),
+        "source": {e.key: e.en for e in sorted(inv.entries, key=lambda x: x.key) if e.key in content},
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", "utf-8")
@@ -608,7 +619,7 @@ def delvec_command(explicit: str | None) -> list[str]:
     cmd = explicit or os.environ.get("DELVEC")
     if cmd:
         return shlex.split(cmd)
-    return ["cargo", "run", "-q", "-p", "delvewright-compiler", "--bin", "delvec", "--"]
+    return ["cargo", "run", "-q", "-p", "delvec", "--bin", "delvec", "--"]
 
 
 def run_delvec(args: Sequence[str], delvec: Sequence[str]) -> subprocess.CompletedProcess[str]:

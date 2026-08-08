@@ -1,4 +1,4 @@
-# `delvewright-compiler` (`delvec`)
+# `delvec` — the compiler (crate `delvec`, lib target `delvewright_compiler`)
 
 The deterministic compiler (spec-0002, ADR-0001/0006/0011): staged campaign DSL
 in, datapack + server assets out. Rust-native emission; command syntax checked
@@ -14,13 +14,31 @@ it here. This README is crate-local dev notes only. Any PR that changes compiler
 behavior updates that reference in the same PR (CLAUDE.md Methodology; the docs CI
 job runs `tools/check-dw-codes.py`).
 
+## Crate identity (ADR-0017)
+
+The package is **`delvec`** — `cargo install` resolves by crate name, never by
+binary name — while the LIBRARY target keeps the name **`delvewright_compiler`**,
+so the 366 in-tree `use delvewright_compiler::…` paths did not churn for the
+rename. An external dependent therefore writes:
+
+```toml
+delvec = "1"
+```
+```rust
+use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION};
+```
+
+`delvewright-dsl` is published alongside it on its own `0.x` line, pinned by an
+exact `=` requirement; `versions.toml [engine]` is the source of truth for both
+and `validation/check-versions.sh` binds them.
+
 ## Build & test
 
 ```
-cargo build -p delvewright-compiler                  # build the delvec binary
-cargo run -p delvewright-compiler --bin delvec -- \  # run it
+cargo build -p delvec                  # build the delvec binary
+cargo run -p delvec --bin delvec -- \  # run it
     build <campaign-dir> -o out --prefabs campaigns/prefabs
-cargo test -p delvewright-compiler                   # unit + integration tests
+cargo test -p delvec                   # unit + integration tests
 ```
 
 Tests read the prefab library (`campaigns/prefabs/*.nbt`, git-lfs) from the

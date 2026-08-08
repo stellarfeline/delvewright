@@ -353,12 +353,30 @@ def invocations(spans: list[str]) -> list[tuple[str | None, list[str]]]:
     word — a placeholder `<version>`, a version number, a flag — yields no
     subcommand, which is how the storybook marker template in this same file
     ("last verified with delvec <version>.") contributes nothing.
+
+    Since ADR-0017 the CARGO PACKAGE is also called `delvec`, so `delvec` now
+    appears in the skill as an argument to cargo (`-p delvec`, `--bin delvec`)
+    as well as as a command. Those occurrences are not invocations and the
+    tokens after them belong to cargo, not to this CLI — reading them as
+    invocations made `cargo build -p delvec --bin delvec` report that `delvec`
+    was given a `--bin` flag it does not have.
+
+    The discriminator is the selector in front TOGETHER with the `--` behind:
+    `cargo run … --bin delvec -- schema` really does hand `schema` to this CLI,
+    so that occurrence is an invocation, while `-p delvec` and a `--bin delvec`
+    that ends the command are pure cargo arguments. Dropping only on the
+    selector loses the `-- schema` binding, which the test beside this asserts
+    in both directions.
     """
+    CARGO_SELECTORS = {"-p", "--package", "--bin", "--example"}
     found: list[tuple[str | None, list[str]]] = []
     for span in spans:
         tokens = span.replace("`", " ").split()
         for i, token in enumerate(tokens):
             if token != "delvec":
+                continue
+            after = tokens[i + 1] if i + 1 < len(tokens) else None
+            if i > 0 and tokens[i - 1] in CARGO_SELECTORS and after != "--":
                 continue
             rest = tokens[i + 1 :]
             if rest and rest[0] == "--":  # `cargo run … --bin delvec -- schema`

@@ -27,7 +27,8 @@ runs:
       shell: bash
       run: |
         python3 - <<'PY' >> "$GITHUB_OUTPUT"
-        import tomllib
+        import sys, tomllib
+        sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
         c = tomllib.load(open("versions.toml", "rb"))["content"]
         print(f"repo={c['repo']}")
         print(f"sha={c['sha']}")

@@ -94,6 +94,7 @@ done
 # script cannot drift from the manifest the rest of the stack is pinned to.
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 d = tomllib.load(open(sys.argv[1], "rb"))
 def emit(k, v): print(f'{k}={v!r}'.replace("'", '"'))
 emit("MC_VERSION",     d["minecraft"]["version"])

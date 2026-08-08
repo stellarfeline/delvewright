@@ -84,7 +84,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
 | 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
-| 4 | l10n sidecar coverage + reserved marker channel | `dsl::validate_l10n`, `dsl::validate_marker_channel` | `DW0180`/`DW0181`/`DW0182` (exit 1) |
+| 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed); then read the settled draw back and report a pool that seats the same anchor-bearing prefab twice (`DW0498`, `compiler::pool`) | `compiler::solver`, `compiler::pool` | `DW030x` (exit 3); advisory `DW0498` |
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
@@ -410,10 +410,12 @@ from l10n (no stage-7 string is player-visible).
 
 ### l10n sidecars (`l10n/<code>.json`)
 
-Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content}`; `content` = flat
-**stable key → translated string**. Key inventory derived from stage docs
+Envelope `{dsl_version,campaign_id,kind:"l10n",lang,content,source?}`; `content` =
+flat **stable key → translated string**, `source` = the same keys → the canonical
+English each row was translated **from**. Key inventory derived from stage docs
 (`world.title`, `world.outro`, `area.<a>.name`, `class.<c>.name/.blurb/.kit.<i>.name`,
-`npc.<n>.name`, `quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
+`npc.<n>.name`, `actor.<a>.name` (a scripted puppet's nameplate, only when set),
+`quest.<q>.goal`, `obj.<q>.<o>.title/.hint`,
 `obj.<q>.<o>.missing_item_hint` (v0.7) and `obj.<q>.<o>.item_name` (a `collect`'s
 collected-item display name, v0.8, only when authored),
 `dlg.<n>.<node>.text/.opt.<i>.label/.opt.<i>.tooltip` (the tooltip v0.8, only when
@@ -441,8 +443,46 @@ under a position-derived child key = parent `fx.…` key + a stable segment
 (`seq.<step>` for a sequence step; `respawn`/`caught`/`arrive` for the bundles) +
 the effect's list index + leaf, e.g. `fx.<q>.oc.<o>.0.seq.1.0.narrate` (nesting is
 arbitrary-depth). Keys are purely position-derived → deterministic + byte-stable.
-Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`.
+**Entity display names are keyed by their TEXT, not by their site.** An NPC
+(`npc.<n>.name`) and a scripted actor (`actor.<a>.name`) are two DSL surfaces for
+one thing a player reads — a nameplate over a body — and one character routinely
+occupies both: a stage-2 NPC that stands and talks, plus one actor puppet per
+cutscene pose. Per-site keys would ask a translator for `Polyphemus` five times and
+let it be answered five ways, so **the first site (NPCs before actors) declaring a
+given name owns the key and every later site carrying the byte-identical name
+emits that same key**. The inventory asks once; two bodies a player reads as one
+character cannot render as two. Deliberately scoped to that class: prose keeps one
+key per site (two coinciding English strings may legitimately need different
+renderings), and `wave.<w>.mob.<i>.name` is **not** merged — same shape, but
+merging it retires keys live campaigns already translate, which is an owner call.
+
+Coverage is **exact**: missing/absent/inconsistent → `DW0180`; orphan → `DW0181`;
+a key in the compiler's reserved `delvewright.` chrome namespace → `DW0186`.
 Excludes authoring context (theme/premise/persona).
+
+**Coverage is about key SETS, and that is not the same as being up to date.**
+Rewrite an authored line and its translation is present, applied and **wrong**,
+with no key moved and every coverage check green. `source` closes that: it records
+the English each row was translated from, so the compiler compares
+(`DW0187`) instead of a human auditing. It is load-bearing for entity display
+names in particular — their key belongs to the first site declaring a given text,
+so renaming ONE body migrates the key to ANOTHER, and the row that goes stale is
+not the row the author edited (`DW0180` points at the newly-required key, which is
+somewhere else entirely). `source` is additive: an older sidecar parses unchanged
+and its unguarded rows are **counted** by `DW0188` on every run, so an unadopted
+sidecar never reads like a checked one. `tools/i18n-translate.py` writes it, so
+adoption is a re-run with no retranslation.
+
+**Every string field in the DSL is classified, or CI is red.** `DW0185` proves that
+a string the inventory *knows about* reaches a component; it cannot see one the
+inventory never met, which ships English silently — how `actors[].name` survived
+twenty playtest rounds. `crates/dsl/tests/l10n_surface.rs` closes that half: it
+enumerates every string-valued property of the seven stage schemas (derived from
+the Rust types, so complete by construction — **78** today) and requires each to
+be classified `Inventoried` / `Reference` / `Machine` / `NotPlayerVisible(<why>)`,
+in both directions. A new `String` anywhere in the DSL fails it until somebody
+records whether a player reads it. It is a test, not a `DW` code, because the
+defect is in the compiler: no campaign input can produce it.
 
 **`delvec l10n-inventory <dir> [--lang <code>]`** emits that inventory as one JSON
 document on stdout — the work list a translator (in-agent, human, or an external
@@ -464,6 +504,101 @@ translates, so a re-run fills only the gaps. Persona rows carry voice, never plo
 gating — an incomplete sidecar is the normal state when you ask — and needs no
 prefab library; only an unparseable campaign fails (exit 1). See
 [i18n.md](i18n.md).
+
+### Language delivery — i18n v2 (spec-0029)
+
+**A released delve ships every declared language; the client picks its own.**
+`delvec build` (no `--lang`) emits every authored player-visible string as a
+**translatable text component**
+
+```json
+{"translate": "<l10n key>", "fallback": "<English source>"}
+```
+
+and writes one `assets/delvewright/lang/<mc_code>.json` per declared language,
+plus `en_us.json`, into the resource pack the release already ships. A client
+auto-selects the lang file matching its own locale; a locale we do not ship, a key
+a translator missed, **and a player who declined the resource-pack prompt** all
+resolve through the component's own `fallback`. That is why the fallback rides the
+component and not the pack's `en_us.json`: a declined pack has no lang files at
+all, and the delve must still be playable in English.
+
+| Piece | Behaviour |
+|---|---|
+| Key set | The existing l10n inventory, unchanged. `each_string` stays the single authority over what is translatable — no second key scheme, no second inventory. |
+| Tagging | `dsl::l10n::tag_translatables` rewrites each inventoried string to `<U+E000><key><U+E000><English>` **once**, before `Plan::build`. From there the tag is the compiler's only evidence that a string is player-visible. Emitters lower it through `emit::tr` / `emit::snbt_component`; non-component consumers read it through `dsl::l10n::plain`. |
+| Lang files | Flat `{key: string}` in `BTreeMap` order (ADR-0006). `en_us.json` **is** the live inventory; each other file is its sidecar's `content`. The key sets must be equal — a hole fails the build (`DW0180`/`DW0181` at emit time), because a hole is a player reading a raw key. |
+| Language codes | `dsl::mclang::mc_lang_code` normalises (lowercase, `-`→`_`) and then **checks membership against the pinned client's own language set** — `CLIENT_LANGS`, 143 stems **derived** from Mojang's 1.21.11 asset index (`tools/derive-client-langs.py`; digests in the module header), never transcribed. The membership check is what makes normalisation safe: a bare rewrite alone would invent `de` from `de`, a filename no client asks for, and a lang file nobody loads is a language silently dropped. A bare language resolves to `<lang>_<lang>` if the client ships one, else to its sole file; ambiguous (`zh`, `sr`, `be`) and unknown codes are `DW0184`. Baked into the source — the compiler never reaches the network during a build (ADR-0006). |
+| `--lang <code>` | **Unchanged**, and still the single-language bake (spec-0029 §4): strings are swapped before emission, nothing carries a translate key, and the build ships **no** lang files — there is nothing for a client to select between. For local dev and one-language artifacts; the release path does not use it. |
+| Art titles | `emit_narrate` no longer `to_ascii_uppercase()`s an `art` string — a case transform is something a `{"translate": …}` component cannot express, since the client resolves the lang file after the compiler is gone. The `delve:art` font now carries a **second bitmap provider** over the same atlas addressed by the lowercase letters, so a lowercase letter renders through its uppercase bitmap: identical pixels, in every language. Cells with no lowercase form are `\u0000` (vanilla's unused-cell marker), so no char is claimed twice. |
+| Width gates | `DW0330`/`DW0331` already checked source **and** every declared translation. Under v2 any declared language may be what a player sees, so those checks are load-bearing rather than belt-and-braces. Unchanged code, raised stakes. |
+| Build inputs | Every `l10n/<code>.json` is now an input of **every** build (not just a `--lang` bake) and is hashed into `manifest.json` — the sidecar's bytes ship in the pack, so they are as much a build input as a stage document. |
+
+No DSL change and no `dsl_version` bump: this is emission only. Every campaign's
+emitted bytes change (literals become components); released delves reproduce
+through their pinned engine (`versions.toml` + OCI), per the versioning discipline.
+
+#### Compiler chrome — the strings the compiler writes itself
+
+*Owner ruling 2026-08-06.* A delve's on-screen text has two authors. Everything
+above concerns the **campaign's** strings. The compiler writes thirteen of its own
+— `New objective: `, `Delve Complete`, `Choose your class`, the default a bonfire
+shows when the campaign authors no label — and until this they had no key and no
+override, so a player reading a fully translated delve still saw English chrome
+wrapped around it.
+
+They are **compiler-owned end to end** (`dsl::chrome`): the keys, the English, and
+every translation live with the engine, and a campaign authors nothing. Eight of
+them are *product chrome* (`objective.new`, `objective.complete`,
+`campaign.complete`, `campaign.signature`, `campaign.banner`, `lobby.waiting`,
+`class.title`, `class.body`) — no campaign author wants to write those, which is
+why the answer is not to give them an override; that would move the engine's
+maintenance cost onto content. The other five are *diegetic defaults*
+(`boundary.message`, `gate.sealed`, `bonfire.title|rest|save`) whose authored
+overrides already exist, are unchanged, and still win — what lives in `chrome` is
+only what the compiler bakes when nothing is authored.
+
+| Piece | Behaviour |
+|---|---|
+| Key space | `delvewright.ui.<area>.<name>`. Collision-proof both ways by construction: the l10n key scheme derives a fixed set of kinds and can never produce `delvewright.`, and vanilla never defines it either. A sidecar that writes one anyway is `DW0186`. |
+| Delivery | Identical to an authored string: the chrome string enters emission as a translation tag, an emitter lowers it through `emit::tr`/`snbt_component`, and a site that fails to is `DW0185` — chrome inherits the whole invariant rather than getting a parallel path. |
+| Sentences, not fragments | Four chrome strings frame a value and are **one key with `%s`**, carried by the component's `with` (`"%s — complete."`, `"New objective: %s"`, `"Waiting for the party — %s / %s"`). A concatenation freezes English word order into every language; `translate`+`with` is vanilla's own primitive for it. A unit test requires each language's placeholder count to equal the English's. |
+| Lang files | Chrome is written into `en_us.json` and into each **declared** language's file — never into languages the delve does not already ship, or a French client on a Chinese-only campaign would read French chrome around English story. Partial-by-language reads as broken; uniform English does not. |
+| The honest fallback | A language the compiler has no chrome table for gets **no chrome rows at all**: the client resolves through `en_us.json` (or, for a player who declined the pack, the component's own `fallback`) and reads English. Absent, never English written into `fr_fr.json` under a translated name. |
+| Coverage | `dsl::chrome::TABLES` maps a client language stem to a table. Today: **30 tables covering 47 of the client's 143 locales**, plus the 5 English locales that need none. The rest render English. |
+| `--lang` bake | A bake ships no lang files, so the fallback IS what the player reads: `Chrome::for_build` puts the baked language's text there, falling back to English. `%s` still substitutes — vanilla formats the fallback with the same `with` arguments. |
+
+**The translations are unreviewed.** They are machine-produced from the canonical
+English and have not been checked by native speakers; that is recorded in
+`dsl::chrome`'s module header so nobody mistakes them for reviewed work, and a
+correction is a one-line table edit. English stays canonical.
+
+#### Named exclusions — where an authored string stays literal
+
+An authored string that does not land in a text component cannot carry a translate
+key. Every such site is named here and reads its string through
+`dsl::l10n::plain`; none of them is rendered by a client. Anything **not** on this
+list that emits an authored string outside a component fails the build with
+`DW0185`, so this table cannot silently grow.
+
+| Site | Artifact | Why it is not a component |
+|---|---|---|
+| `emit::artifact_title` | `packtest-datapack/**` test `#>` descriptions | A PackTest source is a generated test, read by the validation server and by a maintainer — never rendered to a player. |
+| `emit::emit_packtest` (dialogue-visibility test) | `packtest-datapack/**/v04_dialogue_visibility.mcfunction` | Same: the option label appears in the test's own description line. |
+| `combat::actor_json` (an actor's `name`) | `validation/combat-plan.json` | The validation ladder's own artifact, read by the bot and by a maintainer. It could not carry a tag before `actors[].name` was inventoried; now that it can, it reads the English through `plain`. |
+| `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
+
+`delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
+tag at all: tagging happens inside `build`, after validation and analysis, so
+every other subcommand reads the campaign exactly as authored.
+
+`critical-path.json`, `validation/*.json`, `combat-plan.json` and `manifest.json`
+carry **ids**, never authored prose, so they need no exclusion — the bot contract
+was already language-neutral. A generated PackTest may still *write* a text
+component (`collect_container.mcfunction` pre-loads the stack the objective
+counts): that is emitted by the same helper the datapack uses, so the two cannot
+drift, and it is an input to the test rather than an assertion about rendered text.
+No generated PackTest asserts on rendered text at all.
 
 ---
 
@@ -2241,6 +2376,8 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 | `DW0180` | l10n sidecar absent / inconsistent envelope / under-covers inventory (also if `en` is declared). Compiler-level. The inventory it demands coverage of spans **every effect root emission can lower** — including `traps[].payload` and a dialogue option's `set-checkpoint` `on_respawn` bundle (task #168); a string in either used to ship English-only in a translated build, uncovered. |
 | `DW0181` | l10n sidecar has an orphan key (over-coverage). Compiler-level. |
 | `DW0182` | A player-visible string — authored English (the whole l10n inventory) or any sidecar translation — contains the reserved completion-marker sigil `[dw:complete`. That chat sequence is the validation bot's completion oracle (§4 "The completion-marker channel"); content carrying it could forge a passing critical-path step, so the sigil is **reserved**, not merely discouraged. Reword the line. |
+| `DW0183` | (i18n v2, spec-0029) A player-visible string — authored or translated — contains a character from the reserved private-use block `U+E000..U+F8FF`. That block is how the compiler carries an l10n key from the stage docs to the text component the string is emitted into (`dsl::l10n::TR_SIGIL`), so content carrying it could impersonate a translation tag; it also has no glyph in any Minecraft font. Remove the character. |
+| `DW0184` | (i18n v2, spec-0029) A declared `world.languages` code does not resolve to a language file the **pinned client actually loads** (`dsl::mclang::CLIENT_LANGS`, derived from Mojang's 1.21.11 asset index), so its `assets/delvewright/lang/<code>.json` would sit under a filename no client ever asks for and the language would ship invisible. Also fires on an ambiguous bare code (`zh`, `sr`, `be` — several regions, no `<lang>_<lang>`), because guessing the region is how a language ships invisible. Use a code the client loads. A language is never silently dropped. |
 | `DW0190` | Mannequin `skin.texture_id` malformed or duplicated. |
 | `DW0191` | A `talk-to` has no **ungated** completing option (all `requires_flags`-gated → deadlock risk). |
 | `DW0192` | Wave-mob `effects[].effect` not a known 1.21.11 status-effect id. |
@@ -3043,6 +3180,15 @@ every earlier campaign's removal is byte-identical.
 |------|---------|
 | `DW0497` | **The compiler emitted a `function <ns>:<name>` call to a function it never emitted.** Build-tier (exit 3), `compiler::integrity::check_tree`, run last, over the finished output tree — beside the affordance-hardware self-check, and on the same principle: judge the commands that ship, not the intent behind them. **The class.** Nearly every verb compiles in two halves — the *call site*, lowered from the effect tree wherever the author put the verb, and the *machinery*, emitted from a per-feature registration walk. When those two walks disagree about what exists, the call site still emits, vanilla resolves an unknown function to nothing at all (no error, no log line, nothing a bot can observe), and the verb simply never happens. **The motivating build** is the island's round 21: `wave/storm-surf` was fired from a top-level effect chain and got its full machinery; `wave/storm-shore` and `wave/storm-fire` were fired from step 7 of a `sequence`, and the wave emitter — which resolved a wave's area only from top-level chains — produced no `spawn_…`, no census, no brand, no kill reward for either, while `seq_under_ram` shipped `function nobodys-cave-island:spawn_storm_shore` all the same. Two of three storm waves never spawned; every build-tier proof was green, and the only thing that noticed was the compiler's own generated census PackTest — which walks `waves[]` rather than the effect tree — failing on a live server four minutes into a ladder run. Landing this check surfaced a **second, independent instance** immediately: `spawn-npc` on a non-`deferred` NPC compiled `function <ns>:spawn_npc_<id>` against a function only ever emitted for `deferred` NPCs, so a character brought back after a `despawn-npc` stayed gone. **Model:** every emitted `.mcfunction` in every tree is scanned for calls in command position — bare, after `run`, after `schedule` — and each target in the campaign's own namespace must name an emitted `data/<ns>/function/**` body. Deliberately **feature-blind**: the rule is "a call has a callee", which needs no knowledge of waves or NPCs and therefore guards emitters not yet written. Scope: the campaign's own namespace only (`minecraft:…` belongs to a tree this compiler does not emit); functions, not function tags (`function #<ns>:<tag>` is skipped, tag membership being a separate artifact); and **tiered** — the shipped `datapack/` ships alone (ADR-0010) so it may only call itself, while `packtest-datapack/` and `creator-datapack/` load beside it and may call their own tier or the shipped one. PackTest `test/` bodies are callers but never callees. The message lists every dangling call with its artifact path, line number, the whole command, and the missing target. Prescription: **fix the emitter** so its call walk and its machinery walk derive from one traversal — this is a compiler defect, never content. Never silence it by deleting the call site: the call is what the author asked for. |
 
+### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
+
+| Code | Meaning |
+|------|---------|
+| `DW0185` | **An authored player-visible string reached the built tree outside a text component.** Build-tier (exit 3), `emit::check_untranslated_literals`, run last over the finished output tree — beside `DW0497` and the affordance self-check, on the same principle: judge the bytes that ship, not the intent behind them. **The class.** i18n v2 (spec-0029) makes every authored string a `{"translate": …, "fallback": …}` component so a client can render the player's own language. The risk that change carries is a string that *cannot* land in a component — it would ship as a literal no lang file can reach, silently untranslatable, which is exactly the defect v2 exists to remove. Rather than enumerate the emission sites once and trust the list to stay true, the compiler makes it an invariant: each inventoried string enters emission carrying its l10n key in a reserved private-use tag (`dsl::l10n::tag_translatables`), an emitter either lowers it through `emit::tr`/`emit::snbt_component` or reads it through `dsl::l10n::plain`, and **a tag still present in the finished tree is a site that did neither**. Deliberately feature-blind, so it guards emitters not yet written. **Scope:** every emitted file, plus the compiler-authored resource-pack assets before they are zipped. A file that is neither UTF-8 text nor a **classified** verbatim binary output (`.nbt`, `.png`, `resourcepack.zip` — byte copies of input assets the compiler writes no string into) also fails here, so a new binary artifact cannot quietly opt out of the scan. The message lists every offending artifact with the key and the line. **Prescription:** lower the string through the component helpers; or, if the site is genuinely not a component and never read by a player, read it through `dsl::l10n::plain` **and** add it to the named-exclusion table in §2 "Language delivery". Never silence it by dropping the string. |
+| `DW0186` | (i18n v2 addendum) A campaign l10n sidecar defines a key in the reserved `delvewright.` **chrome** namespace. Those are the engine's own on-screen strings — `New objective: `, `Choose your class`, a bonfire's default labels — owned by the compiler, shipped translated with it, authored by no campaign; a sidecar row under that prefix would be written into the language file and silently replace product chrome for that language. `DW0181` also flags it as an orphan; this names the reason. |
+| `DW0187` | (i18n v2) An l10n sidecar row was translated from English the campaign no longer holds: its `source` entry differs from the key's canonical English (or names a key the sidecar does not translate). The translation is present, applied and wrong, and no key-set check can see it — `DW0180`/`DW0181` compare key SETS and a rewritten line moves no key. Load-bearing for entity display names, whose key belongs to the first site declaring a given text: renaming one body hands its key to another, so the stale row is not the one the author edited. Fix by re-translating the key and updating its `source` — `tools/i18n-translate.py` does both. |
+| `DW0188` | (i18n v2) An l10n sidecar records `source` provenance for only some of its rows, or none, so `DW0187` cannot see the rest. **Warning tier**, stating the unguarded row count: `source` is additive and this is the one-version deprecation window before it is required. The count exists so an unadopted sidecar is a reported number on every run rather than a silence that reads like a pass. Adopt by re-running `tools/i18n-translate.py` — it records provenance for rows it already has, and retranslates nothing. |
+
 #### The branch artifacts (validation metadata)
 
 Two outputs, emitted only for a campaign that declares `branch_points`, both pure
@@ -3213,112 +3359,106 @@ this doc is current behavior).
 
 ### Known spec ↔ code drift (current, for maintainers)
 
-- **Effect-root drift is NOT closed (swept 2026-08-05, task #170; last updated
-  task #24).** Tasks #142, #167, #168, #169, #170 and #24 each fixed one walker
-  that claimed campaign-wide effect coverage while enumerating three or four of
-  the **five** roots `plan::for_each_effect_root` names. A full workspace sweep
-  after #170 found the class is far larger than "one more": the seven fixed walkers
-  (`for_each_gate_effect`, `timeline::walk_campaign`, `emit::all_campaign_effects`,
-  `dsl::l10n`'s inventory, `compiler::flow`, `emit::check_effect_anchors`,
-  `emit::declared_flags`) are joined by the following, which are **not** fixed and
-  each need their own proof-carrying round. **Seven rows, thirteen distinct
-  walkers** — the count is by row, and several rows name a family. Both **latent
-  emission/runtime defects** on the list are now closed (task #24); everything
-  below is an imprecise diagnostic or proof, not a shipped defect. Listed worst
-  first; roots noted as **R1** `on_objective_complete`, **R2** `on_complete`,
-  **R3** `triggers[].effects`, **R4** `traps[].payload`, **R5** dialogue-option
-  `set-checkpoint.on_respawn`.
+- **Effect-root drift is CLOSED, structurally, except one named finding.** An
+  *effect root* is a `Vec<QuestEffect>` emission can lower. There are five; four
+  hang off the quests stage and the fifth off dialogue. Six walks were found blind
+  to a root and fixed one at a time, by six unrelated investigations; a sweep after
+  the sixth found **thirteen more**, and the sweep's own guard then found **three
+  the sweep had missed**. Not one was ever red — a walk that visits four of five
+  roots produces correct-looking output over any campaign that does not use the
+  fifth.
 
-  | Walker | Feeds | Has | Consequence of the gap |
-  |---|---|---|---|
-  | `emit::check_wave_spawns` | `DW0310` | R1–R3, and **shallow** (no `visit_deep`) | A `spawn-wave` in a `sequence` step / R4 / R5 emits the dangling `function <ns>:spawn_<wave>` the check exists to stop. |
-  | `gates::check_close_gates` | `DW0343` | R1–R3 | Its own file's `check_seal_hints` (`DW0423`, 20 lines below) already carries the corrected reasoning; it was never back-ported. |
-  | `dsl::validate` flag-producer set, ×3: the inline scan in the main pass, `collect_declared_flags`, `produced_flags` | `DW0172`, ending/flag reference checks | R1–R4 / R1–R3 shallow / R1–R4 | Three independent, mutually disagreeing answers to "what flags does this campaign produce". All miss R5 — pinned by `flow_effect_roots::a_dialogue_respawn_bundle_is_still_never_a_producer`, which asserts the resulting `DW0172`. |
-  | `camera::cutscene_units`, `rehearsal::bundles` | cutscene shot planning; the `dw:rehearsal` inventory | R1–R3 | Both assert in prose that they walk "in the order `emit` walks them" — a claim #169 falsified. `rehearsal::bundles` is a literal hand-rolled copy of `for_each_effect_root` minus R4/R5. |
-  | `light::reachable_time_weather` | spec-0010 darkness gate, `DW0496` | R1–R3, **shallow** | Under-reporting reachable darkness passes a delve that goes dark. |
-  | `eclipse::walkers` | `DW0359`/`DW0422` | R1–R3, **R5** | The only walker that grew R5 by hand and never got R4. |
-  | `combat::actor_beats`, `validate::difficulty_checks`, `daylight::fightable_actor`, `nav::actor_fights` | actor coverage, `DW0469`-adjacent proofs | R1–R4 | All four go through `dsl::for_each_campaign_effect`, whose `EffectSite` enum has **no dialogue variant** — R5 is not representable in its callback, so fixing them means widening that type. |
+  Fixing them one at a time was never going to close it, so the roots are now
+  enumerated **once**:
 
-  The two doc comments that encoded the exact fallacy `plan::for_each_effect_root`
-  was written to refute — `combat::actor_beats` ("Dialogue options are
-  deliberately not walked: `DialogueEffect` has no actor verb at all, so there is
-  nothing there to miss") and `dsl::validate`'s "Dialogue effects are a flat list
-  (no nesting), so a direct scan suffices there" — were **corrected in task #24**,
-  ahead of their walks. Both now name the blind spot they used to argue away: the
-  dialogue **option's** `set_checkpoint().1` is a `Vec<QuestEffect>`, not a
-  `DialogueEffect`. Behaviour there is unchanged; the reasoning is what was
-  reproducing the bug.
+  - `delvewright_dsl::effects::for_each_effect_root` is the single enumeration.
+    `for_each_effect_root_mut` (the l10n write path) is generated from the **same
+    macro body**, so the ref/mut pair cannot drift either.
+  - `dsl::for_each_campaign_effect` = that walk + the single nesting authority
+    (`QuestEffect::nested_effect_lists_labeled`). Both axes inherited, neither
+    listed. Its `EffectSite` gained a `DialogueRespawn` variant — its absence was
+    load-bearing, because root 5 was not *representable* in the callback.
+  - `compiler::plan::for_each_effect_root` and `l10n::effect_roots` /
+    `effect_roots_mut` are thin adapters over it. Four separate enumerations became
+    one.
+  - `EffectRootKind::ALL` is the closed set, and the walk **asserts on every call**
+    that it enumerated all of them — in release builds too, because a root quietly
+    dropping out of the enumeration has no other symptom.
+  - Every walk reports a `RootBinding`: how many roots it enumerated and how many
+    bundles each bound to on this campaign. *Enumerated the root* and *this
+    campaign uses the root* are different facts, and a proof that conflates them
+    reports a vacuous green as a pass.
 
-  `emit::declared_flags` was the second, closed by the same task. It decides which
-  `dw.f_<flag>` objectives `setup` creates, which makes it emission rather than a
-  lint: a `set-flag` whose objective was never declared writes to nothing —
-  vanilla answers an undeclared objective with a command error and carries on, so
-  there is no crash, nothing a bot observes, and every gate on that flag simply
-  never opens. That is the `DW0497` shape (a call with no callee) one layer down,
-  at the scoreboard. A `set-flag` in a `traps[].payload` or a dialogue
-  `on_respawn` bundle emitted its write against an objective nothing created. The
-  roots now come from `plan::for_each_effect_root`; the non-root sources beside it
-  (trap and timed-gate `disarm.sets_flag`, the flat `DialogueEffect::SetFlag`
-  list, the cast ledger's flag reads) are unchanged, because none of them is an
-  effect root. Pinned by `flag_objective_roots`, whose every assertion locates the
-  **write** in the shipped pack before demanding the declaration — the declaration
-  alone would stay green if the root stopped being lowered at all.
+  Adding a sixth root is one edit in that macro, and every walk below inherits it.
 
-  `emit::check_effect_anchors` (`DW0360`) was the first of the two **latent
-  emission defects** on that list, closed by task #24. Its own doc called it "the
-  backstop that makes the rule total" while it walked R1–R3, so a typo'd anchor in
-  a trap payload or a dialogue `on_respawn` bundle emitted nothing and said
-  nothing: the fixture build shipped `trap_fire_alarm_chest.mcfunction` containing
-  only its sentinel line, with the `open-gate` gone. It now inherits its roots
-  from `plan::for_each_effect_root` and descends each — pinned by
-  `anchor_seal::typod_anchor_in_a_trap_payload_is_dw0360`,
-  `…_nested_in_a_trap_payload_…` and
-  `…_in_a_dialogue_respawn_bundle_…`, each paired with a control proving the root
-  really is lowered (so no assertion there is vacuous).
+  Walkers swept (13 from the audit + 3 the guard found): `emit::check_wave_spawns`
+  (already closed before the sweep), `gates::check_close_gates`, `dsl::validate`'s
+  three flag-producer answers (the inline pass scan, `collect_declared_flags`,
+  `produced_flags`), `camera::cutscene_units`, `rehearsal::bundles`,
+  `light::reachable_time_weather`, `eclipse::walkers`, `combat::actor_beats`,
+  `validate::difficulty_checks`, `daylight::fightable_actor`, `nav::actor_fights`,
+  plus `continuity::excluded_npcs`, `emit::first_damage_players` and
+  `emit_v04_packtests`' despawn scan.
 
-  **Open for the planner: `DW0360` vs `DW0447` overlap.** Widening the seal to R4
-  put the spec-0022 payload-verb anchors (`volley.from_anchor`,
-  `volley.kill_zone.anchor`, `collapse.region_anchor.anchor`) in its reach for the
-  first time — and `DW0447` already owns exactly that predicate
-  (`plan::point_any` failing), fails the build just as hard, and says more (verb,
-  volume, anchor). Task #24 therefore scopes the seal to the verbs that fail
-  **open**, which is what its charter has always described, and lets the
-  fail-**closed** payload verbs keep `DW0447` — but **only where `DW0447` runs**.
+  Two of those were also **shallow** — no nesting descent at all — which mattered
+  more than the root axis on real content: `nobodys-cave-island` sets four of its
+  five `set-time`s, two of three `set-weather`s and two of three `spawn-wave`s
+  inside nested bundles, and produces two flags (`flag/eury-hidden`,
+  `flag/antiphos-posted`) that `collect_declared_flags` could not see. That
+  campaign stayed green only because it gates an *objective* on those two flags
+  rather than a *trigger*, and objectives are checked against a different, deeper
+  inventory. Three inventories, three answers, and which one you hit decided
+  whether legitimate content compiled.
 
-  That qualifier is the finding, and it is recorded because the first version of
-  this carve-out was unconditional and rested on a false premise ("a payload verb
-  implies a trap, which is a `nav::needs_world` condition"). **There is no rule
-  confining `volley`/`collapse` to `traps[].payload`.** `dsl::validate` reaches
-  them through `for_each_trap_payload_deep` *inside* the traps loop, which
-  validates them where they are rather than forbidding them elsewhere, and both
-  are ordinary variants of the shared `QuestEffect` enum — a `volley` on a quest's
-  `on_complete` parses, validates and reaches emission. `plan_payload_verbs`,
-  however, lives inside the world block, so `DW0447` is unreachable for a campaign
-  with no traps, no waves, no bodies and no walkable critical leg. Measured, the
-  unconditional deferral did not merely lose the better message there: the typo'd
-  anchor surfaced as **`DW0497`**, whose message tells the author the *compiler*
-  is defective and names a generated function — and which fires identically when
-  the anchor is correct, so it carries no signal about the typo at all.
+  `tools/check-effect-roots.py` is the other half: nothing in the type system stops
+  a fourteenth hand-rolled walk, because the root fields are ordinary public
+  fields. It fails CI when a window of source names three or more distinct roots
+  outside a reasoned allowlist. It is a proximity heuristic and says so — a tripwire
+  for the shape the thirteen actually had, not a proof of absence.
 
-  The deferral is therefore conditional on `emit::assembles_world(plan)`, which is
-  the **same** predicate the world block itself reads (extracted so a check that
-  defers to another check cannot drift from whether that other check runs). Pinned
-  by `anchor_seal::the_worldless_fixture_really_does_skip_the_payload_proof`
-  (the premise, held as a fact rather than prose) and
-  `anchor_seal::typod_volley_anchor_without_a_world_is_dw0360` (the corner).
+  **Open finding: `plan::required_anchors_for_area`.** It collects the anchors an
+  area's assembly must provide from R1+R2 (and R3 only when the campaign has a
+  single area), so an anchor named only in a `traps[].payload` or a dialogue
+  `on_respawn` bundle is never registered as required. Left unfixed deliberately:
+  unlike every other walker in the sweep this is not a mechanical widening, because
+  a trap payload has no area attribution — a trap carries an `at` anchor, not an
+  area — and registering its anchors in every area is the over-provisioning that
+  function's own comment warns against. `DW0360`/`DW0447` still catch the resulting
+  unresolved anchor at build time, so this is a worse message rather than a silent
+  drop. It needs its own round, with a layout diff. Recorded in the guard's
+  allowlist so it stays visible on every CI run.
 
-  This is the only carve-out in the seal, and it is the sort of
-  two-codes-one-predicate redundancy the registry owner may prefer to collapse;
-  that decision is not a worker's to make.
+  **Sound by construction, not a walker: `validate::reserved_v06_world`.** It checks
+  R1–R3 for v0.6-only *fields*; R4/R5 cannot exist below v0.6 at all
+  (`/content/traps` is reserved wholesale, and a dialogue `set-checkpoint` by
+  `v06_effect()`), so widening it would report the same campaigns with a worse
+  message.
 
-  **Adjacent, unfixed, found while closing the above:** a `volley` on a quest's
-  `on_complete` in a world-less campaign fails the build with `DW0497` **even when
-  its anchor is valid** — the call site emits `function <ns>:volley_<key>` while
-  `plan_payload_verbs` never runs to emit the machinery. That is a genuine
-  call-walk/machinery-walk disagreement of exactly the class `DW0497` exists to
-  catch, and it is untouched here: the fix is either to confine the payload verbs
-  to `traps[].payload` at the DSL layer or to make their machinery independent of
-  the world block, and both are their own round.
+  **`DW0360` vs `DW0447` overlap** (unchanged by this sweep, still open for the
+  registry owner). Widening the seal to R4 put the spec-0022 payload-verb anchors
+  (`volley.from_anchor`, `volley.kill_zone.anchor`, `collapse.region_anchor.anchor`)
+  in its reach, and `DW0447` already owns exactly that predicate, fails just as hard
+  and says more. The seal therefore scopes itself to the verbs that fail **open**
+  and lets the fail-**closed** payload verbs keep `DW0447` — but only where
+  `DW0447` runs. That qualifier is the finding: **there is no rule confining
+  `volley`/`collapse` to `traps[].payload`**, and `plan_payload_verbs` lives inside
+  the world block, so `DW0447` is unreachable for a campaign with no traps, no
+  waves, no bodies and no walkable critical leg. Measured, an unconditional
+  deferral there did not merely lose the better message — the typo'd anchor
+  surfaced as `DW0497`, whose message tells the author the *compiler* is defective
+  and which fires identically when the anchor is correct. The deferral is therefore
+  conditional on `emit::assembles_world(plan)`, the same predicate the world block
+  itself reads. Pinned by
+  `anchor_seal::the_worldless_fixture_really_does_skip_the_payload_proof` and
+  `anchor_seal::typod_volley_anchor_without_a_world_is_dw0360`.
+
+  **Adjacent, unfixed:** a `volley` on a quest's `on_complete` in a world-less
+  campaign fails the build with `DW0497` **even when its anchor is valid** — the
+  call site emits `function <ns>:volley_<key>` while `plan_payload_verbs` never runs
+  to emit the machinery. A genuine call-walk/machinery-walk disagreement of the
+  class `DW0497` exists to catch; the fix is either to confine the payload verbs to
+  `traps[].payload` at the DSL layer or to make their machinery independent of the
+  world block, and both are their own round.
 
 - **spec-0002 CLI** lists stages `1..5`, `dsl 0.1.0`, and omits `--json`/
   `--prefabs`/`--lang`; code is stages `1..6`, `dsl 0.6.0`, all three flags.

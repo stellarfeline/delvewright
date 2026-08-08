@@ -26,6 +26,7 @@ BOOTSTRAP_SH="$ROOT/validation/server-bootstrap-cache.sh"
 # --- pull every value we assert on out of the manifest in one shot --------------
 eval "$(python3 - "$MANIFEST" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
 d = tomllib.load(open(sys.argv[1], "rb"))
 def emit(k, v): print(f'{k}={v!r}'.replace("'", '"'))
 emit("MC_VERSION",        d["minecraft"]["version"])
@@ -138,6 +139,138 @@ if [[ $CHUNKY_CORE =~ ^chunky-core-.*SNAPSHOT ]]; then
 else
   fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
 fi
+
+echo "== Engine release line ([engine], ADR-0016 / ADR-0017) =="
+# ADR-0016 requires four numbers to be ONE number: the version compiled into the
+# binary, the git tag, the crates.io version, and the window the `/new-delve`
+# skill declares. Before this block they agreed only by intention, and this
+# repo's history is a list of contracts that lived in comments. Here they are
+# bound; `.github/workflows/engine-release.yml` binds the git tag at release time
+# (it cannot be checked from a working tree), and `tools/check-skill-version.py`
+# binds the skill's window.
+#
+# Cargo manifests are parsed with tomllib rather than grepped: `name = ` and
+# `version = ` occur inside dependency tables and inside comments, and a gate
+# that matches the wrong line is worse than no gate.
+# NOT `$(python3 - <<'PY' ... PY)`: macOS ships bash 3.2, whose command-
+# substitution parser scans the heredoc body for backticks and parentheses even
+# when the heredoc is QUOTED — so a backtick in a Python comment inside `$( )`
+# is a syntax error reported at a line ~130 further down, in code that never
+# changed. Measured 2026-08-06. Redirecting to a file keeps the heredoc out of a
+# command substitution entirely, which makes the trap stop existing rather than
+# leaving the next editor to rediscover it.
+eng_report_file="$(mktemp)"
+python3 - "$MANIFEST" "$ROOT" > "$eng_report_file" <<'PY'
+import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+from pathlib import Path
+
+manifest, root = Path(sys.argv[1]), Path(sys.argv[2])
+e = tomllib.load(manifest.open("rb"))["engine"]
+out = []
+def ok(msg):   out.append(("ok", msg))
+def bad(msg):  out.append(("FAIL", msg))
+
+compiler = tomllib.load((root / "crates/compiler/Cargo.toml").open("rb"))
+dsl      = tomllib.load((root / "crates/dsl/Cargo.toml").open("rb"))
+
+# 1. crates.io identity. `cargo install` resolves by CRATE name, never by binary
+#    name, so the package must BE `delvec` or `cargo install delvec` installs
+#    somebody else's crate (or nothing).
+for label, mani, want_name, want_ver in (
+    ("compiler", compiler, e["crate"], e["version"]),
+    ("dsl", dsl, e["dsl_crate"], e["dsl_crate_version"]),
+):
+    got_name, got_ver = mani["package"]["name"], mani["package"]["version"]
+    (ok if got_name == want_name else bad)(
+        f"{label} package name {got_name!r} (manifest: {want_name!r})")
+    (ok if got_ver == want_ver else bad)(
+        f"{label} package version {got_ver!r} (manifest: {want_ver!r})")
+
+# 2. The lib TARGET keeps the pre-rename name on purpose (366 in-tree
+#    `use delvewright_compiler::` paths). If that ever moves silently, every one
+#    of them breaks at once, so it is pinned here rather than left to luck.
+lib_name = compiler.get("lib", {}).get("name")
+(ok if lib_name == "delvewright_compiler" else bad)(
+    f"compiler lib target name {lib_name!r} (must stay 'delvewright_compiler')")
+
+# 3. Once `path` is stripped on publish, the `=` requirement is the ONLY thing
+#    tying `delvec` to a specific `delvewright-dsl`.
+req = compiler["dependencies"][e["dsl_crate"]]
+req = req if isinstance(req, str) else req.get("version", "<absent>")
+(ok if req == e["dsl_crate_req"] else bad)(
+    f"compiler depends on {e['dsl_crate']} {req!r} (manifest: {e['dsl_crate_req']!r})")
+
+# 4. Publishability inventory, in BOTH directions. The two crates that must be
+#    publishable, and every other workspace member that must NOT be — a new
+#    crate added without `publish = false` would otherwise be swept onto
+#    crates.io by the first `--workspace` anything, irreversibly.
+members = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]["members"]
+publishable = {e["crate"], e["dsl_crate"]}
+n_pub = n_priv = 0
+for m in members:
+    mani = tomllib.load((root / m / "Cargo.toml").open("rb"))
+    name, flag = mani["package"]["name"], mani["package"].get("publish", True)
+    if name in publishable:
+        n_pub += 1
+        (ok if flag is not False else bad)(f"{name} is publishable")
+    else:
+        n_priv += 1
+        (ok if flag is False else bad)(
+            f"{name} declares `publish = false` (it is not on the release line "
+            f"and must never reach crates.io)")
+missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in members}
+if missing:
+    bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")
+ok(f"publish inventory: {len(members)} member(s) = {n_pub} publishable + {n_priv} private")
+
+# 5. `rust-version` in a published manifest is a promise to a stranger running
+#    `cargo install`. It must be the toolchain this repo actually builds on, not
+#    a looser number nobody has tested.
+toolchain = tomllib.load((root / "rust-toolchain.toml").open("rb"))["toolchain"]["channel"]
+(ok if toolchain == e["rust_toolchain"] else bad)(
+    f"rust-toolchain.toml channel {toolchain!r} (manifest: {e['rust_toolchain']!r})")
+for label, mani in (("compiler", compiler), ("dsl", dsl)):
+    rv = mani["package"].get("rust-version")
+    (ok if rv == e["rust_toolchain"] else bad)(
+        f"{label} rust-version {rv!r} (manifest: {e['rust_toolchain']!r})")
+
+# 6. The release matrix and the shelf must be the same set, both directions —
+#    a target in versions.toml with no matrix row is a promised binary nobody
+#    builds; a matrix row with no manifest line is a binary nobody declared.
+wf = (root / ".github/workflows/engine-release.yml").read_text(encoding="utf-8")
+declared = set(e["targets"])
+in_matrix = {t for t in declared if f"target: {t}," in wf}
+stray = set()
+import re as _re
+for m in _re.finditer(r"target:\s*([A-Za-z0-9_.-]+),", wf):
+    stray.add(m.group(1))
+if not declared:
+    bad("[engine].targets is empty — the shelf would bind to nothing")
+elif in_matrix == declared and stray == declared:
+    ok(f"release matrix == [engine].targets ({len(declared)} target(s))")
+else:
+    bad(f"release matrix {sorted(stray)} != [engine].targets {sorted(declared)}")
+
+# 7. The build script must hold no COPY of the shelf — the way a consumer cannot
+#    drift from the manifest is to carry nothing (same rule as the server-jar
+#    bootstrap below).
+script = (root / "tools/build-release-binaries.sh").read_text(encoding="utf-8")
+code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#"))
+hard = sorted(t for t in declared if t in code)
+(ok if not hard else bad)(
+    "tools/build-release-binaries.sh hardcodes no target triple"
+    if not hard else
+    f"tools/build-release-binaries.sh hardcodes {hard} — read them from versions.toml")
+
+for status, msg in out:
+    print(f"{status}\t{msg}")
+PY
+while IFS=$'\t' read -r status msg; do
+  [ -n "$status" ] || continue
+  if [ "$status" = "ok" ]; then pass "$msg"; else fail "$msg"; fi
+done < "$eng_report_file"
+rm -f "$eng_report_file"
 
 echo "== Server-jar bootstrap (task #41) =="
 # `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:

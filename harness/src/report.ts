@@ -25,6 +25,7 @@ import type {
   PerformedRest,
 } from "./combat.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
+import type { NamePreference } from "./executor.ts";
 
 /**
  * One tiered actor, and what this run did about it (#114).
@@ -121,6 +122,13 @@ export class RunReport {
   private readonly actors: ActorReport[] = [];
   private floorLedger: FloorLedger | undefined;
   private actorsGate: BindingCount | undefined;
+  /** spec-0029: the name-preference binding, zero until the run records one. */
+  private namePreference: NamePreference = {
+    decisions: 0,
+    withUsableName: 0,
+    candidates: 0,
+    namedCandidates: 0,
+  };
 
   constructor(campaignId: string, difficulty: string) {
     this.campaignId = campaignId;
@@ -192,6 +200,21 @@ export class RunReport {
    */
   recordActorsGate(gate: BindingCount | undefined): void {
     this.actorsGate = gate;
+  }
+
+  /**
+   * Record the same-type name-preference binding (spec-0029): how many
+   * candidate-preference decisions the run made and how many had a usable name.
+   *
+   * i18n v2 emits an authored custom name as a translate component, so the
+   * heuristic that prefers a body by its name reads a component rather than a
+   * string. That weakens a preference, never an identity (`executor.ts` says so),
+   * but the spec requires the weakening be MEASURED: a run that made decisions
+   * and found zero usable names is a finding, and a run that made none is an
+   * unbound gate, which is also a finding.
+   */
+  recordNamePreference(binding: NamePreference): void {
+    this.namePreference = binding;
   }
 
   recordBranches(tier: string, driven: string | undefined, outcomes: readonly BranchOutcome[]): void {
@@ -319,6 +342,17 @@ export class RunReport {
       // `actors[]`'s own binding count (rule 1): distinct question from
       // `floor_gate`'s — an all-`ordinary` actor binds this one and not that
       // one. `null` when the plan predates the field.
+      // spec-0029 name-preference binding. `unbound` is stated explicitly so a
+      // run that never exercised the preference cannot read as one that
+      // exercised it successfully — a green gate that binds to nothing is
+      // vacuous, not a pass (CLAUDE.md).
+      name_preference: {
+        decisions: this.namePreference.decisions,
+        with_usable_name: this.namePreference.withUsableName,
+        candidates: this.namePreference.candidates,
+        named_candidates: this.namePreference.namedCandidates,
+        unbound: this.namePreference.decisions === 0,
+      },
       actors_gate:
         this.actorsGate === undefined
           ? null

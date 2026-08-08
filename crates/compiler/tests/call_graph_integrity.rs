@@ -32,7 +32,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
     .expect("campaign parses")
 }
 
-fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
+fn build(campaign: &Campaign, dir: &std::path::Path) -> Result<BuildOutput, BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -44,7 +44,7 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
     }
     emit::build(
         &plan,
-        &BTreeMap::new(),
+        &common::campaign_inputs(dir),
         &structures,
         &CommandTree::v1_21_11(),
         &prefabs,
@@ -143,7 +143,7 @@ fn shipped_fixtures_emit_a_closed_call_graph() {
     ] {
         let campaign = parse_dir(&dir);
         let ns = campaign.world.campaign_id.as_str().to_string();
-        let out = build(&campaign)
+        let out = build(&campaign, &dir)
             .unwrap_or_else(|e| panic!("fixture `{}` must build: {e:?}", dir.display()));
         integrity::check_tree(&ns, &out).unwrap_or_else(|e| {
             panic!(
