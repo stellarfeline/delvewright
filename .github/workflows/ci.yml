@@ -55,9 +55,9 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy -D warnings
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
@@ -134,7 +134,7 @@ jobs:
       # tests once — including the cases that prove it FAILS (a rock stacked on a
       # stair tread), which running the generators can only prove by not firing.
       - name: shared generator invariants — unit tests
-        run: cargo test --manifest-path prefabs/island-terrain-generator/Cargo.toml
+        run: cargo test --locked --manifest-path prefabs/island-terrain-generator/Cargo.toml
       # Running the generator twice into different trees proves BOTH halves at
       # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
       - name: run every generator twice — invariants hold, output is identical
@@ -439,7 +439,7 @@ jobs:
       # one. Dev profile — the workspace sets `opt-level = 1` for it (PR #313),
       # which is what makes a real layout solve affordable on every push.
       - name: build the engine under test
-        run: cargo build -p delvec --bin delvec
+        run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
         run: python3 tools/build-every-campaign.py --delvec target/debug/delvec
 

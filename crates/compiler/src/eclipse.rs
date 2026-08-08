@@ -344,9 +344,15 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        // …and the v0.8 form of the same merge: a click trigger anchored on a gate
-        // the campaign seals rides that seal's hitboxes and summons nothing.
-        if plan.seal_hints.iter().any(|s| s.anchor == at) {
+        // …and the general form of the same merge (task #50): wherever a
+        // compiler-owned interaction set already covers the anchor — a
+        // `close-gate` seal, a sealed shortcut door — the trigger rides it and
+        // summons nothing. Read from `crate::pressable`, the same authority the
+        // emitter uses, so the two can never disagree about whether a body exists.
+        if matches!(
+            crate::pressable::body_at(plan, at),
+            crate::pressable::Body::Rides { .. }
+        ) {
             continue;
         }
         let Some(pos) = plan.point_any(at) else {

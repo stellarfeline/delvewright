@@ -219,7 +219,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 
 | Check | Binds today |
 |---|---|
-| A — every `summon minecraft:interaction`, keyed by enclosing fn | 9 sites |
+| A — every `summon minecraft:interaction`, keyed by enclosing fn | 11 sites (was 9; the shortcut wrong-side lift adds `ws_arm_fns`) |
 | B — every compiler-baked player-facing English string | 3 constants (was 5; spec-0029 closed two) |
 | C — DSL structs declared separately with an identical field set | 2 groups |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 6 (enum, field) pairs |
