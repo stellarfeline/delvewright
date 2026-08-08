@@ -30,3 +30,29 @@
 # batch_size = 40                               # optional keys per request (default 40)
 # timeout_seconds = 120                         # optional (default 120)
 # max_retries = 3                               # optional (default 3)
+
+# [refimg] — draw a REFERENCE IMAGE for the design-alignment gate: concept art
+# produced BEFORE any prefab exists, so the owner confirms the design against a
+# picture instead of prose. NOT a render — a render is a candidate prefab imaged
+# by `delve-render`, later, at contact-sheet curation. Two stages, two producers.
+#
+#   consumed by: tools/refimg.py           ·   docs: docs/reference/tools.md
+#
+# Generation-time working material only: ref images are local, gitignored, never
+# shipped and never in the content repo, so image-model output licensing never
+# touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes.
+#
+# NEVER put an API key in this file (or in delvewright.local.toml). `api_key_env`
+# is the NAME of an environment variable, read at call time, never stored or
+# logged; an inline `api_key =` is refused outright.
+#
+# The provider name carries CAPABILITY, not just wire format. A provider that
+# cannot accept a style anchor must fail loudly rather than silently drop it.
+#
+# [refimg]
+# provider = "ideogram-v3"                     # only supported value today
+# model = "ideogram-v3"
+# api_key_env = "DELVEWRIGHT_REFIMG_API_KEY"
+# rendering_speed = "TURBO"                    # TURBO | DEFAULT | QUALITY
+# resolution = "1344x768"                      # optional, provider-validated
+# timeout_seconds = 180                        # optional (default 180)
