@@ -772,9 +772,19 @@ pub fn anchor_starts(plan: &Plan) -> Vec<[i32; 3]> {
 /// **full blockstate-carrying** form — the model because waterlogging, slab
 /// halves and snow layers change the fluid and step models (task #78), the
 /// write-log because it is the runtime `setblock`/`fill` line. An air write
-/// removes the cell (absent = air) and always clears any open-gate marking; a
-/// non-air write over an authored open gate likewise closes it (the runtime
-/// `setblock` replaces the whole block, state included).
+/// removes the cell (absent = air); any write replaces the whole block, state
+/// included, so the cell's open-gate marking is re-derived from what was just
+/// written rather than carried over.
+///
+/// **`open=true` is honoured** (island round 21). `Assembled::open_gates` is the
+/// side set [`crate::assembled::occupancy_of`] reads to tell a *closed* fence
+/// gate (a barrier the player opens with a right-click, and nobody else passes)
+/// from an *open* one (a bare threshold). It was populated only by the prefab
+/// read, and every edit write unconditionally CLEARED it — so a stage-7 edit
+/// could write `minecraft:oak_fence_gate[open=true]`, ship that exact block in
+/// the world, and still have every proof downstream model it as shut. That is
+/// the model contradicting the bytes it emitted, and it made the one available
+/// fix for `DW0452` impossible to author.
 fn write_cell(
     assembled: &mut Assembled,
     batch_writes: &mut BTreeMap<[i32; 3], String>,
@@ -786,7 +796,11 @@ fn write_cell(
     } else {
         assembled.blocks.insert(cell, block.to_string());
     }
-    assembled.open_gates.remove(&cell);
+    if assembled::is_fence_gate(block) && assembled::state_value(block, "open") == Some("true") {
+        assembled.open_gates.insert(cell);
+    } else {
+        assembled.open_gates.remove(&cell);
+    }
     batch_writes.insert(cell, block.to_string());
 }
 

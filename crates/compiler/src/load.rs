@@ -61,6 +61,13 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<LoadedCampaign> {
         None
     };
     let l10n = load_l10n_dir(&dir.join("l10n"))?;
+    // i18n v2 (spec-0029): every sidecar is a build input of **every** build, not
+    // just of a `--lang` bake — the delve now ships each declared language's lang
+    // file in its resource pack, so the sidecar's bytes are as much a build input
+    // as a stage document, and the manifest hashes them like one.
+    for (code, bytes) in &l10n {
+        inputs.insert(format!("l10n/{code}.json"), bytes.clone());
+    }
     Ok(LoadedCampaign {
         raw: RawCampaign {
             world,

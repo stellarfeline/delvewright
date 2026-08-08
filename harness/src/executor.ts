@@ -3222,15 +3222,30 @@ export class MineflayerExecutor implements StepExecutor {
     for (;;) {
       const near = Object.values(bot.entities)
         .filter((e) => e?.position && e.name === want)
-        .map((e) => ({
-          id: e.id,
-          named: displayNameOf(e) === a.name,
-          d: Math.hypot(e.position.x - pos[0], e.position.y - pos[1], e.position.z - pos[2]),
-        }))
+        .map((e) => {
+          const label = displayNameOf(e);
+          return {
+            id: e.id,
+            label,
+            named: label === a.name,
+            d: Math.hypot(e.position.x - pos[0], e.position.y - pos[1], e.position.z - pos[2]),
+          };
+        })
         .filter((e) => e.d <= ACTOR_MATCH_RADIUS)
         .sort((x, y) => Number(y.named) - Number(x.named) || x.d - y.d);
       const best = near[0];
-      if (best) return { id: best.id };
+      if (best) {
+        // spec-0029: the preference is measured every time it is exercised —
+        // how many bodies it chose between and how many of them had a name the
+        // heuristic could read. Recorded on the deciding pass only, so the
+        // settle-loop's earlier empty polls do not inflate the count.
+        this.namePreferenceDecisions += 1;
+        this.namePreferenceCandidates += near.length;
+        const named = near.filter((e) => e.label !== undefined && e.label !== "").length;
+        this.namePreferenceNamedCandidates += named;
+        if (named > 0) this.namePreferenceWithName += 1;
+        return { id: best.id };
+      }
       if (Date.now() >= deadline) return undefined;
       await delay(REACH_POLL_MS);
     }
@@ -4000,6 +4015,26 @@ export class MineflayerExecutor implements StepExecutor {
     this.restSteps = rests;
   }
 
+  /** spec-0029 name-preference binding counters (see {@link NamePreference}). */
+  private namePreferenceDecisions = 0;
+  private namePreferenceWithName = 0;
+  private namePreferenceCandidates = 0;
+  private namePreferenceNamedCandidates = 0;
+
+  /**
+   * The measured name-preference binding for the run report (spec-0029). Always
+   * reported, including the all-zero shape — a preference nobody exercised is a
+   * stated zero binding, never a silent absence.
+   */
+  namePreference(): NamePreference {
+    return {
+      decisions: this.namePreferenceDecisions,
+      withUsableName: this.namePreferenceWithName,
+      candidates: this.namePreferenceCandidates,
+      namedCandidates: this.namePreferenceNamedCandidates,
+    };
+  }
+
   /** Rests this run performed, and the bonfires among them. For the run report. */
   performedRests(): readonly PerformedRest[] {
     return this.restSteps.filter((r) => this.restedBonfires.has(r.bonfire));
@@ -4307,19 +4342,51 @@ function fmt(p: { x: number; y: number; z: number }): string {
  * them and gives up quietly rather than throwing. Used only to PREFER the right
  * body among candidates of the same entity type (#114); identity never rests on
  * it, because a client cannot read the entity tag the compiler actually uses.
+ *
+ * **i18n v2 (spec-0029).** An authored name now ships as
+ * `{"translate": "<l10n key>", "fallback": "<English source>"}`, so the `text`
+ * field is gone. `fallback` is read explicitly and FIRST among the component
+ * shapes: it is by construction the English source the campaign document holds,
+ * which is exactly the string the plan's `actors[].name` carries — so the
+ * preference heuristic keeps matching, rather than depending on whether the
+ * installed prismarine-chat resolves an unknown translate key to its fallback or
+ * to the raw key. How often it actually binds is MEASURED, not assumed:
+ * {@link NamePreference} counts every candidate-preference decision and how many
+ * had a usable name, and the run report prints both.
  */
 export function displayNameOf(e: unknown): string | undefined {
   const ent = e as { displayName?: unknown; customName?: unknown };
   for (const raw of [ent.customName, ent.displayName]) {
     if (typeof raw === "string" && raw.length > 0) return raw;
     if (raw && typeof raw === "object") {
-      const o = raw as { text?: unknown; toString?: () => string };
+      const o = raw as { text?: unknown; fallback?: unknown; toString?: () => string };
+      if (typeof o.fallback === "string" && o.fallback.length > 0) return o.fallback;
       if (typeof o.text === "string" && o.text.length > 0) return o.text;
       const s = typeof o.toString === "function" ? o.toString() : "";
       if (s && s !== "[object Object]") return s;
     }
   }
   return undefined;
+}
+
+/**
+ * How often the same-type candidate preference (#114) actually had a name to
+ * prefer by — the binding count spec-0029 requires the bot run to state rather
+ * than assume.
+ *
+ * `decisions` counts every time the bot chose among candidate bodies for a named
+ * actor; `withUsableName` counts the ones where at least one candidate carried a
+ * readable custom name. A run whose `decisions` is 0 examined nothing and is
+ * `unbound` — a finding, not a pass (CLAUDE.md, playtest-methodology.md rule 1).
+ * A run with decisions but `withUsableName: 0` is the specific regression
+ * spec-0029 asks to watch for: translate components rendering as keys the
+ * heuristic cannot match.
+ */
+export interface NamePreference {
+  readonly decisions: number;
+  readonly withUsableName: number;
+  readonly candidates: number;
+  readonly namedCandidates: number;
 }
 
 /**

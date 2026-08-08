@@ -134,17 +134,40 @@ pub struct ShortcutPlan {
     pub unlock: [i32; 3],
     /// Effects fired once, when the shortcut opens.
     pub on_unlock: Vec<QuestEffect>,
+    /// The volume a presser must stand in for the press to count as coming from
+    /// the wrong side, derived from the gate slab and the `unlock` cell. `None`
+    /// when the geometry does not decide it — `DW0425`.
+    pub sealed_side: Option<crate::wrongside::SealedSide>,
 }
 
-/// The compiler's canonical English answer a sealed gate gives a right-click
-/// when the `close-gate` authors no `sealed_hint` (English-first, CLAUDE.md
-/// language policy — baked at emit time exactly as the boundary return message
-/// is, so it is not l10n-inventoried).
+impl ShortcutPlan {
+    /// The **shell** cells of the sealed gate: every region cell with at least
+    /// one axis-neighbour outside the region, in ascending `(x, y, z)` order —
+    /// exactly the clickable surface, and for the thin slab a doorway usually is,
+    /// the whole region.
+    ///
+    /// The same rule [`SealHintPlan::shell_cells`] applies to a `close-gate`
+    /// seal, for the same reason: a cell buried inside the door has six sealed
+    /// neighbours, so no face of it can ever be in a crosshair, and arming it
+    /// would ship an entity nothing can reach.
+    pub fn shell_cells(&self) -> Vec<[i32; 3]> {
+        shell_cells_of(self.gate_region)
+    }
+}
+
+/// The compiler's own answer a sealed gate gives a right-click when the
+/// `close-gate` authors no `sealed_hint`.
 ///
 /// The owner's island finding #34: a sealed boulder answered a right-click with
 /// SILENCE. There is no such thing as a seal with nothing to say, so the answer
 /// is the compiler's obligation and the authored line is only the wording.
-pub const SEAL_HINT_DEFAULT: &str = "The way is sealed.";
+///
+/// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
+/// the compiler, and not l10n-inventoried — a campaign that wants its own wording
+/// authors `sealed_hint`, which is inventoried like any other line. The plan
+/// carries the chrome default in its tagged form; `emit` rebinds it to the build's
+/// language.
+pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
 
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
 /// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
@@ -175,24 +198,36 @@ impl SealHintPlan {
     /// for the thin slab a gate anchor usually is (a doorway one block deep) it
     /// is the whole region.
     pub fn shell_cells(&self) -> Vec<[i32; 3]> {
-        let (a, b) = self.region;
-        let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-        let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-        let mut out = Vec::new();
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    let interior = (lo[0] < x && x < hi[0])
-                        && (lo[1] < y && y < hi[1])
-                        && (lo[2] < z && z < hi[2]);
-                    if !interior {
-                        out.push([x, y, z]);
-                    }
+        shell_cells_of(self.region)
+    }
+}
+
+/// The **shell** cells of an inclusive region: every cell with at least one
+/// axis-neighbour outside it, in ascending `(x, y, z)` order.
+///
+/// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
+/// own answer needed the identical surface (task #50). One definition, because
+/// two copies of "which cells of a sealed slab can be clicked" would be free to
+/// drift apart, and the whole point of the geometry is that it is the same
+/// question in both places.
+fn shell_cells_of(region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
+    let (a, b) = region;
+    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+    let mut out = Vec::new();
+    for x in lo[0]..=hi[0] {
+        for y in lo[1]..=hi[1] {
+            for z in lo[2]..=hi[2] {
+                let interior = (lo[0] < x && x < hi[0])
+                    && (lo[1] < y && y < hi[1])
+                    && (lo[2] < z && z < hi[2]);
+                if !interior {
+                    out.push([x, y, z]);
                 }
             }
         }
-        out
     }
+    out
 }
 
 /// A resolved stage-5 `timed-gate` (spec-0016 §4), in declared order.
@@ -2525,6 +2560,11 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
+            // Task #50: which half of the doorway is the sealed one, from the
+            // slab's thin axis and the side the unlock stands on. `None` is not
+            // an error here — `emit` raises `DW0425` only if an answer was
+            // actually authored for a side the geometry does not name.
+            sealed_side: crate::wrongside::derive((from, to), unlock),
         });
     }
     out
@@ -2596,10 +2636,10 @@ fn collect_seal_hints(
             safe: safe_local(name),
             region: (from, to),
             block,
-            text: e
-                .close_gate_sealed_hint()
-                .unwrap_or(SEAL_HINT_DEFAULT)
-                .to_string(),
+            text: match e.close_gate_sealed_hint() {
+                Some(h) => h.to_string(),
+                None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            },
         });
     });
     out
@@ -3137,9 +3177,21 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
-                prompt: labels.prompt_or_default().to_string(),
-                rest_label: labels.rest_or_default().to_string(),
-                save_label: labels.save_or_default().to_string(),
+                // Authored strings are ordinary inventoried campaign text; an
+                // unauthored one takes the compiler's chrome default in its tagged
+                // form, which `emit` rebinds to the build's language.
+                prompt: labels
+                    .prompt
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_TITLE.tagged()),
+                rest_label: labels
+                    .rest_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_REST.tagged()),
+                save_label: labels
+                    .save_label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| delvewright_dsl::chrome::BONFIRE_SAVE.tagged()),
             });
         }
     }

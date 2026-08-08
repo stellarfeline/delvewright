@@ -1,5 +1,5 @@
 {
-  "dsl_version": "0.6.0",
+  "dsl_version": "0.9.0",
   "campaign_id": "souls-shortcut",
   "stage": "quests",
   "content": {
@@ -45,6 +45,31 @@
             "type": "narrate",
             "text": "The bars grind up. This door is open for good.",
             "style": "subtitle"
+          }
+        ]
+      }
+    ],
+    "triggers": [
+      {
+        "id": "trigger/bars-wont-give",
+        "at": "anchor/door",
+        "on": {
+          "on": "strike"
+        },
+        "once": false,
+        "effects": [
+          {
+            "type": "narrate",
+            "style": "chat",
+            "text": "You set your shoulder to the bars. They do not give, and nothing on this side of them will."
+          },
+          {
+            "type": "play-sound",
+            "sound": "minecraft:block.chain.hit",
+            "at": {
+              "at": "anchor",
+              "anchor": "anchor/door"
+            }
           }
         ]
       }

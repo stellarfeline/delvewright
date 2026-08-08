@@ -388,14 +388,17 @@ fn compass_toward(eye: [f64; 3], look_at: [f64; 3]) -> &'static str {
     }
 }
 
-/// The display name of an NPC, or its id's local part.
+/// The display name of an NPC, or its id's local part. The render plan is a
+/// reviewer artifact, never a text component and never rendered by a client, so
+/// authored names appear here as their English source (`l10n::plain`) — a named
+/// exclusion under spec-0029, listed in `docs/reference/compiler.md`.
 fn npc_name(c: &Campaign, npc_id: &str) -> String {
     c.npcs
         .content
         .npcs
         .iter()
         .find(|n| n.id.as_str() == npc_id)
-        .map(|n| n.name.clone())
+        .map(|n| delvewright_dsl::l10n_plain(&n.name).to_string())
         .unwrap_or_else(|| local_of(npc_id))
 }
 
@@ -436,20 +439,23 @@ fn find_objective<'a>(c: &'a Campaign, obj_id: &str) -> Option<&'a Objective> {
         .find(|o| o.id().as_str() == obj_id)
 }
 
-/// The display name of an area, or empty.
+/// The display name of an area, or empty. Reviewer artifact — English source, per
+/// [`npc_name`].
 fn area_name_of(c: &Campaign, area_id: &str) -> String {
     c.world
         .content
         .areas
         .iter()
         .find(|a| a.id.as_str() == area_id)
-        .map(|a| a.name.clone())
+        .map(|a| delvewright_dsl::l10n_plain(&a.name).to_string())
         .unwrap_or_default()
 }
 
 /// The first clause of a hint (up to the first sentence end), trimmed — keeps the
-/// expect line to one sentence.
+/// expect line to one sentence. Reviewer artifact, so the hint is read as its
+/// English source (`l10n::plain`) — a spec-0029 named exclusion.
 fn first_clause(hint: &str) -> String {
+    let hint = delvewright_dsl::l10n_plain(hint);
     let end = hint.find(['.', ';', '—']).unwrap_or(hint.len());
     hint[..end].trim().to_string()
 }
@@ -573,7 +579,7 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             .npcs
             .iter()
             .find(|n| n.id.as_str() == npc.npc_id)
-            .map(|n| n.name.as_str())
+            .map(|n| delvewright_dsl::l10n_plain(&n.name))
             .unwrap_or("NPC");
         let Some(ResolvedAnchor::Point { pos, facing }) =
             plan.anchors.get(&(area.clone(), anchor.to_string()))
@@ -613,7 +619,10 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
             Value::String("interaction hitbox present — objective is completable here".into()),
         ];
         if let Some(h) = hint {
-            expect.push(Value::String(format!("matches objective hint: {h}")));
+            expect.push(Value::String(format!(
+                "matches objective hint: {}",
+                delvewright_dsl::l10n_plain(&h)
+            )));
         }
         shots.push(json!({
             "id": format!("interact/{}", short(&obj_id)),
