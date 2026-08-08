@@ -166,16 +166,23 @@ impl ValleySurround {
     }
 
     /// The scene-rect interior MOAT fill (spec-0026 amendment, task #157
-    /// round 3 — planner ruling): scene-rect columns with ZERO piece-authored
-    /// blocks receive ambient gap-floor ground at `floor_top_y` with the gap
-    /// floor's own surface treatment (the noise is world-coordinate-keyed, so
-    /// the dapple runs seamlessly from the annulus gap floor through the
-    /// moat), making the box-garden floor continuous from gap floor to every
-    /// piece footprint. Columns with ANY authored block are untouched —
-    /// pieces own their columns; authored overhangs and voids are
-    /// intentional. Emitted as row-strip tiles (`horizon/valley/m<n>`) so no
-    /// tile ever carries an air cell over a piece column (placed air would
-    /// erase authored blocks).
+    /// rounds 3–4 — planner ruling): scene-rect columns no piece FLOORS
+    /// receive ambient gap-floor ground at `floor_top_y` with the gap floor's
+    /// own surface treatment (the noise is world-coordinate-keyed, so the
+    /// dapple runs seamlessly from the annulus gap floor through the moat),
+    /// making the box-garden floor continuous from gap floor to every piece
+    /// footprint.
+    ///
+    /// `authored` is the caller's set of floored columns — those where a piece
+    /// authors a block at or below `floor_top_y` ([`Plan::ground_columns`],
+    /// which owns the rationale). Those columns are untouched: the piece owns
+    /// its ground, holes and basements included. A column whose piece content
+    /// is entirely ABOVE the gap floor (an elevated storey) is NOT floored and
+    /// is filled — the valley floor runs on under it. Emitted as row-strip
+    /// tiles (`horizon/valley/m<n>`) so no tile ever carries an air cell over
+    /// a floored column (placed air would erase authored blocks).
+    ///
+    /// [`Plan::ground_columns`]: crate::plan::Plan
     ///
     /// Returns the strip tiles and their standable cells (extra starts for
     /// the un-climbability flood).

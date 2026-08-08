@@ -3054,6 +3054,30 @@ export class MineflayerExecutor implements StepExecutor {
    * billed it hard.
    */
   async kill(step: KillStep): Promise<void> {
+    await this.clearWave(step);
+    // task #178: winning the fight is a MEANS. The proof is the delve's own
+    // completion marker for this step's objective — exactly the criterion
+    // `talk-to`, `reach`, `collect` and `interact` have always been held to, and
+    // the only one `kill` was ever exempt from.
+    //
+    // The exemption is how a hard softlock reached the owner past an all-green
+    // ladder (hollow-vigil, 2026-08-05). Every terminal condition below is a
+    // judgement about MOBS — confirmed kills, engaged-and-down, the server's live
+    // wave census — and each of them was satisfied while the campaign's kill
+    // countdown sat above zero, because the countdown only ever moved on a
+    // player-credited kill and the wave had died to daylight. The bot reported the
+    // encounter cleared; the delve considered the objective open forever; the next
+    // quest never armed and the key it places was never placed. The bot was
+    // grading a different game from the one the party plays.
+    //
+    // Nothing here weakens the census logic — it stays, as the thing that decides
+    // when to STOP swinging. It simply no longer gets to declare the step proven.
+    await this.requireObjective(step.objective, `kill ${step.wave}`);
+  }
+
+  /** Fight the wave until nothing of it stands — the "stop swinging" decision.
+   * Says nothing about whether the campaign accepted the fight; see {@link kill}. */
+  private async clearWave(step: KillStep): Promise<void> {
     const enc = this.encounterFor(step.wave);
     if (!enc) {
       // No combat plan (or a wave outside it): pre-spec-0023 behaviour, untouched.

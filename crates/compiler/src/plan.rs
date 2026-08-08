@@ -1692,8 +1692,8 @@ impl<'a> Plan<'a> {
         })
     }
 
-    /// Attach the valley MOAT (spec-0026 amendment, task #157 round 3): fill
-    /// every scene-rect column that carries zero piece-authored blocks with
+    /// Attach the valley MOAT (spec-0026 amendment, task #157 rounds 3–4):
+    /// fill every scene-rect column that carries no piece-authored GROUND with
     /// ambient gap-floor ground, so the box-garden floor is continuous from
     /// the gap floor to every piece footprint (the #157 walls-down probe
     /// found DW0322 void exposure INSIDE the scene rect — the rect is the
@@ -1701,7 +1701,7 @@ impl<'a> Plan<'a> {
     /// it runs at the `read_structures` choke point every subcommand funnels
     /// through — build, snapshot, blocking and the render plan all see the
     /// same completed surround. Idempotent; a no-op for surround-less plans
-    /// and for scenes whose pieces author every rect column.
+    /// and for scenes whose pieces floor every rect column.
     pub fn attach_valley_moat(&mut self, structures: &BTreeMap<String, Vec<u8>>) {
         let Some(surround) = &self.surround else {
             return;
@@ -1713,19 +1713,21 @@ impl<'a> Plan<'a> {
         {
             return; // already attached (idempotence across repeated reads)
         }
-        // Authored columns of every placed piece, rotation-aware — a column
-        // with ANY authored block belongs to its piece (authored overhangs
-        // and voids are intentional; the moat never touches them).
+        let floor_top_y = surround.valley.floor_top_y;
         let mut authored: BTreeSet<(i32, i32)> = BTreeSet::new();
         for area in &self.areas {
             for piece in &area.pieces {
                 let Some(bytes) = structures.get(&piece.structure_file) else {
                     continue;
                 };
-                for (local, _, _) in crate::assembled::structure_cells(bytes) {
-                    let t = piece.rotation.transform(local);
-                    authored.insert((piece.pos[0] + t[0], piece.pos[2] + t[2]));
-                }
+                authored.extend(Self::ground_columns(
+                    crate::assembled::structure_cells(bytes)
+                        .into_iter()
+                        .map(|(local, _, _)| local),
+                    piece.pos,
+                    piece.rotation,
+                    floor_top_y,
+                ));
             }
         }
         let surround = self.surround.as_mut().expect("checked above");
@@ -1743,6 +1745,44 @@ impl<'a> Plan<'a> {
             surround.structures.insert(file, tile.bytes);
         }
         surround.valley.gap_floor_starts.extend(starts);
+    }
+
+    /// The columns a placed piece FLOORS: the world `(x, z)` of every authored
+    /// cell that lands at or below the gap-floor top, rotated exactly the way
+    /// [`crate::assembled`] rotates the same cells into the voxel model (and
+    /// the way vanilla's `place template … <rotation>` rotates them about the
+    /// `pos` pivot).
+    ///
+    /// The `y` predicate is the whole point (task #157 round 4). Round 3 asked
+    /// "does the piece author ANY block in this column", which reads a
+    /// **vertical** scene wrong: a keep whose stairs lift later corridors 4, 8,
+    /// 12, 16 blocks above the datum authors nothing at gap-floor level under
+    /// those corridors, yet claimed their columns — so the moat skipped them
+    /// and the gap-floor plane stayed void under the entire elevated footprint
+    /// (hollow-vigil: 476 such columns, 159 of them bordering filled ground →
+    /// `DW0322`). A piece that never reaches the floor band has said nothing
+    /// about the ground there; the valley floor runs on underneath it, exactly
+    /// as it does under a column no piece mentions at all.
+    ///
+    /// Conversely a piece that authors anything at or below `floor_top_y` owns
+    /// that column's ground — floor, doorway, basement or a deliberate hole —
+    /// and the moat never writes into it. That is also what keeps the fill
+    /// non-destructive: the moat's tiles are placed after the scene pieces, so
+    /// every cell it writes (`y ≤ floor_top_y`) must be one no piece claimed.
+    fn ground_columns(
+        cells: impl Iterator<Item = [i32; 3]>,
+        pos: [i32; 3],
+        rotation: Rotation,
+        floor_top_y: i32,
+    ) -> BTreeSet<(i32, i32)> {
+        let mut out = BTreeSet::new();
+        for local in cells {
+            let t = rotation.transform(local);
+            if pos[1] + t[1] <= floor_top_y {
+                out.insert((pos[0] + t[0], pos[2] + t[2]));
+            }
+        }
+        out
     }
 
     /// Every piece the bootstrap must place and the world model must contain:
@@ -4091,4 +4131,85 @@ pub fn campaign_start_quests(campaign: &Campaign) -> Vec<&str> {
         .filter(|q| matches!(q.trigger, Trigger::CampaignStart))
         .map(|q| q.id.as_str())
         .collect()
+}
+
+#[cfg(test)]
+mod moat_tests {
+    use super::*;
+
+    /// One 3×3 footprint's worth of local cells at a chosen local y.
+    fn plate(y: i32) -> Vec<[i32; 3]> {
+        (0..3)
+            .flat_map(move |x| (0..3).map(move |z| [x, y, z]))
+            .collect()
+    }
+
+    /// The moat's authored-column bookkeeping is rotation-aware, and it agrees
+    /// with the world model: `Rotation::transform` about the `pos` pivot is the
+    /// same transform [`crate::assembled`] applies to the same cells, and the
+    /// same one vanilla's `place template … <rotation>` applies (pivot ZERO).
+    /// Asserted for every rotation, on a footprint that is NOT square in the
+    /// axis sense (3 wide, 5 deep) so an axis swap cannot hide.
+    #[test]
+    fn ground_columns_follow_the_placement_rotation() {
+        let cells: Vec<[i32; 3]> = (0..3)
+            .flat_map(|x| (0..5).map(move |z| [x, 0, z]))
+            .collect();
+        let cases = [
+            (Rotation::None, (10, 12), (30, 34)),
+            (Rotation::Cw90, (6, 10), (30, 32)),
+            (Rotation::Cw180, (8, 10), (26, 30)),
+            (Rotation::Ccw90, (10, 14), (28, 30)),
+        ];
+        for (rot, (min_x, max_x), (min_z, max_z)) in cases {
+            let got = Plan::ground_columns(cells.iter().copied(), [10, 63, 30], rot, 63);
+            let xs: Vec<i32> = got.iter().map(|c| c.0).collect();
+            let zs: Vec<i32> = got.iter().map(|c| c.1).collect();
+            assert_eq!(got.len(), 15, "{rot:?} keeps the whole 3×5 footprint");
+            assert_eq!(
+                (
+                    *xs.iter().min().unwrap(),
+                    *xs.iter().max().unwrap(),
+                    *zs.iter().min().unwrap(),
+                    *zs.iter().max().unwrap()
+                ),
+                (min_x, max_x, min_z, max_z),
+                "{rot:?} footprint"
+            );
+        }
+    }
+
+    /// Task #157 round 4: a piece whose cells all sit ABOVE the gap-floor top
+    /// floors nothing — the moat must be free to run the valley floor under it.
+    /// Rotated, because the vertical keep's elevated corridors are.
+    #[test]
+    fn an_elevated_storey_floors_no_column() {
+        for rot in Rotation::ALL {
+            assert!(
+                Plan::ground_columns(plate(4).into_iter(), [38, 67, 14], rot, 63).is_empty(),
+                "{rot:?}: a storey four blocks over the datum claims no ground"
+            );
+        }
+    }
+
+    /// The complement: a piece that reaches the floor band owns those columns,
+    /// and only those. A pillar authored from y = 63 up, plus a canopy at the
+    /// top that overhangs by one column, floors the pillar's footprint only —
+    /// the overhang is void at ground level and belongs to the moat.
+    #[test]
+    fn only_columns_reaching_the_floor_band_are_floored() {
+        let mut cells: Vec<[i32; 3]> = (0..4).map(|y| [0, y, 0]).collect(); // pillar
+        cells.extend((0..3).map(|x| [x, 4, 0])); // canopy, overhanging x = 1, 2
+        let got = Plan::ground_columns(cells.into_iter(), [5, 63, 9], Rotation::None, 63);
+        assert_eq!(got, [(5, 9)].into_iter().collect::<BTreeSet<_>>());
+    }
+
+    /// A basement column — authored BELOW the gap-floor top and nowhere in it —
+    /// is floored too: the moat would otherwise cap it with grass, burying
+    /// authored geometry under a plane it never asked for.
+    #[test]
+    fn a_column_authored_below_the_datum_is_floored() {
+        let got = Plan::ground_columns(plate(0).into_iter(), [0, 55, 0], Rotation::None, 63);
+        assert_eq!(got.len(), 9, "sub-datum cells still claim their columns");
+    }
 }

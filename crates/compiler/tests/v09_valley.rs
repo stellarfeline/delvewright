@@ -285,7 +285,31 @@ fn v09_flooded_interior_without_waterline_is_dw0364() {
 /// the same prefab id.
 #[test]
 fn v09_open_scene_onto_gap_floor_builds_green() {
-    open_scene_builds_green("v09-open", 48, 48, |_, _| true);
+    open_scene_builds_green("v09-open", 48, 48, |_, _| true, |_, _| false);
+}
+
+/// Task #157 round 4 — the ELEVATED-storey seam. A walls-down scene whose
+/// pieces climb (hollow-vigil is a vertical keep: stairs lift the later
+/// corridors 4, 8, 12, 16 blocks above the datum) leaves scene-rect columns
+/// whose only authored blocks sit ABOVE the gap-floor top. Round 3's moat
+/// projected authorship to 2D and read those columns as "the piece owns this
+/// ground", so it skipped them — and the gap-floor plane stayed void under the
+/// whole elevated footprint, with DW0322 firing along every seam where the
+/// filled ground met it (159 columns on the real staging).
+///
+/// The fixture is the minimal shape: a ground plate with a wing whose blocks
+/// exist only on the top storey (local y = 4) and nowhere at the datum. The
+/// moat must give that wing ground, exactly as it does for a column no piece
+/// mentions at all.
+#[test]
+fn v09_elevated_storey_over_void_builds_green() {
+    open_scene_builds_green(
+        "v09-elevated",
+        94,
+        27,
+        |x, z| !(x >= 40 && (8..=18).contains(&z)),
+        |x, z| x >= 40 && (8..=18).contains(&z),
+    );
 }
 
 /// Task #157 round 3 (planner ruling — the void moat): a walls-down scene
@@ -296,7 +320,7 @@ fn v09_open_scene_onto_gap_floor_builds_green() {
 /// moat.
 #[test]
 fn v09_blob_scene_with_void_moat_builds_green() {
-    open_scene_builds_green("v09-blob", 94, 27, |x, z| x <= 60 || z <= 13);
+    open_scene_builds_green("v09-blob", 94, 27, |x, z| x <= 60 || z <= 13, |_, _| false);
 }
 
 /// The 94×27 twin — hollow-vigil's ACTUAL proportions (task #157 round 2):
@@ -306,10 +330,18 @@ fn v09_blob_scene_with_void_moat_builds_green() {
 /// and DW0322 stays silent purely by construction.
 #[test]
 fn v09_hollow_proportioned_open_scene_builds_green() {
-    open_scene_builds_green("v09-hollow", 94, 27, |_, _| true);
+    open_scene_builds_green("v09-hollow", 94, 27, |_, _| true, |_, _| false);
 }
 
-fn open_scene_builds_green(name: &str, w: i32, d: i32, covered: impl Fn(i32, i32) -> bool) {
+/// `covered` marks columns carrying the ground plate (local y = 0); `elevated`
+/// marks columns carrying ONLY an upper storey (local y = 4) over datum void.
+fn open_scene_builds_green(
+    name: &str,
+    w: i32,
+    d: i32,
+    covered: impl Fn(i32, i32) -> bool,
+    elevated: impl Fn(i32, i32) -> bool,
+) {
     let prefabs = tmp(&format!("{name}-prefabs"));
     common::copy_dir_all(&common::prefabs_dir(), &prefabs);
 
@@ -342,6 +374,12 @@ fn open_scene_builds_green(name: &str, w: i32, d: i32, covered: impl Fn(i32, i32
             if covered(x, z) {
                 blocks.push(BlockEntry {
                     pos: [x, 0, z],
+                    state: 0,
+                });
+            }
+            if elevated(x, z) {
+                blocks.push(BlockEntry {
+                    pos: [x, 4, z],
                     state: 0,
                 });
             }
@@ -384,6 +422,36 @@ fn open_scene_builds_green(name: &str, w: i32, d: i32, covered: impl Fn(i32, i32
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
     let camp = valley_campaign(&format!("{name}-scene"), "valley");
+    // Boundary safety (`DW0322`) is proven by the world-edits pass
+    // ([`edit::check_batch_invariants`]) — a campaign with no stage-7 script is
+    // never asked the question. The staging these fixtures stand in for IS an
+    // edited campaign (hollow-vigil carves its gate yard open), so the fixture
+    // carries a one-cell batch: the smallest legal script that puts the whole
+    // assembled world, surround and moat included, in front of the proof.
+    let edits = serde_json::json!({
+        "dsl_version": "0.9.0",
+        "campaign_id": "hello-world",
+        "stage": "world-edits",
+        "content": { "batches": [ {
+            "id": "batch/boundary-probe",
+            "area": "area/keep",
+            "note": "Re-lay one floor cell under the keeper so the batch invariants \
+                     (DW0322 boundary safety over the assembled world) run at all.",
+            "edits": [
+                { "verb": "select", "name": "region/under-keeper", "shape": {
+                    "kind": "box",
+                    "frame": { "kind": "anchor-relative", "anchor": "anchor/keeper-stand" },
+                    "min": [0, -1, 0], "max": [0, -1, 0] } },
+                { "verb": "fill", "region": "region/under-keeper", "recipe": {
+                    "blocks": [ { "block": "minecraft:stone", "weight": 1.0 } ] } }
+            ]
+        } ] }
+    });
+    std::fs::write(
+        camp.join("world-edits.json"),
+        serde_json::to_string_pretty(&edits).unwrap(),
+    )
+    .unwrap();
     let out = tmp(&format!("{name}-scene-out"));
     let r = delvec(&[
         "build",
