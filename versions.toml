@@ -206,14 +206,18 @@ targets = [
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
 # content `main` tip in a normal follow-up PR.
 repo = "stellarfeline/delvewright-campaigns"
-# The spec-0026 **walk_y backfill** (content branch
-# `worker/spec-0026-walk-y-backfill`, content PR #21), which is content `main`
-# e4c58c0f plus one additive line per prefab: every prefab metadata file declares
+# The spec-0026 **walk_y backfill** PLUS the island's declared shoreline
+# (content branch `content/island-tideline`, which contains content PR #21's
+# branch), i.e. content `main` e4c58c0f plus one additive line per prefab: every prefab metadata file declares
 # its tileset walk-plane convention (`walk_y` — keep 1, cave 2, island 3; each
 # verified empirically from the .nbt geometry, and the island set re-derived
 # over main's REGENERATED island prefabs as `waterline_y + 1`). The compiler's
 # per-area placement datum consumes it (base = walk_ref_y - walk_y, spec-0026
-# §2, DW0367).
+# §2, DW0367). The branch's second half is the island's `batch/tideline`
+# declaration, which spec-0030's `flood` verb consumes: without it this delvec
+# reds DW0364 on 26 standable cells at world y=62 — the ocean line — in ALREADY
+# RELEASED content, because the per-area walk_y datum is what finally lets
+# DW0364 see the banks the owner ruled intended (2026-08-06).
 #
 # This is a BRANCH sha, not a content `main` tip, and the branch pin is not a
 # shortcut — it is the ONLY pin that can exist here, because the change is
@@ -234,7 +238,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # is EMPTY, so no prefab geometry moved under the walk_y derivation.
 # RE-PIN to the content `main` tip the moment content #21 merges
 # (RE-PIN CONVENTION above).
-sha = "1319414c704f839b48e9a31a7246e28240117d34"
+sha = "986562787c1468cea93b924856c0867b4c51994f"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

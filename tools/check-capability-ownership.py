@@ -206,6 +206,21 @@ STRUCTURAL_TWINS = {
         "different roles in the same shot and are kept distinct on purpose. No "
         "capability is stranded — nothing wants a 'generic anchor+offset'."
     ),
+    ("HorizonSpec", "ResolvedHorizon"): (
+        "ACCEPTED — a wire/resolved PAIR, not one class typed twice. The field "
+        "names coincide because the second IS the first with defaults applied; "
+        "the types are opposites, and the difference is re-checkable rather "
+        "than taken on trust: `HorizonSpec` is every field `Option<T>`, "
+        "`deny_unknown_fields`, Serialize/Deserialize/JsonSchema — WHAT AN "
+        "AUTHOR MAY WRITE. `ResolvedHorizon` is every field concrete with no "
+        "serde at all — WHAT DOWNSTREAM READS. Sharing the type would delete "
+        "the distinction the surface depends on: `DW0366` can reject an "
+        "`ocean` that declares `blend_width` only because *absent* and "
+        "*defaulted* are different states in the wire form, and one total type "
+        "cannot tell them apart. No capability is stranded — the pair IS the "
+        "mechanism. If a third such pair appears, generalise the CHECK on that "
+        "structural test instead of adding a third entry here."
+    ),
 }
 
 # A field on this share or more of a tagged enum's variants is a cross-cutting
