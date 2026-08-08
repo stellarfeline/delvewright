@@ -69,21 +69,36 @@ PROVIDERS = {
         # The Interactions API, NOT the OpenAI-compatibility layer: that layer has
         # no image input and SILENTLY IGNORES unknown parameters, so a
         # style-anchored request through it would drop the anchor without error.
+        #
+        # Schema below is COPIED FROM THE OFFICIAL SDK's generated types
+        # (googleapis/python-genai, `google/genai/_gaos/types/interactions/`),
+        # not inferred from prose docs or from a paid probe. Reading the SDK
+        # corrected three things the docs had left wrong or unsaid: a `seed`
+        # exists, `previous_interaction_id` exists, and `image_size` has no
+        # "0.5K".
         "endpoint": "https://generativelanguage.googleapis.com/v1beta/interactions",
         "auth_header": "x-goog-api-key",
         "wire": "json",
-        # Images only — and weaker than advertised: every reference image is
-        # submitted as an untyped `{"type":"image"}`, with NO field distinguishing
-        # a style reference from a character or object one. The role is carried by
-        # the PROMPT TEXT, so the anchor is prose-mediated, not structural.
-        "anchors": ("images",),
-        "seed": False,
+        # `ImageContent` is {data|uri, mime_type, resolution, type} — there is NO
+        # role field, confirmed in the SDK and not merely in the docs. A reference
+        # image cannot declare itself a STYLE reference rather than a subject one;
+        # the role is carried by the prompt text. The structural anchor here is
+        # `previous_interaction_id` (--chain-from), which pins a whole conversation
+        # rather than re-describing a look.
+        "anchors": ("images", "chain"),
+        "seed": True,
     },
 }
 
 USER_AGENT = "delvewright-refimg/1"
 
 RENDERING_SPEEDS = ("TURBO", "DEFAULT", "QUALITY")
+
+# Copied from the SDK's generated literals (ImageResponseFormat*). Validated
+# locally so a typo is an error here rather than a silently different picture.
+IMAGE_SIZES = ("512", "1K", "2K", "4K")
+ASPECT_RATIOS = ("1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4",
+                 "9:16", "16:9", "21:9", "1:8", "8:1", "1:4", "4:1")
 
 
 class ConfigError(Exception):
@@ -130,6 +145,19 @@ def load_config() -> dict:
             f"[{SECTION}].rendering_speed = {speed!r}; allowed: {', '.join(RENDERING_SPEEDS)}."
         )
     cfg["rendering_speed"] = speed
+
+    if cfg["provider"] == "gemini-native":
+        size = cfg.get("image_size", "2K")
+        if size not in IMAGE_SIZES:
+            raise ConfigError(
+                f"[{SECTION}].image_size = {size!r}; allowed: {', '.join(IMAGE_SIZES)}. "
+                f"(There is no \"0.5K\" — the SDK's own literals are the authority.)"
+            )
+        ratio = cfg.get("aspect_ratio", "16:9")
+        if ratio not in ASPECT_RATIOS:
+            raise ConfigError(
+                f"[{SECTION}].aspect_ratio = {ratio!r}; allowed: {', '.join(ASPECT_RATIOS)}."
+            )
     return cfg
 
 
@@ -180,6 +208,15 @@ def build_request(cfg: dict, args) -> tuple[dict, list[tuple[str, Path]]]:
             f"one changed word becomes one changed thing; without it every edit is a "
             f"full reroll. Drop the flag to accept that, or configure a provider with one."
         )
+    if args.chain_from and "chain" not in provider["anchors"]:
+        raise SystemExit(
+            f"--chain-from: provider {cfg['provider']!r} has no interaction chaining."
+        )
+    if args.style_note and provider["wire"] != "json":
+        raise SystemExit(
+            f"--style-note: provider {cfg['provider']!r} has no system-instruction channel; "
+            f"put the style contract in the prompt itself."
+        )
 
     files: list[tuple[str, Path]] = []
     for ref in args.style_ref:
@@ -218,8 +255,22 @@ def build_request(cfg: dict, args) -> tuple[dict, list[tuple[str, Path]]]:
             "type": "image",
             "aspect_ratio": cfg.get("aspect_ratio", "16:9"),
             "image_size": cfg.get("image_size", "2K"),
+            # NO `delivery`. The SDK's generated types carry it ("inline"|"uri"),
+            # but the endpoint answers `400 Image delivery mode is not supported`
+            # for this model — the SDK types are a SUPERSET of what the service
+            # accepts. Authoritative for shape, not for availability. Omitting it
+            # yields inline bytes, which is what we want anyway.
         },
+        # Storing is what makes this interaction addressable as a later
+        # `previous_interaction_id` — without it the series anchor cannot exist.
+        "store": True,
     }
+    if args.seed is not None:
+        body["generation_config"] = {"seed": args.seed}
+    if args.chain_from:
+        body["previous_interaction_id"] = args.chain_from
+    if args.style_note:
+        body["system_instruction"] = args.style_note
     return body, files
 
 
@@ -254,6 +305,25 @@ def call(cfg: dict, payload, files: list[tuple[str, Path]]) -> dict:
         raise SystemExit(f"provider returned HTTP {exc.code}:\n{detail}")
 
 
+# No identifier is megabytes. A style code is 8 hex chars, a seed is an int, an
+# interaction id is a short token — so a string this long is a PAYLOAD (image
+# bytes, a thought signature), never an anchor a series could need. Redacting by
+# size rather than by field name keeps the rule true for fields no provider has
+# documented yet, which is the case this sidecar exists for.
+REDACT_OVER_CHARS = 4096
+
+
+def _redacted(node):
+    """`node` with every oversized payload string replaced by its field size."""
+    if isinstance(node, dict):
+        return {k: _redacted(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_redacted(v) for v in node]
+    if isinstance(node, str) and len(node) > REDACT_OVER_CHARS:
+        return f"<{len(node)} chars elided — payload, not an anchor>"
+    return node
+
+
 def _walk_images(node) -> list[tuple[str, str]]:
     """Every (mime, base64) image found anywhere in a response, in document order.
 
@@ -278,22 +348,62 @@ def _walk_images(node) -> list[tuple[str, str]]:
     return found
 
 
-def save(result: dict, out: Path) -> list[Path]:
+def save(result: dict, out: Path, request: dict | None = None) -> list[Path]:
     out.parent.mkdir(parents=True, exist_ok=True)
     # The FULL response is kept beside the images on purpose. It is the only place
     # an anchor the series depends on can be read back from, and no provider here
     # promises one comes back — Ideogram's generate response was MEASURED not to
     # return a style code. Record it and look, rather than assume.
+    # Strip inline image payloads out of the SAVED response, never out of the one
+    # we extract from: a 2K image is ~4M base64 chars, so keeping it would write an
+    # 8 MB sidecar per generation — ~330 MB for one 8-zone round — duplicating bytes
+    # already written as the image file. Everything else is kept verbatim, because
+    # the sidecar's job is to preserve whatever the provider returned that a series
+    # might need (an interaction id to chain from, a seed, a style code).
+    # The REQUEST goes in beside the response, and this was a real gap: the
+    # first eight-zone round shipped six images whose prompt and style note
+    # existed only in the shell that launched them. A reference image is the
+    # design-alignment gate's artifact — the owner looks at it and says yes or
+    # no — so an image nobody can re-issue with one word changed is a dead end,
+    # and a series whose shared style note is unrecoverable cannot be EXTENDED
+    # at all, which is exactly what a two-zone follow-up needs to do.
+    #
+    # Anchors are recorded by provenance, never by payload: a reference image
+    # is named by path, the chained interaction by id. Same reason the response
+    # drops inline image bytes.
     meta = out.with_suffix(".json")
-    meta.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    # Merged, not nested: the response's own fields stay at the top level so
+    # the six sidecars written before this change keep the same shape, and
+    # reading an interaction id to chain from stays `d["id"]` everywhere.
+    doc: dict = dict(_redacted(result))
+    if request is not None:
+        doc["request"] = _redacted(request)
+    meta.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
     written = [meta]
 
     urls = [item.get("url") for item in result.get("data", []) if isinstance(item, dict) and item.get("url")]
-    inline = [] if urls else _walk_images(result)
+
+    # Prefer the MODEL'S OWN OUTPUT steps. A chained interaction
+    # (`previous_interaction_id`) can carry earlier images in the same document,
+    # and a generic walk would save the conversation's input back out as if the
+    # model had just drawn it. Fall back to the walk when no such step exists —
+    # the response shape is undocumented and the call is already paid for.
+    steps = result.get("steps")
+    inline: list[tuple[str, str]] = []
+    if not urls and isinstance(steps, list):
+        for step in steps:
+            if isinstance(step, dict) and step.get("type") == "model_output":
+                inline.extend(_walk_images(step.get("content")))
+    if not urls and not inline:
+        inline = _walk_images(result)
     total = len(urls) + len(inline)
 
-    def dest_for(i: int) -> Path:
-        return out.with_name(f"{out.name}-{i}.png") if total > 1 else out.with_suffix(".png")
+    def dest_for(i: int, mime: str = "image/png") -> Path:
+        # The extension follows the bytes. Gemini returns JPEG for this model; a
+        # file named .png that is actually a JPEG is the kind of small lie that
+        # costs an hour when some later tool trusts the name.
+        ext = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp"}.get(mime, ".png")
+        return out.with_name(f"{out.name}-{i}{ext}") if total > 1 else out.with_suffix(ext)
 
     for i, url in enumerate(urls):
         # The image host rejects urllib's default `Python-urllib/x.y` agent with a
@@ -315,14 +425,14 @@ def save(result: dict, out: Path) -> list[Path]:
             continue
         written.append(dest_for(i))
 
-    for i, (_mime, b64) in enumerate(inline):
+    for i, (mime, b64) in enumerate(inline):
         try:
-            dest_for(i).write_bytes(base64.b64decode(b64))
+            dest_for(i, mime).write_bytes(base64.b64decode(b64))
         except (ValueError, TypeError) as exc:
             print(f"warning: inline image {i} did not decode ({exc}); response kept at {meta}",
                   file=sys.stderr)
             continue
-        written.append(dest_for(i))
+        written.append(dest_for(i, mime))
 
     if total == 0:
         print(f"warning: no image found in the response; it is kept at {meta} — "
@@ -341,6 +451,12 @@ def main() -> int:
     ap.add_argument("--style-ref", action="append", default=[],
                     help="style reference image (repeatable, max 3); excludes --style-code")
     ap.add_argument("--seed", type=int, help="hold it to change one word and see one change")
+    ap.add_argument("--chain-from", metavar="INTERACTION_ID",
+                    help="continue a previous interaction (its `id`, recorded in that "
+                         "call's sidecar) — the series anchor: zones 2..N chain off zone 1")
+    ap.add_argument("--style-note", metavar="TEXT",
+                    help="system instruction carrying the style contract, held constant "
+                         "across a series while the prompt varies per zone")
     ap.add_argument("--count", type=int, default=1)
     ap.add_argument("--rendering-speed", choices=RENDERING_SPEEDS)
     ap.add_argument("--resolution")
@@ -385,7 +501,18 @@ def main() -> int:
         return 0
 
     result = call(cfg, fields, files)
-    for path in save(result, args.out):
+    request = {
+        "provider": cfg["provider"],
+        "model": cfg.get("model"),
+        "prompt": args.prompt,
+        "style_note": getattr(args, "style_note", None),
+        "seed": args.seed,
+        "aspect_ratio": cfg.get("aspect_ratio"),
+        "image_size": cfg.get("image_size"),
+        "chain_from": getattr(args, "chain_from", None),
+        "reference_images": [str(rp) for _, rp in files],
+    }
+    for path in save(result, args.out, request):
         print(path)
     return 0
 
