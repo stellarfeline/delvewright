@@ -140,15 +140,15 @@ Controls, all one operation `car → floor N`:
 
 Ordering, as ticks of one `sequence`:
 
-| t | step |
-|---|---|
-| 0 | gate: the car is not already at the destination, and no ride is in progress |
-| 0 | set `ride_in_progress` |
-| 0 | grant blindness for the whole sequence plus slack |
-| 1 | fill the destination car region (floor blocks + the in-car lever) |
-| 2 | teleport every player and entity inside the old car volume to the new one |
-| 3 | clear the old car region |
-| 4 | set `car_at_floor`; clear `ride_in_progress` |
+| step | tick | what happens |
+|---|---|---|
+| 1 | 0 | gate: the car is not already at the destination, and no ride is in progress |
+| 2 | 0 | set `ride_in_progress` |
+| 3 | 0 | grant blindness for the whole sequence plus slack |
+| 4 | 1 | fill the destination car region (floor blocks + the in-car lever) |
+| 5 | 2 | teleport every player and entity inside the old car volume to the new one |
+| 6 | 3 | clear the old car region |
+| 7 | 4 | set `car_at_floor`; clear `ride_in_progress` |
 
 **Invariant: the car always exists somewhere.** Create before clear, never the
 reverse — there is no tick at which a save could be loaded with no car.
