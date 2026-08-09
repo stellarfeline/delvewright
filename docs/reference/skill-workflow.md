@@ -96,7 +96,7 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience" |
+| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images** (owner correction, 2026-08-07): concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience" |
 | 5 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 6 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 7 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
@@ -133,7 +133,7 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 
 | File | What it is |
 |---|---|
-| six stage JSONs | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one; `delvec validate` covers stages 1–7) | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |
@@ -182,14 +182,22 @@ because that is what the rewrite will consume. Not a proposal — an inventory.
    hand-carried is the *building* of the Artifact: assembling the story and the
    near/far frames is still the authoring agent's own composition, with no
    template and nothing checking that every scene actually got a pair of images.
+   `tools/refimg.py` draws the individual reference image when a `[refimg]`
+   provider is configured, but it is advisory and needs a human iterating on the
+   prompt — it composes nothing.
 3. **Chunky is a separate process, not wired into CI** — storybook art is a
    two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
    shipped frame).
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is what the mutex used to paper over.
-5. **ADR-0016's third version line is undelivered.** The ADR gives the skill its
-   own version plus the `delvec` range it drives (`delvec >= 1.0 < 2`), declared
-   *in the skill*. The skill's frontmatter today carries `name` and
-   `description` and nothing else — so the product version line exists on paper
-   only, and nothing checks that a declared range is true.
+5. ~~**ADR-0016's third version line is undelivered.**~~ **Closed** — the
+   frontmatter carries `version: 1.1.0`, `requires: delvec: ">=1.0.0 <2.0.0"`
+   and `verified_with: 1.1.0`, and `tools/check-skill-version.py` binds all
+   three: the window must contain this repo's engine, `verified_with` must equal
+   `crates/compiler/Cargo.toml`'s version in **both** directions, and every
+   subcommand and long flag the skill names must exist in the clap CLI (today:
+   9 distinct subcommands, 13 flag references). What is still hand-carried is a
+   floor that has become **too low** — the gate tests the skill against the
+   CURRENT CLI, so a subcommand introduced after the declared floor still
+   passes, and this repo has only one engine to test against.
