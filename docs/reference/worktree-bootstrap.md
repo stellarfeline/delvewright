@@ -8,9 +8,18 @@ Every worker that skips them hits the same two failures.
 
 `crates/compiler/tests/analyze.rs` (via `common::prefabs_dir()`) and every
 campaign build resolve content through the `campaigns` symlink at the repo
-root (target: a `delvewright-campaigns` checkout; override with
-`$DELVEWRIGHT_CAMPAIGNS_DIR`). A fresh worktree lacks it — symptom: exactly
-two `analyze.rs` test failures that look like a broken compiler.
+root (target: a `delvewright-campaigns` checkout). A fresh worktree lacks it —
+symptom: exactly two `analyze.rs` test failures that look like a broken
+compiler.
+
+**The symlink is the only mechanism.** This file used to offer
+`$DELVEWRIGHT_CAMPAIGNS_DIR` as an override and the skill repeated the offer;
+no code has ever read that variable. The path is constructed literally in five
+places (`crates/compiler/tests/common/mod.rs`, `crates/compiler/src/main.rs`'s
+`--prefabs` default, `crates/render/src/nbt.rs`, `crates/render/tests/gpu.rs`,
+`.github/workflows/release.yml`), so a worker who exported the variable instead
+of making the symlink got the two failures this file exists to prevent, from
+the fix this file recommended. Making it real means all five sites or none.
 
 Fix, from the new worktree root:
 
