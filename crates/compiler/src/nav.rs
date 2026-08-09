@@ -535,6 +535,38 @@ pub fn entity_footprint(entity: &str) -> Footprint {
 /// front of rather than stand inside.
 const SNAP_RADIUS: i32 = 3;
 
+/// A reachability root: a declared cell, plus the AABB the snap that seats it may
+/// not leave — the assembled piece that DECLARES the anchor.
+///
+/// The confinement exists because [`World::snap_in_bounds`] (and so
+/// [`World::snap`]) chooses the nearest standable cell by squared distance and
+/// **nothing else**: it does not care that solid geometry stands between the
+/// anchor and the cell it lands on. An anchor a campaign must declare in a room's
+/// ceiling — every spec-0022 `collapse` payload has one — is therefore closer to
+/// the cell on top of the ROOF than to the floor below it, and snaps up through
+/// the ceiling onto a component no player can ever walk to. Every proof rooted
+/// there then reasons about the roof: boundary safety
+/// ([`verify_boundary_safety`]) demanded a safe edge on a bare platform in a void
+/// world, which is unsatisfiable by construction.
+///
+/// This is the same leak [`World::confined_standable_cells`] closed for wave
+/// seating (task #41), one layer up: there a flood from a wave anchor crossed a
+/// socket seam into the neighbouring piece, here a *snap* crosses a ceiling into
+/// nothing. The piece AABB is the boundary in both cases because it is the only
+/// shape that says "the room this anchor was authored inside".
+///
+/// Only the seating is confined. The walk that follows is deliberately not: a
+/// player who reaches a room reaches whatever it connects to, and confining the
+/// flood would shrink the region a boundary proof examines — a weaker check, not
+/// a more correct one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnchorRoot {
+    /// The declared cell (a `Point` anchor's position, a `Gate` anchor's `from`).
+    pub at: [i32; 3],
+    /// World AABB `(min, max)` of the piece that declares it.
+    pub within: ([i32; 3], [i32; 3]),
+}
+
 /// A build diagnostic raised by navigation planning (mapped to exit 3, `DW03xx`).
 #[derive(Debug)]
 pub struct NavError {
@@ -918,12 +950,37 @@ impl World {
     /// not themselves standable are snapped within [`SNAP_RADIUS`] first; an
     /// unsnappable start contributes nothing.
     pub fn reachable_walkable(&self, starts: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
+        self.flood_walkable(starts.iter().filter_map(|&s| self.snap(s, SNAP_RADIUS)))
+    }
+
+    /// [`World::reachable_walkable`] with each root's **seating** confined to the
+    /// AABB that declares it ([`AnchorRoot`]). Only the snap is confined; the walk
+    /// itself is unbounded, because a player who reaches a room does reach what it
+    /// connects to.
+    pub fn reachable_walkable_rooted(&self, roots: &[AnchorRoot]) -> BTreeSet<[i32; 3]> {
+        self.flood_walkable(roots.iter().filter_map(|r| self.seat(r)))
+    }
+
+    /// Where a root actually puts a walker: the nearest standable cell to
+    /// `root.at` **inside `root.within`**. `None` when the declaring piece offers
+    /// no footing within [`SNAP_RADIUS`] — a root that seats nowhere contributes
+    /// nothing, exactly as an unsnappable start does.
+    fn seat(&self, root: &AnchorRoot) -> Option<[i32; 3]> {
+        let (lo, hi) = root.within;
+        self.snap_in_bounds(root.at, SNAP_RADIUS, &|c| {
+            (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i])
+        })
+    }
+
+    /// The walk closure of already-seated cells: deterministic BFS over a
+    /// `BTreeSet` frontier with the fixed neighbour order (ADR-0006). The one flood
+    /// both [`World::reachable_walkable`] and [`World::reachable_walkable_rooted`]
+    /// run, so confining a root changes *where the walk starts* and nothing else.
+    fn flood_walkable(&self, seats: impl IntoIterator<Item = [i32; 3]>) -> BTreeSet<[i32; 3]> {
         let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
         let mut queue: std::collections::VecDeque<[i32; 3]> = std::collections::VecDeque::new();
-        for &s in starts {
-            if let Some(cell) = self.snap(s, SNAP_RADIUS)
-                && seen.insert(cell)
-            {
+        for cell in seats {
+            if seen.insert(cell) {
                 queue.push_back(cell);
             }
         }
@@ -4753,9 +4810,10 @@ const OPEN_SEA_MARGIN: i32 = 2;
 
 /// Assert the reachable walk region's boundary is safe (spec-0017 boundary
 /// safety; [`DW_EDIT_BORDERS_VOID`]). `starts` are the reachability roots (the
-/// plan's resolved anchors — the same roots the relight pass floods from). Run
-/// after every edit batch — never on the no-edit path, whose worlds provide this
-/// physically.
+/// plan's resolved anchors, each carrying the piece that declares it — see
+/// [`AnchorRoot`], and the same roots the relight pass floods from). Run after
+/// every edit batch, and once over the finished world for every campaign that
+/// assembles one (task #170).
 ///
 /// The premise is the world's [`Ambient`] — what a column the compiler modelled
 /// nothing into actually contains — and the rule follows from it:
@@ -4815,8 +4873,8 @@ const OPEN_SEA_MARGIN: i32 = 2;
 /// fire. The two models compose without interacting: partial heights change
 /// *which cells are reachable* (via [`World::neighbors_fp`], feeding `reachable`
 /// above), never *what counts as a climb-out*.
-pub fn verify_boundary_safety(world: &World, starts: &[[i32; 3]]) -> Result<(), NavError> {
-    let reachable = world.reachable_walkable(starts);
+pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
+    let reachable = world.reachable_walkable_rooted(starts);
     match &world.ambient {
         Ambient::Void => boundary_void(world, &reachable),
         Ambient::Ocean(sea) => boundary_ocean(world, &reachable, sea),
@@ -4882,9 +4940,10 @@ fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Na
         message: format!(
             "boundary safety (spec-0017): {} reachable walkable cell(s) border a void drop over \
              {} distinct column(s) — one step off the proven ground falls out of the world:{}\n\
-             The edit stripped the physical boundary here: extend the terrain under the exposed \
-             edge (fill/morph a slope or outcrop below {first:?}) or reinstate a barrier shape; \
-             do NOT weaken this check or reroute the path to sidestep it",
+             There is no physical boundary here — either an edit stripped one or the scene ground \
+             never had an edge: extend the terrain under the exposed edge (fill/morph a slope or \
+             outcrop below {first:?}) or reinstate a barrier shape; do NOT weaken this check or \
+             reroute the path to sidestep it",
             hits.len(),
             columns.len(),
             listing,
@@ -5432,6 +5491,19 @@ mod tests {
         g < s
     }
 
+    /// One boundary-proof root whose declaring "piece" is the whole synthetic
+    /// world. These fixtures build a single free-standing shape a few blocks
+    /// across and test the void/ocean MODEL, so the piece AABB is that shape —
+    /// stated explicitly rather than left open, because an unbounded root is the
+    /// exact defect [`AnchorRoot`] exists to prevent and no production path may
+    /// construct one.
+    fn roots(at: [i32; 3]) -> [AnchorRoot; 1] {
+        [AnchorRoot {
+            at,
+            within: ([-64, 0, -64], [64, 128, 64]),
+        }]
+    }
+
     /// Boundary safety (spec-0017 invariant 4): a walkable platform edge whose
     /// neighbour column has NOTHING below is a void drop → `DW0322`; ringing the
     /// platform with a 2-high (unjumpable) rim, or giving the neighbour column
@@ -5447,7 +5519,8 @@ mod tests {
             }
         }
         let world = World::from_solid_cells(solid);
-        let err = verify_boundary_safety(&world, &[[1, 64, 1]]).expect_err("edge borders void");
+        let err =
+            verify_boundary_safety(&world, &roots([1, 64, 1])).expect_err("edge borders void");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(err.message.contains("void drop"), "names the hazard");
     }
@@ -5472,7 +5545,7 @@ mod tests {
             }
         }
         let world = World::from_solid_cells(solid);
-        verify_boundary_safety(&world, &[[1, 64, 1]]).expect("a 2-high rim holds the line");
+        verify_boundary_safety(&world, &roots([1, 64, 1])).expect("a 2-high rim holds the line");
 
         // (b) A single floor cell whose four neighbour columns all have geometry
         // far below: a deep drop is legal (falling, not leaving the world).
@@ -5482,7 +5555,55 @@ mod tests {
             solid.insert([dx, 10, dz]);
         }
         let world = World::from_solid_cells(solid);
-        verify_boundary_safety(&world, &[[0, 64, 0]]).expect("deep drops onto land are legal");
+        verify_boundary_safety(&world, &roots([0, 64, 0])).expect("deep drops onto land are legal");
+    }
+
+    /// Anchor SEATING, not the boundary model ([`AnchorRoot`]). A ceiling anchor —
+    /// which every spec-0022 `collapse` payload must declare — is two blocks from
+    /// the cell on top of the roof and three from the floor of its own room, so an
+    /// unconfined nearest-standable snap seats it on the ROOF, a component no
+    /// player can walk to. Confining the snap to the declaring piece puts it back
+    /// on the floor. Both halves are asserted here: the confined seating is the
+    /// fix, the unconfined one is the defect it replaces.
+    #[test]
+    fn a_ceiling_anchor_seats_in_its_room_not_on_the_roof() {
+        // A 7×7 room: floor y=63, ceiling y=68, walls between them.
+        let mut solid = BTreeSet::new();
+        for x in 0..7 {
+            for z in 0..7 {
+                solid.insert([x, 63, z]);
+                solid.insert([x, 68, z]);
+                for y in 64..68 {
+                    if x == 0 || x == 6 || z == 0 || z == 6 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let world = World::from_solid_cells(solid);
+        let ceiling_anchor = [3, 67, 3];
+        let (floor, roof) = ([3, 64, 3], [3, 69, 3]);
+
+        // The defect: the nearest standable cell by squared distance is the roof
+        // (Δy 2) rather than the room's own floor (Δy 3) — a solid ceiling in
+        // between counts for nothing.
+        let loose = world.reachable_walkable(&[ceiling_anchor]);
+        assert!(
+            loose.contains(&roof),
+            "unconfined snap climbs onto the roof"
+        );
+        assert!(
+            !loose.contains(&floor),
+            "and never reaches the room it was declared in"
+        );
+
+        // The fix: the piece AABB (y 63..=68) excludes the roof cell entirely.
+        let seated = world.reachable_walkable_rooted(&[AnchorRoot {
+            at: ceiling_anchor,
+            within: ([0, 63, 0], [6, 68, 6]),
+        }]);
+        assert!(seated.contains(&floor), "confined snap seats in the room");
+        assert!(!seated.contains(&roof), "the roof is out of the piece");
     }
 
     // -----------------------------------------------------------------------
@@ -5503,7 +5624,8 @@ mod tests {
             }
         }
         let world = World::from_solid_cells(solid);
-        let err = verify_boundary_safety(&world, &[[1, 64, 1]]).expect_err("edge borders void");
+        let err =
+            verify_boundary_safety(&world, &roots([1, 64, 1])).expect_err("edge borders void");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(
             err.message.contains("12 reachable walkable cell(s)"),
@@ -5565,13 +5687,13 @@ mod tests {
     fn boundary_safety_ocean_beach_is_not_a_void_drop_dw0322() {
         let (solid, covered) = island(8, 62);
         let voidish = World::from_solid_cells(solid.clone());
-        let err = verify_boundary_safety(&voidish, &[[3, 63, 3]])
+        let err = verify_boundary_safety(&voidish, &roots([3, 63, 3]))
             .expect_err("under `void` the same coast IS a void drop");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(err.message.contains("void drop"));
 
         let sea = ocean(solid, BTreeSet::new(), covered);
-        verify_boundary_safety(&sea, &[[3, 63, 3]])
+        verify_boundary_safety(&sea, &roots([3, 63, 3]))
             .expect("an ocean beach is swimming, not falling out of the world");
     }
 
@@ -5582,7 +5704,7 @@ mod tests {
     fn boundary_safety_ocean_sheer_cliff_strands_the_player_dw0322() {
         let (solid, covered) = island(8, 70);
         let world = ocean(solid, BTreeSet::new(), covered);
-        let err = verify_boundary_safety(&world, &[[3, 71, 3]])
+        let err = verify_boundary_safety(&world, &roots([3, 71, 3]))
             .expect_err("a sheer coast cannot be re-climbed");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(
@@ -5616,12 +5738,12 @@ mod tests {
     fn boundary_safety_ocean_admits_a_rim_below_the_waterline() {
         let (solid, covered) = island(8, 61);
         let world = ocean(solid, BTreeSet::new(), covered);
-        verify_boundary_safety(&world, &[[3, 62, 3]]).expect("wade out of the shallows");
+        verify_boundary_safety(&world, &roots([3, 62, 3])).expect("wade out of the shallows");
 
         // One block higher than the flush beach: the swimmer faces a wall.
         let (solid, covered) = island(8, 64);
         let world = ocean(solid, BTreeSet::new(), covered);
-        let err = verify_boundary_safety(&world, &[[3, 65, 3]])
+        let err = verify_boundary_safety(&world, &roots([3, 65, 3]))
             .expect_err("a lip 2 above the surface is not a climb-out");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
     }
@@ -5655,7 +5777,7 @@ mod tests {
             }
         }
         let world = ocean(solid, flooded, vec![([0, 60, 0], [12, 63, 12])]);
-        let err = verify_boundary_safety(&world, &[[1, 63, 1]])
+        let err = verify_boundary_safety(&world, &roots([1, 63, 1]))
             .expect_err("the inner pool has 2-high walls all round");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(
@@ -5692,7 +5814,7 @@ mod tests {
             }
         }
         let world = ocean(solid, flooded, vec![([0, 60, 0], [12, 62, 12])]);
-        verify_boundary_safety(&world, &[[1, 63, 1]])
+        verify_boundary_safety(&world, &roots([1, 63, 1]))
             .expect("a flush pool is a puddle, not a trap");
     }
 
@@ -8029,7 +8151,7 @@ mod tests {
             "feet rest on the slab face, not the cell floor"
         );
         // … while the ocean premise still governs the boundary verdict.
-        verify_boundary_safety(&world, &[[3, 63, 3]])
+        verify_boundary_safety(&world, &roots([3, 63, 3]))
             .expect("a slab-course beach is a climb-out, not a stranding");
 
         // The control: the identical geometry under the void premise is still the
@@ -8039,7 +8161,7 @@ mod tests {
             cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect(),
             &BTreeSet::new(),
         ));
-        let err = verify_boundary_safety(&voidish, &[[3, 63, 3]])
+        let err = verify_boundary_safety(&voidish, &roots([3, 63, 3]))
             .expect_err("under `void` the same slab coast is a void drop");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
     }

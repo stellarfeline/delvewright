@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every campaign storybook carries the engine-version marker, and it is TRUE.
+"""A campaign storybook carries exactly one version literal, and it is TRUE.
 
 A campaign's storybook (`campaigns/<id>/README.md` in the content repo,
 spec-0007) is what a server host reads before running the delve. It must say
@@ -30,6 +30,52 @@ byte-identical in every localized edition, because it is a version stamp, not
 prose: a translated gloss may follow on the next line, but the stamp itself does
 not get translated (a mistranslated version number is a wrong version number).
 
+## No OTHER version literal — the marker is the only one
+
+The marker being true is not enough, because it was never the only number in the
+file. The v1.1.0 island release shipped a storybook telling a host to
+`docker run …/delve-nobodys-cave-island:v1.0.0` — the version it had just
+replaced. THREE version literals sat in that README and exactly ONE (the marker)
+was bound to a check:
+
+1. the marker                                 — bound here, correct
+2. `**v1.0.0** (exact engine pin: …)`         — a campaign-version stamp, read
+                                                by nothing, and a lie by
+                                                construction between releases
+                                                (`main` is not a released
+                                                version)
+3. `ghcr.io/…/delve-…:v1.0.0` in the host command — read by nothing, and the one
+                                                a host copy-pastes and acts on
+4. a localized edition's GLOSS beside the marker, carrying its own TRANSLATED
+   copy of the delvec number, which drifted to `1.0.0` while the untranslated
+   English stamp one line above said `1.1.0`
+
+All four are one defect: **a version literal that nothing binds.** A hand-typed
+number nobody derives is stale the moment anything moves, and a stale one in a
+storybook is worse than none — it hands a host a wrong instruction with the
+authority of documentation. So the rule is not "check the other numbers too"
+(that would need a binding per number, invented per campaign); it is that a
+storybook may carry **no version literal other than the marker**. The facts
+those numbers wanted to state already live where they are GENERATED: the
+release page (machine-written per tag) and `versions.toml`.
+
+Two recognisers, one rule, so the message can say what to do:
+
+- **A pinned image tag** — an OCI reference `<registry>/<path>:<tag>` whose tag
+  is not `latest`. The host command must name `:latest`, which *is* the
+  storybook's claim ("this is the current delve"); a reader who wants one exact
+  version takes `:vX.Y.Z` off a release page. `:vX.Y.Z` written as a placeholder
+  in prose is not a literal and is fine.
+- **A bare dotted version** — `v?N.N.N` anywhere else, which is shapes 2 and 4.
+  Two-component numbers are left alone on purpose (`CC BY-SA 4.0` is a licence,
+  not a version).
+
+The marker line itself, and any line that *attempts* the marker, are exempt —
+they are owned by the marker clauses above and reported there instead.
+
+If a storybook ever genuinely must state a second version, the answer is to give
+this gate a binding for it, never to write the number.
+
 ## What is checked, per campaign
 
 - `README.md` exists, and one `README.<code>.md` per language declared in
@@ -39,6 +85,7 @@ not get translated (a mistranslated version number is a wrong version number).
 - The engine version in the marker equals the campaign's max declared per-stage
   `dsl_version`  -> otherwise RED (the drift this gate exists for).
 - The delvec version in the marker is <= this repo's `DELVEC_VERSION`.
+- No other line carries a version literal or a pinned image tag.
 
 Per-stage `dsl_version` DISAGREEMENT inside one campaign is not this gate's
 business — `delvec validate` owns it (DW0102). This gate only reads the max.
@@ -64,8 +111,9 @@ they resolve through the local `campaigns` symlink and through CI's
 one; nothing here reads engine state other than `crates/compiler/Cargo.toml`'s
 `[package] version` (== `DELVEC_VERSION`).
 
-Exit 0 = every storybook marker present and true, 1 = missing/mismatched marker
-(see stderr), 2 = usage/IO error.
+Exit 0 = every storybook marker present and true and no other version literal
+anywhere, 1 = missing/mismatched marker or an unbound literal (see stderr),
+2 = usage/IO error.
 """
 
 import argparse
@@ -124,6 +172,26 @@ MARKER_RE = re.compile(
 CARGO_VERSION_RE = re.compile(r'(?m)^version\s*=\s*"([^"]+)"')
 
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+# An OCI image reference with an explicit tag: a dotted registry host (optional
+# port), a repository path, then `:tag`. The dotted host is what keeps
+# `localhost:25565`, `-p 25565:25565` and `delve-data:/data` — all of which sit
+# in the same `docker run` line — out of this.
+IMAGE_REF_RE = re.compile(
+    r"(?P<ref>(?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,}(?::\d+)?"
+    r"/[a-z0-9][a-z0-9._/-]*)"
+    r":(?P<tag>[A-Za-z0-9][A-Za-z0-9._-]*)"
+)
+
+# The only tag a storybook may name: it means "the current delve", which is
+# exactly what the storybook claims to describe. An exact version is a fact
+# about a RELEASE and belongs on the release page, where it is machine-written.
+UNPINNED_IMAGE_TAG = "latest"
+
+# A bare version literal: three dotted numeric components, optionally `v`-
+# prefixed. Deliberately NOT two components — `CC BY-SA 4.0` and `GPL-3.0` are
+# licences, not versions, and a storybook names them legitimately.
+VERSION_LITERAL_RE = re.compile(r"(?<![\w.])v?\d+\.\d+\.\d+(?![\w.])")
 
 
 def marker_line(dsl: str, delvec: str) -> str:
@@ -185,6 +253,60 @@ def expected_readmes(campaign: pathlib.Path) -> list[pathlib.Path]:
     ]
 
 
+def unbound_version_literals(
+    rel: str, lines: list[str], exempt: set[int], example: str
+) -> list[str]:
+    """Errors for every version literal in a storybook that nothing binds.
+
+    `exempt` holds the line indices the marker clauses already own (the marker
+    itself and any malformed attempt at it); every other line may carry no
+    version literal at all. See the module docstring for why the rule is
+    "none", not "check them too".
+    """
+    localized = rel != "README.md"
+    errors: list[str] = []
+    for index, line in enumerate(lines):
+        if index in exempt:
+            continue
+        line_no = index + 1
+        covered: list[tuple[int, int]] = []
+        for image in IMAGE_REF_RE.finditer(line):
+            covered.append(image.span())
+            tag = image.group("tag")
+            if tag == UNPINNED_IMAGE_TAG:
+                continue
+            errors.append(
+                f"{rel}:{line_no} pins an image tag: "
+                f"`{image.group('ref')}:{tag}` — a host COPY-PASTES this line, "
+                f"and a pinned tag is stale the day the next release ships (the "
+                f"v1.1.0 island storybook told hosts to run v1.0.0). Name "
+                f"`:{UNPINNED_IMAGE_TAG}` here — that is what this storybook "
+                f"describes — and send a reader who wants one exact version to "
+                f"the release page, where the tag is machine-written"
+            )
+        for literal in VERSION_LITERAL_RE.finditer(line):
+            if any(start <= literal.start() < end for start, end in covered):
+                continue
+            message = (
+                f"{rel}:{line_no} carries the version literal `{literal.group()}`, "
+                f"which nothing binds. The engine-version marker is the ONE "
+                f"version a check can keep true here ({example}); every other "
+                f"number is hand-typed and goes stale in silence. Delete it, and "
+                f"leave the fact where it is GENERATED — the release page, or "
+                f"`versions.toml`. If a storybook truly must state another "
+                f"version, give this gate a binding for it first, never the number"
+            )
+            if localized:
+                message += (
+                    " — and note a localized edition may gloss the marker but "
+                    "never restate its numbers: the stamp is not translated, "
+                    "because a mistranslated version number is a wrong version "
+                    "number"
+                )
+            errors.append(message)
+    return errors
+
+
 def check_readme(path: pathlib.Path, max_dsl: str, engine_delvec: str) -> list[str]:
     """Errors for one storybook file, given the campaign's real versions."""
     rel = path.name
@@ -203,19 +325,25 @@ def check_readme(path: pathlib.Path, max_dsl: str, engine_delvec: str) -> list[s
     ]
     attempts = [i for i, line in enumerate(lines) if MARKER_ATTEMPT_RE.search(line)]
 
+    # The marker clauses own the marker line and any malformed attempt at one;
+    # the literal scan owns every other line, and runs whatever the marker did
+    # — a storybook with no marker at all can still be pinning a dead image tag.
+    exempt = {i for i, _ in markers} | set(attempts)
+    errors = unbound_version_literals(rel, lines, exempt, example)
+
     if len(markers) > 1:
-        return [
+        return errors + [
             f"{rel} carries the marker {len(markers)} times (lines "
             f"{', '.join(str(i + 1) for i, _ in markers)}) — one storybook, one stamp"
         ]
 
     if not markers:
         if not attempts:
-            return [
+            return errors + [
                 f"{rel} carries NO engine-version marker — add this line under the "
                 f"title: {example}"
             ]
-        return [
+        return errors + [
             f"{rel}:{i + 1} the marker is MALFORMED. found:    {lines[i].rstrip()}\n"
             f"    expected: {example}"
             for i in attempts
@@ -223,7 +351,6 @@ def check_readme(path: pathlib.Path, max_dsl: str, engine_delvec: str) -> list[s
 
     index, match = markers[0]
     line_no = index + 1
-    errors: list[str] = []
 
     if line_no > MARKER_WITHIN_LINES:
         errors.append(
@@ -299,6 +426,9 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[str] = []
     checked: list[str] = []
     skipped: list[str] = []
+    # The literal clauses' binding count: storybook files actually read. A gate
+    # that examined zero of them is vacuous, not a pass (CLAUDE.md).
+    scanned = 0
 
     for campaign in campaigns:
         errors = check_campaign(campaign, engine_delvec)
@@ -312,12 +442,21 @@ def main(argv: list[str] | None = None) -> int:
                 )
             continue
         checked.append(campaign.name)
+        scanned += sum(1 for r in expected_readmes(campaign) if r.is_file())
         failures.extend(f"{campaign.name}: {e}" for e in errors)
 
     for stale in sorted(set(ALLOWLIST) - ids):
         failures.append(
             f"{stale}: ALLOWLIST entry names a campaign that is not under {root} — "
             "remove it (a stale exemption hides the next real one)"
+        )
+
+    if not scanned:
+        failures.append(
+            f"ZERO storybook files were read under {root} — every campaign here is "
+            "allowlisted or storybook-less, so the version-literal clauses examined "
+            "nothing. A gate that binds to nothing is vacuous, not a pass "
+            "(CLAUDE.md): shrink the ALLOWLIST or fix the path"
         )
 
     # Exemptions are announced on every run, pass or fail (module docstring).
@@ -333,7 +472,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"storybook version markers OK: {len(checked)} campaign(s) checked against "
-        f"delvec {engine_delvec}, {len(skipped)} allowlisted."
+        f"delvec {engine_delvec}, {len(skipped)} allowlisted; {scanned} storybook "
+        "file(s) scanned for unbound version literals."
     )
     return 0
 
