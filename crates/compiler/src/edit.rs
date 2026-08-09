@@ -756,14 +756,26 @@ fn check_support(
     Ok(())
 }
 
-/// Every resolved anchor position of the plan — the same reachability roots the
-/// relight pass floods from (a `Point`'s cell; a `Gate`'s `from` corner).
-pub fn anchor_starts(plan: &Plan) -> Vec<[i32; 3]> {
+/// Every resolved anchor of the plan as a reachability root — the same roots the
+/// relight pass floods from (a `Point`'s cell; a `Gate`'s `from` corner), each
+/// carrying the AABB of the piece that DECLARES it.
+///
+/// The bounds are not decoration: seating an anchor is a nearest-standable-cell
+/// snap, and an unconfined one walks through solid geometry (see
+/// [`crate::nav::AnchorRoot`]). `plan.anchors` is a `BTreeMap`, so the order here
+/// is deterministic (ADR-0006).
+pub fn anchor_starts(plan: &Plan) -> Vec<crate::nav::AnchorRoot> {
     plan.anchors
-        .values()
-        .map(|resolved| match resolved {
-            ResolvedAnchor::Point { pos, .. } => *pos,
-            ResolvedAnchor::Gate { from, .. } => *from,
+        .iter()
+        .map(|((area_id, _), resolved)| {
+            let at = match resolved {
+                ResolvedAnchor::Point { pos, .. } => *pos,
+                ResolvedAnchor::Gate { from, .. } => *from,
+            };
+            crate::nav::AnchorRoot {
+                at,
+                within: plan.piece_bounds(area_id, at),
+            }
         })
         .collect()
 }
@@ -1579,7 +1591,7 @@ fn relight_region(
     };
     let starts = anchor_starts(plan);
     let reachable: BTreeSet<[i32; 3]> = nav
-        .reachable_walkable(&starts)
+        .reachable_walkable_rooted(&starts)
         .into_iter()
         .filter(|cell| crate::light::in_bounds(*cell, amin, amax))
         .collect();
