@@ -108,7 +108,7 @@ This is the shape PRs #301/#302/#321 fixed thirteen times. It is **not closed**.
 
 | # | Finding | Evidence | Sev |
 |---|---|---|---|
-| 16b | **`shortcuts[].on_unlock` is a SIXTH effect root that no enumeration knows about.** It is a `Vec<QuestEffect>` hanging off a stage-5 struct — structurally identical in kind to `traps[].payload`, which *is* root R4 — and emission really lowers it. But it is not an `EffectRootKind` variant and not in `nested_effect_lists`. So every walk that inherits the five roots skips it: a `narrate` inside it is never l10n-inventoried, a `set-flag` inside it is invisible to the flag model and to `emit::declared_flags`. This is precisely the defect PRs #301/#302/#321 claimed to close, still live, in the one root the enumeration does not contain — and `check-effect-roots.py` cannot see it, because it greps for the five roots it knows. **Zero live campaign usage is the only reason it has not shipped as a bug.** | field `stages.rs:1703`; lowered `emit.rs:5043`; roots `effects.rs:63-88`; nesting `stages.rs:4883` | **B** |
+| 16b | **`shortcuts[].on_unlock` is a SIXTH effect root that no enumeration knows about.** It is a `Vec<QuestEffect>` hanging off a stage-5 struct — structurally identical in kind to `traps[].payload`, which *is* root R4 — and emission really lowers it. But it is not an `EffectRootKind` variant and not in `nested_effect_lists`. So every walk that inherits the five roots skips it: a `narrate` inside it is never l10n-inventoried, a `set-flag` inside it is invisible to the flag model and to `emit::declared_flags`. This is precisely the defect PRs #301/#302/#321 claimed to close, still live, in the one root the enumeration does not contain — and `check-effect-roots.py` cannot see it, because it greps for the five roots it knows. **Zero live campaign usage is the only reason it has not shipped as a bug.** **CLOSED (spec-0031): it is `EffectRootKind::ShortcutUnlock`, root R6** — see fix-sequence item 0 for why a root rather than the desugar this audit recommended. | field `stages.rs:1703`; lowered `emit.rs:5043`; roots `effects.rs:63-88`; nesting `stages.rs:4883` | **B** |
 | 17 | **`DW0473` (unavoidable lethal damage) walks 2 of 5 effect roots** — `on_complete` and `on_objective_complete` only. A `damage-players` inside a `traps[].payload` is invisible to it, and spec-0022 made trap payloads the *intended* home for exactly that. A safety proof with a hole in the place the hazard verb lives. | `combat.rs:1084-1115` | **B** |
 | 18 | Twelve further hand-rolled effect walks still miss roots after #321: `has_any_sustain`/`DW0474` (3/5), `collect_open_gate_anchors` (3/5), `gate_open_indices` (3/5, and its comment says it "mirrors" the one above — it mirrors the gap), `collect_v06_effects` (3/5 + a private dialogue walk), `wave_area` (4/5), `required_anchors_for_area` (2-3/5), `continuity` NPC-lifecycle (2/5 — the same module walks both ways), `quests_ending_tail` (2/5), the kill-less-wave PackTest picker (1/5), `branch` beat-account (2/5), `flow` advance replay (2/5), `actor_beats` (4/5, self-documented). | as listed | **B** |
 | 19 | **Two affordance registries with divergent membership.** `emit::affordances` (feeding `DW0420`/`DW0421` — "the affordance has visible hardware") is a hand-enumerated list of four kinds, and its own doc claims "the list is the definition of the class … which is what makes the proof total rather than a spot check". It is a spot check: it never sees `interact` objectives, env triggers, NPC hitboxes, seals or trapfire bodies. `eclipse::affordances` enumerates a *different* subset. | `emit.rs:4676-4724`, `eclipse.rs:308-395` | **B** |
@@ -175,6 +175,24 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
    pattern — desugar it into an existing root — not a sixth `EffectRootKind`.
    No DSL change, no version bump, **no adoption**, zero live usage. *Do this
    first and alone; the shortcut-door worker is inside this surface right now.*
+
+   **DONE (spec-0031), and NOT by the desugar this item recommended.** It is
+   `EffectRootKind::ShortcutUnlock`, root R6. The recommendation above was
+   right about the shape of the bug and wrong about the cheapest correct fix,
+   for a reason worth keeping: `Ambush::to_trigger` works because an ambush
+   **is** a trigger — a one-shot `EnvTrigger` at an anchor is the entirety of
+   what an ambush emits, so the sugar has nothing left over. A shortcut's
+   unlock is not a trigger. Its detection is a once-only `#sc_<id>` sentinel
+   poll that in the same function clears the gate region, retires the unlock
+   affordance (`DW0421`) and kills the wrong-side bodies, and its permanence is
+   structural (`DW0372`). Desugaring `on_unlock` into an `EnvTrigger` at the
+   unlock anchor would have put **two independent detectors on one event** —
+   the sentinel poll and the trigger's own — free to fire in different ticks or
+   for one to fire when the other did not. Cheapness is not worth a second
+   detector. The general rule the two cases share: *desugar when the sugar's
+   whole meaning is the general construct; add a root when the bundle hangs off
+   an object with runtime machinery of its own* (which is also why
+   `traps[].payload` is R4 and not a desugared trigger).
 1. **Widen `EnvTrigger.at` from a point to an anchor's shape** (#1–#3, #3b).
    #3b (a `narrate` `actionbar` style) is part of the same lift — without it the
    general effect still cannot reach the channel `sealed_hint` uses. Unblocks

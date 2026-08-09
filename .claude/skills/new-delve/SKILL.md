@@ -406,6 +406,15 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      objective runs first (`DW0493`). `dropped_by` names a wave, never an actor
      (an actor's death is observable by no objective). Needs `dsl_version` 0.9.0
      on the quests stage.
+   - **What happens when a player dies is content, not engine behaviour.** The
+     quests stage takes a campaign-wide `on_death`: a bundle of ordinary effects
+     that runs at the moment a player dies, for that player. One per campaign —
+     it is not a field on a checkpoint, because dying is true everywhere in the
+     delve; put `requires_flags`/`forbids_flags` on the effects inside it if the
+     beat should only land in some phase of the story. Do NOT write a death beat
+     the mainline depends on: nothing inside it is credited as a flag producer,
+     deliberately, so a door it alone opens is a door only a corpse can open.
+     Needs `dsl_version` 0.10.0 on the quests stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
