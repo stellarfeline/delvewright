@@ -33,16 +33,29 @@ engine tests red for content reasons.
 
 ## 2. `delvewright.local.toml` (gitignored)
 
-Local machine configuration (validation ports, container tooling paths)
-is read from `delvewright.local.toml` at the repo root and is gitignored.
-Copy it from the main checkout when present:
+Local machine configuration is read from `delvewright.local.toml` at the repo
+root and is gitignored. Copy it from the main checkout when present:
 
 ```sh
 cp <main-checkout>/delvewright.local.toml .
 ```
 
-Absence is not always fatal (defaults exist) but validation compose runs
-inherit wrong defaults silently — prefer copying.
+**Exactly two tools read it**, both Python, and only for their own section:
+`tools/i18n-translate.py` (`[i18n]`) and `tools/refimg.py` (`[refimg]`). No
+shell script, no compose file and no Rust crate reads it — grep the tree before
+believing otherwise.
+
+This section used to say the file held "validation ports, container tooling
+paths" and that "validation compose runs inherit wrong defaults silently". Both
+were false in the same way `$DELVEWRIGHT_CAMPAIGNS_DIR` above was false: a
+plausible mechanism nothing implements. Nothing in `validation/` has ever read
+this file — validation gets its ports from `ephemeral-port.yaml` and its pins
+from `versions.toml`. A worker who skipped the copy and then blamed a red
+ladder run on it was chasing a cause that does not exist.
+
+So absence is not fatal to any ladder run; it is fatal only to `i18n-translate`
+and `refimg`, which exit non-zero saying what to add. Copy it anyway if you may
+touch either.
 
 ## Status
 
