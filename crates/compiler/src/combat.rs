@@ -460,16 +460,14 @@ pub struct ActorEncounter {
 /// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
 /// bundles — is descended exactly as emission descends it, and an ambush (which
 /// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// The dialogue **stage** is nonetheless a blind spot, and it is a real one
-/// (task #24 — the doc here used to argue it away). `DialogueEffect` indeed has
-/// no actor verb, but a dialogue option's `set-checkpoint` carries an
-/// `on_respawn` bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is
-/// a beat emission lowers and this index does not see. It is the fifth root
-/// [`crate::plan::for_each_effect_root`] enumerates, and
-/// [`for_each_campaign_effect`] cannot express it: its `EffectSite` has no
-/// dialogue variant, so reaching root 5 means widening that type. Until then this
-/// index covers four of the five roots — see "Known spec ↔ code drift" in
-/// `docs/reference/compiler.md`.
+/// The dialogue **stage** was the blind spot this doc used to argue away
+/// (task #24). `DialogueEffect` indeed has no actor verb, but a dialogue option's
+/// `set-checkpoint` carries an `on_respawn` bundle that is a `Vec<QuestEffect>`,
+/// so a `spawn-actor` there is a beat emission lowers — and it was invisible here
+/// only because `EffectSite` could not *represent* it. Widening the type is what
+/// let the walk widen; the same widening carried roots 6 and 7 (spec-0031) in on
+/// the day they were added, which is the property the exhaustive match below
+/// exists to keep.
 fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
     let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
         .quests
@@ -499,6 +497,12 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
             // that checkpoint is active — so, like a trigger and a trap, it has no
             // DAG position.
             EffectSite::DialogueRespawn { npc, .. } => ("dialogue-respawn", npc.clone(), None),
+            // Effect roots 6 and 7 (spec-0031). Both are ambient for the same
+            // reason the two above are: the party may earn the shortcut at any
+            // time or never, and nobody is forced to die. A body put in the world
+            // from either is a beat the floor gate must be able to name.
+            EffectSite::ShortcutUnlock { shortcut } => ("shortcut-unlock", shortcut.clone(), None),
+            EffectSite::OnDeath => ("on-death", "on_death".to_string(), None),
         };
         let t = (kind == "trigger")
             .then(|| triggers.get(owner.as_str()))

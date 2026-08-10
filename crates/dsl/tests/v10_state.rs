@@ -261,6 +261,73 @@ fn a_player_scoped_datum_needs_an_acting_player() {
         "an objective's guard is a party predicate: {d:#?}"
     );
 
+    // Root R3: a TRIGGER's effects are polled on the tick with no executor, so a
+    // per-player datum read or written there has no subject either. Three of the
+    // seven roots are like this (R3, R4, R6) and four are not — the answer is
+    // `EffectRootKind::runs_with_acting_player`'s, not this check's.
+    let doc = quests_doc("0.10.0")
+        .replace(
+            r#"{ "id": "state/ride", "scope": "party" }"#,
+            r#"{ "id": "state/ride", "scope": "player" }"#,
+        )
+        .replace(
+            r#""effects": [ {{ "type": "add-state", "state": "state/toll", "amount": -1 }} ]"#
+                .replace("{{", "{")
+                .replace("}}", "}")
+                .as_str(),
+            r#""effects": [ { "type": "set-state", "state": "state/ride", "value": 1 } ]"#,
+        );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0503" && x.message.contains("no acting player")),
+        "a trigger's effects run with no acting player: {d:#?}"
+    );
+
+    // Root R6: a shortcut's `on_unlock` is emitted `Audience::Scheduled` too, and
+    // the READ side fails the same way as the write side.
+    let doc = quests_doc("0.10.0")
+        .replace(
+            r#"{ "id": "state/ride", "scope": "party" }"#,
+            r#"{ "id": "state/ride", "scope": "player" }"#,
+        )
+        .replace(
+            r#"    "quests": ["#,
+            r#"    "shortcuts": [
+      { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",
+        "on_unlock": [
+          { "type": "narrate", "text": "The bar lifts for good.",
+            "requires_state": [ { "state": "state/ride", "op": "equals", "value": 1 } ] }
+        ] }
+    ],
+    "quests": ["#,
+        );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        d.iter().any(|x| x.code == "DW0503"
+            && x.message.contains("requires_state")
+            && x.message.contains("state/ride")),
+        "a comparison inside `shortcuts[].on_unlock` has no acting player: {d:#?}"
+    );
+
+    // …and the four roots that DO have one are clean: `on_death` is the dying
+    // player's own beat, so a per-player write there is exactly right.
+    let doc = quests_doc("0.10.0")
+        .replace(
+            r#"{ "id": "state/ride", "scope": "party" }"#,
+            r#"{ "id": "state/ride", "scope": "player" }"#,
+        )
+        .replace(
+            r#"    "quests": ["#,
+            r#"    "on_death": [ { "type": "set-state", "state": "state/ride", "value": 0 } ],
+    "quests": ["#,
+        );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        !d.iter().any(|x| x.code == "DW0503"),
+        "`on_death` runs as the dying player, so a per-player write is legal: {d:#?}"
+    );
+
     // The scheduler seam: a `sequence` step writes a per-player datum with no
     // player to write it to — the same seam `DW0357` polices for `carrier: one`.
     let doc = quests_doc("0.10.0")
@@ -276,7 +343,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
     let d = check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
-            .any(|x| x.code == "DW0503" && x.message.contains("scheduler")),
+            .any(|x| x.code == "DW0503" && x.message.contains("`sequence` step")),
         "a scheduled write of a per-player datum is DW0503: {d:#?}"
     );
 }
@@ -332,4 +399,57 @@ fn the_numeric_gate_is_part_of_an_effects_content_key() {
         r#"SetFlag { flag: FlagId("flag/lit"), requires_flags: [] }"#
     );
     assert_ne!(format!("{gated:?}"), format!("{bare:?}"));
+}
+
+/// **The gate walk inherits every effect root, including the two `on_death`
+/// (#346) added after this surface was written.**
+///
+/// `for_each_gate`'s effect branch is defined on `stages::for_each_campaign_effect`,
+/// which is defined on `effects::for_each_effect_root` — the single enumeration.
+/// So a numeric gate on an effect inside the campaign's `on_death` bundle (root
+/// R7) or inside a `shortcuts[].on_unlock` bundle (root R6) is reached with no
+/// edit to `dsl::gate` at all. That is a claim about a walk, and a claim about a
+/// walk is worth exactly what it is bound to — so it is proven rather than
+/// asserted: an undeclared datum named from inside each of those two bundles must
+/// raise `DW0500`, which can only happen if the walk got there.
+///
+/// This is the shape the `for_each_effect_root` family exists to prevent (#301,
+/// #302, #321): a proof written over "every gate" that silently stops at the
+/// roots its author happened to know about.
+#[test]
+fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
+    // R7 — the campaign-wide `on_death` bundle.
+    let doc = quests_doc("0.10.0").replace(
+        r#"    "quests": ["#,
+        r#"    "on_death": [
+      { "type": "narrate", "text": "The toll goes back to the mud.",
+        "requires_state": [ { "state": "state/unwalked-r7", "op": "at-least", "value": 1 } ] }
+    ],
+    "quests": ["#,
+    );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0500" && x.message.contains("state/unwalked-r7")),
+        "a gate inside `on_death` (root R7) must be walked: {d:#?}"
+    );
+
+    // R6 — a shortcut's `on_unlock` bundle.
+    let doc = quests_doc("0.10.0").replace(
+        r#"    "quests": ["#,
+        r#"    "shortcuts": [
+      { "id": "shortcut/back-way", "gate": "anchor/door", "unlock": "anchor/exit",
+        "on_unlock": [
+          { "type": "narrate", "text": "The bar lifts for good.",
+            "requires_state": [ { "state": "state/unwalked-r6", "op": "at-least", "value": 1 } ] }
+        ] }
+    ],
+    "quests": ["#,
+    );
+    let d = check_campaign(&campaign_with(&doc, None));
+    assert!(
+        d.iter()
+            .any(|x| x.code == "DW0500" && x.message.contains("state/unwalked-r6")),
+        "a gate inside `shortcuts[].on_unlock` (root R6) must be walked: {d:#?}"
+    );
 }

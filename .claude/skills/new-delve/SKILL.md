@@ -425,10 +425,21 @@ For each stage in order — world → npcs → classes → quest-plan → quests
        reading a datum nothing writes is `DW0501`, and a datum no gate reads is
        `DW0502`. Both mean the mechanism is decoration.
      - A `player`-scoped datum can only be touched where a player is acting — a
-       dialogue option, a cast placement, or an effect on a beat a player
-       completes. An objective/trigger/trap gate and a `sequence` step have no
-       acting player (`DW0503`); use `party` scope there.
+       dialogue option, a cast placement, an `on_death` beat, or an effect on a
+       quest beat a player completes. These have **no** acting player and reject
+       one (`DW0503`): an objective/trigger/trap *gate*, a trigger's `effects`, a
+       trap's `payload`, a shortcut's `on_unlock`, a `sequence` step and a
+       `move-npc`/`move-actor` `on_arrive`. Use `party` scope there.
      - Needs `dsl_version` 0.10.0 on the stage that declares or reads it.
+   - **What happens when a player dies is content, not engine behaviour.** The
+     quests stage takes a campaign-wide `on_death`: a bundle of ordinary effects
+     that runs at the moment a player dies, for that player. One per campaign —
+     it is not a field on a checkpoint, because dying is true everywhere in the
+     delve; put `requires_flags`/`forbids_flags` on the effects inside it if the
+     beat should only land in some phase of the story. Do NOT write a death beat
+     the mainline depends on: nothing inside it is credited as a flag producer,
+     deliberately, so a door it alone opens is a door only a corpse can open.
+     Needs `dsl_version` 0.10.0 on the quests stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket

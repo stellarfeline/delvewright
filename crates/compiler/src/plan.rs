@@ -1664,6 +1664,18 @@ impl<'a> Plan<'a> {
         !self.checkpoints.is_empty()
     }
 
+    /// The campaign's `on_death` bundle (DSL v0.10, spec-0031) — effect root R7,
+    /// the effects that run at the moment a player dies. Empty for every campaign
+    /// below 0.10.0 and for any that declares no death beat, which is what keeps
+    /// the whole corpse-side half of the death edge out of their emission.
+    ///
+    /// Read straight off the campaign rather than planned into a field: unlike a
+    /// checkpoint or a shortcut this bundle resolves no geometry, so a planning
+    /// step would only be a second place for it to go stale.
+    pub fn on_death(&self) -> &[QuestEffect] {
+        &self.campaign.quests.content.on_death
+    }
+
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
     /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
     /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
@@ -2719,6 +2731,22 @@ pub(crate) enum EffectRoot<'a> {
     /// while that checkpoint is active, so it is optional too (nobody is forced to
     /// die).
     DialogueRespawn,
+    /// A `shortcuts[].on_unlock` (spec-0016 §2) — fired by the far-side
+    /// interaction, so it has no step of its own, and **optional**: `Plan::build`
+    /// registers every shortcut gate as sealed at step 0 so the delve is proven
+    /// completable with no shortcut ever taken, which is exactly the statement
+    /// "the party may never fire this bundle".
+    ///
+    /// Carries nothing, unlike its trigger/trap siblings, because a shortcut
+    /// declares no flag gate — there is no `requires_flags` for a consumer to read
+    /// off it. The owning object is still available on the DSL side
+    /// (`EffectRootOwner::ShortcutUnlock`) for a consumer that needs to name it,
+    /// and the site's `path` already does.
+    ShortcutUnlock,
+    /// The campaign's `on_death` (spec-0031) — fired at the moment a player dies,
+    /// so it has no step and is optional in the strongest sense the model has:
+    /// nobody is forced to die.
+    OnDeath,
 }
 
 /// Where an effect was declared: which stage document, the JSON pointer inside it,
@@ -2780,6 +2808,8 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::Trigger(t) => EffectRoot::Trigger(t),
             delvewright_dsl::EffectRootOwner::TrapPayload(t) => EffectRoot::TrapPayload(t),
             delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
+            delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => EffectRoot::ShortcutUnlock,
+            delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
         };
         f(
             &EffectRootSite {
@@ -2909,7 +2939,17 @@ fn collect_gate_events(
             EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
             EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
             EffectRoot::Trigger(_) => (0, true),
-            EffectRoot::TrapPayload(_) | EffectRoot::DialogueRespawn => (0, false),
+            // Optional roots: an `open-gate` from one is not credited (the proof may
+            // not lean on a wall the party might never open), a `close-gate` from
+            // one is (the proof must survive the seal). R6 is optional for a reason
+            // the model already asserts elsewhere — every shortcut gate is
+            // registered sealed at step 0 so the delve is finishable the long way,
+            // which is precisely "this bundle may never fire". R7 is optional
+            // because nobody is forced to die.
+            EffectRoot::TrapPayload(_)
+            | EffectRoot::DialogueRespawn
+            | EffectRoot::ShortcutUnlock
+            | EffectRoot::OnDeath => (0, false),
         };
         let gate = e
             .open_gate_anchor()

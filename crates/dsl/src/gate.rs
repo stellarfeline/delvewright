@@ -227,29 +227,38 @@ impl GateConsumer {
     }
 
     /// Whether emission evaluates this consumer's gate **against an acting
-    /// player** (`@s`), rather than against the party holder (`#party`).
+    /// player** (`@s`) rather than against the party holder (`#party`) — or
+    /// `None` when the class alone cannot say.
     ///
     /// This is a statement about the emitter, not a preference: a dialogue
     /// option's availability is computed per player into `dw.dmask` and its
     /// `/trigger` handler runs `as @s`; a cast placement selects a scene into a
-    /// per-player `dw.cast`. The other four are party predicates by construction
-    /// — an objective's activation guard is read on the tick ("whoever finishes
-    /// the last objective completes the quest for everyone"), and a trigger's and
-    /// a trap's arming gates flip one global sentinel.
+    /// per-player `dw.cast`. Three of the others are party predicates by
+    /// construction — an objective's activation guard is read on the tick
+    /// ("whoever finishes the last objective completes the quest for everyone"),
+    /// and a trigger's and a trap's *arming* gates flip one global sentinel.
+    ///
+    /// **`Effect` answers `None`, and that is the whole point of the return
+    /// type.** An effect's gate is evaluated wherever its bundle is run, and
+    /// which that is belongs to the **root**, not to the effect: four roots have
+    /// an acting player and three do not
+    /// ([`EffectRootKind::runs_with_acting_player`](crate::EffectRootKind::runs_with_acting_player)),
+    /// and on top of that the `sequence` / `on_arrive` seams inside a bundle drop
+    /// the actor mid-walk. An earlier version of this method answered `true` for
+    /// `Effect`, which is right for `on_objective_complete` and wrong for a
+    /// trigger's effects, a trap's payload and a shortcut's `on_unlock` — three
+    /// of the seven roots, silently. `Option` makes that wrong answer
+    /// unrepresentable: a caller must handle the deferral.
     ///
     /// It is what makes a `player`-scoped datum's readability decidable
-    /// (`DW0503`) from the closed consumer set rather than from a list someone
-    /// maintains: a seventh consumer must answer this question to compile.
-    /// `Effect` is the one that cannot answer it from its class alone — an
-    /// effect bundle has an acting player unless the **scheduler** is what
-    /// re-invokes it — so it answers `true` here and the scheduler seam is
-    /// latched by the walk that already exists for `DW0357`.
-    pub fn evaluates_per_player(self) -> bool {
+    /// (`DW0503`) from the closed consumer set rather than from a list somebody
+    /// maintains — a seventh consumer class must answer this to compile.
+    pub fn evaluates_per_player(self) -> Option<bool> {
         match self {
-            GateConsumer::DialogueOption | GateConsumer::CastPlacement | GateConsumer::Effect => {
-                true
-            }
-            GateConsumer::Objective | GateConsumer::Trigger | GateConsumer::Trap => false,
+            GateConsumer::DialogueOption | GateConsumer::CastPlacement => Some(true),
+            GateConsumer::Objective | GateConsumer::Trigger | GateConsumer::Trap => Some(false),
+            // Ask the root (and then the seams inside the bundle).
+            GateConsumer::Effect => None,
         }
     }
 

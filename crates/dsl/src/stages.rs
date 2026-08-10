@@ -1260,6 +1260,35 @@ pub struct QuestsContent {
     /// `DW0141`), so a campaign that declares none stays byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub state: Vec<StateDecl>,
+    /// **The campaign's death beat** (DSL v0.10, spec-0031): effects run at the
+    /// moment a player dies, for that player. Effect root **R7**
+    /// ([`crate::EffectRootKind::OnDeath`]); empty/absent below 0.10.0 (reserved
+    /// `DW0141`), so every existing campaign emits byte-identically.
+    ///
+    /// **Why this is campaign-wide and not a field on a checkpoint.** The engine
+    /// already has `on_respawn`, and it hangs off a `set-checkpoint` because
+    /// *where you come back* is a property of the checkpoint. *That you died* is
+    /// not: it is true at every point of the delve, under every checkpoint, and a
+    /// bundle repeated on each checkpoint would be the same content written N
+    /// times with N chances to forget one. So death is a moment in the campaign,
+    /// and this is the one place it is named. Anything that should only happen in
+    /// some phase of the delve is expressed by the ordinary per-effect
+    /// `requires_flags` / `forbids_flags` gate every other root already carries —
+    /// no second gating surface.
+    ///
+    /// **Audience is the dying player** (`Audience::Solo`, the audience
+    /// `on_respawn` and `on_caught` already use): a death is one player's, and
+    /// re-broadcasting it to the party would duplicate their narration and their
+    /// kit. A beat the whole party should see is a `narrate` addressed by the
+    /// author to the party through the effect's own vocabulary, not a different
+    /// default here.
+    ///
+    /// **Timing.** It fires on the death edge while the player is still a corpse
+    /// (`Health: 0.0f`, on the death screen) — see
+    /// `emit::emit_checkpoint_functions`. That is the difference between this and
+    /// `on_respawn`, which deliberately waits for the player to come back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_death: Vec<QuestEffect>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -6338,6 +6367,16 @@ pub enum EffectSite {
         /// The node the option sits under.
         node: String,
     },
+    /// A `shortcuts[].on_unlock` bundle (spec-0016 §2) — ambient, no DAG
+    /// position, and the sixth root: representable here only since spec-0031, for
+    /// exactly the reason [`EffectSite::DialogueRespawn`] records above.
+    ShortcutUnlock {
+        /// The shortcut id.
+        shortcut: String,
+    },
+    /// The campaign's `on_death` bundle (spec-0031) — ambient, no DAG position,
+    /// and no owning object: there is one per campaign.
+    OnDeath,
 }
 
 impl EffectSite {
@@ -6349,7 +6388,9 @@ impl EffectSite {
             }
             EffectSite::Trigger { .. }
             | EffectSite::Trap { .. }
-            | EffectSite::DialogueRespawn { .. } => None,
+            | EffectSite::DialogueRespawn { .. }
+            | EffectSite::ShortcutUnlock { .. }
+            | EffectSite::OnDeath => None,
         }
     }
 }
@@ -6396,6 +6437,10 @@ pub fn for_each_campaign_effect<'a>(
                     node: seg(5),
                 }
             }
+            crate::effects::EffectRootOwner::ShortcutUnlock(s) => EffectSite::ShortcutUnlock {
+                shortcut: s.id.as_str().to_string(),
+            },
+            crate::effects::EffectRootOwner::OnDeath => EffectSite::OnDeath,
         };
         for (i, eff) in list.iter().enumerate() {
             campaign_effect_deep(eff, &format!("{}/{i}", root.path), &site, f);

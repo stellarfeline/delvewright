@@ -976,15 +976,21 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v10(c, d);
 }
 
-/// DSL v0.10 reserved-feature gating (spec-0031): runtime state — the stage-5
-/// `state[]` declaration, the `set-state`/`add-state`/`clear-state` verbs, and
-/// the `requires_state` comparison on every gate consumer.
+/// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
+/// version**, and this is the one fence for both:
+///
+/// * runtime state — the stage-5 `state[]` declaration, the
+///   `set-state`/`add-state`/`clear-state` verbs, and the `requires_state`
+///   comparison on every gate consumer;
+/// * the campaign-wide `on_death` bundle — effect root R7, the effects that run
+///   at the moment a player dies.
 ///
 /// The same asymmetry every version ledger uses: *declaring* any of it below
-/// 0.10.0 is `DW0141`. There is no requirement half — a campaign that declares
-/// no datum and no comparison emits exactly what it emitted before (no
-/// scoreboard objective, no guard clause, no function), which is what keeps
-/// every 0.2–0.9 campaign's datapack byte-for-byte unchanged.
+/// 0.10.0 is `DW0141`. There is no requirement half — nothing obliges a campaign
+/// to hold a datum or a death beat, and one that declares neither emits exactly
+/// what it emitted before (no scoreboard objective, no guard clause, no
+/// function, and the whole `dw.death_seen` half of the death edge absent), which
+/// is what keeps every 0.2–0.9 campaign's datapack byte-for-byte unchanged.
 ///
 /// The `requires_state` half reads the gates from
 /// [`for_each_gate`](crate::gate::for_each_gate), the closed consumer
@@ -995,6 +1001,17 @@ fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let dialogue_ok = is_v10(c.dialogue.dsl_version.as_str());
     if quests_ok && dialogue_ok {
         return;
+    }
+    if !quests_ok && !c.quests.content.on_death.is_empty() {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            "/content/on_death".to_string(),
+            "the campaign-wide `on_death` bundle (the effects that run at the moment a player \
+             dies) requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or \
+             remove the section"
+                .to_string(),
+        ));
     }
     if !quests_ok && !c.quests.content.state.is_empty() {
         d.push(Diagnostic::error(
@@ -1118,8 +1135,13 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 )),
                 Some(decl) => {
                     read.insert(cmp.state.as_str().to_string());
+                    // An EFFECT's gate is evaluated wherever its bundle runs, and
+                    // that is the root's fact, not the effect's — so
+                    // `evaluates_per_player` answers `None` here and the scope
+                    // check for effects happens in the root walk below, which
+                    // knows both the root's audience and the seams inside it.
                     if decl.scope == crate::stages::StateScope::Player
-                        && !site.consumer.evaluates_per_player()
+                        && site.consumer.evaluates_per_player() == Some(false)
                     {
                         d.push(Diagnostic::error(
                             codes::STATE_SCOPE_UNREACHABLE,
@@ -1164,11 +1186,19 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     });
-    // A `player`-scoped datum written from a scheduler-only bundle has no
-    // recipient, exactly as a `carrier: "one"` give does (`DW0357`). Latched by
-    // the same walk shape, over the same seams.
+    // A `player`-scoped datum read or written where there is no acting player
+    // has no subject, exactly as a `carrier: "one"` give does (`DW0357`).
+    //
+    // **The latch starts from the ROOT**, not from `false`. Four of the seven
+    // roots run with an acting player and three do not
+    // (`EffectRootKind::runs_with_acting_player` — a trigger's effects, a trap's
+    // payload and a shortcut's `on_unlock` are all polled on the tick with no
+    // executor), and inside a bundle the `sequence` / `on_arrive` seams drop the
+    // actor the same way. Seeding it `false` — as this walk first did — read
+    // every root as player-bearing and let three of the seven through.
     crate::effects::for_each_effect_root(c, &mut |site, effs| {
-        check_player_state_not_scheduled(effs, &declared, site.stage, &site.path, false, d);
+        let scheduled = !site.kind().runs_with_acting_player();
+        check_player_state_not_scheduled(effs, &declared, site.stage, &site.path, scheduled, d);
     });
 
     // --- the two halves of the vacuity ledger ---------------------------------
@@ -1214,14 +1244,21 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Reject a `player`-scoped state write inside a **scheduler-only** bundle
-/// (`DW0503`).
+/// Reject a `player`-scoped datum **read or written** where emission has no
+/// acting player (`DW0503`).
 ///
-/// The seams and the latch semantics are [`check_carrier_one_not_scheduled`]'s,
-/// deliberately: a `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
-/// re-invoked with the server command source, while a `set-checkpoint`'s
-/// `on_respawn` and a `begin-stealth`'s `on_caught` are dispatched per player and
-/// so reset the latch.
+/// `scheduled` arrives already seeded from the ROOT
+/// ([`EffectRootKind::runs_with_acting_player`](crate::EffectRootKind::runs_with_acting_player)),
+/// and from there the seams and the latch semantics are
+/// [`check_carrier_one_not_scheduled`]'s, deliberately: a `sequence` step and a
+/// `move-npc`/`move-actor` `on_arrive` are re-invoked with the server command
+/// source, while a `set-checkpoint`'s `on_respawn` and a `begin-stealth`'s
+/// `on_caught` are dispatched per player and so reset the latch.
+///
+/// Reads and writes are checked together because they fail the same way: a
+/// per-player score named from a sourceless function is `@s` with nothing to
+/// resolve it to, whether the command is a `scoreboard players set` or an
+/// `execute if score`.
 fn check_player_state_not_scheduled(
     effs: &[QuestEffect],
     declared: &BTreeMap<&str, &crate::stages::StateDecl>,
@@ -1230,23 +1267,50 @@ fn check_player_state_not_scheduled(
     scheduled: bool,
     d: &mut Vec<Diagnostic>,
 ) {
+    let is_player = |id: &str| {
+        declared
+            .get(id)
+            .is_some_and(|s| s.scope == crate::stages::StateScope::Player)
+    };
     for e in effs {
+        if scheduled {
+            for cmp in e.requires_state() {
+                if is_player(cmp.state.as_str()) {
+                    d.push(Diagnostic::error(
+                        codes::STATE_SCOPE_UNREACHABLE,
+                        stage,
+                        path.to_string(),
+                        format!(
+                            "a `{}` effect's `requires_state` compares `{}`, which is \
+                             `player`-scoped, in a bundle that runs with no acting player (a \
+                             trigger's effects, a trap's payload and a shortcut's `on_unlock` \
+                             are polled on the tick from the server command source; so are a \
+                             `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There \
+                             is no player to read the datum from. Declare it `party`-scoped, or \
+                             move the comparison onto a beat a player completes",
+                            e.verb(),
+                            cmp.state.as_str()
+                        ),
+                    ));
+                }
+            }
+        }
         if scheduled
             && let Some((id, _)) = e.writes_state()
-            && declared
-                .get(id.as_str())
-                .is_some_and(|s| s.scope == crate::stages::StateScope::Player)
+            && is_player(id.as_str())
         {
             d.push(Diagnostic::error(
                 codes::STATE_SCOPE_UNREACHABLE,
                 stage,
                 path.to_string(),
                 format!(
-                    "`{}` writes `{}`, which is `player`-scoped, from a bundle only the scheduler \
-                     ever runs (a `sequence` step, or a `move-npc`/`move-actor` `on_arrive`). \
-                     Those run with the server command source — there is no acting player whose \
-                     datum this would be, so the write would silently reach nobody. Declare the \
-                     datum `party`-scoped, or move the write onto a beat a player completes",
+                    "`{}` writes `{}`, which is `player`-scoped, from a bundle that runs with no \
+                     acting player (a trigger's effects, a trap's payload and a shortcut's \
+                     `on_unlock` are polled on the tick from the server command source; so are a \
+                     `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There is no \
+                     acting player whose datum this would be, so the write would silently reach \
+                     nobody. Declare the datum `party`-scoped, or move the write onto a beat a \
+                     player completes",
                     e.verb(),
                     id.as_str()
                 ),

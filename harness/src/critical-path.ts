@@ -35,11 +35,14 @@
  * horizon-library surface (`horizon` object form, new base/shorthand names) —
  * world-generation input the compiler consumes to build the map, not a change
  * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
- * v0.10 (spec-0031) adds **runtime state** — a declared integer datum, the
- * `set-state`/`add-state`/`clear-state` verbs, and the `requires_state`
- * comparison every gate carries. All of it is server-side scoreboard state the
- * datapack drives; no step gains a field and no step is walked differently, so
- * a v0.10 path is walked exactly as a v0.9 one is.
+ * v0.10 (spec-0031) adds two things, neither of which touches the step
+ * contract: **runtime state** — a declared integer datum, the
+ * `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
+ * comparison every gate carries, all of it server-side scoreboard state the
+ * datapack drives — and the campaign-wide `on_death` effect root, effects that
+ * run at the moment a player dies. Neither exports a new step or reorders one
+ * (a death beat is a reaction to something the bot may never do), so a v0.10
+ * path is walked exactly as a v0.9 one is.
  *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`

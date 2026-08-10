@@ -267,6 +267,17 @@ MODIFIER_HOLES = {
         "`happening` field. The branch-contradiction proof (`DW0485`) reasons only "
         "over beats that declare one, so those effects are invisible to it."
     ),
+    ("EffectSite", "quest"): (
+        "ACCEPTED — operand, and the capability IS already on the enum. `quest` "
+        "names the DAG owner of a firing; the ambient roots (trigger, trap, "
+        "dialogue `on_respawn`, shortcut `on_unlock`, campaign `on_death`) have no "
+        "DAG position by definition, and inventing one for them is exactly the "
+        "over-attribution the completability model must not make. The cross-cutting "
+        "question — 'does this site have a quest?' — is answered for EVERY variant "
+        "by `EffectSite::quest() -> Option<&str>`, which is the lift this check "
+        "asks for. Newly visible only because spec-0031's two roots took the enum "
+        "past MODIFIER_MIN_VARIANTS; the shape has been correct since the fifth."
+    ),
 }
 
 
@@ -305,15 +316,24 @@ EFFECT_BUNDLES = {
     "on_rest": "NESTED (`bonfire`), via `nested_effect_lists`.",
     "on_caught": "NESTED (`begin-stealth`), via `nested_effect_lists`.",
     "on_unlock": (
-        "OPEN FINDING — UNREACHED. `shortcuts[].on_unlock` is lowered at emit time "
-        "(`emit.rs:5043`, `emit_effect_bundle`) but is NOT one of the five "
-        "`EffectRootKind` variants and NOT in `nested_effect_lists` — it hangs off "
-        "a stage-5 struct exactly as `traps[].payload` does, and that one IS root "
-        "R4. So it is a sixth root nothing enumerates: a `narrate` inside it is "
-        "never l10n-inventoried, a `set-flag` inside it is invisible to the flag "
-        "model and to `emit::declared_flags`. Zero live campaign usage today, which "
-        "is the only reason this has not shipped as a bug. `check-effect-roots.py` "
-        "cannot see it — it greps for the five roots it knows."
+        "ROOT R6 (`EffectRootKind::ShortcutUnlock`) — CLOSED by spec-0031. It was "
+        "the finding this check was written to surface: `shortcuts[].on_unlock` was "
+        "lowered at emit time (`emit_shortcut_functions` → `emit_effect_bundle`) "
+        "and was NOT an `EffectRootKind` variant and NOT in `nested_effect_lists`, "
+        "so a `narrate` inside it was never l10n-inventoried, a `set-flag` inside "
+        "it was invisible to the flag model and to `emit::declared_flags`, and a "
+        "`sequence` inside it would have emitted a `function` call to a function "
+        "nothing generated. Zero live campaign usage was the only reason it never "
+        "shipped as a bug. Deliberately made a root rather than desugared the way "
+        "`telegraph` is: an unlock is not a trigger — it is polled behind a "
+        "once-only `#sc_<id>` sentinel and it clears the gate region — so "
+        "desugaring it would have introduced a second detector for one event."
+    ),
+    "on_death": (
+        "ROOT R7 (`EffectRootKind::OnDeath`) — the campaign-wide death beat "
+        "(spec-0031). Added as a root on the day the surface was added, which is "
+        "the point: 'the purse is dropped on death' is then ordinary content in a "
+        "general mechanism rather than an engine feature."
     ),
 }
 

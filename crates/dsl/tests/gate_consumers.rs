@@ -202,7 +202,29 @@ fn the_consumer_set_covers_every_declaring_type() {
         assert!(matches!(k.stage(), "quests" | "dialogue"), "{k:?}");
         // Every class must have an answer to "does emission evaluate this gate
         // against an acting player?" — it is what makes a `player`-scoped datum's
-        // readability decidable (`DW0503`) rather than guessed.
-        let _: bool = k.evaluates_per_player();
+        // readability decidable (`DW0503`) rather than guessed. `Effect` answers
+        // `None` ("ask the root"), which is an answer; a class that could not
+        // answer at all would not compile.
+        let _: Option<bool> = k.evaluates_per_player();
     }
+    // Binding: exactly one class defers to the root, and both definite answers
+    // occur — a set that answered the same thing everywhere would make `DW0503`'s
+    // per-site reasoning vacuous.
+    assert_eq!(
+        GateConsumer::ALL
+            .iter()
+            .filter(|k| k.evaluates_per_player().is_none())
+            .count(),
+        1,
+        "only the effect class defers to the effect root"
+    );
+    assert!(
+        GateConsumer::ALL
+            .iter()
+            .any(|k| k.evaluates_per_player() == Some(true))
+            && GateConsumer::ALL
+                .iter()
+                .any(|k| k.evaluates_per_player() == Some(false)),
+        "both definite answers must occur"
+    );
 }

@@ -1,7 +1,7 @@
 //! **The one enumeration of the campaign's effect roots.**
 //!
 //! An *effect root* is a `Vec<QuestEffect>` that emission can lower. There are
-//! five, they hang off three different stage documents, and nothing about the
+//! seven, they hang off two different stage documents, and nothing about the
 //! shape of the DSL makes them findable by inspection — which is why every walk
 //! that needed "every effect" was, historically, written by someone enumerating
 //! the roots they happened to know about.
@@ -33,6 +33,27 @@
 //!   [`EffectRootOwner`]. Adding a variant there is a rustc error at every such
 //!   site, so a new root cannot be silently mis-classified either.
 //!
+//! Roots 6 and 7 were added by spec-0031, and they are worth reading as a pair
+//! because they are the two ways this defect class recurs after the enumeration
+//! exists:
+//!
+//! * **R6 `shortcuts[].on_unlock` was already a root and nobody had noticed.**
+//!   It is a `Vec<QuestEffect>` hanging off a stage-5 struct, structurally
+//!   identical in kind to `traps[].payload` (which is R4), and emission really
+//!   lowers it (`emit::emit_shortcut_functions`). It was simply never listed —
+//!   so every proof, every l10n pass and every diagnostic written for "the
+//!   general path" silently did not cover it: a `narrate` inside it was never
+//!   inventoried, a `set-flag` inside it was invisible to the flag model, and a
+//!   `sequence` inside it would have emitted a `function` call to a function
+//!   nothing generated. Zero campaigns happened to use it, which is the only
+//!   reason it never shipped as a bug. The sixth blind spot in the family that
+//!   `#301`/`#302`/`#321` each closed one instance of.
+//! * **R7 `on_death` is new surface that starts inside the enumeration.** The
+//!   whole point of adding it as a root, rather than as a hook on the checkpoint
+//!   machinery that detects death, is that "the purse is dropped on death" then
+//!   stops being an engine feature and becomes ordinary content in a general
+//!   mechanism.
+//!
 //! What this module deliberately does **not** try to be is a guard against a
 //! fourteenth hand-rolled walk being written tomorrow. Nothing in the type system
 //! can stop someone iterating `campaign.quests.content.quests` directly; that
@@ -44,7 +65,7 @@
 //! [`for_each_effect_root`].
 
 use crate::envelope::Campaign;
-use crate::stages::{EnvTrigger, Quest, QuestEffect, Trap};
+use crate::stages::{EnvTrigger, Quest, QuestEffect, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
 /// every l10n key is built from. Duplicated from `l10n::local` deliberately: this
@@ -76,17 +97,29 @@ pub enum EffectRootKind {
     /// inside one is quest-effect vocabulary all the same, and it is lowered
     /// (into `cp_on_respawn_<i>`).
     DialogueRespawn,
+    /// A `shortcuts[].on_unlock` bundle (spec-0016 §2) — the beat that plays as
+    /// the bar lifts. Lowered by `emit::emit_shortcut_functions` into
+    /// `shortcut_open_<id>`, and unenumerated until spec-0031: the sixth blind
+    /// spot, structurally the same shape as R4.
+    ShortcutUnlock,
+    /// The campaign's `on_death` bundle (DSL v0.10, spec-0031) — the effects that
+    /// run at the moment a player dies, for that player. One per campaign, and
+    /// visited only when non-empty, so `unbound_roots` tells the truth about a
+    /// campaign that declares no death beat.
+    OnDeath,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 5] = [
+    pub const ALL: [EffectRootKind; 7] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
         EffectRootKind::TrapPayload,
         EffectRootKind::DialogueRespawn,
+        EffectRootKind::ShortcutUnlock,
+        EffectRootKind::OnDeath,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -98,8 +131,43 @@ impl EffectRootKind {
             EffectRootKind::ObjectiveComplete
             | EffectRootKind::QuestComplete
             | EffectRootKind::Trigger
-            | EffectRootKind::TrapPayload => "quests",
+            | EffectRootKind::TrapPayload
+            | EffectRootKind::ShortcutUnlock
+            | EffectRootKind::OnDeath => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
+        }
+    }
+
+    /// Whether emission runs this root's bundle **with an acting player**
+    /// (`@s`), or from the server command source.
+    ///
+    /// This is a fact about the ROOT, not about any verb inside it, and it is
+    /// stated here — on the object class — rather than in the one diagnostic that
+    /// first needed it. Four roots have a player: `on_objective_complete` and
+    /// `on_complete` are dispatched `as @a` from the tick
+    /// (`Audience::Party`), and `on_death` and a dialogue `on_respawn` are the
+    /// dying/respawning player's own (`Audience::Solo`). Three do not: a
+    /// trigger's effects, a trap's payload and a shortcut's `on_unlock` are all
+    /// polled on the tick with no executor (`Audience::Scheduled`) — their own
+    /// doc comments in `emit` say so.
+    ///
+    /// It is exhaustive, so an eighth root cannot be added without answering it,
+    /// and `emit::root_audience` is bound to it in both directions by
+    /// `emit`'s own test — the emitter and this answer cannot drift.
+    ///
+    /// The consumer that needs it today is `DW0503`: a `player`-scoped runtime
+    /// datum (spec-0031) read or written inside a bundle with no acting player
+    /// would emit `@s` into a sourceless function, which fails silently at
+    /// runtime.
+    pub fn runs_with_acting_player(self) -> bool {
+        match self {
+            EffectRootKind::ObjectiveComplete
+            | EffectRootKind::QuestComplete
+            | EffectRootKind::DialogueRespawn
+            | EffectRootKind::OnDeath => true,
+            EffectRootKind::Trigger
+            | EffectRootKind::TrapPayload
+            | EffectRootKind::ShortcutUnlock => false,
         }
     }
 
@@ -112,6 +180,8 @@ impl EffectRootKind {
             EffectRootKind::Trigger => "trigger effects",
             EffectRootKind::TrapPayload => "trap payload",
             EffectRootKind::DialogueRespawn => "dialogue set-checkpoint on_respawn",
+            EffectRootKind::ShortcutUnlock => "shortcut on_unlock",
+            EffectRootKind::OnDeath => "campaign on_death",
         }
     }
 }
@@ -121,7 +191,7 @@ impl EffectRootKind {
 /// This is what a consumer matches on when it needs to reason about *when* a
 /// bundle fires (the completability model) or *who* gates it (a trigger's or
 /// trap's `requires_flags`). Because the match is exhaustive at every such site,
-/// a sixth root is a compile error everywhere the answer would have to change.
+/// an eighth root is a compile error everywhere the answer would have to change.
 #[derive(Clone, Copy)]
 pub enum EffectRootOwner<'a> {
     /// A quest's `on_objective_complete[<objective>]` — fires at that objective's
@@ -150,6 +220,17 @@ pub enum EffectRootOwner<'a> {
     /// die). Carries no owning object: the npc, node and option are all named in
     /// the site's `path`, and no consumer needs to reach the tree itself.
     DialogueRespawn,
+    /// A `shortcuts[].on_unlock` (spec-0016 §2) — fired once, by the far-side
+    /// interaction, and **optional**: `Plan::build` registers every shortcut gate
+    /// as sealed at step 0 precisely so the delve is proven completable with no
+    /// shortcut ever taken. Carries the shortcut; it declares no flag gate of its
+    /// own, so the whole bundle is ungated.
+    ShortcutUnlock(&'a Shortcut),
+    /// The campaign's `on_death` (spec-0031) — fired at the moment a player dies,
+    /// so it has no step of its own and is **optional** in the strongest sense:
+    /// nobody is forced to die. Carries no owning object; there is exactly one
+    /// per campaign and its path is `/content/on_death`.
+    OnDeath,
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -161,6 +242,8 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::Trigger(_) => EffectRootKind::Trigger,
             EffectRootOwner::TrapPayload(_) => EffectRootKind::TrapPayload,
             EffectRootOwner::DialogueRespawn => EffectRootKind::DialogueRespawn,
+            EffectRootOwner::ShortcutUnlock(_) => EffectRootKind::ShortcutUnlock,
+            EffectRootOwner::OnDeath => EffectRootKind::OnDeath,
         }
     }
 
@@ -171,7 +254,9 @@ impl<'a> EffectRootOwner<'a> {
             | EffectRootOwner::QuestComplete { quest } => Some(quest),
             EffectRootOwner::Trigger(_)
             | EffectRootOwner::TrapPayload(_)
-            | EffectRootOwner::DialogueRespawn => None,
+            | EffectRootOwner::DialogueRespawn
+            | EffectRootOwner::ShortcutUnlock(_)
+            | EffectRootOwner::OnDeath => None,
         }
     }
 }
@@ -252,8 +337,9 @@ impl RootBinding {
 ///
 /// Expanded twice — by [`for_each_effect_root`] with `iter`/`as_slice` and by
 /// [`for_each_effect_root_mut`] with `iter_mut`/`as_mut_slice`. There is no second
-/// copy of "which lists are roots" anywhere in the workspace, so adding a sixth
-/// root is one edit here and every consumer of either walk inherits it. That is
+/// copy of "which lists are roots" anywhere in the workspace, so adding a root is
+/// one edit here and every consumer of either walk inherits it (roots 6 and 7 were
+/// added by spec-0031 and this claim is what made it a small change). That is
 /// the whole point of this module: the previous arrangement had the root list
 /// written out four times (twice in `l10n`, once in `plan`, once in `stages`) and
 /// approximated a further thirteen times by walkers that enumerated three or four
@@ -276,6 +362,8 @@ macro_rules! effect_root_walk {
         trigger_owner: |$t:ident| $ownt:expr,
         trap_owner: |$p:ident| $ownp:expr,
         dialogue_owner: $ownd:expr,
+        shortcut_owner: |$s:ident| $owns:expr,
+        death_owner: $ownx:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -364,6 +452,36 @@ macro_rules! effect_root_walk {
                 }
             }
         }
+        // R6 `shortcuts[].on_unlock` (spec-0016 §2) — an effect bundle emission
+        // has always lowered and no enumeration knew about, closed by spec-0031.
+        note(EffectRootKind::ShortcutUnlock);
+        for (si, $s) in $c.quests.content.shortcuts.$iter().enumerate() {
+            let sl = local($s.id.as_str()).to_string();
+            let owner = $owns;
+            visit(
+                (EffectRootKind::ShortcutUnlock, owner, None),
+                format!("/content/shortcuts/{si}/on_unlock"),
+                format!("fx.sc.{sl}"),
+                $s.on_unlock.$slice(),
+            );
+        }
+        // R7 the campaign's `on_death` (DSL v0.10, spec-0031) — one bundle, no
+        // owning object, visited only when the campaign declares one. An empty
+        // list is NOT visited: `RootBinding` must be able to say "this campaign
+        // has no death beat", which a site count that is always 1 could not.
+        note(EffectRootKind::OnDeath);
+        {
+            let owner = $ownx;
+            let on_death = $c.quests.content.on_death.$slice();
+            if !on_death.is_empty() {
+                visit(
+                    (EffectRootKind::OnDeath, owner, None),
+                    "/content/on_death".to_string(),
+                    "fx.death".to_string(),
+                    on_death,
+                );
+            }
+        }
     }};
 }
 
@@ -375,6 +493,8 @@ enum RawOwner<'a> {
     Trigger(&'a EnvTrigger),
     Trap(&'a Trap),
     Dialogue,
+    Shortcut(&'a Shortcut),
+    Death,
 }
 
 impl<'a> RawOwner<'a> {
@@ -395,6 +515,10 @@ impl<'a> RawOwner<'a> {
             (RawOwner::Dialogue, EffectRootKind::DialogueRespawn) => {
                 EffectRootOwner::DialogueRespawn
             }
+            (RawOwner::Shortcut(s), EffectRootKind::ShortcutUnlock) => {
+                EffectRootOwner::ShortcutUnlock(s)
+            }
+            (RawOwner::Death, EffectRootKind::OnDeath) => EffectRootOwner::OnDeath,
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -402,6 +526,8 @@ impl<'a> RawOwner<'a> {
                     RawOwner::Trigger(_) => "trigger",
                     RawOwner::Trap(_) => "trap",
                     RawOwner::Dialogue => "dialogue",
+                    RawOwner::Shortcut(_) => "shortcut",
+                    RawOwner::Death => "on_death",
                 }
             ),
         }
@@ -414,14 +540,19 @@ impl<'a> RawOwner<'a> {
 /// The order is contractual, because emission and the l10n key scheme are defined
 /// by it: per quest, `on_objective_complete` (a `BTreeMap`, so key-ordered) then
 /// `on_complete`; then every trigger; then every trap payload; then every dialogue
-/// `on_respawn` bundle. Roots 1–3 keep the order they had before roots 4 and 5
-/// existed, so a campaign that uses only them produces byte-identical output.
+/// `on_respawn` bundle; then every shortcut's `on_unlock`; then the campaign's
+/// `on_death`. **Each new root is appended, never inserted**, so a campaign that
+/// predates it produces byte-identical output — that is why R6 hangs off the
+/// quests stage but comes after the dialogue-stage R5.
 ///
 /// A list is a root if `emit::emit_quest_effect` can reach it, **not** if the
 /// quests stage happens to own it. That distinction is the entire defect class:
-/// four of the five roots are reachable from `campaign.quests.content` and the
-/// fifth is not, so every walk reasoned from "effects live in the quests stage"
-/// was correct-looking, green, and wrong.
+/// six of the seven roots are reachable from `campaign.quests.content` and R5 is
+/// not, so every walk reasoned from "effects live in the quests stage" was
+/// correct-looking, green, and wrong. R6 is the mirror-image reading error —
+/// `shortcuts[].on_unlock` *is* in `campaign.quests.content` and was still missed,
+/// because the walks were written against a remembered list rather than against
+/// what emission reaches.
 ///
 /// Returns the [`RootBinding`] ledger — how many roots were enumerated and how
 /// many bundles each actually bound to on this campaign. A proof that states what
@@ -445,6 +576,8 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::Trigger, 0usize),
         (EffectRootKind::TrapPayload, 0usize),
         (EffectRootKind::DialogueRespawn, 0usize),
+        (EffectRootKind::ShortcutUnlock, 0usize),
+        (EffectRootKind::OnDeath, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -493,6 +626,8 @@ pub fn for_each_effect_root<'a>(
         trigger_owner: |t| RawOwner::Trigger(t),
         trap_owner: |p| RawOwner::Trap(p),
         dialogue_owner: RawOwner::Dialogue,
+        shortcut_owner: |s| RawOwner::Shortcut(s),
+        death_owner: RawOwner::Death,
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -551,6 +686,8 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         trigger_owner: |_t| (),
         trap_owner: |_p| (),
         dialogue_owner: (),
+        shortcut_owner: |_s| (),
+        death_owner: (),
     );
 }
 
@@ -570,6 +707,8 @@ mod tests {
                 (EffectRootKind::Trigger, 0),
                 (EffectRootKind::TrapPayload, 0),
                 (EffectRootKind::DialogueRespawn, 0),
+                (EffectRootKind::ShortcutUnlock, 0),
+                (EffectRootKind::OnDeath, 0),
             ],
             effects: 0,
         };

@@ -29,9 +29,11 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
 /// authorable option strings and the class-kit `flask`; v0.9 (task #179) adds
-/// declared `drops`; v0.10 (spec-0031) adds **runtime state** — the stage-5
-/// `state[]` declaration, the `set-state`/`add-state`/`clear-state` verbs, and
-/// the `requires_state` numeric comparison on every gate consumer.
+/// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
+/// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the
+/// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
+/// comparison on every gate consumer — and the campaign-wide `on_death` effect
+/// root, the bundle that runs at the moment a player dies.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
@@ -138,23 +140,28 @@ pub fn is_v09(version: &str) -> bool {
     ordinal(version) >= 9
 }
 
-/// True if `version` enables the DSL v0.10 surface (spec-0031 §"the missing
-/// primitive"): **runtime state** — the stage-5 `state[]` declaration of named,
-/// scoped, integer-valued data; the `set-state` / `add-state` / `clear-state`
-/// verbs that write one; and `requires_state`, the numeric comparison carried by
-/// **every** gate consumer beside `requires_flags` / `forbids_flags`.
+/// True if `version` enables the DSL v0.10 surface. **Two spec-0031 surfaces
+/// land in it**, and they are additive over v0.9 and over each other:
 ///
-/// The datum is what `FlagId` is not: it clears, it counts, and its multiplayer
-/// scope is declared rather than assumed. The comparison lives in the gate and
-/// not in any one verb, because its consumers are exactly the gate's consumers —
-/// a door that opens at 500, a line withheld below 200, a lever inert while a
-/// ride is in progress. Generality is decided at the first site (CLAUDE.md); a
-/// second bespoke field would be the defect, not the fix.
+/// * §"the missing primitive" — **runtime state**: the stage-5 `state[]`
+///   declaration of named, scoped, integer-valued data; the `set-state` /
+///   `add-state` / `clear-state` verbs that write one; and `requires_state`, the
+///   numeric comparison carried by **every** gate consumer beside
+///   `requires_flags` / `forbids_flags`. The datum is what `FlagId` is not: it
+///   clears, it counts, and its multiplayer scope is declared rather than
+///   assumed. The comparison lives in the gate and not in any one verb, because
+///   its consumers are exactly the gate's consumers — a door that opens at 500,
+///   a line withheld below 200, a lever inert while a ride is in progress.
+///   Generality is decided at the first site (CLAUDE.md); a second bespoke field
+///   would be the defect, not the fix.
+/// * §`on_death` — the stage-5 campaign-wide `on_death` bundle: the seventh
+///   effect root, and the only one that runs while the player who fired it is
+///   still a corpse.
 ///
-/// Additive over v0.9: a campaign that declares no `state` and no
-/// `requires_state` compiles byte-identically (no new scoreboard objective, no
-/// new guard clause, no new function), and any use of the surface in an earlier
-/// campaign is rejected with `DW0141`.
+/// A campaign that declares neither compiles byte-identically (no new scoreboard
+/// objective, no new guard clause, no new function, and the whole
+/// `dw.death_seen` half of the death edge absent), and any use of either surface
+/// in an earlier campaign is rejected with `DW0141`.
 pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
 }
