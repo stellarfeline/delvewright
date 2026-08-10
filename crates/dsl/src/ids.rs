@@ -94,6 +94,15 @@ prefixed_id!(
     /// flags is exactly those produced by some `set-flag` effect.
     FlagId, "flag");
 prefixed_id!(
+    /// Runtime-state id: `state/<kebab>` (stage-5 `state` section, DSL v0.10,
+    /// spec-0031). A named, scoped, integer-valued datum.
+    ///
+    /// Unlike [`FlagId`] this one **is** declared. A datum's scope (per-player or
+    /// party-wide) is a multiplayer semantic that no inference can supply, and a
+    /// counter — unlike a monotonic "this happened" flag — has an initial value
+    /// that only a declaration can state.
+    StateId, "state");
+prefixed_id!(
     /// Environment-trigger id: `trigger/<kebab>` (stage-5 `triggers` section,
     /// DSL v0.4). Unique within the stage-5 triggers namespace.
     TriggerId, "trigger");

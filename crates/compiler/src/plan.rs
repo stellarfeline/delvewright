@@ -368,6 +368,9 @@ pub struct TrapPlan {
     pub requires_flags: Vec<String>,
     /// Flags whose being set deactivates the trap (DSL v0.6 negative gate).
     pub forbids_flags: Vec<String>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): the trap is armed only while
+    /// every comparison holds.
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
 }
 
 /// A gate open/close firing (DSL v0.6), collected in deterministic content order.
@@ -608,6 +611,9 @@ pub struct OptionPlan {
     pub requires_flags: Vec<String>,
     /// Flags whose being set HIDES this option (DSL v0.6 negative gate).
     pub forbids_flags: Vec<String>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): the option is shown only while
+    /// every comparison holds.
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
     /// World-time cuts this option fires (DSL v0.5 dialogue `set-time`), in order.
     pub sets_time: Vec<delvewright_dsl::WorldTime>,
     /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
@@ -815,6 +821,24 @@ pub fn dlg_trigger(npc_id: &str) -> String {
 pub fn flag_score(flag_id: &str) -> String {
     format!("dw.f_{}", safe_local(flag_id))
 }
+/// Scoreboard objective holding a declared runtime datum (`state/<kebab>`, DSL
+/// v0.10, spec-0031).
+///
+/// One objective per datum, holding an ordinary integer. **Who** holds the value
+/// is the datum's declared scope, not a property of the objective: a `party`
+/// datum lives on the [`PARTY`] fake player (where every story flag already
+/// lives, spec-0018) and a `player` datum on each real player.
+pub fn state_score(state_id: &str) -> String {
+    format!("dw.s_{}", safe_local(state_id))
+}
+
+/// The per-player tag marking "this player's `player`-scoped data are seeded to
+/// their declared initials" (DSL v0.10). Player tags live in player data, so the
+/// seed runs exactly once per player per world — on their first tick, never
+/// again on a relog, which is what makes a datum survive a disconnect the way a
+/// scoreboard score does.
+pub const STATE_SEEDED_TAG: &str = "dw_state";
+
 /// Trigger objective the bot chats / an interaction advancement sets to drive an
 /// `interact` objective (v0.3).
 pub fn interact_trigger(obj_id: &str) -> String {
@@ -2029,6 +2053,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
+                requires_state: opt.requires_state.clone(),
                 sets_time,
                 sets_weather,
                 sets_checkpoints,
@@ -3196,6 +3221,7 @@ fn collect_traps(
                 .iter()
                 .map(|f| f.as_str().to_string())
                 .collect(),
+            requires_state: t.requires_state.clone(),
             forbids_flags: t
                 .forbids_flags
                 .iter()

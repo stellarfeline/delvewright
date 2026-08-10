@@ -140,24 +140,42 @@ fn json_effects(src: &str) -> Vec<QuestEffect> {
 /// A prefab tree with an `anchor/trap` (a dispenser-backed trigger cell) added to
 /// `hello-room`, which root 4 needs and the fixture does not otherwise have.
 fn prefabs_with_trap() -> PathBuf {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("effect_root_walkers_prefabs");
-    if dir.join("hello-room.json").exists() {
-        return dir;
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
-    let path = dir.join("hello-room.json");
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    meta.get_mut("anchors")
-        .and_then(|a| a.as_object_mut())
-        .unwrap()
-        .insert(
-            "anchor/trap".to_string(),
-            serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
-        );
-    std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    dir
+    // Materialized EXACTLY ONCE per process, behind a `OnceLock`.
+    //
+    // It was a `if dir.join("hello-room.json").exists() { return dir }` cache in
+    // front of a `remove_dir_all` + copy. Both tests in this binary run in
+    // parallel threads and both call this, so on a cold cache both could see
+    // `exists() == false`, and the loser's `remove_dir_all` then deleted the
+    // library the winner was already handing to `PrefabRegistry::load_dir` —
+    // surfacing as `DW0300: no matching prefab metadata was found in the prefabs
+    // dir` in exactly one of the two tests. A time-of-check/time-of-use window of
+    // microseconds on a fast local disk, and wide enough to fire on CI once a
+    // sibling test binary was added that copies the same 76-file library
+    // alongside it. `OnceLock` closes it by construction: one initializer runs,
+    // every other caller blocks on it and then reads a finished directory, and
+    // nothing destructive ever runs concurrently with a read.
+    //
+    // CLAUDE.md: an intermittent red is a finding, not something to re-run.
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir =
+            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("effect_root_walkers_prefabs");
+        let _ = std::fs::remove_dir_all(&dir);
+        common::copy_dir_all(&common::prefabs_dir(), &dir);
+        let path = dir.join("hello-room.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        meta.get_mut("anchors")
+            .and_then(|a| a.as_object_mut())
+            .unwrap()
+            .insert(
+                "anchor/trap".to_string(),
+                serde_json::json!({ "pos": [5, 1, 6], "dispenser": [4, 1, 6] }),
+            );
+        std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+        dir
+    })
+    .clone()
 }
 
 fn load() -> LoadedCampaign {

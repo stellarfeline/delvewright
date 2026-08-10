@@ -423,6 +423,7 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
         sound: None,
         requires_flags: vec![],
         forbids_flags: vec![],
+        requires_state: vec![],
     }];
     let nested = QuestEffect::Sequence {
         steps: vec![SequenceStep {

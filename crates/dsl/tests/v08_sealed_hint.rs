@@ -118,6 +118,7 @@ fn an_unauthored_hint_does_not_move_a_content_key() {
         anchor: AnchorId("anchor/door".to_string()),
         requires_flags: Vec::new(),
         forbids_flags: Vec::new(),
+        requires_state: Vec::new(),
         happening: None,
         sealed_hint: None,
     };
@@ -129,6 +130,7 @@ fn an_unauthored_hint_does_not_move_a_content_key() {
         anchor: AnchorId("anchor/door".to_string()),
         requires_flags: Vec::new(),
         forbids_flags: Vec::new(),
+        requires_state: Vec::new(),
         happening: None,
         sealed_hint: Some("It will not shift.".to_string()),
     };
