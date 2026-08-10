@@ -406,6 +406,28 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      objective runs first (`DW0493`). `dropped_by` names a wave, never an actor
      (an actor's death is observable by no objective). Needs `dsl_version` 0.9.0
      on the quests stage.
+   - **A number the world remembers is `state`, not a flag.** A flag is boolean,
+     party-wide and one-way — nothing clears one — so it says "this happened" and
+     nothing else. When a beat needs a *quantity* that goes down as well as up (a
+     toll still owed, a floor a lift is at, whether a ride is in progress),
+     declare it in the stage-5 `state` list: `{"id": "state/<kebab>", "scope":
+     "party" | "player", "initial": <n>, "note": "<what the number means>"}`.
+     `scope` is required and never guessed — `party` is one shared value, `player`
+     gives each member their own. Write it with `set-state` / `add-state` (signed:
+     a negative `amount` counts down) / `clear-state` (back to `initial`).
+     - **Read it in the gate, never in a verb.** `requires_state: [{"state": …,
+       "op": "equals"|"not-equals"|"at-least"|"at-most", "value": <n>}]` is
+       accepted everywhere `requires_flags` is — an objective, any gatable effect,
+       a trigger, a trap, a dialogue option, a cast placement — so "the door opens
+       at zero" and "this line is withheld below two" are the same construct.
+     - Every datum must be both **written somewhere and read somewhere**: a gate
+       reading a datum nothing writes is `DW0501`, and a datum no gate reads is
+       `DW0502`. Both mean the mechanism is decoration.
+     - A `player`-scoped datum can only be touched where a player is acting — a
+       dialogue option, a cast placement, or an effect on a beat a player
+       completes. An objective/trigger/trap gate and a `sequence` step have no
+       acting player (`DW0503`); use `party` scope there.
+     - Needs `dsl_version` 0.10.0 on the stage that declares or reads it.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket

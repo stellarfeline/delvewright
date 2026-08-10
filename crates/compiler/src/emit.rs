@@ -22,7 +22,8 @@ use crate::plan::{
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
 use delvewright_dsl::{
-    EquipItem, MobEquipment, Objective, QuestEffect, Trigger, is_v03, is_v04, is_v06,
+    CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
+    StateScope, Trigger, is_v03, is_v04, is_v06,
 };
 
 /// The emitted build tree: relative path → file bytes.
@@ -2086,6 +2087,28 @@ fn emit_functions(
             plan::flag_score(&flag)
         ));
     }
+    // DSL v0.10 runtime state (spec-0031): one objective per declared datum, and
+    // the `party`-scoped ones seeded to their declared initials right here —
+    // `setup` runs once, at world init, which is exactly a party datum's
+    // lifetime. `player`-scoped data cannot be seeded here (no player exists
+    // yet); they are seeded on each player's first tick (`state_seed`). The loop
+    // is empty for every pre-0.10 campaign, so their setup is byte-identical.
+    for st in declared_states(c) {
+        setup.push(format!(
+            "scoreboard objectives add {} dummy",
+            plan::state_score(st.id.as_str())
+        ));
+    }
+    for st in declared_states(c) {
+        if st.scope == StateScope::Party {
+            setup.push(format!(
+                "scoreboard players set {} {} {}",
+                plan::PARTY,
+                plan::state_score(st.id.as_str()),
+                st.initial
+            ));
+        }
+    }
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
     // exists, so v0.2/v0.3 setup is unchanged.
@@ -2448,6 +2471,21 @@ fn emit_functions(
     // Per-PLAYER, not party-wide: classing is per-player (`dw.classed`), so a
     // second player still on the class screen must keep an armed trigger while
     // the first is sealed.
+    // DSL v0.10 runtime state (spec-0031): seed each player's `player`-scoped
+    // data to their declared initials, once, on their first tick. `setup` cannot
+    // do it — no player exists at world init — and the tag lives in player data,
+    // so a relog does not re-seed and a datum survives a disconnect exactly as a
+    // scoreboard score does. Emitted only when the campaign declares a
+    // `player`-scoped datum, so every pre-0.10 tick is byte-identical.
+    if declared_states(c)
+        .iter()
+        .any(|st| st.scope == StateScope::Player)
+    {
+        tick.push(format!(
+            "execute as @a[tag=!{}] run function {ns}:state_seed",
+            plan::STATE_SEEDED_TAG
+        ));
+    }
     tick.push(format!("execute as @a run function {ns}:class_arm"));
     for npc in &plan.npcs {
         tick.push(format!(
@@ -2521,7 +2559,7 @@ fn emit_functions(
                 if o.title().is_some() {
                     tick.push(format!(
                         "execute{} unless score {} {} matches 1 run function {ns}:announce_{}",
-                        pending_guard(o, &qa),
+                        pending_guard(plan, o, &qa),
                         plan::PARTY,
                         announce_score(o.id().as_str()),
                         safe_obj_fn(o.id().as_str())
@@ -2546,7 +2584,7 @@ fn emit_functions(
                 }
                 tick.push(format!(
                     "execute{} unless score {} dw.sys matches 1 run function {ns}:activate_{}",
-                    pending_guard(o, &qa),
+                    pending_guard(plan, o, &qa),
                     activation_flag(o.id().as_str()),
                     safe_obj_fn(o.id().as_str())
                 ));
@@ -2609,14 +2647,14 @@ fn emit_functions(
                     if v03 {
                         tick.push(format!(
                             "execute as @a{} if entity @s[x={},dx=2,y={},dy=2,z={},dz=2] run function {ns}:complete_{}",
-                            pending_guard(o, &qa),
+                            pending_guard(plan, o, &qa),
                             pos[0] - 1, pos[1] - 1, pos[2] - 1,
                             safe_obj_fn(id.as_str())
                         ));
                     } else {
                         tick.push(format!(
                             "execute as @a{} if entity @s[x={},y={},z={},distance=..{}] run function {ns}:complete_{}",
-                            pending_guard(o, &qa),
+                            pending_guard(plan, o, &qa),
                             pos[0], pos[1], pos[2], radius,
                             safe_obj_fn(id.as_str())
                         ));
@@ -2625,7 +2663,7 @@ fn emit_functions(
                 Objective::Kill { id, wave, .. } => {
                     tick.push(format!(
                         "execute as @a{} if score {} {} matches ..0 run function {ns}:complete_{}",
-                        pending_guard(o, &qa),
+                        pending_guard(plan, o, &qa),
                         plan::wave_counter(wave.as_str()),
                         plan::WAVE_OBJECTIVE,
                         safe_obj_fn(id.as_str())
@@ -2655,7 +2693,7 @@ fn emit_functions(
                     // interaction advancement's reward; the guard applies uniformly.
                     tick.push(format!(
                         "execute as @a[scores={{{trigger}=1..}}]{}{item_guard} run function {ns}:complete_{}",
-                        pending_guard(o, &qa),
+                        pending_guard(plan, o, &qa),
                         safe_obj_fn(id.as_str())
                     ));
                     // v0.7: the empty-hand answer. A click that reaches an OPEN
@@ -2672,7 +2710,7 @@ fn emit_functions(
                     if let (Some(it), Some(hint)) = (requires_item, missing_item_hint) {
                         tick.push(format!(
                             "execute as @a[scores={{{trigger}=1..}}]{} unless items entity @s weapon.mainhand {it} run tellraw @s {}",
-                            pending_guard(o, &qa),
+                            pending_guard(plan, o, &qa),
                             tr(hint)
                         ));
                     }
@@ -2697,11 +2735,11 @@ fn emit_functions(
                     // matching item count across the inventory.
                     tick.push(format!(
                         "execute as @a{} store result score @s {COLLECT_HOLD} if items entity @s container.* {item}",
-                        pending_guard(o, &qa)
+                        pending_guard(plan, o, &qa)
                     ));
                     tick.push(format!(
                         "execute as @a{} if score @s {COLLECT_HOLD} matches {count}.. run function {ns}:complete_{}",
-                        pending_guard(o, &qa),
+                        pending_guard(plan, o, &qa),
                         safe_obj_fn(id.as_str())
                     ));
                 }
@@ -2774,6 +2812,30 @@ fn emit_functions(
                 "tag @s add dw_joined".to_string(),
             ]),
         ));
+    }
+
+    // --- state_seed: per-player runtime-state initials (DSL v0.10) ---
+    //
+    // Run `as` each player who has not been seeded yet (see the `tick` driver).
+    // The tag goes on LAST: a crash between two writes leaves the player unseeded
+    // and the next tick redoes the whole block, so a partially-seeded player is
+    // not a state this can reach.
+    if declared_states(plan.campaign)
+        .iter()
+        .any(|st| st.scope == StateScope::Player)
+    {
+        let mut body: Vec<String> = Vec::new();
+        for st in declared_states(plan.campaign) {
+            if st.scope == StateScope::Player {
+                body.push(format!(
+                    "scoreboard players set @s {} {}",
+                    plan::state_score(st.id.as_str()),
+                    st.initial
+                ));
+            }
+        }
+        body.push(format!("tag @s add {}", plan::STATE_SEEDED_TAG));
+        fns.push(("state_seed".to_string(), lines(&body)));
     }
 
     // --- show_class ---
@@ -2924,6 +2986,12 @@ fn emit_functions(
                     plan::flag_score(f)
                 ));
             }
+            // v0.10: the numeric gate, made inert to a direct `/trigger` the same
+            // way. One `return fail` per term — any single comparison failing
+            // shuts the option — which is what `negate` spells.
+            for clause in state_clauses(plan, &opt.requires_state, true) {
+                body.push(format!("execute {clause} run return fail"));
+            }
             // v0.4: set any flags this option declares (dialogue `set-flag`).
             for f in &opt.sets_flags {
                 body.push(format!(
@@ -2975,7 +3043,7 @@ fn emit_functions(
         )];
         talk.extend(cast_dispatch(plan, npc, &casts));
         fns.push((format!("talk_{}", npc.safe), lines(&talk)));
-        fns.extend(cast_selector_fn(npc, &casts));
+        fns.extend(cast_selector_fn(plan, npc, &casts));
         fns.extend(cast_bark_fns(plan, npc, &casts));
         // v0.4: flag-gate chooser functions for gated nodes.
         for func in gated_node_choosers(plan, npc) {
@@ -3569,7 +3637,7 @@ fn emit_functions(
                         lines(&[
                             format!(
                                 "execute{} run function {ns}:complete_{}",
-                                pending_guard(o, &qa),
+                                pending_guard(plan, o, &qa),
                                 safe_obj_fn(id.as_str())
                             ),
                             format!(
@@ -4269,14 +4337,19 @@ impl Audience {
 /// selector would not work). An ungated effect (both lists empty) is emitted
 /// verbatim.
 fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
-    let flags = eff.requires_flags();
-    let forbids = eff.forbids_flags();
+    let gate = eff.gate();
+    let flags = gate.requires_flags;
+    let forbids = gate.forbids_flags;
     let mut inner: Vec<String> = Vec::new();
     emit_quest_effect(plan, eff, aud, &mut inner);
-    if flags.is_empty() && forbids.is_empty() {
+    if gate.is_empty() {
         body.extend(inner);
         return;
     }
+    // DSL v0.10: the numeric terms join the flag terms in one guard, in gate
+    // field order. `state_clauses` yields ` if score …` (leading space); this
+    // guard is built in the space-TERMINATED form, so the clauses are re-spaced
+    // rather than concatenated verbatim.
     let guard: String = flags
         .iter()
         .map(|f| {
@@ -4293,6 +4366,11 @@ fn emit_gated_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 plan::flag_score(f.as_str())
             )
         }))
+        .chain(
+            state_clauses(plan, gate.requires_state, false)
+                .into_iter()
+                .map(|c| format!("{c} ")),
+        )
         .collect();
     for line in inner {
         body.push(with_execute_prefix(&guard, line));
@@ -4324,6 +4402,138 @@ fn emit_effect_bundle<'a>(
         emit_gated_effect(plan, e, aud, &mut body);
     }
     body
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.10 runtime state (spec-0031) — the numeric half of the one gate
+// ---------------------------------------------------------------------------
+
+/// The declaration of a runtime datum, or `None` if the campaign declares none
+/// by that id (which validation has already rejected — `DW0500`).
+fn state_decl<'a>(plan: &'a Plan, id: &StateId) -> Option<&'a delvewright_dsl::StateDecl> {
+    plan.campaign.quests.content.state_decl(id.as_str())
+}
+
+/// **Who** holds a datum's value: the party fake player for a `party` datum, the
+/// acting player for a `player` one.
+///
+/// The whole content of the declared scope, in one function. An undeclared datum
+/// answers `#party` so that a campaign which failed validation still emits
+/// something well-formed rather than panicking mid-build.
+fn state_holder(plan: &Plan, id: &StateId) -> String {
+    match state_decl(plan, id).map(|s| s.scope) {
+        Some(StateScope::Player) => "@s".to_string(),
+        _ => plan::PARTY.to_string(),
+    }
+}
+
+/// A datum's declared `initial` — the value it starts at and the value
+/// `clear-state` returns it to.
+fn state_initial(plan: &Plan, id: &StateId) -> i32 {
+    state_decl(plan, id).map(|s| s.initial).unwrap_or(0)
+}
+
+/// The `execute` sub-clauses a gate's **numeric** terms contribute, each already
+/// prefixed with a space, e.g. ` if score #party dw.s_purse matches 500..`.
+///
+/// With `negate` the clauses assert the gate is NOT satisfied — one clause per
+/// term, which is the "any single term failing shuts it" form the trap arming
+/// tick needs (there, a gate closing has to be expressible as its own condition).
+///
+/// Empty for a gate with no comparison, which is every pre-0.10 campaign — so
+/// splicing this into an existing guard moves no existing command by a byte.
+fn state_clauses(plan: &Plan, cmps: &[StateCompare], negate: bool) -> Vec<String> {
+    cmps.iter()
+        .map(|c| {
+            let holder = state_holder(plan, &c.state);
+            let obj = plan::state_score(c.state.as_str());
+            // `equals`/`at-least`/`at-most` are `if … matches <range>`;
+            // `not-equals` is the same range under `unless`. Negation flips the
+            // keyword and nothing else, so the two readings can never disagree
+            // about what the range means.
+            let (positive, range) = match c.op {
+                CompareOp::Equals => (true, format!("{}", c.value)),
+                CompareOp::NotEquals => (false, format!("{}", c.value)),
+                CompareOp::AtLeast => (true, format!("{}..", c.value)),
+                CompareOp::AtMost => (true, format!("..{}", c.value)),
+            };
+            let kw = if positive != negate { "if" } else { "unless" };
+            format!("{kw} score {holder} {obj} matches {range}")
+        })
+        .collect()
+}
+
+/// [`state_clauses`] in the **space-prefixed** form the `execute` builders in
+/// this module splice onto a growing condition (` if score … if score …`).
+fn state_cond(plan: &Plan, cmps: &[StateCompare], negate: bool) -> String {
+    state_clauses(plan, cmps, negate)
+        .into_iter()
+        .map(|c| format!(" {c}"))
+        .collect()
+}
+
+/// The whole gate as one space-prefixed `execute` condition — flags, then the
+/// negative flags, then the numeric terms, in gate field order.
+///
+/// Empty for an ungated site, so a caller that splices it in unconditionally
+/// emits exactly what it emitted before v0.10.
+fn gate_cond(plan: &Plan, gate: Gate<'_>) -> String {
+    let mut out = String::new();
+    for f in gate.requires_flags {
+        out.push_str(&format!(
+            " if score {} {} matches 1",
+            plan::PARTY,
+            plan::flag_score(f.as_str())
+        ));
+    }
+    for f in gate.forbids_flags {
+        out.push_str(&format!(
+            " unless score {} {} matches 1",
+            plan::PARTY,
+            plan::flag_score(f.as_str())
+        ));
+    }
+    out.push_str(&state_cond(plan, gate.requires_state, false));
+    out
+}
+
+/// The commands that force a gate's numeric terms to be satisfied (`satisfy`) or
+/// violated — used by the generated PackTest preambles, which have to *drive* a
+/// gate rather than merely read it.
+///
+/// A `not-equals` gate is satisfied by any other value, and `value + 1` is the
+/// deterministic choice; `at-least`/`at-most` are satisfied at the boundary. The
+/// violating value is the mirror. Both directions are needed because the flag
+/// gate's own templates already prove both truth-table rows, and a numeric gate
+/// that only ever proved the open row would be the weaker test.
+fn state_drive_lines(plan: &Plan, cmps: &[StateCompare], satisfy: bool) -> Vec<String> {
+    cmps.iter()
+        .map(|c| {
+            let v = match (c.op, satisfy) {
+                // The boundary satisfies `equals`, `at-least` and `at-most`.
+                (CompareOp::Equals, true)
+                | (CompareOp::AtLeast, true)
+                | (CompareOp::AtMost, true)
+                | (CompareOp::NotEquals, false) => c.value,
+                // One step past it violates them — and satisfies `not-equals`.
+                (CompareOp::Equals, false)
+                | (CompareOp::AtMost, false)
+                | (CompareOp::NotEquals, true) => c.value.wrapping_add(1),
+                (CompareOp::AtLeast, false) => c.value.wrapping_sub(1),
+            };
+            format!(
+                "scoreboard players set {} {} {v}",
+                state_holder(plan, &c.state),
+                plan::state_score(c.state.as_str())
+            )
+        })
+        .collect()
+}
+
+/// Every declared runtime datum, in declared order (empty for a pre-0.10
+/// campaign, which is what keeps its setup byte-identical).
+fn declared_states(c: &delvewright_dsl::Campaign) -> &[delvewright_dsl::StateDecl] {
+    &c.quests.content.state
 }
 
 /// Emit a quest effect's commands into `body`, addressing `aud`.
@@ -4412,6 +4622,41 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 "scoreboard players set {} {} 1",
                 plan::PARTY,
                 plan::flag_score(flag.as_str())
+            ));
+        }
+        // --- DSL v0.10 runtime state (spec-0031) ------------------------------
+        // Each of the three is a plain `scoreboard players …` against the datum's
+        // declared holder. `clear-state` WRITES the declared `initial` rather
+        // than `reset`ting the score: a reset score is *absent*, and an absent
+        // score makes `unless … matches` true — so a cleared datum would silently
+        // satisfy a `not-equals` comparison against its own initial value.
+        QuestEffect::SetState { state, value, .. } => {
+            body.push(format!(
+                "scoreboard players set {} {} {value}",
+                state_holder(plan, state),
+                plan::state_score(state.as_str())
+            ));
+        }
+        QuestEffect::AddState { state, amount, .. } => {
+            // `add` / `remove` rather than one signed `add`: vanilla's `add` takes
+            // an unsigned operand and `remove` is its documented dual.
+            let holder = state_holder(plan, state);
+            let obj = plan::state_score(state.as_str());
+            if *amount < 0 {
+                body.push(format!(
+                    "scoreboard players remove {holder} {obj} {}",
+                    amount.unsigned_abs()
+                ));
+            } else {
+                body.push(format!("scoreboard players add {holder} {obj} {amount}"));
+            }
+        }
+        QuestEffect::ClearState { state, .. } => {
+            body.push(format!(
+                "scoreboard players set {} {} {}",
+                state_holder(plan, state),
+                plan::state_score(state.as_str()),
+                state_initial(plan, state)
             ));
         }
         QuestEffect::SpawnWave { wave, .. } => {
@@ -7806,7 +8051,13 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
         // Flags are party state (spec-0018): the gate is a single `#party` read,
         // positive and negative alike. `unless … matches 1` is unset-safe (an
         // uninitialized flag score counts as "not set").
-        let flag_guard = party_flag_gate(&t.requires_flags);
+        let flag_guard = format!(
+            "{}{}",
+            party_flag_gate(&t.requires_flags),
+            // DSL v0.10 (spec-0031). A trigger's arming gate is a party predicate
+            // (`DW0503` keeps `player`-scoped data out of it).
+            state_cond(plan, &t.requires_state, false)
+        );
         let forbid_guard: String = t
             .forbids_flags
             .iter()
@@ -7958,15 +8209,16 @@ fn trap_gate_hardware(
             return Err(BuildFailure::Diagnostic {
                 code: DW_TRAP_GATE_UNSUPPORTED,
                 message: format!(
-                    "trap `{}` declares a flag gate (`requires_flags`/`forbids_flags`), but its \
-                     `anchor/trap` marker `{}` {what}. A flag gate physically removes the \
-                     trigger from the world while the gate is shut and puts it back after, so \
+                    "trap `{}` declares a gate (`requires_flags`/`forbids_flags`/ \
+                     `requires_state`), but its `anchor/trap` marker `{}` {what}. A gate \
+                     physically removes the trigger from the world while it is shut and puts \
+                     it back after, so \
                      it is only sound for a trigger whose whole state is the block: a pressure \
                      plate or a tripwire. A `trapped-chest` trigger carries a block entity with \
                      an inventory that removal would destroy. Declare the plate/tripwire as \
                      `trigger_block` on the anchor's prefab metadata (with its blockstate, as a \
                      gate anchor declares its fill `block`), switch the trap to a \
-                     `pressure-plate`/`tripwire` trigger, or drop the flag gate and gate the \
+                     `pressure-plate`/`tripwire` trigger, or drop the gate and gate the \
                      story beat that arms the trap instead.",
                     t.id, t.at_anchor,
                 ),
@@ -7977,10 +8229,15 @@ fn trap_gate_hardware(
     Ok(out)
 }
 
-/// Whether `t` declares a flag gate at all (an ungated trap emits nothing new, so
-/// every existing campaign stays byte-identical).
+/// Whether `t` declares a gate at all — flags, negative flags, or (DSL v0.10) a
+/// numeric comparison. An ungated trap emits nothing new, so every existing
+/// campaign stays byte-identical.
+///
+/// All three axes, not two: the arming machinery a gated trap gets is the same
+/// machinery whichever axis shut it, and a trap gated only by a number that
+/// quietly skipped it would be armed forever.
 fn trap_is_gated(t: &plan::TrapPlan) -> bool {
-    !t.requires_flags.is_empty() || !t.forbids_flags.is_empty()
+    !t.requires_flags.is_empty() || !t.forbids_flags.is_empty() || !t.requires_state.is_empty()
 }
 
 /// The `tick` clauses that open and shut every gated trap's hardware.
@@ -8016,6 +8273,14 @@ fn trap_gate_tick(plan: &Plan) -> Vec<String> {
                 plan::flag_score(f)
             ));
         }
+        // DSL v0.10 (spec-0031): one shut clause per numeric term — any single
+        // term ceasing to hold disarms the trap, which is what `negate` spells.
+        // The datum is party-scoped by construction here (`DW0503`).
+        for clause in state_clauses(plan, &t.requires_state, true) {
+            out.push(format!(
+                "execute if score #trapgate_{id} dw.sys matches 1 {clause} run function {ns}:trap_gate_off_{id}"
+            ));
+        }
         let mut on = format!("execute unless score #trapgate_{id} dw.sys matches 1");
         for f in &t.requires_flags {
             on.push_str(&format!(
@@ -8029,6 +8294,7 @@ fn trap_gate_tick(plan: &Plan) -> Vec<String> {
                 plan::flag_score(f)
             ));
         }
+        on.push_str(&state_cond(plan, &t.requires_state, false));
         on.push_str(&format!(" run function {ns}:trap_gate_on_{id}"));
         out.push(on);
     }
@@ -9375,7 +9641,7 @@ fn quests_in_arming_order(c: &delvewright_dsl::Campaign) -> Vec<&delvewright_dsl
     out
 }
 
-fn pending_guard(o: &Objective, quest_active: &str) -> String {
+fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> String {
     let p = plan::PARTY;
     let mut g = format!(" if score {p} {quest_active} matches 1");
     for a in o.after() {
@@ -9384,18 +9650,12 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
             obj_score(a.as_str())
         ));
     }
-    for f in o.requires_flags() {
-        g.push_str(&format!(
-            " if score {p} {} matches 1",
-            plan::flag_score(f.as_str())
-        ));
-    }
-    for f in o.forbids_flags() {
-        g.push_str(&format!(
-            " unless score {p} {} matches 1",
-            plan::flag_score(f.as_str())
-        ));
-    }
+    // The objective's whole gate, in gate field order: required flags, forbidden
+    // flags, then (DSL v0.10) the numeric terms. Written through `gate_cond` so
+    // this guard cannot end up knowing about two of the gate's three fields —
+    // which is exactly how the numeric axis would have been missed. Empty terms
+    // contribute nothing, so a pre-0.10 campaign's guard is byte-identical.
+    g.push_str(&gate_cond(plan, o.gate()));
     g.push_str(&format!(
         " unless score {p} {} matches 1",
         obj_score(o.id().as_str())
@@ -9416,6 +9676,9 @@ fn pending_guard(o: &Objective, quest_active: &str) -> String {
 fn option_display_gated(opt: &plan::OptionPlan, v04: bool) -> bool {
     v04 && (!opt.requires_flags.is_empty()
         || !opt.forbids_flags.is_empty()
+        // v0.10 (spec-0031): a numeric gate hides the option exactly as a flag
+        // gate does — an option the player cannot pick must not be drawn.
+        || !opt.requires_state.is_empty()
         || !opt.completes.is_empty())
 }
 
@@ -9439,7 +9702,11 @@ fn node_gated_options<'a>(
 /// objective itself not yet complete (objective-state axis). Mirrors the
 /// click-handler guard (emit.rs ~1166) so an option is shown iff clicking it
 /// would fire.
-fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPlan) -> String {
+fn option_display_conditions(
+    plan: &Plan,
+    c: &delvewright_dsl::Campaign,
+    opt: &plan::OptionPlan,
+) -> String {
     let p = plan::PARTY;
     let mut cond = String::new();
     for f in &opt.requires_flags {
@@ -9453,6 +9720,10 @@ fn option_display_conditions(c: &delvewright_dsl::Campaign, opt: &plan::OptionPl
             plan::flag_score(f)
         ));
     }
+    // DSL v0.10 (spec-0031). A dialogue option's availability is computed PER
+    // PLAYER (`dw.dmask`, run `as @s`), so this is the one gate site a
+    // `player`-scoped datum reads from `@s` rather than from the party holder.
+    cond.push_str(&state_cond(plan, &opt.requires_state, false));
     for obj in &opt.completes {
         if let Some((qid, _)) = objective_quest(c, obj) {
             cond.push_str(&format!(
@@ -9509,7 +9780,7 @@ fn gated_node_choosers(plan: &Plan, npc: &plan::NpcPlan) -> Vec<(String, String)
         for (i, g) in gated.iter().enumerate() {
             dmask.push(format!(
                 "execute{} run scoreboard players add @s dw.dmask {}",
-                option_display_conditions(c, g),
+                option_display_conditions(plan, c, g),
                 1u32 << i
             ));
         }
@@ -9610,6 +9881,7 @@ fn cast_dispatch(
 /// and assert which scene the ledger selected **without opening a dialog** (a
 /// PackTest dummy has no client to show a screen to).
 fn cast_selector_fn(
+    plan: &Plan,
     npc: &plan::NpcPlan,
     casts: &std::collections::BTreeMap<String, crate::cast::NpcCast>,
 ) -> Option<(String, String)> {
@@ -9634,6 +9906,10 @@ fn cast_selector_fn(
                 plan::flag_score(f)
             ));
         }
+        // DSL v0.10 (spec-0031): the placement's numeric terms. The cast selector
+        // is per-player (`dw.cast` on `@s`), so a `player`-scoped datum is legal
+        // here too.
+        gate.push_str(&state_cond(plan, &cl.requires_state, false));
         body.push(format!(
             "execute if score {} {} matches 1{gate} run scoreboard players set @s {CAST_SCORE} {}",
             plan::PARTY,
@@ -10812,7 +11088,7 @@ fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
         // The join's REAL emitted activation guard, materialized as a score so a
         // PackTest can assert it. Not a restatement: `pending_guard` is the very
         // function the `tick` driver uses.
-        let guard = pending_guard(join, &quest_active_score(qid));
+        let guard = pending_guard(plan, join, &quest_active_score(qid));
         let probe = |b: &mut Vec<String>, expect: u32| {
             b.push(format!("scoreboard players set {scratch} dw.sys 0"));
             b.push(format!(
@@ -10916,6 +11192,7 @@ fn emit_scheduled_executor_packtests(
             flag: delvewright_dsl::FlagId(SCHEDULED_PROBE_FLAG.to_string()),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
         }],
         Audience::Scheduled,
     );
@@ -14571,7 +14848,7 @@ fn pin_dummy(tag: &str) -> (String, String) {
 /// makes the named stack's assertion vacuous. Everything about which flags are
 /// pinned stays in one place, so no template can be written that opens a gate by
 /// hand and forgets one (PR #237's template flag hygiene).
-fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
+fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
         "scoreboard players set {party} {} 1",
@@ -14599,6 +14876,13 @@ fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<Strin
             plan::flag_score(f.as_str())
         ));
     }
+    // v0.10 numeric gate (spec-0031): the datum is DRIVEN to a value that opens
+    // the gate, or — with `with_flags: false` — to one that shuts it, for the
+    // same batch-server reason the flags are actively cleared rather than merely
+    // left alone. A template that pinned the flags and left the numbers to
+    // whatever a sibling template last wrote would be a coin toss dressed as a
+    // proof.
+    p.extend(state_drive_lines(plan, o.requires_state(), with_flags));
     p
 }
 
@@ -14615,8 +14899,14 @@ fn packtest_guards(quest_id: &str, o: &Objective, with_flags: bool) -> Vec<Strin
 /// place that stops being true is a template that `await`s, which
 /// `tests/packtest_batch.rs` polices separately). Only the ITEM still goes to the
 /// test's own pinned dummy.
-fn packtest_preamble(quest_id: &str, o: &Objective, with_flags: bool, sel: &str) -> Vec<String> {
-    let mut p = packtest_guards(quest_id, o, with_flags);
+fn packtest_preamble(
+    plan: &Plan,
+    quest_id: &str,
+    o: &Objective,
+    with_flags: bool,
+    sel: &str,
+) -> Vec<String> {
+    let mut p = packtest_guards(plan, quest_id, o, with_flags);
     match o {
         Objective::Collect { item, count, .. } => {
             p.push(format!("give {sel} {item} {count}"));
@@ -14753,7 +15043,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::PARTY,
             obj_score(id.as_str())
         ));
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         // Clear the wave tag before the fresh spawn — a sibling test may have
         // already fired this spawn-wave (`spawn_<wave>` is unguarded).
         b.push(format!("kill @e[tag={}]", plan::wave_tag(wave.as_str())));
@@ -14818,7 +15108,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::PARTY,
             obj_score(id.as_str())
         ));
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         b.push(format!(
             "execute as {sel} run function {ns}:c_reward_{}",
             plan::safe_local(id.as_str())
@@ -14850,7 +15140,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::PARTY,
             obj_score(id.as_str())
         ));
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         b.push(format!(
             "scoreboard players set {sel} {} 1",
             plan::interact_trigger(id.as_str())
@@ -14888,7 +15178,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // guards satisfied so the arming flag is the only thing standing in the
         // way. The preamble sets the quest active, so it is cleared after it.
         b.push(format!("scoreboard players set {party} {obj} 0"));
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         b.push(format!("scoreboard players set {party} {qa} 0"));
 
         // --- the premature click: no completion, and no banked trigger ---
@@ -14952,7 +15242,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             "scoreboard players set {party} {} 0",
             obj_score(id.as_str())
         ));
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         // --- phase A: carried, not held ---
         b.push(format!(
             "item replace entity {sel} weapon.mainhand with minecraft:air"
@@ -15019,7 +15309,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             "scoreboard players set {party} {} 0",
             obj_score(id)
         ));
-        b.extend(packtest_preamble(qid, o, false, &sel)); // flags withheld (cleared)
+        b.extend(packtest_preamble(plan, qid, o, false, &sel)); // flags withheld (cleared)
         driver(&mut b);
         b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
@@ -15067,7 +15357,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         // Preamble satisfies quest/after/requires and CLEARS forbids; then set
         // the forbidden flags to prove suppression.
-        b.extend(packtest_preamble(qid, o, true, &sel));
+        b.extend(packtest_preamble(plan, qid, o, true, &sel));
         for f in o.forbids_flags() {
             b.push(format!(
                 "scoreboard players set {party} {} 1",
@@ -15229,7 +15519,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         // point of this template is which stack completes the objective, and the
         // plain item handed over first would complete it before the named one is
         // ever presented.
-        b.extend(packtest_guards(qid, o, true));
+        b.extend(packtest_guards(plan, qid, o, true));
         // Empty the adopted container first — `setup` may have run for a sibling
         // template, and this objective's own activation is guarded once per world
         // by `#act_<obj>`, so the fill is not re-run on a second call. Clearing

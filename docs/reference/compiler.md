@@ -10,10 +10,10 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.8.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.10.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`** (additive supersets; `0.2.0` output stays byte-identical
-  across the later versions).
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`** (additive supersets; `0.2.0` output stays
+  byte-identical across the later versions).
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.
@@ -282,6 +282,11 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Objective `interact` | `{anchor,requires_item?,missing_item_hint?,prop?,…}`; interaction entity. **`requires_item` means HELD, not possessed** (owner ruling, 2026-08-03): `execute if items entity @s weapon.mainhand <item>`. Presenting the item IS the action — a player who right-clicks a sleeping giant with the stake stowed in their pack has not stabbed anything, and the pre-ruling inventory-wide reading (`container.*`) fired the moment the item was picked up anywhere, whatever the hands were doing. This is a **deliberate global semantics change, not an opt-in flag**: every `requires_item` in every campaign now means held, so any campaign that uses one changes bytes. `missing_item_hint` (v0.7) is the diegetic answer to a click that arrives without the item in hand — one guarded per-player `tellraw`, carrying the objective's own activation guard so an inactive or finished interaction stays silent, emitted before the trigger reset so one click yields exactly one line. Absent = the pre-0.7 silence, byte-identical. Requires `requires_item` (`DW0437`); l10n key `obj.<quest>.<obj>.missing_item_hint`. `prop{block}` `setblock`s the affordance (v0.4); `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.3 / prop 0.4 / held + hint 0.7 |
 | `after[]` | Ordering (acyclic → `DW0140`). | 0.1 |
 | `requires_flags[]` | AND-gate on set flags (puzzle primitive). | 0.3 |
+| `state[]` | `{id, scope, initial?, note?}` (spec-0031, reserved `DW0141` pre-0.10) — **runtime state**: a named, integer-valued datum the campaign sets, adds to and clears while the delve is played. What `FlagId` is not: a flag is boolean, party-wide and monotonic (no verb clears one), which is right for "this has happened" and useless for a balance, a floor number, or "a ride is in progress". Unlike a flag a datum **is declared**, because two facts about it cannot be recovered from its use sites: `scope` (`player` = each player holds their own, `party` = one shared value on the `#party` holder, spec-0018) and `initial` (the value it starts at, and the value `clear-state` returns it to — one field, not two, so a datum can never be un-returnable to its own start). `note` is authoring prose, never machine-checked and never shown (the forcing function `cast[].doing` plays for a scene). Emission: one `dw.s_<local>` scoreboard objective per datum; a `party` datum seeded in `setup` (world init is exactly its lifetime), a `player` datum seeded on each player's first tick by `state_seed`, tagged `dw_state` so a relog does not re-seed. Absent = no objective, no function, no tick clause — byte-identical to pre-0.10. | 0.10 |
+| `requires_state[]` | `[{state, op, value}]`, `op` ∈ `equals` \| `not-equals` \| `at-least` \| `at-most` (spec-0031, reserved `DW0141` pre-0.10) — the **numeric third field of the gate**, accepted at every one of the 28 sites `requires_flags`/`forbids_flags` are: all five objective kinds, all nineteen gatable effect verbs, `triggers[]`, `traps[]`, dialogue options and cast placements. It lives in the gate and not in any verb because the comparison's consumers are exactly the gate's consumers — "this door opens at 500", "this line is withheld below 200", "this lever does nothing while the car is moving" — and generality is decided at the FIRST site (CLAUDE.md). Emission: ` if score <holder> dw.s_<local> matches <range>`, spliced into the guard each consumer already builds, where `<holder>` is `#party` or `@s` per the datum's declared scope. Four operators, not six: over integers `less-than n` is `at-most n-1`, and a second spelling of one thing is a second emission path to keep honest. Absent = no clause — byte-identical to pre-0.10. Enforced total by `crates/dsl/tests/gate_consumers.rs`, which enumerates the consumers from the **generated JSON Schema** (i.e. from the types) and reds when any gate-declaring object carries only part of the gate. | 0.10 |
+| Effect `set-state{state,value}` | Writes a declared datum to an absolute value (spec-0031). `scoreboard players set <holder> dw.s_<local> <value>`. | 0.10 |
+| Effect `add-state{state,amount}` | Moves a declared datum by a **signed** amount (spec-0031); negative counts down. One verb, not an `add`/`subtract` pair: a purse a shop debits and a stake a death forfeits are one operation with the sign flipped. Lowers via vanilla's `scoreboard players remove` (its `add` takes an unsigned operand). | 0.10 |
+| Effect `clear-state{state}` | Returns a declared datum to its declared `initial` (spec-0031) — the verb a flag has never had, and the reason a datum is not a flag. It **writes** the initial rather than `reset`ting the score: a reset score is *absent*, and an absent score makes `unless … matches` true, so a cleared datum would silently satisfy a `not-equals` comparison against its own starting value. | 0.10 |
 | `forbids_flags[]` | Negative gate, accepted **everywhere `requires_flags` is** (objectives, `triggers[]`, per-effect, dialogue options, `traps[]`): the element is suppressed while ANY listed flag is set. Per-player sites emit `unless score @s dw.f_<flag> matches 1` clauses (unset-safe — flag scores are never pre-initialized, so a `scores={…=..0}` selector would wrongly fail on unset); trigger arming uses the any-player form `unless entity @a[scores={dw.f_<flag>=1..}]` (a positive selector inside a negation). Unknown flags get the same `DW0172` treatment as `requires_flags`. Reserved (`DW0141`) pre-0.6 at every site. | 0.6 |
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?}` is v0.6 (task #65; reserved `DW0141` pre-0.6): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family). Each slot is **either a bare item id string or `{item, enchantments{<id>: <level>}}`** (spec-0021) — the plain string stays the plain string, which is what keeps every pre-enchantment campaign byte-identical on re-serialisation; enchantments emit as the 1.21 `minecraft:enchantments` item component inside the slot compound, ids validated (`DW0433`) and levels range-checked (`DW0434`); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time` — and since task #189 that ruling is **enforced**, not merely offered: a burning species staged for a fight whose ground reaches open sky under a pinned daytime hour is `DW0496`. **`drops[]` (v0.9, task #179, owner ruling 2026-08-04; reserved `DW0141` pre-0.9)** names the DECLARED SUBSET this mob leaves behind — usually one piece, never automatically everything. Two entry forms: `{slot}` (a worn piece; the slot must be one the same mob's `equipment` really fills, and each slot at most once — `DW0490`) and `{item, name?}` (a quest token the fight yields rather than wears; id validated `DW0143`, `name` l10n-inventoried as `wave.<wave>.mob.<i>.drop.<n>.name`). Only an `elite`/`boss` wave may declare drops (`DW0491`) — rank-and-file gear stays unfarmable by construction. | 0.3 / tuning 0.4 / equipment 0.6 / drops 0.9 |
 | `loot[]` | `{id,anchor,items[{item,count?,name?,enchantments?}]}` (spec-0021, reserved `DW0141` pre-0.6) — contents for a container the **prefab already placed**, the same division of labour a trap has with its dispenser. The compiler never places the container; `DW0431` proves one is really there. Slot assignment is **positional and deterministic**: the nth declared stack lands in `container.<n>` (ADR-0006 — no loot tables, no RNG, no seeded shuffle). Emitted in `setup_finish` as `item replace block … container.<n> with <item>[components] <count>`, so a campaign with no `loot` is byte-identical. `name` enters the l10n inventory as `loot.<id>.item.<i>.name`, exactly like a class kit item's name. Item ids validate against the pinned registry (`DW0143`), anchors against prefab metadata (`DW0142`); `DW0432` caps a fill at 27 stacks and `DW0435` rejects two fills of one container. | 0.6 |
@@ -2364,7 +2369,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -3194,6 +3199,72 @@ composed: `execute as @e[tag=…] run data merge entity @s` (single-entity by
 construction, which is what `data merge` requires) writing `0.0f` on every slot
 and an empty death loot table. Emitted only for actors that declare drops, so
 every earlier campaign's removal is byte-identical.
+
+### DW050x — runtime state (`dsl::validate`; spec-0031, DSL v0.10)
+
+Runtime state is a **declared** datum: a name, a scope (`player` / `party`) and
+an initial value, written by `set-state`/`add-state`/`clear-state` and compared
+against by `requires_state` in any gate. All four codes are validation-tier (exit
+1), in `dsl::validate::state_checks`, and the whole surface is fenced at
+`dsl_version 0.10.0` (declaring any of it earlier is `DW0141`, per stage — a
+dialogue option's comparison is fenced by the *dialogue* stage's version). Below
+0.10 nothing here fires and nothing here emits: no scoreboard objective, no
+`state_seed` function, no tick clause, no guard clause. Proven on bytes by
+rebuilding an existing campaign with the pre-change compiler
+(`nobodys-cave-island`: identical `datapack/`, `world/` and server config; the
+only delta is the engine `dsl_version` string stamped into the creator-loop
+`layout.json`).
+
+Both directions of the read/write ledger are errors, because each is a **vacuous
+binding** in the CLAUDE.md sense and each is silent — the campaign compiles, the
+datapack loads, and the delve plays as though the mechanism were live.
+
+| Code | Meaning |
+|------|---------|
+| `DW0500` | **An undeclared datum.** A `state/<kebab>` reference — in a `requires_state` comparison or in one of the three verbs — names a datum the stage-5 `state` list does not declare. Unlike a flag, whose set is exactly what some `set-flag` produces, a datum is declared because its scope and its initial value are facts no use site can supply: an undeclared reference is not "a datum that happens to start at zero", it is a datum with no defined multiplayer semantics at all. Prescription: declare it, or fix the id. |
+| `DW0501` | **Read, never written.** A gate's `requires_state` reads a declared datum that no verb anywhere in the campaign ever writes, so it can only ever hold its declared `initial` and every comparison against it was decided when the campaign was written. The gate is a constant wearing a condition's clothes — the numeric form of the bot's combat floor examining zero enemies for nineteen island rounds. Prescription: write it somewhere, or drop the comparison and say what you meant unconditionally. |
+| `DW0502` | **Never read.** A declared datum that no gate's `requires_state` anywhere in the campaign ever reads. Either some verb writes it and nothing ever asks (an inert write — a counter nobody consults), or nothing touches it at all (a dead declaration). Runtime state exists to be compared against; a datum with no reader is bookkeeping no player can observe. Prescription: gate something on it, or delete the declaration and its writes. |
+| `DW0503` | **No acting player.** A `player`-scoped datum is referenced where emission has no `@s` to read or write it against. Two such places exist, and both are properties of the SITE rather than of the verb: a **scheduler-only bundle** (a `sequence` step, a `move-npc`/`move-actor` `on_arrive`) runs with the server command source — the same seam `DW0357` polices for `carrier: "one"`, walked with the same latch, so a `set-checkpoint` `on_respawn` and a `begin-stealth` `on_caught` nested inside one reset it; and the gates emission evaluates against the **party holder** (an objective's activation guard, a trigger's arming gate, a trap's arming gate) have no acting player either. Prescription: declare the datum `party`-scoped if the whole party shares it, or move the read/write onto a site a player drives — a dialogue option, a cast placement, or an effect on a beat a player completes. |
+
+#### Which gates can read a per-player datum, and why it is decidable
+
+`GateConsumer::evaluates_per_player` answers it once, from the **closed** set of
+gate consumers, so `DW0503` is not a list anybody maintains: a dialogue option's
+availability is computed per player into `dw.dmask` and its `/trigger` handler
+runs `as @s`; a cast placement selects a scene into a per-player `dw.cast`; an
+effect bundle has an acting player unless the scheduler is what re-invokes it.
+The other three are party predicates by construction — an objective's guard is
+read on the tick ("whoever finishes the last objective completes the quest for
+everyone"), and a trigger's and a trap's arming gates flip one global sentinel.
+A seventh consumer class cannot compile without answering the same question.
+
+#### One gate, three fields
+
+`requires_flags` / `forbids_flags` / `requires_state` are one object
+(`dsl::gate::Gate`), and every consumer answers `gate()`. Two things keep that
+from decaying:
+
+- `crates/dsl/tests/gate_consumers.rs` enumerates the gate-declaring object
+  schemas **from the generated JSON Schema** — derived from the Rust types, so
+  the enumeration is complete by construction rather than by diligence — and
+  fails when any of them declares part of the gate and not the rest. It states
+  its binding count (28 sites, 6 consumer classes) and asserts it exactly, so a
+  new gate consumer is a deliberate diff rather than a silent one.
+- `tools/check-capability-ownership.py` carries `("QuestEffect",
+  "requires_state")` in `MODIFIER_HOLES` as an **inherited** open finding: the
+  comparison rides exactly the nineteen verbs the flag pair rides and is absent
+  from exactly the same ten. That is the point, not an oversight — a gate is one
+  object, and giving its comparison a different carrier set than its flags would
+  make "which verbs are gatable" two different answers. All three fields lift
+  together, in one `dsl_version`, or none do.
+
+**Not yet modelled.** A `requires_state` comparison is excluded from the static
+producibility model exactly as `forbids_flags` is: the flow/reachability proofs
+do not reason about integers, so a numeric gate cannot make a beat *unreachable*
+in their eyes. `DW0501` is what keeps that from being a hole a campaign can fall
+into silently — a comparison whose datum nothing drives is rejected outright —
+but a datum that is written and still never reaches the required range is not
+caught today. Stated here rather than left to be discovered.
 
 ### DW0497 — emitted call-graph integrity (`compiler::integrity`; error; exit 3)
 

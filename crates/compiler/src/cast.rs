@@ -106,6 +106,9 @@ pub struct CastClause {
     pub requires_flags: Vec<String>,
     /// Branch gate: no listed flag may be set.
     pub forbids_flags: Vec<String>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): the clause selects its scene
+    /// only while every comparison holds.
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
 }
 
 /// One NPC's whole ledger, resolved into the scenes the emitter swaps between.
@@ -188,6 +191,7 @@ pub fn npc_casts(c: &Campaign) -> BTreeMap<String, NpcCast> {
                         .iter()
                         .map(|f| f.as_str().to_string())
                         .collect(),
+                    requires_state: p.requires_state.clone(),
                 });
             }
         }

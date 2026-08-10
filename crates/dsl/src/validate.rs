@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09,
+    is_v07, is_v08, is_v09, is_v10,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -48,6 +48,10 @@ pub fn validate_campaign_with(
     plan(c, &mut d);
     after_ordering(c, &mut d);
     reserved(c, &mut d);
+    // DSL v0.10 (spec-0031): the runtime-state surface. Unconditional — every
+    // loop inside is empty for a campaign that declares no datum and no
+    // comparison, and the version fence itself lives in `reserved_v10`.
+    state_checks(c, &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
@@ -969,6 +973,308 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v07(c, d);
     reserved_v08(c, d);
     reserved_v09(c, d);
+    reserved_v10(c, d);
+}
+
+/// DSL v0.10 reserved-feature gating (spec-0031): runtime state — the stage-5
+/// `state[]` declaration, the `set-state`/`add-state`/`clear-state` verbs, and
+/// the `requires_state` comparison on every gate consumer.
+///
+/// The same asymmetry every version ledger uses: *declaring* any of it below
+/// 0.10.0 is `DW0141`. There is no requirement half — a campaign that declares
+/// no datum and no comparison emits exactly what it emitted before (no
+/// scoreboard objective, no guard clause, no function), which is what keeps
+/// every 0.2–0.9 campaign's datapack byte-for-byte unchanged.
+///
+/// The `requires_state` half reads the gates from
+/// [`for_each_gate`](crate::gate::for_each_gate), the closed consumer
+/// enumeration, rather than from a list of the sites this function's author
+/// happened to remember: the fence is exactly as total as the surface.
+fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests_ok = is_v10(c.quests.dsl_version.as_str());
+    let dialogue_ok = is_v10(c.dialogue.dsl_version.as_str());
+    if quests_ok && dialogue_ok {
+        return;
+    }
+    if !quests_ok && !c.quests.content.state.is_empty() {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            "/content/state".to_string(),
+            "the stage-5 `state` declaration (named, scoped, integer-valued runtime data) \
+             requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove \
+             the section"
+                .to_string(),
+        ));
+    }
+    crate::gate::for_each_gate(c, &mut |site, gate| {
+        if gate.requires_state.is_empty() {
+            return;
+        }
+        let stage = site.consumer.stage();
+        let staged_ok = if stage == "dialogue" {
+            dialogue_ok
+        } else {
+            quests_ok
+        };
+        if staged_ok {
+            return;
+        }
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            stage,
+            format!("{}/requires_state", site.path),
+            format!(
+                "a `requires_state` numeric gate on a {} requires dsl_version 0.10.0 — raise \
+                 this stage's `dsl_version` to 0.10.0, or remove the comparison",
+                site.consumer.label()
+            ),
+        ));
+    });
+    if quests_ok {
+        return;
+    }
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(verb) = eff.v10_effect() else {
+            return;
+        };
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            path.to_string(),
+            format!(
+                "the `{verb}` effect (writing a declared runtime datum) requires dsl_version \
+                 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the effect"
+            ),
+        ));
+    });
+}
+
+/// DSL v0.10 runtime-state checks (spec-0031): every reference resolves, every
+/// read has a writer, every datum has a reader, and a `player`-scoped datum is
+/// only touched where emission has a player to touch it against.
+///
+/// Both halves of the read/write obligation are here on purpose. A datum a gate
+/// reads and no verb writes is a comparison whose answer was fixed when the
+/// campaign was written; a datum a verb writes and no gate reads is bookkeeping
+/// no player can observe. Each is a **vacuous binding** in the CLAUDE.md sense,
+/// and each is silent — the campaign compiles, the datapack loads, and the delve
+/// plays as though the mechanism were live.
+///
+/// The reads come from [`for_each_gate`](crate::gate::for_each_gate) and the
+/// writes from
+/// [`for_each_campaign_effect`](crate::stages::for_each_campaign_effect) — the
+/// two closed enumerations — so neither side of the ledger can drift narrower
+/// than the surface it polices.
+fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let decls = &c.quests.content.state;
+    // --- the declarations themselves ------------------------------------------
+    let mut declared: BTreeMap<&str, &crate::stages::StateDecl> = BTreeMap::new();
+    for (i, s) in decls.iter().enumerate() {
+        if !s.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/state/{i}/id"),
+                format!(
+                    "runtime-state id `{}` is malformed — ids are `state/<kebab-case>`",
+                    s.id.as_str()
+                ),
+            ));
+            continue;
+        }
+        if declared.insert(s.id.as_str(), s).is_some() {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/state/{i}/id"),
+                format!(
+                    "runtime-state id `{}` is declared more than once — one datum, one \
+                     declaration (its scope and its initial value have to be a single fact)",
+                    s.id.as_str()
+                ),
+            ));
+        }
+    }
+
+    // --- the reads: every gate's `requires_state`, from the closed set --------
+    let mut read: BTreeSet<String> = BTreeSet::new();
+    crate::gate::for_each_gate(c, &mut |site, gate| {
+        for (k, cmp) in gate.requires_state.iter().enumerate() {
+            let path = format!("{}/requires_state/{k}", site.path);
+            let stage = site.consumer.stage();
+            match declared.get(cmp.state.as_str()) {
+                None => d.push(Diagnostic::error(
+                    codes::STATE_UNDECLARED,
+                    stage,
+                    path,
+                    format!(
+                        "`requires_state` on this {} compares `{}`, which the campaign never \
+                         declares. Add it to the stage-5 `state` list (a datum's scope and its \
+                         initial value are facts no use site can supply), or fix the id",
+                        site.consumer.label(),
+                        cmp.state.as_str()
+                    ),
+                )),
+                Some(decl) => {
+                    read.insert(cmp.state.as_str().to_string());
+                    if decl.scope == crate::stages::StateScope::Player
+                        && !site.consumer.evaluates_per_player()
+                    {
+                        d.push(Diagnostic::error(
+                            codes::STATE_SCOPE_UNREACHABLE,
+                            stage,
+                            path,
+                            format!(
+                                "`{}` is `player`-scoped, but emission evaluates a {}'s gate \
+                                 against the party holder — there is no acting player to read it \
+                                 from. Declare the datum `party`-scoped, or move the comparison \
+                                 onto a site a player drives (a dialogue option, a cast \
+                                 placement, or an effect on a beat a player completes)",
+                                cmp.state.as_str(),
+                                site.consumer.label()
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    });
+
+    // --- the writes: every state verb, at every effect root, nesting included -
+    let mut written: BTreeSet<String> = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some((id, _)) = eff.writes_state() else {
+            return;
+        };
+        match declared.get(id.as_str()) {
+            None => d.push(Diagnostic::error(
+                codes::STATE_UNDECLARED,
+                "quests",
+                format!("{path}/state"),
+                format!(
+                    "`{}` writes `{}`, which the campaign never declares. Add it to the stage-5 \
+                     `state` list, or fix the id",
+                    eff.verb(),
+                    id.as_str()
+                ),
+            )),
+            Some(_) => {
+                written.insert(id.as_str().to_string());
+            }
+        }
+    });
+    // A `player`-scoped datum written from a scheduler-only bundle has no
+    // recipient, exactly as a `carrier: "one"` give does (`DW0357`). Latched by
+    // the same walk shape, over the same seams.
+    crate::effects::for_each_effect_root(c, &mut |site, effs| {
+        check_player_state_not_scheduled(effs, &declared, site.stage, &site.path, false, d);
+    });
+
+    // --- the two halves of the vacuity ledger ---------------------------------
+    for (i, s) in decls.iter().enumerate() {
+        let id = s.id.as_str();
+        // A malformed or duplicate id has already been reported; reporting it a
+        // third time as "unread" would be noise about a datum that does not exist.
+        if declared.get(id).is_none_or(|kept| !std::ptr::eq(*kept, s)) {
+            continue;
+        }
+        if read.contains(id) && !written.contains(id) {
+            d.push(Diagnostic::error(
+                codes::STATE_NEVER_WRITTEN,
+                "quests",
+                format!("/content/state/{i}"),
+                format!(
+                    "`{id}` is read by a gate but no `set-state`/`add-state`/`clear-state` \
+                     anywhere in the campaign ever writes it — it can only ever hold its declared \
+                     initial ({}), so every comparison against it was decided when the campaign \
+                     was written. Write it somewhere, or drop the comparison and say what you \
+                     meant unconditionally",
+                    s.initial
+                ),
+            ));
+        }
+        if !read.contains(id) {
+            let tail = if written.contains(id) {
+                "some verb writes it and nothing ever asks"
+            } else {
+                "nothing touches it at all"
+            };
+            d.push(Diagnostic::error(
+                codes::STATE_NEVER_READ,
+                "quests",
+                format!("/content/state/{i}"),
+                format!(
+                    "`{id}` is declared but no gate's `requires_state` anywhere in the campaign \
+                     ever reads it — {tail}. Runtime state exists to be compared against; gate \
+                     something on it, or delete the declaration and its writes"
+                ),
+            ));
+        }
+    }
+}
+
+/// Reject a `player`-scoped state write inside a **scheduler-only** bundle
+/// (`DW0503`).
+///
+/// The seams and the latch semantics are [`check_carrier_one_not_scheduled`]'s,
+/// deliberately: a `sequence` step and a `move-npc`/`move-actor` `on_arrive` are
+/// re-invoked with the server command source, while a `set-checkpoint`'s
+/// `on_respawn` and a `begin-stealth`'s `on_caught` are dispatched per player and
+/// so reset the latch.
+fn check_player_state_not_scheduled(
+    effs: &[QuestEffect],
+    declared: &BTreeMap<&str, &crate::stages::StateDecl>,
+    stage: &str,
+    path: &str,
+    scheduled: bool,
+    d: &mut Vec<Diagnostic>,
+) {
+    for e in effs {
+        if scheduled
+            && let Some((id, _)) = e.writes_state()
+            && declared
+                .get(id.as_str())
+                .is_some_and(|s| s.scope == crate::stages::StateScope::Player)
+        {
+            d.push(Diagnostic::error(
+                codes::STATE_SCOPE_UNREACHABLE,
+                stage,
+                path.to_string(),
+                format!(
+                    "`{}` writes `{}`, which is `player`-scoped, from a bundle only the scheduler \
+                     ever runs (a `sequence` step, or a `move-npc`/`move-actor` `on_arrive`). \
+                     Those run with the server command source — there is no acting player whose \
+                     datum this would be, so the write would silently reach nobody. Declare the \
+                     datum `party`-scoped, or move the write onto a beat a player completes",
+                    e.verb(),
+                    id.as_str()
+                ),
+            ));
+        }
+        match e {
+            // Dispatched per player; they reset the latch.
+            QuestEffect::SetCheckpoint { on_respawn, .. } => {
+                check_player_state_not_scheduled(on_respawn, declared, stage, path, false, d);
+            }
+            QuestEffect::BeginStealth { on_caught, .. } => {
+                check_player_state_not_scheduled(on_caught, declared, stage, path, false, d);
+            }
+            // The scheduler-only seams (see `emit::Audience::Scheduled`).
+            QuestEffect::Sequence { steps } => {
+                for st in steps {
+                    check_player_state_not_scheduled(&st.effects, declared, stage, path, true, d);
+                }
+            }
+            QuestEffect::MoveActor { on_arrive, .. } | QuestEffect::MoveNpc { on_arrive, .. } => {
+                check_player_state_not_scheduled(on_arrive, declared, stage, path, true, d);
+            }
+            QuestEffect::Bonfire { on_rest, .. } => {
+                check_player_state_not_scheduled(on_rest, declared, stage, path, scheduled, d);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the
