@@ -432,3 +432,21 @@ two land as a pair.
 1.21.11 jump kinematics on a throwaway server to feed
 `docs/notes/jump-arc-model.md`. The compiler consumes the resulting **model**,
 never this rig. Do not wire spikes into a skill.
+
+`tools/spike-death-teleport/run.sh` (`EULA=TRUE tools/spike-death-teleport/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server, (a) which
+pre-respawn death signals exist per death cause — `deathCount`, the
+`entity_killed_player` / `entity_hurt_player` advancement triggers, the corpse's
+`Pos`, and `LastDeathLocation` — and (b) how accumulated fall distance settles
+when a falling player is teleported. Findings:
+[`../notes/death-and-teleport-spike.md`](../notes/death-and-teleport-spike.md);
+raw per-sample observations are committed next to the rig
+(`tools/spike-death-teleport/observations.json`), as is the 1.21.11 gamerule
+identifier list it extracts from the pinned jar
+(`gamerules-1.21.11.txt`). It publishes an **ephemeral** loopback port and never
+takes the 25565 mutex, so it runs alongside any ladder. Two design notes carried
+by this rig and worth copying into the next one: every rcon response is checked
+(`fill` into an unloaded chunk and a legacy camelCase `gamerule` both answer
+politely and change nothing), and every sample batch is fenced by a `#sync`
+scoreboard round-trip so a desynchronised read aborts instead of shifting every
+later value by one.
