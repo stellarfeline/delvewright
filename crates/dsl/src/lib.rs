@@ -16,6 +16,7 @@ pub mod chrome;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
+pub mod gate;
 pub mod ids;
 pub mod l10n;
 pub mod mclang;
@@ -36,10 +37,11 @@ pub use envelope::{
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
     is_v10, parse_campaign,
 };
+pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,
     EditBatchId, EndingId, FlagId, LethalVolumeId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
-    RegionId, ShortcutId, TimedGateId, TriggerId, WaveId,
+    RegionId, ShortcutId, StateId, TimedGateId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
@@ -61,17 +63,17 @@ pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
     BONFIRE_SAVE_LABEL_EN, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot,
     CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
-    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, DamageKind,
-    DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption, EffectSite,
-    EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture, Happening,
-    HappeningVerb, Horizon, ItemDrop, KitItem, LethalVolume, Lethality, Loot, LootItem,
+    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, CompareOp,
+    DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
+    EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture,
+    Happening, HappeningVerb, Horizon, ItemDrop, KitItem, LethalVolume, Lethality, Loot, LootItem,
     MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect,
     MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
     PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,
     QuestsContent, Relationship, Role, SequenceStep, Shortcut, ShotStyle, SkinModel, SlotDrop,
-    SoundAt, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger,
-    TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent, WorldDifficulty, WorldTime,
-    WorldWeather, is_potion_bearing_item,
+    SoundAt, StateCompare, StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap,
+    TrapDisarm, TrapEffect, TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

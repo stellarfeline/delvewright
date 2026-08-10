@@ -175,6 +175,16 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ),
     ("SoundAt", "actor", Reference),
     ("SoundAt", "at", Machine),
+    (
+        "StateDecl",
+        "note",
+        NotPlayerVisible(
+            "what a runtime datum MEANS, written for the author — the forcing function \
+                          that makes someone say what the number is, exactly as \
+                          `CastPlacement.doing` does for a scene. Never machine-checked and \
+                          never rendered (spec-0031)",
+        ),
+    ),
     ("Trigger", "type", Machine),
     ("TriggerOn", "on", Machine),
     ("WaveMob", "entity", Reference),

@@ -7345,6 +7345,7 @@ mod tests {
                 sound: None,
                 requires_flags: Vec::new(),
                 forbids_flags: Vec::new(),
+                requires_state: Vec::new(),
             }])
             .is_punishing(),
             "a narrate-only on_caught carries no timing obligation"
@@ -7356,6 +7357,7 @@ mod tests {
                 damage_type: None,
                 requires_flags: Vec::new(),
                 forbids_flags: Vec::new(),
+                requires_state: Vec::new(),
             }])
             .is_punishing(),
             "damage-players makes the beat punishing"
@@ -7918,6 +7920,7 @@ mod tests {
             disarm,
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
         }
     }
 

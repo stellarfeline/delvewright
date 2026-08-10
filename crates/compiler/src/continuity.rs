@@ -416,7 +416,8 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
     // option's `set-checkpoint` `on_respawn` bundle are the two sources with the
     // LEAST static position of any — the party may never spring the trap and nobody
     // is forced to die — so missing them made the lint under-exclude, which is the
-    // direction that WARNS on a history the compiler cannot order.
+    // direction that WARNS on a history the compiler cannot order. Roots 6 and 7
+    // (spec-0031) join them for the same reason and with the same answer.
     delvewright_dsl::for_each_effect_root(c, &mut |site, effs| match site.owner {
         delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
         | delvewright_dsl::EffectRootOwner::QuestComplete { .. } => {
@@ -426,7 +427,9 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
         // lifecycle effect in it is excluded regardless of depth.
         delvewright_dsl::EffectRootOwner::Trigger(_)
         | delvewright_dsl::EffectRootOwner::TrapPayload(_)
-        | delvewright_dsl::EffectRootOwner::DialogueRespawn => {
+        | delvewright_dsl::EffectRootOwner::DialogueRespawn
+        | delvewright_dsl::EffectRootOwner::ShortcutUnlock(_)
+        | delvewright_dsl::EffectRootOwner::OnDeath => {
             let reason = match site.owner {
                 delvewright_dsl::EffectRootOwner::Trigger(_) => {
                     "its lifecycle is driven from an environment trigger, which the \
@@ -435,6 +438,15 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
                 delvewright_dsl::EffectRootOwner::TrapPayload(_) => {
                     "its lifecycle is driven from a trap payload, which the party may \
                      spring at any time (or never)"
+                }
+                delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => {
+                    "its lifecycle is driven from a shortcut's `on_unlock` beat, which \
+                     the party may earn at any time — or never, since the delve is \
+                     proven completable with no shortcut taken"
+                }
+                delvewright_dsl::EffectRootOwner::OnDeath => {
+                    "its lifecycle is driven from the campaign's `on_death` bundle, \
+                     which fires only on a death nobody is forced to take"
                 }
                 _ => {
                     "its lifecycle is driven from a dialogue option's `on_respawn` \

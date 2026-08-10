@@ -487,4 +487,50 @@ pub mod codes {
     /// [`Wave`]: crate::stages::Wave
     /// [`Actor`]: crate::stages::Actor
     pub const BOSS_RESPAWNS_ON_REST: &str = "DW0499";
+
+    // -- DSL v0.10 runtime state (spec-0031) ---------------------------------
+
+    /// (v0.10, spec-0031) A `state/<kebab>` reference — in a `requires_state`
+    /// comparison or in a `set-state`/`add-state`/`clear-state` verb — names a
+    /// datum the campaign never declares in the stage-5 `state` list. Unlike a
+    /// flag, a datum IS declared: its scope and its initial value are facts no
+    /// use site can supply, so an undeclared reference is not "a datum that
+    /// happens to start at zero", it is a datum with no defined multiplayer
+    /// semantics at all. Validation-tier (exit 1). Prescription: declare it, or
+    /// fix the id.
+    pub const STATE_UNDECLARED: &str = "DW0500";
+    /// (v0.10, spec-0031) A gate's `requires_state` reads a declared datum that
+    /// **no verb anywhere in the campaign ever writes**. The datum can only ever
+    /// hold its declared `initial`, so the comparison's answer was decided at
+    /// authoring time and the gate is a constant wearing a condition's clothes.
+    ///
+    /// This is the vacuity rule at the level of one datum (CLAUDE.md: *a green
+    /// gate that binds to nothing is vacuous, not a pass*) — the numeric
+    /// equivalent of the bot's combat floor examining zero enemies for nineteen
+    /// rounds. Validation-tier (exit 1). Prescription: write the datum somewhere
+    /// (`set-state`/`add-state`/`clear-state`), or drop the comparison and say
+    /// what you meant unconditionally.
+    pub const STATE_NEVER_WRITTEN: &str = "DW0501";
+    /// (v0.10, spec-0031) A declared datum that **no gate anywhere in the
+    /// campaign ever reads**. Either some verb writes it and nothing ever asks
+    /// (the write is inert — a counter nobody consults), or nothing touches it at
+    /// all (a dead declaration). Runtime state exists to be compared against; a
+    /// datum with no reader is bookkeeping no player can ever observe.
+    /// Validation-tier (exit 1). Prescription: gate something on it with
+    /// `requires_state`, or delete the declaration and its writes.
+    pub const STATE_NEVER_READ: &str = "DW0502";
+    /// (v0.10, spec-0031) A `player`-scoped datum is referenced where emission
+    /// has no acting player to read or write it against.
+    ///
+    /// Two such places exist, and both are properties of the SITE, not of the
+    /// verb: a scheduler-only bundle (a `sequence` step, a `move-npc` /
+    /// `move-actor` `on_arrive`) runs with the server command source — the same
+    /// seam `DW0357` polices for `carrier: "one"` — and the gates emission
+    /// evaluates against the party holder rather than against a player (an
+    /// objective's activation guard, a trigger's arming gate, a trap's arming
+    /// gate) have no `@s` either. Validation-tier (exit 1). Prescription: declare
+    /// the datum `party`-scoped if the whole party shares it, or move the
+    /// read/write onto a site a player drives (a dialogue option, a cast
+    /// placement, an effect on a beat a player completes).
+    pub const STATE_SCOPE_UNREACHABLE: &str = "DW0503";
 }

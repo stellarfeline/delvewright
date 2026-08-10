@@ -145,9 +145,24 @@ declared option, default no.
    exercised by the bot tier on a fixture, with the amount asserted.
 10. Every gate above states its binding count; a zero binding is a failure.
 
-## Unverified, to be settled by live measurement
+## Settled by live measurement (#349, pinned 1.21.11)
 
-- Whether the pre-respawn death advancement fires for non-entity deaths (void,
-  fall, drowning). This decides whether half the death causes in a souls-shaped
-  delve can be accounted at all, and is the single load-bearing unknown in this
-  spec.
+The single load-bearing unknown in this spec resolves **favourably**, and the
+question it was phrased as was the wrong one. Full derivation in spec-0031;
+data in `docs/notes/death-and-teleport-spike.md`.
+
+The engine's death edge is not an advancement — it is a `deathCount` scoreboard
+criterion. Measured over 5 causes × 3 repeats, the edge is armed **on the
+corpse, pre-respawn, for every cause including void, fall, drowning and lava**;
+`LastDeathLocation` is written on the same tick; and the corpse's position is
+the death position and is stable while the death screen is up.
+
+So the recovery stake can be placed for every death cause a souls-shaped delve
+produces, which is what this spec needed and could not assume. The compile-time
+placement table stands unchanged — the measurement only confirms that the
+runtime lookup has a death position to key on.
+
+**One measured constraint the stake must respect.** A respawned player is
+invulnerable for 59 ticks (~3 s), and `/kill` reports success while doing
+nothing during that window. A retention policy that reacts to a *second* death
+must not assume a death can be forced or observed inside those three seconds.

@@ -165,6 +165,7 @@ fn quest_effect_debug_is_stable_over_the_additive_fields() {
         on_arrive: vec![],
         requires_flags: vec![],
         forbids_flags: vec![],
+        requires_state: vec![],
         happening: None,
     };
     assert_eq!(

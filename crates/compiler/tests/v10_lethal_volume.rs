@@ -188,6 +188,36 @@ fn a_volume_emits_a_tick_driver_and_a_killing_body() {
         kill.contains("tellraw @s") && kill.contains("The pit takes you."),
         "the wording reaches the player who died: {kill}"
     );
+    // The wording is a CONSEQUENCE of the blow, never a prediction of it, and
+    // this is the assertion that pins it: PackTest cannot read chat, so the
+    // runtime template can only show the guard's condition coming out false —
+    // that the message is actually conditioned on it is checked here.
+    //
+    // Measured on the pinned 1.21.11 toolserver, after getting it wrong twice:
+    // `/damage` reports SUCCESS while doing nothing (a respawned player is
+    // invulnerable for 59 ticks), so `execute store success` is inert; the guard
+    // must read the outcome. A dummy at `Health: 20f` in a swinging volume was
+    // still at `Health: 20f` after 202 ticks with `/damage` answering success
+    // every tick.
+    assert!(
+        kill.contains("execute if score #leth_hp dw.sys matches ..0 run tellraw @s"),
+        "the wording is conditioned on the player actually ending up dead — an \
+         unconditional `tellraw` prints once per tick for three seconds after any \
+         respawn, about a death that is not happening: {kill}"
+    );
+    assert!(
+        !kill.contains("store success"),
+        "the guard must not read `/damage`'s own result, which reports success even \
+         when it does nothing (measured): {kill}"
+    );
+    // The blow must come first; a guard evaluated before the damage reads the
+    // health the player had on the way in.
+    let dmg_at = kill.find("damage @s").expect("the blow is emitted");
+    let guard_at = kill.find("execute if score").expect("the guard is emitted");
+    assert!(
+        dmg_at < guard_at,
+        "the blow precedes the guard that reads its outcome: {kill}"
+    );
     // Delivered as a text component, which is what makes it translatable AND
     // readable by a player who declined the resource pack (spec-0029 §3).
     assert!(
@@ -302,6 +332,33 @@ fn each_volume_gets_a_packtest_that_binds() {
     assert!(
         t.contains("assert score #hp_leth dw.sys matches ..0"),
         "the template asserts the entity died: {t}"
+    );
+
+    // The second template, and what it binds to. A PackTest fake player is
+    // permanently undamageable (measured: `Health: 20f` unchanged after 202 ticks
+    // inside a swinging volume, `minecraft:generic` refused identically), so this
+    // tier cannot witness a player DEATH — that belongs to the bot tier. What it
+    // can witness is the opposite direction, and the dummy is the ideal fixture
+    // for it: a body that provably never dies must never produce the claim.
+    let claim = text(
+        &out,
+        "packtest-datapack/data/hello-world/test/lethal_the_drop_claim.mcfunction",
+    );
+    assert!(
+        claim.contains("scoreboard players set #leth_hp dw.sys 0"),
+        "the guard score is baselined to the DEAD sentinel, so a kill function that \
+         never ran cannot pass by leaving it untouched: {claim}"
+    );
+    // The DRIVER, not the kill function: only the driver carries the `@a[<box>]`
+    // re-bind, so only driving it binds the template to the player path existing.
+    // Measured: with the player line deleted from the driver, a template that
+    // called `lethal_<id>_kill` directly still passed 12/12.
+    assert!(
+        claim.contains("function hello-world:lethal_the_drop\n")
+            && !claim.contains("run function hello-world:lethal_the_drop_kill")
+            && claim.contains("assert score #leth_hp dw.sys matches 1.."),
+        "the template drives the volume's DRIVER (which carries the player re-bind), \
+         not its kill function: {claim}"
     );
 }
 

@@ -49,6 +49,10 @@
                 "text": "The bar comes off the inner gate and it swings wide.",
                 "subject": "anchor/door"
               }
+            },
+            {
+              "type": "set-checkpoint",
+              "anchor": "anchor/keeper-stand"
             }
           ]
         },

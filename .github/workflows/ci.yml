@@ -688,14 +688,19 @@ jobs:
       # the passes above: one extra toolserver boot, no new pull, no new compile.
       # spec-0031 — a lethal volume is a RUNTIME mechanism, and a compile-time proof
       # that its box is impassable proves nothing about whether the box kills. The
-      # generated template is emitted only for a campaign that HAS a volume, and no
-      # existing fixture declares one, so without this pass the whole runtime half
-      # is shape-verified in Rust and never actually RUN — the same gap the cast,
-      # bonfire and lane passes above exist to close. Measured red->green on the
-      # pinned toolserver: with the volume's damage amount stripped to 0 the
-      # template fails ("Expected #hp_leth dw.sys to match ..0, but got 2000"),
-      # with it the suite is green. Same cost profile: one extra toolserver boot,
-      # no new pull, no new compile.
+      # generated templates are emitted only for a campaign that HAS a volume, and
+      # no existing fixture declares one, so without this pass the whole runtime
+      # half is shape-verified in Rust and never actually RUN — the same gap the
+      # cast, bonfire and lane passes above exist to close. TWO templates per
+      # volume, each red for its own reason, both measured on the pinned
+      # toolserver: `lethal_<id>` (a body enters the box and dies) fails with the
+      # damage amount stripped to 0 ("Expected #hp_leth ..0, but got 2000"), and
+      # `lethal_<id>_claim` (the wording is withheld when nothing lands) fails with
+      # the player line deleted from the volume's driver ("Expected #leth_hp 1..,
+      # but got 0"). A PackTest fake player is permanently undamageable — measured,
+      # 202 ticks — so neither template asserts a player DEATH; that claim belongs
+      # to the bot tier. Same cost profile: one extra toolserver boot, no new pull,
+      # no new compile.
       - name: build the lethal-volume delve output (spec-0031)
         run: |
           cargo run -p delvec --bin delvec -- \

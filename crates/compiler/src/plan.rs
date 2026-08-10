@@ -397,6 +397,9 @@ pub struct TrapPlan {
     pub requires_flags: Vec<String>,
     /// Flags whose being set deactivates the trap (DSL v0.6 negative gate).
     pub forbids_flags: Vec<String>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): the trap is armed only while
+    /// every comparison holds.
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
 }
 
 /// A gate open/close firing (DSL v0.6), collected in deterministic content order.
@@ -641,6 +644,9 @@ pub struct OptionPlan {
     pub requires_flags: Vec<String>,
     /// Flags whose being set HIDES this option (DSL v0.6 negative gate).
     pub forbids_flags: Vec<String>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): the option is shown only while
+    /// every comparison holds.
+    pub requires_state: Vec<delvewright_dsl::StateCompare>,
     /// World-time cuts this option fires (DSL v0.5 dialogue `set-time`), in order.
     pub sets_time: Vec<delvewright_dsl::WorldTime>,
     /// Weather cuts this option fires (DSL v0.5 dialogue `set-weather`), in order.
@@ -848,6 +854,24 @@ pub fn dlg_trigger(npc_id: &str) -> String {
 pub fn flag_score(flag_id: &str) -> String {
     format!("dw.f_{}", safe_local(flag_id))
 }
+/// Scoreboard objective holding a declared runtime datum (`state/<kebab>`, DSL
+/// v0.10, spec-0031).
+///
+/// One objective per datum, holding an ordinary integer. **Who** holds the value
+/// is the datum's declared scope, not a property of the objective: a `party`
+/// datum lives on the [`PARTY`] fake player (where every story flag already
+/// lives, spec-0018) and a `player` datum on each real player.
+pub fn state_score(state_id: &str) -> String {
+    format!("dw.s_{}", safe_local(state_id))
+}
+
+/// The per-player tag marking "this player's `player`-scoped data are seeded to
+/// their declared initials" (DSL v0.10). Player tags live in player data, so the
+/// seed runs exactly once per player per world — on their first tick, never
+/// again on a relog, which is what makes a datum survive a disconnect the way a
+/// scoreboard score does.
+pub const STATE_SEEDED_TAG: &str = "dw_state";
+
 /// Trigger objective the bot chats / an interaction advancement sets to drive an
 /// `interact` objective (v0.3).
 pub fn interact_trigger(obj_id: &str) -> String {
@@ -1677,6 +1701,18 @@ impl<'a> Plan<'a> {
         !self.checkpoints.is_empty()
     }
 
+    /// The campaign's `on_death` bundle (DSL v0.10, spec-0031) — effect root R7,
+    /// the effects that run at the moment a player dies. Empty for every campaign
+    /// below 0.10.0 and for any that declares no death beat, which is what keeps
+    /// the whole corpse-side half of the death edge out of their emission.
+    ///
+    /// Read straight off the campaign rather than planned into a field: unlike a
+    /// checkpoint or a shortcut this bundle resolves no geometry, so a planning
+    /// step would only be a second place for it to go stale.
+    pub fn on_death(&self) -> &[QuestEffect] {
+        &self.campaign.quests.content.on_death
+    }
+
     /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
     /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
     /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
@@ -2054,6 +2090,7 @@ fn plan_npc(npc: &Npc, tree: &NpcDialogue) -> NpcPlan {
                     .iter()
                     .map(|f| f.as_str().to_string())
                     .collect(),
+                requires_state: opt.requires_state.clone(),
                 sets_time,
                 sets_weather,
                 sets_checkpoints,
@@ -2731,6 +2768,22 @@ pub(crate) enum EffectRoot<'a> {
     /// while that checkpoint is active, so it is optional too (nobody is forced to
     /// die).
     DialogueRespawn,
+    /// A `shortcuts[].on_unlock` (spec-0016 §2) — fired by the far-side
+    /// interaction, so it has no step of its own, and **optional**: `Plan::build`
+    /// registers every shortcut gate as sealed at step 0 so the delve is proven
+    /// completable with no shortcut ever taken, which is exactly the statement
+    /// "the party may never fire this bundle".
+    ///
+    /// Carries nothing, unlike its trigger/trap siblings, because a shortcut
+    /// declares no flag gate — there is no `requires_flags` for a consumer to read
+    /// off it. The owning object is still available on the DSL side
+    /// (`EffectRootOwner::ShortcutUnlock`) for a consumer that needs to name it,
+    /// and the site's `path` already does.
+    ShortcutUnlock,
+    /// The campaign's `on_death` (spec-0031) — fired at the moment a player dies,
+    /// so it has no step and is optional in the strongest sense the model has:
+    /// nobody is forced to die.
+    OnDeath,
 }
 
 /// Where an effect was declared: which stage document, the JSON pointer inside it,
@@ -2792,6 +2845,8 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::Trigger(t) => EffectRoot::Trigger(t),
             delvewright_dsl::EffectRootOwner::TrapPayload(t) => EffectRoot::TrapPayload(t),
             delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
+            delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => EffectRoot::ShortcutUnlock,
+            delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
         };
         f(
             &EffectRootSite {
@@ -2921,7 +2976,17 @@ fn collect_gate_events(
             EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
             EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
             EffectRoot::Trigger(_) => (0, true),
-            EffectRoot::TrapPayload(_) | EffectRoot::DialogueRespawn => (0, false),
+            // Optional roots: an `open-gate` from one is not credited (the proof may
+            // not lean on a wall the party might never open), a `close-gate` from
+            // one is (the proof must survive the seal). R6 is optional for a reason
+            // the model already asserts elsewhere — every shortcut gate is
+            // registered sealed at step 0 so the delve is finishable the long way,
+            // which is precisely "this bundle may never fire". R7 is optional
+            // because nobody is forced to die.
+            EffectRoot::TrapPayload(_)
+            | EffectRoot::DialogueRespawn
+            | EffectRoot::ShortcutUnlock
+            | EffectRoot::OnDeath => (0, false),
         };
         let gate = e
             .open_gate_anchor()
@@ -3229,6 +3294,7 @@ fn collect_traps(
                 .iter()
                 .map(|f| f.as_str().to_string())
                 .collect(),
+            requires_state: t.requires_state.clone(),
             forbids_flags: t
                 .forbids_flags
                 .iter()

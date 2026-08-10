@@ -33,9 +33,12 @@ fn version_line() {
         s.contains(&format!("delvec {}", env!("CARGO_PKG_VERSION"))),
         "{s}"
     );
-    // spec-0031 raised the implemented DSL to 0.10.0: the stage-5
-    // `lethal_volumes` declaration — a box that kills whatever enters it, worded
-    // by the campaign's own strings.
+    // spec-0031 raised the implemented DSL to 0.10.0, in three additive parts:
+    // runtime state — the stage-5 `state[]` declaration, the
+    // `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
+    // numeric comparison carried by every gate consumer — the campaign-wide
+    // `on_death` bundle, effect root R7, and the stage-5 `lethal_volumes`
+    // declaration.
     assert!(s.contains("dsl 0.10.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }

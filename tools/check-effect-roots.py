@@ -3,9 +3,9 @@
 
 ## The defect this exists to end
 
-An *effect root* is a `Vec<QuestEffect>` that emission can lower. There are five,
-four hang off the quests stage and the fifth hangs off dialogue, and nothing about
-the shape of the DSL makes them findable by inspection. So every walk that needed
+An *effect root* is a `Vec<QuestEffect>` that emission can lower. There are seven,
+six hang off the quests stage and one hangs off dialogue, and nothing about the
+shape of the DSL makes them findable by inspection. So every walk that needed
 "every effect" was written by someone enumerating the roots they happened to know
 about, and each copy missed a different subset.
 
@@ -23,10 +23,19 @@ fourteenth hand-rolled walk being written tomorrow — nothing in the type syste
 can, because the root fields are ordinary public fields on ordinary public
 structs. This gate is that half.
 
+**This gate has one blind spot by construction, and it has been hit** (spec-0031).
+It greps for the roots it knows, so it cannot see a root that is *not in the
+enumeration at all*: `shortcuts[].on_unlock` was a `Vec<QuestEffect>` emission
+lowered for two versions while every walk, and this file, went green. The gate for
+THAT shape is `tools/check-capability-ownership.py` check E, which enumerates the
+effect-bundle FIELDS out of `stages.rs` and fails on any it cannot account for.
+The two are complementary and neither replaces the other: this one catches a walk
+that forgets a known root, that one catches a root nobody knows.
+
 ## What it flags
 
 A window of `WINDOW` source lines that mentions `THRESHOLD` or more *distinct*
-root markers. A walk that enumerates three of the five roots names three root
+root markers. A walk that enumerates three of the seven roots names three root
 fields within a few lines of each other; that is what this catches, and it is why
 the threshold is on DISTINCT roots rather than on occurrences. Single-root access
 — `dsl::validate` checking one quest's own `on_complete`, emission lowering one
@@ -70,6 +79,8 @@ ROOT_MARKERS = {
     "R5 dialogue on_respawn": re.compile(
         r"set_checkpoint_on_respawn\b|DialogueEffect::SetCheckpoint"
     ),
+    "R6 shortcuts[].on_unlock": re.compile(r"content\.shortcuts\b"),
+    "R7 campaign on_death": re.compile(r"content\.on_death\b"),
 }
 
 # Files allowed to name several roots close together, each with the reason. A new
@@ -82,11 +93,12 @@ ALLOWED = {
     ),
     "crates/dsl/src/validate.rs": (
         "`reserved_v06_world` — the v0.6 version fence, sound by construction "
-        "rather than by walking. It checks R1-R3 for v0.6-only FIELDS, and R4/R5 "
-        "cannot exist below v0.6 at all: `/content/traps` is reserved wholesale a "
-        "few lines below, and a dialogue `set-checkpoint` is reserved by "
-        "`v06_effect()` in the stage-6 block. Widening the fence would report the "
-        "same campaigns with a worse message."
+        "rather than by walking. It checks R1-R3 for v0.6-only FIELDS, and R4-R7 "
+        "cannot exist below v0.6 at all: `/content/traps` and `/content/shortcuts` "
+        "are reserved wholesale a few lines below, a dialogue `set-checkpoint` is "
+        "reserved by `v06_effect()` in the stage-6 block, and `/content/on_death` "
+        "is reserved to 0.10.0 by `reserved_v10`. Widening the fence would report "
+        "the same campaigns with a worse message."
     ),
     "crates/compiler/src/plan.rs": (
         "`required_anchors_for_area` — OPEN FINDING, not a false positive. It "
