@@ -1273,11 +1273,18 @@ fn effect_timeline<'a>(path: &str, list: &'a [QuestEffect]) -> Vec<(u32, String,
 /// `DW0540`: a grant that is still live when a clear in the same bundle removes
 /// it.
 ///
-/// Each grant is paired with the EARLIEST clear that could remove it — the first
-/// one strictly later on the timeline that either names the same effect or names
-/// none at all (vanilla's `effect clear <targets>` with no id clears everything,
-/// and so does this verb). Ordering is `(tick, declaration position)`, so two
-/// effects on the same tick are ordered by what the author wrote.
+/// Each grant is paired with the EARLIEST clear that could remove it: the one
+/// smallest in `(tick, declaration position)` among those strictly after the
+/// grant, that either names the same effect or names none at all (vanilla's
+/// `effect clear <targets>` with no id clears everything, and so does this verb).
+///
+/// **Ordered by the key, never by the loop index.** A bundle's steps are declared
+/// in whatever order the author wrote them, not in tick order, so "the next clear
+/// in the list" and "the clear that actually fires first" are different effects
+/// the moment a `sequence` declares `at_ticks: 40` above `at_ticks: 5`. Taking
+/// the first in declaration order made the rule miss exactly the live removal it
+/// exists to find — and, symmetrically, miss a clear declared *above* a grant but
+/// scheduled after it.
 fn check_grant_removal(
     stage: &'static str,
     timeline: &[(u32, String, &QuestEffect)],
@@ -1295,15 +1302,16 @@ fn check_grant_removal(
         let removal = timeline
             .iter()
             .enumerate()
-            .skip(gi + 1)
-            .filter(|(_, (t, _, _))| *t >= *g_tick)
-            .find_map(|(_, (t, p, e))| match e.clear_effect() {
-                Some((None, _)) => Some((*t, p, "clears every effect")),
+            .filter(|(ci, (t, _, _))| (*t, *ci) > (*g_tick, gi))
+            .filter_map(|(ci, (t, p, e))| match e.clear_effect() {
+                Some((None, _)) => Some(((*t, ci), t, p, "clears every effect")),
                 Some((Some(c), _)) if crate::registry::namespaced_effect_id(c) == granted => {
-                    Some((*t, p, "clears it"))
+                    Some(((*t, ci), t, p, "clears it"))
                 }
                 _ => None,
-            });
+            })
+            .min_by_key(|(key, _, _, _)| *key)
+            .map(|(_, t, p, what)| (*t, p, what));
         let Some((c_tick, c_path, what)) = removal else {
             continue;
         };

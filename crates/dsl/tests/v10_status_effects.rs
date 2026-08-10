@@ -283,6 +283,52 @@ fn a_clear_of_another_effect_is_clean() {
     assert!(!d.iter().any(|x| x.code == "DW0540"), "{d:#?}");
 }
 
+/// **Declaration order is not tick order.** A `sequence` may declare its late
+/// step above its early one; the rule must pair the grant with the clear that
+/// really fires first, or it reports clean on the live removal it exists to
+/// find. Here the at-100 clear is inert (the 2s grant is long gone) and the at-4
+/// clear is the real one.
+#[test]
+fn the_removal_is_the_earliest_by_tick_not_by_declaration_order() {
+    let q = quests_with(
+        "0.10.0",
+        r#"[
+      { "type": "sequence", "steps": [
+        { "at_ticks": 0, "effects": [
+          { "type": "give-effect", "effect": "minecraft:blindness", "seconds": 2 } ] },
+        { "at_ticks": 100, "effects": [
+          { "type": "clear-effect", "effect": "minecraft:blindness" } ] },
+        { "at_ticks": 4, "effects": [
+          { "type": "clear-effect", "effect": "minecraft:blindness" } ] }
+      ] }
+    ]"#,
+    );
+    let d = check_campaign(&campaign_with(&q));
+    let hit = d
+        .iter()
+        .find(|x| x.code == "DW0540")
+        .unwrap_or_else(|| panic!("the at-4 clear is the removal, whatever the order: {d:#?}"));
+    assert!(hit.message.contains("4 tick(s) later"), "{}", hit.message);
+}
+
+/// …and the same key ordering catches a clear declared ABOVE the grant but
+/// scheduled after it. A skip-to-the-next-index scan misses this one entirely.
+#[test]
+fn a_clear_declared_above_the_grant_but_scheduled_after_it_is_dw0540() {
+    let q = quests_with(
+        "0.10.0",
+        r#"[
+      { "type": "sequence", "steps": [
+        { "at_ticks": 6, "effects": [
+          { "type": "clear-effect", "effect": "minecraft:blindness" } ] },
+        { "at_ticks": 0, "effects": [
+          { "type": "give-effect", "effect": "minecraft:blindness", "seconds": 30 } ] }
+      ] }
+    ]"#,
+    );
+    assert!(codes(&q).contains(&"DW0540".to_string()));
+}
+
 /// The rule reaches a grant nested inside a `trigger`'s bundle too — it is
 /// seeded from `for_each_effect_root`, the closed root set, not from the quest
 /// stage's `on_objective_complete` alone.
