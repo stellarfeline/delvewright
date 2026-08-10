@@ -128,14 +128,20 @@ Expansion holds no global state — two programs cannot influence each other, wh
 is regression-tested.
 
 The same promise is asserted one layer out, on the bytes that actually ship: a
-double-**export** test over every library program at four seeds compares the
-`.nbt` and the metadata JSON byte for byte (§6).
+double-**export** test over the three ported programs of §5 at four seeds
+compares the `.nbt` and the metadata JSON byte for byte (§6). The §5b staging
+rules and the §5c zone programs are **not** in that suite — `tests/export.rs`
+carries `temple` / `castle` / `church` and nothing else; what covers the staging
+rules is the registry round trip (`crates/compiler/tests/grammar_prefab.rs`),
+which exports once and reads back, not twice and compares.
 
 ## 4. Failure is loud
 
 The interpreter has no silent degradation. `Program::validate` runs before any
 expansion (unknown rule/role/param, empty rule or split, child/piece mismatch on
-a non-repeating split, zero weights, an `orientation` guard that is not a
+a non-repeating split, zero weights, a `rounding` other than `truncate` on a
+split with no relative piece — nowhere to put the remainder — `split_axis` named
+outside a split, an `orientation` guard that is not a
 permutation — a guard nothing could ever match — and a `mark` whose anchor stem
 is not kebab-case). During expansion: `NoApplicableRule`,
 `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, `PaletteFull` (more
@@ -351,7 +357,7 @@ variant among them.
 | | |
 |---|---|
 | Controls | none (the row is as long as the box); roles `stone`, `barrel`, `barrel_unbanded` |
-| Smallest region | 5 × 5 × 3 — three barrels is the shortest row in which the odd one always has a neighbour |
+| Smallest region | 5 × 5 × 5 — **both** horizontal extents ≥ 5. `MIN_LINE` (3) is the shortest row in which the odd one always has a neighbour, but the frame makes local `Z` the *larger* horizontal, so a 3-long row can never be reached: the same shape `boulder_stair`'s `MIN_DEPTH` records |
 | Anchors | `anchor/store-line` — the barrel at the approach end of the row. `anchor/tell` — the odd barrel's own cell, facing out into the room (hence the row sits at `X`-max) |
 
 **Exactly one, without a counter.** A rule has no memory, so the invariant is in
@@ -667,10 +673,13 @@ Gates:
 the eight above (`tests/library.rs`, `tests/determinism.rs`,
 `crates/compiler/tests/grammar_prefab.rs`).
 
-Two anchor names are shared across rules — `anchor/elite` (`causeway`,
-`elite_ground`) and `anchor/gate` (`watch_bay`, `far_side_bar`). Composing
-either pair into one zone means saying which is which at the include site
+Three anchor names are shared across rules — `anchor/elite` (`causeway`,
+`elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
+`anchor/landing` (`drop_shaft`, `dumbwaiter`). Composing
+any of those pairs into one zone means saying which is which at the include site
 (`include_renaming`, §5c); saying nothing is still an `AnchorCollision`.
+Nothing enumerates the collisions: the list is prose, and the third entry was
+missing from it until a sweep counted the stems.
 
 **`counterweight_lift` is not built.** The vocabulary doc
 (`docs/notes/private/grammar-staging-vocabulary.md`, planner-internal) calls

@@ -62,8 +62,9 @@ model (e.g. main agent on `sonnet` → all subagents `sonnet`).
 ## Campaign workspace (artifact of record — NEVER skip)
 
 Campaigns do not live in this repo (CLAUDE.md forbidden zone) — they live in the
-**`delvewright-campaigns` git repo** (symlinked at `campaigns/`, real path
-`../delvewright-campaigns/`; override: `$DELVEWRIGHT_CAMPAIGNS_DIR`). Create
+**`delvewright-campaigns` git repo**, reached through the `campaigns/` symlink
+at the engine repo root (real path `../delvewright-campaigns/`). The symlink is
+the only way there — there is no environment-variable override. Create
 `campaigns/campaigns/<campaign-id>/` with the six stage JSONs, a
 `GENERATION.md` (prompt verbatim, date, dsl_version, decisions made, and the
 campaign's **posture note** — see *Writing craft* §B), and a

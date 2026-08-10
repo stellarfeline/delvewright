@@ -244,6 +244,18 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # The same document's VERSION HEADER was bound to nothing. It claimed
+      # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
+      # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body
+      # of that very file describing the v0.9 surface correctly. It is the first
+      # thing an authoring session reads to pick a stage envelope's dsl_version,
+      # so a stale claim there is acted on. Bound by EQUALITY in both directions:
+      # the stale-OLDER direction is the one that happens (docs are written once,
+      # the build moves), and a gate that only rejects "newer than the build" is
+      # exactly what let a storybook ship a v1.0 marker through the whole v1.1
+      # release green (engine #342). Deterministic, offline, stdlib-only python3.
+      - name: compiler reference version header matches the build (both directions)
+        run: python3 tools/check-reference-versions.py
       # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
       # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
       # (crates/dsl/src/envelope.rs) — nothing else in the repo relates the two

@@ -10,10 +10,13 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 0.1.0`, `dsl 0.8.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.9.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`** (additive supersets; `0.2.0` output stays byte-identical
-  across the later versions).
+  `0.7.0`, `0.8.0`, `0.9.0`** (additive supersets; `0.2.0` output stays
+  byte-identical across the later versions). This line is not prose: it is bound
+  by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
+  (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS`) and `versions.toml` by
+  `tools/check-reference-versions.py`, in both directions.
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.
@@ -72,6 +75,16 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   container fill". An adopted container is a required anchor for the layout solver
   and becomes the `critical_path` step position (the bot opens that block).
   Generated PackTest `collect_container`. All three fields absent → byte-identical.
+- task #179 has **landed** at `dsl_version 0.9.0` (owner ruling 2026-08-04):
+  declared `drops[]` on an elite/boss wave mob and on an actor — either a worn
+  `{slot}` or a `{item, name?}` quest token — plus the `collect` objective's
+  `dropped_by`, which gates provisioning on the fight instead of a placed chest
+  and makes "kill the boss → take its key → open the door" a chain the compiler
+  proves (`DW0492`/`DW0493`) rather than an authoring intention. Only `elite`/
+  `boss` may declare drops (`DW0491`); a slot must be one the same mob's
+  `equipment` really fills and may appear once (`DW0490`). Absent `drops` /
+  `dropped_by` keeps v0.8 output byte-identical; declaring either below 0.9.0 is
+  `DW0141`.
 
 ---
 
@@ -91,7 +104,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (**boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space (task #117); talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
-| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0451`/`DW0453`/`DW0489` |
+| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
 | 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), and the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) | `compiler::affordance` + `compiler::integrity` | `DW0420`/`DW0421`/`DW0497` (exit 3) |
 
@@ -2381,7 +2394,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
