@@ -73,6 +73,37 @@ read-only `LastDeathLocation` player NBT, whichever a live spike confirms fires
 for non-entity deaths (void, fall, drowning). That question is load-bearing for
 a souls-shaped delve and is answered by measurement, never by recall.
 
+**Implementation notes (#346), recorded so they are not re-derived.**
+
+`on_death` is campaign-wide, one bundle at `/content/on_death` — deliberately
+**not** a field on a checkpoint. *Where you come back* is a checkpoint's
+property; *that you died* is true everywhere in the delve. A per-checkpoint
+bundle would be N copies of one fact with N chances to forget one. Phase-
+specific behaviour uses the per-effect gate every root already carries, so no
+second gating surface appears.
+
+**When to desugar and when to add a root — the rule the sixth blind spot
+yielded.** `Shortcut.on_unlock` became a root rather than being desugared into a
+trigger, and the general form is worth keeping: *desugar when the sugar's whole
+meaning is the general construct; add a root when the bundle hangs off an object
+that has runtime machinery of its own.* An ambush **is** a trigger — the trigger
+is the entirety of what it emits — so it desugars. A shortcut's unlock is not:
+its detection is a once-only sentinel poll that, in the same function, clears
+the gate region, retires the affordance and kills the wrong-side bodies.
+Desugaring it would have put **two independent detectors on one event**, which
+is precisely the defect the death edge is built to avoid. The same reasoning is
+why `traps[].payload` is a root and not sugar.
+
+**What is proven, and what is not.** The compile-time shape is proven; the
+runtime behaviour is not, and the reason is worth stating rather than
+discovering later. A generated PackTest cannot prove the corpse-side positive,
+because it drives a fake player and a fake player is alive; and no generated
+template was added, because no campaign declares `on_death` yet, so it would
+bind to zero campaigns and be vacuous — a green that means nothing. **The
+obligation this creates: the first campaign to declare `on_death` must carry a
+bot-tier proof of the corpse-side fire.** It is not optional, and it is not the
+campaign author's discretion.
+
 ### Region fill / clear
 
 `open-gate` and `close-gate` already fill and clear a declared region with a
@@ -181,9 +212,29 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    (per-player or party) and set / add / clear it; a datum read without ever
    being written, and a datum written but never read, are each diagnosed.
 2. A numeric comparison is accepted anywhere the flag gate is accepted —
-   every effect variant, objective kind, trigger, trap, cast placement,
-   dialogue option and branch declaration — verified by a test that enumerates
-   the gate struct's consumers from the type, not from a hand-written list.
+   every effect variant, objective kind, trigger, trap, cast placement and
+   dialogue option — verified by a test that enumerates the gate's consumers
+   from the type, not from a hand-written list.
+
+   **Correction (implementation, #348): a branch declaration is not a gate
+   consumer.** This criterion originally listed it. `BranchDecl.flags` is a
+   *pinning* declaration — "these flags are SET on this branch" — read by the
+   chronicle and the branch proofs; it is not a condition, and `purse == 500`
+   has no meaning in it. The distinction is worth stating because the two read
+   alike in JSON and only one of them gates anything. Measured consumer count:
+   six classes over 28 declaring sites.
+
+   **Correction (implementation, #348): the gate is a borrowed view, not a
+   flattened struct.** The obvious shape — one `Gate` struct
+   `#[serde(flatten)]`ed into each site — is not available: serde rejects
+   `flatten` in combination with `deny_unknown_fields`, which all 76 stage
+   structs carry and which is what turns an author's typo into `DW0100` instead
+   of silence. Taking the flattened struct would have meant deleting
+   `deny_unknown_fields` from 25 sites, i.e. weakening an existing check to
+   obtain a tidier type — which the debug doctrine forbids. So the fields sit on
+   all 28 sites and a from-the-type test is what makes "every consumer carries
+   the whole gate" a property rather than a habit. What the criterion demands is
+   the property; the struct was only ever one way to get it.
 3. `on_death` is a member of the effect-root set and is visited by
    `for_each_effect_root`; a test enumerates roots from the type and fails when
    any root is unvisited by any walker.
@@ -200,7 +251,26 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    filter.
 8. A lethal volume kills on entry and states the death message from the
    campaign's own strings, entering the l10n inventory like any player-visible
-   string.
+   string. The completability proof treats its cells as **impassable** — not
+   merely solid; nothing may stand on top either — so a campaign whose only
+   route to an objective crosses one fails to compile, naming the volume.
+
+   **Correction (implementation, #347): three things this criterion got wrong.**
+   - It did not say through which *channel* the message is stated. The obvious
+     reading — vanilla's death screen, via the damage type's `message_id` — is
+     blocked by spec-0029 §3: vanilla builds that component with no `fallback`,
+     so a player who declines the resource pack is shown a raw
+     `death.attack.…` key, and `DW0185` cannot catch it because the literal in
+     the emission is the key rather than the authored string. The message is
+     delivered through the engine's own translate-with-fallback path instead.
+   - It omitted the completability half entirely, which lived only in the prose
+     above. Geometry that kills interacts with reachability; a criterion that
+     does not say so leaves the most important half unproven. Folded in above.
+   - **"Kills whatever enters it" is not literally implementable.** Engine
+     machinery lives in the world — a volume drawn across a cutscene dolly would
+     erase the camera. Five machinery types are exempt by name. Content bodies
+     deliberately are not, which is what makes a posted NPC inside a volume a
+     diagnosable authoring error rather than a silent deletion on tick one.
 9. **The lift is authored entirely in campaign JSON**, with no verb naming a
    lift, and its full sequence — including the call from a floor the car is not
    at — is exercised by a PackTest template and by the bot tier.
