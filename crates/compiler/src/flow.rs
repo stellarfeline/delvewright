@@ -487,11 +487,23 @@ impl<'a> Flow<'a> {
             crate::plan::EffectRoot::TrapPayload(trap) => {
                 collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
             }
-            // A reaction bundle: it fires only when somebody dies, at a time no
-            // static model can name, so nothing inside it is a producer. Exactly
-            // what `collect_flags` already refuses for the identical bundle rooted
-            // in the quests stage — reached here, not credited here.
-            crate::plan::EffectRoot::DialogueRespawn => {}
+            // A shortcut's `on_unlock` is ambient for the same reason, and the
+            // reachability of its firing is not an assumption here — `DW0373`
+            // proves the far-side `unlock` is walkable while the gate is still
+            // sealed, so "the party can always go and pull it" is a theorem this
+            // build has already discharged. It declares no flag gate, so the
+            // producer is ungated.
+            crate::plan::EffectRoot::ShortcutUnlock => {
+                collect_flags(effs, &[], &mut ambient);
+            }
+            // Reaction bundles: they fire only when somebody dies, at a time no
+            // static model can name, so nothing inside either is a producer.
+            // Exactly what `collect_flags` already refuses for the identical
+            // bundle rooted in the quests stage — reached here, not credited here.
+            // Crediting `on_death` would be worse than a missing producer: it
+            // would let the mainline be proven reachable via a flag the party only
+            // obtains by dying.
+            crate::plan::EffectRoot::DialogueRespawn | crate::plan::EffectRoot::OnDeath => {}
         });
         // `disarm.sets_flag` is a field, not an effect list, so it has no root of
         // its own; same ambient reasoning, same gate.

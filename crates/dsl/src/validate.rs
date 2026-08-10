@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09,
+    is_v07, is_v08, is_v09, is_v10,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -969,6 +969,31 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v07(c, d);
     reserved_v08(c, d);
     reserved_v09(c, d);
+    reserved_v10(c, d);
+}
+
+/// DSL v0.10 reserved-feature gating (spec-0031): the campaign-wide `on_death`
+/// bundle — effect root R7, the effects that run at the moment a player dies.
+///
+/// The same asymmetry every version ledger uses, and here it is exact in both
+/// directions: *declaring* `on_death` below 0.10.0 is `DW0141`, and a campaign
+/// that declares none emits not one byte differently from before the root existed
+/// (the whole `dw.death_seen` half of the death edge is conditional on a non-empty
+/// bundle). There is no requirement half — nothing obliges a campaign to have a
+/// death beat.
+fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if is_v10(c.quests.dsl_version.as_str()) || c.quests.content.on_death.is_empty() {
+        return;
+    }
+    d.push(Diagnostic::error(
+        codes::RESERVED,
+        "quests",
+        "/content/on_death".to_string(),
+        "the campaign-wide `on_death` bundle (the effects that run at the moment a player dies) \
+         requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the \
+         section"
+            .to_string(),
+    ));
 }
 
 /// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the

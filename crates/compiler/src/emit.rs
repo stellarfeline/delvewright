@@ -2134,6 +2134,20 @@ fn emit_functions(
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
         setup.push("scoreboard objectives add dw.death_ack dummy".to_string());
+    } else if !plan.on_death().is_empty() {
+        // v0.10 `on_death` (spec-0031) rides the SAME detector, so a campaign that
+        // declares a death beat and no checkpoint still needs `deathCount` — but
+        // not the checkpoint marker or the respawn-side ack, which nothing would
+        // read. A campaign with a checkpoint already declared `dw.deaths` above.
+        setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
+    }
+    // The corpse-side acknowledgement (spec-0031). Separate from `dw.death_ack`
+    // because that one is deliberately WITHHELD while the player is dead, which is
+    // exactly the window `on_death` fires in. Absent — like this whole branch —
+    // for a campaign that declares no `on_death`, so pre-0.10 emission is
+    // byte-identical.
+    if !plan.on_death().is_empty() {
+        setup.push("scoreboard objectives add dw.death_seen dummy".to_string());
     }
     // v0.6 stealth beats (spec-0014; sneak requirement removed by owner ruling
     // 2026-08-01): the active-session marker + per-player grace scores. Hidden =
@@ -2724,10 +2738,14 @@ fn emit_functions(
     // task #184: timed-gate disarm detection. Empty without a jammable gate →
     // byte-identical.
     tick.extend(timed_gate_tick(plan));
-    // v0.6 checkpoints (spec-0012): per-player respawn detection via the vanilla
+    // v0.6 checkpoints (spec-0012): per-player death detection via the vanilla
     // `deathCount` criterion — the respawn re-seat (task #145) and the active
-    // checkpoint's `on_respawn`. Emitted for every campaign with a checkpoint.
-    if plan.any_checkpoint() {
+    // checkpoint's `on_respawn`. Since spec-0031 the same one detector also drives
+    // the campaign's `on_death` beat on the CORPSE side of the same edge, so a
+    // campaign with a death beat and no checkpoint arms the identical line. There
+    // is no second detector, and this is the only place the whole delve asks
+    // whether anyone has died.
+    if plan.any_checkpoint() || !plan.on_death().is_empty() {
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
@@ -4778,16 +4796,76 @@ fn center(cell: i32) -> String {
     format!("{:.1}", cell as f64 + 0.5)
 }
 
-/// Generate the checkpoint respawn-dispatch functions (DSL v0.6, spec-0012).
-/// Empty unless some checkpoint carries an `on_respawn` hook. Respawn is detected
-/// via the vanilla `deathCount` criterion: a player whose death total exceeds the
-/// acknowledged total respawned since last tick; the active checkpoint (`#cp`)
-/// selects which per-player `on_respawn` list runs. Effects are emitted in
-/// declared (deterministic) order and are expected to be idempotent (spec-0012).
+/// **The death-position seam — deliberately empty, and the one thing here that a
+/// live measurement decides.**
+///
+/// Every command this returns is prepended to the corpse-side branch of
+/// `cp_respawn_check`, ahead of `on_death_fire`, so whatever records "where the
+/// player died" runs before any authored effect can read it. It emits **nothing**
+/// today, which is why a campaign that declares `on_death` still gets exactly the
+/// commands its bundle asks for and no speculative bookkeeping.
+///
+/// It is a named function rather than a comment because the alternative — writing
+/// nothing and remembering — is how a seam becomes folklore. spec-0032's recovery
+/// stake needs the position; nothing in the current surface does.
+///
+/// **Why it is not filled in here.** There are two candidate vanilla mechanisms
+/// and the choice between them is a question about the pinned server, not about
+/// this compiler:
+///
+/// * the **pre-respawn death advancement**, whose trigger for *non-entity* deaths
+///   (void, fall, drowning) is unverified — a souls-shaped delve kills the player
+///   that way constantly, so a mechanism that only fires on mob kills is not a
+///   mechanism;
+/// * the read-only **`LastDeathLocation`** player NBT, whose availability at the
+///   instant the corpse-side branch runs (as opposed to after the respawn) is
+///   likewise unverified.
+///
+/// CLAUDE.md's debug doctrine answers a question like this by measurement, never
+/// by recall, and that measurement is running separately on a live pinned 1.21.11
+/// server (spec-0031, "Unverified"). Guessing here would bake the wrong primitive
+/// into emitted commands and into every proof written over them.
+///
+/// What is **already settled**, and what this seam therefore does not have to
+/// establish: `deathCount` ticks up on the death rather than on the respawn
+/// (measured, task #145), `@a` matches a player on the death screen (the `alive`
+/// guard exists because it does), and the corpse stands where it fell. The open
+/// question is only how to *record* that position durably enough for a later
+/// effect to place something at it.
+fn death_position_capture() -> Vec<String> {
+    Vec::new()
+}
+
+/// Generate the death-edge functions: the campaign's `on_death` beat (DSL v0.10,
+/// spec-0031) and the checkpoint respawn dispatch (DSL v0.6, spec-0012).
+///
+/// **One detector, two edges.** Death is detected exactly once, by the vanilla
+/// `deathCount` criterion (`dw.deaths`), and `cp_respawn_check` is the one
+/// function that reads it. What spec-0031 adds is a second *acknowledgement* of
+/// that same counter, not a second detector — because the two consumers want
+/// opposite sides of the same event:
+///
+/// * `on_death` wants **the moment of death**: the player is still a corpse on
+///   the death screen, standing where they died. `deathCount` has already ticked
+///   up there (measured, task #145 — it is why the v0.6 half needs its `alive`
+///   guard at all), and `@a` matches a corpse, so the corpse side of the edge is
+///   reachable with no new machinery.
+/// * `on_respawn` and the re-seat want **the player who has come back**, so they
+///   hold both their fire and their acknowledgement behind `alive`.
+///
+/// A single ack cannot serve both: `dw.death_ack` is deliberately withheld while
+/// the player is dead, so on the corpse side `deaths > death_ack` stays true for
+/// every tick of the death screen. `dw.death_seen` is the corpse-side ack, and it
+/// exists only for a campaign that declares `on_death` — a campaign that does not
+/// emits this function exactly as it did before the root existed.
+///
+/// **Not yet emitted: the death POSITION.** See
+/// [`death_position_capture`] — the one seam a live measurement fills in.
 fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
-    if !plan.any_checkpoint() {
+    let on_death = plan.on_death();
+    if !plan.any_checkpoint() && on_death.is_empty() {
         return fns;
     }
     // cp_respawn_check (as @s): fire on the death-count edge, then acknowledge.
@@ -4799,18 +4877,46 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     // alive again: a dead player reads `Health: 0.0f`, and holding the ack keeps
     // the edge armed instead of burning it on the corpse (task #145).
     let alive = "unless data entity @s {Health:0.0f}";
-    fns.push((
-        "cp_respawn_check".to_string(),
-        lines(&[
-            format!(
-                "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
-                 {ns}:cp_respawn_fire"
-            ),
-            format!(
-                "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
-            ),
-        ]),
-    ));
+    let dead = "if data entity @s {Health:0.0f}";
+    let mut check: Vec<String> = Vec::new();
+    // The corpse side FIRST: `on_death` is the earlier moment, and a reader of the
+    // generated function should meet the two edges in the order the player lives
+    // them. Ordering is otherwise immaterial — the two branches are mutually
+    // exclusive by their own guards.
+    if !on_death.is_empty() {
+        check.extend(death_position_capture());
+        check.push(format!(
+            "execute {dead} if score @s dw.deaths > @s dw.death_seen run function \
+             {ns}:on_death_fire"
+        ));
+        check.push(format!(
+            "execute {dead} run scoreboard players operation @s dw.death_seen = @s dw.deaths"
+        ));
+    }
+    if plan.any_checkpoint() {
+        check.push(format!(
+            "execute {alive} if score @s dw.deaths > @s dw.death_ack run function \
+             {ns}:cp_respawn_fire"
+        ));
+        check.push(format!(
+            "execute {alive} run scoreboard players operation @s dw.death_ack = @s dw.deaths"
+        ));
+    }
+    fns.push(("cp_respawn_check".to_string(), lines(&check)));
+    // on_death_fire (as @s): the campaign's death beat, for the player who died.
+    //
+    // `Audience::Solo`, the audience `on_respawn` and `on_caught` already use: a
+    // death is one player's, and re-broadcasting it to the party would duplicate
+    // their narration and their kit.
+    if !on_death.is_empty() {
+        fns.push((
+            "on_death_fire".to_string(),
+            lines(&emit_effect_bundle(plan, on_death, Audience::Solo)),
+        ));
+    }
+    if !plan.any_checkpoint() {
+        return fns;
+    }
     // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
     //
     // Why this exists (owner playtest, task #145). `set-checkpoint` records the
