@@ -630,7 +630,7 @@ pub fn build_with_warnings(
                                 code: e.code,
                                 message: format!("branch `{}`: {}", r.branch.id, e.message),
                             })?;
-                        let (gate_events, ancestors) = plan.branch_gate_model(&cp);
+                        let (region_events, ancestors) = plan.branch_gate_model(&cp);
                         let ancestor = |g: usize, s: usize| {
                             g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
                         };
@@ -642,7 +642,7 @@ pub fn build_with_warnings(
                             &world,
                             &cp.steps,
                             &cp.transport_by_step,
-                            &gate_events,
+                            &region_events,
                             &ancestor,
                         )
                         .map_err(label)?;
@@ -650,7 +650,7 @@ pub fn build_with_warnings(
                             &world,
                             &cp.steps,
                             &cp.transport_by_step,
-                            &gate_events,
+                            &region_events,
                             &ancestor,
                         );
                         crate::nav::verify_exported_routes(&world, &branch_routes)
@@ -4615,6 +4615,32 @@ fn declared_states(c: &delvewright_dsl::Campaign) -> &[delvewright_dsl::StateDec
     &c.quests.content.state
 }
 
+/// **The one runtime region write** (DSL v0.10, spec-0031): fill the inclusive box
+/// `region` with `block`, optionally restricted to the cells currently holding
+/// `only`.
+///
+/// Every verb that writes a region at runtime goes through here — `fill-region`
+/// (author's box, author's block), `clear-region` (author's box, air),
+/// `close-gate` (the gate anchor's box and its declared block) and `open-gate`
+/// (the gate anchor's box, air, `replace`-filtered to the gate block so an opened
+/// threshold never scrubs anything that drifted into it). The `replace` filter is
+/// the only difference between the four, which is why it is a parameter here
+/// rather than four spellings of `fill` in four match arms.
+fn fill_region_command(region: ([i32; 3], [i32; 3]), block: &str, only: Option<&str>) -> String {
+    let (from, to) = region;
+    let filter = match only {
+        Some(o) => format!(" replace {o}"),
+        None => String::new(),
+    };
+    format!(
+        "fill {} {} {} {} {} {} {block}{filter}",
+        from[0], from[1], from[2], to[0], to[1], to[2]
+    )
+}
+
+/// The block a cleared region is written with. Named because three verbs share it.
+const AIR: &str = "minecraft:air";
+
 /// Emit a quest effect's commands into `body`, addressing `aud`.
 fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut Vec<String>) {
     let ns = &plan.namespace;
@@ -4626,10 +4652,8 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 if name == anchor.as_str()
                     && let ResolvedAnchor::Gate { from, to, block } = resolved
                 {
-                    body.push(format!(
-                        "fill {} {} {} {} {} {} minecraft:air replace {}",
-                        from[0], from[1], from[2], to[0], to[1], to[2], block
-                    ));
+                    // A region write whose box and filter the gate anchor supplies.
+                    body.push(fill_region_command((*from, *to), AIR, Some(block)));
                     // …and take the seal's answer down with the seal (task #142).
                     // The hitboxes exist exactly while the region is solid: an
                     // opened threshold that still says "the way is sealed" is a
@@ -4651,10 +4675,8 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 if name == anchor.as_str()
                     && let ResolvedAnchor::Gate { from, to, block } = resolved
                 {
-                    body.push(format!(
-                        "fill {} {} {} {} {} {} {}",
-                        from[0], from[1], from[2], to[0], to[1], to[2], block
-                    ));
+                    // The same region write, with the block the anchor declares.
+                    body.push(fill_region_command((*from, *to), block, None));
                     // Arm the seal's answer (task #142, owner island finding #34):
                     // a wall the party walks back to and presses must say
                     // something. Guarded on absence, so a re-fired `close-gate`
@@ -4753,6 +4775,18 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
                 body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
+            }
+        }
+        // --- DSL v0.10 region writes (spec-0031) ---
+        // The general spelling of what `open-gate`/`close-gate` do to a gate
+        // anchor's box, through the same one command builder. An unresolvable box
+        // emits nothing — a dangling `region/anchor` is `DW0142`/`DW0355` at
+        // validation, not a silently mis-aimed fill here.
+        QuestEffect::FillRegion { .. } | QuestEffect::ClearRegion { .. } => {
+            if let Some((zone, block)) = eff.region_write()
+                && let Some(region) = plan.zone_box(zone)
+            {
+                body.push(fill_region_command(region, block.unwrap_or(AIR), None));
             }
         }
         QuestEffect::DespawnNpc { npc, .. } => {

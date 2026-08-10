@@ -200,7 +200,7 @@ fn nested_sequence_gate_effects_are_collected() {
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds with nested gate effects");
-    let closes: Vec<bool> = plan.gate_events.iter().map(|e| e.closes).collect();
+    let closes: Vec<bool> = plan.region_events.iter().map(|e| e.fills()).collect();
     assert!(
         closes.contains(&true),
         "the sequence-nested close-gate must be collected: {closes:?}"

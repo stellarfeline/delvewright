@@ -535,8 +535,8 @@ fn gate_region_warnings(
     batch_writes: &BTreeMap<[i32; 3], String>,
 ) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    for ev in &plan.gate_events {
-        if !ev.closes {
+    for ev in &plan.region_events {
+        if !ev.fills() {
             continue;
         }
         let (lo, hi) = ev.region;

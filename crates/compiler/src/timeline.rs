@@ -37,7 +37,7 @@
 //! only, because assuming a seal happened is the conservative direction) —
 //! **this model does not**, and the asymmetry is not an oversight.
 //!
-//! `collect_gate_events` reasons *across* bundles about the route the player is
+//! `collect_region_events` reasons *across* bundles about the route the player is
 //! forced to walk, so whether a firing happens is load-bearing. The staged walk
 //! reasons only *within* one bundle, about a walk that bundle itself orders, and
 //! its claim is conditional from the start: **if this bundle runs, this walk

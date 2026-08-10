@@ -36,14 +36,14 @@ use serde_json::Value;
 
 /// How many object schemas across the seven stage documents declare a gate.
 ///
-/// Five objective kinds + nineteen gatable effect verbs + the environment
+/// Five objective kinds + twenty-one gatable effect verbs + the environment
 /// trigger + the trap + the dialogue option + the cast placement. Asserted
 /// exactly rather than as a lower bound: this is the **binding count** the
 /// generality claim rests on, and a green that bound to fewer sites than it
 /// thinks is vacuous, not a pass (CLAUDE.md). Changing it is a deliberate act —
 /// a new gate consumer, or a verb becoming gatable — and it should be visible in
 /// the diff that does it.
-const GATE_SITES: usize = 28;
+const GATE_SITES: usize = 30;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.
