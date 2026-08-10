@@ -10,7 +10,9 @@ its mandatory steps inline.
 
 ## The measured record
 
-Owner findings per playtest, by the round they were reported in:
+Owner findings per playtest, by the round they were **first** reported in (the
+ledger's `Reported` column; a re-report of an already-open finding is not counted
+again):
 
 | r3 | r4 | r5 | r7 | r8 | r11 | r12 | r13 | r14 | r15 | r16–r22 |
 |----|----|----|----|----|-----|-----|-----|-----|-----|---------|
@@ -58,7 +60,8 @@ observed on the island:
   and `wave/storm-fire` silently never spawned until engine PR #280 closed a
   wave-machinery emission gap; the round-22 bot run was the first time that fight
   existed at all, for machine or human. Guarded now by the dangling-function
-  check.
+  check (`DW0497`: no emitted `function <ns>:<name>` may point at a function that
+  was never emitted).
 
 **Obligation.** Every validation artifact states its binding count, and a zero
 binding is a finding. Reading a report is not enough — an empty coverage set and
@@ -96,8 +99,11 @@ unprovable before them.
 
 **Obligation.** A new campaign declares the cast ledger, happenings, branch
 points and actor/wave tiers as it authors each stage — never as a later adoption
-round. `/new-delve` requires all four; a campaign missing one is not a campaign
-whose gates mean anything.
+round. `/new-delve` requires the first three outright, and the compiler fails a
+build that omits one (`DW0460` / `DW0481` / `DW0480`). The fourth it can only
+**ask** for: no diagnostic demands a tier, so an untiered set-piece fight
+compiles green and rule 1's unbound-gate report is its whole backstop. A campaign
+missing one is not a campaign whose gates mean anything.
 
 ## Rule 4 — a capability-gap finding blocks staging, not just the backlog
 
@@ -149,8 +155,10 @@ not an inference to make silently.
 
 Not because one round fixed everything. Because:
 
-1. Rounds 16–21 ran with no owner exposure at all (prose, branch declaration,
-   version adoption, the terminal round).
+1. Rounds 17–21 ran with no owner exposure at all (prose, happenings, branch
+   declaration, version adoption, the terminal round). Round 16 *was* an owner
+   playtest — four items, every one of them a finding she had already reported,
+   which is the rebuke rule 4 comes from.
 2. By r21 all four declaration surfaces had landed, so the *existing* gates
    finally had something to bite.
 3. Round 21 is recorded as "red frames, in the order the machine produced them —
