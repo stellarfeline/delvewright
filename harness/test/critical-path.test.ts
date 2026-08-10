@@ -410,14 +410,17 @@ test("accepts the 0.5.0 and 0.6.0 dsl versions (additive; same path contract)", 
   }
 });
 
-test("accepts the 0.7.0, 0.8.0, and 0.9.0 dsl versions (additive; same path contract)", () => {
+test("accepts the 0.7.0 … 0.10.0 dsl versions (additive; same path contract)", () => {
   // v0.9 (spec-0026) adds the stage-1 horizon-library surface (object-form
   // `horizon`, new base/shorthand names) — world-generation input the compiler
   // consumes to build the map, not a change to the critical-path step contract
   // the bot walks. task #157: the allowlist lagged the compiler's dsl_version
   // ceiling and refused every 0.9.0 campaign at the gate before the bot took a
   // single step.
-  for (const v of ["0.7.0", "0.8.0", "0.9.0"]) {
+  // v0.10 (spec-0031) adds the campaign-wide `on_death` effect root — a beat
+  // that fires on a death the bot may never take. It exports no new step and
+  // reorders none.
+  for (const v of ["0.7.0", "0.8.0", "0.9.0", "0.10.0"]) {
     const raw = validRaw();
     raw["version"] = v;
     assert.equal(parseCriticalPath(raw).version, v);

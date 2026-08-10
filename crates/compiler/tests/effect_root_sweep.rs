@@ -77,9 +77,22 @@ fn quests_doc(prelude: &str, exit_tail: &str) -> String {
 /// `on_objective_complete` bundle (leading comma included) — where a fixture puts
 /// a producer at whatever nesting depth it wants to test.
 fn quests_doc_with(prelude: &str, exit_tail: &str, talk_tail: &str) -> String {
+    quests_doc_versioned("0.6.0", prelude, exit_tail, talk_tail, "")
+}
+
+/// As [`quests_doc_with`], with the stage's `dsl_version` and a trailing
+/// `content` section (leading comma included) under the caller's control — the
+/// v0.10 `on_death` root lives at the content level, not inside a quest.
+fn quests_doc_versioned(
+    version: &str,
+    prelude: &str,
+    exit_tail: &str,
+    talk_tail: &str,
+    content_tail: &str,
+) -> String {
     format!(
         r#"{{
-  "dsl_version": "0.6.0",
+  "dsl_version": "{version}",
   "campaign_id": "hello-world",
   "stage": "quests",
   "content": {{
@@ -98,7 +111,7 @@ fn quests_doc_with(prelude: &str, exit_tail: &str, talk_tail: &str) -> String {
         }},
         "on_complete": [ {{ "type": "campaign-complete" }} ]
       }}
-    ]
+    ]{content_tail}
   }}
 }}"#
     )
@@ -108,7 +121,7 @@ fn quests_doc_with(prelude: &str, exit_tail: &str, talk_tail: &str) -> String {
 // 1. the enumeration itself
 // ---------------------------------------------------------------------------
 
-/// The walk enumerates all five roots on **every** campaign, including one that
+/// The walk enumerates all seven roots on **every** campaign, including one that
 /// uses none of them — the distinction the binding ledger exists to draw.
 ///
 /// "This walk reached the root" and "this campaign has a bundle there" are
@@ -126,7 +139,12 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
         "all {} roots enumerated, on a campaign that uses only two of them",
         EffectRootKind::COUNT
     );
-    assert_eq!(EffectRootKind::COUNT, 5, "five roots (spec-0022 + v0.6)");
+    assert_eq!(
+        EffectRootKind::COUNT,
+        7,
+        "seven roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
+         and R7 campaign `on_death`)"
+    );
 
     // hello-world has one quest with one `on_objective_complete` bundle and one
     // `on_complete`, and nothing else.
@@ -136,6 +154,8 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     assert_eq!(n(EffectRootKind::Trigger), 0);
     assert_eq!(n(EffectRootKind::TrapPayload), 0);
     assert_eq!(n(EffectRootKind::DialogueRespawn), 0);
+    assert_eq!(n(EffectRootKind::ShortcutUnlock), 0);
+    assert_eq!(n(EffectRootKind::OnDeath), 0);
 
     // …and the ledger says so out loud, rather than leaving a reader to notice an
     // empty count on their own.
@@ -144,23 +164,28 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
         vec![
             EffectRootKind::Trigger,
             EffectRootKind::TrapPayload,
-            EffectRootKind::DialogueRespawn
+            EffectRootKind::DialogueRespawn,
+            EffectRootKind::ShortcutUnlock,
+            EffectRootKind::OnDeath,
         ],
         "a root this campaign has no bundle at is NAMED as unbound"
     );
     assert!(
-        binding.summary().contains("roots 5/5"),
+        binding.summary().contains("roots 7/7"),
         "{}",
         binding.summary()
     );
 }
 
-/// A campaign that exercises all five roots binds all five. The control for the
-/// test above: without it, "enumerated 5" could be true of a walk that visits five
+/// A campaign that exercises all seven roots binds all seven. The control for the
+/// test above: without it, "enumerated 7" could be true of a walk that visits seven
 /// roots and finds nothing at any of them.
 #[test]
 fn a_campaign_using_every_root_binds_every_root() {
-    let c = parse_hw(&quests_doc(ALL_ROOTS_PRELUDE, ""), Some(RESPAWN_DIALOGUE));
+    let c = parse_hw(
+        &quests_doc_versioned("0.10.0", ALL_ROOTS_PRELUDE, "", "", ON_DEATH_TAIL),
+        Some(RESPAWN_DIALOGUE),
+    );
     let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
     assert!(
         binding.unbound_roots().is_empty(),
@@ -170,7 +195,27 @@ fn a_campaign_using_every_root_binds_every_root() {
     assert_eq!(binding.roots_enumerated, EffectRootKind::COUNT);
 }
 
-/// A trigger and a trap, each with a one-effect bundle.
+/// An `on_death` declared but **empty** binds no root. The distinction matters:
+/// R7 is a single campaign-wide list, so a walk that visited it unconditionally
+/// would report every campaign in the repo as bound at R7 and the ledger would
+/// stop being able to say "this campaign has no death beat" — a vacuous green
+/// wearing a binding count (CLAUDE.md).
+#[test]
+fn an_empty_on_death_binds_nothing() {
+    let c = parse_hw(
+        &quests_doc_versioned("0.10.0", "", "", "", r#", "on_death": []"#),
+        None,
+    );
+    let binding = delvewright_dsl::for_each_effect_root(&c, &mut |_, _| {});
+    assert!(
+        binding.unbound_roots().contains(&EffectRootKind::OnDeath),
+        "an empty death beat is UNBOUND, not bound-to-nothing: {}",
+        binding.summary()
+    );
+    assert_eq!(binding.roots_enumerated, EffectRootKind::COUNT);
+}
+
+/// A trigger, a trap and a shortcut, each with a one-effect bundle.
 const ALL_ROOTS_PRELUDE: &str = r#""triggers": [
       { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "approach", "range": 3 },
         "effects": [ { "type": "set-flag", "flag": "flag/woken" } ] }
@@ -179,7 +224,16 @@ const ALL_ROOTS_PRELUDE: &str = r#""triggers": [
       { "id": "trap/alarm-chest", "at": "anchor/exit", "trigger": "trapped-chest",
         "lethality": "harmful",
         "payload": [ { "type": "set-flag", "flag": "flag/sprung" } ] }
+    ],
+    "shortcuts": [
+      { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit",
+        "on_unlock": [ { "type": "set-flag", "flag": "flag/opened" } ] }
     ],"#;
+
+/// The campaign's `on_death` bundle — root 7, the only one that is a single list
+/// hanging off the stage document itself.
+const ON_DEATH_TAIL: &str = r#",
+    "on_death": [ { "type": "set-flag", "flag": "flag/fell" } ]"#;
 
 /// A dialogue whose option sets a checkpoint carrying an `on_respawn` bundle —
 /// effect root 5, the one that hangs off the dialogue stage.

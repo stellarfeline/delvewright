@@ -34,7 +34,7 @@ pub use effects::{
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    parse_campaign,
+    is_v10, parse_campaign,
 };
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,

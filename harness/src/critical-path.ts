@@ -35,6 +35,10 @@
  * horizon-library surface (`horizon` object form, new base/shorthand names) —
  * world-generation input the compiler consumes to build the map, not a change
  * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
+ * v0.10 (spec-0031) adds the campaign-wide `on_death` effect root — effects that
+ * run at the moment a player dies. It exports no new step and reorders none: a
+ * death beat is a reaction to something the bot may never do, so a v0.10 path is
+ * walked exactly as a v0.9 one is.
  *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
@@ -50,6 +54,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.7.0",
   "0.8.0",
   "0.9.0",
+  "0.10.0",
 ] as const;
 
 /**
