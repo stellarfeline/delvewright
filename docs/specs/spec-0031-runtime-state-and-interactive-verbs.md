@@ -276,9 +276,77 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    at — is exercised by a PackTest template and by the bot tier.
 10. Every gate above states its binding count, and a zero binding is a failure.
 
-## Unverified, and to be settled by live measurement before the gates are worded
+## Settled by live measurement (#349, pinned 1.21.11)
 
-- Whether the pre-respawn death advancement fires for non-entity deaths (void,
-  fall, drowning).
-- How fall damage settles for a player teleported while already falling — this
-  decides whether the arriving car catches a falling player or they die on it.
+Both questions are answered. Full data: `docs/notes/death-and-teleport-spike.md`,
+`tools/spike-death-teleport/observations.json` (4140 samples), re-runnable.
+
+### The death signal — and a wrong premise in this spec
+
+**This spec asked the wrong question.** It said "the pre-respawn death
+*advancement*". The engine's edge is not an advancement: `emit_checkpoint_functions`
+arms `dw.deaths`, a vanilla **`deathCount` scoreboard criterion**, guarded by
+`unless data entity @s {Health:0.0f}` — and that guard is precisely what defers
+`cp_respawn_check` to the first tick after respawn.
+
+Measured, 5 causes × 3 repeats, every repeat agreeing:
+
+| cause | `deathCount` edge | fires pre-respawn | corpse `Pos` is the death position | `LastDeathLocation` |
+|---|---|---|---|---|
+| void | yes | yes | yes (`floor` = LDL block) | yes, same tick |
+| fall | yes | yes | yes, exact | yes, same tick |
+| drowning | yes | yes | yes, exact | yes, same tick |
+| lava | yes | yes | yes, exact | yes, same tick |
+| mob (control) | yes | yes | yes, exact | yes, same tick |
+
+So the load-bearing unknown resolves **favourably**: the score edge is armed on
+the corpse for every cause, `LastDeathLocation` is written on the same tick, and
+the corpse's position is stable while the death screen is up (measured drift
+0.000 — a corpse stops falling). `on_death` can fire corpse-side and capture the
+position for all five causes.
+
+**An advancement would have been the wrong instrument**, which is the reusable
+lesson: `entity_killed_player` covers 1 of the 5 causes, and
+`entity_hurt_player` fires on the *first* damage event with HP still 16–20, so
+it means "was hurt", never "died here". Had this spec's premise been implemented
+as written, four of five death causes in a souls-shaped delve would have gone
+unaccounted.
+
+### Fall damage across a mid-fall teleport
+
+**It carries, and applies at the destination.** `fall_distance` after − before =
+exactly `0.0000` in 46/46 teleport trials, including teleports 143 and 157
+blocks straight *up*. Landing damage is `floor(fall_distance) − 3`.
+
+| fall distance when teleported onto the car | damage | outcome |
+|---|---|---|
+| 1.145 / 5.688 / 10.807 / 18.773 | 0 / 2 / 7 / 15 | survived |
+| 20.279 | 17 | survived, 3 HP |
+| 23.435 / 25.083 / 30.297 | ≥20 | died |
+
+**An arriving lift car does not catch a falling player past roughly 20 blocks of
+fall — it is the surface they die on.** This agrees with the owner's design of
+record, which already says a player who jumps a shaft with the car below takes
+ordinary fall damage, lethal or not by height.
+
+Still unmeasured, and stated rather than assumed: the exact lethal boundary
+between 20.279 and 23.435 (free fall quantises `fall_distance` in ~3-block steps
+there, so `floor − 3` is a fit, not a measurement); whether a real vanilla client
+matches the bot; **what does reset fall distance** — only same-dimension
+`/teleport` was tested, so the mechanism that would make a lift *safe* is
+unmeasured; and moving destinations.
+
+### Two incidental findings that constrain the verbs above
+
+- **1.21.11 rejects every legacy camelCase gamerule.** All eight probed answer
+  `Incorrect argument for command` and change nothing; several were reworded
+  (`doMobSpawning` → `spawn_mobs`, `doDaylightCycle` → `advance_time`). The
+  compiler already emits the new names. The general lesson is not the rename: it
+  is that **neither offending site reads the command's response**, so a rule
+  that silently stopped applying looked exactly like one that worked.
+- **A respawned player is invulnerable for 59 ticks (~3 s), and `/kill` answers
+  `Killed <player>` while doing nothing.** This bears directly on the lethal
+  volume and on the shaft-bottom volume: a player who respawns into or falls
+  into one within three seconds of respawning does not die, and any emission
+  that assumes `/kill` is synchronous is wrong. It also explains two things
+  previously read as instrument flakiness.
