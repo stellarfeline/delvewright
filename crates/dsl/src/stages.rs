@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
     EndingId, FlagId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId,
-    TimedGateId, TrapId, TriggerId, WaveId,
+    StateId, TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -664,6 +664,12 @@ pub struct DialogueOption {
     /// suppressed at any point, so it cannot be the only completing path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbids_flags: Vec<FlagId>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
+    /// hold for this gate to be open. The third field of the one gate, carried by
+    /// every gate consumer — never by the verb that first wanted it. Default
+    /// empty, so a pre-0.10 campaign is byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_state: Vec<StateCompare>,
     /// Effects fired when this option is chosen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<DialogueEffect>,
@@ -1248,6 +1254,12 @@ pub struct QuestsContent {
     /// (reserved `DW0141`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
+    /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
+    /// counters the campaign sets, adds to and clears at runtime, and compares
+    /// against in any gate. Empty/absent in pre-0.10 campaigns (reserved
+    /// `DW0141`), so a campaign that declares none stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub state: Vec<StateDecl>,
     /// **The campaign's death beat** (DSL v0.10, spec-0031): effects run at the
     /// moment a player dies, for that player. Effect root **R7**
     /// ([`crate::EffectRootKind::OnDeath`]); empty/absent below 0.10.0 (reserved
@@ -1314,6 +1326,143 @@ impl QuestsContent {
         self.triggers = self.all_triggers();
         self.ambushes_expanded = true;
     }
+
+    /// The declared datum with this id, if any (DSL v0.10).
+    pub fn state_decl(&self, id: &str) -> Option<&StateDecl> {
+        self.state.iter().find(|s| s.id.as_str() == id)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 5 — runtime state (DSL v0.10, spec-0031)
+// ---------------------------------------------------------------------------
+
+/// Who holds a datum's value (DSL v0.10, spec-0031).
+///
+/// **Declared, never inferred.** A datum's multiplayer semantics is the one
+/// thing about it that cannot be recovered from its uses: a purse read on a
+/// `talk-to` looks identical whether every player has their own or the party
+/// shares one, and the difference decides the whole design. spec-0031 states it
+/// as a rule, and the type makes it un-omittable — there is no default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum StateScope {
+    /// Each player holds their own value. Read and written against the acting
+    /// player, so a bundle with no acting player (the scheduler) cannot touch one
+    /// (`DW0503`).
+    Player,
+    /// One value the whole party shares — the same holder story flags use
+    /// (spec-0018). Readable and writable from every audience, including the
+    /// scheduler.
+    Party,
+}
+
+impl StateScope {
+    /// The wire token (`player` / `party`).
+    pub fn token(self) -> &'static str {
+        match self {
+            StateScope::Player => "player",
+            StateScope::Party => "party",
+        }
+    }
+}
+
+/// One declared runtime datum (DSL v0.10, spec-0031): a named, scoped,
+/// integer-valued counter.
+///
+/// This is what [`FlagId`] is not. A flag is boolean, party-wide and
+/// **monotonic** — no verb clears one — which is exactly right for "this has
+/// happened" and useless for a balance, a floor number, or "a ride is in
+/// progress". A datum clears, counts down as well as up, and states its scope.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StateDecl {
+    /// Unique datum id (`state/<kebab>`).
+    pub id: StateId,
+    /// Who holds the value. Required — see [`StateScope`].
+    pub scope: StateScope,
+    /// The value the datum starts at, and the value `clear-state` returns it to.
+    /// Defaults to `0`.
+    ///
+    /// One field rather than a separate `initial` and `cleared`: "the value this
+    /// datum has when nothing has happened to it yet" is one fact, and two fields
+    /// would let a campaign declare a datum that can never be returned to its own
+    /// starting state.
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub initial: i32,
+    /// Free prose: what this datum means. Never machine-checked, never shown to a
+    /// player — the forcing function that makes an author say what the number is,
+    /// the same role `cast[].doing` plays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// serde `skip_serializing_if` helper: skip a zero `i32` (`StateDecl.initial`).
+fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
+
+/// How a [`StateCompare`] relates a datum to its operand (DSL v0.10).
+///
+/// Four operators, not six: over integers `less-than n` is `at-most n-1` and
+/// `greater-than n` is `at-least n+1`, so the extra spellings would add a second
+/// way to say one thing and a second emission path to keep honest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompareOp {
+    /// The datum is exactly `value`.
+    Equals,
+    /// The datum is anything but `value`.
+    NotEquals,
+    /// The datum is `value` or more.
+    AtLeast,
+    /// The datum is `value` or less.
+    AtMost,
+}
+
+impl CompareOp {
+    /// The wire token (`equals` / `not-equals` / `at-least` / `at-most`).
+    pub fn token(self) -> &'static str {
+        match self {
+            CompareOp::Equals => "equals",
+            CompareOp::NotEquals => "not-equals",
+            CompareOp::AtLeast => "at-least",
+            CompareOp::AtMost => "at-most",
+        }
+    }
+}
+
+/// What one of the DSL v0.10 state verbs does to a datum — the value half of
+/// [`QuestEffect::writes_state`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StateWrite {
+    /// `set-state`: the datum becomes this value.
+    Set(i32),
+    /// `add-state`: the datum moves by this signed amount.
+    Add(i32),
+    /// `clear-state`: the datum returns to its declared `initial`.
+    Clear,
+}
+
+/// One numeric term of a gate (DSL v0.10, spec-0031): *this datum compares thus
+/// to this value*.
+///
+/// It rides [`Gate`](crate::gate::Gate) — the shared gate, carried by every
+/// consumer of `requires_flags`/`forbids_flags` — and not any one verb. The
+/// comparison's consumers are exactly the gate's consumers ("this door opens at
+/// 500", "this line is withheld below 200", "this lever does nothing while the
+/// car is moving"), so hanging it off the first verb that asked would leave the
+/// second with no surface and make a second bespoke field look like the fix.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StateCompare {
+    /// The datum to read. Must be declared in the stage-5 `state` list
+    /// (`DW0502`).
+    pub state: StateId,
+    /// How to compare it.
+    pub op: CompareOp,
+    /// What to compare it against.
+    pub value: i32,
 }
 
 /// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
@@ -1425,6 +1574,12 @@ pub struct Trap {
     /// listed flag is set (mirrors [`EnvTrigger::forbids_flags`]). Default empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbids_flags: Vec<FlagId>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
+    /// hold for this gate to be open. The third field of the one gate, carried by
+    /// every gate consumer — never by the verb that first wanted it. Default
+    /// empty, so a pre-0.10 campaign is byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_state: Vec<StateCompare>,
 }
 
 impl Trap {
@@ -1689,6 +1844,7 @@ impl Ambush {
             on: self.trigger.clone(),
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
             once: true,
             effects,
         }
@@ -1763,6 +1919,12 @@ pub struct EnvTrigger {
     /// the moment the wake beat takes over.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbids_flags: Vec<FlagId>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
+    /// hold for this gate to be open. The third field of the one gate, carried by
+    /// every gate consumer — never by the verb that first wanted it. Default
+    /// empty, so a pre-0.10 campaign is byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_state: Vec<StateCompare>,
     /// Fire at most once (default `true`, mirroring objective completion). Set
     /// `false` to allow re-firing every time the condition is met.
     #[serde(default = "default_true")]
@@ -2484,6 +2646,12 @@ pub struct CastPlacement {
     /// listed flag is set. Mirrors an option's `forbids_flags`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbids_flags: Vec<FlagId>,
+    /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
+    /// hold for this gate to be open. The third field of the one gate, carried by
+    /// every gate consumer — never by the verb that first wanted it. Default
+    /// empty, so a pre-0.10 campaign is byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires_state: Vec<StateCompare>,
 }
 
 /// What an NPC's right-click offers for a quest's duration.
@@ -2581,6 +2749,12 @@ pub enum Objective {
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -2617,6 +2791,12 @@ pub enum Objective {
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -2651,6 +2831,12 @@ pub enum Objective {
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -2763,6 +2949,12 @@ pub enum Objective {
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -2826,6 +3018,12 @@ pub enum Objective {
         /// flag is set for the player — the dual of `requires_flags`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
         /// bot should traverse sneaking (sprint disabled). Emitted into
         /// `critical-path.json` as `sneak: true` on the step. Purely a harness
@@ -3082,6 +3280,18 @@ impl Objective {
         }
     }
 
+    /// The numeric gate terms (DSL v0.10, spec-0031): comparisons that must hold
+    /// before this objective activates. See [`StateCompare`].
+    pub fn requires_state(&self) -> &[StateCompare] {
+        match self {
+            Objective::TalkTo { requires_state, .. }
+            | Objective::ReachAnchor { requires_state, .. }
+            | Objective::Kill { requires_state, .. }
+            | Objective::Collect { requires_state, .. }
+            | Objective::Interact { requires_state, .. } => requires_state,
+        }
+    }
+
     /// What this objective does to the story (DSL v0.8, spec-0025).
     pub fn happening(&self) -> Option<&Happening> {
         match self {
@@ -3191,6 +3401,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
         /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
@@ -3217,6 +3433,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
         /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
@@ -3281,6 +3503,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Sets a campaign flag, enabling flag-gated objectives (v0.3).
     SetFlag {
@@ -3293,6 +3521,70 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// Writes a declared datum to an absolute value (DSL v0.10, spec-0031).
+    SetState {
+        /// The datum to write (stage-5 `state` ref).
+        state: StateId,
+        /// The value to write.
+        value: i32,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// Moves a declared datum by a signed amount (DSL v0.10, spec-0031).
+    ///
+    /// **Signed on purpose.** A purse that a shop debits and a stake that a death
+    /// forfeits are the same operation with the sign flipped; a separate
+    /// `subtract-state` would be a second verb for one mechanism, and the first
+    /// campaign to need "add a negative" would have to choose between them.
+    AddState {
+        /// The datum to move (stage-5 `state` ref).
+        state: StateId,
+        /// How far to move it. Negative counts down.
+        amount: i32,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// Returns a declared datum to its declared `initial` (DSL v0.10,
+    /// spec-0031) — the verb `FlagId` has never had.
+    ClearState {
+        /// The datum to clear (stage-5 `state` ref).
+        state: StateId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Spawns a stage-5 wave's mobs at its anchor (v0.3).
     SpawnWave {
@@ -3305,6 +3597,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
         /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
@@ -3331,6 +3629,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Sets a block at an anchor (DSL v0.4, spec-0008 §2). General form of a prop
     /// placement. Block id validated against the pinned 1.21.11 block registry;
@@ -3348,6 +3652,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
@@ -3360,6 +3670,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
         /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
@@ -3398,6 +3714,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
         /// What this beat does to the story (DSL v0.8, spec-0025; required at
         /// 0.8.0, `DW0481`; reserved `DW0141` earlier). Deliberately absent from
         /// the hand-written `Debug` rendering below: the declaration is
@@ -3451,6 +3773,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -3465,6 +3793,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Cuts the dimension-global weather to a new state (DSL v0.5, spec-0010).
     /// Instantaneous; persists because the weather cycle is frozen by sealing.
@@ -3478,6 +3812,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Plays a vanilla sound event, positionally or per-player (DSL v0.6,
     /// spec-0014). `sound` is validated against the vendored pinned-1.21.11
@@ -3504,6 +3844,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Deals damage to the acting player(s) (DSL v0.6): the real consequence a
     /// stealth `on_caught` or a souls-style beat needs — vanilla's `/damage`
@@ -3535,6 +3881,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// Sets the party-wide respawn checkpoint (DSL v0.6, spec-0012). Emits
     /// `spawnpoint @a` at the anchor cell and mirrors the coords into
@@ -3749,6 +4101,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
     /// **Ceiling collapse** (DSL v0.6, spec-0022): delete a region's blocks and
     /// drop them as `falling_block` entities — the buried-alive trap redstone
@@ -3786,6 +4144,12 @@ pub enum QuestEffect {
         /// [`QuestEffect::forbids_flags`].
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
     },
 }
 
@@ -3798,7 +4162,15 @@ pub enum QuestEffect {
 /// a purely additive schema change (the [`CameraShot`] precedent). Rules:
 /// every pre-existing field prints exactly as `#[derive(Debug)]` printed it (in
 /// declaration order); `forbids_flags` prints only when non-empty; `move-npc`'s
-/// `on_arrive` prints only when non-empty.
+/// `on_arrive` prints only when non-empty; and (DSL v0.10) `requires_state`
+/// prints only when non-empty, on **every** variant that carries it — including
+/// `volley` and `collapse`, whose other fields print unconditionally, because
+/// what has to stay stable is what an existing campaign renders, and every
+/// existing campaign's `requires_state` is empty.
+///
+/// It must print at all, though: two effects that differ only in their numeric
+/// gate are different effects, and a rendering that omitted the difference would
+/// collide their `seq_<hash>` function names.
 impl std::fmt::Debug for QuestEffect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         /// Append `forbids_flags` only when non-empty (see the impl doc).
@@ -3812,17 +4184,33 @@ impl std::fmt::Debug for QuestEffect {
                 d.field("forbids_flags", &forbids_flags)
             }
         }
+        /// Append `requires_state` only when non-empty (DSL v0.10; see the impl
+        /// doc). Read off `self.requires_state()` rather than bound per arm, so
+        /// the gate tail is written once for all nineteen gated variants.
+        fn rs<'c, 'a, 'b: 'a>(
+            d: &'c mut std::fmt::DebugStruct<'a, 'b>,
+            requires_state: &[StateCompare],
+        ) -> &'c mut std::fmt::DebugStruct<'a, 'b> {
+            if requires_state.is_empty() {
+                d
+            } else {
+                d.field("requires_state", &requires_state)
+            }
+        }
         match self {
             QuestEffect::OpenGate {
                 anchor,
                 requires_flags,
                 forbids_flags,
                 ..
-            } => ff(
-                f.debug_struct("OpenGate")
-                    .field("anchor", anchor)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+            } => rs(
+                ff(
+                    f.debug_struct("OpenGate")
+                        .field("anchor", anchor)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::CloseGate {
@@ -3833,10 +4221,13 @@ impl std::fmt::Debug for QuestEffect {
                 ..
             } => {
                 let mut s = f.debug_struct("CloseGate");
-                let d = ff(
-                    s.field("anchor", anchor)
-                        .field("requires_flags", requires_flags),
-                    forbids_flags,
+                let d = rs(
+                    ff(
+                        s.field("anchor", anchor)
+                            .field("requires_flags", requires_flags),
+                        forbids_flags,
+                    ),
+                    self.requires_state(),
                 );
                 // Prints only when authored (the additive-field rule): a campaign
                 // that takes the compiler's canonical seal line renders exactly as
@@ -3854,25 +4245,33 @@ impl std::fmt::Debug for QuestEffect {
                 carrier,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("GiveItem")
-                    .field("item", item)
-                    .field("count", count)
-                    .field("name", name)
-                    .field("carrier", carrier)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("GiveItem")
+                        .field("item", item)
+                        .field("count", count)
+                        .field("name", name)
+                        .field("carrier", carrier)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SetFlag {
                 flag,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("SetFlag")
-                    .field("flag", flag)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("SetFlag")
+                        .field("flag", flag)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SpawnWave {
@@ -3880,11 +4279,14 @@ impl std::fmt::Debug for QuestEffect {
                 requires_flags,
                 forbids_flags,
                 ..
-            } => ff(
-                f.debug_struct("SpawnWave")
-                    .field("wave", wave)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+            } => rs(
+                ff(
+                    f.debug_struct("SpawnWave")
+                        .field("wave", wave)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::Narrate {
@@ -3893,13 +4295,17 @@ impl std::fmt::Debug for QuestEffect {
                 sound,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("Narrate")
-                    .field("text", text)
-                    .field("style", style)
-                    .field("sound", sound)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("Narrate")
+                        .field("text", text)
+                        .field("style", style)
+                        .field("sound", sound)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SetBlock {
@@ -3907,12 +4313,16 @@ impl std::fmt::Debug for QuestEffect {
                 block,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("SetBlock")
-                    .field("anchor", anchor)
-                    .field("block", block)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("SetBlock")
+                        .field("anchor", anchor)
+                        .field("block", block)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::DespawnNpc {
@@ -3920,11 +4330,14 @@ impl std::fmt::Debug for QuestEffect {
                 requires_flags,
                 forbids_flags,
                 ..
-            } => ff(
-                f.debug_struct("DespawnNpc")
-                    .field("npc", npc)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+            } => rs(
+                ff(
+                    f.debug_struct("DespawnNpc")
+                        .field("npc", npc)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::MoveNpc {
@@ -3944,7 +4357,7 @@ impl std::fmt::Debug for QuestEffect {
                     d.field("on_arrive", on_arrive);
                 }
                 d.field("requires_flags", requires_flags);
-                ff(&mut d, forbids_flags).finish()
+                rs(ff(&mut d, forbids_flags), self.requires_state()).finish()
             }
             QuestEffect::Cutscene {
                 shots,
@@ -3953,36 +4366,48 @@ impl std::fmt::Debug for QuestEffect {
                 look_at,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("Cutscene")
-                    .field("shots", shots)
-                    .field("path", path)
-                    .field("seconds", seconds)
-                    .field("look_at", look_at)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("Cutscene")
+                        .field("shots", shots)
+                        .field("path", path)
+                        .field("seconds", seconds)
+                        .field("look_at", look_at)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SetTime {
                 time,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("SetTime")
-                    .field("time", time)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("SetTime")
+                        .field("time", time)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SetWeather {
                 weather,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("SetWeather")
-                    .field("weather", weather)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("SetWeather")
+                        .field("weather", weather)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::PlaySound {
@@ -3992,14 +4417,18 @@ impl std::fmt::Debug for QuestEffect {
                 pitch,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("PlaySound")
-                    .field("sound", sound)
-                    .field("at", at)
-                    .field("volume", volume)
-                    .field("pitch", pitch)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("PlaySound")
+                        .field("sound", sound)
+                        .field("at", at)
+                        .field("volume", volume)
+                        .field("pitch", pitch)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::DamagePlayers {
@@ -4008,13 +4437,17 @@ impl std::fmt::Debug for QuestEffect {
                 damage_type,
                 requires_flags,
                 forbids_flags,
-            } => ff(
-                f.debug_struct("DamagePlayers")
-                    .field("amount", amount)
-                    .field("within", within)
-                    .field("damage_type", damage_type)
-                    .field("requires_flags", requires_flags),
-                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("DamagePlayers")
+                        .field("amount", amount)
+                        .field("within", within)
+                        .field("damage_type", damage_type)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
             )
             .finish(),
             QuestEffect::SetCheckpoint { anchor, on_respawn } => f
@@ -4089,30 +4522,89 @@ impl std::fmt::Debug for QuestEffect {
                 interval,
                 requires_flags,
                 forbids_flags,
-            } => f
-                .debug_struct("Volley")
-                .field("projectile", projectile)
-                .field("from_anchor", from_anchor)
-                .field("kill_zone", kill_zone)
-                .field("salvos", salvos)
-                .field("interval", interval)
-                .field("requires_flags", requires_flags)
-                .field("forbids_flags", forbids_flags)
-                .finish(),
+                ..
+            } => rs(
+                f.debug_struct("Volley")
+                    .field("projectile", projectile)
+                    .field("from_anchor", from_anchor)
+                    .field("kill_zone", kill_zone)
+                    .field("salvos", salvos)
+                    .field("interval", interval)
+                    .field("requires_flags", requires_flags)
+                    .field("forbids_flags", forbids_flags),
+                self.requires_state(),
+            )
+            .finish(),
             QuestEffect::Collapse {
                 region_anchor,
                 falling_block,
                 then_floor,
                 requires_flags,
                 forbids_flags,
-            } => f
-                .debug_struct("Collapse")
-                .field("region_anchor", region_anchor)
-                .field("falling_block", falling_block)
-                .field("then_floor", then_floor)
-                .field("requires_flags", requires_flags)
-                .field("forbids_flags", forbids_flags)
-                .finish(),
+                ..
+            } => rs(
+                f.debug_struct("Collapse")
+                    .field("region_anchor", region_anchor)
+                    .field("falling_block", falling_block)
+                    .field("then_floor", then_floor)
+                    .field("requires_flags", requires_flags)
+                    .field("forbids_flags", forbids_flags),
+                self.requires_state(),
+            )
+            .finish(),
+            // DSL v0.10 (spec-0031). New variants, so there is no pre-addition
+            // rendering to preserve: every authored field prints. The gate tail
+            // still prints only when non-empty — one rendering rule for one
+            // field, everywhere.
+            QuestEffect::SetState {
+                state,
+                value,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("SetState")
+                        .field("state", state)
+                        .field("value", value)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::AddState {
+                state,
+                amount,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("AddState")
+                        .field("state", state)
+                        .field("amount", amount)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::ClearState {
+                state,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("ClearState")
+                        .field("state", state)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
         }
     }
 }
@@ -4557,6 +5049,9 @@ impl QuestEffect {
             QuestEffect::CampaignComplete { .. } => "campaign-complete",
             QuestEffect::GiveItem { .. } => "give-item",
             QuestEffect::SetFlag { .. } => "set-flag",
+            QuestEffect::SetState { .. } => "set-state",
+            QuestEffect::AddState { .. } => "add-state",
+            QuestEffect::ClearState { .. } => "clear-state",
             QuestEffect::SpawnWave { .. } => "spawn-wave",
             QuestEffect::Narrate { .. } => "narrate",
             QuestEffect::SetBlock { .. } => "set-block",
@@ -4712,7 +5207,11 @@ impl QuestEffect {
             | QuestEffect::Sequence { .. }
             // spec-0022 trap-payload verbs are v0.6 — they report via `v06_effect`.
             | QuestEffect::Volley { .. }
-            | QuestEffect::Collapse { .. } => None,
+            | QuestEffect::Collapse { .. }
+            // spec-0031 state verbs are v0.10 — they report via `v10_effect`.
+            | QuestEffect::SetState { .. }
+            | QuestEffect::AddState { .. }
+            | QuestEffect::ClearState { .. } => None,
         }
     }
 
@@ -4766,6 +5265,18 @@ impl QuestEffect {
             // spec-0022 trap-payload verbs — v0.6 surface, reserved earlier.
             QuestEffect::Volley { .. } => Some("volley"),
             QuestEffect::Collapse { .. } => Some("collapse"),
+            _ => None,
+        }
+    }
+
+    /// The v0.10 effect name if this effect is one introduced in DSL v0.10
+    /// (`set-state`/`add-state`/`clear-state`, spec-0031). These validate in
+    /// v0.10 campaigns and are reserved (`DW0141`) earlier.
+    pub fn v10_effect(&self) -> Option<&'static str> {
+        match self {
+            QuestEffect::SetState { .. } => Some("set-state"),
+            QuestEffect::AddState { .. } => Some("add-state"),
+            QuestEffect::ClearState { .. } => Some("clear-state"),
             _ => None,
         }
     }
@@ -5245,6 +5756,9 @@ impl QuestEffect {
             | QuestEffect::CloseGate { requires_flags, .. }
             | QuestEffect::GiveItem { requires_flags, .. }
             | QuestEffect::SetFlag { requires_flags, .. }
+            | QuestEffect::SetState { requires_flags, .. }
+            | QuestEffect::AddState { requires_flags, .. }
+            | QuestEffect::ClearState { requires_flags, .. }
             | QuestEffect::SpawnWave { requires_flags, .. }
             | QuestEffect::Narrate { requires_flags, .. }
             | QuestEffect::SetBlock { requires_flags, .. }
@@ -5292,6 +5806,9 @@ impl QuestEffect {
             | QuestEffect::CloseGate { forbids_flags, .. }
             | QuestEffect::GiveItem { forbids_flags, .. }
             | QuestEffect::SetFlag { forbids_flags, .. }
+            | QuestEffect::SetState { forbids_flags, .. }
+            | QuestEffect::AddState { forbids_flags, .. }
+            | QuestEffect::ClearState { forbids_flags, .. }
             | QuestEffect::SpawnWave { forbids_flags, .. }
             | QuestEffect::Narrate { forbids_flags, .. }
             | QuestEffect::SetBlock { forbids_flags, .. }
@@ -5315,6 +5832,57 @@ impl QuestEffect {
             | QuestEffect::MoveActor { .. }
             | QuestEffect::UnleashActor { .. }
             | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The numeric gate terms (DSL v0.10, spec-0031), accepted on exactly the
+    /// verbs the flag pair is accepted on — it is one gate with three fields, not
+    /// a fourth mechanism. The ten verbs that carry no flag gate carry no
+    /// comparison either; when they gain one they gain all three together
+    /// (`tools/check-capability-ownership.py`, `MODIFIER_HOLES`).
+    pub fn requires_state(&self) -> &[StateCompare] {
+        match self {
+            QuestEffect::OpenGate { requires_state, .. }
+            | QuestEffect::CloseGate { requires_state, .. }
+            | QuestEffect::GiveItem { requires_state, .. }
+            | QuestEffect::SetFlag { requires_state, .. }
+            | QuestEffect::SetState { requires_state, .. }
+            | QuestEffect::AddState { requires_state, .. }
+            | QuestEffect::ClearState { requires_state, .. }
+            | QuestEffect::SpawnWave { requires_state, .. }
+            | QuestEffect::Narrate { requires_state, .. }
+            | QuestEffect::SetBlock { requires_state, .. }
+            | QuestEffect::DespawnNpc { requires_state, .. }
+            | QuestEffect::MoveNpc { requires_state, .. }
+            | QuestEffect::Cutscene { requires_state, .. }
+            | QuestEffect::SetTime { requires_state, .. }
+            | QuestEffect::SetWeather { requires_state, .. }
+            | QuestEffect::PlaySound { requires_state, .. }
+            | QuestEffect::DamagePlayers { requires_state, .. }
+            | QuestEffect::Volley { requires_state, .. }
+            | QuestEffect::Collapse { requires_state, .. } => requires_state,
+            QuestEffect::CampaignComplete { .. }
+            | QuestEffect::SpawnNpc { .. }
+            | QuestEffect::SetCheckpoint { .. }
+            | QuestEffect::Bonfire { .. }
+            | QuestEffect::BeginStealth { .. }
+            | QuestEffect::EndStealth
+            | QuestEffect::SpawnActor { .. }
+            | QuestEffect::DespawnActor { .. }
+            | QuestEffect::MoveActor { .. }
+            | QuestEffect::UnleashActor { .. }
+            | QuestEffect::Sequence { .. } => &[],
+        }
+    }
+
+    /// The datum this effect writes and how, if it is one of the DSL v0.10 state
+    /// verbs (`set-state` / `add-state` / `clear-state`).
+    pub fn writes_state(&self) -> Option<(&StateId, StateWrite)> {
+        match self {
+            QuestEffect::SetState { state, value, .. } => Some((state, StateWrite::Set(*value))),
+            QuestEffect::AddState { state, amount, .. } => Some((state, StateWrite::Add(*amount))),
+            QuestEffect::ClearState { state, .. } => Some((state, StateWrite::Clear)),
+            _ => None,
         }
     }
 

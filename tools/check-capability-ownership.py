@@ -233,6 +233,17 @@ MODIFIER_HOLES = {
         "OPEN FINDING. The dual of `requires_flags`, missing from the same ten "
         "variants for the same reason. Lifts with it, not separately."
     ),
+    ("QuestEffect", "requires_state"): (
+        "OPEN FINDING, inherited. The numeric third field of the SAME gate "
+        "(spec-0031, DSL v0.10), placed on exactly the variants `requires_flags` "
+        "and `forbids_flags` already ride and absent from exactly the same ten. "
+        "That is deliberate rather than an oversight: a gate is one object, and "
+        "giving its comparison a different carrier set than its flags would make "
+        "'which verbs are gatable' two different answers, which is the very shape "
+        "this check exists to catch. The hole IS the flag pair's hole; all three "
+        "fields lift together, in one `dsl_version`, or none do. Do not close "
+        "this entry by widening the numeric axis on its own."
+    ),
     ("WorldEdit", "region"): (
         "ACCEPTED — operand, not modifier. `WorldEdit` splits cleanly into "
         "CELL-level ops (which take a `region`) and PIECE-level ops (which take a "

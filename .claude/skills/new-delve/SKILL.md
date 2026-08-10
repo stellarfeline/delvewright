@@ -407,6 +407,30 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      objective runs first (`DW0493`). `dropped_by` names a wave, never an actor
      (an actor's death is observable by no objective). Needs `dsl_version` 0.9.0
      on the quests stage.
+   - **A number the world remembers is `state`, not a flag.** A flag is boolean,
+     party-wide and one-way — nothing clears one — so it says "this happened" and
+     nothing else. When a beat needs a *quantity* that goes down as well as up (a
+     toll still owed, a floor a lift is at, whether a ride is in progress),
+     declare it in the stage-5 `state` list: `{"id": "state/<kebab>", "scope":
+     "party" | "player", "initial": <n>, "note": "<what the number means>"}`.
+     `scope` is required and never guessed — `party` is one shared value, `player`
+     gives each member their own. Write it with `set-state` / `add-state` (signed:
+     a negative `amount` counts down) / `clear-state` (back to `initial`).
+     - **Read it in the gate, never in a verb.** `requires_state: [{"state": …,
+       "op": "equals"|"not-equals"|"at-least"|"at-most", "value": <n>}]` is
+       accepted everywhere `requires_flags` is — an objective, any gatable effect,
+       a trigger, a trap, a dialogue option, a cast placement — so "the door opens
+       at zero" and "this line is withheld below two" are the same construct.
+     - Every datum must be both **written somewhere and read somewhere**: a gate
+       reading a datum nothing writes is `DW0501`, and a datum no gate reads is
+       `DW0502`. Both mean the mechanism is decoration.
+     - A `player`-scoped datum can only be touched where a player is acting — a
+       dialogue option, a cast placement, an `on_death` beat, or an effect on a
+       quest beat a player completes. These have **no** acting player and reject
+       one (`DW0503`): an objective/trigger/trap *gate*, a trigger's `effects`, a
+       trap's `payload`, a shortcut's `on_unlock`, a `sequence` step and a
+       `move-npc`/`move-actor` `on_arrive`. Use `party` scope there.
+     - Needs `dsl_version` 0.10.0 on the stage that declares or reads it.
    - **What happens when a player dies is content, not engine behaviour.** The
      quests stage takes a campaign-wide `on_death`: a bundle of ordinary effects
      that runs at the moment a player dies, for that player. One per campaign —

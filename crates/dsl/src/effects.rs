@@ -138,6 +138,39 @@ impl EffectRootKind {
         }
     }
 
+    /// Whether emission runs this root's bundle **with an acting player**
+    /// (`@s`), or from the server command source.
+    ///
+    /// This is a fact about the ROOT, not about any verb inside it, and it is
+    /// stated here — on the object class — rather than in the one diagnostic that
+    /// first needed it. Four roots have a player: `on_objective_complete` and
+    /// `on_complete` are dispatched `as @a` from the tick
+    /// (`Audience::Party`), and `on_death` and a dialogue `on_respawn` are the
+    /// dying/respawning player's own (`Audience::Solo`). Three do not: a
+    /// trigger's effects, a trap's payload and a shortcut's `on_unlock` are all
+    /// polled on the tick with no executor (`Audience::Scheduled`) — their own
+    /// doc comments in `emit` say so.
+    ///
+    /// It is exhaustive, so an eighth root cannot be added without answering it,
+    /// and `emit::root_audience` is bound to it in both directions by
+    /// `emit`'s own test — the emitter and this answer cannot drift.
+    ///
+    /// The consumer that needs it today is `DW0503`: a `player`-scoped runtime
+    /// datum (spec-0031) read or written inside a bundle with no acting player
+    /// would emit `@s` into a sourceless function, which fails silently at
+    /// runtime.
+    pub fn runs_with_acting_player(self) -> bool {
+        match self {
+            EffectRootKind::ObjectiveComplete
+            | EffectRootKind::QuestComplete
+            | EffectRootKind::DialogueRespawn
+            | EffectRootKind::OnDeath => true,
+            EffectRootKind::Trigger
+            | EffectRootKind::TrapPayload
+            | EffectRootKind::ShortcutUnlock => false,
+        }
+    }
+
     /// A short human label, used by the binding ledger and by diagnostics that
     /// report which roots a proof examined.
     pub fn label(self) -> &'static str {
