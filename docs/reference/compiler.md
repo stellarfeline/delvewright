@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.9.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.10.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS`) and `versions.toml` by
@@ -85,6 +85,18 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   `equipment` really fills and may appear once (`DW0490`). Absent `drops` /
   `dropped_by` keeps v0.8 output byte-identical; declaring either below 0.9.0 is
   `DW0141`.
+- spec-0031 has **landed** at `dsl_version 0.10.0`: the campaign-wide `on_death`
+  bundle — **effect root R7**, the effects that run at the moment a player dies —
+  and, alongside it, `shortcuts[].on_unlock` finally entering the enumeration as
+  **root R6**, which it should have been since spec-0016 §2. `on_death` rides the
+  existing `dw.deaths` death edge and adds no second detector; the *position* a
+  player died at is deliberately not captured yet (`emit::death_position_capture`,
+  an empty named seam — the vanilla mechanism is being measured live). A campaign
+  declaring no death beat is byte-identical, proven by rebuilding
+  `nobodys-cave-island` on both engines in both declared languages: 610 files, 608
+  identical, the two deltas being the engine-version string stamped into the
+  creator-loop `layout.json` and that file's `manifest.json` hash. Declaring
+  `on_death` below 0.10.0 is `DW0141`.
 
 ---
 
@@ -2397,7 +2409,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
