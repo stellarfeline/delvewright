@@ -1,0 +1,25 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "lethal-volume",
+  "stage": "npcs",
+  "content": {
+    "npcs": [
+      {
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "role": "quest-giver",
+        "area": "area/keep",
+        "anchor": "anchor/keeper-stand",
+        "base_entity": "minecraft:villager",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "Keep the gate shut until someone proves they truly mean to leave the moor behind.",
+          "secret": "He blames himself for the night the moor swallowed the old road, and has never forgiven the silence that followed.",
+          "backstory": "Once a road-warden of the keep, he held his post alone long after the highway drowned and the last caravan failed to arrive."
+        }
+      }
+    ]
+  }
+}

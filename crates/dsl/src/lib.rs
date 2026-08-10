@@ -40,8 +40,8 @@ pub use envelope::{
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,
-    EditBatchId, EndingId, FlagId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId,
-    ShortcutId, StateId, TimedGateId, TriggerId, WaveId,
+    EditBatchId, EndingId, FlagId, LethalVolumeId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
+    RegionId, ShortcutId, StateId, TimedGateId, TriggerId, WaveId,
 };
 pub use l10n::{
     ArtNarrate, CANONICAL_LANG, L10nDoc, L10nKind, MARKER_SIGIL, OptionLabel, ScreenNarrate,
@@ -66,7 +66,7 @@ pub use stages::{
     CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, CompareOp,
     DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode, DialogueOption,
     EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot, Facing, Fixture,
-    Happening, HappeningVerb, Horizon, ItemDrop, KitItem, Lethality, Loot, LootItem,
+    Happening, HappeningVerb, Horizon, ItemDrop, KitItem, LethalVolume, Lethality, Loot, LootItem,
     MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, MobAttributes, MobDrop, MobEffect,
     MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent, Objective, Persona, Pieces,
     PlannedQuest, PotionContents, PotionEffect, Prop, Quest, QuestEffect, QuestPlanContent,

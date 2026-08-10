@@ -32,8 +32,9 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
 /// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
 /// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
-/// comparison on every gate consumer — and the campaign-wide `on_death` effect
-/// root, the bundle that runs at the moment a player dies.
+/// comparison on every gate consumer — the campaign-wide `on_death` effect
+/// root, the bundle that runs at the moment a player dies, and the stage-5
+/// `lethal_volumes` declaration.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
@@ -157,11 +158,19 @@ pub fn is_v09(version: &str) -> bool {
 /// * §`on_death` — the stage-5 campaign-wide `on_death` bundle: the seventh
 ///   effect root, and the only one that runs while the player who fired it is
 ///   still a corpse.
+/// * §"Lethal volume" — the stage-5 `lethal_volumes[]` declaration: a box that
+///   kills whatever enters it, worded by the campaign's own strings. Geometry,
+///   so the completability model owns it (`DW0510`/`DW0511`); an ordinary
+///   `/damage`, so the death edge above needs no second detector.
 ///
-/// A campaign that declares neither compiles byte-identically (no new scoreboard
+/// A campaign that declares none of it compiles byte-identically (no new scoreboard
 /// objective, no new guard clause, no new function, and the whole
-/// `dw.death_seen` half of the death edge absent), and any use of either surface
-/// in an earlier campaign is rejected with `DW0141`.
+/// `dw.death_seen` half of the death edge absent; no lethal tick call and no
+/// navigation cell), and any use of any of it in an earlier campaign is rejected
+/// with `DW0141`.
+///
+/// **The version is `0.10.0`, not `0.9.1`.** `ordinal` matches the literal
+/// string, so the ledger is a sequence of minors and a patch would sort nowhere.
 pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
 }

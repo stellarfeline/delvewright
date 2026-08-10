@@ -155,6 +155,35 @@ impl ShortcutPlan {
     }
 }
 
+/// A resolved stage-5 **lethal volume** (DSL v0.10, spec-0031): the box, the
+/// wording, and the damage type the kill is dealt with.
+///
+/// Resolution is the shared [`Plan::zone_box`] — the same anchor-centred box a
+/// `begin-stealth` zone and a `damage-players` `in` filter resolve through — so a
+/// volume cannot drift into its own geometry rule. A volume whose anchor no placed
+/// piece provides is simply absent from this list (validation reports it as
+/// `DW0142`), never a blank box at the world origin.
+pub struct LethalVolumePlan {
+    /// The authored id (`lethal/<kebab>`).
+    pub id: String,
+    /// `safe_local(id)` — the segment that names the emitted function.
+    pub safe: String,
+    /// Inclusive world-space corners of the box.
+    pub region: ([i32; 3], [i32; 3]),
+    /// The (l10n-tagged) line the volume says as it kills.
+    pub message: String,
+    /// The damage type the kill is dealt with.
+    pub damage_type: delvewright_dsl::DamageKind,
+}
+
+impl LethalVolumePlan {
+    /// Whether `cell` lies inside this volume.
+    pub fn contains(&self, cell: [i32; 3]) -> bool {
+        let (lo, hi) = self.region;
+        (0..3).all(|i| lo[i] <= cell[i] && cell[i] <= hi[i])
+    }
+}
+
 /// The compiler's own answer a sealed gate gives a right-click when the
 /// `close-gate` authors no `sealed_hint`.
 ///
@@ -440,6 +469,10 @@ pub struct Plan<'a> {
     /// before starting the next step (gap 8). `None` for `select-class` /
     /// `assert-complete` and any step that does not change area.
     pub critical_path_transport: Vec<Option<[i32; 3]>>,
+    /// Resolved lethal volumes (DSL v0.10, spec-0031), declaration-ordered. Empty
+    /// for every campaign that declares none — which is what keeps the navigation
+    /// world, the emitted tick and the build outputs byte-identical.
+    pub lethal_volumes: Vec<LethalVolumePlan>,
     /// Per-step stealth hint (DSL v0.4), aligned 1:1 with `critical_path`: `true`
     /// when the step's objective is `stealth`-marked → emitted as `sneak: true`.
     pub critical_path_sneak: Vec<bool>,
@@ -1404,6 +1437,9 @@ impl<'a> Plan<'a> {
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
 
+        // ---- lethal volumes (spec-0031) ----
+        let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
+
         // ---- `collect` container adoption (DSL v0.8, task #95) ----
         let collect_fills = collect_collect_fills(campaign, &anchors);
 
@@ -1474,6 +1510,7 @@ impl<'a> Plan<'a> {
             critical_path_sneak: cp.sneak_by_step,
             critical_path_cutscene: cp.cutscene_by_step,
             checkpoints,
+            lethal_volumes,
             stealth_beats,
             objective_steps,
             traps,
@@ -3176,6 +3213,42 @@ fn collect_loot(
                         enchantments: it.enchantments.clone(),
                     })
                     .collect(),
+            })
+        })
+        .collect()
+}
+
+/// Resolve every declared lethal volume (DSL v0.10, spec-0031) against the solved
+/// layout, in declaration order.
+///
+/// The box is `anchor ± extent`, resolved exactly as [`Plan::zone_box`] resolves a
+/// stealth zone and a `damage-players` `in` filter — one geometry rule for every
+/// anchor-centred box in the engine. A volume whose anchor no placed piece
+/// provides is dropped (validation already reported `DW0142`) rather than
+/// silently becoming a box at the origin.
+fn collect_lethal_volumes(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<LethalVolumePlan> {
+    campaign
+        .quests
+        .content
+        .lethal_volumes
+        .iter()
+        .filter_map(|v| {
+            let c = point_any(anchors, v.region.anchor.as_str())?;
+            let e = v.region.extent;
+            Some(LethalVolumePlan {
+                id: v.id.as_str().to_string(),
+                safe: safe_local(v.id.as_str()),
+                region: (
+                    [c[0] - e[0] as i32, c[1] - e[1] as i32, c[2] - e[2] as i32],
+                    [c[0] + e[0] as i32, c[1] + e[1] as i32, c[2] + e[2] as i32],
+                ),
+                message: v.message.clone(),
+                damage_type: v
+                    .damage_type
+                    .unwrap_or(delvewright_dsl::DamageKind::Generic),
             })
         })
         .collect()

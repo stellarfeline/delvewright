@@ -334,6 +334,10 @@ pub fn build_with_warnings(
     // which is not the same fact as "examined nothing", so the artifact is
     // omitted entirely rather than emitted claiming a zero it never measured.
     let mut traversal_gate: Option<crate::traversal::TraversalGate> = None;
+    // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
+    // the world block below. `None` for a campaign that declares no volume — no
+    // ledger, no artifact, no byte moved for anybody who has not opted in.
+    let mut lethal_gate: Option<crate::lethal::LethalGate> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -483,6 +487,23 @@ pub fn build_with_warnings(
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
                 crate::nav::check_checkpoints(plan, &world)?;
+                // spec-0031: the one lethal-volume obligation routing cannot see.
+                // Every route proof already treats a volume's cells as impassable
+                // (`nav::World::with_lethal`), so `DW0510` fell out of DW0311
+                // above; a respawn SEAT inside a volume is reached by teleport and
+                // routes perfectly while killing the party on arrival, forever.
+                let lethal_seats = crate::lethal::check_respawn_seats(plan, campaign_spawn(plan))?;
+                if !plan.lethal_volumes.is_empty() {
+                    lethal_gate = Some(crate::lethal::gate(
+                        plan.campaign,
+                        &plan.lethal_volumes,
+                        world.lethal_cells(),
+                        lethal_seats,
+                        crate::nav::critical_leg_count(plan),
+                        // One template per resolved volume (see `emit_packtest`).
+                        plan.lethal_volumes.len(),
+                    ));
+                }
                 crate::nav::check_stealth_zones(plan, &world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -1086,6 +1107,15 @@ pub fn build_with_warnings(
     // body regardless of class, so the count itself shows that rule is total.
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
+    // The lethal-volume proofs' binding ledger (`compiler::lethal`,
+    // playtest-methodology.md rule 1): how many volumes were declared, how many
+    // resolved to a box on the solved layout, how many world cells they close, and
+    // how many respawn seats and critical-path legs were tested against them. A
+    // campaign that declares no volume emits no file, so a file that exists and
+    // reports zero is a finding rather than an absence.
+    if let Some(gate) = &lethal_gate {
+        put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
@@ -2786,6 +2816,9 @@ fn emit_functions(
     if plan.any_checkpoint() || !plan.on_death().is_empty() {
         tick.push(format!("execute as @a run function {ns}:cp_respawn_check"));
     }
+    // spec-0031: lethal volumes. One driver line per declared volume; empty for a
+    // campaign that declares none → byte-identical.
+    tick.extend(lethal_tick(plan));
     // v0.6 stealth (spec-0014): while a beat is active, run its per-tick judge.
     for beat in &plan.stealth_beats {
         tick.push(format!(
@@ -2808,6 +2841,8 @@ fn emit_functions(
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
     fns.extend(emit_stealth_functions(plan));
+    // --- spec-0031 lethal-volume functions ---
+    fns.extend(emit_lethal_functions(plan));
 
     // --- cs_repair: rejoin-after-cutscene repair (see the `tick` driver above) ---
     fns.extend(cutscene_repair_fns(plan));
@@ -6399,6 +6434,156 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     if let Some(f) = emit_flask_function(plan) {
         fns.push(f);
+    }
+    fns
+}
+
+/// Entity types the **engine itself** places as machinery, never as bodies a
+/// player fights or talks to: the `minecraft:interaction` hitboxes behind every
+/// affordance, the cutscene camera and its marks, the display entities behind an
+/// art title. A lethal volume must not delete them — a volume drawn across a
+/// cutscene dolly would otherwise erase the camera mid-shot, and one over a gate
+/// seal would erase the thing the player presses.
+///
+/// The list is exactly the set the compiler `summon`s as machinery, and it is a
+/// list of **types** rather than of tags on purpose: a vanilla selector cannot
+/// match a tag prefix, and every alternative — one negated tag per feature — grows
+/// with the engine and is silently wrong the day a feature is added. Content
+/// bodies (a wave mob, an actor puppet, an NPC) are deliberately NOT here: a mob
+/// that walks into the lava dies, which is the mechanism working. An NPC posted
+/// inside a volume is a content defect the campaign's own placement proofs and
+/// `DW0511` are there to surface, not something to hide by exempting NPCs.
+const LETHAL_EXEMPT_TYPES: [&str; 5] = [
+    "minecraft:interaction",
+    "minecraft:marker",
+    "minecraft:item_display",
+    "minecraft:block_display",
+    "minecraft:text_display",
+];
+
+/// Scratch score holding the struck player's health **after** a lethal volume's
+/// blow — the world state the volume's wording asserts, read back rather than
+/// predicted.
+///
+/// **Measured, after getting it wrong once.** Vanilla refuses damage far more
+/// often than "the target is dead" suggests: a player is invulnerable for **59
+/// ticks (~3 s) after respawning**, and `/damage` (like `/kill`) reports success
+/// and does nothing (spec-0031 spike). The obvious guard — `execute store
+/// success ... run damage` — is therefore **inert**, and this was measured on the
+/// pinned 1.21.11 toolserver rather than reasoned about: a PackTest dummy in
+/// `playerGameType: 0` (survival) with `Invulnerable: 0` and `Health: 20f` took
+/// `damage @s 1000 minecraft:fall`, ended on `Health: 20f`, and the command
+/// answered **success = 1**. Reading a response that does not carry the answer is
+/// the same defect as reading no response at all — which is precisely what the
+/// eight legacy camelCase gamerules did at two sites in that same spike.
+///
+/// So the guard reads the **outcome**: the wording is printed only when the
+/// player it is about actually ended the tick dead. That covers every refusal in
+/// one rule and needs no list of them — the respawn window, a totem (the volume
+/// struck and did not take them; the next tick will), `resistance`, creative.
+/// Reset to a sentinel before the read so a failed `data get` can never leave a
+/// previous player's zero behind and claim a death that did not happen.
+const LETHAL_HP: &str = "#leth_hp dw.sys";
+
+/// Damage dealt by a lethal volume, in half-hearts. Far above any reachable
+/// max-health + absorption, so "lethal" is a property of the verb and not a number
+/// an author has to get right. A held totem still fires — the curated
+/// [`delvewright_dsl::DamageKind`] set deliberately excludes every totem-bypassing
+/// vanilla type — and the next tick inside the volume kills anyway, which is the
+/// totem doing its job rather than the volume failing to do its own.
+const LETHAL_DAMAGE: u32 = 1000;
+
+/// The box-selector argument shared by both of a volume's selectors.
+fn lethal_box(v: &crate::plan::LethalVolumePlan) -> String {
+    let (lo, hi) = v.region;
+    format!(
+        "x={},dx={},y={},dy={},z={},dz={}",
+        lo[0],
+        hi[0] - lo[0],
+        lo[1],
+        hi[1] - lo[1],
+        lo[2],
+        hi[2] - lo[2]
+    )
+}
+
+/// The per-tick driver lines for the campaign's lethal volumes (spec-0031), in
+/// declaration order. Empty for a campaign that declares none, so the emitted
+/// `tick` is byte-identical for everybody who has not opted in.
+fn lethal_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.lethal_volumes
+        .iter()
+        .map(|v| format!("function {ns}:lethal_{}", v.safe))
+        .collect()
+}
+
+/// Generate one function per lethal volume (spec-0031).
+///
+/// Two lines, and the split is the whole design:
+///
+/// * **players** are re-bound one at a time (`execute as @a[…] run function`) so
+///   the volume's own wording is `tellraw`n to the player it is about, in that
+///   player's language — the `{"translate":…,"fallback":…}` component every
+///   player-visible string in this engine goes through. It is guarded by
+///   `tag=!dw_cutscene` like every other harmful piece of campaign machinery: a
+///   player watching a cutscene is an observer, and the camera flies wherever the
+///   shot needs it to. **The blow comes first and the wording is conditioned on
+///   the player actually ending up dead** ([`LETHAL_HP`]): vanilla refuses damage
+///   to a player for 59 ticks after they respawn, and a message printed ahead of
+///   the swing would be a line the delve repeats for three seconds about a death
+///   that is not happening.
+/// * **everything else** takes the same `/damage` in one line, minus the engine's
+///   own machinery ([`LETHAL_EXEMPT_TYPES`]).
+///
+/// The wording is delivered as a component and NOT as a custom `damage_type`
+/// `message_id`. Vanilla builds a death message from `message_id` with no
+/// `fallback` field, so that spelling would ship a raw translation key
+/// (`death.attack.…`) to any player who declines the resource-pack prompt — which
+/// spec-0029 §3 makes an invariant against, and which `DW0185` would not catch
+/// because the key is not the authored string. Vanilla's own broadcast still
+/// fires, worded by the declared `damage_type`: the party reads who died, the
+/// victim reads what the place was.
+///
+/// The kill is an ordinary `/damage`, so the vanilla `deathCount` edge
+/// (`dw.deaths` / `dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`) and
+/// `keep_inventory` all see exactly the death they already handle. There is no
+/// second death detector here, and there is nothing for one to do.
+fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for v in &plan.lethal_volumes {
+        let bx = lethal_box(v);
+        let kind = v.damage_type.id();
+        let exempt: String = LETHAL_EXEMPT_TYPES
+            .iter()
+            .map(|t| format!(",type=!{t}"))
+            .collect();
+        fns.push((
+            format!("lethal_{}", v.safe),
+            lines(&[
+                format!(
+                    "execute as @a[{bx},tag=!{CUTSCENE_TAG}] run function {ns}:lethal_{}_kill",
+                    v.safe
+                ),
+                format!(
+                    "execute as @e[{bx},type=!minecraft:player{exempt}] run damage @s \
+                     {LETHAL_DAMAGE} {kind}"
+                ),
+            ]),
+        ));
+        fns.push((
+            format!("lethal_{}_kill", v.safe),
+            lines(&[
+                format!("damage @s {LETHAL_DAMAGE} {kind}"),
+                format!("scoreboard players set {LETHAL_HP} 1"),
+                format!("execute store result score {LETHAL_HP} run data get entity @s Health 100"),
+                format!(
+                    "execute if score {LETHAL_HP} matches ..0 run tellraw @s {}",
+                    tr(&v.message)
+                ),
+            ]),
+        ));
     }
     fns
 }
@@ -13879,6 +14064,138 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_damage.mcfunction"),
             lines(&t).into_bytes(),
+        );
+    }
+
+    // spec-0031 lethal volumes: the runtime half, one template per volume.
+    emit_lethal_packtests(plan, out);
+}
+
+/// spec-0031 PackTests: one template per resolved lethal volume, each of which
+/// **puts an entity in the volume and asserts the volume kills it**.
+///
+/// A compile-time proof that a box is impassable proves nothing about a box that
+/// kills; the two halves are independent, and a green over the first alone is the
+/// vacuous pass CLAUDE.md names. So the runtime half is bound per volume, not once
+/// per campaign: `validation/lethal-gate.json` reports the template count beside
+/// the volume count, and a campaign with N volumes and fewer than N templates is
+/// legible as such without re-deriving it.
+///
+/// The body drives the volume's real generated function on a summoned NoAI dummy
+/// and asserts its `Health` reached zero. Zero-health rather than
+/// "no entity matches": a mob killed by `/damage` plays its death animation for
+/// ~20 ticks before vanilla removes it, so `unless entity` would be asserting the
+/// scheduler rather than the kill. `/damage` is synchronous, so the whole claim
+/// lands in one tick.
+///
+/// The dummy is a mob, which is exactly the line under test — the volume's
+/// non-player selector, minus [`LETHAL_EXEMPT_TYPES`]. The player half runs
+/// through the same `/damage` on a per-player re-bind and is asserted by the
+/// compiler unit tests, which read the emitted command text directly (PackTest's
+/// framework dummies are not a substitute for a real player here).
+fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for v in &plan.lethal_volumes {
+        let (lo, hi) = v.region;
+        let mid = [
+            (lo[0] + hi[0]) / 2,
+            (lo[1] + hi[1]) / 2,
+            (lo[2] + hi[2]) / 2,
+        ];
+        let tag = format!("dw_lethtest_{}", v.safe);
+        let sel = format!("@e[tag={tag},limit=1]");
+        let mut t = packtest_header(&format!(
+            "{title}: lethal volume `{}` kills what enters it (spec-0031)",
+            v.id
+        ));
+        t.push(format!("function {ns}:setup"));
+        // Never assume a fresh world on the shared-batch server.
+        t.push(format!("kill @e[tag={tag}]"));
+        t.push(format!(
+            "summon minecraft:zombie {} {} {} \
+             {{Tags:[\"{tag}\"],NoAI:1b,Silent:1b,PersistenceRequired:1b,Health:20f}}",
+            mid[0] as f64 + 0.5,
+            mid[1],
+            mid[2] as f64 + 0.5
+        ));
+        // Bound, not assumed: the dummy really is in the volume's own selector
+        // box. A template whose dummy landed outside would pass this test by
+        // examining nothing, which is the failure mode the ledger exists for.
+        t.push(format!(
+            "execute store result score #in_leth dw.sys if entity @e[tag={tag},{}]",
+            lethal_box(v)
+        ));
+        t.push("assert score #in_leth dw.sys matches 1".to_string());
+        t.push(format!("function {ns}:lethal_{}", v.safe));
+        t.push(format!(
+            "execute store result score #hp_leth dw.sys run data get entity {sel} Health 100"
+        ));
+        t.push("assert score #hp_leth dw.sys matches ..0".to_string());
+        t.push(format!("kill @e[tag={tag}]"));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/lethal_{}.mcfunction",
+                v.safe
+            ),
+            lines(&t).into_bytes(),
+        );
+
+        // --- the wording guard, on a real player object ---
+        //
+        // The template above proves the volume KILLS. This one proves it does not
+        // CLAIM a death it did not cause — the half that was wrong twice.
+        //
+        // **What this tier can and cannot witness, measured rather than assumed.**
+        // A PackTest fake player is **permanently undamageable**: on the pinned
+        // 1.21.11 toolserver a dummy in `playerGameType: 0` with `Invulnerable: 0`
+        // and `Health: 20f` stood inside a volume whose loop swings every tick and
+        // was still at `Health: 20f` after **202 ticks** — far past vanilla's
+        // 59-tick post-respawn window — and `minecraft:generic` was refused
+        // identically, so it is not damage-type specific. `/damage` reported
+        // **success** throughout, which is why the guard cannot be
+        // `execute store success` and reads the outcome instead ([`LETHAL_HP`]).
+        //
+        // So a player DEATH cannot be witnessed here at all, and this template
+        // does not pretend to: that claim belongs to the bot tier, which drives a
+        // real client. What the dummy is perfect for is the other direction — it
+        // is a body that provably never dies, which makes it a standing fixture
+        // for "nothing landed", stronger than the 3-second respawn window because
+        // it never expires. An unconditional `tellraw` (the first version of this
+        // verb) would print the volume's wording here every tick, forever, about a
+        // death that is not happening.
+        let (pin, psel) = pin_dummy(&format!("dw_lethp_{}", v.safe));
+        let mut p = packtest_header(&format!(
+            "{title}: lethal volume `{}` withholds its wording when the blow does not land \
+             (spec-0031)",
+            v.id
+        ));
+        p.push(format!("function {ns}:setup"));
+        p.push(pin);
+        p.push(format!(
+            "tp {psel} {} {} {}",
+            mid[0] as f64 + 0.5,
+            mid[1],
+            mid[2] as f64 + 0.5
+        ));
+        // Baseline the guard to the DEAD sentinel, so a kill function that never
+        // ran at all cannot pass this by leaving the score untouched — the
+        // binding, not the outcome, is what a zero would hide.
+        p.push(format!("scoreboard players set {LETHAL_HP} 0"));
+        // The volume's own DRIVER, not its kill function: the driver is what
+        // carries the `@a[<box>]` re-bind, so this binds to the player path
+        // existing and reaching a player standing in the box. Calling
+        // `lethal_<id>_kill` directly — as the first version did — passes
+        // unchanged with the player line deleted from the driver, which is a test
+        // that examines the wrong object and reports green.
+        p.push(format!("function {ns}:lethal_{}", v.safe));
+        p.push(format!("assert score {LETHAL_HP} matches 1.."));
+        out.insert(
+            format!(
+                "packtest-datapack/data/{ns}/test/lethal_{}_claim.mcfunction",
+                v.safe
+            ),
+            lines(&p).into_bytes(),
         );
     }
 }

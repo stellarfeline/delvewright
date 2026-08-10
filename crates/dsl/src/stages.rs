@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, ClassId, DialogueId, EditBatchId,
-    EndingId, FlagId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId, RegionId, ShortcutId,
-    StateId, TimedGateId, TrapId, TriggerId, WaveId,
+    EndingId, FlagId, LethalVolumeId, LootId, NpcId, ObjectiveId, PoolId, PrefabId, QuestId,
+    RegionId, ShortcutId, StateId, TimedGateId, TrapId, TriggerId, WaveId,
 };
 
 /// serde default helper: `true` (used by DSL v0.4 `trigger.once`).
@@ -1289,6 +1289,11 @@ pub struct QuestsContent {
     /// `on_respawn`, which deliberately waits for the player to come back.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_death: Vec<QuestEffect>,
+    /// Lethal volumes (DSL v0.10, spec-0031): declared boxes that kill whatever
+    /// enters them. Empty/absent in pre-0.10 campaigns (reserved `DW0141`), so a
+    /// campaign that declares none stays byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lethal_volumes: Vec<LethalVolume>,
     #[serde(default, skip_serializing)]
     pub ambushes: Vec<Ambush>,
     /// Whether [`Self::expand_ambushes`] has already run (never serialized). The
@@ -4712,6 +4717,67 @@ impl DamageKind {
             DamageKind::Explosion => "minecraft:explosion",
         }
     }
+}
+
+/// A stage-5 **lethal volume** (DSL v0.10, spec-0031): a declared box that kills
+/// whatever enters it, and states — in the campaign's own words — what killed it.
+///
+/// # A mechanism, not a fiction
+///
+/// The commissioning case was a cliff whose fall must be fatal, but nothing here
+/// knows what a cliff is: a lava pit, an acid pool, an out-of-bounds plane and the
+/// bottom of a lift shaft are the same declaration, differently dressed and
+/// differently worded. The alternative considered and **rejected** for the cliff
+/// was making the world's horizon void so the fall kills anyway — that changes
+/// approved art to obtain a behaviour, and it serves exactly one fiction.
+///
+/// # It is geometry, so the completability proof owns it
+///
+/// A volume that kills is, for a route, a volume that cannot be crossed. The
+/// compiler models its cells as impassable in the same navigation world every
+/// other reachability proof runs on, exactly as a `close-gate`'s sealed region is
+/// modelled solid — so a forced path that has no way to an objective except
+/// through a lethal volume is a build failure (`DW0510`) naming the volume, never
+/// a shipped delve that kills the player on the critical path. A respawn seat
+/// inside one is the death loop that failure mode ends in, and is its own
+/// error (`DW0511`).
+///
+/// # It rides the death edge that already exists
+///
+/// The kill is a `/damage`, exactly like `damage-players`, a trap payload or a
+/// timed gate's crush. Everything downstream — the vanilla `deathCount` edge
+/// (`dw.deaths` / `dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`),
+/// `keep_inventory` — sees an ordinary death and needs no second detector.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LethalVolume {
+    /// Unique lethal-volume id (`lethal/<kebab>`).
+    pub id: LethalVolumeId,
+    /// The volume: an anchor-centred box (`anchor ± extent`).
+    ///
+    /// **Deliberately the existing zone type**, not a second struct with the same
+    /// two fields. `StealthZone` is already the engine's anchor-centred box object
+    /// class — `damage-players`'s `in` filter reuses it, and the compiler resolves
+    /// every one of them through the single `Plan::zone_box`. A private twin here
+    /// would be `tools/check-capability-ownership.py` check C by construction, and
+    /// would fork the resolution the very next time a box grew a capability.
+    pub region: StealthZone,
+    /// What this volume says when it kills — a player-visible line, inventoried
+    /// under `lethal.<id>.message` and translated like every other one.
+    ///
+    /// Required, and deliberately so: a volume with no words is a player who dies
+    /// with no idea why, and there is no compiler-owned default that could be
+    /// right for a cliff, a lava pit and an acid pool at once.
+    pub message: String,
+    /// The damage type the kill is dealt with (default [`DamageKind::Generic`]).
+    ///
+    /// This is what words vanilla's own broadcast — `fall` says the party member
+    /// fell from a high place, `on_fire` that they burnt to a crisp — while
+    /// [`Self::message`] says what the *place* was. The curated enum is shared
+    /// with `damage-players`, so a lethal volume can no more void a held totem
+    /// than a scripted hit can.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage_type: Option<DamageKind>,
 }
 
 /// The presentation channel for a [`QuestEffect::Narrate`] (DSL v0.4).

@@ -1,0 +1,95 @@
+{
+  "dsl_version": "0.10.0",
+  "campaign_id": "lethal-volume",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "happening": {
+          "verb": "arrives",
+          "text": "The party comes in out of the moor and finds the Keeper at his post.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "happening": {
+              "verb": "learns",
+              "text": "The Keeper warns them the road's edge has gone, and lifts the gate.",
+              "subject": "npc/keeper"
+            }
+          },
+          {
+            "type": "reach-anchor",
+            "id": "obj/exit",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "after": [
+              "obj/talk"
+            ],
+            "happening": {
+              "verb": "survives",
+              "text": "They reach the road's edge and stop short of the drop."
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "happening": {
+                "verb": "opens",
+                "text": "The bar comes off the inner gate and it swings wide.",
+                "subject": "anchor/door"
+              }
+            },
+            {
+              "type": "set-checkpoint",
+              "anchor": "anchor/keeper-stand"
+            }
+          ]
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete",
+            "happening": {
+              "verb": "gains",
+              "text": "The delve ends with the road open and the drop behind them."
+            }
+          }
+        ],
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "standing well back from the broken edge, one hand on the bar",
+              "dialogue": "dlg/greeting"
+            }
+          ]
+        }
+      }
+    ],
+    "lethal_volumes": [
+      {
+        "id": "lethal/the-drop",
+        "region": {
+          "anchor": "anchor/exit",
+          "extent": [
+            0,
+            0,
+            0
+          ]
+        },
+        "message": "The stone floor gives way beneath you.",
+        "damage_type": "fall"
+      }
+    ]
+  }
+}

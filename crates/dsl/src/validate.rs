@@ -115,8 +115,92 @@ pub fn validate_campaign_with(
         let effects_reg = VendoredEffectRegistry::v1_21_11();
         kit_potion_checks(c, &effects_reg, &mut d);
     }
+    // DSL v0.10 (spec-0031): the stage-5 lethal volumes. Structural only — the
+    // completability half (`DW0510` the forced route, `DW0511` the respawn seat)
+    // is compiler-tier, because it needs the solved layout.
+    if is_v10(c.quests.dsl_version.as_str()) {
+        lethal_volume_checks(c, anchors, &mut d);
+    }
 
     d
+}
+
+/// Stage-5 lethal-volume structural checks (DSL v0.10, spec-0031): id syntax and
+/// uniqueness, a resolvable region anchor, and a wording the player can actually
+/// read (`DW0512`).
+///
+/// Everything geometric is deliberately absent here and lives in the compiler:
+/// where the box lands, what it overlaps and whether the party can still finish
+/// are questions about the *solved layout*, which the DSL crate does not have.
+fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    let volumes = &c.quests.content.lethal_volumes;
+    if volumes.is_empty() {
+        return;
+    }
+    // The same "is this anchor provided by some bound prefab" rule every stage-5
+    // anchor reference uses; a pool area defers the answer to the compiler.
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    let mut seen_id: BTreeSet<&str> = BTreeSet::new();
+    for (i, v) in volumes.iter().enumerate() {
+        if !v.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/lethal_volumes/{i}/id"),
+                format!(
+                    "malformed lethal-volume id `{}` — lethal-volume ids must be lowercase \
+                     kebab-case with the `lethal/` prefix (e.g. `lethal/cliff-fall`)",
+                    v.id
+                ),
+            ));
+        }
+        if !seen_id.insert(v.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/lethal_volumes/{i}/id"),
+                format!("duplicate lethal-volume id `{}`", v.id),
+            ));
+        }
+        if !(has_pool_area || known_anchor.contains(v.region.anchor.as_str())) {
+            d.push(Diagnostic::error(
+                codes::ANCHOR_UNRESOLVED,
+                "quests",
+                format!("/content/lethal_volumes/{i}/region/anchor"),
+                format!(
+                    "lethal-volume anchor `{}` is not provided by any prefab bound in this \
+                     campaign — use an anchor the prefab exposes (anchor names come from prefab \
+                     metadata; do NOT invent one)",
+                    v.region.anchor
+                ),
+            ));
+        }
+        if v.message.trim().is_empty() {
+            d.push(Diagnostic::error(
+                codes::LETHAL_MESSAGE_BLANK,
+                "quests",
+                format!("/content/lethal_volumes/{i}/message"),
+                format!(
+                    "lethal volume `{}` declares a blank `message`, so it would kill in silence \
+                     — the one thing this declaration exists to prevent. Write the line the \
+                     player reads as they die (`The undertow takes you.`); there is no compiler \
+                     default that could be right for a cliff, a lava pit and an acid pool at \
+                     once.",
+                    v.id
+                ),
+            ));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -983,14 +1067,18 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///   `set-state`/`add-state`/`clear-state` verbs, and the `requires_state`
 ///   comparison on every gate consumer;
 /// * the campaign-wide `on_death` bundle — effect root R7, the effects that run
-///   at the moment a player dies.
+///   at the moment a player dies;
+/// * the stage-5 `lethal_volumes` declaration — a box that kills whatever enters
+///   it.
 ///
 /// The same asymmetry every version ledger uses: *declaring* any of it below
 /// 0.10.0 is `DW0141`. There is no requirement half — nothing obliges a campaign
-/// to hold a datum or a death beat, and one that declares neither emits exactly
+/// to hold a datum, a death beat or a killing box, and one that declares none of
+/// them emits exactly
 /// what it emitted before (no scoreboard objective, no guard clause, no
-/// function, and the whole `dw.death_seen` half of the death edge absent), which
-/// is what keeps every 0.2–0.9 campaign's datapack byte-for-byte unchanged.
+/// function, the whole `dw.death_seen` half of the death edge absent, and no
+/// lethal tick call), which is what keeps every 0.2–0.9 campaign's datapack
+/// byte-for-byte unchanged.
 ///
 /// The `requires_state` half reads the gates from
 /// [`for_each_gate`](crate::gate::for_each_gate), the closed consumer
@@ -1010,6 +1098,16 @@ fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "the campaign-wide `on_death` bundle (the effects that run at the moment a player \
              dies) requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or \
              remove the section"
+                .to_string(),
+        ));
+    }
+    if !quests_ok && !c.quests.content.lethal_volumes.is_empty() {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            "/content/lethal_volumes".to_string(),
+            "a `lethal_volumes` declaration (a box that kills whatever enters it) requires \
+             dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the field"
                 .to_string(),
         ));
     }

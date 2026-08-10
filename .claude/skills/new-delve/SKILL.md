@@ -440,6 +440,21 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      the mainline depends on: nothing inside it is credited as a flag producer,
      deliberately, so a door it alone opens is a door only a corpse can open.
      Needs `dsl_version` 0.10.0 on the quests stage.
+   - **A place that kills is DECLARED, never faked with the art.** A cliff whose
+     fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
+     declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
+     damage_type?}` on the quests stage (`dsl_version` 0.10.0). Never obtain the
+     behaviour by changing the world instead — making the horizon `void` so the
+     fall kills is the move this exists to replace, and it serves exactly one
+     fiction. `message` is REQUIRED and is what the player reads as they die
+     (blank is `DW0512`); `damage_type` words vanilla's own broadcast (`fall`,
+     `on_fire`, …). The volume is geometry the completability proof honours: if the
+     party's only route to an objective crosses it the build fails naming the
+     volume (`DW0510`), and nothing the campaign POSTS — the entry spawn, a
+     checkpoint, a bonfire, an NPC's anchor, a `cast` placement, an actor — may sit
+     inside one (`DW0511`). Put the volume where a player can SEE what will happen
+     before they commit to it; a killing box nobody can read is 初见杀 with no
+     lesson in it.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
