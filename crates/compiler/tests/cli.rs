@@ -33,10 +33,10 @@ fn version_line() {
         s.contains(&format!("delvec {}", env!("CARGO_PKG_VERSION"))),
         "{s}"
     );
-    // Task #179 raised the implemented DSL to 0.9.0: declared drops on an
-    // elite/boss (`drops[]`) and the `collect` `dropped_by` that sources a quest
-    // item off a body instead of out of a box.
-    assert!(s.contains("dsl 0.9.0"), "{s}");
+    // spec-0031 raised the implemented DSL to 0.10.0: the stage-5
+    // `lethal_volumes` declaration — a box that kills whatever enters it, worded
+    // by the campaign's own strings.
+    assert!(s.contains("dsl 0.10.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

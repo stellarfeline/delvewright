@@ -34,7 +34,9 @@
  * run at all, branch tier or not. v0.9 (spec-0026) adds the stage-1
  * horizon-library surface (`horizon` object form, new base/shorthand names) —
  * world-generation input the compiler consumes to build the map, not a change
- * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is.
+ * to the step contract, so a v0.9 path is walked exactly as a v0.8 one is. The
+ * same holds for v0.10 (spec-0031 lethal volumes): a volume changes what the
+ * WORLD does to a body that enters it, and changes no step the bot walks.
  *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
@@ -50,6 +52,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.7.0",
   "0.8.0",
   "0.9.0",
+  "0.10.0",
 ] as const;
 
 /**

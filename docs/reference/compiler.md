@@ -285,6 +285,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | `forbids_flags[]` | Negative gate, accepted **everywhere `requires_flags` is** (objectives, `triggers[]`, per-effect, dialogue options, `traps[]`): the element is suppressed while ANY listed flag is set. Per-player sites emit `unless score @s dw.f_<flag> matches 1` clauses (unset-safe — flag scores are never pre-initialized, so a `scores={…=..0}` selector would wrongly fail on unset); trigger arming uses the any-player form `unless entity @a[scores={dw.f_<flag>=1..}]` (a positive selector inside a negation). Unknown flags get the same `DW0172` treatment as `requires_flags`. Reserved (`DW0141`) pre-0.6 at every site. | 0.6 |
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?}` is v0.6 (task #65; reserved `DW0141` pre-0.6): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family). Each slot is **either a bare item id string or `{item, enchantments{<id>: <level>}}`** (spec-0021) — the plain string stays the plain string, which is what keeps every pre-enchantment campaign byte-identical on re-serialisation; enchantments emit as the 1.21 `minecraft:enchantments` item component inside the slot compound, ids validated (`DW0433`) and levels range-checked (`DW0434`); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time` — and since task #189 that ruling is **enforced**, not merely offered: a burning species staged for a fight whose ground reaches open sky under a pinned daytime hour is `DW0496`. **`drops[]` (v0.9, task #179, owner ruling 2026-08-04; reserved `DW0141` pre-0.9)** names the DECLARED SUBSET this mob leaves behind — usually one piece, never automatically everything. Two entry forms: `{slot}` (a worn piece; the slot must be one the same mob's `equipment` really fills, and each slot at most once — `DW0490`) and `{item, name?}` (a quest token the fight yields rather than wears; id validated `DW0143`, `name` l10n-inventoried as `wave.<wave>.mob.<i>.drop.<n>.name`). Only an `elite`/`boss` wave may declare drops (`DW0491`) — rank-and-file gear stays unfarmable by construction. | 0.3 / tuning 0.4 / equipment 0.6 / drops 0.9 |
 | `loot[]` | `{id,anchor,items[{item,count?,name?,enchantments?}]}` (spec-0021, reserved `DW0141` pre-0.6) — contents for a container the **prefab already placed**, the same division of labour a trap has with its dispenser. The compiler never places the container; `DW0431` proves one is really there. Slot assignment is **positional and deterministic**: the nth declared stack lands in `container.<n>` (ADR-0006 — no loot tables, no RNG, no seeded shuffle). Emitted in `setup_finish` as `item replace block … container.<n> with <item>[components] <count>`, so a campaign with no `loot` is byte-identical. `name` enters the l10n inventory as `loot.<id>.item.<i>.name`, exactly like a class kit item's name. Item ids validate against the pinned registry (`DW0143`), anchors against prefab metadata (`DW0142`); `DW0432` caps a fill at 27 stacks and `DW0435` rejects two fills of one container. | 0.6 |
+| `lethal_volumes[]` | `{id,region{anchor,extent},message,damage_type?}` (spec-0031, DSL v0.10; reserved `DW0141` pre-0.10) — a declared box that **kills whatever enters it**, worded by the campaign's own strings. A mechanism, not a fiction: the commissioning case was a cliff whose fall must be fatal, and the same declaration is a lava pit, an acid pool, an out-of-bounds plane or the bottom of a lift shaft. The alternative considered and **rejected** for the cliff was making the world's `horizon` void so the fall kills anyway — that changes approved art to obtain a behaviour, and it serves exactly one fiction. `region` is the existing anchor-centred box (`anchor ± extent`), the SAME `StealthZone` type a `begin-stealth` beat and a `damage-players` `in` filter use, resolved through the one `Plan::zone_box`; a private twin with the same two fields would be `tools/check-capability-ownership.py` check C by construction. `message` is required (`DW0512` rejects a blank one) and is l10n-inventoried as `lethal.<id>.message`. `damage_type` is the curated `DamageKind` shared with `damage-players` (default `generic`), so a volume can no more void a held totem than a scripted hit can; it is what words **vanilla's own** death broadcast (`fall` → *fell from a high place*) while `message` says what the place was. Emission: one `function <ns>:lethal_<id>` line on the tick, and a two-line body — `execute as @a[<box>,tag=!dw_cutscene] run function <ns>:lethal_<id>_kill` (which `tellraw @s`s the wording as a `{translate,fallback}` component, then `damage @s 1000 <type>`), plus one `execute as @e[<box>,type=!minecraft:player,type=!…] run damage @s 1000 <type>` for everything else. The engine's own machinery types (`interaction`, `marker`, `item_display`, `block_display`, `text_display`) are excluded — a volume drawn across a cutscene dolly must not erase the camera. Content bodies (wave mobs, actor puppets, NPCs) are deliberately NOT excluded: a mob that walks into the lava dies, which is the mechanism working. The kill is an ordinary `/damage`, so the vanilla `deathCount` edge (`dw.deaths`/`dw.death_ack`), the checkpoint re-seat (`cp_respawn_check`) and `keep_inventory` see the death they already handle — there is **no second death detector**. Completability: the volume's cells are impassable in the shared nav `World` (`DW0510`) and no place the campaign POSTS something — a respawn seat, an NPC anchor, a `cast` placement, an actor anchor — may sit in one (`DW0511`). A campaign that declares none emits no tick line, no function and no ledger. | 0.10 |
 | `timed_gates[]` | `{id,gate,open_ticks,closed_ticks,phase?,crush?,disarm?}` (spec-0016 §4 + addendum, reserved `DW0141` pre-0.6) — a gate region on a deterministic open/close clock, so passage is a timing read rather than a permanent state. Emission is a **self-sustaining two-function ping-pong** (`tgate_open_<id>` / `tgate_close_<id>`), each half doing its `fill` and scheduling the other; `schedule` is replace-mode so the clock can never double up, and a timed gate costs **nothing per tick**. The gate is sealed by the prefab at world-load, so the clock's first act is always an OPEN (`phase` holds it shut that many ticks first). Structural errors are `DW0377` (id, a half-cycle of 0, a `phase` at or beyond the cycle, two clocks on one region, or a gate a `shortcut` already owns — a clock would re-seal what `DW0372` forbids re-sealing); a gate anchor with no declared fill `block` is `DW0343`. The design proof is `DW0378`: **not** all-phase passability (a gate that punishes bad timing is the point, owner ruling 2026-08-02) but ≥ 20% of the cycle admitting a crossing. **`crush`** (optional, default `false` — owner directive 2026-08-03) makes the closing edge a real portcullis judgement: every player whose position intersects the gate region when it shuts is dealt lethal `damage` by command. It is a *command*, not suffocation, because vanilla's in-wall damage is slow, gear-dependent and escapable — a portcullis that merely inconveniences teaches nothing, and `DW0378` has already proven the window fair, so the penalty may be absolute. Zero per-tick cost is preserved: the judgement rides the closing tick of the ping-pong that already runs. Defaulting to `false` keeps every pre-addendum campaign byte-identical. **`disarm`** (optional, task #184 — souls dossier §5.2) is the ladder's third rung: readable, avoidable, and finally *disable-able*, the way Smouldering Lake's ballista and the Fringefolk chariot can be removed for good. Its shape is `{via, sets_flag}`, **exactly** a trap's `disarm`, and it carries the same obligations: the `via` anchor gets a compiler-owned interaction entity **plus visible hardware** (`DW0420`), it may not be the gate anchor itself (`DW0377`), and it must be reachable from the campaign entry while the gate is SHUT (`DW0393`). Interacting with it suppresses the clock **permanently with the gate resting OPEN** — a jammed portcullis stays up — and permanence is structural exactly as a shortcut's is: no emitted function re-arms the clock and no `close-gate` may name the gate (`DW0389`). A disarmed gate therefore **can never crush**: the judgement rides the closing tick, and the closing tick is inside the suppressed clock. `DW0378`'s 20% duty-cycle proof and `DW0388`'s observability proof are unchanged and apply identically — observability is about the *pre-disarm* read, which is how the party decides the jam is worth the walk. Defaulting to absent keeps every pre-#184 campaign byte-identical. | 0.6 |
 | `ambushes[]` | `{id,at,actors[],trigger,telegraph[]?}` (spec-0016 §3, reserved `DW0141` pre-0.6) — **sugar**, not a new runtime mechanism. `parse_campaign` desugars each ambush into an ordinary one-shot `EnvTrigger` named `trigger/<local id>` at `at`, whose effects are the `telegraph` bundle, then a `spawn-actor` per listed actor, then an `unleash-actor` per listed actor. Everything downstream — validation, l10n, the flag/wave producer scans, nav, emission — sees only that trigger, so the sugar has no second code path to drift down and an ambush is exactly as debuggable as the trigger an author would otherwise type. The canonical form of a campaign is therefore its **desugared** form (the section is never serialized), which is what keeps the canonical round-trip idempotent. `telegraph` is **optional and stays optional** (owner ruling 2026-08-02): the un-telegraphed ambush is core souls vocabulary and nothing in the compiler asks for a tell. Declaration errors are `DW0375`; the counterplay obligation is `DW0376`. | 0.6 |
 | `waves[].respawns_on_rest` | `true` re-seats the wave on every bonfire rest **and** on every respawn at a bonfire (spec-0016 §1) — the souls contract: progress is kept, the enemies come back. Emission: `spawn_<wave>` additionally sets a seated sentinel `#wseat_<wave> dw.sys`, and `wave_reseat_<wave>` kills every survivor carrying `dw_wave_<id>` then re-runs the wave's own spawn (authored composition, DW0312-proven cells). A rest only re-seats waves the party has actually met — an unmet wave is never conjured. **Stationed re-seat** (owner ruling 2026-08-04): a re-seated wave returns to the state it was FIRST seated in, never to the state the party last left it in — a lane wave re-enters its routed patrol from the lane start (`Patrolling:1b` re-applied, `patrol_target` back on waypoint 0, `#lane_<wave>` back to 0, the clock re-armed through the same replace-mode `schedule`), a non-lane wave stands at its anchor under vanilla-local AI with no patrol NBT at all. **Nothing re-seated may pursue across the map.** This holds because `wave_reseat_<wave>` re-enters through the wave's own `spawn_<wave>` and everything stationing a wave is written there and nowhere else, so the spawn state and the stationed state are the same bytes — an invariant the tests pin (`wave_reseat_<wave>` is exactly two lines) rather than a coincidence of the current emission. What earns it is `DW0478`: a bonfire may not stand where a re-seated force can perceive it. Generated PackTests `souls_reseat_stationed` (a rest, driven from the squad hauled onto the party and released to native AI) and `souls_td_lane_reseat` (the re-summon alone, for a lane campaign with no rest point beside its lane). Declaring the field with **no** `bonfire` in the campaign is inert, so it is `DW0370`, not a silent no-op. Reserved `DW0141` pre-0.6. | 0.6 |
@@ -424,7 +425,11 @@ authored), `wave.<w>.mob.<i>.name`) plus effect strings
 `bonfire`'s authored rest-dialog strings `fx.….rest_prompt|.rest_label|.save_label`
 and a `close-gate`'s authored `fx.….sealed_hint` (all v0.8; unauthored ones are
 absent because the compiler bakes its canonical English, the
-`world.boundary.message` precedent).
+`world.boundary.message` precedent), plus `lethal.<volume>.message` — a lethal
+volume's death wording (v0.10, spec-0031). That one is **required rather than
+defaulted** (`DW0512`): a player reading a raw key at the moment they die is the
+worst place in a delve for a hole, and there is no compiler-owned English that
+could be right for a cliff, a lava pit and an acid pool at once.
 **Every effect root emission can lower** is inventoried, not just the quests
 stage's three (task #168): `fx.trap.<trap>.<i>.…` for a `traps[].payload`
 (spec-0022 — a trap that narrates is ordinary now that a trap's consequence is
@@ -1393,6 +1398,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   no-stranding (`DW0315`/`DW0316`), stealth (`DW0327`/`DW0355`), traps
   (`DW0342`), shortcuts/ambush/timed-gate (`DW0373`–`DW0378`, `DW0388`), stair
   orientation (`DW0430`) — these still run on the default path only.
+- `<out>/validation/lethal-gate.json`: the lethal-volume proofs' **binding
+  ledger** (`compiler::lethal`, spec-0031, playtest-methodology.md rule 1).
+  `volumes.declared` vs `volumes.resolved` (a gap is an anchor no placed piece
+  provides — already `DW0142`, restated so a reader of the ledger alone cannot
+  mistake a dropped volume for a proven one), `cells` (what the navigation model
+  actually made impassable), `respawn_seats_examined` (every posted place tested
+  against `DW0511` — respawn seats and posted bodies alike),
+  `critical_path_legs_examined` (legs routed with lethality applied) and
+  `packtest_templates` (the runtime half, one per volume; a compile-time-only
+  green over a runtime mechanism is exactly the vacuity this number exposes).
+  **Emitted only for a campaign that declares a volume**, so a file that exists
+  and reports zero is a finding rather than an absence.
 - `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
   ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
   the traversal proof actually examined — `legs`, `route_cells`, and
@@ -3194,6 +3211,60 @@ composed: `execute as @e[tag=…] run data merge entity @s` (single-entity by
 construction, which is what `data merge` requires) writing `0.0f` on every slot
 and an empty death loot table. Emitted only for actors that declare drops, so
 every earlier campaign's removal is byte-identical.
+
+### DW0510–DW0512 — lethal volumes (`compiler::nav` / `compiler::lethal` / `dsl::validate`; spec-0031, DSL v0.10)
+
+A lethal volume is **geometry that kills**, so most of its completability
+reasoning is not a check of its own: [`nav::World`] carries its cells as
+impassable (`World::with_lethal`), and every route proof in the engine inherits
+that for free — the critical path, the checkpoint no-stranding proof (`DW0315`),
+the branch paths, the trap forced-cell set, the exported harness waypoints. That
+is the same move `close-gate`'s seal makes, and for the same reason: a fourth
+consumer inherits the proof instead of re-deriving it.
+
+`DW0510` exists because the *fix* for a blocked route differs in kind. A generic
+`DW0311` sends the author to look for a wedged doorway or a void gap; here the
+geometry is walkable and a **declaration** closed it. So the failure is derived
+from a counterfactual — the leg is re-routed over the identical world with
+lethality removed — and names the volumes covering that route.
+
+`DW0511` is the one obligation routing cannot see, and it is one rule because it
+is one defect: **a body put here by declaration rather than by walking.** Two
+families fall under it. A *respawn seat* (entry spawn, `set-checkpoint`,
+`bonfire`) means the party dies on arrival and is re-seated to die again, forever
+— `/spawnpoint` is only a hint and the engine re-seats on the death edge, so
+nothing downstream can rescue it. A *posted body* (a stage-2 NPC's anchor, a
+per-quest `cast` placement, a stage-5 actor's anchor) is deleted on the first
+tick: the volume's entity sweep exempts the engine's own machinery types and
+deliberately not content bodies, so the delve loses its speaker in silence while
+every static proof stays green. The second family was found while writing this
+feature's own CI fixture, whose first draft put the volume on the Keeper's post.
+
+Binding (playtest-methodology rule 1): a campaign with a volume emits
+`validation/lethal-gate.json` — volumes declared vs. resolved, world cells closed,
+posted places examined (`respawn_seats_examined`, which counts both families),
+critical-path legs routed, and PackTest templates generated (one per volume). A campaign with no volume emits **no file at all**, so
+a file that exists and reports zero is a finding rather than an absence.
+
+| Code | Meaning |
+|------|---------|
+| `DW0510` | **The only route runs through the volume.** A forced critical-path leg has no collision-free path once the declared lethal volumes are impassable, but routes fine without them — or a visited objective's only footing lies inside one. Build-tier (exit 3), `compiler::nav`. The message names the volumes the lethality-free route crosses. Prescription: move or shrink the volume, or give the party a route around it — never delete the volume to silence the proof. |
+| `DW0511` | **A posted place inside the volume.** Somewhere the campaign requires the party or a declared body to BE lies inside a lethal volume: the entry spawn, a `set-checkpoint` / `bonfire` cell (the death loop), or an NPC anchor, `cast` placement or actor anchor (a body the volume deletes on the first tick). Build-tier (exit 3), `compiler::lethal`. The message names the post and the volumes covering it. Prescription: move the post out, or shrink the volume's `extent` so it does not cover it. |
+| `DW0512` | **A volume that kills in silence.** A `lethal_volumes[]` entry's `message` is blank. Validation-tier (exit 1), `dsl::validate`. There is no compiler-owned default that could be right for a cliff, a lava pit and an acid pool at once, so a blank wording is refused rather than papered over — a volume that kills while the player learns nothing is the vacuous pass CLAUDE.md names. Prescription: write the line the player reads as they die. |
+
+#### Why the wording is a component, and not a custom damage type
+
+Vanilla's own spelling for "a death message the pack wrote" is a datapack
+`damage_type` with a `message_id`, whose key the client resolves from a lang
+file. It is **rejected here**, and the reason is an existing invariant rather than
+a preference: vanilla builds that message with no `fallback` field, so a player
+who declines the resource-pack prompt would read a raw `death.attack.…` key —
+which spec-0029 §3 makes the delve's playable-in-English guarantee against, and
+which `DW0185` would not catch (the emitted literal is the key, not the authored
+string). The wording therefore travels the one path every player-visible string in
+this engine travels, `emit::tr` → `{"translate":…,"fallback":…}`, and vanilla's
+own broadcast still fires, worded by the declared `damage_type`: the party reads
+*who* died, the victim reads *what the place was*.
 
 ### DW0497 — emitted call-graph integrity (`compiler::integrity`; error; exit 3)
 

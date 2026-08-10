@@ -66,6 +66,7 @@ pub mod emit;
 pub mod flow;
 pub mod gates;
 pub mod integrity;
+pub mod lethal;
 pub mod light;
 pub mod load;
 pub mod loot;

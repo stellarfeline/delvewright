@@ -40,6 +40,7 @@
 //! | `fx.…​.narrate` / `fx.…​.give` | a `narrate` line / named `give-item` in an effect list |
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
+//! | `lethal.<volume>.message` | a stage-5 lethal volume's death wording (v0.10) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -436,6 +437,16 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
                 f(&format!("loot.{ll}.item.{i}.name"), name);
             }
         }
+    }
+    // Stage 5 — lethal volumes (v0.10, spec-0031): the line the volume says as it
+    // kills. As player-visible as a narrate, and read at the worst possible moment
+    // to be reading a raw key, so it is inventoried like any other authored line.
+    // Widening this reaches NO older campaign: only a 0.10.0 quests stage may
+    // declare a lethal volume at all (`DW0141`), so the error-tier obligation this
+    // module's `inventory` doc warns about cannot be created retroactively here.
+    for v in &mut c.quests.content.lethal_volumes {
+        let vl = local(v.id.as_str()).to_string();
+        f(&format!("lethal.{vl}.message"), &mut v.message);
     }
     // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
     // dialog, a seal's answer — over **every** root emission can lower an effect

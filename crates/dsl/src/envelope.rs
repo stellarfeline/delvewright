@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.9.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -28,11 +28,13 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.9.0";
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
-/// authorable option strings and the class-kit `flask`.
+/// authorable option strings and the class-kit `flask`; v0.9 (task #179) adds
+/// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
+/// (spec-0031) adds the stage-5 `lethal_volumes` declaration.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
-    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0",
+    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
 ];
 
 /// True if `version` is a `dsl_version` this crate accepts.
@@ -58,6 +60,7 @@ fn ordinal(version: &str) -> u32 {
         "0.7.0" => 7,
         "0.8.0" => 8,
         "0.9.0" => 9,
+        "0.10.0" => 10,
         _ => 0,
     }
 }
@@ -132,6 +135,19 @@ pub fn is_v08(version: &str) -> bool {
 /// rejected with `DW0141`.
 pub fn is_v09(version: &str) -> bool {
     ordinal(version) >= 9
+}
+
+/// True if `version` enables the DSL v0.10 surface (spec-0031): the stage-5
+/// `lethal_volumes` declaration — a box that kills whatever enters it, wording
+/// the death in the campaign's own strings. Additive over v0.9: a campaign that
+/// declares none compiles and emits byte-identically (the list is absent from
+/// canonical output, no tick call is emitted, and the navigation world gains no
+/// cells), and declaring one in an earlier campaign is rejected with `DW0141`.
+///
+/// **The version is `0.10.0`, not `0.9.1`.** `ordinal` matches the literal
+/// string, so the ledger is a sequence of minors and a patch would sort nowhere.
+pub fn is_v10(version: &str) -> bool {
+    ordinal(version) >= 10
 }
 
 /// Which stage a document belongs to.

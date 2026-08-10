@@ -52,6 +52,19 @@ pub const DW_CAMERA_SPIN: &str = "DW0347";
 /// doorway shut / opened a void gap and only a runtime bot caught it) into a
 /// compile error.
 pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
+/// `DW0510`: the party's only route to a critical-path objective runs through a
+/// declared **lethal volume** (DSL v0.10, spec-0031).
+///
+/// A volume that kills whatever enters it is, for a route, a volume no route may
+/// enter — so its cells are impassable in the navigation world, exactly as a
+/// `close-gate`'s sealed region is solid, and a forced leg that has no other way
+/// through fails. It is a code of its own rather than a [`DW_CRITICAL_UNROUTABLE`]
+/// variant because the *fix* is different in kind: the geometry is fine and the
+/// prefab is fine, and the author needs to be told which volume they must move,
+/// shrink or route around — not sent to look for a wedged doorway that does not
+/// exist. Derived from a counterfactual: the leg is re-routed over the identical
+/// world with lethality removed, and the volumes covering that route are named.
+pub const DW_LETHAL_ON_CRITICAL_PATH: &str = "DW0510";
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
@@ -722,6 +735,10 @@ impl Ambient {
 /// drift, a `dirt_path` at 15/16), that true height. It is what makes
 /// [`World::neighbors_fp`] a physical step rule rather than a cell-adjacency rule
 /// — see [`MAX_AUTO_STEP_16`] / [`MAX_JUMP_RISE_16`].
+/// One declared lethal volume as the navigation model carries it: `(id, box)`,
+/// the box being inclusive world-space corners.
+type LethalRegion = (String, ([i32; 3], [i32; 3]));
+
 pub struct World {
     solid: BTreeSet<[i32; 3]>,
     tall: BTreeSet<[i32; 3]>,
@@ -731,6 +748,22 @@ pub struct World {
     /// top, that height in sixteenths (task #78). Absent = a full cube. Feeds
     /// the physical step rule in [`World::neighbors_fp`].
     partial: BTreeMap<[i32; 3], u8>,
+    /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
+    ///
+    /// A volume that kills whatever enters it is, for a route, a volume no route
+    /// may enter — so these cells are **impassable**, exactly like a flooded one,
+    /// and for the same reason: a walker that goes there does not come out the
+    /// other side. They are deliberately *not* added to `solid`: a lethal cell is
+    /// not floor, so nothing may stand on top of one either. Empty for every
+    /// campaign that declares no volume, which is what keeps routing, standability
+    /// and every downstream proof byte-identical.
+    lethal: BTreeSet<[i32; 3]>,
+    /// The declared volumes behind `lethal`, as `(id, box)`, in declaration
+    /// order. Carried so a route failure can NAME the volume that caused it
+    /// rather than report an unroutable leg over geometry that looks open — the
+    /// difference between `DW0510` and a `DW0311` that sends the author to fix a
+    /// prefab that was never wrong.
+    lethal_regions: Vec<LethalRegion>,
     /// What the *unmodelled* columns contain (spec-0013 `horizon`). Defaults to
     /// [`Ambient::Void`] — the pre-0.6 world and every synthetic test world —
     /// and is set from the plan by [`World::from_plan`] /
@@ -767,6 +800,79 @@ impl World {
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
         Self::from_occupancy(crate::assembled::assembled_occupancy(plan, structures))
             .with_ambient(Ambient::of_plan(plan))
+            .with_lethal(plan)
+    }
+
+    /// This world with the plan's declared **lethal volumes** (DSL v0.10,
+    /// spec-0031) marked impassable.
+    ///
+    /// This is where "a volume that kills" becomes "a volume no proof may route
+    /// through", and it is deliberately applied to the base world rather than
+    /// per-leg the way a `close-gate`'s seal is: a seal has a point in the quest
+    /// DAG before which the region is open, and a lethal volume has none — it
+    /// kills from world-load, in every branch, on every leg. A campaign with no
+    /// volume gets the identical world back (the set is empty), so nothing moves
+    /// for anybody who has not declared one.
+    fn with_lethal(mut self, plan: &Plan) -> World {
+        for v in &plan.lethal_volumes {
+            self.lethal
+                .extend(crate::assembled::region_cells(v.region.0, v.region.1));
+            self.lethal_regions.push((v.id.clone(), v.region));
+        }
+        self
+    }
+
+    /// A copy of this world with **no** lethal volumes — the counterfactual the
+    /// `DW0510` diagnostic is derived from.
+    ///
+    /// A route that fails on the real world and succeeds on this one failed
+    /// *because of* a lethal volume, and the cells it would have walked name which
+    /// volumes. Without the counterfactual the author gets "no collision-free
+    /// path" over geometry that looks perfectly open — the reachability report
+    /// that sends someone to fix the prefab.
+    fn without_lethal(&self) -> World {
+        World {
+            solid: self.solid.clone(),
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
+            flooded: self.flooded.clone(),
+            partial: self.partial.clone(),
+            lethal: BTreeSet::new(),
+            lethal_regions: Vec::new(),
+            ambient: self.ambient.clone(),
+        }
+    }
+
+    /// Whether this world carries any lethal-volume cell at all. Call sites skip
+    /// the counterfactual clone entirely when it does not.
+    pub fn has_lethal(&self) -> bool {
+        !self.lethal.is_empty()
+    }
+
+    /// Whether `c` lies inside a declared lethal volume.
+    pub fn is_lethal(&self, c: [i32; 3]) -> bool {
+        self.lethal.contains(&c)
+    }
+
+    /// How many cells this world's lethal volumes occupy — the binding count the
+    /// `validation/lethal-gate.json` ledger states out loud.
+    pub fn lethal_cells(&self) -> usize {
+        self.lethal.len()
+    }
+
+    /// The ids of the lethal volumes covering any of `cells`, in declaration
+    /// order — who to blame for a route that only exists when lethality is
+    /// ignored. Deterministic: declaration order, no hashing (ADR-0006).
+    fn lethal_volumes_over(&self, cells: &[[i32; 3]]) -> Vec<&str> {
+        self.lethal_regions
+            .iter()
+            .filter(|(_, (lo, hi))| {
+                cells
+                    .iter()
+                    .any(|c| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+            })
+            .map(|(id, _)| id.as_str())
+            .collect()
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`]
@@ -778,6 +884,8 @@ impl World {
             use_gates: occ.use_gates,
             flooded: occ.flooded,
             partial: occ.partial,
+            lethal: BTreeSet::new(),
+            lethal_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -828,6 +936,8 @@ impl World {
             use_gates: self.use_gates.clone(),
             flooded: self.flooded.clone(),
             partial,
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -851,6 +961,8 @@ impl World {
             use_gates: BTreeSet::new(),
             flooded: self.flooded.clone(),
             partial: self.partial.clone(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -877,6 +989,8 @@ impl World {
             use_gates: BTreeSet::new(),
             flooded: BTreeSet::new(),
             partial: BTreeMap::new(),
+            lethal: BTreeSet::new(),
+            lethal_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -890,6 +1004,8 @@ impl World {
             use_gates: BTreeSet::new(),
             flooded,
             partial: BTreeMap::new(),
+            lethal: BTreeSet::new(),
+            lethal_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -1246,7 +1362,10 @@ impl World {
     /// a right-click (walkers that cannot are routed on
     /// [`World::without_gate_use`]).
     fn is_occupied(&self, c: [i32; 3]) -> bool {
-        self.solid.contains(&c) || self.tall.contains(&c) || self.flooded.contains(&c)
+        self.solid.contains(&c)
+            || self.tall.contains(&c)
+            || self.flooded.contains(&c)
+            || self.lethal.contains(&c)
     }
 
     /// Whether a cell is a valid standing position: the feet-cell and the
@@ -2610,6 +2729,17 @@ struct VisitedPos {
     src_step: usize,
 }
 
+/// How many critical-path **legs** the completability proof routes — consecutive
+/// visited pairs, minus the inter-area teleport hops it skips. The binding count
+/// `validation/lethal-gate.json` reports for `DW0510`: a lethal volume proven over
+/// zero legs is a vacuous green, and this is what makes that legible.
+pub fn critical_leg_count(plan: &Plan) -> usize {
+    critical_positions(plan)
+        .windows(2)
+        .filter(|pair| !pair[1].transport_before)
+        .count()
+}
+
 fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
     positions_of(&plan.critical_path, &plan.critical_path_transport)
 }
@@ -2799,6 +2929,22 @@ fn route_walked_legs(
 /// is routed over the world with any gate sealed by an earlier `close-gate`
 /// ([`leg_seal`]) forced solid, so a forced path that must re-cross a sealed gate
 /// fails [`DW_CRITICAL_UNROUTABLE`].
+/// Render a blamed-volume list for a `DW0510` message: backticked ids joined by
+/// `, `, or the honest `(none — the volume set is empty)` when the counterfactual
+/// found a route that touches no declared volume, which would itself be a bug in
+/// this proof rather than in the campaign.
+fn names_of(ids: &[&str]) -> String {
+    if ids.is_empty() {
+        return "(none — the counterfactual route touches no declared volume; this is a \
+                compiler defect, escalate it)"
+            .to_string();
+    }
+    ids.iter()
+        .map(|i| format!("`{i}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
@@ -2819,30 +2965,93 @@ fn route_visited(
             leg_world_owned = world.with_sealed(&sealed);
             &leg_world_owned
         };
-        let start = leg_world.snap_endpoint(from, false).ok_or_else(|| NavError {
-            code: DW_CRITICAL_UNROUTABLE,
-            message: format!(
-                "critical path: no standable floor within {SNAP_RADIUS} blocks of visited anchor \
-                 {from:?} — a player-visited anchor sits walled in or over void. Fix the prefab \
-                 so this anchor sits on/next to reachable floor; if the prefab looks correct, this \
-                 is an assembly/toolchain defect — escalate rather than move the anchor into a \
-                 wall"
-            ),
-        })?;
-        let goal = leg_world
-            .snap_endpoint(to, pair[1].talk_to)
-            .ok_or_else(|| NavError {
-                code: DW_CRITICAL_UNROUTABLE,
+        // The lethal-free view of this same leg, built once and only when the
+        // campaign declares a volume at all. Every failure below asks it first:
+        // a leg that routes here and nowhere else failed *because of* lethality,
+        // and saying which volume is a different fix from every other answer
+        // this function gives.
+        let open_owned;
+        let open: Option<&World> = if leg_world.has_lethal() {
+            open_owned = leg_world.without_lethal();
+            Some(&open_owned)
+        } else {
+            None
+        };
+        let lethal_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+            let open = open?;
+            let cell = open.snap_endpoint(at, talk_to)?;
+            let names = names_of(&leg_world.lethal_volumes_over(&[cell]));
+            Some(NavError {
+                code: DW_LETHAL_ON_CRITICAL_PATH,
                 message: format!(
-                    "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
-                     anchor {to:?} — a player-visited anchor sits walled in or over void (a \
-                     talk-to NPC needs a dry standable cell beside it, within interaction range \
-                     and clear of water). Fix the prefab so this anchor sits on/next to reachable \
-                     floor; if the prefab looks correct, this is an assembly/toolchain defect — \
-                     escalate rather than move it into a wall"
+                    "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                     anchor {at:?} lies INSIDE lethal volume(s) {names} — a player who reaches \
+                     this objective is killed by standing where the objective is. Move the \
+                     volume off the anchor, shrink its `extent`, or move the objective; do NOT \
+                     delete the volume to silence the proof."
                 ),
-            })?;
+            })
+        };
+        let start = match leg_world.snap_endpoint(from, false) {
+            Some(c) => c,
+            None => {
+                if let Some(e) = lethal_snap_err(from, false) {
+                    return Err(e);
+                }
+                return Err(NavError {
+                    code: DW_CRITICAL_UNROUTABLE,
+                    message: format!(
+                        "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
+                         anchor {from:?} — a player-visited anchor sits walled in or over void. \
+                         Fix the prefab so this anchor sits on/next to reachable floor; if the \
+                         prefab looks correct, this is an assembly/toolchain defect — escalate \
+                         rather than move the anchor into a wall"
+                    ),
+                });
+            }
+        };
+        let goal = match leg_world.snap_endpoint(to, pair[1].talk_to) {
+            Some(c) => c,
+            None => {
+                if let Some(e) = lethal_snap_err(to, pair[1].talk_to) {
+                    return Err(e);
+                }
+                return Err(NavError {
+                    code: DW_CRITICAL_UNROUTABLE,
+                    message: format!(
+                        "critical path: no standable floor within {SNAP_RADIUS} blocks of visited \
+                         anchor {to:?} — a player-visited anchor sits walled in or over void (a \
+                         talk-to NPC needs a dry standable cell beside it, within interaction \
+                         range and clear of water). Fix the prefab so this anchor sits on/next to \
+                         reachable floor; if the prefab looks correct, this is an \
+                         assembly/toolchain defect — escalate rather than move it into a wall"
+                    ),
+                });
+            }
+        };
         if leg_world.find_path(start, goal).is_none() {
+            // Lethality first: it is the strictly more specific answer, and the
+            // generic one below would send the author to fix open geometry.
+            if let Some(open) = open
+                && let (Some(s2), Some(g2)) = (
+                    open.snap_endpoint(from, false),
+                    open.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = open.find_path(s2, g2)
+            {
+                let names = names_of(&leg_world.lethal_volumes_over(&cells));
+                return Err(NavError {
+                    code: DW_LETHAL_ON_CRITICAL_PATH,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) runs THROUGH lethal volume(s) {names} — the \
+                         party cannot reach this objective without dying on the way. The \
+                         geometry is walkable; the volume is what closes it. Move or shrink the \
+                         volume, or give the party a route around it; do NOT delete the volume \
+                         to silence the proof."
+                    ),
+                });
+            }
             let gate_hint = if sealed.is_empty() {
                 "this is a wedged doorway seam, a void gap in the assembled layout, or an \
                  unbroken 1.5-tall barrier (fence/wall) ring — a walking player can neither pass \

@@ -206,6 +206,14 @@ pub mod codes {
     /// an authoring intention the quest graph cannot prove, and the collect
     /// reads as reachable from the campaign's first tick.
     pub const DROP_COLLECT_UNORDERED: &str = "DW0493";
+    /// (spec-0031, DSL v0.10) A `lethal_volumes[]` entry's `message` is blank.
+    ///
+    /// The volume would still kill — and would kill in silence, which is the one
+    /// thing the declaration exists to prevent. There is no compiler default that
+    /// could be right for a cliff, a lava pit and an acid pool at once, so a blank
+    /// wording is refused rather than papered over: a gate that reports green
+    /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
+    pub const LETHAL_MESSAGE_BLANK: &str = "DW0512";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)

@@ -141,6 +141,12 @@ prefixed_id!(
     /// within the stage-5 loot namespace.
     LootId, "loot");
 prefixed_id!(
+    /// Lethal-volume id: `lethal/<kebab>` (stage-5 `lethal_volumes` section, DSL
+    /// v0.10, spec-0031). Unique within the stage-5 lethal-volume namespace; it
+    /// names the volume's emitted tick function, its l10n key, and the volume a
+    /// completability finding blames.
+    LethalVolumeId, "lethal");
+prefixed_id!(
     /// Edit-batch id: `batch/<kebab>` (stage-7 `world-edits` batches, DSL v0.6,
     /// spec-0017). Unique within the edit script; also the batch's snapshot name
     /// and its seed-stream label, so renaming a batch deliberately reseeds it.
