@@ -145,15 +145,15 @@ struct Body {
 }
 
 /// An interaction affordance: one `minecraft:interaction` entity at a cell.
-struct Affordance {
+pub(crate) struct Affordance {
     /// What declares it (`interact objective`, `trigger`, …), for the message.
-    kind: &'static str,
+    pub(crate) kind: &'static str,
     /// The declaring id (`obj/harden`).
-    id: String,
+    pub(crate) id: String,
     /// The anchor it sits on.
-    anchor: String,
+    pub(crate) anchor: String,
     /// The resolved cell.
-    pos: [i32; 3],
+    pub(crate) pos: [i32; 3],
 }
 
 /// An axis-aligned interval `[lo, hi)`.
@@ -306,7 +306,11 @@ fn bodies(plan: &Plan) -> Vec<Body> {
 
 /// Every interaction affordance the compiler will summon, in a deterministic
 /// order (objectives, triggers, bonfires, shortcut unlocks, trap disarms).
-fn affordances(plan: &Plan) -> Vec<Affordance> {
+///
+/// The single authority on the set, read by `DW0359` here and by `DW0542`
+/// ([`crate::teleport`]) — so an affordance added to the engine enters both
+/// proofs by existing rather than by being remembered twice.
+pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     let c = plan.campaign;
     let mut out = Vec::new();
     for q in &c.quests.content.quests {

@@ -348,6 +348,14 @@ pub fn build_with_warnings(
     // to move a shot that was never the problem. Name the root cause instead.
     check_effect_anchors(plan)?;
 
+    // spec-0031: a `teleport` moves EVERYTHING inside its volume, so the volume
+    // may not cover an affordance the engine bound to hardware it cannot move.
+    // Runs here — right after the anchor-resolution seal and before any occupancy
+    // model — because it is pure box arithmetic over resolved cells, and because
+    // the alternative it replaces is a runtime type-exemption list
+    // (`crate::teleport` records why that would be wrong).
+    let teleport_gate = crate::teleport::check_bound_affordances(plan)?;
+
     // A dialogue node's conditionally-visible options are encoded as 2^n precomputed
     // variants; past the cap that is a pack-size decision, and past 32 it was a
     // compiler panic (DW0362).
@@ -1114,6 +1122,15 @@ pub fn build_with_warnings(
     // how many respawn seats and critical-path legs were tested against them. A
     // campaign that declares no volume emits no file, so a file that exists and
     // reports zero is a finding rather than an absence.
+    if teleport_gate.declared > 0 {
+        // One template per distinct teleport (`emit_teleport_packtests` dedupes by
+        // the same content key `teleport_fns` does), counted from the emission
+        // rather than from the declaration, so the ledger reports what was really
+        // generated.
+        let mut gate = teleport_gate;
+        gate.packtests = teleport_fns(plan).len();
+        put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
+    }
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
     }
@@ -3715,6 +3732,7 @@ fn emit_functions(
     fns.extend(movenpc_fns(plan, moves));
     fns.extend(actor_fns(plan, actor_moves));
     fns.extend(sequence_fns(plan));
+    fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan));
     fns.extend(trap_fns(plan, trap_gates));
@@ -4895,7 +4913,96 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         QuestEffect::SpawnNpc { npc, .. } => {
             body.push(format!("function {ns}:{}", spawn_npc_fn(npc.as_str())));
         }
+        // --- DSL v0.10 status effects (spec-0031) -----------------------------
+        // Vanilla `effect give` / `effect clear`, through the SAME formatter the
+        // engine's own night-vision clock has used since v0.6
+        // (`effect_give_command`) — the hard-coded case is now one configured use
+        // of the general verb's emission rather than a private copy of it.
+        //
+        // No `tag=!dw_cutscene` guard, deliberately: a status effect is not
+        // inherently harm (regeneration, night vision, glowing), and the engine's
+        // pre-existing region-scoped grant has never carried one. Where an author
+        // wants a beat to spare an observer, the `in` filter and the effect gate
+        // both say so explicitly.
+        QuestEffect::GiveEffect { .. } => {
+            if let Some((effect, seconds, amplifier, hide, within)) = eff.give_effect() {
+                let Some(sel) = effect_selector(plan, who, within) else {
+                    return;
+                };
+                body.push(effect_give_command(&sel, effect, seconds, amplifier, hide));
+            }
+        }
+        QuestEffect::ClearEffect { .. } => {
+            if let Some((effect, within)) = eff.clear_effect() {
+                let Some(sel) = effect_selector(plan, who, within) else {
+                    return;
+                };
+                // Vanilla's own two spellings: with an id, or bare for "all".
+                body.push(match effect {
+                    Some(id) => format!("effect clear {sel} {id}"),
+                    None => format!("effect clear {sel}"),
+                });
+            }
+        }
+        // --- DSL v0.10 teleport (spec-0031) -----------------------------------
+        // ONE command, and its selector is the volume — never the effect's
+        // audience. `who` is deliberately unused here: a teleport moves what is
+        // INSIDE the box, and a box does not have a party. The selector carries
+        // the six box terms and nothing else — no `type=`, no `tag=`, no
+        // `limit=`, no `sort=` — which is what makes the selection total, and
+        // `crates/compiler/tests/v10_teleport.rs` asserts exactly that against the
+        // emitted string. See `QuestEffect::Teleport` for why a machinery-type
+        // exemption (which `lethal_volumes[]` must carry) would be wrong here and
+        // what stands in its place.
+        QuestEffect::Teleport { .. } => {
+            // A call into the generated function, exactly as `volley` and
+            // `collapse` do: the body is proven geometry, and a body that only
+            // ever exists inline is a body no runtime test can call.
+            if teleport_command(plan, eff).is_some() {
+                body.push(format!("function {ns}:{}", teleport_fn(eff)));
+            }
+        }
     }
+}
+
+/// The `effect give`/`effect clear` target selector for a v0.10 status-effect
+/// verb: the effect's audience, narrowed by the declared `in` box when there is
+/// one.
+///
+/// `None` when the filter's anchor does not resolve — referential validation
+/// already reports that (`DW0142`), and emitting a selector with a blank box
+/// would be an invalid command rather than a diagnosis.
+fn effect_selector(
+    plan: &Plan,
+    who: &str,
+    within: Option<&delvewright_dsl::StealthZone>,
+) -> Option<String> {
+    match within {
+        None => Some(who.to_string()),
+        Some(zone) => {
+            let (lo, hi) = plan.zone_box(zone)?;
+            Some(format!("{who}[{}]", box_selector_args(lo, hi)))
+        }
+    }
+}
+
+/// Vanilla's `effect give`, always in its full five-token form.
+///
+/// The engine has emitted this since v0.6 and exposed no verb for it; this is the
+/// one place that writes the command, used by both the author-facing
+/// `give-effect` and the night-vision area mitigation
+/// ([`night_vision_fns`]). The full form — duration, amplifier and
+/// `hideParticles` all present — is what the mitigation already emitted, so
+/// routing it through here is byte-identical for every existing campaign, and it
+/// leaves nothing to a vanilla default that a future version could re-pick.
+fn effect_give_command(
+    selector: &str,
+    effect: &str,
+    seconds: u32,
+    amplifier: u32,
+    hide_particles: bool,
+) -> String {
+    format!("effect give {selector} {effect} {seconds} {amplifier} {hide_particles}")
 }
 
 /// Emit a `despawn-actor` inline (spec-0014). Both styles target the actor body tag
@@ -6493,9 +6600,14 @@ const LETHAL_HP: &str = "#leth_hp dw.sys";
 /// totem doing its job rather than the volume failing to do its own.
 const LETHAL_DAMAGE: u32 = 1000;
 
-/// The box-selector argument shared by both of a volume's selectors.
-fn lethal_box(v: &crate::plan::LethalVolumePlan) -> String {
-    let (lo, hi) = v.region;
+/// An inclusive block AABB as vanilla selector arguments — `x=…,dx=…,…`.
+///
+/// One spelling for one fact. Vanilla's `dx` is a *span*, not a count, so the box
+/// `lo..=hi` is `dx = hi - lo`; every anchor-centred volume in the engine
+/// (`lethal_volumes[]`, a `teleport`'s `from`, a status effect's `in`) resolves
+/// through [`crate::plan::Plan::zone_box`] to exactly this pair and formats it
+/// here, so no two verbs can disagree by one block about what "inside" means.
+pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {
     format!(
         "x={},dx={},y={},dy={},z={},dz={}",
         lo[0],
@@ -6505,6 +6617,12 @@ fn lethal_box(v: &crate::plan::LethalVolumePlan) -> String {
         lo[2],
         hi[2] - lo[2]
     )
+}
+
+/// The box-selector argument shared by both of a volume's selectors.
+fn lethal_box(v: &crate::plan::LethalVolumePlan) -> String {
+    let (lo, hi) = v.region;
+    box_selector_args(lo, hi)
 }
 
 /// The per-tick driver lines for the campaign's lethal volumes (spec-0031), in
@@ -7669,6 +7787,58 @@ fn volley_fn(eff: &QuestEffect) -> String {
 /// The generated function name for a `collapse` effect.
 fn collapse_fn(eff: &QuestEffect) -> String {
     format!("collapse_{}", payload_verb_key(eff))
+}
+
+/// The generated function name for a `teleport` effect (DSL v0.10, spec-0031).
+///
+/// A named function rather than an inline line, for the same reason `volley` and
+/// `collapse` have one: **the body is compiler-PROVEN geometry** — a box resolved
+/// through `Plan::zone_box` and a destination resolved to a literal cell — and a
+/// body that only ever exists spliced into a `seq_<hash>` beside four other
+/// effects is a body no runtime test can call. The generated PackTest calls
+/// exactly this function, so the runtime proof of totality binds to the emission
+/// rather than to a command the test re-typed for itself.
+fn teleport_fn(eff: &QuestEffect) -> String {
+    format!("teleport_{}", payload_verb_key(eff))
+}
+
+/// The one emitted line of a `teleport`: move everything in the volume.
+///
+/// `None` when either anchor is unresolved — `check_effect_anchors` (`DW0360`)
+/// owns that failure, and an invalid selector emitted here would report it as
+/// something else.
+fn teleport_command(plan: &Plan, eff: &QuestEffect) -> Option<String> {
+    let (from, to) = eff.teleport()?;
+    let (lo, hi) = plan.zone_box(from)?;
+    let d = ent_xyz(anchor_point_any(plan, to.as_str())?);
+    Some(format!(
+        "tp @e[{}] {} {} {}",
+        box_selector_args(lo, hi),
+        d[0],
+        d[1],
+        d[2]
+    ))
+}
+
+/// One function per distinct `teleport` (deduped by content key). Empty for a
+/// campaign that declares none, so pre-0.10 output is byte-identical.
+fn teleport_fns(plan: &Plan) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        if eff.teleport().is_none() {
+            continue;
+        }
+        let name = teleport_fn(eff);
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let Some(cmd) = teleport_command(plan, eff) else {
+            continue;
+        };
+        out.push((name, lines(&[cmd])));
+    }
+    out
 }
 
 /// Actor staging functions (spec-0014): a `spawn_actor_<id>` (idempotent summon) and
@@ -9469,14 +9639,26 @@ fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
             continue;
         }
         let (min, max) = area.bounds();
-        gives.push(format!(
-            "effect give @a[x={},dx={},y={},dy={},z={},dz={}] minecraft:night_vision {seconds} 0 true",
-            min[0],
+        // An area's `bounds()` are inclusive corners, so the selector span is
+        // `max - min + 1` — a placed area is a count of cells, where a declared
+        // volume (`box_selector_args`) is a span between two corners. The two are
+        // one block apart on purpose and this is the only place the difference
+        // lives.
+        let span = [
             max[0] - min[0] + 1,
-            min[1],
             max[1] - min[1] + 1,
-            min[2],
             max[2] - min[2] + 1,
+        ];
+        let sel = format!(
+            "@a[{}]",
+            box_selector_args(min, [min[0] + span[0], min[1] + span[1], min[2] + span[2]])
+        );
+        gives.push(effect_give_command(
+            &sel,
+            "minecraft:night_vision",
+            seconds,
+            0,
+            true,
         ));
     }
     if gives.is_empty() {
@@ -14069,6 +14251,113 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // spec-0031 lethal volumes: the runtime half, one template per volume.
     emit_lethal_packtests(plan, out);
+
+    // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
+    emit_teleport_packtests(plan, out);
+}
+
+/// The entity types a `teleport` template puts in the volume — deliberately
+/// **the engine's own machinery beside a content body**.
+///
+/// This list is the acceptance criterion made runtime-visible. `lethal_volumes[]`
+/// must exempt `interaction`, `marker` and the three display types by name
+/// ([`LETHAL_EXEMPT_TYPES`]) or it would erase a cutscene camera; a `teleport`
+/// exempts nothing, and the four machinery types here are exactly the ones an
+/// exemption list would have dropped. If a future selector grows a `type=!…`
+/// term, the entity of that type stays behind and this template reds — which is
+/// the point: an NPC is a body plus a co-located `minecraft:interaction`, and a
+/// verb that moves one without the other loses the delve its speaker in silence.
+///
+/// `(type, extra NBT)`. Every one is `Silent`/`NoAI`/persistent where the type
+/// supports it, so a template can never leave a wandering body behind on the
+/// shared batch server.
+const TELEPORT_WITNESS_TYPES: [(&str, &str); 5] = [
+    // a content body — the cargo-lift ruling: everyone on the car travels
+    (
+        "minecraft:zombie",
+        "NoAI:1b,Silent:1b,PersistenceRequired:1b",
+    ),
+    // the four an exemption list would have dropped
+    ("minecraft:interaction", "width:1.0f,height:2.0f"),
+    ("minecraft:marker", ""),
+    ("minecraft:text_display", ""),
+    ("minecraft:item", r#"Item:{id:"minecraft:stone",count:1}"#),
+];
+
+/// spec-0031 PackTests: one template per resolved `teleport`, each of which
+/// **puts one entity of every witness type in the volume and asserts every one of
+/// them arrived**.
+///
+/// The compile-time test (`crates/compiler/tests/v10_teleport.rs`) proves the
+/// compiler wrote no filter. That is only half of "the selection is total": the
+/// other half is vanilla's own `@e[<box>]` semantics, which no Rust test can
+/// witness. This template is that half, and it calls the campaign's REAL
+/// generated `teleport_<key>` function — not a command it re-typed — so a
+/// selector that grows a filter reds here.
+///
+/// The assertion is a count, not a per-entity check: the witnesses go in tagged,
+/// the box is asserted to hold all of them first (a template whose entities
+/// landed outside would pass by examining nothing), the function runs, and the
+/// box must then hold **zero**. Counting rather than naming keeps the claim
+/// exactly "every entity in the volume left it", which is the criterion's
+/// wording.
+fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let Some((from, _to)) = eff.teleport() else {
+            continue;
+        };
+        let name = teleport_fn(eff);
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let Some((lo, hi)) = plan.zone_box(from) else {
+            continue;
+        };
+        let mid = [
+            (lo[0] + hi[0]) / 2,
+            (lo[1] + hi[1]) / 2,
+            (lo[2] + hi[2]) / 2,
+        ];
+        let bx = box_selector_args(lo, hi);
+        let tag = format!("dw_tptest_{}", &name["teleport_".len()..]);
+        let n = TELEPORT_WITNESS_TYPES.len();
+        let mut t = packtest_header(&format!(
+            "{title}: `{name}` moves EVERYTHING in its volume — no type is exempt (spec-0031)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        // Never assume a fresh world on the shared-batch server.
+        t.push(format!("kill @e[tag={tag}]"));
+        for (ty, nbt) in TELEPORT_WITNESS_TYPES {
+            let sep = if nbt.is_empty() { "" } else { "," };
+            t.push(format!(
+                "summon {ty} {} {} {} {{Tags:[\"{tag}\"]{sep}{nbt}}}",
+                mid[0] as f64 + 0.5,
+                mid[1],
+                mid[2] as f64 + 0.5
+            ));
+        }
+        // Bound, not assumed: all N witnesses really are inside the volume's own
+        // selector box before anything moves.
+        t.push(format!(
+            "execute store result score #tp_in dw.sys if entity @e[tag={tag},{bx}]"
+        ));
+        t.push(format!("assert score #tp_in dw.sys matches {n}"));
+        t.push(format!("function {ns}:{name}"));
+        // …and none of them is left behind. A `type=!…` term in the selector
+        // leaves its entity here and this count is non-zero.
+        t.push(format!(
+            "execute store result score #tp_left dw.sys if entity @e[tag={tag},{bx}]"
+        ));
+        t.push("assert score #tp_left dw.sys matches 0".to_string());
+        t.push(format!("kill @e[tag={tag}]"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
 }
 
 /// spec-0031 PackTests: one template per resolved lethal volume, each of which

@@ -970,11 +970,7 @@ pub struct PotionEffect {
 impl PotionEffect {
     /// True if this effect is applied once on drinking rather than over time.
     pub fn is_instant(&self) -> bool {
-        let norm = if self.effect.contains(':') {
-            self.effect.clone()
-        } else {
-            format!("minecraft:{}", self.effect)
-        };
+        let norm = crate::registry::namespaced_effect_id(&self.effect);
         INSTANT_EFFECTS.contains(&norm.as_str())
     }
 }
@@ -988,6 +984,14 @@ pub const MAX_POTION_DURATION_TICKS: u32 = 1_000_000;
 /// The largest `amplifier` a potion effect may declare: vanilla stores it in an
 /// unsigned byte, so 255 is not a policy but the end of the field.
 pub const MAX_POTION_AMPLIFIER: u32 = 255;
+
+/// The largest `seconds` a [`QuestEffect::GiveEffect`] may declare, derived from
+/// [`MAX_POTION_DURATION_TICKS`] rather than chosen again: the two are the same
+/// quantity in different units, and a second independently-picked ceiling is how
+/// two limits for one fact drift apart. ≈13.9 hours, past the 10-hour delve
+/// ceiling, so nothing a delve can legally need is refused — while a duration
+/// typed in *ticks* or in milliseconds is caught (`DW0541`).
+pub const MAX_EFFECT_SECONDS: u32 = MAX_POTION_DURATION_TICKS / 20;
 
 /// The canonical English title of the bonfire rest dialog (owner ruling
 /// 2026-08-03). Baked at emit time when the campaign authors no `prompt`, in the
@@ -4156,6 +4160,147 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
     },
+    /// Grants a vanilla **status effect** for a stated duration (DSL v0.10,
+    /// spec-0031). The engine has emitted status effects since v0.6 — the
+    /// night-vision area mitigation is a self-rescheduling, region-scoped
+    /// `effect give` — and exposed none, so an author who wanted blindness for a
+    /// lift ride, slowness in deep water or regeneration at a shrine had no
+    /// surface at all. This is that surface, over the whole pinned 1.21.11
+    /// `mob_effect` registry (`DW0192` rejects an id outside it).
+    ///
+    /// **A grant carries a duration, and there is no way to spell one that does
+    /// not.** Vanilla's `infinite` keyword is deliberately absent from this
+    /// surface: an effect whose only removal is a later command is an effect the
+    /// player keeps forever whenever that command does not run — a logout, a
+    /// crash, a chain interrupted by a death. A duration expires on its own, with
+    /// no cooperation from anything. `seconds` is therefore required and bounded
+    /// (1..=[`MAX_EFFECT_SECONDS`], `DW0541`), and the *pattern* that reintroduces
+    /// the same hazard — pairing a grant with a `clear-effect` that removes it
+    /// while it is still live — is `DW0540`.
+    ///
+    /// `in` narrows to players inside an anchor-centred box, the same
+    /// [`StealthZone`] a `begin-stealth` zone, a `damage-players` filter and a
+    /// `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`.
+    /// It is what makes "blind whoever is riding the car" expressible without
+    /// blinding the whole party.
+    GiveEffect {
+        /// Vanilla status-effect id (e.g. `minecraft:blindness`), validated
+        /// against the pinned 1.21.11 registry (`DW0192`).
+        effect: String,
+        /// Duration in seconds. Required, `1..=`[`MAX_EFFECT_SECONDS`]
+        /// (`DW0541`) — see the variant docs for why there is no infinite form.
+        seconds: u32,
+        /// Amplifier (0 = level I), `0..=`[`MAX_POTION_AMPLIFIER`] (`DW0541`).
+        /// Absent = 0.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        amplifier: Option<u32>,
+        /// Suppress the swirling particles (vanilla's `hideParticles`). Absent =
+        /// `false`, vanilla's own default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hide_particles: Option<bool>,
+        /// Optional spatial filter: only grant to a player inside this
+        /// anchor-centred box (`anchor ± extent`). Absent = every player the
+        /// effect's audience addresses.
+        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+        within: Option<StealthZone>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// Removes a status effect (DSL v0.10, spec-0031) — vanilla's `effect clear`.
+    ///
+    /// This is **not** how a `give-effect` is supposed to end: a duration is. It
+    /// exists for the effects the engine did not grant — a potion the player
+    /// drank, a `wither` a mob applied, the whole set at a bonfire — which is why
+    /// `effect` is optional (absent = clear everything, exactly as vanilla's
+    /// `effect clear <targets>` does). Pairing it with a live grant of the same
+    /// effect in the same bundle is `DW0540`.
+    ClearEffect {
+        /// The status-effect id to remove (`DW0192`). **Absent clears every
+        /// effect**, matching `effect clear <targets>` with no id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effect: Option<String>,
+        /// Optional spatial filter, identical in shape and meaning to
+        /// [`QuestEffect::GiveEffect`]'s.
+        #[serde(default, rename = "in", skip_serializing_if = "Option::is_none")]
+        within: Option<StealthZone>,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// Teleports **everything inside a declared volume** to an anchor (DSL v0.10,
+    /// spec-0031).
+    ///
+    /// **The selector is a region, never a block.** "Whoever is standing on this
+    /// block" has three different answers for a player half a foot over the edge,
+    /// a player mid-jump and a player sneaking on the lip; a volume has one, and
+    /// it is the same one every tick. `from` is the anchor-centred
+    /// [`StealthZone`] box the rest of the engine already uses.
+    ///
+    /// **The selection is total.** Emission is a single `tp @e[<box>] <cell>`
+    /// with no `type=`, no `tag=`, no `limit=` and no `sort=` — every entity in
+    /// the volume moves, and `crates/compiler/tests/v10_teleport.rs` asserts that
+    /// from the emitted selector rather than from anyone's memory. A
+    /// machinery-type exemption of the kind a `lethal_volumes[]` entry must carry
+    /// was considered and **rejected**: an NPC is a body plus a co-located
+    /// `minecraft:interaction` hitbox, so exempting `minecraft:interaction` —
+    /// as the lethal volume does — would teleport the speaker and leave its
+    /// dialogue box behind. The two engine affordances that are bound to hardware
+    /// the teleport cannot move are refused at compile time instead (`DW0542`).
+    /// Owner ruling
+    /// 2026-08-08 is that everyone on the car travels, players and entities
+    /// alike; totality is how that is true.
+    ///
+    /// **A teleport is not a rescue.** Accumulated fall distance carries across
+    /// one unchanged and is charged in full at the destination — measured Δ
+    /// exactly `0.0000` in 46/46 trials on the pinned 1.21.11, including
+    /// teleports 143 and 157 blocks straight *up*, with landing damage
+    /// `floor(fall_distance) − 3` (`docs/notes/death-and-teleport-spike.md` §3).
+    /// A platform that arrives under a falling player past ~20 blocks of fall is
+    /// the surface they die on. The compiler does not try to reset the counter:
+    /// what *does* reset it was explicitly not measured, and inventing a
+    /// mechanism from recall is the folklore this project forbids.
+    Teleport {
+        /// The volume whose contents are moved, as an anchor-centred box
+        /// (`anchor ± extent`) — the same shape a `begin-stealth` zone, a
+        /// `damage-players` `in` filter and a `lethal_volumes[]` region take.
+        ///
+        /// Deliberately NOT a bare prefab `region` anchor, for the reason
+        /// [`QuestEffect::Collapse`] records: the assembled model clears every
+        /// gate-region anchor's cells, so a volume described that way would
+        /// delete the geometry it names.
+        from: StealthZone,
+        /// The destination anchor. Resolved to a literal cell at build time, so
+        /// the emitted `tp` carries absolute coordinates and no runtime search.
+        to: AnchorId,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031); see
+        /// [`QuestEffect::requires_state`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
 }
 
 /// `Debug` is hand-written because it is a **stable content-key rendering**: the
@@ -4604,6 +4749,63 @@ impl std::fmt::Debug for QuestEffect {
                 ff(
                     f.debug_struct("ClearState")
                         .field("state", state)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::GiveEffect {
+                effect,
+                seconds,
+                amplifier,
+                hide_particles,
+                within,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("GiveEffect")
+                        .field("effect", effect)
+                        .field("seconds", seconds)
+                        .field("amplifier", amplifier)
+                        .field("hide_particles", hide_particles)
+                        .field("within", within)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::ClearEffect {
+                effect,
+                within,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("ClearEffect")
+                        .field("effect", effect)
+                        .field("within", within)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::Teleport {
+                from,
+                to,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("Teleport")
+                        .field("from", from)
+                        .field("to", to)
                         .field("requires_flags", requires_flags),
                     forbids_flags,
                 ),
@@ -5140,6 +5342,9 @@ impl QuestEffect {
             QuestEffect::Sequence { .. } => "sequence",
             QuestEffect::Volley { .. } => "volley",
             QuestEffect::Collapse { .. } => "collapse",
+            QuestEffect::GiveEffect { .. } => "give-effect",
+            QuestEffect::ClearEffect { .. } => "clear-effect",
+            QuestEffect::Teleport { .. } => "teleport",
         }
     }
 
@@ -5277,7 +5482,10 @@ impl QuestEffect {
             // spec-0031 state verbs are v0.10 — they report via `v10_effect`.
             | QuestEffect::SetState { .. }
             | QuestEffect::AddState { .. }
-            | QuestEffect::ClearState { .. } => None,
+            | QuestEffect::ClearState { .. }
+            | QuestEffect::GiveEffect { .. }
+            | QuestEffect::ClearEffect { .. }
+            | QuestEffect::Teleport { .. } => None,
         }
     }
 
@@ -5343,6 +5551,9 @@ impl QuestEffect {
             QuestEffect::SetState { .. } => Some("set-state"),
             QuestEffect::AddState { .. } => Some("add-state"),
             QuestEffect::ClearState { .. } => Some("clear-state"),
+            QuestEffect::GiveEffect { .. } => Some("give-effect"),
+            QuestEffect::ClearEffect { .. } => Some("clear-effect"),
+            QuestEffect::Teleport { .. } => Some("teleport"),
             _ => None,
         }
     }
@@ -5634,9 +5845,25 @@ impl QuestEffect {
             QuestEffect::MoveNpc { to_anchor, .. } | QuestEffect::MoveActor { to_anchor, .. } => {
                 vec![("to_anchor".to_string(), to_anchor)]
             }
+            // The `in` filter is one capability on three verbs, so it registers
+            // once: `damage-players` (v0.6) and the v0.10 status-effect pair.
             QuestEffect::DamagePlayers {
                 within: Some(zone), ..
+            }
+            | QuestEffect::GiveEffect {
+                within: Some(zone), ..
+            }
+            | QuestEffect::ClearEffect {
+                within: Some(zone), ..
             } => vec![("in/anchor".to_string(), &zone.anchor)],
+            // Both of a `teleport`'s anchors are load-bearing — the source volume
+            // decides WHAT moves and the destination decides WHERE — so a typo in
+            // either is a dangling reference (`DW0142`), never a silently
+            // zero-cell volume or a dropped command.
+            QuestEffect::Teleport { from, to, .. } => vec![
+                ("from/anchor".to_string(), &from.anchor),
+                ("to".to_string(), to),
+            ],
             QuestEffect::BeginStealth { zones, .. } => zones
                 .iter()
                 .enumerate()
@@ -5836,7 +6063,10 @@ impl QuestEffect {
             | QuestEffect::PlaySound { requires_flags, .. }
             | QuestEffect::DamagePlayers { requires_flags, .. }
             | QuestEffect::Volley { requires_flags, .. }
-            | QuestEffect::Collapse { requires_flags, .. } => requires_flags,
+            | QuestEffect::Collapse { requires_flags, .. }
+            | QuestEffect::GiveEffect { requires_flags, .. }
+            | QuestEffect::ClearEffect { requires_flags, .. }
+            | QuestEffect::Teleport { requires_flags, .. } => requires_flags,
             // Terminal / party- or session-global verbs are not per-effect
             // gatable: `campaign-complete` is terminal; `set-checkpoint`
             // (`spawnpoint @a`) / `begin-stealth` / `end-stealth` are party-wide
@@ -5886,7 +6116,10 @@ impl QuestEffect {
             | QuestEffect::PlaySound { forbids_flags, .. }
             | QuestEffect::DamagePlayers { forbids_flags, .. }
             | QuestEffect::Volley { forbids_flags, .. }
-            | QuestEffect::Collapse { forbids_flags, .. } => forbids_flags,
+            | QuestEffect::Collapse { forbids_flags, .. }
+            | QuestEffect::GiveEffect { forbids_flags, .. }
+            | QuestEffect::ClearEffect { forbids_flags, .. }
+            | QuestEffect::Teleport { forbids_flags, .. } => forbids_flags,
             QuestEffect::CampaignComplete { .. }
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
@@ -5926,7 +6159,10 @@ impl QuestEffect {
             | QuestEffect::PlaySound { requires_state, .. }
             | QuestEffect::DamagePlayers { requires_state, .. }
             | QuestEffect::Volley { requires_state, .. }
-            | QuestEffect::Collapse { requires_state, .. } => requires_state,
+            | QuestEffect::Collapse { requires_state, .. }
+            | QuestEffect::GiveEffect { requires_state, .. }
+            | QuestEffect::ClearEffect { requires_state, .. }
+            | QuestEffect::Teleport { requires_state, .. } => requires_state,
             QuestEffect::CampaignComplete { .. }
             | QuestEffect::SpawnNpc { .. }
             | QuestEffect::SetCheckpoint { .. }
@@ -5973,6 +6209,62 @@ impl QuestEffect {
             | QuestEffect::DespawnActor { actor, .. }
             | QuestEffect::MoveActor { actor, .. }
             | QuestEffect::UnleashActor { actor, .. } => Some(actor),
+            _ => None,
+        }
+    }
+
+    /// Every vanilla **status-effect** id this effect names, for registry
+    /// validation (`DW0192`) — the sibling of [`Self::sound_refs`] and the single
+    /// authority on the status-effect-bearing verb surface. `(subpath, id)`
+    /// pairs; empty for a `clear-effect` that names none (which clears all).
+    pub fn status_effect_refs(&self) -> Vec<(&'static str, &str)> {
+        match self {
+            QuestEffect::GiveEffect { effect, .. } => vec![("effect", effect.as_str())],
+            QuestEffect::ClearEffect {
+                effect: Some(e), ..
+            } => vec![("effect", e.as_str())],
+            _ => Vec::new(),
+        }
+    }
+
+    /// `(effect, seconds, amplifier, hide_particles, in)` if this is a
+    /// `give-effect` (DSL v0.10), with the documented defaults already applied.
+    pub fn give_effect(&self) -> Option<(&str, u32, u32, bool, Option<&StealthZone>)> {
+        match self {
+            QuestEffect::GiveEffect {
+                effect,
+                seconds,
+                amplifier,
+                hide_particles,
+                within,
+                ..
+            } => Some((
+                effect.as_str(),
+                *seconds,
+                amplifier.unwrap_or(0),
+                hide_particles.unwrap_or(false),
+                within.as_ref(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// `(effect, in)` if this is a `clear-effect` (DSL v0.10). The effect is
+    /// `None` for the clear-everything form, exactly as vanilla spells it.
+    pub fn clear_effect(&self) -> Option<(Option<&str>, Option<&StealthZone>)> {
+        match self {
+            QuestEffect::ClearEffect { effect, within, .. } => {
+                Some((effect.as_deref(), within.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `(from, to)` if this is a `teleport` (DSL v0.10): the source volume and
+    /// the destination anchor.
+    pub fn teleport(&self) -> Option<(&StealthZone, &AnchorId)> {
+        match self {
+            QuestEffect::Teleport { from, to, .. } => Some((from, to)),
             _ => None,
         }
     }

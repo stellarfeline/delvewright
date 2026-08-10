@@ -214,6 +214,26 @@ pub mod codes {
     /// wording is refused rather than papered over: a gate that reports green
     /// while the player learns nothing is exactly the vacuous pass CLAUDE.md names.
     pub const LETHAL_MESSAGE_BLANK: &str = "DW0512";
+    /// (spec-0031, DSL v0.10) **A grant whose removal is a later effect, not its
+    /// own duration.** A `give-effect` is still live at the moment a
+    /// `clear-effect` for the same effect fires in the same bundle, so the clear
+    /// — not the duration — is what ends it.
+    ///
+    /// A bundle that does not reach its end leaves the effect on the player: a
+    /// logout, a crash, a death mid-chain, a `sequence` whose remaining
+    /// `schedule` never runs. A duration expires with no cooperation from
+    /// anything, which is why `seconds` is mandatory and why vanilla's `infinite`
+    /// is absent from this surface — this diagnostic is what stops the same
+    /// hazard being rebuilt out of two effects that are individually fine.
+    pub const EFFECT_CLEARED_LIVE: &str = "DW0540";
+    /// (spec-0031, DSL v0.10) A `give-effect`'s `seconds` is zero or beyond
+    /// [`crate::MAX_EFFECT_SECONDS`], or its `amplifier` is beyond
+    /// [`crate::MAX_POTION_AMPLIFIER`].
+    ///
+    /// Zero is the grant that never happens — the unbound-vacuity class as a
+    /// number. The ceilings are vanilla's own field widths, so a duration typed
+    /// in ticks or milliseconds is caught instead of silently overflowing.
+    pub const EFFECT_GRANT_BOUNDS: &str = "DW0541";
     /// (v0.3) A wave mob `entity` is not a known vanilla entity id. (Item-id
     /// checks for `collect.item`, `interact.requires_item` and `give-item.item`
     /// reuse [`ITEM_UNKNOWN`] / `DW0143`.)
