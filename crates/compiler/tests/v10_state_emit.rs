@@ -43,26 +43,38 @@ fn tmp(name: &str) -> PathBuf {
 /// A private prefab copy whose `hello-room.json` gains an `anchor/trap` carrying
 /// a restorable `trigger_block` — a gated trap's hardware obligation (`DW0363`)
 /// holds for a numeric gate exactly as it does for a flag one.
-fn patched_prefabs(who: &str) -> PathBuf {
-    let dir = tmp(&format!("v10-state-prefabs-{who}"));
-    common::copy_dir_all(&common::prefabs_dir(), &dir);
-    let path = dir.join("hello-room.json");
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    let anchors = meta
-        .get_mut("anchors")
-        .and_then(|a| a.as_object_mut())
-        .unwrap();
-    anchors.insert(
-        "anchor/trap".to_string(),
-        serde_json::json!({
-            "pos": [5, 1, 6],
-            "dispenser": [4, 1, 6],
-            "trigger_block": "minecraft:stone_pressure_plate"
-        }),
-    );
-    std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    dir
+///
+/// Materialized **once per process** behind a `OnceLock`, not once per test. The
+/// library is 76 files, the four tests here are read-only over it, and copying it
+/// four times in parallel is IO this binary does not need — IO that is enough, on
+/// a CI disk, to widen a time-of-check/time-of-use window in a sibling test
+/// binary doing the same thing (see `effect_root_walkers::prefabs_with_trap`).
+/// One initializer, every other caller blocking on it, nothing destructive
+/// running beside a read.
+fn patched_prefabs() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir = tmp("v10-state-prefabs");
+        common::copy_dir_all(&common::prefabs_dir(), &dir);
+        let path = dir.join("hello-room.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let anchors = meta
+            .get_mut("anchors")
+            .and_then(|a| a.as_object_mut())
+            .unwrap();
+        anchors.insert(
+            "anchor/trap".to_string(),
+            serde_json::json!({
+                "pos": [5, 1, 6],
+                "dispenser": [4, 1, 6],
+                "trigger_block": "minecraft:stone_pressure_plate"
+            }),
+        );
+        std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+        dir
+    })
+    .clone()
 }
 
 const WORLD: &str = r#"{
@@ -213,7 +225,7 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
     std::fs::write(dir.join("quests.json"), QUESTS).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE).unwrap();
 
-    let prefab_dir = patched_prefabs(who);
+    let prefab_dir = patched_prefabs();
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("v10-state parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
