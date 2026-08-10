@@ -58,7 +58,13 @@ docker run -d --name "${CONTAINER}" \
   -p 127.0.0.1::25565 \
   "${IMAGE}" >/dev/null
 
-PORT="$(docker port "${CONTAINER}" 25565 | head -1 | sed 's/.*://')"
+# Capture, then split in the shell. `docker port … | head -1` would put an
+# early-exit consumer on the right of a pipe under `set -o pipefail`: head stops
+# reading, docker dies of SIGPIPE (141), and the pipeline reports failure
+# *because* the port was found (tools/check-shell-pipe-shortcircuit.py).
+PORT_MAP="$(docker port "${CONTAINER}" 25565)"
+PORT_LINE="${PORT_MAP%%$'\n'*}"   # first mapping only (v4 and v6 are both listed)
+PORT="${PORT_LINE##*:}"           # everything after the last colon
 [ -n "${PORT}" ] || { echo "[spike] could not read the ephemeral host port" >&2; exit 1; }
 echo "[spike] ephemeral host port: 127.0.0.1:${PORT}"
 
