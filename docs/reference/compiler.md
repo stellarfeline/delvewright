@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.9.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.10.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS`) and `versions.toml` by
@@ -2394,7 +2394,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
