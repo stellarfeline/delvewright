@@ -1462,6 +1462,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   green over a runtime mechanism is exactly the vacuity this number exposes).
   **Emitted only for a campaign that declares a volume**, so a file that exists
   and reports zero is a finding rather than an absence.
+- `<out>/validation/teleport-gate.json`: the `teleport` proof's **binding
+  ledger** (`compiler::teleport`, spec-0031, playtest-methodology.md rule 1).
+  `teleports.declared` vs `teleports.resolved` (a gap is an anchor no placed
+  piece provides — already `DW0142`/`DW0360`), `cells` (the size of what the
+  emitted selector sweeps), `affordances_examined` (every engine affordance
+  tested against `DW0542` — `eclipse::affordances` plus the seal shells) and
+  `packtest_templates` (the runtime half of totality, one per teleport; whether
+  vanilla's `@e[<box>]` really reaches every entity type is vanilla's fact, not
+  the compiler's, and a compile-time-only green over it is exactly the vacuity
+  this number exposes). **Emitted only for a campaign that declares a
+  teleport**, so a file that exists and reports zero is a finding rather than an
+  absence.
 - `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
   ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
   the traversal proof actually examined — `legs`, `route_cells`, and
