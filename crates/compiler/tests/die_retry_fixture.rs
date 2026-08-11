@@ -42,6 +42,17 @@
 //! staged is by definition not that encounter's governing checkpoint. Geometry is
 //! the only free variable, which is why the fix was the world and not the beats.
 //!
+//! **And `quests.json` declares 0.11.0 on purpose.** `DW0478` examines a plain
+//! `set-checkpoint` only from that version — the obligation fence on the object
+//! class it widened onto (`nav::PLAIN_CHECKPOINT_BINDS_AT`), so an untouched old
+//! campaign is not reddened by an engine change. This fixture's checkpoint is a
+//! plain one, so at the 0.10.0 it shipped with it would have been *grandfathered*:
+//! the five-piece keep would still be five pieces, the test would still be green,
+//! and the constraint the keep exists to satisfy would no longer be checked at
+//! all. That is the vacuity this repo names most often, and it is the reason the
+//! `unbound` assertion below is not decoration — it is what caught this, red,
+//! when the fence landed. Adopting 0.11.0 is this fixture's adoption round.
+//!
 //! Five pieces is the floor, not a preference: `pool/stone-keep` seats the
 //! required pieces as entry → gate room (`anchor/keeper-stand`) → boss hall
 //! (`anchor/boss`), and the solver splits filler evenly across the gaps *before*
@@ -158,6 +169,16 @@ fn the_fixture_gives_the_die_retry_stage_something_to_bind_on() {
         safety["unbound"], false,
         "the fixture's checkpoint must be MEASURED against the guard, not merely \
          left unexamined: {safety:#}"
+    );
+    assert!(
+        safety["grandfathered"]
+            .as_array()
+            .expect("the ledger publishes what the obligation fence withheld")
+            .is_empty(),
+        "…and it must not be withheld by the version fence either. A plain \
+         `set-checkpoint` is examined only from dsl_version 0.11.0; below it this \
+         fixture would keep its five-piece keep, keep its green, and quietly stop \
+         proving the constraint the keep was built for: {safety:#}"
     );
     assert!(
         safety["pairs"].as_u64().unwrap_or(0) >= 1,

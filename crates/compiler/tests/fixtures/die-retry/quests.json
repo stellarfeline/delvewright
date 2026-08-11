@@ -1,5 +1,5 @@
 {
-  "dsl_version": "0.10.0",
+  "dsl_version": "0.11.0",
   "campaign_id": "die-retry",
   "stage": "quests",
   "content": {

@@ -184,6 +184,22 @@ fn stage_ordinal(versions: &BTreeMap<&'static str, u32>, stage: &str) -> u32 {
         .unwrap_or_else(|| versions.values().copied().min().unwrap_or(0))
 }
 
+/// The version `stage` is judged at on `c` — the same reading [`Fenced::apply`]
+/// uses on a diagnostic's own `stage`, exposed for the **second granularity**
+/// this module's docs describe: a check whose BINDING widened and which therefore
+/// has to ask the version question itself, per object, because no per-code fence
+/// can see it. `DW0478`'s respawn-point class is the compiler-side instance — a
+/// `bonfire` binds at every version, a plain `set-checkpoint` from 0.11, and the
+/// two are one code — as [`crate::l10n::required_inventory`] is the DSL-side one.
+///
+/// It exists so "which `dsl_version` governs this object" has ONE definition,
+/// fallback included: an unknown stage name reads the campaign-wide minimum,
+/// which grandfathers, and grandfathering is the direction that is safe to be
+/// wrong in.
+pub fn stage_version_of(c: &Campaign, stage: &str) -> u32 {
+    stage_ordinal(&stage_versions(c), stage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

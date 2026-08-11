@@ -38,7 +38,7 @@ pub use envelope::{
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
     is_v10, is_v11, minor_ordinal, parse_campaign,
 };
-pub use fence::Fenced;
+pub use fence::{Fenced, stage_version_of};
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,

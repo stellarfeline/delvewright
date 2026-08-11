@@ -103,6 +103,16 @@ pub struct CheckpointPlan {
     /// party rests at the affordance, not when the effect fires. `false` for a
     /// plain `set-checkpoint` (spec-0012), which is immediate.
     pub rest: bool,
+    /// The **stage document this checkpoint was authored in** — `"quests"` (a
+    /// quest bundle or an environment trigger) or `"dialogue"` (a reply option's
+    /// effects), spelled as the fence spells stage names
+    /// (`delvewright_dsl::stage_version_of`).
+    ///
+    /// Recorded because one check versions its own binding per respawn point:
+    /// `DW0478` examines a plain `set-checkpoint` only from the `dsl_version` at
+    /// which its object class widened, and "which version" is a question about
+    /// the document the author wrote it in, not about the campaign as a whole.
+    pub stage: &'static str,
     /// The bonfire rest dialog's three strings, already resolved against the
     /// compiler's canonical English (owner ruling 2026-08-03). Meaningless for a
     /// plain `set-checkpoint`, which shows no dialog.
@@ -2769,6 +2779,7 @@ fn collect_v06_effects(
 ) -> (Vec<CheckpointPlan>, Vec<StealthBeat>) {
     let mut c = V06Collector {
         anchors,
+        stage: "quests",
         checkpoints: Vec::new(),
         stealth: Vec::new(),
         stealth_ends: Vec::new(),
@@ -2798,6 +2809,9 @@ fn collect_v06_effects(
     }
 
     // Stage 6 — dialogue `set-checkpoint` (rooted at the NPC's talk-to beat).
+    // Everything collected from here answers to `dialogue.json`'s own
+    // `dsl_version`, which is what a per-object version fence has to read.
+    c.stage = "dialogue";
     for tree in &campaign.dialogue.content.dialogues {
         let step = dialogue_fire_step(campaign, tree.npc.as_str(), obj_step);
         for node in &tree.nodes {
@@ -3864,6 +3878,9 @@ fn collect_traps(
 /// their anchors (a struct so the collection borrows stay simple).
 struct V06Collector<'a> {
     anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
+    /// The stage document currently being walked, stamped onto every checkpoint
+    /// collected from it ([`CheckpointPlan::stage`]).
+    stage: &'static str,
     checkpoints: Vec<CheckpointPlan>,
     stealth: Vec<StealthBeat>,
     /// Firing steps of every `end-stealth`, in content order — closes each beat's
@@ -3893,6 +3910,7 @@ impl V06Collector<'_> {
                 on_respawn: on_respawn.to_vec(),
                 fire_step,
                 rest,
+                stage: self.stage,
                 // Authored strings are ordinary inventoried campaign text; an
                 // unauthored one takes the compiler's chrome default in its tagged
                 // form, which `emit` rebinds to the build's language.
