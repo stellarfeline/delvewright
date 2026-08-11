@@ -155,6 +155,11 @@ delve-render index <build-dir> -o <file>     # image <-> expect pairs for a revi
 delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
+delve-render viewer <nbt|dir>... -o <page.html> [--title T] [--biome minecraft:plains]
+                                             # [--palette palette.json]
+                                             # ONE interactive page: a camera the reviewer drives
+delve-render palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains]
+                                             # the derived colour/shape table `viewer` reads
 ```
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
@@ -228,6 +233,71 @@ bearing, chunk list = the layout's own chunks, and — iff the plan states
 `horizon: ocean` — Chunky's ambient water plane at the compiler's sea level. One
 scene per bearing (`<campaign>_panorama_<bearing>.json`), so four bearings coexist
 in one scene dir.
+
+### `viewer` — the page the reviewer drives · agent builds it, owner decides from it
+
+A still render answers *is the set pretty*. Only a camera the reviewer drives
+answers *what is it like to be in here* — where the way in is, which face the
+party walks on, where the interactables sit, how the interior reads at eye
+height. `viewer` turns one prefab (or a directory of them, with a switcher) into
+**one self-contained `.html`**: no CDN, no external stylesheet, no fetch, so it
+opens from `file://` and survives the strict CSP a Claude Artifact is published
+under. Every byte is inline.
+
+```sh
+delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
+delve-render viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
+```
+
+**Colour is derived, never typed.** Each palette blockstate is resolved the way
+the game resolves it — `blockstates/<id>.json` → variant (or every satisfied
+`multipart` case) → the model's `parent` chain → its `elements` and `textures` →
+the `.png`s — and the block's colour is the alpha-weighted mean of those
+textures. The model's element bounds come across too, so a slab is half-height, a
+carpet is a sheet and a chain is a thin post rather than everything being a cube.
+Grass, foliage and water are tinted from `data/**/worldgen/biome/<id>.json` in
+the same jar (`temperature`/`downfall` index the vanilla colormaps;
+`effects.water_color` colours water), which is why `--biome` is a real knob: a
+swamp, a desert and a cherry grove each produce their own table.
+
+**Cameras.** `Exterior ¾` and `Plan` always exist; every declared anchor and
+jigsaw socket adds a **player point of view** — eye at **1.62 blocks** above the
+floor of that cell, the height a standing player actually sees from. A socket's
+facing points *out* of the piece, so its point of view looks the other way. The
+page opens on the first anchor whose name stem is a reserved way in (`spawn`,
+`entry`, `entrance`, `threshold`), else the first socket, skipping any whose eye
+would land inside a block; a prefab that declares none opens on the exterior.
+Orbit, pan and zoom work with mouse and touch; in a point of view, W/A/S/D walks.
+The **cutaway** slider hides everything above a Y level and re-meshes, which is
+how a roofed interior gets read at all.
+
+**Anchors come from `<basename>.json` beside the `.nbt`** — the same metadata
+`piece` already reads, so hand-built prefabs carry them today and a grammar
+snapshot's semantics sidecar loads through the same reader. Point anchors and
+region anchors both draw. **Zero anchors is a stated finding** (`DW0726`), not a
+quiet success: the page says so and offers exterior and plan only.
+
+**Unresolved blocks are surfaced, never silently coloured** (`DW0727`, a
+warning, with the cell count): they draw in the missing-texture magenta and are
+listed on the page. An id the client jar does not have is an id the pinned
+server does not have either — which is how `minecraft:chain` was found (1.21.11
+renamed it `minecraft:iron_chain`).
+
+**Size.** Geometry is never JSON: the grid is run-length encoded as
+`(palette index u16, run length u16)` and base64'd, so the payload tracks how
+complicated the building is rather than how big its box is, and only exposed
+faces are meshed — in the browser, from that grid. Measured: `island-mountain`
+(36×28×42, 42,336 cells) **83 KiB**; a zone-sized 41×14×125 box (71,750 cells)
+**80 KiB**; all 36 committed prefabs on one page **176 KiB**. The ceiling is
+16 MB.
+
+Two runs over the same input produce the same page byte for byte (ADR-0006).
+`#model=<id>&preset=<id>&cut=<y>` in the URL opens a specific view, so a link
+points at the thing being discussed.
+
+`palette` writes the derived table on its own. It is the `--palette` input, which
+lets a page be built with **no client jar present** (CI does exactly this), and
+it is the seam a creator uses to supply their own resource pack's colours.
 
 ## 4a. Chunky — the official renderer (external process) · agent + human
 

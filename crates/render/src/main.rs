@@ -13,10 +13,13 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+use delvewright_render::assets::Assets;
+use delvewright_render::blockcolor::{Appearances, Deriver, PaletteTable};
 use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
-    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
+    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER,
+    DW_UNRESOLVED_BLOCK, Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
@@ -27,6 +30,7 @@ use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
 use delvewright_render::sheet::{self, ScoreSet, SheetOptions};
 use delvewright_render::shots;
+use delvewright_render::viewer;
 
 #[derive(Parser)]
 #[command(
@@ -134,6 +138,42 @@ enum Command {
         #[arg(long)]
         title: Option<String>,
     },
+    /// Turn one or more prefab `.nbt`s into ONE self-contained interactive HTML
+    /// page: a camera the reviewer drives, preset points of view including
+    /// player eye height at the way in, and every block coloured by what it
+    /// actually is.
+    Viewer {
+        /// Prefab `.nbt` files, or directories of them. Each prefab's
+        /// `<basename>.json` is read when present — that is where anchors live.
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Output `.html`.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Page title. Defaults to the prefab id, or a count when several.
+        #[arg(long)]
+        title: Option<String>,
+        /// Biome whose grass, foliage and water tints colour the model.
+        #[arg(long, default_value = delvewright_render::blockcolor::DEFAULT_BIOME)]
+        biome: String,
+        /// Use a precomputed appearance table (`delve-render palette`) instead
+        /// of deriving one, so a page can be built with no client jar present.
+        #[arg(long)]
+        palette: Option<PathBuf>,
+    },
+    /// Derive the appearance table (colour, coverage and model bounds per
+    /// blockstate) for some prefabs, as JSON — the `viewer`'s `--palette` input.
+    Palette {
+        /// Prefab `.nbt` files, or directories of them.
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Output `.json`.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Biome whose tints are baked into the table.
+        #[arg(long, default_value = delvewright_render::blockcolor::DEFAULT_BIOME)]
+        biome: String,
+    },
     /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
     /// for handing shots to a reviewing agent / vision model.
     Index {
@@ -181,6 +221,21 @@ fn main() -> ExitCode {
             title.as_deref(),
             &cli,
         ),
+        Command::Viewer {
+            inputs,
+            out,
+            title,
+            biome,
+            palette,
+        } => run_viewer(
+            inputs,
+            out,
+            title.as_deref(),
+            biome,
+            palette.as_deref(),
+            &cli,
+        ),
+        Command::Palette { inputs, out, biome } => run_palette(inputs, out, biome, &cli),
         Command::Index { build_dir, out } => run_index(build_dir, out, &cli),
     }
 }
@@ -713,4 +768,245 @@ fn save_png(frame: &render::Frame, path: &Path) -> Result<(), (Diagnostic, u8)> 
 fn fail(d: Diagnostic, json: bool, code: u8) -> ExitCode {
     d.print(json);
     ExitCode::from(code)
+}
+
+/// Collect prefab `.nbt` paths from files and/or directories, sorted by name so
+/// a page built from a directory is the same page on every machine.
+fn collect_nbt(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Diagnostic> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for input in inputs {
+        if input.is_dir() {
+            let mut found: Vec<PathBuf> = std::fs::read_dir(input)
+                .map_err(|e| {
+                    Diagnostic::error(DW_INPUT, format!("read dir {}: {e}", input.display()))
+                })?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|e| e == "nbt"))
+                .collect();
+            found.sort();
+            out.extend(found);
+        } else {
+            out.push(input.clone());
+        }
+    }
+    if out.is_empty() {
+        return Err(Diagnostic::error(
+            DW_INPUT,
+            "no prefab `.nbt` files in the given paths",
+        ));
+    }
+    Ok(out)
+}
+
+fn load_models(paths: &[PathBuf]) -> Result<Vec<viewer::ViewerModel>, Diagnostic> {
+    let mut models = Vec::with_capacity(paths.len());
+    for p in paths {
+        models.push(
+            viewer::ViewerModel::load(p)
+                .map_err(|e| Diagnostic::error(DW_INPUT, format!("{}: {e}", p.display())))?,
+        );
+    }
+    Ok(models)
+}
+
+/// Open the asset source colours are derived from — the same jar the GPU path
+/// textures with.
+fn open_assets(cli: &Cli) -> Result<Assets, Diagnostic> {
+    let path = resolve_textures(cli)?;
+    Assets::open(Path::new(&path))
+        .map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
+}
+
+/// Report every blockstate that could not be resolved, with its cell count, and
+/// state the anchor binding. A page that silently drew an unknown block grey
+/// would hide exactly the finding it exists to surface.
+fn report_page(stats: &viewer::BuildStats, models: usize, json: bool) {
+    for (state, (reason, count)) in &stats.unresolved {
+        Diagnostic::warning(
+            DW_UNRESOLVED_BLOCK,
+            format!(
+                "{state}: {reason} — {count} cell(s) drawn as the missing-texture \
+                 placeholder. The block does not exist in this asset source at all, \
+                 so a server pinned to the same version does not have it either"
+            ),
+        )
+        .print(json);
+    }
+    if stats.anchors == 0 {
+        Diagnostic::warning(
+            DW_BINDING,
+            format!(
+                "0 anchors bound over {models} prefab(s): no `<basename>.json` \
+                 declared any anchor or socket, so the page offers the exterior and \
+                 plan views only and no player point of view"
+            ),
+        )
+        .print(json);
+    }
+}
+
+fn run_viewer(
+    inputs: &[PathBuf],
+    out: &Path,
+    title: Option<&str>,
+    biome: &str,
+    palette: Option<&Path>,
+    cli: &Cli,
+) -> ExitCode {
+    let paths = match collect_nbt(inputs) {
+        Ok(p) => p,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    let models = match load_models(&paths) {
+        Ok(m) => m,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+
+    let title = title.map(|t| t.to_string()).unwrap_or_else(|| {
+        if models.len() == 1 {
+            models[0].id().to_string()
+        } else {
+            format!("{} prefabs", models.len())
+        }
+    });
+
+    // Either a table someone derived earlier (no jar needed) or a live
+    // derivation from the client jar.
+    let table;
+    let assets;
+    let deriver;
+    let colors: &dyn Appearances = match palette {
+        Some(p) => {
+            let bytes = match std::fs::read(p) {
+                Ok(b) => b,
+                Err(e) => {
+                    return fail(
+                        Diagnostic::error(DW_INPUT, format!("read {}: {e}", p.display())),
+                        cli.json,
+                        exit::INPUT,
+                    );
+                }
+            };
+            table = match serde_json::from_slice::<PaletteTable>(&bytes) {
+                Ok(t) => t,
+                Err(e) => {
+                    return fail(
+                        Diagnostic::error(DW_INPUT, format!("parse {}: {e}", p.display())),
+                        cli.json,
+                        exit::INPUT,
+                    );
+                }
+            };
+            &table
+        }
+        None => {
+            assets = match open_assets(cli) {
+                Ok(a) => a,
+                Err(d) => return fail(d, cli.json, exit::RENDER),
+            };
+            deriver = Deriver::with_biome(&assets, biome);
+            &deriver
+        }
+    };
+
+    let (html, stats) = match viewer::build_page(&models, colors, &title) {
+        Ok(v) => v,
+        Err(e) => {
+            return fail(Diagnostic::error(DW_INPUT, e), cli.json, exit::INPUT);
+        }
+    };
+    if let Some(parent) = out.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("create {}: {e}", parent.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    if let Err(e) = std::fs::write(out, &html) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+
+    report_page(&stats, models.len(), cli.json);
+
+    if cli.json {
+        let summary = serde_json::json!({
+            "page": out.display().to_string(),
+            "prefabs": models.len(),
+            "bytes": stats.bytes,
+            "anchors": stats.anchors,
+            "unresolved": stats.unresolved.len(),
+        });
+        println!("{summary}");
+    } else {
+        println!(
+            "{} — {} prefab(s), {} anchors, {} KiB",
+            out.display(),
+            models.len(),
+            stats.anchors,
+            stats.bytes / 1024
+        );
+    }
+    ExitCode::from(exit::OK)
+}
+
+fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, cli: &Cli) -> ExitCode {
+    let paths = match collect_nbt(inputs) {
+        Ok(p) => p,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    let models = match load_models(&paths) {
+        Ok(m) => m,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    let assets = match open_assets(cli) {
+        Ok(a) => a,
+        Err(d) => return fail(d, cli.json, exit::RENDER),
+    };
+    let deriver = Deriver::with_biome(&assets, biome);
+    let table = viewer::palette_for(&models, &deriver);
+
+    let mut json = match serde_json::to_string_pretty(&table) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("internal: serialise palette: {e}");
+            return ExitCode::from(exit::INTERNAL);
+        }
+    };
+    json.push('\n');
+    if let Err(e) = std::fs::write(out, &json) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+
+    for (state, reason) in &table.unresolved {
+        Diagnostic::warning(DW_UNRESOLVED_BLOCK, format!("{state}: {reason}")).print(cli.json);
+    }
+    if cli.json {
+        let summary = serde_json::json!({
+            "palette": out.display().to_string(),
+            "biome": table.biome,
+            "entries": table.entries.len(),
+            "unresolved": table.unresolved.len(),
+        });
+        println!("{summary}");
+    } else {
+        println!(
+            "{} — {} blockstates from {}, {} unresolved",
+            out.display(),
+            table.entries.len(),
+            table.biome,
+            table.unresolved.len()
+        );
+    }
+    ExitCode::from(exit::OK)
 }

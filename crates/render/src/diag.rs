@@ -28,6 +28,14 @@ pub const DW_RANK_ORDER: &str = "DW0725";
 /// zero is an error (nothing was ranked), a partial binding a warning. A gate
 /// that binds to nothing is vacuous, not a pass (CLAUDE.md).
 pub const DW_BINDING: &str = "DW0726";
+/// A blockstate in a prefab has no definition in the asset source it was
+/// coloured from — the block does not exist at the pinned version, or the model
+/// or its textures are absent. Reported with a cell count rather than drawn
+/// silently, because a block that cannot be resolved is a finding about the
+/// prefab or the pinned version, not a cosmetic detail: `minecraft:chain` is
+/// `minecraft:iron_chain` in 1.21.11, and the prefabs that still name the old id
+/// place a block the server does not have.
+pub const DW_UNRESOLVED_BLOCK: &str = "DW0727";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real

@@ -630,6 +630,11 @@ have caught gets paid for twice once stages 5–6 are written against it.
   puts them all on one page, optionally ordered by similarity to this gate's
   reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
   score only ORDERS the page, it never removes a candidate from it.
+  A still image cannot answer where the way in is or how a room reads from
+  standing height; when that is the question,
+  `delve-render viewer <nbt|dir> -o <page.html>` gives her one self-contained
+  page she drives — orbit, plan, a player point of view at every anchor, and a
+  cutaway for roofed interiors. Advisory, human-in-the-loop.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
@@ -779,6 +784,13 @@ Symptom → tool:
   human-optional. Say plainly that the score only orders the page: every
   candidate is on it, and the low scorer is present, last — she is the selector,
   the number is not.
+- **She cannot tell from a picture what a prefab is like to be inside**: mention
+  `delve-render viewer <nbt|dir> -o <page.html>` — one self-contained HTML page
+  with a camera she drives: exterior, plan, and a player point of view at eye
+  height (1.62) standing at every declared anchor and doorway, plus a cutaway
+  slider that takes the roof off. Blocks carry their real colours, derived from
+  the pinned client jar. Pass a directory to put a whole library on one page.
+  One line, human-optional.
 
 ### Localization stage (only when the prompt asks for other languages)
 

@@ -34,6 +34,11 @@ index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision r
 contact-sheet <dir> -o <png>    many candidate renders on ONE page, for curation
                                 [--scores f] [--shot ext-se] [--columns N]
                                 [--thumb 256] [--title T]
+viewer <nbt|dir>... -o <html>   ONE self-contained interactive page: a camera the
+                                reviewer drives [--title T] [--biome id]
+                                [--palette f]
+palette <nbt|dir>... -o <json>  the derived per-blockstate colour/shape table
+                                [--biome id]
 ```
 
 **Exit codes**: `0` ok · `2` input/usage · `3` output · `4` **fidelity-gate
@@ -54,7 +59,8 @@ and it is never redistributed.
 | `DW0722` | output error (cannot write) |
 | `DW0723` | renderer/GPU error or textures not found |
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
-| `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning |
+| `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor binding (warning) |
+| `DW0727` | a prefab blockstate has no definition in the asset source (`viewer` / `palette`) — warning, with its cell count |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
 except `DW0724`, which the compiler's visual tier holds. Take the next unused
@@ -320,6 +326,64 @@ differ between a laptop and a runner, and a curation page that shifted between
 runs would make "cell 7" mean two things. Two runs over the same inputs produce
 the same page byte for byte (`tests/sheet.rs`). Sheets are working material like
 every render — `.sheets/` is gitignored, nothing here ships.
+
+## `viewer` — the camera the reviewer drives
+
+A still render answers *is the set pretty*. Only a camera the reviewer drives
+answers *what is it like to be in here*. `viewer` emits **one self-contained
+`.html`** — no CDN, no external stylesheet, no fetch — so it opens from
+`file://` and survives the strict CSP an Artifact is published under.
+
+```sh
+delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
+delve-render viewer campaigns/prefabs -o .sheets/library.html   # all of them, one page
+```
+
+**The renderer is hand-written WebGL**, because a voxel model is axis-aligned
+boxes and that is nearly all a scene graph would be used for. The alternative
+was vendoring a general 3D library, and the sizes decided it: three.js r164's
+minified build measures **674,422 bytes**, against **47,891 bytes** for this
+page's entire front end (renderer, styles and markup together) — 14x, for
+geometry that is six quads per box. The CSP rules out loading it from a CDN, and
+an inline `<script>` gets no transfer compression, so that 659 KB would land in
+every page whole: eight times the size of the whole `island-mountain` page as it
+stands. Vendoring would also have owed an ACKNOWLEDGEMENTS entry; the hand-
+written path owes none.
+
+**Colour is derived from the pinned jar, never typed out.** `blockcolor.rs`
+resolves each palette blockstate the way the game does — variant or `multipart`
+→ `parent` chain → `elements` + `textures` → the `.png`s — and takes the
+alpha-weighted mean. Element bounds come with it, so a slab is half-height and a
+chain is a thin post. Grass, foliage and water tint from
+`data/**/worldgen/biome/<id>.json` in the same jar, which is why `--biome` is a
+real knob rather than decoration.
+
+**Presets**: `Exterior ¾`, `Plan`, and a **player point of view** per declared
+anchor and jigsaw socket — eye at **1.62 blocks** above that cell's floor. A
+socket faces *out* of the piece, so its view looks the other way. The page opens
+on the first reserved way-in stem (`spawn`/`entry`/`entrance`/`threshold`), else
+the first socket, skipping any whose eye would land inside a block. The cutaway
+slider hides everything above a Y level and re-meshes — how a roofed interior
+gets read at all.
+
+**Anchors come from `<basename>.json`**, the same sidecar `piece` reads, so
+hand-built prefabs work today and a grammar snapshot's semantics sidecar loads
+through the same reader. Zero anchors is a stated finding (`DW0726`), and the
+page still renders with exterior and plan only.
+
+**Packing**: the grid is run-length encoded as `(palette index u16, run length
+u16)` and base64'd — 4 bytes per *run*, not per cell — and only exposed faces
+are meshed, in the browser. `island-mountain` (42,336 cells) is an 83 KiB page;
+a zone-sized 41×14×125 box (71,750 cells) is 80 KiB; all 36 committed prefabs on
+one page is 176 KiB. Two runs over one input are byte-identical (ADR-0006).
+
+`#model=<id>&preset=<id>&cut=<y>` opens a specific view, so a link points at the
+thing being discussed — and so a headless check can open any preset without
+driving the UI.
+
+`palette` writes that derived table on its own. It is `viewer --palette`'s input,
+which is how a page is built with **no client jar** (what CI does), and how a
+creator supplies their own resource pack's colours.
 
 ## Stability (double-render)
 
