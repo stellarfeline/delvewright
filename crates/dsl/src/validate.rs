@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09, is_v10,
+    is_v07, is_v08, is_v09, is_v10, is_v11,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -17,7 +17,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, EncounterTier, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn, WorldEdit,
+    EditFrame, EncounterTier, Locomotion, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn,
+    WorldEdit, body_traversal_sites,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -62,6 +63,10 @@ pub fn validate_campaign_with(
     // for the same reason — every loop inside is empty for a campaign that
     // declares neither, and the version fence lives in `reserved_v10`.
     economy_checks(c, &mut d);
+    // DSL v0.11 (spec-0033): the per-body traversal declaration. Unconditional
+    // for the same reason its neighbours are — the walk is empty for a campaign
+    // that declares none, and the version fence lives in `reserved_v11`.
+    body_traversal_checks(c, &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
@@ -1362,6 +1367,92 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v08(c, d);
     reserved_v09(c, d);
     reserved_v10(c, d);
+    reserved_v11(c, d);
+}
+
+/// DSL v0.11 reserved-feature gating (spec-0033): the per-body `traversal`
+/// declaration.
+///
+/// **Fenced per stage, because the surface is per stage.** The stage-2 NPC's
+/// declaration is gated on the `npcs` document's own `dsl_version` and the
+/// stage-5 actor's on the `quests` document's, so a campaign may adopt the
+/// surface one stage at a time — which is what keeps every 0.2–0.10 campaign
+/// compiling untouched.
+///
+/// There is no requirement half. Nothing obliges a body to declare anything; the
+/// derived class is exactly what every pre-0.11 build used, so a campaign that
+/// declares none emits byte-for-byte what it emitted before.
+fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if !is_v11(c.npcs.dsl_version.as_str()) {
+        for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
+            if npc.traversal.is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "npcs",
+                format!("/content/npcs/{i}/traversal"),
+                format!(
+                    "a per-body `traversal` declaration (what npc `{}` can do when it moves) \
+                     requires dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or \
+                     remove the field",
+                    npc.id
+                ),
+            ));
+        }
+    }
+    if !is_v11(c.quests.dsl_version.as_str()) {
+        for (i, actor) in c.quests.content.actors.iter().enumerate() {
+            if actor.traversal.is_none() {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                codes::RESERVED,
+                "quests",
+                format!("/content/actors/{i}/traversal"),
+                format!(
+                    "a per-body `traversal` declaration (what actor `{}` can do when it moves) \
+                     requires dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or \
+                     remove the field",
+                    actor.id
+                ),
+            ));
+        }
+    }
+}
+
+/// DSL v0.11 (spec-0033): a declared locomotion the engine cannot hold the body
+/// to is refused at declaration time (`DW0455`).
+///
+/// Today that is exactly `aquatic`, and the reason is structural rather than a
+/// taste call: `aquatic` carries no exemption and governs no rule, so declaring
+/// it could never change a verdict — it would land in `DW0454` every time. A
+/// value whose only outcome is another diagnostic is a trap, so it is refused
+/// here with the gap named.
+fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for site in body_traversal_sites(c) {
+        if site.traversal.locomotion != Locomotion::Aquatic {
+            continue;
+        }
+        let (stage, path, id) = (site.body.stage(), &site.path, site.body.id());
+        d.push(Diagnostic::error(
+            codes::TRAVERSAL_UNPROVABLE,
+            stage,
+            format!("{path}/locomotion"),
+            format!(
+                "`{id}` declares `locomotion: aquatic`, which the compiler cannot hold it to. \
+                 `aquatic` is the one class that carries no exemption and governs no rule — it is \
+                 a ledger label derived from vanilla's own `#minecraft:aquatic` tag — so the \
+                 declaration could never change a verdict and would be reported inert (`DW0454`). \
+                 The gap, stated rather than left to folklore: routing has ONE reachability model, \
+                 standable ground, and water-flooded cells are impassable and never floor for \
+                 EVERY body, so there is nothing for an aquatic claim to feed. Prescription: \
+                 remove the declaration — a route that crosses water is already governed by the \
+                 flooded-cell rules, and a body vanilla itself calls aquatic still reaches the \
+                 traversal proof's binding ledger under its derived class."
+            ),
+        ));
+    }
 }
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
