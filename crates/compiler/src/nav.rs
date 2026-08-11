@@ -33,25 +33,26 @@ use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
 use crate::plan::{Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan};
 use delvewright_dsl::Diagnostic;
+use delvewright_dsl::DwCode;
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
 /// NPC's position over the assembled geometry.
-pub const DW_MOVE_UNROUTABLE: &str = "DW0307";
+pub const DW_MOVE_UNROUTABLE: DwCode = DwCode::every_version("DW0307");
 /// `DW0308`: a `cutscene` camera dolly path that passes through a solid block.
-pub const DW_CUTSCENE_CLIP: &str = "DW0308";
+pub const DW_CUTSCENE_CLIP: DwCode = DwCode::every_version("DW0308");
 /// `DW0347`: a `cutscene` shot whose aim sweeps faster than the angular budget
 /// ([`crate::camera::MAX_AIM_DEG_PER_TICK`], 6 °/tick = 120 °/s) — a pan that
 /// fast at 20 Hz is nausea-tier and provably bad *before* it ships. Typical
 /// cause: a `look_at` subject too close to a fast dolly. See the camera dossier
 /// (`docs/notes/camera-dossier.md` §1) for the budget's derivation.
-pub const DW_CAMERA_SPIN: &str = "DW0347";
+pub const DW_CAMERA_SPIN: DwCode = DwCode::every_version("DW0347");
 /// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
 /// walkable path connects over the assembled geometry (with no inter-area
 /// transport between them) — the player would be stranded. Turns the whole
 /// "assembled seams aren't walkable" bug class (task #34: a prefab regen wedged a
 /// doorway shut / opened a void gap and only a runtime bot caught it) into a
 /// compile error.
-pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
+pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
 /// `DW0510`: the party's only route to a critical-path objective runs through a
 /// declared **lethal volume** (DSL v0.10, spec-0031).
 ///
@@ -64,16 +65,16 @@ pub const DW_CRITICAL_UNROUTABLE: &str = "DW0311";
 /// shrink or route around — not sent to look for a wedged doorway that does not
 /// exist. Derived from a counterfactual: the leg is re-routed over the identical
 /// world with lethality removed, and the volumes covering that route are named.
-pub const DW_LETHAL_ON_CRITICAL_PATH: &str = "DW0510";
+pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
 /// at the checkpoint.
-pub const DW_CHECKPOINT_STRANDED: &str = "DW0315";
+pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::every_version("DW0315");
 /// `DW0316`: a `set-checkpoint` anchor with no standable footing on the final
 /// assembled model (a trap-trigger / hazard / mid-air cell), so the party would
 /// respawn into the void or a wall.
-pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
+pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::every_version("DW0316");
 /// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
 /// timing read — the set of entry phases from which a walking player clears the
 /// span before the gate shuts covers **less than 20% of the cycle** (owner ruling
@@ -81,7 +82,7 @@ pub const DW_CHECKPOINT_UNSTANDABLE: &str = "DW0316";
 /// that punishes bad timing is the point. A gate that punishes *every* timing is
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
-pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
+pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::every_version("DW0378");
 /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
 /// observe before committing to it — no standable cell exists that is clear of
 /// the hazard's lethal span, reachable without entering it, and has line of
@@ -94,7 +95,7 @@ pub const DW_TIMED_GATE_COIN_FLIP: &str = "DW0378";
 /// you cannot see inside the Capra room. [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`)
 /// measures the ratio — the dossier's own verdict is that if only one of the two
 /// proofs can be afforded it should be this one, not the 20%.
-pub const DW_HAZARD_UNOBSERVABLE: &str = "DW0388";
+pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::every_version("DW0388");
 /// `DW0393`: a `timed-gate`'s `disarm` affordance (task #184) is not usable
 /// **before** the gate is committed to — its cell has no standable footing, or is
 /// walkable from the campaign entry only through the gate span itself.
@@ -106,7 +107,7 @@ pub const DW_HAZARD_UNOBSERVABLE: &str = "DW0388";
 /// clause `DW0373` puts on a shortcut's unlock and `DW0342` puts on a trap's
 /// disarm, stated once for the gate: the affordance must be reachable while the
 /// hazard is still ahead of you.
-pub const DW_TIMED_GATE_DISARM_UNREACHABLE: &str = "DW0393";
+pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::every_version("DW0393");
 /// `DW0376`: an `ambush` (spec-0016 §3) with no counterplay — with every
 /// ambusher standing where it will stand, no rest point (a checkpoint, a bonfire,
 /// or the campaign entry) is walkable from the trigger cell any more. The player
@@ -118,13 +119,13 @@ pub const DW_TIMED_GATE_DISARM_UNREACHABLE: &str = "DW0393";
 /// ambushers in the same cells. What the engine owes the informed player is a
 /// *play* — a retreat, luring ground, a positioning line — and that is what this
 /// proves exists.
-pub const DW_AMBUSH_NO_COUNTERPLAY: &str = "DW0376";
+pub const DW_AMBUSH_NO_COUNTERPLAY: DwCode = DwCode::every_version("DW0376");
 /// `DW0373`: a `shortcut` (spec-0016 §2) whose far-side `unlock` affordance is
 /// not reachable while the gate is still sealed — the LONG route does not exist,
 /// so the mechanism that opens the shortcut can never be pulled and the gate is
 /// dead scenery. The whole pattern is "earn the far side the hard way, then open
 /// the door forever"; without a hard way there is nothing to earn.
-pub const DW_SHORTCUT_NO_LONG_ROUTE: &str = "DW0373";
+pub const DW_SHORTCUT_NO_LONG_ROUTE: DwCode = DwCode::every_version("DW0373");
 /// `DW0374`: a `shortcut` (spec-0016 §2) that **leaks** — opening its gate does not
 /// shorten the walk from the campaign entry to its own `unlock` affordance, so the
 /// unlock is not on the far side of anything. The pattern is "earn the far side
@@ -132,7 +133,7 @@ pub const DW_SHORTCUT_NO_LONG_ROUTE: &str = "DW0373";
 /// reaching the mechanism that opens it, the loop-back moment — which IS the
 /// design — never happens. The classic form is an `unlock` placed on the NEAR
 /// side of its own gate.
-pub const DW_SHORTCUT_NO_GAIN: &str = "DW0374";
+pub const DW_SHORTCUT_NO_GAIN: DwCode = DwCode::every_version("DW0374");
 /// `DW0379`: **retry cost** (spec-0016 §7, warning tier) — the proven walk from a
 /// rest point to a beat it can respawn the party into is longer than
 /// [`RETRY_BUDGET_TICKS`]. Dying must be an investment, not a commute: past the
@@ -140,7 +141,7 @@ pub const DW_SHORTCUT_NO_GAIN: &str = "DW0374";
 /// a long walk can be the authored point (a pilgrimage, a set-piece approach),
 /// and the compiler will not overrule that — it names the distance and leaves the
 /// judgement to the owner's QA hour.
-pub const DW_RETRY_COST: &str = "DW0379";
+pub const DW_RETRY_COST: DwCode = DwCode::every_version("DW0379");
 /// `DW0380`: **optional-elite bypass** (spec-0016 §7, warning tier) — an enemy the
 /// critical path never requires the party to kill has no route around it: every
 /// proven forward leg passes inside its aggro radius, so "optional" is a lie and
@@ -149,7 +150,7 @@ pub const DW_RETRY_COST: &str = "DW0379";
 /// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
 /// or walk around it — is explicitly legitimate (owner ruling 2026-08-02), and
 /// this is the one obligation it carries: the walk-around has to exist.
-pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: &str = "DW0380";
+pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380");
 /// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
 /// with the assembled world — a waypoint anchor that resolves nowhere, a
 /// waypoint with no standable footing, a leg the squad cannot walk, or a leg
@@ -157,7 +158,7 @@ pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: &str = "DW0380";
 /// patrol target to a random point once the patroller is within 10 blocks of it,
 /// so a tighter lane is a lane the engine quietly stops following — the squad
 /// wanders, and it reads as working-but-drunk rather than as a bug.
-pub const DW_LANE_GEOMETRY: &str = "DW0386";
+pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
 /// `DW0478`: **the bonfire safe zone** (spec-0016 §1, owner ruling 2026-08-04) — a
 /// rest checkpoint sits inside some hostile force's aggro range.
 ///
@@ -167,10 +168,10 @@ pub const DW_LANE_GEOMETRY: &str = "DW0386";
 /// the retry loop stops teaching and becomes a soft-lock — a despair machine you
 /// cannot rest your way out of. Error tier, not advisory: unlike the §7 pacing
 /// lints there is no reading of this geometry that is the authored point.
-pub const DW_BONFIRE_IN_AGGRO: &str = "DW0478";
+pub const DW_BONFIRE_IN_AGGRO: DwCode = DwCode::every_version("DW0478");
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
-pub const DW_STEALTH_ZONE: &str = "DW0327";
+pub const DW_STEALTH_ZONE: DwCode = DwCode::every_version("DW0327");
 /// `DW0355`: a **punishing** `begin-stealth` whose grace window cannot be beaten —
 /// from a position a player legally occupies the instant the beat arms (the
 /// activating objective's anchor, or any checkpoint that can respawn them into the
@@ -181,7 +182,7 @@ pub const DW_STEALTH_ZONE: &str = "DW0327";
 /// or human — a fixed couple of seconds later, and if the checkpoint it respawns
 /// them at is also outside cover, the retry loop never terminates. A structurally
 /// unavoidable death is not 初见杀 (spec-0016), it is a broken beat.
-pub const DW_STEALTH_ONSET: &str = "DW0355";
+pub const DW_STEALTH_ONSET: DwCode = DwCode::every_version("DW0355");
 /// `DW0342`: a **lethal** trap (spec-0011) whose trigger cell lies on the forced
 /// critical path with no discharge — not avoidable (the trigger cell is a required
 /// path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it →
@@ -189,7 +190,7 @@ pub const DW_STEALTH_ONSET: &str = "DW0355";
 /// player is provably killed or soft-looped. Analysis-tier (exit 2) like `DW0312`:
 /// a content-design mistake, not a geometry defect. (Renumbered from the spec's
 /// stale `DW0314`.)
-pub const DW_TRAP_LETHAL_UNAVOIDABLE: &str = "DW0342";
+pub const DW_TRAP_LETHAL_UNAVOIDABLE: DwCode = DwCode::every_version("DW0342");
 
 /// A resolved stealth zone `(anchor name, centre cell, half-extents)`.
 type ZoneCell = (String, [i32; 3], [u32; 3]);
@@ -200,7 +201,7 @@ type StealthProbe = (Vec<ZoneCell>, usize);
 /// the assembled geometry, or an actor spawn/destination anchor that does not
 /// resolve to a placeable cell (spec-0014). Names the actor, the leg, and the
 /// first blocked cell.
-pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
+pub const DW_ACTOR_UNROUTABLE: DwCode = DwCode::every_version("DW0325");
 
 /// `DW0410`: a staged walk (`move-actor` / `move-npc`) whose path is blocked by a
 /// gate that an **earlier effect in its own timeline** sealed with `close-gate`
@@ -212,7 +213,7 @@ pub const DW_ACTOR_UNROUTABLE: &str = "DW0325";
 /// The planner routes over the timeline-adjusted world first, so a legal
 /// alternative route around the seal is simply taken and no diagnostic is raised
 /// — this fires only when the sealed world admits no route.
-pub const DW_GATE_TIMELINE: &str = "DW0410";
+pub const DW_GATE_TIMELINE: DwCode = DwCode::every_version("DW0410");
 
 /// `DW0488`: one content-keyed walk driver is shared by occurrences that do not
 /// stand in the same place when they fire, so the shared driver's first waypoint
@@ -231,7 +232,7 @@ pub const DW_GATE_TIMELINE: &str = "DW0410";
 /// Distinct from [`DW_MOVE_UNROUTABLE`]/[`DW_ACTOR_UNROUTABLE`], which fire when
 /// a leg has no route at all: here every leg is perfectly routable and the defect
 /// is that they cannot share one route.
-pub const DW_MOVE_ORIGIN_SHARED: &str = "DW0488";
+pub const DW_MOVE_ORIGIN_SHARED: DwCode = DwCode::every_version("DW0488");
 
 /// The branch condition a staging effect fires under: the per-effect
 /// `requires_flags` / `forbids_flags` gate (DSL v0.6).
@@ -584,7 +585,7 @@ pub struct AnchorRoot {
 #[derive(Debug)]
 pub struct NavError {
     /// The stable diagnostic code (`DW0307` / `DW0308`).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, naming the offending NPC / endpoints / segment.
     pub message: String,
 }
@@ -5097,7 +5098,7 @@ pub fn branch_path_routes(
 /// from `find_path` over this same world, so this can only fire if a later pass
 /// mutates a cell nav relied on or an endpoint resolves off the walkable set — in
 /// which case it is a compiler/assembly defect to escalate, never a cell to nudge.
-pub const DW_WAYPOINT_NOT_STANDABLE: &str = "DW0314";
+pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
 
 /// Assert every exported waypoint cell is standable in `world` — the final model the
 /// routes were computed over (settled + flooded + fixtures). Returns
@@ -5137,7 +5138,7 @@ pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), 
 /// wall" — the owner's exact visual-review failure mode — a build error to fix at
 /// its source (the camera derivation), never a shot to nudge or a data value to
 /// change.
-pub const DW_POV_CAMERA_OCCLUDED: &str = "DW0724";
+pub const DW_POV_CAMERA_OCCLUDED: DwCode = DwCode::every_version("DW0724");
 
 /// Assert every player-POV camera eye cell is clear (unoccupied) in `world` — the
 /// final assembled model. Each entry is `(shot_id, eye_cell)` where `eye_cell` is
@@ -5179,7 +5180,7 @@ pub fn verify_pov_cameras(world: &World, cameras: &[(String, [i32; 3])]) -> Resu
 ///   *stranding* — a player who ends up in the sea with no shoreline to climb
 ///   back onto is out of the delve just as permanently as one who fell out of a
 ///   void world. See [`verify_boundary_safety`] for the exact model.
-pub const DW_EDIT_BORDERS_VOID: &str = "DW0322";
+pub const DW_EDIT_BORDERS_VOID: DwCode = DwCode::every_version("DW0322");
 
 /// How many individual violations a `DW0322` report names before summarising the
 /// remainder as a count. A boundary failure is systemic by nature — one stripped
@@ -5547,16 +5548,16 @@ fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
 /// the slot cannot reach is a hole a player could stand in and be safe by
 /// accident. Escaping a volley must be a decision (leave the zone), never a
 /// lucky step.
-pub const DW_VOLLEY_ZONE_UNCOVERED: &str = "DW0442";
+pub const DW_VOLLEY_ZONE_UNCOVERED: DwCode = DwCode::every_version("DW0442");
 /// `DW0444`: a trap-payload region is unusable — a `volley` kill zone with no
 /// standable cell, or a `collapse` region with nothing to drop / nothing to
 /// land on.
-pub const DW_TRAP_REGION_EMPTY: &str = "DW0444";
+pub const DW_TRAP_REGION_EMPTY: DwCode = DwCode::every_version("DW0444");
 /// `DW0445`: the critical path is not completable once a `collapse` has fired.
-pub const DW_COLLAPSE_BURIES_PATH: &str = "DW0445";
+pub const DW_COLLAPSE_BURIES_PATH: DwCode = DwCode::every_version("DW0445");
 /// `DW0446`: a `volley`'s `from_anchor` cell is not clear, so the projectile
 /// would be summoned inside solid geometry and never leave it.
-pub const DW_VOLLEY_SLOT_OCCLUDED: &str = "DW0446";
+pub const DW_VOLLEY_SLOT_OCCLUDED: DwCode = DwCode::every_version("DW0446");
 
 /// Height above a kill-zone cell's floor a volley aims at: centre mass of a
 /// standing player (a 1.8-tall hitbox with feet on the floor). Aiming at the

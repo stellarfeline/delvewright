@@ -66,18 +66,20 @@ use crate::flow::Flow;
 
 /// Stable analysis codes.
 pub mod codes {
+    use delvewright_dsl::DwCode;
+
     /// Finale quest can never complete.
-    pub const FINALE_UNREACHABLE: &str = "DW0201";
+    pub const FINALE_UNREACHABLE: DwCode = DwCode::every_version("DW0201");
     /// Quest can never be triggered.
-    pub const QUEST_UNREACHABLE: &str = "DW0202";
+    pub const QUEST_UNREACHABLE: DwCode = DwCode::every_version("DW0202");
     /// Objective can never be completed (deadlock).
-    pub const OBJECTIVE_DEADLOCK: &str = "DW0203";
+    pub const OBJECTIVE_DEADLOCK: DwCode = DwCode::every_version("DW0203");
     /// The exported critical path is not a walkable playthrough.
-    pub const PATH_INCOHERENT: &str = crate::flow::DW_PATH_INCOHERENT;
+    pub const PATH_INCOHERENT: DwCode = crate::flow::DW_PATH_INCOHERENT;
     /// Optional participation can skip a load-bearing mainline beat (task #174).
-    pub const OPTIONAL_GATES_MAINLINE: &str = crate::flow::DW_OPTIONAL_GATES_MAINLINE;
+    pub const OPTIONAL_GATES_MAINLINE: DwCode = crate::flow::DW_OPTIONAL_GATES_MAINLINE;
     /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
-    pub const PARTY_UNDIVIDABLE: &str = "DW0358";
+    pub const PARTY_UNDIVIDABLE: DwCode = DwCode::every_version("DW0358");
     // DW0210 (dark-area mitigation) moved to `crate::light` (spec-0010): it is now
     // measured over the assembled world, not a per-piece admission profile.
 }

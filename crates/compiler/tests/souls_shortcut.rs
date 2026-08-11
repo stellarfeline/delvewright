@@ -226,7 +226,7 @@ fn fixture_variant(name: &str, patch: &[StagePatch]) -> std::path::PathBuf {
 }
 
 /// Plan a campaign directory, returning the `DW03xx` plan error if there is one.
-fn plan_code(dir: &std::path::Path) -> Result<(), &'static str> {
+fn plan_code(dir: &std::path::Path) -> Result<(), delvewright_dsl::DwCode> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("variant parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

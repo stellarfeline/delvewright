@@ -11,10 +11,11 @@
 use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::registry::PrefabRegistry;
+use delvewright_dsl::DwCode;
 
 /// `DW0343`: a `close-gate` targets a gate anchor that declares no fill `block` in
 /// its prefab metadata (or is not a gate region), so the compiler cannot seal it.
-pub const DW_GATE_NO_BLOCK: &str = "DW0343";
+pub const DW_GATE_NO_BLOCK: DwCode = DwCode::every_version("DW0343");
 
 /// `DW0423`: two `close-gate` effects seal the **same** gate anchor with
 /// different `sealed_hint` wordings.
@@ -24,7 +25,7 @@ pub const DW_GATE_NO_BLOCK: &str = "DW0343";
 /// wording has nowhere to live and would be silently dropped. Rejected instead —
 /// a line an author wrote and a player can never read is the same silence class
 /// as the finding this verb exists to close.
-pub const DW_SEAL_HINT_CONFLICT: &str = "DW0423";
+pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::every_version("DW0423");
 
 /// Validate every verb that needs a gate anchor's **fill block** references an
 /// anchor that declares one (`DW0343`): `close-gate` (which fills the region back

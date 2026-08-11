@@ -70,12 +70,14 @@
 //! (`DW0425`), because an answer placed on a guessed side would fire exactly where
 //! the door DOES open.
 
+use delvewright_dsl::DwCode;
+
 /// `DW0425`: the compiler cannot decide which side of a shortcut's gate is the
 /// sealed one.
 ///
 /// Every shortcut door answers — the wording defaults — so this binds to every
 /// shortcut in the campaign, not only to the ones that authored a line.
-pub const DW_SHORTCUT_SIDE_UNDECIDABLE: &str = "DW0425";
+pub const DW_SHORTCUT_SIDE_UNDECIDABLE: DwCode = DwCode::every_version("DW0425");
 
 /// The sealed side of a shortcut gate — expressed as the cells a body must stand
 /// in for the door to be pressable from that side and no other.
