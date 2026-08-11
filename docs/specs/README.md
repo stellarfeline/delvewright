@@ -37,3 +37,6 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0026](spec-0026-horizon-library.md) | Horizon library — five pseudo-open-world bases | Proposed |
 | [spec-0027](spec-0027-grammar-prefab-backend.md) | Box-split grammar prefab back end | Proposed |
 | [spec-0028](spec-0028-ref-image-intent-alignment.md) | Reference-image intent alignment (optional prefab-chain step) | Proposed |
+| [spec-0029](spec-0029-i18n-v2-client-selected-language.md) | i18n v2 — the client picks the language | Implemented |
+| [spec-0031](spec-0031-runtime-state-and-interactive-verbs.md) | Runtime state, and the verbs that need it | Draft |
+| [spec-0032](spec-0032-economy-and-recovery-stake.md) | Currency, trade, and the recovery stake | Draft |
