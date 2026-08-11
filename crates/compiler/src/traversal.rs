@@ -250,7 +250,12 @@ pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453");
 
 /// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
 /// rule's verdict, so nothing in this build holds the body to it (spec-0033).
-pub const DW_TRAVERSAL_DECLARATION_INERT: &str = "DW0454";
+///
+/// [`Binds::EveryVersion`]: the `traversal` field itself is fenced at 0.11 by
+/// `DW0141`, so a campaign below it cannot reach this rule, and above it the
+/// rule judges what the document says rather than requiring the document to
+/// gain anything.
+pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::every_version("DW0454");
 
 /// How many route steps after a rise still count as "and came down the other
 /// side". Four: the island's crossing takes one step up, at most two along the
