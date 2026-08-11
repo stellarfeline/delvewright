@@ -304,8 +304,31 @@ fn bodies(plan: &Plan) -> Vec<Body> {
     out
 }
 
+/// The affordance authority as `(kind, label, cell)` — the same list
+/// [`affordances`] builds, flattened for a consumer that only needs to ask *what
+/// stands where*.
+///
+/// Public so a proof outside this module can assert its own membership in it. That
+/// is not a convenience: there are TWO affordance authorities in the compiler —
+/// [`crate::affordance`], which `DW0420`/`DW0421` read for visibility and
+/// retirement, and this one, which carries a resolved CELL — and a new affordance
+/// class registered with only one of them is invisible to every proof on the other
+/// side. spec-0032's shop shipped exactly that way until a test asked.
+pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
+    affordances(plan)
+        .into_iter()
+        .map(|a| {
+            (
+                a.kind,
+                format!("`{}` at anchor `{}`", a.id, a.anchor),
+                a.pos,
+            )
+        })
+        .collect()
+}
+
 /// Every interaction affordance the compiler will summon, in a deterministic
-/// order (objectives, triggers, bonfires, shortcut unlocks, trap disarms).
+/// order (objectives, triggers, bonfires, shortcut unlocks, trap disarms, shops).
 fn affordances(plan: &Plan) -> Vec<Affordance> {
     let c = plan.campaign;
     let mut out = Vec::new();
@@ -401,6 +424,33 @@ fn affordances(plan: &Plan) -> Vec<Affordance> {
             });
         }
     }
+    // spec-0032 shops. A shop's interaction point is a compiler-summoned hitbox on
+    // a declared prefab anchor — the same object class as a bonfire's, and a body
+    // parked in front of it is the same defect: a brazier the player can see and
+    // reach that answers nothing.
+    for (i, sh) in plan.campaign.quests.content.shops.iter().enumerate() {
+        let Some(pos) = plan.point_any(sh.anchor.as_str()) else {
+            continue;
+        };
+        out.push(Affordance {
+            kind: "shop",
+            id: format!("{} (#{i})", sh.id),
+            anchor: sh.anchor.as_str().to_string(),
+            pos,
+        });
+    }
+    // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
+    // rather than an omission — the same discipline the `approach` trigger and the
+    // `strike-npc` skips above are recorded with.
+    //
+    // A stake's marker is summoned at RUNTIME, at a position chosen at runtime from
+    // the compile-time placement table (or at the death point itself), once per
+    // death per player. There is no compile-time cell for this proof — or for any
+    // other proof that reasons about where an affordance stands — to test, so a
+    // stake cannot be eclipsed by a body at build time in any sense this check can
+    // decide. What CAN be said about it statically is said where it belongs: the
+    // anchor is walkable, is reachable from the respawn point in force, and stands
+    // on ground the runtime does not rewrite (`crate::stake`, `DW0525`/`DW0526`).
     out
 }
 

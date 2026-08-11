@@ -117,7 +117,7 @@
     "shops": [
       {
         "id": "shop/keeper-brazier",
-        "anchor": "anchor/keeper-stand",
+        "anchor": "spawn",
         "title": "The keeper's brazier",
         "marker_item": "minecraft:campfire",
         "offers": [

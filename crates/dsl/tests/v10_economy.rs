@@ -82,7 +82,7 @@ const GOOD: &str = r#",
     ],
     "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],
     "shops": [
-      { "id": "shop/brazier", "anchor": "anchor/keeper-stand", "title": "The brazier",
+      { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
         "offers": [
           { "label": "Bank an ember",
             "effects": [

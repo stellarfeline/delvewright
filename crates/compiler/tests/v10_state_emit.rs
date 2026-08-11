@@ -108,7 +108,7 @@ const QUESTS: &str = r#"{
     "shops": [
       {
         "id": "shop/keeper-wares",
-        "anchor": "anchor/exit",
+        "anchor": "spawn",
         "title": "What the keeper will part with",
         "offers": [
           { "label": "A coin's worth of nerve",

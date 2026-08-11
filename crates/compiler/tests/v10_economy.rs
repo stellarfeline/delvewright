@@ -150,7 +150,7 @@ const PURSE_AND_STAKE: &str = r#",
     ],
     "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],
     "shops": [
-      { "id": "shop/brazier", "anchor": "anchor/keeper-stand", "title": "The brazier",
+      { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
         "offers": [
           { "label": "Bank an ember", "tooltip": "Costs one ember.",
             "effects": [
@@ -403,6 +403,63 @@ fn an_offer_gate_is_inert_to_a_direct_trigger() {
     assert!(
         pick.contains("unless score @s dw.s_embers matches 3.. run return fail"),
         "the offer's own gate shuts a direct `/trigger`:\n{pick}"
+    );
+}
+
+/// **A shop's interaction point is visible to the body-eclipse proof** (`DW0359`).
+///
+/// This is the instance fix's general form, and it is here because the gap was
+/// real and shipped: there are TWO affordance authorities — `emit::affordances`,
+/// which `DW0420`/`DW0421` read, and `eclipse::affordances`, which carries a
+/// resolved cell and is read by `DW0359`, and by any later proof that needs to
+/// know where an affordance stands. Registering the shop with only the first left
+/// its hitbox invisible
+/// to every proof that reasons about WHERE an affordance stands, and this PR's own
+/// two fixtures both put a shop on an anchor an NPC was standing on. Both compiled
+/// green.
+///
+/// A body on the shop's anchor must now be a build failure naming the shop.
+#[test]
+fn a_body_standing_on_a_shop_eclipses_it() {
+    // `npc/keeper` stands at `anchor/keeper-stand` in the hello-world base, so a
+    // shop declared there is exactly the defect.
+    let eclipsed = PURSE_AND_STAKE.replace(
+        r#""anchor": "spawn", "title""#,
+        r#""anchor": "anchor/keeper-stand", "title""#,
+    );
+    assert_ne!(
+        eclipsed, PURSE_AND_STAKE,
+        "the shop really moved onto the NPC"
+    );
+    let code = failure_code(&parse_hw(&quests_doc(&eclipsed, "")));
+    assert_eq!(
+        code,
+        delvewright_compiler::eclipse::DW_BODY_ECLIPSE,
+        "a keeper standing in front of his own brazier is a brazier nobody can press"
+    );
+}
+
+/// …and a recovery stake is deliberately NOT in that authority, which is a
+/// decision rather than an omission.
+///
+/// A stake's marker is summoned at runtime, at a position chosen at runtime — so
+/// there is no compile-time cell for a body-eclipse proof, or any other proof
+/// about where an affordance stands, to test. Asserted so the absence cannot be
+/// mistaken for the gap the test above closes.
+#[test]
+fn a_stake_has_no_compile_time_cell_to_eclipse() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let c = purse_campaign();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let posts = delvewright_compiler::eclipse::affordance_cells(&plan);
+    assert!(
+        posts.iter().any(|(kind, _, _)| *kind == "shop"),
+        "the shop IS in the authority: {posts:#?}"
+    );
+    assert!(
+        !posts.iter().any(|(kind, _, _)| *kind == "recovery stake"),
+        "a stake has no compile-time cell, so it cannot be in a proof that needs \
+         one — what CAN be said about its anchor is `DW0525`/`DW0526`: {posts:#?}"
     );
 }
 
