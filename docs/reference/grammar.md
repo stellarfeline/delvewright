@@ -1446,18 +1446,89 @@ for a command block meant to, so shipping a silent hole is refused instead.
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
 
+## 6b. Snapshots — freezing an expansion as a *picture*
+
+`export::snapshot_nbt(model)` writes the same structure bytes with **no cap on
+the extents**. It exists because `export_prefab` refuses anything over 48 on an
+axis and is right to: that cap is a limit on *placing* a template, so a prefab —
+a thing whose whole purpose is to be placed — must respect it. A snapshot is
+never placed. It goes to `delve-render`, which meshes it and takes a picture, and
+neither the renderer nor the NBT schema has such a limit.
+
+Collapsing the two would have forced one of two dishonest answers: cap the
+snapshot, and five of the eight bell zones — 60 to 125 blocks long *by design* —
+could never be looked at at all; or lift the cap on the prefab, and the pipeline
+would start emitting prefabs that silently fail to place. So the caller says
+which of the two things it is making.
+
+A snapshot carries no metadata, no provenance row and no prefab id, because it is
+not an asset: it never enters the prefab library and never reaches a delve.
+Freezing a *curated* candidate as a real prefab is still `export_prefab`'s job,
+cap and all — which for an oversize zone means the zone is authored as several
+jigsaw-socketed prefabs, exactly as the refusal says.
+
+## 6c. Sweeps — many expansions, one page (spec-0027 §3)
+
+`sweep::run(manifest, dir)` expands one program many ways and writes one
+`<candidate-id>.nbt` per candidate, flat, plus `sweep.json`. Flat because that is
+what `delve-render batch` consumes, so the expander hands the render layer its
+input with no adapter between them. `delve-grammar sweep` is the CLI;
+`tools/zone-sheets.py` runs the whole chain to a finished page.
+
+**A candidate is a variation, not a seed.** An expansion has four inputs —
+program, region, parameters, seed — and `sweep::Candidate` can override any of
+the last three. This is not generality for its own sake: the seed is the *least*
+live of them for the programs that exist. A box-split grammar chooses
+alternatives by **guards on the scope's own dimensions** and only consults the
+RNG when two alternatives apply at once, so a program whose guards discriminate
+cleanly never draws at all. Five of the eight bell zones say exactly that in
+their own fixture notes ("nothing in the gatehouse draws from the seed; it is
+stated, not chosen"), and measurement agrees: they are byte-identical across 32
+seeds, and their renders are **pixel**-identical. A seed-only sweep would have
+bound the one axis that is inert and left the two that work with no way in.
+
+**Every sweep states its binding.** `sweep.json` reports candidates asked for,
+built, refused, `distinct_models` (block for block) and `distinct_massings` (the
+solid/air bitmap alone, so the same building in different stone counts once).
+`distinct_massings == 1` over more than one candidate is a **finding**, not a
+page: every cell shows one building and the curation gate in front of it has
+nothing to decide. `SweepReport::massing_is_uniform` names that condition so each
+consumer says it out loud rather than re-deriving `== 1`. Both counts come from
+the models, never from the pictures — two renders can differ by a shadow, and two
+identical renders can hide a moved wall behind a roof.
+
+A refused candidate **keeps its row**: a guard refusing is a fact about the
+program, and dropping the row would make the sweep look smaller instead of making
+the zone look stricter. An override naming a parameter the program does not
+declare is refused outright, because a silently-dropped override produces a
+candidate that reads as varied on the manifest and renders as a duplicate on the
+page.
+
+Each zone's **design box** is a constant on its own module (`bell::gate_ward::
+REGION`) and the registry `bell::ZONES` pairs it with its constructor, so a tool
+enumerates zones rather than knowing eight names. `tests/zones.rs` binds its
+gates to the same constants — the box a campaign expands and the box the gates
+prove are one object, not two that can drift.
+
 ## 7. Not built yet
 
 The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage in
 front of the IR. Later phases of spec-0027.
 
-The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
-candidate renders out as one page, optionally ordered by a similarity score
-against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
-the page and never gates it). What is still missing between the expander and
-that page is the automatic part: nothing yet drives "expand N seed-varied
-candidates → `batch`-render them → sheet", so the sweep is assembled by hand
-today.
+**A cutaway that can see into a zone.** The sweep and the page are built, and the
+thing between them is now the weak link: `delve-render`'s per-piece `cutaway`
+strips exactly the top `Y` layer (`crates/render/src/nbt.rs`). That is the right
+dollhouse for the small roofed rooms the shot set was designed against, and it
+reveals nothing at all in a zone 10–14 courses tall whose route is carved out of
+solid mass — the layer under the roof is more rock. Measured on the bell zones:
+region changes are plainly visible on `ext-se` (12–13% of the frame moves), and
+parameter changes that genuinely move interior walls are **invisible from every
+shot the renderer plans** (0–0.3%). So a contact sheet can today show the owner a
+zone's bounding box and not its massing, which is the one thing she is being
+asked to choose. The general form is a cutaway whose depth (or cut plane) is a
+parameter of the shot rather than a constant of the mesher — the same shape as
+every other "the mechanism exists, its binding is too narrow to reach the objects
+it should" finding in CLAUDE.md.
 
 `mark` declares point anchors only. Gate-region anchors (`region` + `block`),
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine

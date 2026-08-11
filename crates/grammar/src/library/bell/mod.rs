@@ -231,6 +231,69 @@ pub use hall_keep::hall_keep;
 use crate::compose::{AnchorRenames, include_renaming};
 use crate::ir::Program;
 
+/// One row of [`ZONES`]: what a zone is called, how to build it, and the box it
+/// is designed for.
+pub struct Zone {
+    /// The zone's stable id — what a sweep manifest and a contact sheet name it
+    /// by, and what the owner says out loud. Kebab-case, so it is also a usable
+    /// directory and structure-file name.
+    pub id: &'static str,
+    /// Builds the zone's grammar program.
+    pub program: fn() -> Program,
+    /// The zone's design box (`REGION` of its own module).
+    pub region: [u32; 3],
+}
+
+/// Every zone of the remake, in ascent order (REMAKE §3).
+///
+/// A registry rather than eight names a caller has to know: a tool that sweeps
+/// or renders zones enumerates *this*, so adding a zone reaches every such tool
+/// without touching one of them. Ascent order rather than alphabetical because
+/// that is the order the campaign — and the owner reviewing eight sheets — walks
+/// them in.
+pub static ZONES: &[Zone] = &[
+    Zone {
+        id: "barrow-shore",
+        program: barrow_shore,
+        region: barrow_shore::REGION,
+    },
+    Zone {
+        id: "cliff-road",
+        program: cliff_road,
+        region: cliff_road::REGION,
+    },
+    Zone {
+        id: "gate-ward",
+        program: gate_ward,
+        region: gate_ward::REGION,
+    },
+    Zone {
+        id: "drowned-ward",
+        program: drowned_ward,
+        region: drowned_ward::REGION,
+    },
+    Zone {
+        id: "chapel-ward",
+        program: chapel_ward,
+        region: chapel_ward::REGION,
+    },
+    Zone {
+        id: "hall-keep",
+        program: hall_keep,
+        region: hall_keep::REGION,
+    },
+    Zone {
+        id: "cistern-deep",
+        program: cistern_deep,
+        region: cistern_deep::REGION,
+    },
+    Zone {
+        id: "bell-tower",
+        program: bell_tower,
+        region: bell_tower::REGION,
+    },
+];
+
 /// Include every named piece of vocabulary into a zone plan.
 ///
 /// A clash here is an authoring mistake in this module — two pieces given the

@@ -105,6 +105,20 @@ use crate::library::{
 use super::composed;
 
 /// The prefix the kitchen duct is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// Eight cells of junction with the shortcuts strip beside it, eight of rest ward,
+/// and the remaining ten of kitchen chute. Nine of the sixteen columns are the
+/// branch strip, and nine tall so the chutes ledge sits four blocks over a
+/// landing that still needs its own headroom.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [16, 9, 26];
+
 const CHUTE: &str = "chute";
 /// The prefix the rest ward's own nook is included under.
 const HEARTH: &str = "hearth";

@@ -630,6 +630,16 @@ have caught gets paid for twice once stages 5–6 are written against it.
   puts them all on one page, optionally ordered by similarity to this gate's
   reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
   score only ORDERS the page, it never removes a candidate from it.
+  For grammar-generated candidates, do not assemble that page by hand:
+  `python3 tools/zone-sheets.py --out DIR` runs sweep → render → sheet for every
+  grammar program in one command. **Read its `MASSINGS` column before showing
+  her anything.** It counts how many genuinely different buildings reached the
+  page, measured on the models rather than the pictures; if it is 1, the page is
+  one building drawn N times and putting it in front of her asks her to choose
+  between identical things. Varying only the **seed** usually produces exactly
+  that — a box-split grammar chooses by guards on the box, not by the RNG — so
+  vary region or parameters, and treat a one-massing sheet as a finding to
+  report rather than a gate to hold.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
@@ -778,7 +788,10 @@ Symptom → tool:
   ordering the page by similarity to the design-gate reference image. One line,
   human-optional. Say plainly that the score only orders the page: every
   candidate is on it, and the low scorer is present, last — she is the selector,
-  the number is not.
+  the number is not. When the candidates come from a grammar program, build the
+  page with `python3 tools/zone-sheets.py --out DIR` rather than by hand, and
+  check its `MASSINGS` count first — a page of one repeated building is a
+  finding to report, not a choice to hand her.
   - **If the choice is about MASSING, point the sheet at a section**, not at the
     silhouette: `--shot plan-mid` (the plan cut at mid height) or `--shot sec-z`.
     The default `ext-se` is the outside of the body, and on a zone carved from

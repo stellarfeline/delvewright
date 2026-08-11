@@ -51,6 +51,17 @@ use crate::library::{alt_when, call, cmp, dim, reoriented};
 use super::composed;
 
 /// The prefix the elite ground is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// One open arena, in a box the campaigns size rather than the piece fixtures.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [19, 6, 24];
+
 const ARENA: &str = "arena";
 
 /// The Barrow Shore.

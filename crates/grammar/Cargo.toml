@@ -21,7 +21,19 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+# `delve-grammar` (spec-0027 §3): the sweep driver. Expands one program many
+# ways and writes the snapshots `delve-render batch` composites into the owner's
+# contact sheet — the one step of the §3 authoring loop that used to be done by
+# hand.
+[[bin]]
+name = "delve-grammar"
+path = "src/main.rs"
+
 [dependencies]
+# The sweep CLI. Same version and derive style as every other binary here.
+# MIT/Apache-2.0.
+clap = { version = "4", features = ["derive"] }
+
 # The grammar program is a typed JSON IR (spec-0027 §3), like every other DSL
 # stage. Both MIT/Apache-2.0.
 serde = { version = "1", features = ["derive"] }

@@ -30,6 +30,10 @@ use delvewright_grammar::geom::Axis;
 use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
 use delvewright_grammar::library::bell::bell_tower::{CLIMB, RISE, SILL};
 use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
+// The zones' design boxes live with the zones now, so the gates below bind to
+// exactly the box a campaign expands rather than to a copy of it that can drift.
+// Spelled by full path: each zone's module and its constructor share a name.
+use delvewright_grammar::library::bell as zones;
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::{
     barrow_shore, bell_tower, boulder_stair, broken_grate, causeway, chapel_ward, cistern_deep,
@@ -45,13 +49,13 @@ use support::{
 
 /// **Z0.** Barrow Shore: one open arena, in a box the campaign's size rather
 /// than the piece fixture's.
-const SHORE_REGION: Box3 = Box3::at_origin([19, 6, 24]);
+const SHORE_REGION: Box3 = Box3::at_origin(zones::barrow_shore::REGION);
 /// The arena draws nothing from the seed; it is stated, not chosen.
 const SHORE_SEED: u64 = 1;
 
 /// **Z1.** The crag: three cells of gulf, the road, and the rock it is cut into,
 /// over eight courses of drop.
-const CLIFF_REGION: Box3 = Box3::at_origin([12, 12, 36]);
+const CLIFF_REGION: Box3 = Box3::at_origin(zones::cliff_road::REGION);
 /// The seed the four-niche road is pinned to.
 const CLIFF_SEED: u64 = 4;
 
@@ -62,7 +66,7 @@ const CLIFF_SEED: u64 = 4;
 /// and an eleven-deep branch strip, for the two reasons Z6 has them; ten tall,
 /// because the upper ward stands on a four-block plinth and still owes the watch
 /// bay its headroom.
-const WARD_REGION: Box3 = Box3::at_origin([20, 10, 84]);
+const WARD_REGION: Box3 = Box3::at_origin(zones::gate_ward::REGION);
 /// Nothing in the gatehouse draws from the seed; it is stated, not chosen.
 const WARD_SEED: u64 = 1;
 /// How far the branch strip runs off Z2's mainline — the `strip_depth` default,
@@ -76,7 +80,7 @@ const WARD_STRIP: i32 = 11;
 /// chute's ledge sits four blocks over a landing that still needs its own
 /// headroom. The mainline is seven wide because the rest ward's nook asks for
 /// it.
-const CHAPEL_REGION: Box3 = Box3::at_origin([16, 9, 26]);
+const CHAPEL_REGION: Box3 = Box3::at_origin(zones::chapel_ward::REGION);
 /// Nothing in the hub draws from the seed; it is stated, not chosen.
 const CHAPEL_SEED: u64 = 1;
 
@@ -85,7 +89,7 @@ const CHAPEL_SEED: u64 = 1;
 /// the remaining sixteen of hall. Eleven tall, because the keep stands on the
 /// duct's own four-block plinth and the gallery still needs a perch over its
 /// pedestal.
-const KEEP_REGION: Box3 = Box3::at_origin([11, 11, 76]);
+const KEEP_REGION: Box3 = Box3::at_origin(zones::hall_keep::REGION);
 /// The storeroom's tell is a seeded draw; this is the pinned fixture's seed.
 const KEEP_SEED: u64 = 1;
 
@@ -95,7 +99,7 @@ const KEEP_SEED: u64 = 1;
 /// strip twenty-one because it has to be deeper than the sally run is long — so
 /// the box is forty across. Ten tall because the shaft's ledge sits four blocks
 /// over a room that still needs its own headroom.
-const DEEP_REGION: Box3 = Box3::at_origin([40, 10, 100]);
+const DEEP_REGION: Box3 = Box3::at_origin(zones::cistern_deep::REGION);
 /// The grate row's break is a seeded draw; this is the pinned fixture's seed.
 const DEEP_SEED: u64 = 1;
 
@@ -105,7 +109,7 @@ const DEEP_SEED: u64 = 1;
 /// reasons Z6 has them — the arena's flank margins, and a branch that has to be
 /// deeper than its junction is long. Ten tall because the causeway stacks a
 /// berm, a gatehouse lane and the keeper's own headroom.
-const DROWNED_REGION: Box3 = Box3::at_origin([40, 10, 60]);
+const DROWNED_REGION: Box3 = Box3::at_origin(zones::drowned_ward::REGION);
 /// Nothing in the drowned ward draws from the seed; it is stated, not chosen.
 const DROWNED_SEED: u64 = 1;
 /// The same as [`DEEP_STRIP`], for Z3.
@@ -131,7 +135,7 @@ const CHAPEL_STRIP: i32 = 9;
 /// long — so the box is forty-one across. Fourteen tall: nine courses for the
 /// flight to climb and the upper storey's own six on top of the eight it stands
 /// on.
-const TOWER_REGION: Box3 = Box3::at_origin([41, 14, 125]);
+const TOWER_REGION: Box3 = Box3::at_origin(zones::bell_tower::REGION);
 /// Nothing in the tower draws from the seed; it is stated, not chosen.
 const TOWER_SEED: u64 = 1;
 /// How far the branch strip runs off Z7's mainline — the `strip_depth` default,
