@@ -3,6 +3,7 @@
 //! spike.
 //!
 //! - [`nbt`] — vanilla-structure `.nbt` → Nucleation adapter.
+//! - [`cutaway`] — which solid the viewer is inside: the shot's half-space clips.
 //! - [`shots`] — per-piece shot planner (`delve-render piece`).
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
@@ -20,6 +21,7 @@
 //! - [`diag`] — diagnostics + exit codes (`DW072x`).
 
 pub mod cache;
+pub mod cutaway;
 pub mod detect;
 pub mod diag;
 pub mod fidelity;

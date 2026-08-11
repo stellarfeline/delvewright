@@ -13,6 +13,7 @@ use nucleation::meshing::{MeshConfig, ResourcePackSource};
 use nucleation::rendering::camera::CameraConfig;
 use nucleation::rendering::gpu::GpuRenderer;
 
+use crate::cutaway::Cutaway;
 use crate::nbt::Structure;
 
 /// Fixed directional-light direction (pinned for reproducibility).
@@ -45,15 +46,16 @@ pub fn load_pack(path: &str) -> Result<ResourcePackSource, String> {
     ResourcePackSource::from_file(path).map_err(|e| format!("load resource pack `{path}`: {e:?}"))
 }
 
-/// Render a parsed structure to an RGBA frame. `strip_ceiling` builds the
-/// dollhouse cutaway for interior shots. Deterministic camera + fixed light.
+/// Render a parsed structure to an RGBA frame. `cut` says which solid the
+/// viewer is inside — [`Cutaway::none`] for an exterior shot, any section for an
+/// interior one. Deterministic camera + fixed light.
 pub fn render_structure(
     st: &Structure,
     pack: &ResourcePackSource,
-    strip_ceiling: bool,
+    cut: &Cutaway,
     p: &RenderParams,
 ) -> Result<Frame, String> {
-    let schem = crate::nbt::build_schematic(st, strip_ceiling).map_err(|e| e.to_string())?;
+    let schem = crate::nbt::build_schematic(st, cut).map_err(|e| e.to_string())?;
     let mesh = schem
         .to_mesh(pack, &MeshConfig::default())
         .map_err(|e| format!("mesh: {e:?}"))?;
