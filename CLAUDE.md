@@ -100,8 +100,8 @@ validation/          # docker compose: headless server + bot, same image as CI &
   it acts on, not to the verb that first needed it.** `close-gate` owns
   `sealed_hint`, which encodes *answering a player who presses this thing* — a
   property of anything right-clickable, and nothing to do with closing a gate.
-  Built onto the verb, it left the second object that needed it with no surface,
-  and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
+  Built onto the verb, it leaves the second object that needs it with no surface,
+  so the fix looks like a second bespoke field on `shortcuts[]`. **A second
   bespoke field is the defect, not the fix.** Generality is decided at the FIRST
   site: retrofitting at the second costs a `dsl_version` bump, per-stage fences,
   and an adoption round on every active campaign.
@@ -123,11 +123,10 @@ validation/          # docker compose: headless server + bot, same image as CI &
      not the clickable **shape** of the object at that anchor — so authoring the
      island boulder's own pattern on a shortcut door compiles clean and ships a
      box pressable only from the side the door opens from. This reads as a
-     missing feature, and the "fix" adds a fourth mechanism. Ask **"what does the
-     existing general mechanism fail to reach, and why"** before ever asking
-     "what surface is missing": the planner proposed a new stage-5 hint section
-     here — strictly weaker than the triggers it duplicated — in the very PR that
-     names this defect.
+     missing feature, and the "fix" adds a fourth mechanism — typically a new
+     authoring section strictly weaker than the mechanism it duplicates. Ask
+     **"what does the existing general mechanism fail to reach, and why"** before
+     ever asking "what surface is missing".
 
   Same shape one layer down as a hand-rolled walk enumerating 3 of 5 effect roots
   (#301/#302/#321): a defect of expressibility, not of care.
@@ -147,11 +146,11 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
-  **Every CI job is a required status check** (owner, 2026-08-05). It used to be
-  three of ten, so `tier 2` — datapack load plus the whole generated PackTest
-  suite — never blocked a merge, and neither did the storybook engine-version
-  marker or the prefab determinism gate. Because branch protection matches a
-  context by its NAME STRING, a renamed job blocks every PR forever, including
+  **Every CI job is a required status check** (owner, 2026-08-05): an advisory
+  job is a job that does not gate — at three of ten required, `tier 2` (datapack
+  load plus the whole generated PackTest suite) did not block a merge. Because
+  branch protection matches a context by its NAME STRING, a renamed job blocks
+  every PR forever, including
   the one that would fix it: `.github/required-status-checks.txt` and
   `tools/check-required-contexts.py` hold the names in lockstep, in both
   directions, so a rename or a new advisory job is an ordinary red instead.
@@ -228,21 +227,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   playtest, or the round summary tells the owner per item that it is still open
   and not to test it. Audit the findings ledger from round 1 — never from the
   last round — before staging any build.
-- **Execute an owner ruling at the scope it was given.** Generalizing it is a
-  design decision: propose it in one line and wait. (Round 16 turned a
-  one-beat ruling into a campaign-wide ceiling and had to be corrected.)
-  Unrequested change is a rejection cause on its own, independent of merit — a
-  worker's entire island round was rejected wholesale for carrying extras.
+- **Execute an owner ruling at the scope it was given.** Widening a one-beat
+  ruling into a campaign-wide rule is a design decision: propose it in one line
+  and wait. Unrequested change is a rejection cause on its own, independent of
+  merit — a worker's entire island round was rejected wholesale for carrying
+  extras.
 - **A settled ruling is never re-asked. Search the record first** (owner rebuke,
-  2026-08-08). Two questions put to the owner that day had already been answered
-  and written down: the actor/NPC `traversal` override was ruled in an earlier
-  session, and "are traps redstone or commands" is the title of
-  `spec-0022-traps-v2-command-driven.md` — her own directive of 2026-08-03,
-  sitting in the repo. Re-asking spends the scarcest resource in the project on
-  something a grep would have answered, and it reads as ignoring the answer.
-  Before any question: the specs and ADRs, `docs/reference/`, the private
-  handoff notes, then prior session transcripts. Ask only what none of them
-  contain.
+  2026-08-08). Re-asking spends the scarcest resource in the project on something
+  a grep would have answered: one such question — "are traps redstone or
+  commands" — was the TITLE of `spec-0022-traps-v2-command-driven.md`, her own
+  directive of 2026-08-03 sitting in the repo. Before any question: the specs and
+  ADRs, `docs/reference/`, the private handoff notes, then prior session
+  transcripts. Ask only what none of them contain.
 - **A release is built from a frozen approved tree, never from a moving branch**
   (owner ruling, 2026-08-08). A release names the exact tree the owner accepted;
   only files that cannot reach the shipped artifact (release plumbing) may be
@@ -254,15 +250,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions. **Both repos are PUBLIC** —
-  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns`. This line
-  said "private for now" long after that stopped being true, and a planning
-  session reasoned from it for hours on 2026-08-06: it ruled out GitHub Releases
-  as a way to distribute `delvec` binaries, when that was exactly the right
-  answer (ADR-0017). A false premise in the file every session reads first is
-  worth more than a stale comment — it is a wrong conclusion, repeated.
+  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns` — so
+  public distribution channels (GitHub Releases, crates.io, GHCR) are open to us
+  by default (ADR-0017).
 - **Docs are the only persistent memory.** End every session by writing lessons back:
   new constraints → this file; new decisions → an ADR; process learnings → the relevant
-  spec. If you fought the codebase and won, record how.
+  spec. If you fought the codebase and won, record how. A stale premise in THIS
+  file is not a stale comment — it is a wrong conclusion, repeated every session
+  (a "private for now" line outlived the fact and cost a planning session hours).
 - **Compiler behavior has one live reference.** `docs/reference/compiler.md` is the
   authoritative current-behavior record for `delvec` (DSL surface, emission,
   invariants, the full DW diagnostics catalog); specs stay historical decision
@@ -285,14 +280,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
   they never `--amend`, rebase or force-push a branch that has been pushed unless
-  asked by name. Three workers dispatched without the worktree line put two of
-  them in the main checkout editing one file at once, on a third party's branch;
-  nothing was lost, but one `git add -A` would have swept three authors into one
-  commit. Recovering from such a collision is **hunk-granular for every file** —
-  the file that leaked was the one a worker had been told it owned — and the
-  review asks for a full re-audit, never a targeted deletion: the planner named
-  two leaked hunks and there were three. Code leaks fail CI; doc leaks merge
-  green.
+  asked by name. Two workers editing one file in the main checkout is one
+  `git add -A` away from sweeping three authors into one commit, and being told
+  you own a file does not stop it leaking. Recovering from such a collision is
+  **hunk-granular for every file**, and the review asks for a full re-audit,
+  never a targeted deletion (one targeted pass named two leaked hunks; there were
+  three). Code leaks fail CI; doc leaks merge green.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 
