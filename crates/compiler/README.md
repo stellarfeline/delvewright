@@ -24,7 +24,7 @@ Silicon and Intel), Windows (x86-64), each with a published SHA-256 — are on t
 ## Use
 
 ```sh
-delvec --version                        # delvec 1.1.0, dsl 0.10.0, mc 1.21.11
+delvec --version                        # engine, campaign-format and Minecraft versions
 delvec schema --stage all               # the JSON Schema every stage is written against
 delvec validate <campaign-dir>          # schema + cross-document reference checks
 delvec analyze  <campaign-dir>          # + quest-graph reachability and deadlock proofs
