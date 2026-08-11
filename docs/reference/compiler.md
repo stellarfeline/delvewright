@@ -4584,9 +4584,9 @@ gate ends up waived. `cargo fmt` is the shape that works.
 **Only object keys may be sorted. Array order is semantic** — `quests[]`,
 `objectives[]`, `effects[]`, `options[]`, `steps[]` are ordered, and reordering
 one changes the game. So this is a correctness property, not a style property,
-and it is *proved* rather than promised: `fmt::format_text` re-parses its own
-output and runs `fmt::equivalent`, which compares **arrays index-wise** and
-objects as key→value maps. A renderer that sorted an array fails its own check
+and it is *proved* rather than promised: `delvewright_dsl::fmt::format_text`
+re-parses its own output and runs `fmt::equivalent`, which compares **arrays
+index-wise** and objects as key→value maps. A renderer that sorted an array fails its own check
 and writes nothing (`DW0772`). The guard is demonstrated firing — the unit test
 `the_guard_catches_a_renderer_that_sorts_arrays` injects a deliberately
 array-sorting renderer and asserts `DW0772`.
@@ -4640,6 +4640,26 @@ bytes, i.e. provenance of exactly what the author checked in, so it *must* move
 when the sources are rewritten. `manifest.json`'s `outputs` map, and every other
 key, are unchanged. A formatter that left `inputs` alone would have broken the
 provenance record instead of preserving it.
+
+### One canonical form, one implementation
+
+The formatter lives in `crates/dsl` (`delvewright_dsl::fmt`), not in the
+compiler, because a canonical form belongs to the **format** rather than to
+whichever writer needed it first — and `delvewright-dsl` is the crate whose
+published description already is "the format the delvec compiler reads"
+(ADR-0018 §4).
+
+That placement is load-bearing, not tidiness. `delvewright_dsl::to_canonical_string`
+already claimed the name "canonical" and is what **`delvec edit apply` writes
+`world-edits.json` with**. Its form was serde's — struct-declaration field order.
+Had `fmt` shipped a second, key-sorted form, the compiler would have written a
+file its own `fmt --check` immediately rejected, and an author running both in
+one loop could not have satisfied both. So `to_canonical_string` now serializes
+with serde and puts the bytes through `fmt`: one definition, two doors.
+
+The pre-existing fixture gate `crates/dsl/tests/roundtrip.rs` is unchanged by
+this and now proves two things at once — serde loses no field on a round trip,
+**and** the fixture on disk is in `delvec fmt` canonical form.
 
 ### CI
 

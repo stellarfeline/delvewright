@@ -2012,7 +2012,7 @@ fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {
 /// vacuous), because the way this gate dies quietly is a path that stops
 /// matching after a directory is renamed.
 fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
-    use delvewright_compiler::fmt;
+    use delvewright_dsl::fmt;
 
     let mut files: Vec<PathBuf> = Vec::new();
     for root in paths {
