@@ -106,7 +106,11 @@ rm -rf "$ROOT/target/package"
 PKG_LOG="$ROOT/target/package-log.txt"
 rm -f "$PKG_LOG"
 rc=0
-(cd "$ROOT" && cargo package -p "$DSL_CRATE" -p "$CRATE" "${DIRTY_FLAG[@]}" \
+# bash 3.2 — which macOS still ships, and which CLAUDE.md names as Dev — treats
+# "${arr[@]}" on an EMPTY array as an unbound variable under `set -u`. The
+# `${arr[@]+...}` guard expands to nothing when the array is unset or empty and
+# to the quoted elements otherwise, so it is correct on 3.2 and on bash 5 alike.
+(cd "$ROOT" && cargo package -p "$DSL_CRATE" -p "$CRATE" ${DIRTY_FLAG[@]+"${DIRTY_FLAG[@]}"} \
       >"$PKG_LOG" 2>&1) || rc=$?
 if [ "$rc" -eq 0 ]; then
   pass "cargo package -p $DSL_CRATE -p $CRATE"
