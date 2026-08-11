@@ -274,6 +274,91 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
 9. **The lift is authored entirely in campaign JSON**, with no verb naming a
    lift, and its full sequence — including the call from a floor the car is not
    at — is exercised by a PackTest template and by the bot tier.
+
+   **Correction (implementation, the lift round): this criterion is PARTLY
+   satisfiable, and what blocks the rest is worth more than the lift.** The
+   fixture is `crates/compiler/tests/fixtures/lift`; the proofs are
+   `crates/compiler/tests/v10_lift.rs`. No engine surface was added — the whole
+   ride is one `sequence` over the five primitives above, and a test enumerating
+   every name in all seven stage schemas (derived from the types, not from a
+   list) asserts nothing in the DSL is named after a lift.
+
+   *Satisfied.* The seven-step table emits step for step at ticks 0/1/2/3/4;
+   create-before-clear holds; and **both planner rulings need no surface of their
+   own** — "a call at the floor the car already occupies is a no-op" is the
+   gate's `not-equals` term spliced into the tick line the trigger already had,
+   and "a pull during a ride is ignored, not queued" is the
+   `data remove entity @s interaction` that runs whether or not the gate opened,
+   so nothing survives to be replayed. Neither was designed for; both fell out.
+
+   *Not satisfied, each recorded as an executing test that reds the day it
+   becomes authorable.*
+
+   - **The lever inside the car is `DW0542`, and the refusal is right.** A
+     `teleport` moves entities and not blocks, **and its `to` is a point**, so an
+     affordance riding a car is torn off its lever and stacked on the destination
+     anchor. The second half of that is the part this spec did not see: a
+     region→point *gather* is a portal, and a car is a region→region
+     *translation*. The consequence is not cosmetic — with call levers meaning
+     "the car comes to this floor", a rider inside the car has no way to say "go
+     to the other floor", so **a car cannot be commanded from inside it**. The
+     fix is not a field on a trigger and not a type exemption in the selector
+     (which would tear an NPC's dialogue hitbox off its body); it is a decision
+     about affordances that belong to runtime-written blocks, and it is
+     unmade.
+   - **A runtime region cannot name a cell at an offset from an anchor.** Every
+     one is `StealthZone { anchor, extent }`: a box *centred* on a prefab anchor
+     with unsigned half-extents. A car needs its deck one block below the riders,
+     its arrival cell one above that deck, and the shaft-bottom lethal volume one
+     below the ground-floor deck. None is nameable, so a lift's geometry is
+     authored in NBT (a prefab shipping an anchor per cell) rather than in
+     campaign JSON — and no prefab in the library ships a shaft. **The general
+     region language already exists one stage away**: stage 7's `select` takes
+     `box {min,max}` in a `piece-local` or `anchor-relative` frame, plus
+     `union` / `intersect` / `subtract`. Stage 5 cannot see it. That is
+     CLAUDE.md's third defect shape — the general mechanism exists and its
+     binding is too narrow to reach the objects it should — and the answer is not
+     a fourth mechanism.
+   - **"The car always exists somewhere" is authored, not enforced.** A sequence
+     that clears its only car before filling the next compiles green.
+
+   *Runtime tier.* The two `teleport_<key>` templates prove step 5 of each ride
+   on the pinned toolserver (CI pass `PackTest suite — lift`). The sequence's own
+   timeline is **debt**: the engine generates templates per verb and has none for
+   a `sequence`. The bot tier is debt too, and for the reason spec-0032 records
+   for the stake — no bot run exists for a fixture campaign.
+
+   **A fourth finding, from the first CI run of that pass.** `lift:campaign`
+   failed on CI — *Expected #party dw.campaign to match 1, but got 0 on tick 0* —
+   over a tree that had gone green locally. Root cause, read off the emission and
+   not re-run: the generated `campaign` template resets `dw.campaign` and the
+   first quest's `dw.qa_<q>`, then re-drives `complete_o_<obj>`; the chain is
+   latched by `dw.q_<q>` (`check_q_<q>` reads `unless score #party dw.q_<q>
+   matches 1`), which the template never clears. The draft fixture put both
+   critical-path objectives on `spawn` — hello-room has four anchors, two are car
+   stations whose cells a `fill-region` makes solid (`DW0314` forbids routing
+   through them) and one is the upper call lever — and `join_place` teleports
+   every joining player onto that cell, so the world tick completed the campaign
+   with nobody doing anything and the template's replay was a no-op. Whether it
+   red depended on batch order, which the compiler does not control:
+   byte-identical packs, verdict by ordering — the `v06_spawn_idempotent` class
+   from a new direction.
+
+   Two defects, one fixed here. The **fixture** was wrong — a delve that finishes
+   itself while the party stands still is not a lift proof — and its finale is
+   now gated on a flag only a ride sets, held by
+   `v10_lift::the_finale_cannot_be_completed_by_standing_still` (measured
+   red→green by deleting the `requires_flags`). The **generated template** is
+   also wrong, generally: it does not meet the batch model's own "own init" rule,
+   because the scores its drive depends on are not the scores it initializes.
+   That is an open finding for its own round — the fix is clearing `dw.o_*` /
+   `dw.q_*` for the quests it re-drives, which moves `packtest-datapack/` bytes
+   for every campaign and cannot ride a PR whose whole claim is that it changes
+   no engine source.
+
+   The reusable half: **a green PackTest suite cannot prove order-independence.**
+   It can only fail to disprove it. Anything that must hold whatever the batch
+   order is has to be asserted about the emission.
 10. Every gate above states its binding count, and a zero binding is a failure.
 
 ## Settled by live measurement (#349, pinned 1.21.11)

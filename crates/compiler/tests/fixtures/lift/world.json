@@ -1,0 +1,14 @@
+{
+  "dsl_version": "0.10.0",
+  "campaign_id": "lift",
+  "stage": "world",
+  "content": {
+    "title": "The Hoist",
+    "theme": "A keep whose two landings are joined by one cage on a chain.",
+    "premise": "spec-0031 acceptance criterion 9: the lift, authored entirely in campaign JSON. Every part of it is a configured use of a v0.10 primitive and no verb names a lift. Two things about this fixture are consequences of the engine rather than of the fiction, and both are executing tests in `crates/compiler/tests/v10_lift.rs` rather than comments here: there is no lever INSIDE the car (any affordance in the car volume is DW0542, correctly), and there is no shaft — a runtime region is a box CENTRED on a prefab anchor, so the car's deck, its arrival cell and a shaft-bottom lethal volume cannot be named, and no prefab in the library ships anchors for them. `hello-room`'s four anchors are exactly consumed by two car stations and two call levers, which is why this campaign casts no NPC.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "difficulty": "normal",
+    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+  }
+}

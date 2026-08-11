@@ -759,6 +759,50 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-economy \
             --output ./delve-output-economy
 
+      # spec-0031 acceptance criterion 9 — the LIFT, authored entirely in campaign
+      # JSON. The compiler gains nothing for it: `tests/fixtures/lift` is the
+      # owner's timing table written as the steps of one `sequence` over the five
+      # v0.10 primitives, and `tests/v10_lift.rs` reads it back off the emission.
+      # This pass is what stops that from being a compile-time-only green: the
+      # campaign really loads, and BOTH rides' `teleport_<key>` templates — step 5
+      # of the table, the only step this tier has a generated template for — run
+      # on the pinned server. Binding: the fixture emits 7 templates and the suite
+      # reports 8 tests — the +1 is the framework's own and is systematic (
+      # lethal-volume and teleport-volume emit 11 and report 12). Two of the 7 are
+      # the lift's own rides: `validation/teleport-gate.json` says declared 2,
+      # resolved 2, packtest_templates 2, unbound false.
+      #
+      # This pass caught the fixture's first draft, and the shape is worth keeping.
+      # `lift:campaign` failed here — "Expected #party dw.campaign to match 1, but
+      # got 0 on tick 0" — while the SAME tree went green locally, because the
+      # generated `campaign` template re-drives the quest chain without clearing
+      # the `dw.q_<q>` latch `check_q_<q>` reads, and the draft fixture's whole
+      # critical path sat in the spawn box that `join_place` drops every dummy
+      # into, so the world tick finished the delve unaided. Verdict by batch
+      # order, on byte-identical packs. The fixture is fixed (its finale is gated
+      # on a flag only a ride sets); the template's own-init gap is an open
+      # finding for its own round. So: a green here does NOT prove
+      # order-independence — `v10_lift::the_finale_cannot_be_completed_by_standing_still`
+      # is what does, because it reads the emission rather than one run.
+      #
+      # What this pass deliberately does NOT claim: the sequence's own TIMELINE.
+      # The engine generates PackTest templates per verb and has none for a
+      # `sequence`, so ticks 0/1/3/4 — the ride latch, the fill, the clear and the
+      # floor record — are proven off the emitted functions in Rust and not on a
+      # server. That is named debt, not an oversight (docs/reference/compiler.md,
+      # the criterion-9 bullet). Same cost profile as the passes above: one extra
+      # toolserver boot, no new pull, no new compile.
+      - name: build the lift delve output (spec-0031 AC9)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/lift \
+            -o validation/delve-output-lift --prefabs campaigns/prefabs
+
+      - name: PackTest suite — lift (both rides move everything in the car)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-lift \
+            --output ./delve-output-lift
+
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
           cargo run -p delvec --bin delvec -- \

@@ -120,6 +120,57 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   interaction hitbox and exempting that type would separate them; the cases the
   exemption would have hidden are a compile error instead (`DW0542`). A campaign
   declaring neither verb is byte-identical.
+- spec-0031 acceptance criterion 9 — **the lift, authored entirely in campaign
+  JSON** — is **partly discharged, and the remainder is a finding**. `delvec`
+  gains nothing here: `crates/compiler/tests/fixtures/lift` authors the owner's
+  timing table as the steps of one `sequence` over the five existing primitives,
+  and `crates/compiler/tests/v10_lift.rs` reads it back off the emission. What is
+  proven: the seven-step table emits step for step at ticks 0/1/2/3/4; the
+  create-before-clear invariant holds; both planner rulings need no surface of
+  their own (the no-op at the occupied floor is the gate's `not-equals` term on
+  the tick line, and "a pull during a ride is ignored, not queued" is the
+  `data remove entity @s interaction` that runs whether or not the gate opened);
+  and no name in any of the seven stage schemas contains the word. What is NOT,
+  each recorded as an executing test that reds the day it becomes authorable:
+  **(1)** the owner's lever *inside* the car is `DW0542` and correctly so — a
+  `teleport` moves entities and not blocks and its `to` is a **point**, so an
+  affordance riding a car is torn off its lever and stacked on the destination
+  anchor — which means a car cannot be commanded from inside it, and the fixture
+  carries only the call half; **(2)** a runtime region is `StealthZone { anchor,
+  extent }`, a box *centred* on a prefab anchor, so the car's deck (one below the
+  riders), its arrival cell (one above the deck) and the shaft-bottom lethal
+  volume (one below the ground-floor deck) are un-nameable — the general region
+  language already exists one stage away in stage 7's `select` (`box {min,max}`
+  in a `piece-local` / `anchor-relative` frame, plus `union`/`intersect`/
+  `subtract`) and stage 5 cannot see it; **(3)** "the car always exists
+  somewhere" is authored, not enforced — a sequence that clears its only car
+  before filling the next compiles green. The runtime half of the criterion is
+  **debt**: the two `teleport_<key>` templates the fixture emits prove step 5 of
+  each ride on the pinned toolserver, and no template exercises the sequence's
+  own timeline, because the engine generates templates per verb and has none for
+  a `sequence`.
+- **The generated `campaign` template does not meet the batch model's own "own
+  init" rule, and the first red was a batch-order coin flip.** Found on CI by the
+  lift fixture (`lift:campaign`: *Expected #party dw.campaign to match 1, but got
+  0 on tick 0*) after the same tree had gone green locally — byte-identical
+  packs, verdict decided by order, which is the `v06_spawn_idempotent` class of
+  §"PackTest batch model" arriving from a new direction. The template resets
+  `dw.campaign` and the FIRST quest's `dw.qa_<q>` and then re-drives
+  `complete_o_<obj>`; the chain it drives is latched by `dw.q_<q>`, which
+  `check_q_<q>` reads as `unless score #party dw.q_<q> matches 1` and which the
+  template never clears. So any campaign whose quests can advance by a route
+  other than this template — a sibling test, or the ordinary world tick — makes
+  the replay a no-op and the assert fail. The lift fixture reached it because
+  `join_place` teleports every joining player onto the spawn cell and its whole
+  critical path sat in a box around that cell, so the tick finished the delve
+  unaided. **Two defects, one fixed:** the fixture now gates its finale on a flag
+  only a ride sets (`v10_lift::the_finale_cannot_be_completed_by_standing_still`,
+  measured red→green by deleting the `requires_flags`), while the template's own
+  init gap is open and belongs to its own round — the fix is clearing `dw.o_*` /
+  `dw.q_*` for the quests it re-drives, in `emit.rs`, which moves
+  `packtest-datapack/` bytes for every campaign. Reading: a **green** PackTest
+  run cannot prove order-independence; only a statement about the emission can,
+  which is why the fixture's guarantee is a Rust test and not a suite run.
 
 ---
 
