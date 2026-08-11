@@ -22,13 +22,17 @@
 # Reply shapes that mean the server did not do what was asked. Two families: a
 # PARSE failure, which every Brigadier error marks with a `<--[HERE]` cursor, and
 # a REFUSAL, where the command parsed and did nothing.
+#
+# The list is the UNION of every private copy this rule had before it moved
+# here, and no two copies agreed — each was silent on exactly the refusals its
+# own run never provoked. It must stay identical to `REJECTION` in rcon.mjs.
 dw_rcon_rejected() {
   case "$1" in
     *"<--[HERE]"*) return 0 ;;
     "Unknown or incomplete command"*|"Incorrect argument"*|"Expected "*|"Invalid "*|"Unknown "*) return 0 ;;
     "That position is not loaded"*|"Cannot place blocks outside of the world"*) return 0 ;;
     "No blocks were filled"*|"Could not set the block"*|"No entity was found"*) return 0 ;;
-    "Failed to parse number"*) return 0 ;;
+    "No targets matched"*|"Malformed "*|"Failed to "*) return 0 ;;
   esac
   return 1
 }

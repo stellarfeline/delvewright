@@ -187,6 +187,50 @@ def check_gamerules(
     return findings, bound, exemptions
 
 
+# The rejection rule has to exist twice — shell tools source `rcon.sh`, Node
+# tools import `rcon.mjs` — and two copies of one truth is exactly the shape the
+# rest of this file exists to prevent. So the two are compared, not trusted:
+# every reply shape one knows, the other must know.
+SHAPE = re.compile(r'"(?:\^|\*)?([A-Z][^"*|^]{4,})"|\|\^?([A-Z][^"|^]{4,})')
+
+
+def rejection_shapes(text: str) -> set[str]:
+    """The reply prefixes a rejection rule recognises, however it spells them."""
+    shapes: set[str] = set()
+    for a, b in SHAPE.findall(text):
+        s = (a or b).strip()
+        # Drop the shell's trailing glob and the regex's closing paren.
+        s = s.removesuffix("*").removesuffix(")").strip()
+        if s and not s.startswith(("shellcheck", "http")):
+            shapes.add(s)
+    return shapes
+
+
+def check_rule_parity() -> tuple[list[str], int]:
+    """`rcon.sh`'s list and `rcon.mjs`'s list recognise the same refusals."""
+    sh = (ROOT / "tools/lib/rcon.sh").read_text()
+    mjs = (ROOT / "tools/lib/rcon.mjs").read_text()
+    # Only the rule bodies, never the surrounding prose.
+    sh_body = sh.split("dw_rcon_rejected()", 1)[-1].split("\n}", 1)[0]
+    mjs_body = mjs.split("export const REJECTION", 1)[-1].split(");", 1)[0]
+    a, b = rejection_shapes(sh_body), rejection_shapes(mjs_body)
+    bound = len(a | b)
+    if a == b:
+        return [], bound
+    only_sh, only_mjs = sorted(a - b), sorted(b - a)
+    lines = [
+        "tools/lib/rcon.sh and tools/lib/rcon.mjs disagree about what a refusal is\n"
+        f"    only rcon.sh:  {only_sh or '(none)'}\n"
+        f"    only rcon.mjs: {only_mjs or '(none)'}\n"
+        "    Every private copy of this rule that has ever been found was silent "
+        "on exactly the refusals its own run never provoked — the shell half and "
+        "the Node half are two copies of one truth and drift the same way. Widen "
+        "whichever is short; a shape is removed only when the pinned server stops "
+        "producing it."
+    ]
+    return lines, bound
+
+
 def main() -> int:
     files = tracked_files()
     registry = gamerule_registry()
@@ -200,23 +244,25 @@ def main() -> int:
 
     channel_findings, channel_bound = check_channels(files)
     gamerule_findings, gamerule_bound, exemptions = check_gamerules(files, registry)
+    parity_findings, parity_bound = check_rule_parity()
 
     print(
         f"check-live-commands: {channel_bound} file(s) invoke rcon-cli; "
         f"{gamerule_bound} `gamerule` line(s) checked against "
-        f"{len(registry)} pinned identifiers"
+        f"{len(registry)} pinned identifiers; "
+        f"{parity_bound} refusal shape(s) compared across the two rule halves"
     )
     for e in exemptions:
         print(f"check-live-commands: exempt — {e}")
-    if channel_bound == 0 or gamerule_bound == 0:
+    if channel_bound == 0 or gamerule_bound == 0 or parity_bound == 0:
         print(
             "check-live-commands: a check that binds to nothing is vacuous — "
-            "expected live command sites and gamerule lines to exist",
+            "expected live command sites, gamerule lines and refusal shapes to exist",
             file=sys.stderr,
         )
         return 1
 
-    findings = channel_findings + gamerule_findings
+    findings = channel_findings + gamerule_findings + parity_findings
     for f in findings:
         print(f"check-live-commands: {f}", file=sys.stderr)
     if findings:

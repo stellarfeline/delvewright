@@ -40,13 +40,24 @@ import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
 
-/** Reply shapes that mean the server did not do what was asked. */
+/**
+ * Reply shapes that mean the server did not do what was asked.
+ *
+ * The list is the UNION of every private copy this rule had before it moved
+ * here, and assembling it found that no two copies agreed: the death-teleport
+ * spike knew the `<--[HERE]` cursor and not `No targets matched`; the
+ * area-effect-arrow spike knew `No targets matched`, `Malformed ` and a broad
+ * `Failed to ` and not the cursor. Each private copy was silent on exactly the
+ * refusals its own run never happened to provoke, which is the failure mode a
+ * shared rule exists to end — so a shape enters this list on evidence and never
+ * leaves it.
+ */
 export const REJECTION = new RegExp(
   "(<--\\[HERE\\]" +
     "|^Unknown or incomplete command|^Incorrect argument|^Expected |^Invalid |^Unknown " +
     "|^That position is not loaded|^Cannot place blocks outside of the world" +
     "|^No blocks were filled|^Could not set the block|^No entity was found" +
-    "|^Failed to parse number)",
+    "|^No targets matched|^Malformed |^Failed to )",
 );
 
 /** True when `reply` is the server saying it refused or could not parse `cmd`. */
