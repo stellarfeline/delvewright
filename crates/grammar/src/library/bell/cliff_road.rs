@@ -6,12 +6,14 @@
 //! ```text
 //!  local X:  0 .. band-1        band .. band+sea-1        band+sea ..
 //!            ┌───────────────┬──────────────────────┬───────────────────┐
-//!  the band  │ far leg ⟲    │        the gulf      │     near leg      │  <- two cliff_paths
-//!            │ crag│niche│▓ │          air         │ ▓│niche│crag …    │
+//!  the band  │ far leg ⟲     │       the gulf       │     near leg      │  <- two cliff_paths
+//!            │ crag│niche│ ·  │         air          │  · │niche│crag …  │
 //!            ├───────────────┼──────────────────────┼───────────────────┤
-//!  the gulf  │  solid crag   │          air         │    solid crag     │  <- `fall` courses
+//!  the gulf  │  solid crag   │         air          │    solid crag     │  <- `fall` courses
 //!            └───────────────┴──────────────────────┴───────────────────┘
-//!                            ^ ▓ = the two ledges, facing each other across it
+//!                            ^ · = the two ledge lanes — open air one cell
+//!                              wide, each on its own leg's gulf face, so a
+//!                              shove off either lands in the same gulf
 //!
 //!  local Z:  0 .. turn_run-1          turn_run ..
 //!            ┌──────────────┬────────────────────────────────────────────┐
