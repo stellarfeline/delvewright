@@ -31,8 +31,8 @@ use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
 use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::{
-    barrow_shore, broken_grate, causeway, chapel_ward, cistern_deep, cliff_road, elite_ground,
-    far_side_bar, gate_ward, hall_keep, watch_bay,
+    barrow_shore, broken_grate, causeway, chapel_ward, cistern_deep, cliff_road, drowned_ward,
+    elite_ground, far_side_bar, gate_ward, hall_keep, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
@@ -82,6 +82,22 @@ const DEEP_REGION: Box3 = Box3::at_origin([40, 10, 100]);
 /// The grate row's break is a seeded draw; this is the pinned fixture's seed.
 const DEEP_SEED: u64 = 1;
 
+/// **Z3.** Drowned Lower Ward: twenty cells of lower ward, twenty of junction
+/// with the shortcut's strip beside it, and the remaining twenty of flooded
+/// crossing. Nineteen-wide mainline and twenty-one-deep strip for the same two
+/// reasons Z6 has them — the arena's flank margins, and a branch that has to be
+/// deeper than its junction is long. Ten tall because the causeway stacks a
+/// berm, a gatehouse lane and the keeper's own headroom.
+const DROWNED_REGION: Box3 = Box3::at_origin([40, 10, 60]);
+/// Nothing in the drowned ward draws from the seed; it is stated, not chosen.
+const DROWNED_SEED: u64 = 1;
+/// The same as [`DEEP_STRIP`], for Z3.
+const DROWNED_STRIP: i32 = 21;
+/// How much of Z3's length the lower ward's arena takes — the `ward_run`
+/// default, restated for the same reason `DROWNED_STRIP` is: the flank gate
+/// reads cells off it rather than off the anchor arithmetic.
+const DROWNED_WARD_RUN: i32 = 20;
+
 /// How far the branch strip runs off Z6's mainline — the `strip_depth` default,
 /// restated here because the gates read cells off it rather than off the anchor
 /// arithmetic.
@@ -124,6 +140,7 @@ fn zones() -> Vec<ZoneFixture> {
         zone(barrow_shore(), SHORE_REGION, SHORE_SEED),
         zone(cliff_road(), CLIFF_REGION, CLIFF_SEED),
         zone(gate_ward(), WARD_REGION, WARD_SEED),
+        zone(drowned_ward(), DROWNED_REGION, DROWNED_SEED),
         ZoneFixture {
             falls: true,
             ..zone(chapel_ward(), CHAPEL_REGION, CHAPEL_SEED)
@@ -242,8 +259,8 @@ fn every_zone_restyles_without_moving_a_block() {
 /// or they do not, and three sealed rooms in a row would satisfy every gate the
 /// vocabulary has.
 ///
-/// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2), 81
-/// (Z4), 368 (Z5), 2078 (Z6).
+/// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2),
+/// 1100 (Z3), 81 (Z4), 368 (Z5), 2078 (Z6).
 #[test]
 fn every_zone_is_walkable_end_to_end() {
     for ZoneFixture {
@@ -287,7 +304,7 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 5, 6, 10].into_iter().zip(zones()) {
+    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 7, 5, 6, 10].into_iter().zip(zones()) {
         assert_eq!(
             program.palette.len(),
             want,
@@ -310,6 +327,34 @@ fn the_zone_fixtures_are_pinned() {
     assert_eq!(span_cells(&ward).len(), 27);
     assert_eq!(approach_cells(&ward).len(), 184);
     assert_eq!(standable_cells(&ward.model).len(), 239);
+
+    // Z3 carries one anchor from each of its four pieces, and it is where the
+    // second rename in the library is read back: the crossing's keeper answers
+    // to `keeper-elite`, the lower ward's own elite still to `elite`.
+    let drowned = expand_at(&drowned_ward(), DROWNED_REGION, DROWNED_SEED);
+    let names: Vec<&str> = drowned.anchors.keys().map(String::as_str).collect();
+    assert_eq!(
+        names,
+        [
+            "anchor/branch-door",
+            "anchor/causeway-head",
+            "anchor/elite",
+            "anchor/gate",
+            "anchor/keeper-elite",
+            "anchor/unlock",
+        ]
+    );
+    assert_eq!(
+        drowned.anchors["anchor/keeper-elite"].declared_by,
+        "ward/post_column"
+    );
+    assert_eq!(
+        drowned.anchors["anchor/elite"].declared_by,
+        "ring/elite_column"
+    );
+    assert_eq!(standable_cells(&drowned.model).len(), 1100);
+    assert_eq!(drowned_berm(&drowned).len(), 18);
+    assert_eq!(branch_near_room(&drowned, DROWNED_STRIP).len(), 180);
 
     // Z4 carries one anchor from each of its three pieces — and, because the
     // hub's whole point is the branch, two of them come from the piece that is
@@ -384,6 +429,297 @@ fn branch_near_room(out: &Expansion, strip: i32) -> BTreeSet<[i32; 3]> {
         .into_iter()
         .filter(|c| c[0] > gate[0] && c[0] < strip)
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Z3 — the Drowned Lower Ward
+// ---------------------------------------------------------------------------
+
+/// The crossing itself: the berm's standable cells **over the flooded ward**,
+/// read off `anchor/causeway-head`'s own column and stopping where the flood
+/// does.
+///
+/// The last `guard_len` cells of the berm run under the gatehouse rather than
+/// across the ward, and they are excluded for the same reason the piece-level
+/// gate excludes them: they are the passage the player takes *under* the
+/// keeper's floor, so the keeper cannot see them, and folding them into a gate
+/// about the crossing would be folding a known blind spot into a green.
+/// `tests/staging.rs` counts and bounds them at piece scale.
+fn drowned_berm(out: &Expansion) -> BTreeSet<[i32; 3]> {
+    let head = out.anchors["anchor/causeway-head"].pos;
+    let ward = out
+        .model
+        .region()
+        .positions()
+        .filter(|&p| {
+            out.model
+                .get(p)
+                .is_some_and(|b| b.name == "minecraft:water")
+        })
+        .map(|p| p[2])
+        .min()
+        .expect("the crossing built no flood at all");
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[0] == head[0] && c[1] == head[1] && c[2] >= ward)
+        .collect()
+}
+
+/// **Z3 gate 1.** The ward is a route in **both** directions under the plain
+/// ±1 step — the stronger of the two movement models, which this zone owes
+/// because it has no one-way hardware in it. The generic suite proves the
+/// forward direction for every zone; what is here is the return leg (a zone
+/// with a shortcut in it that could only be walked one way would be a lie) and
+/// the teeth.
+///
+/// Teeth: `ward/berm_gate = 0` puts the guard post's plinth back, and the zone
+/// is severed — while the crossing itself still walks its own length, so what
+/// went red is the way past the gatehouse and not the gatehouse.
+///
+/// Binding: 1100 standable cells, 1 entry cell (the berm is one wide, which is
+/// the point), 19 exit cells; 18 crossing cells still walked with the lane shut.
+#[test]
+fn the_drowned_ward_is_a_route_both_ways_and_only_through_the_gatehouse() {
+    let out = expand_at(&drowned_ward(), DROWNED_REGION, DROWNED_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert_eq!(entry.len(), 1, "the crossing is one wide: {entry:?}");
+    assert!(
+        connected(&cells, &entry, &exit) && connected(&cells, &exit, &entry),
+        "the drowned ward is not walkable in both directions"
+    );
+
+    let mut plugged = drowned_ward();
+    plugged.set_param("ward/berm_gate", 0).unwrap();
+    let shut = expand_at(&plugged, DROWNED_REGION, DROWNED_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    let (shut_entry, shut_exit) = ends(&shut.model);
+    assert!(
+        !shut_entry.is_empty() && !shut_exit.is_empty(),
+        "the plugged zone has no faces, so the red below would be vacuous"
+    );
+    assert!(
+        !connected(&shut_cells, &shut_entry, &shut_exit),
+        "the guard post's plinth is back and the ward still crosses — either the \
+         lane was never what carried the route, or something else does"
+    );
+    assert!(
+        !reachable_with_fall(&shut.model, &shut_cells, &shut_entry, &shut_exit),
+        "the plugged ward is crossable by stepping off something — the flood is \
+         supposed to be the only thing beside the berm"
+    );
+
+    // ...and the control: with the plinth back, the crossing is still a
+    // crossing. What the red above measured is the exit, not the causeway.
+    let berm = drowned_berm(&shut);
+    assert_eq!(berm.len(), 18, "the crossing with the lane shut");
+    let far: BTreeSet<[i32; 3]> = berm
+        .iter()
+        .copied()
+        .filter(|c| c[2] == berm.iter().map(|b| b[2]).max().unwrap())
+        .collect();
+    let near: BTreeSet<[i32; 3]> = berm
+        .iter()
+        .copied()
+        .filter(|c| c[2] == berm.iter().map(|b| b[2]).min().unwrap())
+        .collect();
+    assert!(
+        connected(&berm, &far, &near),
+        "the plugged crossing does not even cross, so the red above is a broken fixture"
+    );
+}
+
+/// **Z3 gate 2.** The keeper still commands the crossing after composition —
+/// in the campaign's box, which is longer than the piece fixture's and puts the
+/// whole zone's mass in the way.
+///
+/// Teeth: `ward/obstruct` stands one course of stone level with the keeper's own
+/// floor and the same walk must lose cells, while the crossing stays walkable —
+/// blindness, not impassability.
+///
+/// Binding: 18 crossing cells, 18 sightlines; teeth 18 cells with at least one
+/// blind.
+#[test]
+fn the_keeper_sees_the_whole_drowned_crossing() {
+    let out = expand_at(&drowned_ward(), DROWNED_REGION, DROWNED_SEED);
+    let keeper = out.anchors["anchor/keeper-elite"].pos;
+    let berm = drowned_berm(&out);
+    assert_eq!(berm.len(), 18, "the crossing");
+    for cell in &berm {
+        if let Err(blocker) = sees(&out.model, keeper, *cell) {
+            panic!(
+                "after composition the keeper {keeper:?} cannot see the crossing cell \
+                 {cell:?}: {blocker:?} is in the way"
+            );
+        }
+    }
+
+    let mut blinded = drowned_ward();
+    blinded.set_param("ward/obstruct", 1).unwrap();
+    let blocked = expand_at(&blinded, DROWNED_REGION, DROWNED_SEED);
+    let keeper = blocked.anchors["anchor/keeper-elite"].pos;
+    let berm = drowned_berm(&blocked);
+    assert_eq!(
+        berm.len(),
+        18,
+        "the obstructed crossing is still a crossing"
+    );
+    let blind = berm
+        .iter()
+        .filter(|c| sees(&blocked.model, keeper, **c).is_err())
+        .count();
+    assert!(
+        blind > 0,
+        "a pillar stands in the keeper's line and it sees all 18 cells anyway"
+    );
+    let cells = standable_cells(&blocked.model);
+    let (entry, exit) = ends(&blocked.model);
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the obstruction sealed the ward, so the red above is impassability wearing \
+         blindness's name"
+    );
+}
+
+/// **Z3 gate 3.** The fight in the lower ward is still optional — bound over
+/// **the arena's own run**, which is where the claim is true.
+///
+/// Z0 and Z6 bind the same claim across their whole zone. Z3 cannot and says so:
+/// the causeway is a one-wide crossing, so no band of floor runs the length of
+/// this zone at all, and asserting a zone-length bypass here would either be
+/// false or be quietly re-scoped until it passed. The honest form is the arena's
+/// own: two bands, each crossing the arena from its entry face to its exit face.
+///
+/// Teeth: `ring/seal_flank` at 1, 2 and 3 — the counted total drops to 1, 1, 0.
+///
+/// Binding: 2 routes at the default, over bands of 180 standable cells each; 3
+/// teeth configurations.
+#[test]
+fn the_lower_ward_keeps_a_lane_on_each_side_of_its_fight() {
+    for (knob, want) in [(0, 2), (1, 1), (2, 1), (3, 0)] {
+        let mut program = drowned_ward();
+        program.set_param("ring/seal_flank", knob).unwrap();
+        let out = expand_at(&program, DROWNED_REGION, DROWNED_SEED);
+        let elite = out.anchors["anchor/elite"].pos;
+        assert_eq!(
+            arena_flank_routes(&out, elite, DROWNED_WARD_RUN),
+            want,
+            "ring/seal_flank = {knob}"
+        );
+    }
+}
+
+/// The two bands of floor strictly west and strictly east of the lower ward's
+/// engagement circle, each walked across the **arena's own run** rather than the
+/// zone's — see [`the_lower_ward_keeps_a_lane_on_each_side_of_its_fight`].
+///
+/// The run is passed in from the zone's own `ward_run` default rather than
+/// guessed, so a zone that re-sized its arena cannot silently shrink what this
+/// examines.
+fn arena_flank_routes(out: &Expansion, elite: [i32; 3], run: i32) -> usize {
+    let cells: BTreeSet<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] < run)
+        .collect();
+    [
+        (c_lt(&cells, elite[0] - MIN_RADIUS as i32), "west"),
+        (c_gt(&cells, elite[0] + MIN_RADIUS as i32), "east"),
+    ]
+    .into_iter()
+    .filter(|(band, _)| {
+        let entry: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == run - 1).collect();
+        let exit: BTreeSet<[i32; 3]> = band.iter().copied().filter(|c| c[2] == 0).collect();
+        !entry.is_empty() && !exit.is_empty() && connected(band, &entry, &exit)
+    })
+    .count()
+}
+
+fn c_lt(cells: &BTreeSet<[i32; 3]>, x: i32) -> BTreeSet<[i32; 3]> {
+    cells.iter().copied().filter(|c| c[0] < x).collect()
+}
+
+fn c_gt(cells: &BTreeSet<[i32; 3]>, x: i32) -> BTreeSet<[i32; 3]> {
+    cells.iter().copied().filter(|c| c[0] > x).collect()
+}
+
+/// **Z3 gate 4.** The shortcut is sealed, its near room is reachable, and the
+/// junction's doorway is the only way into it — the same four-part claim Z4 and
+/// Z6 make, re-bound to this zone's own box.
+///
+/// Binding: 180 near-room cells; teeth `shortcut/unbarred` and
+/// `junction/sealed`, each with a control that the ward itself still walks.
+#[test]
+fn the_drowned_wards_shortcut_is_sealed_and_reached_through_one_doorway() {
+    let out = expand_at(&drowned_ward(), DROWNED_REGION, DROWNED_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    let door = out.anchors["anchor/branch-door"].pos;
+    let unlock: BTreeSet<[i32; 3]> = [out.anchors["anchor/unlock"].pos].into_iter().collect();
+
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the shortcut sealed the ward"
+    );
+    let near = branch_near_room(&out, DROWNED_STRIP);
+    assert_eq!(near.len(), 180, "the branch's near room");
+    assert!(
+        connected(&cells, &entry, &near),
+        "the ward cannot reach its own shortcut room"
+    );
+    assert!(
+        !connected(&cells, &entry, &unlock),
+        "the ward reaches {unlock:?} while the bar stands"
+    );
+
+    let mut open = drowned_ward();
+    open.set_param("shortcut/unbarred", 1).unwrap();
+    let opened = expand_at(&open, DROWNED_REGION, DROWNED_SEED);
+    let open_cells = standable_cells(&opened.model);
+    let (open_entry, _) = ends(&opened.model);
+    let open_unlock: BTreeSet<[i32; 3]> =
+        [opened.anchors["anchor/unlock"].pos].into_iter().collect();
+    assert!(
+        connected(&open_cells, &open_entry, &open_unlock),
+        "drawing the bar did not open the branch, so the seal above proves nothing"
+    );
+    let cut: BTreeSet<[i32; 3]> = open_cells
+        .iter()
+        .copied()
+        .filter(|c| c[0] != door[0] || c[2] != door[2])
+        .collect();
+    assert_eq!(
+        cut.len(),
+        open_cells.len() - 1,
+        "exactly the doorway was cut"
+    );
+    assert!(
+        !connected(&cut, &open_entry, &open_unlock),
+        "with the junction's doorway plugged the unbarred branch is still reachable"
+    );
+
+    let mut sealed = drowned_ward();
+    sealed.set_param("junction/sealed", 1).unwrap();
+    let shut = expand_at(&sealed, DROWNED_REGION, DROWNED_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    let (shut_entry, shut_exit) = ends(&shut.model);
+    assert_eq!(
+        shut_cells.len(),
+        cells.len() - 1,
+        "the doorway cell, and only it, is gone"
+    );
+    assert!(
+        !connected(
+            &shut_cells,
+            &shut_entry,
+            &branch_near_room(&shut, DROWNED_STRIP)
+        ),
+        "the junction's doorway was filled and the branch is still reachable"
+    );
+    assert!(
+        connected(&shut_cells, &shut_entry, &shut_exit),
+        "sealing the branch door sealed the ward, so the red above measures the \
+         wrong thing"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1454,6 +1790,25 @@ fn the_pieces_stand_in_travel_order() {
         chapel.anchors
     );
 
+    // Z3: the crossing, the junction, and the lower ward's own fight. The
+    // keeper's anchor sits on the gatehouse at the far end of the crossing, so
+    // it comes last; the two shortcut anchors are off the mainline and are
+    // checked below with Z4's and Z6's.
+    let drowned = expand_at(&drowned_ward(), DROWNED_REGION, DROWNED_SEED);
+    let order = [
+        "anchor/elite",
+        "anchor/branch-door",
+        "anchor/keeper-elite",
+        "anchor/causeway-head",
+    ];
+    for pair in order.windows(2) {
+        assert!(
+            z(&drowned, pair[0]) < z(&drowned, pair[1]),
+            "the drowned ward's pieces are out of travel order at {pair:?}: {:#?}",
+            drowned.anchors
+        );
+    }
+
     // Z6 is the long one: five pieces, and the order is also the beat sequence —
     // spill in, read the volley, cross it, find the grate, pass the sally port,
     // meet the elite.
@@ -1481,6 +1836,7 @@ fn the_pieces_stand_in_travel_order() {
     for (out, doorway, gate) in [
         (&chapel, "anchor/branch-door", "anchor/gate"),
         (&deep, "anchor/branch-door", "anchor/sally-gate"),
+        (&drowned, "anchor/branch-door", "anchor/gate"),
     ] {
         for name in [gate, "anchor/unlock"] {
             assert!(
@@ -1506,6 +1862,7 @@ fn the_pieces_stand_in_travel_order() {
         (&chapel, branch),
         (&keep, &[][..]),
         (&deep, sally),
+        (&drowned, branch),
     ] {
         for (name, anchor) in &out.anchors {
             let across = name == "anchor/alcove"
@@ -1523,8 +1880,8 @@ fn the_pieces_stand_in_travel_order() {
             across_seen += usize::from(across);
         }
     }
-    assert_eq!(checked, 36, "the gate checked {checked} anchors");
-    assert_eq!(across_seen, 14, "the gate allowed {across_seen} across");
+    assert_eq!(checked, 42, "the gate checked {checked} anchors");
+    assert_eq!(across_seen, 17, "the gate allowed {across_seen} across");
 }
 
 /// The frame constraint, enforced as a refusal: a piece run shorter than the
@@ -1742,27 +2099,27 @@ fn two_pieces_that_share_a_stem_still_collide_when_nobody_renames() {
     }
 }
 
-/// **Finding: `causeway` has no exit past its guard post**, so nothing can be
-/// chained after it and Z3 has no spine to hang **E** and **F** on even once the
-/// anchor collision above is solved.
+/// **Seam limit 2, closed.** `causeway` used to be a **terminus** with no way
+/// to stop being one, and that was the whole of what Z3 waited on: its far face
+/// carried no standable cell at berm height, so a zone that put anything past it
+/// handed the player a wall, and a zone that put it last ended at one. No
+/// orientation helped — a grammar orientation is a permutation without
+/// reflection, so the post cannot be turned to the entry end either.
 ///
-/// The post is deliberately unreachable from the berm — the rule's own module
-/// note calls it "not a landing", the same move that keeps `rafter_hall`'s
-/// perches off the nave — and the mass that holds it up is solid from the ward
-/// floor to `rise + tower_rise`. That is fine for a piece whose gate is a
-/// sightline. It means the piece is a **terminus**: its far face carries no
-/// standable cell at berm height at all, so a zone that put anything past it
-/// would be handing the player a wall, and a zone that put it last would end at
-/// one.
-///
-/// Fixing it is a change to the §5b rule — an exit lane past the post — which is
-/// a finding to report and not something a zone program may write.
+/// The rule now exposes `berm_gate`, and this test is what keeps both halves
+/// honest. Terminus is still the **default**, because a guard post you can
+/// simply walk under is a weaker piece and nobody should get one by accident;
+/// the piece is deliberately unreachable from the berm either way ("not a
+/// landing", the same move that keeps `rafter_hall`'s perches off the nave). So
+/// the assertions below are unchanged from the ones that recorded the finding —
+/// they are now the proof that the default did not move — and the last one is
+/// the finding's closure. Z3 is [`drowned_ward`], above.
 ///
 /// Binding: the 2 `Z`-slices of the guard station, and the 22-cell berm.
 /// Control: the berm itself is still a route across the ward, so what is severed
-/// is the exit and not the crossing.
+/// with the gate shut is the exit and not the crossing.
 #[test]
-fn the_causeway_has_no_exit_past_its_guard_post() {
+fn the_causeway_is_a_terminus_until_its_berm_gate_is_opened() {
     const WARD: Box3 = Box3::at_origin([9, 10, 24]);
     let out = expand_at(&causeway(), WARD, 1);
     let cells = standable_cells(&out.model);
@@ -1801,6 +2158,17 @@ fn the_causeway_has_no_exit_past_its_guard_post() {
     assert!(
         connected(&berm, &head, &toe),
         "the berm does not even cross the ward, so the red above is a broken fixture"
+    );
+
+    // ...and the closure: the same box, the same seed, one knob.
+    let mut open = causeway();
+    open.set_param("berm_gate", 1).unwrap();
+    let out = expand_at(&open, WARD, 1);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert!(
+        connected(&cells, &entry, &exit),
+        "`berm_gate` is open and the piece is still a terminus"
     );
 }
 

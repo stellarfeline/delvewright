@@ -62,7 +62,9 @@ pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
-pub use bell::{barrow_shore, chapel_ward, cistern_deep, cliff_road, gate_ward, hall_keep};
+pub use bell::{
+    barrow_shore, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward, hall_keep,
+};
 pub use boulder_stair::boulder_stair;
 pub use broken_grate::broken_grate;
 pub use castle::castle;
@@ -251,6 +253,15 @@ fn cmp(lhs: Expr, op: CmpOp, rhs: Expr) -> Cond {
 /// Every sub-guard has to hold.
 fn all_of(of: Vec<Cond>) -> Cond {
     Cond::All { of }
+}
+
+/// At least one sub-guard has to hold.
+///
+/// The sibling of [`all_of`], and the shape a clause takes when a knob adds an
+/// obligation rather than replacing one: "the knob is off, **or** the geometry
+/// it needs is there" is one clause of a rule's own guard, not a second rule.
+fn any_of(of: Vec<Cond>) -> Cond {
+    Cond::Any { of }
 }
 
 /// A guarded alternative.
