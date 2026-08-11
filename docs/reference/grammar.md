@@ -698,6 +698,16 @@ target) has to land first.
 
 ## 5c. Zone programs — the vocabulary composed
 
+> **Where "REMAKE" is.** Every `REMAKE §n` citation in this file and in
+> `crates/grammar/src/library/bell/` points at
+> `campaigns/the-drowned-bell/REMAKE.md` in the **content** repo
+> (`delvewright-campaigns`), reachable locally through the `campaigns/` dev
+> symlink. It is on content `main` as of merge `795ef92` (content PR #31); it
+> had sat on an unmerged branch for six days, during which more than one
+> session grepped this checkout, found nothing, and recorded "REMAKE.md does not
+> exist on disk anywhere (verified)". It does. §3 is the zone list, §4 the
+> lettered staging catalogue (K, R, O, W, …), §7 the engine prerequisites.
+
 `library::bell::{barrow_shore, cliff_road, gate_ward, chapel_ward, hall_keep,
 cistern_deep}` are the drowned-bell remake's **zone programs** (REMAKE §3;
 build-sequence step 3). A zone is one grammar program, and these contain no

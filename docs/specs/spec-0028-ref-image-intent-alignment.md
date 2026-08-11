@@ -4,6 +4,18 @@
   2026-08-04: scoring is rank-only, model = gpt-image-2 via BYO config in the
   i18n-external-LLM style, the interactive-polish round is deferred until the
   engine/toolchain stabilizes, and this is its own spec)
+- **Implemented**: **partially** — measured 2026-08-10; `Status` above records
+  APPROVAL only (task #76). `tools/refimg.py` exists and draws reference images
+  (PR #334), records the request beside the response (PR #338), refuses a flag
+  the configured provider cannot honour, and writes only to gitignored
+  `.refimg/` (AC4's generation-dir default). The design-alignment Artifact became
+  a gate in the `/new-delve` skill in PR #311. **Not built:** AC3 — no
+  similarity score and no contact-sheet ordering exist anywhere in the tree
+  (`similarity` appears in this spec and nowhere else), and there is **no test
+  of any kind** for `refimg.py`, so AC2's stub-model dry-run is exercised by hand
+  (`--dry-run`) rather than by a harness. Two of the spec's own premises moved:
+  the model is not `gpt-image-2` but `ideogram-v3` / `gemini-native`, and AC5
+  (owner walkthrough) is an owner act not asserted here.
 - **ADRs**: 0003/0004 (generation-time only), 0013 (licensing — see §4),
   0012 (skill front-end)
 - **Depends on**: spec-0027 (the builder this step feeds)

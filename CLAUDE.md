@@ -64,9 +64,12 @@ docs/specs/          # owner-approved specs, one per feature
 docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
                      #   grammar.md + how a round is run: playtest-methodology.md
                      #   + how a delve is generated: skill-workflow.md
+                     #   + how a worker starts: worktree-bootstrap.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
-crates/              # Rust workspace: dsl / compiler / orchestrator / admit / schem / render
-prefabs/             # .nbt library + metadata (git-lfs)
+crates/              # Rust workspace: dsl / compiler / grammar / orchestrator / admit / schem / render
+prefabs/             # GPL tileset GENERATORS + invariants. The .nbt library and its
+                     #   metadata live in the CONTENT repo (`campaigns/prefabs` via the
+                     #   dev symlink) — see prefabs/README.md; git-lfs pattern still here
 harness/             # mineflayer bot tests (TypeScript)
 tools/               # auxiliary Python tooling (skins, i18n, CI checks) — never shipped in delves
 packtest/            # PackTest templates

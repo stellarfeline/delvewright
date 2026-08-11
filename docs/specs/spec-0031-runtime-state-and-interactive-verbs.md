@@ -1,6 +1,19 @@
 # spec-0031: Runtime state, and the verbs that need it
 
 - **Status**: Draft (owner design session 2026-08-08)
+- **Implemented**: **yes, on `main`** — measured 2026-08-10. `Status` above
+  records APPROVAL state and is bound to nothing about existence; this line is
+  the fact, and the drift that costs is a shipped feature still reading as
+  unbuilt (task #76). All five v0.10 primitives are merged: runtime state + the
+  numeric gate (AC1–AC2, PR #348), `on_death` as an effect root (AC3, PR #346),
+  region fill/clear (PR #354), status effect + region teleport (PR #353),
+  lethal volumes (AC8, PR #347). **AC9 — the load-bearing one — is discharged**:
+  the lift is authored entirely in campaign JSON with zero new engine surface
+  (PR #356, `0a40db8`; `crates/compiler/tests/v10_lift.rs`, and a test derived
+  from the stage schemas asserts no DSL surface is named after a lift).
+  Residual, tracked: the **runtime** proof that a player entering a lethal
+  volume actually dies is asserted nowhere — a PackTest fake player cannot die
+  (task #68).
 - **ADRs**: 0001 (the compiler emits everything), 0003 (vanilla-first),
   0006 (determinism)
 - **Related**: spec-0011 (trap hardware), spec-0022 (traps v2 — redstone keeps
