@@ -20,6 +20,11 @@ use delvewright_grammar::library::{
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 // W3: the palette/prop family (W + S + M + X).
 use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
+// The mechanism family: the rest point, the lure and the hazard control. Their
+// anchors are the whole reason they exist — a `bonfire{anchor}` and an
+// `EnvTrigger`'s `at` bind to them — so this seam is exactly where a rule that
+// stopped exporting one would have to show.
+use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
 const REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -38,6 +43,9 @@ const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
 const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
 const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
+const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
+const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
+const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
@@ -275,6 +283,24 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
                 "anchor/lift-station-1",
                 "anchor/lift-call-1",
             ],
+        ),
+        (
+            "grammar-hearth-ward",
+            hearth_ward(),
+            HEARTH_REGION,
+            vec!["anchor/hearth"],
+        ),
+        (
+            "grammar-bait-stand",
+            bait_stand(),
+            BAIT_REGION,
+            vec!["anchor/bait", "anchor/bait-perch"],
+        ),
+        (
+            "grammar-disarm-stand",
+            disarm_stand(),
+            DISARM_REGION,
+            vec!["anchor/release", "anchor/run-head"],
         ),
     ] {
         let dir = library_dir(name);

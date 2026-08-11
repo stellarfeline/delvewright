@@ -1,7 +1,7 @@
 //! **Z7 — the Bell Tower.** The zone that is *climbed*: a stair up the tower's
-//! solid base, the loft over it, the boss threshold, the Bellkeeper's ring, and
-//! the counterweight shaft that drops out of the whole thing (REMAKE §3 Z7; §4
-//! entries **R**, **M**, **E** and **L**).
+//! solid base, BF5's rope room at the head of it, the loft over that, the boss
+//! threshold, the Bellkeeper's ring, and the counterweight shaft that drops out
+//! of the whole thing (REMAKE §3 Z7; §4 entries **R**, **M**, **E** and **L**).
 //!
 //! ```text
 //!  seen from above, travel running down the page:
@@ -15,6 +15,8 @@
 //!      │  LIFT SHAFT (full Y)  │D││  the landing's lane     ^ tee_passage    │  tee_run
 //!      ├──────────────────────────┼──────────────────────────────────────────┤
 //!      │        solid margin      │  the loft               ^ rafter_hall    │  loft_run
+//!      ├──────────────────────────┼──────────────────────────────────────────┤
+//!      │        solid margin      │  BF5, the rope room     ^ hearth_ward    │  hearth_run
 //!      ├──────────────────────────┼──────────────────────────────────────────┤
 //!      │        solid margin      │  the ascent             ^ stair_flight   │  the rest
 //!      └──────────────────────────┴──────────────────────────────────────────┘
@@ -91,15 +93,21 @@
 //! `abs(1)` on its first split) reds it with "the tower cannot reach its own
 //! lift landing" while every other gate stays green.
 //!
-//! # Missing (REMAKE §3 Z7)
+//! # BF5, and the gap that closed between one round and the next
 //!
-//! **BF5, the rope room.** A rest point is `bonfire{anchor}` (spec-0016 §1) and
-//! no rule in the vocabulary declares an anchor for one — the same gap Z4
-//! records at the chapel hearth, and the same answer: the smallest honest form
-//! is a `hearth_ward` rule, which is §5b's business and not a zone's. Named, not
-//! faked.
+//! This zone shipped its first round with one entry named as missing: the rope
+//! room. A rest point is `bonfire{anchor}` (spec-0016 §1), no rule declared an
+//! anchor for one, and the honest thing was to name it rather than mint an
+//! anchor a zone has no right to. [`crate::library::hearth_ward`] landed in the
+//! very next round for Z4's own hearth, so the gap is closed here by composing
+//! it — a lane with a sheltered nook, `anchor/hearth` inside, sitting at the head
+//! of the stair where the climb ends. The rule knows nothing about fire; what it
+//! guarantees is somewhere off the road, reachable one way, with one declared
+//! focus, and that is exactly what a rest point binds to.
 //!
-//! The lift's **far** station is likewise not here and cannot be: it stands in
+//! # Still not here, and it cannot be
+//!
+//! The lift's **far** station stands in
 //! whatever zone the ride lands in (REMAKE says Z4), and a zone program builds
 //! one box. What Z7 ships is the shaft head — the top station, the drop below
 //! it, and a bottom that is lethal rather than open, so the piece is complete on
@@ -133,14 +141,21 @@
 //!    reds.
 //! 6. **The plinth arithmetic is guarded, not hoped**: a `shaft/sill` that
 //!    disagrees with the flight's own rise is a refusal naming the rule.
+//!
+//! BF5 carries no gate of its own here, and that is deliberate rather than an
+//! omission: `hearth_ward`'s three claims — the lane is still a chain segment,
+//! the focus is a detour rather than a corridor, exactly one way in — are all
+//! about the piece's own box, and `tests/staging.rs` binds them there. What
+//! composition could break is that the rope room severs the climb, and gate 1
+//! walks straight through it.
 
 use crate::block::BlockState;
 use crate::compose::entry;
 use crate::geom::Axis;
 use crate::ir::{ArithOp, AxisSpec, CmpOp, DimRef, Expr, Program, Reorient};
 use crate::library::{
-    abse, absp, all_of, alt_when, call, cmp, dim, elite_ground, fill, int, lift_shaft, par,
-    rafter_hall, rel, reoriented, split_exact, stair_flight, tee_passage, threshold_motif,
+    abse, absp, all_of, alt_when, call, cmp, dim, elite_ground, fill, hearth_ward, int, lift_shaft,
+    par, rafter_hall, rel, reoriented, split_exact, stair_flight, tee_passage, threshold_motif,
 };
 
 use super::composed;
@@ -153,6 +168,8 @@ const DOOR: &str = "door";
 const TEE: &str = "tee";
 /// The prefix the loft is included under.
 const LOFT: &str = "loft";
+/// The prefix BF5's rope room — a `hearth_ward` — is included under.
+const HEARTH: &str = "hearth";
 /// The prefix the ascent is included under.
 const FLIGHT: &str = "flight";
 /// The prefix the counterweight shaft is included under.
@@ -192,11 +209,12 @@ pub const SILL: i64 = CLIMB;
 /// The Bell Tower.
 ///
 /// Parameters: `ring_run`, `door_run`, `tee_run` and `loft_run` (how much of the
-/// zone's length each upper piece takes; the flight gets the rest, so a longer
-/// zone is a taller climb and never a differently-shaped ring), `strip_depth`
+/// zone's length each upper piece takes — `hearth_run` is BF5's rope room; the
+/// flight gets the rest, so a longer zone is a taller climb and never a
+/// differently-shaped ring), `strip_depth`
 /// (how far off the mainline the shaft's own strip runs), plus every parameter
-/// of the six included pieces under the `ring/`, `door/`, `tee/`, `loft/`,
-/// `flight/` and `shaft/` prefixes — including the knobs the gates are shown red
+/// of the seven included pieces under the `ring/`, `door/`, `tee/`, `loft/`,
+/// `hearth/`, `flight/` and `shaft/` prefixes — including the knobs the gates are shown red
 /// with, `flight/broken_step`, `loft/span_beams`, `ring/seal_flank`,
 /// `tee/sealed` and `shaft/sill`. Palette roles: `plinth` (the mass the upper
 /// storey stands on) and `margin` (the inert rock the shaft's strip is cut out
@@ -206,6 +224,7 @@ pub fn bell_tower() -> Program {
     let door = threshold_motif();
     let tee = tee_passage();
     let loft = rafter_hall();
+    let hearth = hearth_ward();
     let flight = stair_flight();
     // The one piece this zone configures, and it is a fact about the seam rather
     // than taste: the shaft's lowest station has to be the upper storey's own
@@ -221,6 +240,7 @@ pub fn bell_tower() -> Program {
         .param("door_run", 20)
         .param("tee_run", 21)
         .param("loft_run", 20)
+        .param("hearth_run", 20)
         .param("strip_depth", 22)
         .param("climb", CLIMB)
         .role("plinth", BlockState::simple("deepslate_bricks"))
@@ -252,6 +272,7 @@ pub fn bell_tower() -> Program {
                     cmp(par("door_run"), CmpOp::Gt, mainline_width()),
                     cmp(par("tee_run"), CmpOp::Gt, mainline_width()),
                     cmp(par("loft_run"), CmpOp::Gt, mainline_width()),
+                    cmp(par("hearth_run"), CmpOp::Gt, mainline_width()),
                     cmp(flight_run(), CmpOp::Gt, mainline_width()),
                     cmp(par("climb"), CmpOp::Eq, treads()),
                     cmp(
@@ -318,18 +339,26 @@ pub fn bell_tower() -> Program {
             "upper_chain",
             split_exact(
                 Axis::Z,
-                vec![absp("ring_run"), absp("door_run"), absp("tee_run"), rel(1)],
+                vec![
+                    absp("ring_run"),
+                    absp("door_run"),
+                    absp("tee_run"),
+                    absp("loft_run"),
+                    rel(1),
+                ],
                 vec![
                     call(&entry(RING, &ring)),
                     call(&entry(DOOR, &door)),
                     call(&entry(TEE, &tee)),
                     call(&entry(LOFT, &loft)),
+                    call(&entry(HEARTH, &hearth)),
                 ],
             ),
         );
-    // No rename: the six pieces declare six disjoint sets of stems — `elite`,
+    // No rename: the seven pieces declare seven disjoint sets of stems — `elite`,
     // `threshold-narrate`, `branch-door`, `hall-door`/`perch-<i>`,
-    // `stair-foot`/`stair-head`/`stair-step-<i>` and the three `lift-*`. A zone
+    // `stair-foot`/`stair-head`/`stair-step-<i>`, `hearth`, and the three
+    // `lift-*`. A zone
     // that needed one would write it out here, as Z3 and Z6 do.
     composed(
         zone,
@@ -338,6 +367,7 @@ pub fn bell_tower() -> Program {
             (DOOR, &door),
             (TEE, &tee),
             (LOFT, &loft),
+            (HEARTH, &hearth),
             (FLIGHT, &flight),
             (SHAFT, &shaft),
         ],
@@ -356,6 +386,7 @@ fn upper_run() -> Expr {
         .arith(ArithOp::Add, par("door_run"))
         .arith(ArithOp::Add, par("tee_run"))
         .arith(ArithOp::Add, par("loft_run"))
+        .arith(ArithOp::Add, par("hearth_run"))
 }
 
 /// How far along the strip the shaft's own slice starts: the runs of the two
@@ -364,7 +395,7 @@ fn upper_reach() -> Expr {
     par("ring_run").arith(ArithOp::Add, par("door_run"))
 }
 
-/// What the flight gets: whatever length the four upper pieces leave.
+/// What the flight gets: whatever length the five upper pieces leave.
 fn flight_run() -> Expr {
     dim(DimRef::Z).arith(ArithOp::Sub, upper_run())
 }

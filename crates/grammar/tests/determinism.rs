@@ -14,6 +14,9 @@ use delvewright_grammar::library::{
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
 use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
+// The mechanism family (task #182 zone round): the rest point, the lure and the
+// hazard control.
+use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -48,6 +51,11 @@ const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
 /// and two whole storeys), seven deep — so the `lift-station-<i>` and
 /// `lift-call-<i>` numbering a campaign binds is part of what is pinned here.
 const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
+/// The mechanism family: a rest point's nook, a lure with its watcher, and a
+/// hazard's control at the head of its run.
+const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
+const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
+const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 
 fn cases() -> Vec<(Program, Box3)> {
     vec![
@@ -70,6 +78,9 @@ fn cases() -> Vec<(Program, Box3)> {
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
         (lift_shaft(), LIFT_REGION),
+        (hearth_ward(), HEARTH_REGION),
+        (bait_stand(), BAIT_REGION),
+        (disarm_stand(), DISARM_REGION),
     ]
 }
 
