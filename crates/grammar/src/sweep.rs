@@ -36,6 +36,34 @@
 //! models, never from the pictures, because two renders can differ by a shadow
 //! and two identical renders can hide a moved wall behind a roof.
 //!
+//! # What "the same building" means, and why the gate turns on it
+//!
+//! Both counts are taken **up to placement**: two candidates are the same when
+//! one can be carried onto the other by a whole-body move a placement could
+//! undo — a translation, one of the four yaw rotations, a horizontal mirror.
+//! Nothing else is quotiented. Paint still separates models, shape still
+//! separates massings, and a building turned *upside down* is a different
+//! building, because gravity is not a symmetry and nothing downstream can set
+//! it down that way. [`crate::model::VoxelModel::placement_canonical_bytes`]
+//! carries the construction.
+//!
+//! Blind to pose is not a nicety here, it is the difference between a gate and
+//! a number. Every bell zone opens `Reorient::KEEP.y(WorldY).z(Largest)`, which
+//! normalises the scope onto its longer horizontal axis — so a region and its
+//! transpose expand to *the same building written on swapped world axes*. Under
+//! a pose-sensitive digest, `bell:barrow-shore` at `[19,6,24]` and `[24,6,19]`
+//! reported two distinct massings, identical in filled cells, and the page held
+//! one building. The gate that decides whether a sheet is worth the owner's
+//! hour could be passed by candidates that offer her no choice — the vacuous
+//! green CLAUDE.md names, in the place it costs most. A real curation pass hit
+//! it: one zone reported four and held three.
+//!
+//! The other direction is the same defect mirrored, so the equivalence stops
+//! where it does deliberately. A coarser one — ignoring the vertical, or scale,
+//! or interior arrangement — would merge buildings that really are different
+//! and hide choices instead of inventing them. `tests` below measure both
+//! directions on the same zone.
+//!
 //! Nothing here ships: sweeps, snapshots and sheets are generation-time working
 //! material (ADR-0013), and none of it can move a delve's bytes (ADR-0006).
 
@@ -265,11 +293,12 @@ pub struct Built {
     pub snapshot: String,
     /// Cells that are not air.
     pub filled_cells: usize,
-    /// `sha256:` over the model's canonical bytes — block-for-block identity.
+    /// `sha256:` over the model's placement-canonical bytes — block-for-block
+    /// identity, **up to placement**.
     pub model_digest: String,
-    /// `sha256:` over the solid/air bitmap alone — **massing** identity, which
-    /// is what the owner is choosing between. Two candidates that share this
-    /// are the same building in different paint.
+    /// `sha256:` over the solid/air bitmap alone, likewise up to placement —
+    /// **massing** identity, which is what the owner is choosing between. Two
+    /// candidates that share this are the same building in different paint.
     pub massing_digest: String,
     /// Why the expansion failed, when it did. A refused candidate stays in the
     /// report — a guard refusing is a fact about the program, and dropping the
@@ -308,11 +337,15 @@ pub struct SweepReport {
     pub built: usize,
     /// Candidates a guard refused.
     pub refused: usize,
-    /// Distinct models among those that built — block-for-block.
+    /// Distinct models among those that built — block-for-block, up to
+    /// placement.
     pub distinct_models: usize,
     /// Distinct **massings** among those that built. **The number that says
     /// whether there is a choice on the page at all**: `1` means every cell is
     /// the same building, however many candidates were rendered.
+    ///
+    /// Counted up to placement, so a building and the same building turned
+    /// ninety degrees are one. See the module note.
     pub distinct_massings: usize,
     /// Per candidate, in manifest order.
     pub rows: Vec<Built>,
@@ -440,18 +473,16 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
 
         match expand(&prog, region, &ExpandOptions::seeded(seed)) {
             Ok(e) => {
-                let model_bytes = e.model.canonical_bytes();
-                // The massing bitmap: one byte per cell, solid or not, in the
-                // region's own fixed order. Deliberately blind to which block
-                // is there — that is the difference between "a different
-                // building" and "the same building in a different stone".
-                let mass: Vec<u8> = region
-                    .positions()
-                    .map(|p| u8::from(e.model.get(p).map(|b| !b.is_air()).unwrap_or(false)))
-                    .collect();
+                // Both digests are taken **up to placement** (see
+                // [`VoxelModel::placement_canonical_bytes`]): a building and the
+                // same building turned or mirrored are one row on the owner's
+                // page, so they must be one identity here. The massing digest
+                // is additionally blind to which block is where — that is the
+                // difference between "a different building" and "the same
+                // building in a different stone".
                 row.filled_cells = e.model.filled_cells();
-                row.model_digest = digest(&model_bytes);
-                row.massing_digest = digest(&mass);
+                row.model_digest = digest(&e.model.placement_canonical_bytes());
+                row.massing_digest = digest(&e.model.placement_canonical_massing());
                 models.insert(row.model_digest.clone());
                 massings.insert(row.massing_digest.clone());
 
@@ -643,6 +674,130 @@ mod tests {
         assert_eq!(report.distinct_massings, 4, "{}", report.summary());
         assert!(!report.massing_is_uniform());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The motivating case, both directions on one zone.
+    ///
+    /// `bell:barrow-shore` at `[19,6,24]` and at its transpose `[24,6,19]` is
+    /// ONE building: the zone's frame (`z(Largest)`) normalises the box onto its
+    /// longer horizontal axis, so the transposed region expands to the same
+    /// arena written on swapped world axes. Before this metric counted up to
+    /// placement it reported 2, the sheet held 1, and `--require-choice` passed.
+    ///
+    /// The second half is the guard against a fix that is merely coarser: a
+    /// third candidate that really is a different building — a wider arena in a
+    /// deeper box — must still count.
+    ///
+    /// Binding: 3 candidates, 3 built, 2 distinct massings.
+    #[test]
+    fn a_transposed_region_is_one_building_and_a_reshaped_one_is_two() {
+        let dir = std::env::temp_dir().join("dw-sweep-transpose");
+        std::fs::create_dir_all(&dir).unwrap();
+        let m = manifest(
+            "bell:barrow-shore",
+            vec![
+                Candidate {
+                    id: "as-designed".into(),
+                    seed: None,
+                    region: Some([19, 6, 24]),
+                    params: BTreeMap::new(),
+                },
+                Candidate {
+                    id: "transposed".into(),
+                    seed: None,
+                    region: Some([24, 6, 19]),
+                    params: BTreeMap::new(),
+                },
+                Candidate {
+                    id: "taller-head".into(),
+                    seed: None,
+                    region: Some([19, 6, 24]),
+                    params: BTreeMap::from([("arena/head".to_string(), 4i64)]),
+                },
+            ],
+        );
+        let report = run(&m, &dir).unwrap();
+        assert_eq!(report.built, 3, "{}", report.summary());
+        assert_eq!(
+            report.rows[0].massing_digest,
+            report.rows[1].massing_digest,
+            "a box and its transpose are one building: {}",
+            report.summary()
+        );
+        assert_ne!(
+            report.rows[0].massing_digest, report.rows[2].massing_digest,
+            "a wider arena in a deeper box is a different building, and a metric \
+             that merged it would hide a choice instead of inventing one"
+        );
+        assert_eq!(report.distinct_massings, 2, "{}", report.summary());
+        // ...and the sibling count moves with it. A page whose massings collapse
+        // and whose model count does not is the same inflation one layer over.
+        assert_eq!(report.distinct_models, 2, "{}", report.summary());
+        assert!(!report.massing_is_uniform());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The symmetry the frame introduces is a **reflection**, so the metric's
+    /// group has to contain reflections — measured over every zone rather than
+    /// argued, because "which symmetries" is the whole design decision and the
+    /// motivating zone is the one that would not have settled it.
+    ///
+    /// `z(Largest)` swaps the two horizontal axes and reverses neither, which is
+    /// an odd permutation. On `bell:barrow-shore` that is invisible: an open
+    /// circular arena is mirror-symmetric, so its transpose is *also* reachable
+    /// by a plain 90° turn and a rotations-only metric would have merged it by
+    /// luck. On the other seven zones it is not: their transpose is reachable by
+    /// no rotation at all, so a metric blind only to the four yaw rotations
+    /// would have gone on reporting two buildings where the page holds one.
+    ///
+    /// Binding: 8 zones, every one of them non-square and expanding in both its
+    /// design box and the transpose; at least one reflection-only.
+    #[test]
+    fn every_zones_design_box_and_its_transpose_are_one_building() {
+        use crate::geom::Box3;
+        let opts = ExpandOptions::seeded(1);
+        let mut checked = 0usize;
+        let mut reflection_only = Vec::new();
+        for e in registry() {
+            let d = e.region;
+            assert_ne!(
+                d[0], d[2],
+                "{}: a square box has no transpose to test",
+                e.id
+            );
+            let program = (e.program)();
+            let one = expand(&program, Box3::at_origin(d), &opts)
+                .unwrap_or_else(|err| panic!("{}: design box refused: {err}", e.id));
+            let two = expand(&program, Box3::at_origin([d[2], d[1], d[0]]), &opts)
+                .unwrap_or_else(|err| panic!("{}: transposed box refused: {err}", e.id));
+            let onto = one.model.placements_onto(&two.model);
+            assert!(
+                !onto.is_empty(),
+                "{}: transposing the design box built a different building — either the \
+                 frame stopped normalising onto the long axis, or this zone reads the \
+                 world axes directly",
+                e.id
+            );
+            assert_eq!(
+                digest(&one.model.placement_canonical_massing()),
+                digest(&two.model.placement_canonical_massing()),
+                "{}: the placements agree and the digests do not",
+                e.id
+            );
+            if !onto.iter().any(|(rotation, _)| *rotation) {
+                reflection_only.push(e.id.clone());
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, bell::ZONES.len(), "some zone went unmeasured");
+        // Measured 2026-08-11: 7 of the 8. Narrowing the group to the four
+        // rotations turns each of those into a digest mismatch above, which is
+        // what makes this an argument rather than an assertion.
+        assert!(
+            !reflection_only.is_empty(),
+            "no zone's transpose needs a reflection any more, so the mirror half of the \
+             group is bound to nothing measured — re-derive it before trusting it"
+        );
     }
 
     #[test]

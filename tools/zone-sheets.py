@@ -20,6 +20,13 @@ is nothing on it to choose between — the driver says so, loudly, and exits
 non-zero under --require-choice so a curation gate cannot be passed by a page
 that offers none.
 
+"Different building" means different **up to placement**: translation, the four
+yaw rotations and a horizontal mirror do not make a second building, so a
+candidate and its transposed region count once. The count comes from
+`delve-grammar` and this driver adds nothing to it — see `docs/reference/
+grammar.md` §6c for the equivalence and for why a pose-sensitive count let a
+sheet read 4 while holding 3.
+
 A sweep varies whatever its manifest varies: seed, region, parameters. Seeds
 alone are usually inert (a box-split grammar chooses by guards on the box, not
 by the RNG), so `--seeds` is the quick look and a manifest is the real sweep.
@@ -251,6 +258,36 @@ def build_one(
     return report
 
 
+def scale_notes(reports: list[dict]) -> list[str]:
+    """Say, per sheet, that the page does not show absolute size.
+
+    Every candidate is rendered with the camera fitted to its own bounding
+    sphere and then scaled into its own square cell, so a 60-long zone and a
+    96-long one fill the same square: PROPORTION reads across the page and
+    LENGTH does not. When a sweep's candidates are all the same size that costs
+    nothing, and when they are not — which is the usual case, since region is
+    the liveliest axis a manifest has — the page is quietly normalising away one
+    of the things it is asking the owner to compare.
+
+    This is a note and never a gate: it changes no exit code and removes no
+    candidate. Making the page itself honest (a shared scale across a sweep's
+    renders, or the box on each caption) is the renderer's job and its own
+    finding; until then the number is stated where the reader is, rather than
+    left to be inferred from a picture that cannot show it.
+    """
+    out = []
+    for r in reports:
+        sizes = {tuple(row["region"]) for row in r["rows"] if not row.get("error")}
+        if len(sizes) < 2:
+            continue
+        spans = ["x".join(str(v) for v in s) for s in sorted(sizes)]
+        out.append(
+            f"NOTE: {r['program']}'s candidates span {spans[0]} .. {spans[-1]}, but every "
+            f"cell is scaled to fill its own thumbnail — the page shows proportion, not size."
+        )
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, type=Path, help="output root for sheets and working files")
@@ -324,6 +361,9 @@ def main() -> int:
             f"{Path(r['_sheet']).name if r['_sheet'] else '-'}{flag}"
         )
     print(f"\nindex: {index}")
+
+    for line in scale_notes(reports):
+        print(line, file=sys.stderr)
 
     if uniform:
         print(

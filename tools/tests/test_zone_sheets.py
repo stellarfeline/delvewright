@@ -231,3 +231,36 @@ def test_the_operator_is_read_back_as_an_author_writes_it():
         ]
     }
     assert "Dimension.Y >= floor" in module.refusal_digest(report)[0]
+
+
+def _sized(program, regions, errors=()):
+    return {
+        "program": program,
+        "rows": [
+            {"id": f"c{i}", "region": list(r), **({"error": "refused"} if i in errors else {})}
+            for i, r in enumerate(regions)
+        ],
+    }
+
+
+def test_a_page_whose_candidates_differ_in_size_says_it_cannot_show_that():
+    # Every cell is scaled to fill its own thumbnail, so length does not read
+    # across the page. The driver states it rather than leaving the owner to
+    # infer it from a picture that cannot show it.
+    module = _load()
+    notes = module.scale_notes([_sized("bell:gate-ward", [(20, 10, 84), (20, 10, 104)])])
+    assert len(notes) == 1, notes
+    assert "20x10x84 .. 20x10x104" in notes[0]
+    assert "proportion, not size" in notes[0]
+
+
+def test_a_page_whose_candidates_are_all_one_size_gets_no_note():
+    module = _load()
+    assert module.scale_notes([_sized("bell:hall-keep", [(20, 12, 60), (20, 12, 60)])]) == []
+
+
+def test_a_refused_candidates_box_is_not_a_size_the_page_shows():
+    # It was never rendered, so it cannot be what makes the page misleading.
+    module = _load()
+    report = _sized("bell:cliff-road", [(19, 6, 24), (99, 6, 24)], errors={1})
+    assert module.scale_notes([report]) == []

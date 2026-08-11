@@ -664,6 +664,11 @@ have caught gets paid for twice once stages 5–6 are written against it.
   that — a box-split grammar chooses by guards on the box, not by the RNG — so
   vary region or parameters, and treat a one-massing sheet as a finding to
   report rather than a gate to hold.
+  The count is taken **up to placement**: turning, mirroring or sliding a
+  building does not make a second one, so a candidate whose region is another's
+  transpose counts once (a zone frame normalises the box onto its longer
+  horizontal axis, so the two expand to the same building). To widen a zone,
+  raise its *shorter* horizontal dimension; to lengthen it, raise the longer.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.

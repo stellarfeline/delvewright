@@ -113,6 +113,14 @@ can hide a moved wall behind a roof. A sweep whose `distinct_massings` is 1 is a
 front of it has nothing to decide. The tool says so on stderr rather than leaving
 it to be noticed.
 
+Both counts are taken **up to placement**: translation, the four yaw rotations
+and a horizontal mirror are quotiented, so a candidate and its transposed region
+are one row and not two. Paint and the vertical still separate. The full
+equivalence, and why the frame's own `z(Largest)` made a pose-sensitive count
+inflatable, is in [`grammar.md` §6c](grammar.md). Two candidates that used to
+need hand-checking for this — equal `filled_cells`, transposed regions — now
+merge on their own.
+
 A candidate is a **variation**, not a seed — seed, region and parameters are all
 overridable per candidate, because the seed is usually the *least* live of the
 three: a box-split grammar picks alternatives by guards on the box's own

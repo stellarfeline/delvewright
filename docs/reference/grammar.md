@@ -1584,6 +1584,55 @@ consumer says it out loud rather than re-deriving `== 1`. Both counts come from
 the models, never from the pictures — two renders can differ by a shadow, and two
 identical renders can hide a moved wall behind a roof.
 
+### What "the same building" means
+
+Both counts are taken **up to placement**. Two candidates are the same building
+when one can be carried onto the other by a whole-body move a placement could
+undo:
+
+- a **translation** — including the padding of air the region leaves around it,
+  so the same building in a bigger box is not a second building;
+- one of the four **yaw rotations** about the vertical;
+- a horizontal **mirror**.
+
+Those eight horizontal symmetries and translation, and nothing else.
+`VoxelModel::placement_canonical_massing` is the construction: crop to the tight
+box around the non-air cells, encode under each of the eight, take the
+lexicographic minimum. `placement_canonical_bytes` is the same quotient over the
+full block grid, which is what `distinct_models` hashes — the pose is not a
+paint decision either, and fixing one count while leaving its sibling
+pose-sensitive would leave the page inflatable one column over.
+
+What it still distinguishes, deliberately: paint (that is the whole difference
+between the two counts); the **vertical**, because gravity is not a symmetry and
+a building upside down is a different building; scale, height, footprint and
+every internal arrangement. Nothing in the group scales, and only *whole-body*
+translation is quotiented — a wall that moved inside a box that did not is two
+buildings, as it should be.
+
+**Why pose must be quotiented at all.** The pose is not the author's decision.
+Every bell zone's frame opens `Reorient::KEEP.y(WorldY).z(Largest)`, which
+normalises the scope onto its longer horizontal axis, so a region and its
+transpose expand to *the same building written on swapped world axes* — and it
+is not the reviewer's decision either, since a zone is set down wherever the
+campaign wants it. Measured before this: `bell:barrow-shore` at `[19,6,24]` and
+at `[24,6,19]` reported two distinct massings with identical `filled_cells`, and
+the page held one building. A curation pass shipped a sheet reading 4 that held
+3. A count that can be inflated by the frame's own symmetry is not a gate.
+
+**The group has to contain reflections, and that is measured, not assumed.**
+`z(Largest)` swaps two axes and reverses neither, which is an odd permutation.
+On `bell:barrow-shore` this is invisible — an open circular arena is
+mirror-symmetric, so its transpose is *also* a plain 90° turn — but on the other
+seven zones the transpose is reachable by no rotation at all. A metric blind only
+to the four rotations would still have counted two buildings where the page holds
+one, on seven zones of eight.
+
+**`VoxelModel::canonical_bytes` is a different encoding and stays
+pose-sensitive.** It answers "the same expansion twice" for the determinism gate
+(ADR-0006); this answers "the same building twice". Blurring them would let a
+real drift hide behind a rotation.
+
 A refused candidate **keeps its row**: a guard refusing is a fact about the
 program, and dropping the row would make the sweep look smaller instead of making
 the zone look stricter. An override naming a parameter the program does not
