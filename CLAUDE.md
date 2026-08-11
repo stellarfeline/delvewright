@@ -276,6 +276,11 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **Every new mechanic owes a demo level** (owner, 2026-08-03): the PR that lands
+  a mechanic adds its row to `docs/demo-levels.md` — the first-party showcase
+  queue of small levels that verify one mechanic and document it by example. Not
+  necessarily built when the mechanic lands, but always queued; building the next
+  one is the planning agent's standing idle work.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
