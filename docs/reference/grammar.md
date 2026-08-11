@@ -617,30 +617,64 @@ a shallow pool with a walkable rim — either side of a solid, 1-wide raised
 berm (`rise` blocks tall). A guard station sits at the far end, deliberately
 **not flush** with the causeway: its own floor sits `tower_rise` blocks higher,
 reached by a two-Z-slice post (`guard_support`, with the pillar and
-`anchor/elite`; `guard_cantilever`, the same floor and headroom one cell
-further out with **no** pillar under it — the same corbel move `rafter_hall`
-uses to keep a perch's own sightline clear of its own truss). A flush post
+`anchor/elite`; `guard_cantilever`, the same headroom one cell further out with
+**no** pillar under it — the same corbel move `rafter_hall` uses to keep a
+perch's own sightline clear of its own truss). A flush post
 cannot be obstructed without also sealing the causeway itself, since eye height
 over a same-height watch cell and target mass over a same-height target cell
 both fall inside the exact two-cell band `standable` requires clear; elevating
 it is what opens a sightline geometry that can be tested at all.
 
+**One cross-section, and why that is load-bearing.** Every slice of the piece —
+the ward and both `Z`-slices of the post — is one five-way `X` split: wall,
+flank, a **1-wide spine**, flank, wall. Only the bodies differ (flood/berm in the
+ward, plinth/post column at the station), so the berm and the post stand at one
+`X` by construction. They used not to: the post marked the centre of its own
+full-width column, `(X-2-1)/2` in from the interior edge, while the berm sits
+`ceil((X-3)/2)` in — the same cell only at odd `X`. At every **even** width the
+guard stood over the flood, one cell off its own causeway, and blinded itself on
+20 of the crossing's 22 cells. Both fixtures in the repo were odd, so gate 2 was
+green and bound to a geometry the rule never promised. A rule whose gate is "the
+post commands the spine" cannot have the spine's position be a coincidence.
+
+**`berm_gate` — a gatehouse instead of a plug.** Off by default the plinth is
+solid and the piece is a **terminus** (seam limit 2, §5c). On, the spine's own
+column runs *through* the station at berm height, and the course that roofs the
+lane is the post's own floor — so the post is untouched: same floor, same
+headroom, same `anchor/elite`, and the lane's whole clearance lies below `rise +
+1`, the lowest a sightline from the post ever descends. It needs `tower_rise >=
+MIN_GATE_RISE` (3: two cells of clearance and the course over them); a shorter
+post is refused, not built with a crawlspace under it. The capability sits on the
+**cross-section**, not on either `Z`-slice of the post, because both slices need
+it and a knob keyed to the first consumer leaves the second with none.
+
 | | |
 |---|---|
-| Controls | `rise` (3), `head` (3), `tower_rise` (4), `guard_len` (2), `obstruct` (0 — a test knob); roles `stone`, `water` |
-| Smallest region | 5 × (`rise + tower_rise + head`) × (`guard_len + 3`), and at least as long as it is wide |
+| Controls | `rise` (3), `head` (3), `tower_rise` (4), `guard_len` (2), `berm_gate` (0), `obstruct` (0 — a test knob); roles `stone`, `water` |
+| Smallest region | 5 × (`rise + tower_rise + head`) × (`guard_len + 3`), and at least as long as it is wide; with `berm_gate` on, `tower_rise >= 3` as well |
 | Anchors | `anchor/causeway-head` — the causeway's near end. `anchor/elite` — the guard post's floor |
 
 Gates:
 
 1. **The causeway is standable end to end; stepping off it is not** — every
    flood cell fails `standable` outright (its foot cell is water, not air).
-2. **The guard station commands the causeway** — `anchor/elite` sees every
-   standable causeway cell (the same Amanatides–Woo walk `watch_bay` uses).
-   Teeth: `obstruct = 1` stands one solid cell level with the guard's own
-   floor — well above the causeway's own two-cell clearance band — and the
-   same check must find at least one cell it can no longer see, while the
-   causeway stays walkable end to end.
+2. **The guard station commands the causeway, at every width the rule
+   accepts** — `anchor/elite` sees every standable causeway cell (the same
+   Amanatides–Woo walk `watch_bay` uses), swept over widths 5..13, odd and even,
+   and again with the lane open: 198 sightlines each way. Teeth: `obstruct = 1`
+   stands one solid cell level with the guard's own floor — well above the
+   causeway's own two-cell clearance band — and the same check must find at
+   least one cell it can no longer see, while the causeway stays walkable end to
+   end.
+3. **`berm_gate` opens a lane and nothing else** — with it on the piece's
+   `Z`-max face reaches its `Z`-min face under `connected`; with it off it does
+   not; the guard's own floor stays unreachable from the lane under both
+   `connected` and the permissive walk-and-fall model, so the post is still not a
+   landing; and gate 2 still holds. The `guard_len` cells of lane *under* the
+   post are counted and named rather than folded into gate 2: the guard cannot
+   see the floor beneath its own feet, which is what "pass under" means, and
+   hiding that inside a green would be the vacuity §5c's binding counts exist to
+   stop.
 
 ### `elite_ground` — the open arena
 
@@ -668,10 +702,76 @@ Gates:
    exactly the shape a fog-gate motif would take — and the counted route total
    drops from 2 to 1 or 0.
 
-`drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway` and
-`elite_ground` carry the same generic-suite and registry-round-trip promises as
-the eight above (`tests/library.rs`, `tests/determinism.rs`,
-`crates/compiler/tests/grammar_prefab.rs`).
+### `stair_flight` — the way up
+
+A walled shaft with a level landing at each end and a rising run of
+single-block treads between them. The vocabulary's only ascending piece, and
+the only one gated on being walkable in **both** directions — the exact
+negation of the gate `drop_shaft` and `dumbwaiter` owe.
+
+| | |
+|---|---|
+| Controls | `head` (3), `tread` (2 — cells of run per block of rise), `landing_run` (3), `broken_step` (0 — a test knob); role `rock` |
+| Smallest region | `MIN_WIDTH` (3) × (`head` + 1 + `MIN_STEPS`) × (2·`landing_run` + `MIN_STEPS`·`tread`) — 3 × 7 × 12 at the defaults — and at least as long as it is wide |
+| Rise | `min(Y − head − 1, (Z − 2·landing_run) / tread)` treads; a box that cannot hold `MIN_STEPS` (3) is a refusal, never a doorstep |
+| Anchors | `anchor/stair-foot` / `anchor/stair-head` — the two landings' floor centres. `anchor/stair-step-<i>` — every tread, numbered **against** travel as everything here is, so `stair-step-1` is the topmost |
+
+**A climbing run needs no per-iteration index, and the entry that said it did
+was wrong about the IR.** `boulder_stair` records that "a repeated slice cannot
+climb a block per iteration — there is no index the IR exposes to a `Size`".
+That is true of `split_repeat`, which is a *tiling* — every tile handed the same
+pattern — and it is not a fact about the IR. The index a stair needs is **the
+box that is left**, and a self-call already carries it: `run` fills one course of
+its own floor and hands the remainder, one shorter in `Y` and one tread shorter
+in `Z`, to itself; the guard reads those dimensions and the recursion stops when
+either runs out. This is `store_room`'s own state-machine trick ("a rule has no
+memory, so the invariant is in the derivation's shape") aimed at `Y`. **No IR
+change was made or needed.**
+
+**A switchback is a rule body, not an orientation** — a second correction, and
+the one with more left in it. The recorded reason a switchback cannot be built
+is that a grammar orientation is a permutation without reflection. True, and
+beside the point for a stair: an orientation cannot mirror a piece, but a rule
+body can be *written* mirrored. This rule peels its treads off local `Z`-max
+(`[rel, abs]`, recursion first); the same rule written `[abs, rel]` climbs the
+other way. Two such lanes side by side in `X`, joined at the top of the first,
+is a dogleg — which is what a tall tower over a small footprint needs, since a
+straight flight climbs at most about `Z / tread`. Not built; recorded because a
+*false* blocker costs more than a missing feature.
+
+Gates (`tests/staging.rs`), each with its binding count:
+
+1. **The flight walks up, and back down** — the plain ±1-step `connected` walk,
+   66 standable cells in the fixture, 2 landings, 8 treads. `connected`'s edge
+   relation is symmetric, so both directions are literally one claim; both are
+   written down because the calibration is the point. A second test runs the
+   *same* predicate over this rule and over `drop_shaft` and requires them to
+   disagree — one model of "can a body get there", two rules, opposite verdicts.
+2. **The rise is real** — a walk gate alone is vacuous on a flat corridor, so
+   the rise is measured off the anchors and pinned (7 blocks over 8 treads), and
+   its control is `boulder_stair` — flat by construction — read in the same box
+   by the same code, whose lane spans exactly one height.
+3. **Every riser is one block and every tread is ground** — 8 treads, 7
+   consecutive pairs, read in index order.
+4. **It is a shaft** — both long faces solid, all 616 cells of them. Permanent
+   teeth rather than a knob: the same reading over `tee_passage`, which
+   deliberately opens one side face, must find its 2 open cells.
+5. **The run is the only way between the landings** — the same cut
+   `cliff_path` and `ambush_door` use, re-walked under the fall model since a
+   stairwell is open above its own run.
+
+Teeth: `broken_step` raises one tread by one extra course — the last one, picked
+out of the recursion by a guard on the remaining run, so no index is needed
+there either. One riser becomes 2 and the next becomes 0; the shaft still looks
+like a stair, still has all 8 treads and all its walls, everything below the
+break still walks, and the head landing is stranded. That is how a stair fails
+in practice, and a gate that only proved the shaft was not broken in two would
+be green on it.
+
+`drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
+`elite_ground` and `stair_flight` carry the same generic-suite and
+registry-round-trip promises as the eight above (`tests/library.rs`,
+`tests/determinism.rs`, `crates/compiler/tests/grammar_prefab.rs`).
 
 Three anchor names are shared across rules — `anchor/elite` (`causeway`,
 `elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
@@ -681,30 +781,50 @@ any of those pairs into one zone means saying which is which at the include site
 Nothing enumerates the collisions: the list is prose, and the third entry was
 missing from it until a sweep counted the stems.
 
-**`counterweight_lift` is not built.** The vocabulary doc
-(`docs/notes/private/grammar-staging-vocabulary.md`, planner-internal) calls
-for a one-way hub-opener that "needs the lift prefab pair" — two prefab pieces
-(a bottom station and a top station) that mate into a working elevator, the
-way Sen's Fortress's cage lift does. No such pair exists in the prefab library
-today (`prefabs/keep-tileset.md`'s only vertical piece, `keep-stair`, is a
-bidirectional stair connector, not a lift), and a *moving* platform is not
-expressible by this crate's IR at all — `fill`/`split`/`mark` place static
-blocks and metadata, with no notion of runtime state or motion, and the
-`.nbt` export strips command blocks on principle (§6). Building a lift shape
-that only pretends to move would be exactly the downstream folklore the
-no-hack rule forbids. This is a genuine dependency, not a design gap: the
-prefab pair (or a documented redstone/entity mechanism this crate could
-target) has to land first.
+**`counterweight_lift` is not a grammar rule, and no longer needs to be**
+(corrected 2026-08-09; the previous entry is preserved below because its
+*premise* is still true and only its conclusion was wrong).
+
+What that entry said: a lift needs a moving platform, a moving platform is not
+expressible by this crate's IR at all — `fill` / `split` / `mark` place static
+blocks and metadata, with no notion of runtime state or motion, and the `.nbt`
+export strips command blocks on principle (§6) — so the vocabulary waits on a
+prefab pair or a redstone mechanism this crate could target.
+
+Every clause of that is still true. The conclusion is not, because the motion
+moved layers. **A lift shipped as a first-class DSL construct** (spec-0031, PR
+#356): runtime state, region fill / clear, and teleport-by-region, composed into
+one `sequence` in campaign JSON — deliberately *not* a `lift` verb. Nothing
+moves; the car is filled at the destination, its occupants teleported, and the
+old car cleared. So this crate never has to express motion, and a
+`counterweight_lift` **rule** would be a rule for a thing that no longer exists
+as geometry.
+
+What the lift wants from the grammar instead is a **walled shaft with a station
+at each floor** — geometry, and static. spec-0031's own acceptance record names
+the two things that block it, and neither is an IR-motion problem:
+
+- *"No prefab in the library ships a shaft."* `stair_flight` is now one; a
+  lift's is the same shell without the run, plus the deck / arrival / lethal-
+  bottom cells the ride names. That is a `lift_shaft` §5b rule, and it is
+  ordinary work.
+- *A runtime region cannot name a cell at an offset from an anchor*, so a lift's
+  geometry has to be authored as an anchor per cell. `mark` declares point
+  anchors, which is exactly that shape — so the grammar can supply them.
+
+**Do not build a `counterweight_lift` rule.** The zone table's claim that Z7
+waits on one is stale and is corrected in §5c.
 
 ## 5c. Zone programs — the vocabulary composed
 
-`library::bell::{barrow_shore, cliff_road, gate_ward, chapel_ward, hall_keep,
-cistern_deep}` are the drowned-bell remake's **zone programs** (REMAKE §3;
+`library::bell::{barrow_shore, cliff_road, gate_ward, drowned_ward,
+chapel_ward, hall_keep, cistern_deep}` are the drowned-bell remake's **zone
+programs** (REMAKE §3;
 build-sequence step 3). A zone is one grammar program, and these contain no
 encounter geometry of their own: they split the zone's box and `call` §5b's
 rules. The only blocks a zone writes itself are `cliff_road`'s crag and the air
-beside it, and the inert `margin` rock filling the side strip `chapel_ward` and
-`cistern_deep` park a branch in — the mass a zone is carved out of, which no
+beside it, and the inert `margin` rock filling the side strip `drowned_ward`,
+`chapel_ward` and `cistern_deep` park a branch in — the mass a zone is carved out of, which no
 piece handed a sub-box can know about. The other three write nothing at all.
 
 ### `compose::include` — how one program calls another's rules
@@ -763,37 +883,55 @@ cells of length where `ambush_door` alone is happy with 5. The primitive that
 would remove the constraint is a caller-pinned travel axis, the same shape as
 the `local_*` facing spec of §7, one layer out. Not built.
 
-### The six zones, and the two that are named gaps
+### The seven zones, and the one that is a named gap
 
 Rows for Z2, Z4, Z5 and Z7 name §4 entries whose *rules* exist (the W3/W4
 families above) — what those zones wait on is a zone program composing them, or
 the seam limit named beside them, not the vocabulary. Only **B** (bait-item
-gallery), **D** (boulder jam) and `counterweight_lift` have no rule at all. Rows
-are rewritten in the round that builds them; nothing here claims a zone was
-built.
+gallery) and **D** (boulder jam) have no rule at all; `counterweight_lift` is no
+longer on that list and never will be — the lift is a DSL construct now, and
+what a shaft owes the grammar is geometry (§5b). Rows are rewritten in the round
+that builds them; nothing here claims a zone was built.
 
 | Zone | Program | Composed from | Missing |
 |---|---|---|---|
 | Z0 Barrow Shore | `barrow_shore` | `elite_ground` | — (**E** is the whole of Z0) |
 | Z1 Cliff Road | `cliff_road` | `cliff_path` + the zone's gulf | switchback landing — see below |
 | Z2 Gatehouse | `gate_ward` (partial) | `watch_bay`, `ambush_door` | **W**+**S**, **F**, **L**, **M** — built rules awaiting a zone round — and **D**, which has no rule |
-| Z3 Drowned Lower Ward | — | | nothing in the vocabulary: **T**, **E** and **F** are all built rules. Seam limits 1 and 3 are closed; **seam limit 2 still blocks it** |
+| Z3 Drowned Lower Ward | `drowned_ward` | `causeway`, `tee_passage`, `elite_ground`, `far_side_bar` + the zone's branch strip | — |
 | Z4 Chapel Ward (hub) | `chapel_ward` (partial) | `dumbwaiter`, `tee_passage`, `far_side_bar` + the zone's branch strip | the hearth — a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one; the smallest honest form is a `hearth_ward` §5b rule |
 | Z5 Great Hall + Keep | `hall_keep` (partial) | `rafter_hall`, `ambush_door`, `store_room` | **L**, **M** — built rules awaiting a zone round — and **B**, which has no rule |
 | Z6 Cistern Deep | `cistern_deep` | `drop_shaft`, `watch_bay`, `broken_grate`, `elite_ground`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
-| Z7 Bell Tower | — | | two things. `counterweight_lift` (**L**) is not built and cannot be with today's IR (§5b); and **nothing in the vocabulary ascends** — see below. Its loft is `rafter_hall` and its boss ring `elite_ground` |
+| Z7 Bell Tower | — | | a zone round, and one rule. **The ascent blocker is closed**: `stair_flight` (§5b) climbs, gated both ways. `counterweight_lift` is **struck** — the lift is authored in campaign JSON (spec-0031) and needs a `lift_shaft` rule, not a moving-platform one. Its loft is `rafter_hall`, its boss ring `elite_ground` |
 
-**Z7 needs a way up, and that is a second blocker, not the same one.** Every
-vertical piece the vocabulary has is one-way *down* by construction **and by
-gate**: `drop_shaft` and `dumbwaiter` each assert their landing does not reach
-their hatch under the plain step, and `boulder_stair` is flat — a palette rule,
-because a repeated slice cannot climb a block per iteration (§7: the IR exposes
-no index to a `Size`). A bell tower is climbed, so a Z7 composed as a flat chain
-would be a tower in name only. The smallest honest primitive is a `tower_stair`
-rule: a walled shaft with a switchback or helical run of ±1 steps between a low
-landing and a high one, gated on being walkable in **both** directions — the
-exact negation of the gate `drop_shaft` owes. Whether it is expressible without
-a per-iteration index is the first question that round has to answer.
+**Z7's ascent blocker is closed, and the answer was smaller than the question.**
+Every vertical piece the vocabulary had was one-way *down* by construction and
+by gate, and `boulder_stair` is flat, so the round that wanted a bell tower had
+nowhere to start. `stair_flight` (§5b) is the way up: a walled shaft, a landing
+at each end, a run of single-block treads, gated on the plain ±1-step walk in
+both directions — the literal negation of `drop_shaft`'s gate, asserted with the
+same predicate and cross-checked against it in one test.
+
+It needed **no IR change**. The open question was whether a climbing run is
+expressible without a per-iteration index, and it is: the index a stair needs is
+the box that is left, and a self-call carries it (§5b). The claim that it was
+not is corrected at both the sites that made it.
+
+That the composition works is asserted, not assumed:
+`zones::a_zone_can_compose_a_route_a_player_walks_up` chains a `tee_passage`
+approach with a flight in the throwaway `chained` fixture and walks the composed
+model from the zone's own entry face to `anchor/stair-head`, seven blocks up —
+133 standable cells, 3 in the entry face, with the level walk to the foot
+landing as the control. **Nothing new was needed at the seam**: a flight's foot
+landing sits on the same floor course every flat piece uses, so the two mate the
+way any two chain pieces do.
+
+What Z7 still waits on is a zone program, plus a `lift_shaft` rule if the
+tower's lift stays in the design. One shape is worth naming for that round: a
+straight flight climbs at most about `Z / tread`, so a tall tower over a small
+footprint wants a **switchback**, and a switchback is a rule body rather than an
+orientation (§5b) — the "permutation without reflection" answer is the right
+answer to a different question.
 
 **The branch, as a zone builds it.** Z4 and Z6 both hang a `far_side_bar` off a
 `tee_passage` (seam limit 3, below), and both do it the same way, which is now
@@ -827,9 +965,14 @@ reason.
 alternates which side the drop is on, and a grammar orientation is a permutation
 *without reflection*, so no `reorient` can mirror a cliff run. It needs a
 mirroring orientation or a `cliff_turn` landing rule; inventing the landing
-inline is the geometry a zone program does not write.
+inline is the geometry a zone program does not write. **A third option was
+overlooked and is now open rather than answered**: what an orientation cannot do
+a *rule body* can, and `stair_flight` (§5b) records the construction — a rule
+that peels its pieces off the other end of its own split is the mirror image of
+itself. Whether that reaches `cliff_path`, whose recesses and lane are placed by
+`reorient` rather than by split order, has not been checked.
 
-### The three seam limits — two closed, one open
+### The three seam limits — all three closed
 
 Each is asserted rather than asserted-about: every one has a test in
 `tests/zones.rs` that watches it happen.
@@ -840,16 +983,23 @@ Each is asserted rather than asserted-about: every one has a test in
    zone says nothing. What a zone can now do is say which is which, with a
    per-anchor rename at the include site (above). That was Z3's **T** + **E** and
    Z6's **F**, refused for want of a name.
-2. **`causeway` has no exit past its guard post — STILL OPEN, and it is what
-   Z3 now waits on alone.** Its far end is the post's own plinth, solid from the
-   ward floor to `rise + tower_rise`, and the post's floor is an island the berm
-   cannot reach — deliberately, the same "not a landing" move that keeps
-   `rafter_hall`'s perches off the nave. So the piece is a *terminus*: measured,
-   its `Z`-min face carries no standable cell at berm height, its cantilever
-   slice no floor at all, and no walk (fall edges included) crosses it — while
-   the berm itself still crosses the ward, so what is missing is the exit and not
-   the crossing. The fix is an exit lane past the post, which is a change to the
-   §5b rule.
+2. **`causeway` has no exit past its guard post — CLOSED.** Its far end was the
+   post's own plinth, solid from the ward floor to `rise + tower_rise`, with the
+   post's floor an island the berm could not reach — deliberately, the same "not
+   a landing" move that keeps `rafter_hall`'s perches off the nave. So the piece
+   was a *terminus*: its `Z`-min face carried no standable cell at berm height,
+   its cantilever slice no floor at all, and no walk (fall edges included)
+   crossed it. No orientation helped, because a grammar orientation is a
+   permutation without reflection.
+
+   `berm_gate` (§5b) is the exit lane, and **terminus is still the default** —
+   a guard post that can simply be walked under is a weaker piece and nobody
+   should get one by accident, so the old measurement is kept verbatim as the
+   proof the default did not move, with the open case appended as the closure.
+   The lane landed on the piece's cross-section rather than on `guard_support`,
+   which is what let both `Z`-slices of the post have it from one place, and
+   sharing that cross-section closed a second defect nobody had reported (the
+   even-width blindness, §5b).
 3. **A shortcut is a branch, and the seam is a chain — CLOSED.** Every §5b rule
    walls its own two side faces, so pieces joined end to end along one axis and
    nowhere else; a `far_side_bar` in that chain sealed the zone's route instead
@@ -863,14 +1013,15 @@ Each is asserted rather than asserted-about: every one has a test in
    shaped **deeper than wide**, so the bar's own `z(Largest)` aims its travel at
    the chain. That is the same box-shaping discipline "The frame constrains
    composition" already documents, used deliberately instead of fought.
-   `chapel_ward` and `cistern_deep` are the two zones built on it (above); the
+   `drowned_ward`, `chapel_ward` and `cistern_deep` are the three zones built on
+   it (above); the
    throwaway `branch_chain` fixture that first demonstrated it is kept as the
    minimal case.
 
    One consequence for the "no piece was turned" gate: a branch **is** a turned
    piece, on purpose. So the gate no longer allows a `west` facing by name across
    all zones — it takes a per-zone set of the anchors their zone deliberately
-   aimed across the route, pins how many there are (14 of 36), and any other
+   aimed across the route, pins how many there are (17 of 42), and any other
    `west` is still the accidental turn it was written to catch.
 
    Two alternatives were rejected, recorded so nobody re-derives them:
@@ -893,9 +1044,18 @@ Each is asserted rather than asserted-about: every one has a test in
 | `barrow_shore` | 19 × 6 × 24 | `arena/*` only; role `arena/stone` | `elite` |
 | `cliff_road` | 12 × 12 × 36 | `sea` (3), `fall` (8), `ledge_shelf` (0 — a test knob), plus `path/*`; role `crag` | the cliff path's `niche-<i>` / `niche-watch-<i>` |
 | `gate_ward` | 11 × 7 × 28 | `door_run` (12), plus `gate/*` and `door/*` | `watch`, `gate`, `threshold`, `alcove` |
+| `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor within the one-block step `connected` allows, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
 | `chapel_ward` | 12 × 9 × 20 | `strip_depth` (7), `junction_run` (6) — the chute takes the rest — plus `chute/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `branch-door`, `gate`, `unlock` |
 | `hall_keep` | 11 × 9 × 40 | `door_run` (12), `store_run` (12), plus `hall/*`, `door/*`, `stores/*` | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell` |
 | `cistern_deep` | 40 × 10 × 100 | `arena_run` (20), `sally_run` (20), `vent_run` (20), `gallery_run` (20) — the shaft takes the rest — `strip_depth` (21), plus `arena/*`, `tee/*`, `sally/*`, `vent/*`, `gallery/*`, `shaft/*`; role `margin` | `spill`, `landing`, `watch`, `gate`, `grate-secret`, `branch-door`, `sally-gate`, `unlock`, `elite` |
+
+**Z3 does not claim a zone-length bypass, and says why.** Z0 and Z6 re-bind
+`elite_ground`'s "a lane each side of the fight" across their whole zone. In Z3
+that would be false by construction: the causeway is a **one-wide** crossing, so
+no band of floor runs the length of the zone at all. The claim is bound where it
+is true — across the arena's own run — and the alternative, quietly re-scoping a
+zone-length gate until it passed, is exactly the vacuity these binding counts
+exist to catch.
 
 **Z0 is one piece, and its gate says so.** With no seam there is nothing for a
 composition gate to catch: `barrow_shore`'s flank gate re-binds `elite_ground`'s
@@ -911,7 +1071,7 @@ the piece-level claims stay in §5b.
 
 | Gate | Binding | Red demonstrated by |
 |---|---|---|
-| Every zone is a route end to end | 438 / 40 / 239 / 81 / 368 / 2078 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
+| Every zone is a route end to end | 438 / 40 / 239 / 1100 / 81 / 368 / 2078 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
 | Z0 a lane each side of the fight | 2 routes, bands of 111 cells | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, shore still walkable |
 | Z0 a square box is refused | 1 refusal | — (the refusal is the gate; one cell longer builds) |
 | Z1 the ledge is the only route | 36 ledge cells of 40 | deleting the lane severs the zone |
@@ -924,6 +1084,10 @@ the piece-level claims stay in §5b.
 | Z5 every perch visible from the hall door | 4 perches | `hall/span_beams = 1` → 2 blind, keep still walkable |
 | Z5 the alcove is blind from the whole hall | 205 cells, 4 of them rafters | `door/expose = 1` → 152 see it |
 | Z5 exactly one tell | 8 seeds, 5 distinct positions | — (the recursion is the invariant; a broken include reds it) |
+| Z3 a route **both ways**, and only through the gatehouse | 1100 standable, 1 entry cell (the berm is one wide), 19 exit | `ward/berm_gate = 0` restores the plinth → severed under walk *and* walk-and-fall, while the 18-cell crossing still walks |
+| Z3 the keeper commands the crossing *composed* | 18 crossing cells, 18 sightlines | `ward/obstruct = 1` → blind cells, ward still walkable |
+| Z3 a lane each side of the fight, bound over the **arena's own run** | 2 routes at the default | `ring/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0 |
+| Z3 the shortcut is sealed, and reached through one doorway | 1100 standable, 180 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` opens it; `junction/sealed = 1` makes the branch unreachable, ward still walks |
 | Z4 a route down, and none back up | 3 ledge / 3 exit cells, 81 standable | `chute/rescue_ladder = 1` (+ `chute/drop = 2`) → the hub climbs back; two controls |
 | Z4 the shortcut is sealed, and reached through one doorway | 81 standable, 12 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` (85 standable) opens it; `junction/sealed = 1` (80) makes the branch unreachable, hub still walks |
 | Z4 a branch no deeper than its junction is refused | 2 refusals | — (the refusal is the gate; the same box builds at the defaults) |
@@ -931,15 +1095,16 @@ the piece-level claims stay in §5b.
 | Z6 the span cannot be walked round *or fallen past* | 51 span cells, re-walked under the fall model | deleting the span severs the zone |
 | Z6 a lane each side of the fight | 2 routes, bands of 767 / 411 cells (the west band is the larger only because the branch's own rooms fall inside it; they span the sally run alone and carry no route) | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, cistern still a route down |
 | Z6 the sally port is sealed, and reached through one doorway | 2078 standable, 180 the branch's near room, 1 doorway column cut | `sally/unbarred = 1` (2096) opens it; `tee/sealed = 1` (2077) makes the branch unreachable, cistern still a route down |
-| No piece was turned | 36 anchors, travel order + facing; exactly 14 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused; the same boxes turn `ambush_door` / `watch_bay` alone (`west`) |
+| No piece was turned | 42 anchors, travel order + facing; exactly 17 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused; the same boxes turn `ambush_door` / `watch_bay` alone (`west`) |
 | Seam limit 1 closed: a rename lets two pieces declare one stem | 2 pairs, 4 anchors read back by name and declaring rule | dropping the rewrite in `compose::node` → the same `AnchorCollision` |
 | Seam limit 1: no rename, still a collision | 2 pairs | — (the collision *is* the gate, named by rule both times) |
-| Seam limit 2: `causeway` has no exit | 2 `Z`-slices, a 22-cell berm | — (no walk crosses it; the berm still crosses the ward) |
+| Seam limit 2 closed: `causeway` is a terminus until `berm_gate` opens | 2 `Z`-slices, a 22-cell berm | — (with the gate shut no walk crosses it while the berm still crosses the ward; with it open the faces connect) |
 | Seam limit 3: a barred door **on** the route seals the chain | the chain's standable cells, walked twice | `bar/unbarred = 1` reopens exactly that doorway |
 | Seam limit 3 closed: the same bar **beside** the route | 43 standable (25 mainline / 18 branch), 9 near-room, 1 doorway column cut | filling the tee's lane → the branch severs the mainline; a 3-wide doorway → the doorway cut no longer isolates the branch |
 | ...and the branch's teeth | 42 standable, 9 near-room | `tee/sealed = 1` → the branch is unreachable, mainline still walks |
+| A composed route the player walks **up** | 133 standable, 3 in the entry face, 7 blocks of rise | the level walk to the flight's own foot landing is the control; a flat chain reads 0 |
 
-**Z4's and Z6's movement model.** Four zones are crossed with the ±1 step
+**Z4's and Z6's movement model.** Five zones are crossed with the ±1 step
 `connected` uses; Z4 and Z6 are entered by stepping off a ledge, so they are
 crossed under
 `reachable_with_fall` — `connected`'s walk plus a one-way fall — and they are the
