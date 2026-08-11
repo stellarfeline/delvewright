@@ -4,7 +4,7 @@ use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, rafter_hall, store_room, tee_passage, temple, watch_bay,
+    far_side_bar, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
@@ -34,6 +34,9 @@ const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
 const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
 const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
+/// The vertical family's two-way member: five across (two walls and a
+/// three-wide lane), fourteen tall, twenty-two long.
+const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
 
 fn programs() -> Vec<(Program, Box3)> {
     vec![
@@ -54,6 +57,7 @@ fn programs() -> Vec<(Program, Box3)> {
         (tee_passage(), TEE_REGION),
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
+        (stair_flight(), FLIGHT_REGION),
     ]
 }
 

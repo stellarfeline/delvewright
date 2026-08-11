@@ -702,10 +702,76 @@ Gates:
    exactly the shape a fog-gate motif would take — and the counted route total
    drops from 2 to 1 or 0.
 
-`drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway` and
-`elite_ground` carry the same generic-suite and registry-round-trip promises as
-the eight above (`tests/library.rs`, `tests/determinism.rs`,
-`crates/compiler/tests/grammar_prefab.rs`).
+### `stair_flight` — the way up
+
+A walled shaft with a level landing at each end and a rising run of
+single-block treads between them. The vocabulary's only ascending piece, and
+the only one gated on being walkable in **both** directions — the exact
+negation of the gate `drop_shaft` and `dumbwaiter` owe.
+
+| | |
+|---|---|
+| Controls | `head` (3), `tread` (2 — cells of run per block of rise), `landing_run` (3), `broken_step` (0 — a test knob); role `rock` |
+| Smallest region | `MIN_WIDTH` (3) × (`head` + 1 + `MIN_STEPS`) × (2·`landing_run` + `MIN_STEPS`·`tread`) — 3 × 7 × 12 at the defaults — and at least as long as it is wide |
+| Rise | `min(Y − head − 1, (Z − 2·landing_run) / tread)` treads; a box that cannot hold `MIN_STEPS` (3) is a refusal, never a doorstep |
+| Anchors | `anchor/stair-foot` / `anchor/stair-head` — the two landings' floor centres. `anchor/stair-step-<i>` — every tread, numbered **against** travel as everything here is, so `stair-step-1` is the topmost |
+
+**A climbing run needs no per-iteration index, and the entry that said it did
+was wrong about the IR.** `boulder_stair` records that "a repeated slice cannot
+climb a block per iteration — there is no index the IR exposes to a `Size`".
+That is true of `split_repeat`, which is a *tiling* — every tile handed the same
+pattern — and it is not a fact about the IR. The index a stair needs is **the
+box that is left**, and a self-call already carries it: `run` fills one course of
+its own floor and hands the remainder, one shorter in `Y` and one tread shorter
+in `Z`, to itself; the guard reads those dimensions and the recursion stops when
+either runs out. This is `store_room`'s own state-machine trick ("a rule has no
+memory, so the invariant is in the derivation's shape") aimed at `Y`. **No IR
+change was made or needed.**
+
+**A switchback is a rule body, not an orientation** — a second correction, and
+the one with more left in it. The recorded reason a switchback cannot be built
+is that a grammar orientation is a permutation without reflection. True, and
+beside the point for a stair: an orientation cannot mirror a piece, but a rule
+body can be *written* mirrored. This rule peels its treads off local `Z`-max
+(`[rel, abs]`, recursion first); the same rule written `[abs, rel]` climbs the
+other way. Two such lanes side by side in `X`, joined at the top of the first,
+is a dogleg — which is what a tall tower over a small footprint needs, since a
+straight flight climbs at most about `Z / tread`. Not built; recorded because a
+*false* blocker costs more than a missing feature.
+
+Gates (`tests/staging.rs`), each with its binding count:
+
+1. **The flight walks up, and back down** — the plain ±1-step `connected` walk,
+   66 standable cells in the fixture, 2 landings, 8 treads. `connected`'s edge
+   relation is symmetric, so both directions are literally one claim; both are
+   written down because the calibration is the point. A second test runs the
+   *same* predicate over this rule and over `drop_shaft` and requires them to
+   disagree — one model of "can a body get there", two rules, opposite verdicts.
+2. **The rise is real** — a walk gate alone is vacuous on a flat corridor, so
+   the rise is measured off the anchors and pinned (7 blocks over 8 treads), and
+   its control is `boulder_stair` — flat by construction — read in the same box
+   by the same code, whose lane spans exactly one height.
+3. **Every riser is one block and every tread is ground** — 8 treads, 7
+   consecutive pairs, read in index order.
+4. **It is a shaft** — both long faces solid, all 616 cells of them. Permanent
+   teeth rather than a knob: the same reading over `tee_passage`, which
+   deliberately opens one side face, must find its 2 open cells.
+5. **The run is the only way between the landings** — the same cut
+   `cliff_path` and `ambush_door` use, re-walked under the fall model since a
+   stairwell is open above its own run.
+
+Teeth: `broken_step` raises one tread by one extra course — the last one, picked
+out of the recursion by a guard on the remaining run, so no index is needed
+there either. One riser becomes 2 and the next becomes 0; the shaft still looks
+like a stair, still has all 8 treads and all its walls, everything below the
+break still walks, and the head landing is stranded. That is how a stair fails
+in practice, and a gate that only proved the shaft was not broken in two would
+be green on it.
+
+`drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
+`elite_ground` and `stair_flight` carry the same generic-suite and
+registry-round-trip promises as the eight above (`tests/library.rs`,
+`tests/determinism.rs`, `crates/compiler/tests/grammar_prefab.rs`).
 
 Three anchor names are shared across rules — `anchor/elite` (`causeway`,
 `elite_ground`), `anchor/gate` (`watch_bay`, `far_side_bar`) and
@@ -715,20 +781,39 @@ any of those pairs into one zone means saying which is which at the include site
 Nothing enumerates the collisions: the list is prose, and the third entry was
 missing from it until a sweep counted the stems.
 
-**`counterweight_lift` is not built.** The vocabulary doc
-(`docs/notes/private/grammar-staging-vocabulary.md`, planner-internal) calls
-for a one-way hub-opener that "needs the lift prefab pair" — two prefab pieces
-(a bottom station and a top station) that mate into a working elevator, the
-way Sen's Fortress's cage lift does. No such pair exists in the prefab library
-today (`prefabs/keep-tileset.md`'s only vertical piece, `keep-stair`, is a
-bidirectional stair connector, not a lift), and a *moving* platform is not
-expressible by this crate's IR at all — `fill`/`split`/`mark` place static
-blocks and metadata, with no notion of runtime state or motion, and the
-`.nbt` export strips command blocks on principle (§6). Building a lift shape
-that only pretends to move would be exactly the downstream folklore the
-no-hack rule forbids. This is a genuine dependency, not a design gap: the
-prefab pair (or a documented redstone/entity mechanism this crate could
-target) has to land first.
+**`counterweight_lift` is not a grammar rule, and no longer needs to be**
+(corrected 2026-08-09; the previous entry is preserved below because its
+*premise* is still true and only its conclusion was wrong).
+
+What that entry said: a lift needs a moving platform, a moving platform is not
+expressible by this crate's IR at all — `fill` / `split` / `mark` place static
+blocks and metadata, with no notion of runtime state or motion, and the `.nbt`
+export strips command blocks on principle (§6) — so the vocabulary waits on a
+prefab pair or a redstone mechanism this crate could target.
+
+Every clause of that is still true. The conclusion is not, because the motion
+moved layers. **A lift shipped as a first-class DSL construct** (spec-0031, PR
+#356): runtime state, region fill / clear, and teleport-by-region, composed into
+one `sequence` in campaign JSON — deliberately *not* a `lift` verb. Nothing
+moves; the car is filled at the destination, its occupants teleported, and the
+old car cleared. So this crate never has to express motion, and a
+`counterweight_lift` **rule** would be a rule for a thing that no longer exists
+as geometry.
+
+What the lift wants from the grammar instead is a **walled shaft with a station
+at each floor** — geometry, and static. spec-0031's own acceptance record names
+the two things that block it, and neither is an IR-motion problem:
+
+- *"No prefab in the library ships a shaft."* `stair_flight` is now one; a
+  lift's is the same shell without the run, plus the deck / arrival / lethal-
+  bottom cells the ride names. That is a `lift_shaft` §5b rule, and it is
+  ordinary work.
+- *A runtime region cannot name a cell at an offset from an anchor*, so a lift's
+  geometry has to be authored as an anchor per cell. `mark` declares point
+  anchors, which is exactly that shape — so the grammar can supply them.
+
+**Do not build a `counterweight_lift` rule.** The zone table's claim that Z7
+waits on one is stale and is corrected in §5c.
 
 ## 5c. Zone programs — the vocabulary composed
 
@@ -803,9 +888,10 @@ the `local_*` facing spec of §7, one layer out. Not built.
 Rows for Z2, Z4, Z5 and Z7 name §4 entries whose *rules* exist (the W3/W4
 families above) — what those zones wait on is a zone program composing them, or
 the seam limit named beside them, not the vocabulary. Only **B** (bait-item
-gallery), **D** (boulder jam) and `counterweight_lift` have no rule at all. Rows
-are rewritten in the round that builds them; nothing here claims a zone was
-built.
+gallery) and **D** (boulder jam) have no rule at all; `counterweight_lift` is no
+longer on that list and never will be — the lift is a DSL construct now, and
+what a shaft owes the grammar is geometry (§5b). Rows are rewritten in the round
+that builds them; nothing here claims a zone was built.
 
 | Zone | Program | Composed from | Missing |
 |---|---|---|---|
@@ -816,19 +902,36 @@ built.
 | Z4 Chapel Ward (hub) | `chapel_ward` (partial) | `dumbwaiter`, `tee_passage`, `far_side_bar` + the zone's branch strip | the hearth — a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one; the smallest honest form is a `hearth_ward` §5b rule |
 | Z5 Great Hall + Keep | `hall_keep` (partial) | `rafter_hall`, `ambush_door`, `store_room` | **L**, **M** — built rules awaiting a zone round — and **B**, which has no rule |
 | Z6 Cistern Deep | `cistern_deep` | `drop_shaft`, `watch_bay`, `broken_grate`, `elite_ground`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
-| Z7 Bell Tower | — | | two things. `counterweight_lift` (**L**) is not built and cannot be with today's IR (§5b); and **nothing in the vocabulary ascends** — see below. Its loft is `rafter_hall` and its boss ring `elite_ground` |
+| Z7 Bell Tower | — | | a zone round, and one rule. **The ascent blocker is closed**: `stair_flight` (§5b) climbs, gated both ways. `counterweight_lift` is **struck** — the lift is authored in campaign JSON (spec-0031) and needs a `lift_shaft` rule, not a moving-platform one. Its loft is `rafter_hall`, its boss ring `elite_ground` |
 
-**Z7 needs a way up, and that is a second blocker, not the same one.** Every
-vertical piece the vocabulary has is one-way *down* by construction **and by
-gate**: `drop_shaft` and `dumbwaiter` each assert their landing does not reach
-their hatch under the plain step, and `boulder_stair` is flat — a palette rule,
-because a repeated slice cannot climb a block per iteration (§7: the IR exposes
-no index to a `Size`). A bell tower is climbed, so a Z7 composed as a flat chain
-would be a tower in name only. The smallest honest primitive is a `tower_stair`
-rule: a walled shaft with a switchback or helical run of ±1 steps between a low
-landing and a high one, gated on being walkable in **both** directions — the
-exact negation of the gate `drop_shaft` owes. Whether it is expressible without
-a per-iteration index is the first question that round has to answer.
+**Z7's ascent blocker is closed, and the answer was smaller than the question.**
+Every vertical piece the vocabulary had was one-way *down* by construction and
+by gate, and `boulder_stair` is flat, so the round that wanted a bell tower had
+nowhere to start. `stair_flight` (§5b) is the way up: a walled shaft, a landing
+at each end, a run of single-block treads, gated on the plain ±1-step walk in
+both directions — the literal negation of `drop_shaft`'s gate, asserted with the
+same predicate and cross-checked against it in one test.
+
+It needed **no IR change**. The open question was whether a climbing run is
+expressible without a per-iteration index, and it is: the index a stair needs is
+the box that is left, and a self-call carries it (§5b). The claim that it was
+not is corrected at both the sites that made it.
+
+That the composition works is asserted, not assumed:
+`zones::a_zone_can_compose_a_route_a_player_walks_up` chains a `tee_passage`
+approach with a flight in the throwaway `chained` fixture and walks the composed
+model from the zone's own entry face to `anchor/stair-head`, seven blocks up —
+133 standable cells, 3 in the entry face, with the level walk to the foot
+landing as the control. **Nothing new was needed at the seam**: a flight's foot
+landing sits on the same floor course every flat piece uses, so the two mate the
+way any two chain pieces do.
+
+What Z7 still waits on is a zone program, plus a `lift_shaft` rule if the
+tower's lift stays in the design. One shape is worth naming for that round: a
+straight flight climbs at most about `Z / tread`, so a tall tower over a small
+footprint wants a **switchback**, and a switchback is a rule body rather than an
+orientation (§5b) — the "permutation without reflection" answer is the right
+answer to a different question.
 
 **The branch, as a zone builds it.** Z4 and Z6 both hang a `far_side_bar` off a
 `tee_passage` (seam limit 3, below), and both do it the same way, which is now
@@ -862,7 +965,12 @@ reason.
 alternates which side the drop is on, and a grammar orientation is a permutation
 *without reflection*, so no `reorient` can mirror a cliff run. It needs a
 mirroring orientation or a `cliff_turn` landing rule; inventing the landing
-inline is the geometry a zone program does not write.
+inline is the geometry a zone program does not write. **A third option was
+overlooked and is now open rather than answered**: what an orientation cannot do
+a *rule body* can, and `stair_flight` (§5b) records the construction — a rule
+that peels its pieces off the other end of its own split is the mirror image of
+itself. Whether that reaches `cliff_path`, whose recesses and lane are placed by
+`reorient` rather than by split order, has not been checked.
 
 ### The three seam limits — all three closed
 
@@ -994,6 +1102,7 @@ the piece-level claims stay in §5b.
 | Seam limit 3: a barred door **on** the route seals the chain | the chain's standable cells, walked twice | `bar/unbarred = 1` reopens exactly that doorway |
 | Seam limit 3 closed: the same bar **beside** the route | 43 standable (25 mainline / 18 branch), 9 near-room, 1 doorway column cut | filling the tee's lane → the branch severs the mainline; a 3-wide doorway → the doorway cut no longer isolates the branch |
 | ...and the branch's teeth | 42 standable, 9 near-room | `tee/sealed = 1` → the branch is unreachable, mainline still walks |
+| A composed route the player walks **up** | 133 standable, 3 in the entry face, 7 blocks of rise | the level walk to the flight's own foot landing is the control; a flat chain reads 0 |
 
 **Z4's and Z6's movement model.** Five zones are crossed with the ±1 step
 `connected` uses; Z4 and Z6 are entered by stepping off a ledge, so they are

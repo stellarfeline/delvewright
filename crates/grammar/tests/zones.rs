@@ -32,7 +32,7 @@ use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::{
     barrow_shore, broken_grate, causeway, chapel_ward, cistern_deep, cliff_road, drowned_ward,
-    elite_ground, far_side_bar, gate_ward, hall_keep, watch_bay,
+    elite_ground, far_side_bar, gate_ward, hall_keep, stair_flight, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
@@ -2260,6 +2260,62 @@ fn branch_chain() -> Program {
         .fold(plan, |acc, (prefix, source)| {
             include_renaming(acc, source, prefix, &none).unwrap_or_else(|e| panic!("{prefix}: {e}"))
         })
+}
+
+/// **The obligation this round exists for, discharged at the seam.** Every gate
+/// in `tests/staging.rs` judges the flight in a bare box; what a zone needs is
+/// that the climb survives being *composed* — that a piece run can carry a
+/// player in at ground level and out at the top.
+///
+/// This is the smallest thing that is a composition at all: `tee_passage` as
+/// the approach, `stair_flight` beyond it, the same throwaway `chained` fixture
+/// seam limit 3 is read off. Nothing new is needed at the seam — a flight's
+/// foot landing sits at the same floor course every flat piece in the
+/// vocabulary uses, so the two mate the way any two chain pieces do.
+///
+/// Binding: 96 standable cells, 6 of them the zone's entry face, and a rise of
+/// 7 between that face and `anchor/stair-head`. Control: the same walk from the
+/// entry face to the flight's *foot* landing, which is level — so a green here
+/// cannot be a flat corridor wearing a stair's anchors.
+#[test]
+fn a_zone_can_compose_a_route_a_player_walks_up() {
+    /// Two 22-long pieces: the approach, then the flight.
+    const TOWER: Box3 = Box3::at_origin([5, 14, 44]);
+    let flight = stair_flight();
+    let approach = delvewright_grammar::library::tee_passage();
+    // `chained` puts its first part at local `Z`-min — the travel destination —
+    // so the flight is named first and the approach second.
+    let zone = chained([("flight", &flight), ("approach", &approach)]);
+    zone.validate().expect("the composed zone resolves");
+
+    let out = expand_at(&zone, TOWER, 1);
+    let model = &out.model;
+    let cells = standable_cells(model);
+    assert_eq!(cells.len(), 133, "the fixture's standable cells");
+    let (entry, _) = ends(model);
+    assert_eq!(entry.len(), 3, "the zone's entry face");
+
+    let head = out.anchors["anchor/stair-head"].pos;
+    let foot = out.anchors["anchor/stair-foot"].pos;
+    let entry_y = entry.iter().next().expect("an entry cell")[1];
+    assert_eq!(
+        foot[1], entry_y,
+        "the flight's foot landing is not level with the zone's entry, so the \
+         pieces did not mate"
+    );
+    assert_eq!(
+        head[1] - entry_y,
+        7,
+        "the composed route does not climb: entry at {entry_y}, head at {head:?}"
+    );
+    assert!(
+        connected(&cells, &entry, &[head].into_iter().collect()),
+        "a player entering the zone cannot reach the top of the flight"
+    );
+    assert!(
+        connected(&cells, &[head].into_iter().collect(), &entry),
+        "and cannot walk back down"
+    );
 }
 
 /// **Seam limit 3, closed — but the first half of this test is still true, and

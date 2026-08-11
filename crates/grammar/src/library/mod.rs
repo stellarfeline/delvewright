@@ -55,6 +55,7 @@ pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
 pub mod rafter_hall;
+pub mod stair_flight;
 pub mod store_room;
 pub mod tee_passage;
 pub mod temple;
@@ -76,6 +77,7 @@ pub use dumbwaiter::dumbwaiter;
 pub use elite_ground::elite_ground;
 pub use far_side_bar::far_side_bar;
 pub use rafter_hall::rafter_hall;
+pub use stair_flight::stair_flight;
 pub use store_room::store_room;
 pub use tee_passage::tee_passage;
 pub use temple::temple;
@@ -255,11 +257,14 @@ fn all_of(of: Vec<Cond>) -> Cond {
     Cond::All { of }
 }
 
-/// At least one sub-guard has to hold.
+/// At least one sub-guard has to hold. What a rule reaches for when it needs
+/// the exact complement of an `all_of` guard, so two alternatives are a
+/// decision rather than a weighted draw (`docs/reference/grammar.md` §2).
 ///
-/// The sibling of [`all_of`], and the shape a clause takes when a knob adds an
+/// Its other shape is a clause *inside* an `all_of`, when a knob adds an
 /// obligation rather than replacing one: "the knob is off, **or** the geometry
-/// it needs is there" is one clause of a rule's own guard, not a second rule.
+/// it needs is there" belongs in the rule's own guard, not in a second rule
+/// (`causeway`'s `berm_gate`).
 fn any_of(of: Vec<Cond>) -> Cond {
     Cond::Any { of }
 }

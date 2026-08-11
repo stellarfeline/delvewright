@@ -26,6 +26,7 @@ use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::causeway::MIN_GATE_RISE;
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
+use delvewright_grammar::library::stair_flight::{self, stair_flight};
 use delvewright_grammar::library::tee_passage::{self, tee_passage};
 use delvewright_grammar::library::{
     ambush_door, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
@@ -111,6 +112,15 @@ const SHAFT_TEETH_REGION: Box3 = Box3::at_origin([4, 5, 6]);
 const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
 const DUCT_SEED: u64 = 1;
 const DUCT_TEETH_REGION: Box3 = Box3::at_origin([6, 5, 8]);
+
+/// The stair-flight fixture: five across (a wall, a three-wide lane, a wall),
+/// fourteen tall, twenty-two long. Deliberately long enough that the **run**,
+/// not the headroom, is what stops the climb — `broken_step`'s guard reads the
+/// remaining run, so a fixture whose `Y` ran out first would put the break
+/// nowhere. Eight treads, seven blocks of rise; the gates pin both.
+const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// `stair_flight` draws nothing from the seed; it is stated, not chosen.
+const FLIGHT_SEED: u64 = 1;
 
 /// The far-side bar fixture. `Z` strictly longer than `X`, as `SHAFT_TEETH_REGION` notes.
 const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
@@ -1923,6 +1933,351 @@ fn a_rescued_dumbwaiter_has_a_way_back() {
 }
 
 // ---------------------------------------------------------------------------
+// The way up — the stair flight
+// ---------------------------------------------------------------------------
+//
+// Every gate here is read with the **same** `standable` predicate and the same
+// plain ±1-step `connected` walk the L family's one-wayness is proved with, and
+// that is the whole design of this section: `drop_shaft` asserts
+// `!connected(landing, spill)` and this asserts `connected(foot, head)`. One
+// model of "can a body get there", two rules, opposite verdicts — rather than
+// two independent ideas of reachability that could drift apart and both be
+// green.
+
+/// Anchor cells of a stem, as a one-element set for `connected`.
+fn cell(out: &Expansion, name: &str) -> BTreeSet<[i32; 3]> {
+    [out.anchors[name].pos].into_iter().collect()
+}
+
+#[test]
+fn a_stair_flight_expands_deterministically() {
+    let program = stair_flight();
+    let a = expand_at(&program, FLIGHT_REGION, FLIGHT_SEED);
+    let b = expand_at(&program, FLIGHT_REGION, FLIGHT_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/stair-foot"));
+    assert!(a.anchors.contains_key("anchor/stair-head"));
+    assert_eq!(
+        indexed(&a.anchors, "stair-step").len(),
+        8,
+        "the fixture's eight treads are the binding count every gate below reads"
+    );
+}
+
+/// **The gate the entry exists for.** A body walks from the foot landing to the
+/// head landing under the plain ±1 step — no fall edge, because a fall never
+/// points up — and walks back down again.
+///
+/// Both directions are asserted and they are deliberately the *same* claim:
+/// `connected`'s edge relation is symmetric (every `dy` step has a matching
+/// `-dy` step), so a graph that carries a climb carries the descent. Writing
+/// both down is what makes the calibration against `drop_shaft` legible —
+/// see `the_flight_and_the_drop_shaft_are_one_gate_read_twice`.
+///
+/// Binding: 66 standable cells, 2 landings, 8 treads.
+#[test]
+fn the_flight_walks_up_and_back_down() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let model = &out.model;
+    let foot = out.anchors["anchor/stair-foot"].pos;
+    let head = out.anchors["anchor/stair-head"].pos;
+    assert!(standable(model, foot), "{foot:?}");
+    assert!(standable(model, head), "{head:?}");
+
+    let cells = standable_cells(model);
+    assert_eq!(
+        cells.len(),
+        66,
+        "the fixture's standable cell count moved; every gate below is read off it"
+    );
+    let from = cell(&out, "anchor/stair-foot");
+    let to = cell(&out, "anchor/stair-head");
+    assert!(
+        connected(&cells, &from, &to),
+        "the foot landing cannot walk up to the head landing — nothing in the \
+         vocabulary ascends after all"
+    );
+    assert!(
+        connected(&cells, &to, &from),
+        "the head landing cannot walk back down"
+    );
+}
+
+/// The calibration, written as one test so nobody has to take it on trust:
+/// the same predicate, the same walk, the same direction of travel, run over
+/// this rule and over `drop_shaft`, must disagree. A change that broke
+/// `connected` into always-true would red the shaft's half; one that broke it
+/// into always-false would red the flight's.
+#[test]
+fn the_flight_and_the_drop_shaft_are_one_gate_read_twice() {
+    let flight = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let flight_cells = standable_cells(&flight.model);
+    let climbs = connected(
+        &flight_cells,
+        &cell(&flight, "anchor/stair-foot"),
+        &cell(&flight, "anchor/stair-head"),
+    );
+
+    let shaft = expand_at(&drop_shaft(), SHAFT_REGION, SHAFT_SEED);
+    let shaft_cells = standable_cells(&shaft.model);
+    let climbs_back = connected(
+        &shaft_cells,
+        &cell(&shaft, "anchor/landing"),
+        &cell(&shaft, "anchor/spill"),
+    );
+
+    assert!(
+        climbs && !climbs_back,
+        "the two halves of the vertical family agree ({climbs} / {climbs_back}); \
+         one predicate cannot be both the ascent gate and the one-way gate if it \
+         answers the same for a stair and a drop"
+    );
+}
+
+/// **A walk gate alone is vacuous**: a flat corridor walks perfectly in both
+/// directions. So the rise is measured off the declared anchors and pinned, and
+/// the control is a rule that is flat *by construction* — `boulder_stair`,
+/// whose own module explains at length why it does not climb — read in the same
+/// box by the same code.
+///
+/// Binding: 2 landings and 8 treads for the flight, 1 run anchor for the flat
+/// control.
+#[test]
+fn the_head_landing_is_really_above_the_foot_and_a_flat_lane_is_not() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let foot = out.anchors["anchor/stair-foot"].pos;
+    let head = out.anchors["anchor/stair-head"].pos;
+    assert_eq!(
+        head[1] - foot[1],
+        7,
+        "the flight's rise moved: foot {foot:?}, head {head:?}"
+    );
+    let steps = indexed(&out.anchors, "stair-step");
+    assert_eq!(steps.len(), 8);
+
+    // The control: the flat rule in the same box. Its own floor anchor and the
+    // lowest cell of its lane are the same height, which is what "flat" means
+    // and what this gate would report as a rise of zero.
+    let flat = expand_at(&boulder_stair(), FLIGHT_REGION, FLIGHT_SEED);
+    let lane: BTreeSet<i32> = standable_cells(&flat.model)
+        .into_iter()
+        .map(|c| c[1])
+        .collect();
+    assert_eq!(
+        lane.len(),
+        1,
+        "boulder_stair is supposed to be flat; if its lane spans {} heights the \
+         control has stopped controlling anything",
+        lane.len()
+    );
+}
+
+/// **Every riser is exactly one block, and every tread is ground.** The treads
+/// are read off the declared anchors in index order — which, as everywhere in
+/// this vocabulary, runs *against* travel: `stair-step-1` is the topmost tread,
+/// so `Y` decreases by one and `Z` increases by one `tread` as the index rises.
+///
+/// Binding: 8 treads, 7 consecutive pairs.
+#[test]
+fn every_riser_is_one_block_and_every_tread_is_standable() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let model = &out.model;
+    let steps = indexed(&out.anchors, "stair-step");
+    assert_eq!(steps.len(), 8);
+    for step in &steps {
+        assert!(standable(model, *step), "tread {step:?} is not ground");
+    }
+    let mut pairs = 0;
+    for w in steps.windows(2) {
+        let (hi, lo) = (w[0], w[1]);
+        assert_eq!(hi[1] - lo[1], 1, "riser between {lo:?} and {hi:?}");
+        assert_eq!(lo[2] - hi[2], 2, "run between {lo:?} and {hi:?}");
+        pairs += 1;
+    }
+    assert_eq!(pairs, 7, "seven risers between eight treads");
+
+    // The lowest tread is level with the foot landing and the highest with the
+    // head landing: a flight arrives on its landings, it does not step up onto
+    // them.
+    assert_eq!(steps[7][1], out.anchors["anchor/stair-foot"].pos[1]);
+    assert_eq!(steps[0][1], out.anchors["anchor/stair-head"].pos[1]);
+}
+
+/// **The teeth, in the direction that actually drifts.** `broken_step` raises
+/// one tread — the last one, picked out of the recursion by a guard on the
+/// remaining run rather than by an index — so exactly one riser becomes 2 and
+/// the next becomes 0.
+///
+/// This is what a stair fails as: not demolished, not severed, just one step a
+/// body cannot make. Everything below the break still walks, the foot landing
+/// is still ground, the model still has all 8 treads and all its walls — and
+/// the head landing is stranded. A gate that only proved the shaft was not
+/// broken in two would be green on this.
+#[test]
+fn a_single_raised_tread_strands_the_head_landing() {
+    let sound = stair_flight();
+    let mut broken = sound.clone();
+    broken.set_param("broken_step", 1).unwrap();
+
+    let sound_out = expand_at(&sound, FLIGHT_REGION, FLIGHT_SEED);
+    let sound_cells = standable_cells(&sound_out.model);
+    assert!(
+        connected(
+            &sound_cells,
+            &cell(&sound_out, "anchor/stair-foot"),
+            &cell(&sound_out, "anchor/stair-head"),
+        ),
+        "the sound flight already does not climb — the fixture proves nothing"
+    );
+
+    let out = expand_at(&broken, FLIGHT_REGION, FLIGHT_SEED);
+    let cells = standable_cells(&out.model);
+    let foot = cell(&out, "anchor/stair-foot");
+    let head = cell(&out, "anchor/stair-head");
+    assert!(
+        !connected(&cells, &foot, &head),
+        "a tread was raised a whole block and the climb still gets through — \
+         the both-ways gate cannot see a step nobody can make"
+    );
+    assert!(
+        !connected(&cells, &head, &foot),
+        "the descent is unaffected, so the break is not on the route"
+    );
+
+    // ...and what was caught is a step, not a demolition. Exactly one riser is
+    // wrong, both landings are still ground, and the flight still walks from
+    // the foot up to the tread below the break.
+    let steps = indexed(&out.anchors, "stair-step");
+    assert_eq!(
+        steps.len(),
+        8,
+        "the break removed a tread instead of raising it"
+    );
+    let bad: Vec<i32> = steps.windows(2).map(|w| w[0][1] - w[1][1]).collect();
+    assert_eq!(
+        bad,
+        vec![2, 1, 1, 1, 1, 1, 1],
+        "exactly one riser should be two blocks and the rest one"
+    );
+    assert!(standable(&out.model, out.anchors["anchor/stair-foot"].pos));
+    assert!(standable(&out.model, out.anchors["anchor/stair-head"].pos));
+    assert!(
+        connected(&cells, &foot, &[steps[1]].into_iter().collect()),
+        "the flight below the break stopped walking too — that is a demolished \
+         shaft, not a broken step"
+    );
+}
+
+/// **It is a shaft: both long faces are solid, every cell of them.** Read off
+/// the model rather than off the rule, and its teeth are permanent rather than
+/// a knob — `tee_passage` is the same wall-with-one-opening construction and
+/// the same reading must find its doorway. One reading, two rules, opposite
+/// answers.
+///
+/// Binding: 616 wall cells (2 faces × 14 × 22) for the flight, 2 open cells for
+/// the control.
+#[test]
+fn the_shaft_is_walled_on_both_long_faces() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let (walled, open) = side_face_cells(&out.model);
+    assert_eq!(walled + open, 616, "the fixture's two side faces");
+    assert_eq!(
+        open, 0,
+        "the shaft has {open} open cells in a side face — a body can walk out of \
+         it, so it is not a shaft"
+    );
+
+    // The control, in the same box: a rule that deliberately opens one side
+    // face. If this reads zero too, the reading above is measuring nothing.
+    let tee = expand_at(&tee_passage(), FLIGHT_REGION, FLIGHT_SEED);
+    let (_, tee_open) = side_face_cells(&tee.model);
+    assert_eq!(
+        tee_open, 2,
+        "tee_passage's doorway did not show up in the same reading"
+    );
+}
+
+/// Solid and open cell counts over the model's two extreme `X` planes — the
+/// faces every rule in this vocabulary walls (`docs/reference/grammar.md` §5c).
+fn side_face_cells(model: &VoxelModel) -> (usize, usize) {
+    let region = model.region();
+    let (x_min, x_max) = (region.origin[0], region.maximum()[0] - 1);
+    let mut walled = 0;
+    let mut open = 0;
+    for pos in region.positions() {
+        if pos[0] != x_min && pos[0] != x_max {
+            continue;
+        }
+        if solid(model, pos) {
+            walled += 1;
+        } else {
+            open += 1;
+        }
+    }
+    (walled, open)
+}
+
+/// **The run is the only way up.** The same cut `cliff_path`, `ambush_door` and
+/// `boulder_stair` use on their own lanes: delete one `Z` slice of standable
+/// cells mid-run and the two landings must part company — under the *fall*
+/// model as well as the plain walk, since a fall edge only ever adds routes and
+/// a stairwell is open above its own run.
+///
+/// Binding: 66 standable cells, 6 of them in the cut slice.
+#[test]
+fn the_run_is_the_only_way_between_the_landings() {
+    let out = expand_at(&stair_flight(), FLIGHT_REGION, FLIGHT_SEED);
+    let model = &out.model;
+    let cells = standable_cells(model);
+    let foot = cell(&out, "anchor/stair-foot");
+    let head = cell(&out, "anchor/stair-head");
+    assert!(reachable_with_fall(model, &cells, &foot, &head));
+
+    // The middle tread's own Z columns, whichever cells they turned out to be.
+    let steps = indexed(&out.anchors, "stair-step");
+    let cut_z = steps[4][2];
+    let cut: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] != cut_z && c[2] != cut_z + 1)
+        .collect();
+    assert_eq!(
+        cells.len() - cut.len(),
+        6,
+        "the cut removed the wrong number of cells"
+    );
+    assert!(
+        !reachable_with_fall(model, &cut, &foot, &head),
+        "the landings are still joined with a slice of the run deleted, so the \
+         run is not the route"
+    );
+}
+
+/// A box that cannot hold `MIN_STEPS` treads is a refusal naming the rule, not
+/// a two-step doorstep that would pass every gate above.
+///
+/// Binding: 1 refusal, against the same box one cell longer, which builds.
+#[test]
+fn a_box_too_short_to_climb_is_refused_not_flattened() {
+    let program = stair_flight();
+    let too_short = Box3::at_origin([5, 14, 11]);
+    let err = expand(&program, too_short, &ExpandOptions::seeded(FLIGHT_SEED)).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("flight_plan"),
+        "the refusal does not name the rule that refused: {text}"
+    );
+    let just_long_enough = Box3::at_origin([5, 14, 12]);
+    let out = expand_at(&program, just_long_enough, FLIGHT_SEED);
+    assert_eq!(
+        indexed(&out.anchors, "stair-step").len(),
+        stair_flight::MIN_STEPS as usize,
+        "the smallest legal flight should lay exactly MIN_STEPS treads"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // F — the far-side bar
 // ---------------------------------------------------------------------------
 
@@ -2811,6 +3166,15 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [5, 10, 5],
         &[[4, 10, 5], [5, 9, 5], [5, 10, 4]],
     );
+    // stair_flight: MIN_WIDTH (3) across (wall, lane, wall), head + 1 +
+    // MIN_STEPS tall, and 2*landing_run + MIN_STEPS*tread long — the box has to
+    // hold three treads, or the rule refuses rather than laying a doorstep.
+    check(
+        "stair_flight",
+        &stair_flight(),
+        [stair_flight::MIN_WIDTH as u32, 7, 12],
+        &[[2, 7, 12], [3, 6, 12], [3, 7, 11]],
+    );
     // elite_ground: both horizontal extents >= diameter + 2*flank_margin + 2
     // (the wider of the rule's two checks — see the module note), head + 2
     // tall — at `radius`'s enforced floor of 4 (a 9×9 circle) and the default
@@ -2853,6 +3217,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (tee_passage(), TEE_REGION),
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
+        (stair_flight(), FLIGHT_REGION),
     ] {
         let mut restyled = base.clone();
         let roles: Vec<String> = base.palette.keys().cloned().collect();
