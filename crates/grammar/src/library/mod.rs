@@ -67,6 +67,7 @@ pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
 pub mod hearth_ward;
+pub mod lift_shaft;
 pub mod rafter_hall;
 pub mod stair_flight;
 pub mod store_room;
@@ -78,7 +79,8 @@ pub mod watch_bay;
 pub use ambush_door::ambush_door;
 pub use bait_stand::bait_stand;
 pub use bell::{
-    barrow_shore, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward, hall_keep,
+    barrow_shore, bell_tower, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward,
+    hall_keep,
 };
 pub use boulder_stair::boulder_stair;
 pub use broken_grate::broken_grate;
@@ -92,6 +94,7 @@ pub use dumbwaiter::dumbwaiter;
 pub use elite_ground::elite_ground;
 pub use far_side_bar::far_side_bar;
 pub use hearth_ward::hearth_ward;
+pub use lift_shaft::lift_shaft;
 pub use rafter_hall::rafter_hall;
 pub use stair_flight::stair_flight;
 pub use store_room::store_room;

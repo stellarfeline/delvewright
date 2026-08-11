@@ -4,7 +4,8 @@ use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
+    far_side_bar, lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple,
+    watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
@@ -40,6 +41,10 @@ const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The vertical family's *stationary* member (task #182, entry L/4): five
+/// across, sixteen tall — the sill plus two whole storeys — and seven deep, so
+/// the frame turns the landing face onto the long axis the way a zone hands it.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
 /// The mechanism family: a rest point's nook, a lure with its watcher, and a
 /// hazard's control at the head of its run.
 const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
@@ -66,6 +71,7 @@ fn programs() -> Vec<(Program, Box3)> {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (lift_shaft(), LIFT_REGION),
         (hearth_ward(), HEARTH_REGION),
         (bait_stand(), BAIT_REGION),
         (disarm_stand(), DISARM_REGION),
