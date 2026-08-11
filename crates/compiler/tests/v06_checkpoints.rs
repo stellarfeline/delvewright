@@ -157,13 +157,31 @@ fn on_respawn_dispatch_is_emitted() {
         check.contains("if score @s dw.deaths > @s dw.death_ack"),
         "respawn fires on the death-count edge"
     );
+    // DW0495: the two scores the edge compares are created BEFORE it compares
+    // them, and those seeds are deliberately the only ungated lines here — a
+    // comparison against an entry that does not exist is false on the pinned
+    // server, so a gated seed would be a seed that only runs once the guard it
+    // exists to make meaningful has already been evaluated. `add … 0` is
+    // idempotent, so running them every tick is a no-op after the first.
+    let (seeds, edge): (Vec<&str>, Vec<&str>) = check
+        .lines()
+        .partition(|l| l.starts_with("scoreboard players add @s dw."));
+    assert_eq!(
+        seeds,
+        vec![
+            "scoreboard players add @s dw.deaths 0",
+            "scoreboard players add @s dw.death_ack 0",
+        ],
+        "both sides of the edge are seeded, ahead of it:\n{check}"
+    );
     // task #145: `deathCount` ticks on the DEATH, not on the respawn, so both the
     // fire and the acknowledgement wait for a living player — otherwise the whole
     // bundle would land on the corpse and the edge would be spent.
     assert!(
-        check
-            .lines()
-            .all(|l| l.contains("unless data entity @s {Health:0.0f}")),
+        !edge.is_empty()
+            && edge
+                .iter()
+                .all(|l| l.contains("unless data entity @s {Health:0.0f}")),
         "the death edge is held until the player is alive again:\n{check}"
     );
     let fire = fn_body(&out, "cp_respawn_fire");

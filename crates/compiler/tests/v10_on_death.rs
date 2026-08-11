@@ -258,9 +258,16 @@ fn a_campaign_without_a_death_beat_is_byte_identical() {
     let out = build(&loaded, &campaign(&loaded, false));
 
     let check = body(&out, CP, "cp_respawn_check").expect("the detector exists");
+    // The v0.6 dispatcher, unchanged to the byte by the `on_death` surface — with
+    // the two seeds `DW0495` requires and no corpse-side ack. The seeds belong to
+    // the checkpoint edge, not to the death beat: a campaign that declares neither
+    // still emits this function at all only because it has a checkpoint, and
+    // `dw.death_seen` is the line that must stay absent here.
     assert_eq!(
         check,
-        "execute unless data entity @s {Health:0.0f} if score @s dw.deaths > @s dw.death_ack run \
+        "scoreboard players add @s dw.deaths 0\n\
+         scoreboard players add @s dw.death_ack 0\n\
+         execute unless data entity @s {Health:0.0f} if score @s dw.deaths > @s dw.death_ack run \
          function v06-checkpoints:cp_respawn_fire\n\
          execute unless data entity @s {Health:0.0f} run scoreboard players operation @s \
          dw.death_ack = @s dw.deaths\n",

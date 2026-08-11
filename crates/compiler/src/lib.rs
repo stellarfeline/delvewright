@@ -26,6 +26,9 @@
 //! - [`integrity`]: the emitted call graph is closed (`DW0497`) — a
 //!   `function <ns>:<name>` the compiler writes must point at a function the
 //!   compiler wrote, whatever feature emitted either half.
+//! - [`seeding`]: the emitted score reads are closed (`DW0495`) — no comparison
+//!   may read a scoreboard entry the pack never creates, because on the pinned
+//!   server a missing entry is not zero, it is false to every question.
 //! - [`waypoints`]: export the DW0311-proven critical-path routes as validation
 //!   metadata (`validation/critical-path-waypoints.json`) for leg-by-leg bot nav.
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`, spec-0006).
@@ -81,6 +84,7 @@ pub mod registry;
 pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
+pub mod seeding;
 pub mod snapshot;
 pub mod solver;
 pub mod stairs;

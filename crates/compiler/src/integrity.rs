@@ -65,8 +65,12 @@ pub struct IntegrityError {
 
 /// Which emitted datapack a function belongs to. Determines what it may call:
 /// the shipped pack ships alone, the overlays ship beside it.
+///
+/// Shared with [`crate::seeding`], the other feature-blind proof read off the
+/// finished tree: the tier a body ships in is a fact about the build output, not
+/// about either check, so both read it from here rather than each keeping a copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Tier {
+pub(crate) enum Tier {
     /// `datapack/` — the delve itself (ADR-0010).
     Shipped,
     /// `packtest-datapack/` — the generated PackTest overlay (validation only).
@@ -78,7 +82,7 @@ enum Tier {
 impl Tier {
     /// The tier a build-output path belongs to, or `None` for a non-datapack
     /// artifact (`server/`, `critical-path.json`, the resource pack, …).
-    fn of(path: &str) -> Option<Tier> {
+    pub(crate) fn of(path: &str) -> Option<Tier> {
         match path.split_once('/')?.0 {
             "datapack" => Some(Tier::Shipped),
             "packtest-datapack" => Some(Tier::PackTest),
