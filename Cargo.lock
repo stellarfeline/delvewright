@@ -525,6 +525,7 @@ name = "delvewright-admit"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "delvec",
  "delvewright-orchestrator",
  "delvewright-schem",
  "fastnbt",
