@@ -98,6 +98,14 @@ Upstream credits the framework to Eger with contributions by Nicholas Baron and
 an Amulet port by Kevin Kwik and Antoine Si; the temple and castle grammars are
 Eger's, the church grammar is Janista Gitbumrungsin's.
 
+**Where the port has since diverged, so the row above is not read as a claim
+about the current code.** Upstream's orientation is an unsigned axis
+permutation. Ours carries a sign per local axis — the 48 signed axis maps rather
+than the 6 permutations — so a piece can be turned *round* as well as turned 90°
+(`crates/grammar/src/geom.rs`). That is original work, not a port: nothing
+upstream has it, and it is not part of the FDG '22 formulation. Signs default to
+positive, so every ported grammar expands exactly as it did.
+
 ## Evaluated, not adopted (NPC skin pipeline, spec-0009)
 
 | Project | License | Disposition |

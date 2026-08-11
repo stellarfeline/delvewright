@@ -22,7 +22,7 @@
 
 mod support;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::compose::{AnchorRenames, entry, include_renaming};
@@ -53,11 +53,25 @@ const SHORE_REGION: Box3 = Box3::at_origin(zones::barrow_shore::REGION);
 /// The arena draws nothing from the seed; it is stated, not chosen.
 const SHORE_SEED: u64 = 1;
 
-/// **Z1.** The crag: three cells of gulf, the road, and the rock it is cut into,
-/// over eight courses of drop.
+/// **Z1.** The crag, cut by an inlet: two four-cell road bands either side of a
+/// three-cell gulf, over eight courses of drop, and forty cells long — four of
+/// hairpin head and thirty-six of the two legs.
 const CLIFF_REGION: Box3 = Box3::at_origin(zones::cliff_road::REGION);
-/// The seed the four-niche road is pinned to.
+/// The seed the switchback's niche draw is pinned to.
 const CLIFF_SEED: u64 = 4;
+/// How wide one leg's band is: the `sea` gulf takes three of the eleven and the
+/// two `rel(1)` bands halve the rest. Restated here — not recomputed from the
+/// anchors — because the sightline gate has to say which cells are *which
+/// leg's* before it has read an anchor at all.
+const CLIFF_BAND: i32 = 4;
+/// The near leg's ledge column: the low-X edge of its band, against the gulf.
+const NEAR_LEDGE: i32 = CLIFF_BAND + MIN_GULF as i32;
+/// The far leg's ledge column: the high-X edge of *its* band, against the same
+/// gulf — the near leg's ledge mirrored, which is what `turned` buys.
+const FAR_LEDGE: i32 = CLIFF_BAND - 1;
+/// Where the hairpin head ends and the two legs begin, in cells of travel
+/// (`turn_run`).
+const CLIFF_TURN: i32 = 4;
 
 /// **Z2.** Gatehouse and Outer Ward: the finished zone, and the longest of them.
 /// Twelve cells of spill shaft at the exit end, then ten of boss threshold, ten
@@ -351,7 +365,7 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 13, 7, 7, 13, 10, 12].into_iter().zip(zones())
+    for (want, ZoneFixture { program, .. }) in [1, 5, 13, 7, 7, 13, 10, 12].into_iter().zip(zones())
     {
         assert_eq!(
             program.palette.len(),
@@ -366,10 +380,14 @@ fn the_zone_fixtures_are_pinned() {
     assert_eq!(shore.anchors.len(), 1);
     assert_eq!(standable_cells(&shore.model).len(), 438);
 
+    // Z1 is two legs now, and the two sets are pinned separately: one leg
+    // quietly stopping at the hairpin would leave the totals plausible.
     let cliff = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
-    assert_eq!(indexed(&cliff.anchors, "niche").len(), 4);
-    assert_eq!(indexed(&cliff.anchors, "niche-watch").len(), 4);
-    assert_eq!(standable_cells(&cliff.model).len(), 40);
+    assert_eq!(indexed(&cliff.anchors, "near-niche").len(), 5);
+    assert_eq!(indexed(&cliff.anchors, "near-niche-watch").len(), 5);
+    assert_eq!(indexed(&cliff.anchors, "far-niche").len(), 4);
+    assert_eq!(indexed(&cliff.anchors, "far-niche-watch").len(), 4);
+    assert_eq!(standable_cells(&cliff.model).len(), 125);
 
     // Z2 carries an anchor from each of its eight pieces, which is the cheapest
     // possible check that all eight expanded — and it is where Z2's rename is
@@ -1001,142 +1019,431 @@ fn a_square_shore_is_refused() {
 // Z1 — the Cliff Road
 // ---------------------------------------------------------------------------
 
-/// The ledge lane, read off the anchors rather than off the `sea` parameter: a
-/// recess is one cell in from the lane it opens onto, so the niches say where
-/// the road is.
-fn ledge_lane(out: &Expansion) -> i32 {
-    let niches = indexed(&out.anchors, "niche");
-    assert!(!niches.is_empty(), "the road declares no niches");
-    let lanes: BTreeSet<i32> = niches.iter().map(|n| n[0] - 1).collect();
-    assert_eq!(lanes.len(), 1, "the recesses are not all off one lane");
-    *lanes.iter().next().unwrap()
+/// One leg's ledge lane and its seaward direction, read off the anchors rather
+/// than off `sea`: a recess is one cell in from the lane it opens onto, so the
+/// niches say where the road is — and which way it looks.
+///
+/// The two legs answer this differently and that is the point of the zone. The
+/// near leg's recesses sit *inland* of its lane (higher X), so its gulf is at
+/// lower X; the far leg is the same rule turned round, so both are mirrored.
+/// Deriving the direction instead of assuming it is what lets one gate examine
+/// both legs and still be a real claim about each.
+fn leg_lane(out: &Expansion, stem: &str) -> (i32, i32) {
+    let niches = indexed(&out.anchors, stem);
+    assert!(!niches.is_empty(), "the {stem} leg declares no niches");
+    let recesses: BTreeSet<i32> = niches.iter().map(|n| n[0]).collect();
+    assert_eq!(
+        recesses.len(),
+        1,
+        "the {stem} recesses are not all in one column"
+    );
+    let recess = *recesses.iter().next().unwrap();
+    // The lane is whichever neighbour of the recess column is on the gulf side,
+    // and the gulf is the middle of the zone.
+    let mid = out.model.region().size[0] as i32 / 2;
+    let seaward = if recess < mid { 1 } else { -1 };
+    (recess + seaward, seaward)
 }
 
-/// Gate 1, at zone scale: the ledge is the only way along the road. The piece
-/// proves this inside its own box; the zone could still have left a second lane
-/// in the crag beside it, and this is where that would show.
+/// Every standable cell of one leg — its own band, past the hairpin head. The
+/// head belongs to neither leg: it is the zone's own mass, it has no gulf beside
+/// it, and a gate that swept it in would be measuring the turn as if it were a
+/// ledge.
+fn leg_cells(out: &Expansion, seaward: i32) -> BTreeSet<[i32; 3]> {
+    let mid = out.model.region().size[0] as i32 / 2;
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] >= CLIFF_TURN && ((c[0] < mid) == (seaward > 0)))
+        .collect()
+}
+
+/// Gate 1, at zone scale: the switchback is a route, it runs *in on one leg and
+/// out on the other*, and each ledge is the only way along its own leg.
 ///
-/// Binding: 36 ledge cells of 40 standable, cut and re-walked.
+/// The generic end-to-end gate cannot say this. A hairpin's entry and exit are
+/// both on the zone's `Z`-max face, so "connects Z-max to Z-min" is satisfied by
+/// walking the near leg to the head and stopping — which is exactly the shape
+/// the single-run Z1 already had. What has to be proved is that the far leg is
+/// reached, and that it is reached *through* the near one.
+///
+/// Binding: 36 near-ledge cells and 36 far-ledge cells, each cut and re-walked.
 #[test]
-fn the_ledge_is_the_only_route_through_the_zone() {
+fn the_switchback_runs_in_on_one_leg_and_out_on_the_other() {
     let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
     let cells = standable_cells(&out.model);
-    let lane = ledge_lane(&out);
-    let (entry, exit) = ends(&out.model);
-    assert!(connected(&cells, &entry, &exit));
-
-    let on_lane = cells.iter().filter(|c| c[0] == lane).count();
-    assert_eq!(on_lane, 36, "the ledge should run the length of the zone");
-
-    let cut: BTreeSet<[i32; 3]> = cells.iter().copied().filter(|c| c[0] != lane).collect();
-    assert!(
-        !connected(&cut, &entry, &exit),
-        "with the ledge deleted the zone still connects end to end — the crag left \
-         a bypass, so the niches are decoration beside a safe road"
+    let (near_lane, near_sea) = leg_lane(&out, "near-niche");
+    let (far_lane, far_sea) = leg_lane(&out, "far-niche");
+    assert_eq!(near_lane, NEAR_LEDGE, "the near ledge moved");
+    assert_eq!(far_lane, FAR_LEDGE, "the far ledge moved");
+    assert_eq!(
+        (near_sea, far_sea),
+        (-1, 1),
+        "both legs drop toward the same gulf, from opposite sides — that is the \
+         half-turn, and if both look the same way the far leg was not turned"
     );
+
+    let far_z = out.model.region().size[2] as i32 - 1;
+    let enter: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] == far_z && c[0] == near_lane)
+        .collect();
+    let leave: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] == far_z && c[0] == far_lane)
+        .collect();
+    assert_eq!((enter.len(), leave.len()), (1, 1), "one cell at each mouth");
+    assert!(
+        connected(&cells, &enter, &leave),
+        "the near leg does not reach the far one — the hairpin does not turn"
+    );
+
+    for (lane, what) in [(near_lane, "near"), (far_lane, "far")] {
+        let on_lane: Vec<[i32; 3]> = cells
+            .iter()
+            .copied()
+            .filter(|c| c[0] == lane && c[2] >= CLIFF_TURN)
+            .collect();
+        assert_eq!(
+            on_lane.len(),
+            (CLIFF_REGION.size[2] as i32 - CLIFF_TURN) as usize,
+            "the {what} ledge should run the whole length of its leg"
+        );
+        let cut: BTreeSet<[i32; 3]> = cells
+            .iter()
+            .copied()
+            .filter(|c| !on_lane.contains(c))
+            .collect();
+        assert!(
+            !connected(&cut, &enter, &leave),
+            "with the {what} ledge deleted the switchback still runs end to end — \
+             the crag left a bypass, so that leg's niches are decoration beside a \
+             safe road"
+        );
+    }
 }
 
 /// Gate 2, and the reason this zone exists rather than a bare `cliff_path`: the
-/// gulf. From every ledge cell, one step seaward is air, and under that air
-/// there is nothing to land on for at least `fall` blocks.
+/// gulf. From every ledge cell of **both** legs, one step seaward is air, and
+/// under that air there is nothing to land on for at least `fall` blocks.
 ///
-/// Binding: 36 ledge cells × 3 seeds = 108 columns measured.
+/// Binding: 2 legs × 36 ledge cells × 3 seeds = 216 columns measured.
 #[test]
-fn every_ledge_cell_has_the_gulf_beside_it() {
+fn every_ledge_cell_of_both_legs_has_the_gulf_beside_it() {
     let fall = cliff_road().params["fall"];
     assert!(fall >= MIN_DROP);
     let mut measured = 0usize;
     for seed in [CLIFF_SEED, 11, 23] {
         let out = expand_at(&cliff_road(), CLIFF_REGION, seed);
-        let lane = ledge_lane(&out);
-        assert!(lane >= MIN_GULF as i32, "the gulf is {lane} wide");
-        for cell in standable_cells(&out.model).iter().filter(|c| c[0] == lane) {
-            let depth = clear_drop(&out, [cell[0] - 1, cell[1], cell[2]]);
-            assert!(
-                depth >= fall,
-                "seed {seed}: from the ledge cell {cell:?} the drop is only {depth} \
-                 blocks — a shove off this road is survivable, which is not the \
-                 encounter the niche is for"
-            );
-            measured += 1;
+        for stem in ["near-niche", "far-niche"] {
+            let (lane, seaward) = leg_lane(&out, stem);
+            for cell in standable_cells(&out.model)
+                .iter()
+                .filter(|c| c[0] == lane && c[2] >= CLIFF_TURN)
+            {
+                let depth = clear_drop(&out, [cell[0] + seaward, cell[1], cell[2]]);
+                assert!(
+                    depth >= fall,
+                    "seed {seed}, {stem}: from the ledge cell {cell:?} the drop is \
+                     only {depth} blocks — a shove off this road is survivable, \
+                     which is not the encounter the niche is for"
+                );
+                measured += 1;
+            }
         }
     }
-    assert_eq!(measured, 108, "the gate examined {measured} columns");
+    assert_eq!(measured, 216, "the gate examined {measured} columns");
+    assert!(
+        (MIN_GULF as i32) >= 3,
+        "the gulf has to hold a screen column with air either side of it, or the \
+         sightline gate's teeth would take a drop away as a side effect"
+    );
 }
 
 /// ...and the gate has teeth. `ledge_shelf` lays a shelf across the gulf one
-/// course under the road — the one mistake that turns a cliff into a step — and
-/// the same measurement must go red while the road stays exactly as walkable.
+/// course under the roads — the one mistake that turns a cliff into a step — and
+/// the same measurement must go red for both legs while they stay exactly as
+/// walkable.
 #[test]
-fn a_shelf_under_the_ledge_reds_the_drop_gate() {
+fn a_shelf_under_the_ledges_reds_the_drop_gate() {
     let mut caught = cliff_road();
     caught.set_param("ledge_shelf", 1).unwrap();
     let out = expand_at(&caught, CLIFF_REGION, CLIFF_SEED);
     let fall = caught.params["fall"];
-    let lane = ledge_lane(&out);
     let cells = standable_cells(&out.model);
 
-    let shallow: Vec<[i32; 3]> = cells
-        .iter()
-        .copied()
-        .filter(|c| c[0] == lane && clear_drop(&out, [c[0] - 1, c[1], c[2]]) < fall)
-        .collect();
+    let mut shallow = 0usize;
+    for stem in ["near-niche", "far-niche"] {
+        let (lane, seaward) = leg_lane(&out, stem);
+        shallow += cells
+            .iter()
+            .filter(|c| {
+                c[0] == lane
+                    && c[2] >= CLIFF_TURN
+                    && clear_drop(&out, [c[0] + seaward, c[1], c[2]]) < fall
+            })
+            .count();
+    }
     assert_eq!(
-        shallow.len(),
-        36,
-        "a shelf was laid under the whole road and the drop gate still called it a \
-         cliff — the gate proves nothing"
+        shallow, 72,
+        "a shelf was laid under both roads and the drop gate still called them \
+         cliffs — the gate proves nothing"
     );
 
-    // The control: what went red is the drop and nothing else. The road is the
-    // same road — same ledge cells, still walkable end to end.
+    // The control: what went red is the drop and nothing else. A shelf across a
+    // gulf is walkable, so the model gains cells *in the gulf* — that is the
+    // shelf, not a moved road. What must not have changed is either ledge, and
+    // the switchback must still turn.
     let plain = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
-    assert_eq!(
-        cells.iter().filter(|c| c[0] == lane).count(),
-        standable_cells(&plain.model)
-            .iter()
-            .filter(|c| c[0] == lane)
-            .count()
-    );
+    let plain_cells = standable_cells(&plain.model);
+    for stem in ["near-niche", "far-niche"] {
+        let (lane, _) = leg_lane(&out, stem);
+        let count = |set: &BTreeSet<[i32; 3]>| set.iter().filter(|c| c[0] == lane).count();
+        assert_eq!(count(&cells), count(&plain_cells), "the {stem} ledge moved");
+    }
     let (entry, exit) = ends(&out.model);
     assert!(connected(&cells, &entry, &exit));
 }
 
-/// Gate 3: every recess opens onto *that* lane. A niche whose mouth is a cell
+/// Gate 3: every recess opens onto *its own* lane. A niche whose mouth is a cell
 /// back from the edge is an ambush next to a road, not on a ledge — the shove it
 /// exists for has to have somewhere to send the player.
 ///
-/// Binding: 4 niches (and their 4 watch cells).
+/// Binding: every niche of both legs, and their watch cells, at the pinned seed.
 #[test]
-fn every_niche_opens_onto_the_ledge_over_the_gulf() {
+fn every_niche_opens_onto_its_ledge_over_the_gulf() {
     let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
     let model = &out.model;
-    let lane = ledge_lane(&out);
-    let niches = indexed(&out.anchors, "niche");
-    let watches = indexed(&out.anchors, "niche-watch");
-    assert_eq!(niches.len(), 4);
+    let mut checked = 0usize;
+    for stem in ["near-niche", "far-niche"] {
+        let (lane, seaward) = leg_lane(&out, stem);
+        let niches = indexed(&out.anchors, stem);
+        let watches = indexed(&out.anchors, &format!("{stem}-watch"));
+        assert!(!niches.is_empty(), "{stem}");
+        assert_eq!(
+            watches.len(),
+            niches.len(),
+            "every {stem} recess owes a watch cell"
+        );
+        for niche in &niches {
+            let mouth = [lane, niche[1], niche[2]];
+            assert!(standable(model, mouth), "the recess mouth {mouth:?}");
+            assert!(
+                solid(model, [niche[0] - seaward, niche[1], niche[2]]),
+                "the recess at {niche:?} is deeper than one cell"
+            );
+            assert!(
+                passable(model, [lane + seaward, niche[1], niche[2]]),
+                "the cell the mouth {mouth:?} looks out over is not open air"
+            );
+            checked += 1;
+        }
+        for watch in &watches {
+            assert_eq!(watch[0], lane, "a {stem} watch cell stands on the ledge");
+            assert!(standable(model, *watch));
+        }
+    }
+    assert_eq!(checked, 9, "the gate examined {checked} recesses");
+}
+
+/// The two legs really do travel in opposite directions, measured off the
+/// anchors the vocabulary already declares rather than off the geometry twice.
+///
+/// A watch cell is `watch_back` cells **up-path** of the recess it belongs to,
+/// so its `Z` relative to its niche is the sign of travel. The near leg runs
+/// `Z`-max → `Z`-min and its watch cells sit at higher `Z`; the far leg is the
+/// same rule turned round, so its watch cells sit at lower `Z`. If the far leg
+/// had merely been copied rather than turned, both would agree — which is the
+/// drift this gate exists to catch, and it is a cheaper statement of it than any
+/// block comparison.
+#[test]
+fn the_two_legs_of_the_switchback_travel_opposite_ways() {
+    let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let mut compared = 0usize;
+    for (stem, want) in [("near-niche", 1i32), ("far-niche", -1)] {
+        let niches = indexed(&out.anchors, stem);
+        let watches = indexed(&out.anchors, &format!("{stem}-watch"));
+        for (niche, watch) in niches.iter().zip(&watches) {
+            assert_eq!(
+                (watch[2] - niche[2]).signum(),
+                want,
+                "{stem}: the watch cell {watch:?} is on the wrong side of its \
+                 recess {niche:?} — this leg is travelling the other way"
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 9, "the gate compared {compared} pairs");
+}
+
+/// Gate 4 — **the one the design rests on**. §4 K makes a first-time player's
+/// survival depend on a niche being "VISIBLE as a shadowed recess from the
+/// previous switchback"; a one-deep recess off a one-wide ledge is invisible
+/// from anywhere along its own path (that is what makes it an ambush), so the
+/// only place it can be read from is the other leg, across the gulf.
+///
+/// So: every recess on the **far** leg — the later one — is visible from
+/// somewhere a player stands on the near leg, and the count of (viewer, niche)
+/// pairs is reported rather than merely bounded, because a gate that has quietly
+/// stopped binding is the failure mode this whole file is built against.
+#[test]
+fn every_far_niche_is_visible_from_the_near_leg() {
+    let out = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let (_, near_sea) = leg_lane(&out, "near-niche");
+    let viewers = leg_cells(&out, near_sea);
+    assert!(!viewers.is_empty(), "the near leg has nowhere to stand");
+
+    let niches = indexed(&out.anchors, "far-niche");
+    assert!(!niches.is_empty(), "the far leg declares no recesses");
+    let mut pairs = 0usize;
+    for niche in &niches {
+        let seen = viewers
+            .iter()
+            .filter(|&&v| sees(&out.model, v, *niche).is_ok())
+            .count();
+        assert!(
+            seen > 0,
+            "the far recess at {niche:?} cannot be seen from any of the {} cells \
+             a player stands on along the near leg — a first-time player who \
+             looks still dies to the sea, which is the one thing §4 K forbids",
+            viewers.len()
+        );
+        pairs += seen;
+    }
     assert_eq!(
-        watches.len(),
-        niches.len(),
-        "every recess owes a watch cell"
+        (niches.len(), pairs),
+        (4, 37),
+        "the sightline gate bound {} recesses over {pairs} (viewer, niche) pairs",
+        niches.len()
+    );
+}
+
+/// ...and that gate has teeth too. `gulf_screen` stands one column down the
+/// middle of the gulf, through the niche band: it touches neither ledge, so both
+/// roads walk exactly as before and both drops stay lethal, and every crossing
+/// sightline dies. A green that survived this would be measuring the model's
+/// air rather than the player's view.
+#[test]
+fn a_screen_in_the_gulf_reds_the_sightline_gate() {
+    let mut blinded = cliff_road();
+    blinded.set_param("gulf_screen", 1).unwrap();
+    let out = expand_at(&blinded, CLIFF_REGION, CLIFF_SEED);
+    let (_, near_sea) = leg_lane(&out, "near-niche");
+    let viewers = leg_cells(&out, near_sea);
+    let niches = indexed(&out.anchors, "far-niche");
+    assert_eq!(niches.len(), 4, "the screen changed the niche draw");
+
+    let pairs: usize = niches
+        .iter()
+        .map(|n| {
+            viewers
+                .iter()
+                .filter(|&&v| sees(&out.model, v, *n).is_ok())
+                .count()
+        })
+        .sum();
+    assert_eq!(
+        pairs, 0,
+        "a wall was stood between the legs and {pairs} sightlines survived it — \
+         the gate is reading air, not sight"
     );
 
-    for niche in &niches {
-        let mouth = [lane, niche[1], niche[2]];
-        assert!(standable(model, mouth), "the recess mouth {mouth:?}");
+    // The controls: the roads are untouched, and the drop is still a drop.
+    let plain = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    assert_eq!(
+        standable_cells(&out.model),
+        standable_cells(&plain.model),
+        "the screen moved a cell a player stands on"
+    );
+    let fall = blinded.params["fall"];
+    for stem in ["near-niche", "far-niche"] {
+        let (lane, seaward) = leg_lane(&out, stem);
+        for cell in standable_cells(&out.model)
+            .iter()
+            .filter(|c| c[0] == lane && c[2] >= CLIFF_TURN)
+        {
+            assert!(clear_drop(&out, [cell[0] + seaward, cell[1], cell[2]]) >= fall);
+        }
+    }
+}
+
+/// The ladder §4 K asks for — teach (a corpse in the recess), test (an empty
+/// one) and twist (a pair, one of them the one that gets you) — is
+/// `cliff_path`'s own seeded draw and not an authoring decision (that is the
+/// rule's documented choice, and this zone does not relitigate it). So the zone
+/// asserts what a zone can: that all three treatments **do** reach the
+/// switchback, and that they reach *both* legs — a leg that had somehow been
+/// composed with a dead draw would still look right at one pinned seed.
+///
+/// The claim is made over a seed sweep rather than at the pinned fixture
+/// deliberately. Twist is 1 weight in 6; at the pinned seed the nine recesses
+/// happen to draw none, and pinning a seed that did would be choosing a fixture
+/// for its colour instead of measuring the thing.
+///
+/// Binding: 12 seeds × 2 legs, and the treatment of every recess in each.
+#[test]
+fn the_teach_test_twist_draw_reaches_both_legs() {
+    /// (teach, twist-pairs, total) for one leg of one expansion.
+    fn treatments(out: &Expansion, stem: &str) -> (usize, usize, usize) {
+        let niches = indexed(&out.anchors, stem);
+        let mut taught = 0;
+        let mut paired = 0;
+        for (i, niche) in niches.iter().enumerate() {
+            // Teach: the corpse prop sits on the recess's own floor cell.
+            if matches!(out.model.get(*niche), Some(b) if b.name.ends_with("_skull")) {
+                taught += 1;
+            }
+            // Twist: two recesses on adjacent cells of one slot.
+            if i + 1 < niches.len() && (niches[i + 1][2] - niche[2]).abs() == 1 {
+                paired += 1;
+            }
+        }
+        (taught, paired, niches.len())
+    }
+
+    let pinned = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
+    let (near, far) = (
+        treatments(&pinned, "near-niche"),
+        treatments(&pinned, "far-niche"),
+    );
+    assert_eq!(
+        (near.2, far.2),
+        (5, 4),
+        "the pinned switchback draws {} recesses on the way in and {} on the way \
+         out",
+        near.2,
+        far.2
+    );
+
+    let mut seen: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+    let mut counts: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for seed in 0..12u64 {
+        let out = expand_at(&cliff_road(), CLIFF_REGION, seed);
+        for (leg, stem) in [(0usize, "near-niche"), (1, "far-niche")] {
+            let (taught, paired, total) = treatments(&out, stem);
+            assert!(total > 0, "seed {seed}: the {stem} leg drew nothing");
+            seen.entry("teach").or_default()[leg] += taught;
+            seen.entry("twist").or_default()[leg] += paired;
+            seen.entry("test").or_default()[leg] += total - taught - 2 * paired;
+        }
+        counts.insert((
+            indexed(&out.anchors, "near-niche").len(),
+            indexed(&out.anchors, "far-niche").len(),
+        ));
+    }
+    for (name, [on_near, on_far]) in &seen {
         assert!(
-            solid(model, [niche[0] + 1, niche[1], niche[2]]),
-            "the recess at {niche:?} is deeper than one cell"
-        );
-        assert!(
-            passable(model, [lane - 1, niche[1], niche[2]]),
-            "the cell the mouth {mouth:?} looks out over is not open air"
+            *on_near > 0 && *on_far > 0,
+            "over twelve seeds the {name} treatment appeared {on_near} times on \
+             the way in and {on_far} on the way out — a treatment that never \
+             reaches a leg is a ladder with a rung missing: {seen:?}"
         );
     }
-    for watch in &watches {
-        assert_eq!(watch[0], lane, "a watch cell stands on the ledge");
-        assert!(standable(model, *watch));
-    }
+    assert!(
+        counts.len() > 1,
+        "twelve seeds gave one recess count — the draw is not reaching the zone"
+    );
 }
 
 /// How far a body shoved into `start` falls before something stops it.
@@ -2730,25 +3037,32 @@ fn the_towers_plinth_arithmetic_is_guarded_not_hoped() {
 /// no piece was turned: a rotated piece declares its anchors facing `west`, and
 /// its wall across the route.
 ///
-/// **Two zones now turn a piece on purpose**, and the distinction is the whole
+/// **Three zones now turn a piece on purpose**, and the distinction is the whole
 /// value of this gate, so it is stated per zone rather than allowed for by name.
-/// A `west` facing is correct for exactly three kinds of anchor:
+/// A facing other than `north` is correct for exactly three kinds of anchor:
 ///
-/// * one the vocabulary aims across the route through a `reorient` — the cliff
-///   recess, the ambush alcove, the storeroom tell, the broken grate, and the
-///   tee's own branch doorway;
-/// * one declared by a piece the *zone* laid across the mainline, which is what
-///   a branch is: `far_side_bar`'s `gate`/`unlock` in Z4 and Z6.
+/// * `west`, for one the vocabulary aims across the route through a `reorient` —
+///   the cliff recess, the ambush alcove, the storeroom tell, the broken grate,
+///   and the tee's own branch doorway;
+/// * `west`, for one declared by a piece the *zone* laid across the mainline,
+///   which is what a branch is: `far_side_bar`'s `gate`/`unlock` in Z4 and Z6;
+/// * `east` and `south`, for a piece the zone **turned round**. Z1's far leg is
+///   the near leg under a half-turn about the vertical, so its recesses look
+///   the other way across the gulf (`east`) and its watch cells look back up
+///   its own travel (`south`). Both are the derived facing doing exactly what
+///   the sign asks — and both would be `west`/`north` if the leg had been
+///   copied instead of turned, which is the drift this line catches.
 ///
 /// Everything else faces `north`, down travel. A piece that turned by accident
 /// still reds this gate, because its zone's set does not name it.
 ///
-/// Binding: 84 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 16 (Z2), 6
-/// (Z3), 6 (Z4), 14 (Z5), 9 (Z6), 24 (Z7: 9 treads, 5 perches and the rest). Of
-/// those, exactly 26 face across, and that count is pinned too: 4 cliff
-/// recesses, the two ambush alcoves, the storeroom tell, the broken grate, the
-/// boulder stair's two safe pockets, the 9 branch anchors of Z2, Z3, Z4 and Z6,
-/// and Z7's 4.
+/// Binding: 94 anchors — 1 (Z0), 18 (Z1: 5 near niches and their watch cells,
+/// 4 far niches and theirs), 16 (Z2), 6 (Z3), 6 (Z4), 14 (Z5), 9 (Z6), 24 (Z7:
+/// 9 treads, 5 perches and the rest). Of those, exactly 27 face across and 8
+/// face back, and both counts are pinned: 5 near-leg recesses, the two ambush
+/// alcoves, the storeroom tell, the broken grate, the boulder stair's two safe
+/// pockets, the 9 branch anchors of Z2, Z3, Z4 and Z6, and Z7's 4 — plus Z1's
+/// far leg entire.
 #[test]
 fn the_pieces_stand_in_travel_order() {
     // Z2 is now the long one: six pieces on the mainline, and the order is the
@@ -2933,6 +3247,7 @@ fn the_pieces_stand_in_travel_order() {
     ];
     let mut checked = 0;
     let mut across_seen = 0;
+    let mut back_seen = 0;
     for (out, turned) in [
         (&shore, &[][..]),
         (&road, &[][..]),
@@ -2944,13 +3259,23 @@ fn the_pieces_stand_in_travel_order() {
         (&tower, lift),
     ] {
         for (name, anchor) in &out.anchors {
+            // Z1's far leg: the whole piece is turned round, so both of its
+            // stems earn a facing back up the zone rather than down it.
+            let watch = name.starts_with("anchor/far-niche-watch-");
+            let back = watch || name.starts_with("anchor/far-niche-");
             let across = name == "anchor/alcove"
                 || name == "anchor/tell"
                 || name == "anchor/grate-secret"
                 || name.starts_with("anchor/pocket-")
-                || (name.starts_with("anchor/niche-") && !name.starts_with("anchor/niche-watch-"))
+                || (name.starts_with("anchor/near-niche-")
+                    && !name.starts_with("anchor/near-niche-watch-"))
                 || turned.contains(&name.as_str());
-            let want = if across { "west" } else { "north" };
+            let want = match (back, watch, across) {
+                (true, true, _) => "south",
+                (true, false, _) => "east",
+                (_, _, true) => "west",
+                _ => "north",
+            };
             assert_eq!(
                 anchor.facing.as_str(),
                 want,
@@ -2958,10 +3283,12 @@ fn the_pieces_stand_in_travel_order() {
             );
             checked += 1;
             across_seen += usize::from(across);
+            back_seen += usize::from(back);
         }
     }
-    assert_eq!(checked, 84, "the gate checked {checked} anchors");
-    assert_eq!(across_seen, 26, "the gate allowed {across_seen} across");
+    assert_eq!(checked, 94, "the gate checked {checked} anchors");
+    assert_eq!(across_seen, 27, "the gate allowed {across_seen} across");
+    assert_eq!(back_seen, 8, "the gate allowed {back_seen} turned round");
 }
 
 /// The frame constraint, enforced as a refusal: a piece run shorter than the

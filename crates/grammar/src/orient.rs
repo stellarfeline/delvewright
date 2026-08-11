@@ -14,6 +14,21 @@
 //! first keep an axis where you can, then complete the cycle you started (asking
 //! for "my new Z is the old X" means the old Z becomes the new X, i.e. a swap),
 //! and only then fall back to the lowest free axis.
+//!
+//! # Signs ride along, they do not participate
+//!
+//! Which parent axis a slot claims is decided entirely by the [`AxisSpec`]
+//! passes above; the request's `reverse` flags never enter that decision. Once
+//! a slot has its axis, the child's sign for that slot is the parent's sign for
+//! the axis it took, **exclusive-or** the reversal the request asked for.
+//!
+//! That is what makes a reversal *relative to the parent* rather than to the
+//! world, and it is the property a composed piece needs: a rule reasons in the
+//! frame it was handed, so a piece already turned round and then turned round
+//! again is the way it started, whichever world axis it happens to be lying on
+//! by then. `Smallest`/`Largest` measure world extents, which signs cannot
+//! change, so this is not merely convenient — nothing in the axis choice
+//! *could* depend on a sign.
 
 use crate::geom::{Axis, Orientation};
 use crate::ir::{AxisSpec, Reorient};
@@ -133,11 +148,12 @@ pub fn reorient(
         claim(slot, old, &mut from_old, &mut taken)?;
     }
 
-    let axes = [0, 1, 2].map(|slot| {
-        let old = from_old[slot].expect("every slot is assigned");
-        current.get(Axis::from_index(old))
-    });
-    let result = Orientation::from_axes(axes);
+    let taken_by = [0, 1, 2].map(|slot| from_old[slot].expect("every slot is assigned"));
+    let axes = taken_by.map(|old| current.get(Axis::from_index(old)));
+    // The child's sign for a slot is the parent's sign for the axis that slot
+    // claimed, flipped when the request asked. See the module note.
+    let reversed = [0, 1, 2].map(|slot| current.reversed[taken_by[slot]] ^ request.reverse[slot]);
+    let result = Orientation::from_signed_axes(axes, reversed);
     debug_assert!(result.is_permutation(), "reorientation must permute");
     Ok(result)
 }
@@ -191,7 +207,8 @@ mod tests {
             Orientation {
                 x: Axis::Z,
                 y: Axis::Y,
-                z: Axis::X
+                z: Axis::X,
+                reversed: [false; 3],
             }
         );
     }
@@ -212,7 +229,8 @@ mod tests {
             Orientation {
                 x: Axis::Z,
                 y: Axis::Y,
-                z: Axis::X
+                z: Axis::X,
+                reversed: [false; 3],
             }
         );
         // ...and leaves the box alone when world X is already the longest.
@@ -232,6 +250,7 @@ mod tests {
             x: Axis::Z,
             y: Axis::Y,
             z: Axis::X,
+            reversed: [false; 3],
         };
         let got = reorient(
             rotated,
@@ -264,6 +283,7 @@ mod tests {
             x: Axis::Y,
             y: Axis::Z,
             z: Axis::X,
+            reversed: [false; 3],
         };
         let got = reorient(rotated, CUBE, &Reorient::KEEP.y(AxisSpec::WorldY), None).unwrap();
         assert_eq!(got.y, Axis::Y);
@@ -284,12 +304,92 @@ mod tests {
         for x in specs {
             for y in specs {
                 for z in specs {
-                    let req = Reorient { x, y, z };
+                    let req = Reorient {
+                        x,
+                        y,
+                        z,
+                        reverse: [false; 3],
+                    };
                     if let Ok(o) = reorient(Orientation::IDENTITY, [3, 7, 11], &req, None) {
                         assert!(o.is_permutation(), "{req:?} produced {o:?}");
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn a_reversal_follows_the_axis_its_slot_claimed() {
+        // The subtle half: a slot's sign is the parent's sign for the axis that
+        // *slot* took, not for the axis of the same name. Under a swap of X and
+        // Z, a parent reversal on X must come out on the child's Z.
+        let parent = Orientation {
+            reversed: [true, false, false],
+            ..Orientation::IDENTITY
+        };
+        let got = reorient(
+            parent,
+            CUBE,
+            &Reorient::KEEP.z(AxisSpec::LocalX),
+            Some(Axis::Z),
+        )
+        .unwrap();
+        assert_eq!(got.axes(), [Axis::Z, Axis::Y, Axis::X]);
+        assert_eq!(
+            got.reversed,
+            [false, false, true],
+            "the parent's reversed X was claimed by the child's Z and the sign \
+             stayed with the axis, not with the name"
+        );
+    }
+
+    #[test]
+    fn a_reversal_is_relative_to_the_parent_and_composes() {
+        // Turning a turned piece is not turning at all.
+        let once = reorient(Orientation::IDENTITY, CUBE, &Reorient::KEEP.turned(), None).unwrap();
+        assert_eq!(once.reversed, [true, false, true]);
+        assert!(once.is_rotation());
+        let twice = reorient(once, CUBE, &Reorient::KEEP.turned(), None).unwrap();
+        assert_eq!(twice, Orientation::IDENTITY);
+    }
+
+    #[test]
+    fn a_reversal_never_changes_which_axis_is_chosen() {
+        // `Smallest`/`Largest` measure world extents, which a sign cannot move,
+        // so a request's reversals must leave the axis assignment untouched. A
+        // choice that consulted the sign would make `turned()` mean different
+        // things on different boxes.
+        let size = [4, 9, 30];
+        for parent in [
+            Orientation::IDENTITY,
+            Orientation {
+                reversed: [true, true, true],
+                ..Orientation::IDENTITY
+            },
+        ] {
+            let plain = reorient(
+                parent,
+                size,
+                &Reorient::KEEP.y(AxisSpec::WorldY).z(AxisSpec::Largest),
+                None,
+            )
+            .unwrap();
+            let turned = reorient(
+                parent,
+                size,
+                &Reorient::KEEP
+                    .y(AxisSpec::WorldY)
+                    .z(AxisSpec::Largest)
+                    .turned(),
+                None,
+            )
+            .unwrap();
+            assert_eq!(plain.axes(), turned.axes());
+            assert_eq!(
+                turned.reversed,
+                [!plain.reversed[0], plain.reversed[1], !plain.reversed[2]],
+                "the half-turn flipped something other than X and Z"
+            );
         }
     }
 

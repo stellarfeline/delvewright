@@ -15,9 +15,18 @@ A **grammar program** is data: named rules over integer voxel boxes. Expanding
 one against a box and a `u64` seed derives a **voxel model** — a dense grid of
 full block states.
 
-Every scope in a derivation is a box plus an **orientation**: a permutation
-mapping the rule's local `X`/`Y`/`Z` onto world axes. That is what lets one rule
-be reused turned 90°, and what `reorient` manipulates.
+Every scope in a derivation is a box plus an **orientation**: a *signed*
+permutation mapping the rule's local `X`/`Y`/`Z` onto world axes — which world
+axis each local one names, and whether it counts up it or down it. That is what
+lets one rule be reused turned 90° **and turned round**, and what `reorient`
+manipulates.
+
+Signs default to positive and only a request sets one, so every program written
+before they existed expands to the same bytes. A reversed local axis puts the
+rule's local minimum at the box's world maximum: split pieces are laid from that
+end, a local offset is measured from it, and a derived facing points the other
+way. Reversing two axes is a **rotation** (`Orientation::is_rotation`), one is a
+reflection; both are expressible, and a hairpin wants the first.
 
 ```text
 Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelModel
@@ -50,6 +59,16 @@ children.
 completed to a permutation: keep an axis where possible, otherwise complete the
 cycle the request started (asking for "my Z is the old X" swaps X and Z),
 otherwise take the lowest free axis.
+
+A request also carries `reverse` — a `[bool; 3]` indexed by the child's local
+axis, omitted from JSON when empty — saying which of the child's axes run
+**backwards** along the parent axis they name. It is independent of the axis
+choice (a piece can be turned 90° without being turned round, and the other way
+about) and never enters it; once a slot has its axis, the child's sign is the
+parent's sign for that axis **xor** the request's. Reversal is therefore relative
+to the parent, so a piece turned round twice is the way it started.
+`Reorient::turned()` is the half-turn about the vertical — `X` and `Z` both
+reversed — which is what a route doubling back always wants.
 
 **Guards** (`when`): `always` (default), `otherwise`, `cmp` over integer
 expressions of literals / params / scope dimensions with `+ - * / % max min`,
@@ -86,7 +105,7 @@ the declaration is all that is wanted.
 |---|---|
 | `anchor` | kebab-case stem. The exported key is `anchor/<stem>`, i.e. the DSL's `anchor/<kebab>` id — a mark cannot name an anchor the DSL could not reference. |
 | `at` | which cell (flattened into the mark object, see below) |
-| `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived**: a grammar orientation is a permutation without reflection, so the derived facing is the negative direction of the world axis the scope calls local `Z` — `north` when that is world `Z`, `west` when it is world `X`. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
+| `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived**: the negative local `Z` direction read out into the world — `north`/`west` when local `Z` runs forward along world `Z`/`X`, and `south`/`east` when it runs backwards (a reversed axis, §2). A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
 | `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
 
 `at` is one of:
@@ -728,16 +747,18 @@ either runs out. This is `store_room`'s own state-machine trick ("a rule has no
 memory, so the invariant is in the derivation's shape") aimed at `Y`. **No IR
 change was made or needed.**
 
-**A switchback is a rule body, not an orientation** — a second correction, and
-the one with more left in it. The recorded reason a switchback cannot be built
-is that a grammar orientation is a permutation without reflection. True, and
-beside the point for a stair: an orientation cannot mirror a piece, but a rule
-body can be *written* mirrored. This rule peels its treads off local `Z`-max
-(`[rel, abs]`, recursion first); the same rule written `[abs, rel]` climbs the
-other way. Two such lanes side by side in `X`, joined at the top of the first,
-is a dogleg — which is what a tall tower over a small footprint needs, since a
-straight flight climbs at most about `Z / tread`. Not built; recorded because a
-*false* blocker costs more than a missing feature.
+**A switchback is a rule body, not an orientation** — a second correction, now
+itself superseded and kept because the sequence is the lesson. The recorded
+blocker was "a grammar orientation is a permutation without reflection"; this
+entry answered that a rule body can be *written* mirrored (peel the treads off
+`Z`-min instead of `Z`-max and the flight climbs the other way), which is true.
+Both were aiming at the wrong primitive. A doubling-back leg is a **half-turn**,
+not a mirror: two axes, not one, and a rotation rather than a reflection. Since
+orientations carry signs (§2) it is `reorient`'s `turned()`, the piece is the
+same rule with no second body, and `tests/staging.rs` asserts exactly that for
+`cliff_path` cell by cell. A tall tower over a small footprint still wants the
+dogleg (a straight flight climbs at most about `Z / tread`) and can now have one
+without a mirrored copy of this rule.
 
 Gates (`tests/staging.rs`), each with its binding count:
 
@@ -1072,7 +1093,7 @@ builds them; nothing here claims a zone was built.
 | Zone | Program | Composed from | Missing |
 |---|---|---|---|
 | Z0 Barrow Shore | `barrow_shore` | `elite_ground` | — (**E** is the whole of Z0) |
-| Z1 Cliff Road | `cliff_road` | `cliff_path` + the zone's gulf | switchback landing — see below |
+| Z1 Cliff Road | `cliff_road` | two `cliff_path`s (the far one `turned`) + the zone's gulf and hairpin head | — |
 | Z2 Gatehouse | `gate_ward` | `watch_bay`, `ambush_door`, `disarm_stand`, `boulder_stair`, `tee_passage`, `far_side_bar`, `threshold_motif`, `drop_shaft` + the zone's plinth and branch strip | — |
 | Z3 Drowned Lower Ward | `drowned_ward` | `causeway`, `tee_passage`, `elite_ground`, `far_side_bar` + the zone's branch strip | — |
 | Z4 Chapel Ward (hub) | `chapel_ward` | `dumbwaiter`, `hearth_ward`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
@@ -1105,11 +1126,12 @@ way any two chain pieces do.
 **Z7 is built, and the switchback it was expected to need was not needed.** The
 round that wrote `bell_tower` had one open shape recorded for it: a straight
 flight climbs at most about `Z / tread`, so a tall tower over a small footprint
-wants a switchback — a rule body rather than an orientation (§5b). A box-garden
-tower is not that tower. It is a box like every other zone's, so the flight gets
-a long enough run and the zone writes the **plinth** its four upper pieces stand
-on, which is the same licensed mass `cliff_road`'s crag is. The switchback stays
-unbuilt and stays recorded.
+wants a switchback (§5b). A box-garden tower is not that tower. It is a box like
+every other zone's, so the flight gets a long enough run and the zone writes the
+**plinth** its four upper pieces stand on, which is the same licensed mass
+`cliff_road`'s crag is. The dogleg stays unbuilt and stays recorded — but it is
+no longer *blocked*: `reorient`'s `turned()` (§2) makes the return flight the
+same rule, and Z1 is the worked example of exactly that shape.
 
 **The seam between a climbing piece and a flat one, and the one thing that can
 go silently wrong there.** Every §5b rule lays its own floor at the bottom of
@@ -1199,16 +1221,38 @@ scoped to what the player can reach, the way `boulder_stair`'s mirror is already
 scoped to the lane's own floor course, or it will be green for the wrong
 reason.
 
-**Z1 is one run, not a switchback**, and that is a finding: a switchback
-alternates which side the drop is on, and a grammar orientation is a permutation
-*without reflection*, so no `reorient` can mirror a cliff run. It needs a
-mirroring orientation or a `cliff_turn` landing rule; inventing the landing
-inline is the geometry a zone program does not write. **A third option was
-overlooked and is now open rather than answered**: what an orientation cannot do
-a *rule body* can, and `stair_flight` (§5b) records the construction — a rule
-that peels its pieces off the other end of its own split is the mirror image of
-itself. Whether that reaches `cliff_path`, whose recesses and lane are placed by
-`reorient` rather than by split order, has not been checked.
+**Z1 is a switchback — CLOSED**, and the way it closed corrects two rounds of
+diagnosis. The recorded blocker was "a grammar orientation is a permutation
+without reflection", and the open question was whether a mirrored *rule body*
+reached `cliff_path`, "whose recesses and lane are placed by `reorient` rather
+than by split order".
+
+Measured first, and both halves of the record were wrong.
+`tests/staging.rs::the_recess_reorientation_aims_an_anchor_and_writes_nothing`
+strips the only `reorient` inside `cliff_path` and the model is byte-identical:
+the ledge, recess and backing are three pieces of an `X` split, and that
+`reorient` writes no block — it aims `anchor/niche-<i>`, and stripping it leaves
+the recess where it was facing `north` instead of `west`. So a mirrored body
+*would* have reached the rule. What it could not reach is what a hairpin needs:
+its second leg is not a mirror in one axis but a **half-turn** in two, a
+rotation, and writing that as a body means a second copy of the rule.
+
+Orientations carry signs instead (§2). Z1's far leg is the near leg under
+`Reorient::turned()` — same rule, same parameters, no mirrored body, and
+`cliff_path` unchanged by a line;
+`tests/staging.rs::the_cliff_path_turned_round_is_the_same_path_mirrored`
+asserts the turned expansion is the plain one mirrored over all 540 cells and
+every anchor. No `cliff_turn` landing rule was needed either: the hairpin's head
+is `turn_run` cells of solid crag to road level, which is mass and absence and
+therefore a zone's own business.
+
+The fairness this was blocking is now gated. §4 K makes survival depend on a
+niche being visible "from the previous switchback", so the two legs sit either
+side of one gulf and look into each other's recesses;
+`tests/zones.rs::every_far_niche_is_visible_from_the_near_leg` binds 4 recesses
+over 37 (viewer, niche) pairs at the pinned seed, with `gulf_screen` as its
+teeth — a column down the middle of the gulf that leaves both roads walkable and
+both drops lethal and takes every crossing sightline to zero.
 
 ### The three seam limits — all three closed
 
@@ -1227,8 +1271,10 @@ Each is asserted rather than asserted-about: every one has a test in
    a landing" move that keeps `rafter_hall`'s perches off the nave. So the piece
    was a *terminus*: its `Z`-min face carried no standable cell at berm height,
    its cantilever slice no floor at all, and no walk (fall edges included)
-   crossed it. No orientation helped, because a grammar orientation is a
-   permutation without reflection.
+   crossed it. No orientation helped, because at the time a grammar orientation
+   carried no sign and so could not turn the post to the entry end. It can now
+   (§2), and `berm_gate` is kept anyway: the two are different pieces, and a
+   post the route passes *under* is not a post turned round.
 
    `berm_gate` (§5b) is the exit lane, and **terminus is still the default** —
    a guard post that can simply be walked under is a weaker piece and nobody
@@ -1280,7 +1326,7 @@ Each is asserted rather than asserted-about: every one has a test in
 | Program | Fixture region | Controls | Anchors |
 |---|---|---|---|
 | `barrow_shore` | 19 × 6 × 24 | `arena/*` only; role `arena/stone` | `elite` |
-| `cliff_road` | 12 × 12 × 36 | `sea` (3), `fall` (8), `ledge_shelf` (0 — a test knob), plus `path/*`; role `crag` | the cliff path's `niche-<i>` / `niche-watch-<i>` |
+| `cliff_road` | 11 × 13 × 40 | `sea` (3), `fall` (8), `turn_run` (4), `ledge_shelf` (0) and `gulf_screen` (0) — both test knobs — plus `near/*` and `far/*`; role `crag` | `near-niche-<i>` / `near-niche-watch-<i>` on the way in, `far-niche-<i>` / `far-niche-watch-<i>` on the way out |
 | `gate_ward` | 20 × 10 × 84 | `shaft_run` (12), `motif_run` (10), `tee_run` (10), `stair_run` (16), `stand_run` (10), `door_run` (10) — the gated passage takes the rest — `strip_depth` (11), plus `gate/*`, `door/*`, `stand/*`, `stair/*`, `tee/*`, `sally/*`, `motif/*`, `shaft/*`; role `margin`. The upper ward stands on a plinth `shaft/drop` thick | `watch`, `gate`, `threshold`, `alcove`, `release`, `run-head`, `stair-run`, `volley-slot`, `pocket-<i>`, `branch-door`, `sally-gate`, `unlock`, `threshold-narrate`, `spill`, `landing` |
 | `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor within the one-block step `connected` allows, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
 | `chapel_ward` | 16 × 9 × 26 | `strip_depth` (9), `junction_run` (8), `hearth_run` (8) — the chute takes the rest — plus `chute/*`, `hearth/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `hearth`, `branch-door`, `gate`, `unlock` |

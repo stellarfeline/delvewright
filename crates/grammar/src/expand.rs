@@ -558,18 +558,27 @@ impl<'a> Expander<'a> {
         let cell = self.mark_cell(symbol, mark, state)?;
         let facing = match mark.facing {
             Some(f) => f,
-            // A permutation cannot mirror, so a derived facing is always the
-            // negative direction of the world axis the scope calls local Z.
-            None => match state.orient.get(Axis::Z) {
-                Axis::Z => Facing::North,
-                Axis::X => Facing::West,
-                Axis::Y => {
-                    return Err(ExpandError::MarkFacingNotCardinal {
-                        symbol: symbol.to_string(),
-                        anchor: mark.anchor.clone(),
-                    });
+            // A derived facing is the **negative local `Z`** direction, read out
+            // into the world. Which world direction that is depends on the sign
+            // as well as the axis: a scope whose local Z runs backwards has its
+            // negative local Z pointing up the world axis. This is what makes a
+            // piece turned round look the way it now faces rather than the way
+            // it was written.
+            None => {
+                let down_local_z = !state.orient.is_reversed(Axis::Z);
+                match state.orient.get(Axis::Z) {
+                    Axis::Z if down_local_z => Facing::North,
+                    Axis::Z => Facing::South,
+                    Axis::X if down_local_z => Facing::West,
+                    Axis::X => Facing::East,
+                    _ => {
+                        return Err(ExpandError::MarkFacingNotCardinal {
+                            symbol: symbol.to_string(),
+                            anchor: mark.anchor.clone(),
+                        });
+                    }
                 }
-            },
+            }
         };
 
         let seen = self.marks_seen.entry(mark.anchor.clone()).or_insert(0);
@@ -605,41 +614,57 @@ impl<'a> Expander<'a> {
         state: &ScopeState,
     ) -> Result<[i32; 3], ExpandError> {
         let size = state.region.size;
+        // The scope's world extent along the axis a local one names.
+        let extent = |local: Axis| size[state.orient.get(local).index()];
         // Centre of an extent, rounding down; 0 for a degenerate axis, which the
         // bounds check below then reports.
-        let mid = |axis: Axis| (size[axis.index()].saturating_sub(1) / 2) as i64;
+        let mid = |local: Axis| (extent(local).saturating_sub(1) / 2) as i64;
 
         // Offsets from the scope's minimum corner, per WORLD axis.
         let mut delta = [0i64; 3];
+        // Offsets from the scope's **local** minimum corner, per LOCAL axis —
+        // which is the far end in world terms on a reversed axis. Everything
+        // stated in the rule's own frame goes through here, so a mark mirrors
+        // exactly as the blocks around it do.
+        let mut local = [0i64; 3];
+        let mut local_frame = true;
         match &mark.at {
             MarkAt::CornerMin => {}
             MarkAt::FloorCenter => {
-                delta[Axis::X.index()] = mid(Axis::X);
+                // Gravity is a world fact: this position ignores the scope's
+                // local axis names, and for the same reason it ignores their
+                // signs. A floor centre does not move when a piece is turned.
+                local_frame = false;
+                delta[Axis::X.index()] = (size[Axis::X.index()].saturating_sub(1) / 2) as i64;
                 delta[Axis::Y.index()] = 0;
-                delta[Axis::Z.index()] = mid(Axis::Z);
+                delta[Axis::Z.index()] = (size[Axis::Z.index()].saturating_sub(1) / 2) as i64;
             }
             MarkAt::FaceCenter { axis, side } => {
-                let pinned = state.orient.get(*axis);
-                for world in Axis::ALL {
-                    delta[world.index()] = if world == pinned {
+                for l in Axis::ALL {
+                    local[l.index()] = if l == *axis {
                         match side {
                             Side::Min => 0,
-                            Side::Max => (size[world.index()].saturating_sub(1)) as i64,
+                            Side::Max => (extent(l).saturating_sub(1)) as i64,
                         }
                     } else {
-                        mid(world)
+                        mid(l)
                     };
                 }
             }
             MarkAt::Offset { x, y, z } => {
                 let scope = self.scope(state);
-                for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
-                    let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
+                for (l, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
+                    local[l.index()] = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
                     })?;
-                    delta[state.orient.get(local).index()] = value;
                 }
+            }
+        }
+        if local_frame {
+            for l in Axis::ALL {
+                let world = state.orient.get(l);
+                delta[world.index()] = state.orient.place(l, local[l.index()], extent(l));
             }
         }
 
@@ -716,14 +741,29 @@ impl<'a> Expander<'a> {
             error,
         })?;
 
+        // A split lays its pieces in the rule's own order, low local to high
+        // local. On a reversed axis that means starting at the box's world
+        // maximum and walking back — which is the whole of what "the rule body
+        // is mirrored" means for blocks, and is why no rule needs a second,
+        // hand-mirrored copy of itself to run the other way.
         let axis = world_axis.index();
-        let mut cursor = state.region.origin[axis];
+        let reversed = state.orient.is_reversed(split.axis);
+        let mut cursor = if reversed {
+            state.region.origin[axis] + extent as i32
+        } else {
+            state.region.origin[axis]
+        };
         for (i, piece) in pieces.iter().enumerate() {
             let mut origin = state.region.origin;
             let mut size = state.region.size;
-            origin[axis] = cursor;
+            if reversed {
+                cursor -= *piece as i32;
+                origin[axis] = cursor;
+            } else {
+                origin[axis] = cursor;
+                cursor += *piece as i32;
+            }
             size[axis] = *piece;
-            cursor += *piece as i32;
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,

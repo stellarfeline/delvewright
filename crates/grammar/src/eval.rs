@@ -180,6 +180,7 @@ mod tests {
             x: Axis::Z,
             y: Axis::Y,
             z: Axis::X,
+            reversed: [false; 3],
         };
         let s = scope(&region, &p, rotated);
         assert_eq!(s.dim(DimRef::X), 11);
