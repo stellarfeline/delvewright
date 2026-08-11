@@ -343,6 +343,12 @@ pub fn build_with_warnings(
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
     // objectives, no functions, no artifact.
     let mut stake_table: Option<crate::stake::StakeTable> = None;
+    // The bot tier's contract for DYING (`compiler::deathplan`): the lethal volumes
+    // it may walk into, the wording each promises, the `on_death` consequences, the
+    // stake rules and the placement table's rows. `None` for a campaign that
+    // declares none of the three, and for one that assembles no world — a
+    // contract nobody can walk is not the same fact as an empty one.
+    let mut death_plan: Option<Value> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -523,6 +529,17 @@ pub fn build_with_warnings(
                 // death regions — a volume that strands the party is a worse
                 // finding, and it should be reported first.
                 stake_table = crate::stake::build(plan, &world, campaign_spawn(plan))?;
+                // …and the contract the bot tier needs to prove any of it at
+                // runtime. Built here, from the SAME table the proofs above ran
+                // on, because a PackTest fake player is permanently undamageable
+                // (measured 2026-08-03 and 2026-08-09) and so the whole death loop
+                // is the mineflayer tier's claim to make.
+                death_plan = crate::deathplan::build(
+                    plan,
+                    &world,
+                    campaign_spawn(plan),
+                    stake_table.as_ref(),
+                );
                 crate::nav::check_stealth_zones(plan, &world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -1154,6 +1171,13 @@ pub fn build_with_warnings(
     // binding is a finding rather than an absence.
     if let Some(t) = &stake_table {
         put_json(&mut out, "validation/stake-gate.json", &t.gate.to_json());
+    }
+    // The bot tier's death contract (`compiler::deathplan`): what the campaign
+    // PROMISES a death does, so the mineflayer tier can assert it against a real
+    // client that really died. Same rule again — a campaign that declares no
+    // volume, no `on_death` and no stake emits no file at all.
+    if let Some(dp) = &death_plan {
+        put_json(&mut out, "validation/death-plan.json", dp);
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
@@ -5404,6 +5428,35 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let alive = "unless data entity @s {Health:0.0f}";
     let dead = "if data entity @s {Health:0.0f}";
     let mut check: Vec<String> = Vec::new();
+    // **The acknowledgements have to EXIST before they can be compared to.**
+    //
+    // Found by the bot tier's death-loop stage (task #68) on its first live run,
+    // and it had been silently true since spec-0012: `dw.death_ack` and
+    // `dw.death_seen` are `dummy` objectives, so a player who has never died has
+    // no score in either — and `execute if score @s A > @s B` with B UNSET does
+    // not fire. Measured on the pinned 1.21.11 server: an unset right-hand side
+    // makes the test false, and `scoreboard players add <entity> <obj> 0` is what
+    // creates the entry at zero.
+    //
+    // The consequence was that a player's FIRST death fired neither edge: no
+    // `on_death` (so no forfeit and no recovery stake), and no `cp_respawn_fire`
+    // (so no `on_respawn` bundle and no re-seat — the party landed wherever
+    // vanilla's own `/spawnpoint` hint happened to put them, which is exactly the
+    // hint task #145 established cannot be trusted). Both then worked from the
+    // second death onward, which is why it survived: every manual test of "does
+    // dying work" that dies twice passes.
+    //
+    // Seeded here rather than at a join hook because this is the one function that
+    // reads them, so the two facts cannot drift apart; `add 0` is idempotent, so
+    // running it every tick is a no-op after the first. Emitted only for the edge
+    // the campaign actually declares, so a campaign with no `on_death` moves no
+    // byte it did not already have.
+    if !on_death.is_empty() {
+        check.push("scoreboard players add @s dw.death_seen 0".to_string());
+    }
+    if plan.any_checkpoint() {
+        check.push("scoreboard players add @s dw.death_ack 0".to_string());
+    }
     // The corpse side FIRST: `on_death` is the earlier moment, and a reader of the
     // generated function should meet the two edges in the order the player lives
     // them. Ordering is otherwise immaterial — the two branches are mutually

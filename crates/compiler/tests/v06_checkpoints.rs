@@ -160,11 +160,37 @@ fn on_respawn_dispatch_is_emitted() {
     // task #145: `deathCount` ticks on the DEATH, not on the respawn, so both the
     // fire and the acknowledgement wait for a living player — otherwise the whole
     // bundle would land on the corpse and the edge would be spent.
+    //
+    // Scoped to the lines that READ the counter, because task #68 added one that
+    // deliberately does not: the acknowledgement has to be seeded unconditionally
+    // (see below). The invariant this test exists for is unchanged — nothing that
+    // touches `dw.deaths` may land on a corpse.
     assert!(
         check
             .lines()
+            .filter(|l| l.contains("dw.deaths"))
             .all(|l| l.contains("unless data entity @s {Health:0.0f}")),
         "the death edge is held until the player is alive again:\n{check}"
+    );
+    // task #68, found live by the bot tier's death-loop stage: `dw.death_ack` is a
+    // `dummy` objective, so a player who has never died has NO score in it — and
+    // `execute if score @s A > @s B` with B unset does not fire (measured on the
+    // pinned 1.21.11 server). The whole respawn dispatch was therefore dead on a
+    // player's FIRST death, and worked from the second onward, which is why it
+    // survived every manual test that dies twice. The seed must come BEFORE the
+    // comparison, so the order is asserted, not merely the presence.
+    let seed = check
+        .lines()
+        .position(|l| l.trim() == "scoreboard players add @s dw.death_ack 0")
+        .expect("the acknowledgement is seeded so it EXISTS before it is compared to");
+    let read = check
+        .lines()
+        .position(|l| l.contains("if score @s dw.deaths > @s dw.death_ack"))
+        .expect("the edge reads the acknowledgement");
+    assert!(
+        seed < read,
+        "the acknowledgement must be seeded before the edge reads it, or the first \
+         death still compares against an unset score:\n{check}"
     );
     let fire = fn_body(&out, "cp_respawn_fire");
     assert!(

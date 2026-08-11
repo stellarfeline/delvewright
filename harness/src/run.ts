@@ -27,6 +27,12 @@ import {
   loadCombatPlanForCriticalPath,
 } from "./combat.ts";
 import {
+  deathLoopBinding,
+  deathLoopBindingFailures,
+  lethalTrialFailures,
+  loadDeathPlanForCriticalPath,
+} from "./death-loop.ts";
+import {
   RunReport,
   reportPathFromEnv,
   writeRunReport,
@@ -106,6 +112,19 @@ function dieRetryFromEnv(env = process.env): boolean {
  */
 function actorFloorFromEnv(env = process.env): boolean {
   return env["DELVEWRIGHT_ACTOR_FLOOR"] !== "0";
+}
+
+/**
+ * Whether the death-loop stage runs (task #68). ON whenever the build ships a
+ * death plan — like die-retry it is a REQUIRED stage, not an option: a PackTest
+ * fake player is permanently undamageable (measured 2026-08-03 and 2026-08-09),
+ * so this tier is the ONLY place a player death can be witnessed at all, and
+ * every consequence a lethal volume, an `on_death` and a recovery stake promise
+ * is unproven without it. `DELVEWRIGHT_DEATH_LOOP=0` skips it for local
+ * iteration, and the report records that it was skipped — never that it passed.
+ */
+function deathLoopFromEnv(env = process.env): boolean {
+  return env["DELVEWRIGHT_DEATH_LOOP"] !== "0";
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -241,6 +260,33 @@ async function main(): Promise<number> {
   // ENCOUNTERS — the die-retry stage proves dying is safe, and the fights run under
   // bounded, labelled combat assist so bot fencing skill never caps how hard a
   // delve is allowed to be. Absent → the pre-spec-0023 run, unchanged.
+  // task #68: the build's death contract — the lethal volumes the bot may walk
+  // into, the wording each promises, the `on_death` consequences and the recovery
+  // stake's compile-time placement table. Handed over BEFORE the connect, because
+  // it also tells the navigator which cells are impassable: the compiler treats a
+  // lethal volume as impassable in every route proof, and a bot that disagrees
+  // walks its way home through the hazard it just died in.
+  const deathPlan = await loadDeathPlanForCriticalPath(pathArg);
+  // An UNBOUND plan does not make the run red — it makes it loud. A campaign that
+  // declares a lethal volume and no `on_death` has nothing for this stage to
+  // assert, and inventing a content rule that says it must is a design decision,
+  // not an inference. What rule 1 requires is that the zero is REPORTED, which is
+  // what the finding below does.
+  const deathLoop = deathPlan !== undefined && !deathPlan.binding.unbound && deathLoopFromEnv();
+  if (deathPlan) {
+    executor.useDeathPlan(deathPlan);
+    const b = deathPlan.binding;
+    process.stderr.write(
+      `death plan: ${b.volumes} lethal volume(s), ${b.onDeathEffects} on_death effect(s), ` +
+        `${b.stakes} stake(s), ${b.seats} respawn seat(s), ${b.rows} placement row(s); ` +
+        `death-loop stage ${deathLoop ? "ON" : "SKIPPED"}\n`,
+    );
+    if (b.unbound) {
+      // playtest-methodology rule 1, at the earliest possible moment: a contract
+      // that binds to nothing is REPORTED, never quietly walked.
+      process.stderr.write(`death plan: UNBOUND — ${b.reason ?? "no reason given"}\n`);
+    }
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const actorFloor = actorFloorFromEnv();
@@ -296,6 +342,11 @@ async function main(): Promise<number> {
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
+          // task #68: only after the path is proven. The death loop deliberately
+          // kills the player, so running it earlier would leave every later step
+          // walking out of a grave — and a delve whose critical path is broken
+          // has a bigger finding than its recovery stake.
+          if (deathLoop) await executor.runDeathLoop();
         })(),
         budgetMs,
       );
@@ -452,6 +503,38 @@ async function main(): Promise<number> {
           ? []
           : [failure instanceof Error ? failure.message : String(failure)],
     });
+    // task #68 — the death loop. Recorded whether it ran or not, and a stage that
+    // did not run carries the reason: a skipped stage must never be readable as a
+    // passed one, and this stage is the ONLY runtime proof of the mechanic the
+    // whole souls shape rests on.
+    const lethalTrials = executor.deathLoopTrials();
+    const deathBinding = deathPlan ? deathLoopBinding(deathPlan, lethalTrials) : undefined;
+    const deathLoopFailures = deathLoop
+      ? [
+          ...(deathBinding ? deathLoopBindingFailures(deathBinding) : []),
+          ...lethalTrials.flatMap((t) => lethalTrialFailures(t)),
+        ]
+      : [];
+    if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
+    report.stage({
+      stage: "death-loop",
+      ran: deathLoop,
+      passed: deathLoop && deathLoopFailures.length === 0,
+      findings: deathLoop
+        ? executor.deathLoopSkipReason() === undefined
+          ? []
+          : [`the stage stopped before entering any volume — ${executor.deathLoopSkipReason()}`]
+        : [
+            deathPlan === undefined
+              ? "no death plan in this build — the campaign declares no lethal volume, no " +
+                "`on_death` and no recovery stake, so there is no death loop to prove"
+              : deathPlan.binding.unbound
+                ? `this build's death plan is UNBOUND (${deathPlan.binding.reason ?? "no reason given"}) ` +
+                  `— nothing about dying is proven at runtime by this run`
+                : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+          ],
+      failures: deathLoopFailures,
+    });
     report.stage({
       stage: "die-retry",
       ran: dieRetry,
@@ -488,6 +571,14 @@ async function main(): Promise<number> {
       throw new Error(
         `die-retry stage FAILED (${dieRetryFailures.length} finding(s)):\n` +
           dieRetryFailures.map((f) => `  ${f}`).join("\n"),
+      );
+    }
+    // task #68: a delve can be completable and still ship a broken death loop —
+    // which, for a souls-shaped delve, is the whole game. Red in its own right.
+    if (deathLoopFailures.length > 0) {
+      throw new Error(
+        `death-loop stage FAILED (${deathLoopFailures.length} finding(s)):\n` +
+          deathLoopFailures.map((f) => `  ${f}`).join("\n"),
       );
     }
     process.stderr.write(

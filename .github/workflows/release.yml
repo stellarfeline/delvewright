@@ -48,6 +48,51 @@ jobs:
         if: always()
         run: cat validation/run-out/dw-ci-playthrough/run-report.json || true
 
+  # ---- the death loop (task #68) --------------------------------------------
+  # The one mechanic NO other tier can witness. A PackTest fake player is
+  # permanently undamageable — measured independently on 2026-08-03 and again on
+  # 2026-08-09 — so `on_death`, a lethal volume's kill and the recovery stake had
+  # no runtime proof anywhere, while the drowned-bell shape rests entirely on
+  # them. This job walks a real client into a declared lethal volume, kills it,
+  # and asserts every consequence the campaign PROMISED against what it observed:
+  # the volume's own wording reaching that player, the declared forfeit leaving
+  # the ledger, the stake standing at the anchor the compile-time placement table
+  # chose, the walk back, an exact restore under a double right-click, and the
+  # respawn seat.
+  #
+  # Its own tier-3 job rather than a second stage of `playthrough` above, because
+  # it needs a campaign that HAS a death loop: hello-world declares no lethal
+  # volume, no `on_death` and no stake, so the whole contract is absent there and
+  # the stage would report SKIPPED forever. `crates/compiler/tests/fixtures/economy`
+  # is the fixture that declares all three (spec-0031 + spec-0032). Same cost
+  # profile as the playthrough: one server, one bot, no new pull.
+  #
+  # `--output` really selects the tree now — until this change the flag set a
+  # variable only the `packtest` profile read, so the bot ladder silently booted
+  # `./delve-output` whatever it was asked for.
+  death-loop:
+    name: death loop (a real player dies, and every promise is asserted)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-content
+      - uses: Swatinem/rust-cache@v2
+      - name: build the economy delve output (spec-0031 + spec-0032)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/economy \
+            -o validation/delve-output-economy --prefabs campaigns/prefabs
+      - name: the bot dies in a declared lethal volume and recovers its stake
+        run: |
+          bash validation/bot-run.sh --project dw-ci-death-loop \
+            --output ./delve-output-economy
+      # The binding counts are the point of reading this: `deaths_observed: 0`
+      # would be a green stage that examined nothing, and rule 1 makes that a
+      # finding rather than a pass.
+      - name: the run report
+        if: always()
+        run: cat validation/run-out/dw-ci-death-loop/run-report.json || true
+
   # ---- creator playtest note flow (spec-0006 M2) -----------------------------
   # A live-server + mineflayer-bot integration test (same class as the playthrough
   # above), so it lives in tier 3, not tier 2: it boots a full playtest server and a

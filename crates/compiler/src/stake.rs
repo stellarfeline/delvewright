@@ -435,7 +435,13 @@ pub fn choose_anchor(
 /// before any checkpoint has been set, and therefore a real row of the table rather
 /// than an edge case. Threaded in by the caller exactly as
 /// [`crate::lethal::check_respawn_seats`] takes it.
-fn seats(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Vec<Seat> {
+///
+/// Public because [`crate::deathplan`] hands the same list to the bot tier: "the
+/// respawn point in force" is a promise a lethal volume makes with or without a
+/// purse to lose, so a campaign that declares a volume and no stake still owes the
+/// bot the seats to check its respawn against. Deriving them there would be a
+/// second answer to one question.
+pub fn seats(plan: &Plan, world: &World, entry: Option<[i32; 3]>) -> Vec<Seat> {
     let mut out = Vec::new();
     if let Some(pos) = entry
         && let Some(cell) = world.snap(pos, crate::nav::SNAP_RADIUS)

@@ -61,6 +61,18 @@ import {
   type ReengageObservation,
   type WaveCensus,
 } from "./combat.ts";
+import {
+  entryCellOf,
+  expectedForfeit,
+  inBox,
+  openLethalTrial,
+  seatAtRespawn,
+  tableAnchor,
+  type Box,
+  type DeathPlan,
+  type LethalTrial,
+  type StakeRule,
+} from "./death-loop.ts";
 import { presentAndTrigger } from "./held-item.ts";
 import {
   CAMPAIGN_TOKEN,
@@ -1054,6 +1066,55 @@ const REST_RANGE = 2;
 const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
+
+// --- the death loop (task #68) ---------------------------------------------
+/**
+ * How long to wait, after stepping into a declared lethal volume, for the player
+ * to actually die. A volume's driver runs in the campaign `tick`, so the kill is
+ * one tick away; this is a generous ceiling on "one tick", not a guess at how long
+ * dying takes.
+ */
+const LETHAL_DEATH_TIMEOUT_MS = 10_000;
+/**
+ * How long to let the ledger settle after the respawn before reading it.
+ *
+ * The ORDER is guaranteed by the engine, not by this number: the death edge fires
+ * `on_death` on the corpse (`if Health:0.0f`) and the re-seat on the living player
+ * (`unless Health:0.0f`), so by the time a respawn is observed the forfeit has
+ * already run. The poll below therefore stops the instant the ledger reaches the
+ * value the campaign promised, and this ceiling only bounds the case where it
+ * never does — which is the finding, not a flake.
+ */
+const LEDGER_SETTLE_MS = 5_000;
+const LEDGER_POLL_MS = 100;
+/** How long to wait for a scoreboard objective to start reporting after tracking it. */
+const SCORE_TRACK_TIMEOUT_MS = 5_000;
+/** How long to wait for the collected stake's hardware to be retired. */
+const MARKER_RETIRE_TIMEOUT_MS = 5_000;
+/** How far from the table's anchor the marker's own hardware is looked for. */
+const MARKER_SEARCH_RADIUS = 4;
+/**
+ * The pathfinder cost that makes a cell impassable. The library treats a step
+ * whose total cost exceeds 100 as no move at all (`movements.js`: `if (cost > 100)
+ * return`), so anything above it is a refusal rather than a preference.
+ */
+const LETHAL_STEP_COST = 1_000;
+/**
+ * How long the bot leaves its own corpse on the death screen before taking the
+ * respawn — one human beat (20 server ticks).
+ *
+ * Not a tuning knob and not a wait for a race to settle: it is the difference
+ * between a player and a library. mineflayer answers the death packet in the same
+ * event-loop turn, so a default bot is alive again on the next tick and the
+ * engine's whole corpse-side death edge is unobservable — the branch is guarded by
+ * `if data entity @s {Health:0.0f}`, and it is where `on_death` fires. A vanilla
+ * player has to click Respawn, so a corpse always exists for many ticks.
+ *
+ * Kept small enough that the 15 s respawn budget is untouched, and comfortably
+ * inside the 59-tick post-respawn invulnerability window that spec-0032 records —
+ * nothing here forces a second death.
+ */
+const DEATH_SCREEN_HOLD_MS = 1_000;
 /**
  * How often (ms) {@link MineflayerExecutor.awaitEntitySettle} polls the non-player
  * entity count while waiting for the tracker to stop changing shape after spawn.
@@ -1175,6 +1236,49 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly deathWaiters = new Set<(err: BotDeathError) => void>();
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
   private readonly recentChat: string[] = [];
+  /**
+   * task #68: one exact line the run is currently watching for, and whether it has
+   * arrived. Armed around a single act (walking into a lethal volume) rather than
+   * mined out of {@link recentChat}, because that ring holds sixteen lines and a
+   * death broadcasts several — a wording assertion that can be pushed out of a ring
+   * is an intermittent test, which is an under-specified one.
+   */
+  private wordWatch: { readonly needle: string; seen: boolean } | undefined;
+  /**
+   * task #68: the scoreboard ledgers this run is observing, `objective → entry →
+   * value`, fed straight off the wire.
+   *
+   * **Why the raw packet and not `bot.scoreboards`.** mineflayer 4.37's scoreboard
+   * plugin gates every score update on `packet.action === 0`, and 1.21.11 has no
+   * `action` field on `scoreboard_score` at all (it was split out into
+   * `reset_score`), so its model never updates on the pinned version. The packet
+   * itself decodes perfectly — `{itemName, scoreName, value}` — so the harness
+   * reads it directly. This is observation, not game logic: no delve score is ever
+   * written from here.
+   */
+  private readonly scores = new Map<string, Map<string, number>>();
+  /** The objective currently occupying the harness's display slot, if any. */
+  private trackedObjective: string | undefined;
+  /**
+   * task #68: the lethal volumes the build declares, as impassable boxes for the
+   * PATHFINDER. The compiler already treats them as impassable in every route
+   * proof; without the same fact here the bot walks its way back from a death
+   * straight through the hazard it just died in, and a run intermittently dies
+   * twice for reasons no content author could reproduce.
+   */
+  private lethalBoxes: readonly Box[] = [];
+  /** Suspended for exactly one walk: the deliberate step INTO a volume. */
+  private lethalExclusionSuspended = false;
+  /** Every walk into a lethal volume this run made, and what it observed. */
+  private readonly lethalTrials: LethalTrial[] = [];
+  /** Why the death-loop stage did not run, when it did not. */
+  private deathLoopSkip: string | undefined;
+  /**
+   * task #68: the build's death contract — what the campaign PROMISES a death
+   * does. Absent → the pre-task-#68 run, in which nothing about dying is asserted
+   * at all (which is the gap this stage exists to close).
+   */
+  private deathPlan: DeathPlan | undefined;
   /** The `/trigger` the current step sent, and the server's answer to it (task
    * #144). Replaced by each new trigger; see {@link swallowedTriggerVerdict}. */
   private trigger: TriggerEcho | undefined;
@@ -1328,6 +1432,20 @@ export class MineflayerExecutor implements StepExecutor {
       username: this.config.username,
       version: this.config.version,
       auth: this.config.auth,
+      // task #68: mineflayer's auto-respawn answers the death packet in the SAME
+      // event-loop turn it arrives in, so the bot is alive again on the very next
+      // server tick. No human is: the death screen requires a click, and the
+      // engine's death edge is specified ON THE CORPSE (spec-0031/#349 measured
+      // the `deathCount` edge armed pre-respawn, and `cp_respawn_check` reads it
+      // with `if data entity @s {Health:0.0f}`). A corpse that never exists for a
+      // whole tick makes the whole `on_death` branch unreachable — and a validator
+      // that cannot observe a mechanism because of its own client library is a
+      // validator that will report the mechanism green forever.
+      //
+      // So the respawn is taken MANUALLY, one human beat later ({@link
+      // DEATH_SCREEN_HOLD_MS}). Nothing else changes: every existing wait is
+      // counted off `spawnSeq`, which still rises exactly once per respawn.
+      respawn: false,
     });
     this.bot = bot;
     bot.loadPlugin(pathfinder);
@@ -1390,6 +1508,9 @@ export class MineflayerExecutor implements StepExecutor {
     bot.on("messagestr", (message: string) => {
       this.observeMarker(message);
       this.observeCensus(message);
+      if (this.wordWatch && message.includes(this.wordWatch.needle)) {
+        this.wordWatch.seen = true;
+      }
       if (this.trigger && answersTrigger(message, this.trigger.objective)) {
         this.trigger.lines.push(message);
       }
@@ -1398,6 +1519,11 @@ export class MineflayerExecutor implements StepExecutor {
         this.recentChat.shift();
       }
     });
+    // task #68: the scoreboard ledgers, straight off the wire. Both packets are
+    // read because 1.21.11 split "set a score" and "clear a score" into two — a
+    // reader that watches only the first reports a cleared purse as its last known
+    // value, which is the one direction a currency assertion must never drift in.
+    this.installScoreObserver(bot);
     bot.on("death", () => this.onDeath());
     // Scripted-teardown death classification (2026-08-06 island triage): `entityDead`
     // fires on the LivingEntity death status packet, while the entity's last known
@@ -2018,6 +2144,19 @@ export class MineflayerExecutor implements StepExecutor {
       waiter(err);
     }
     this.deathWaiters.clear();
+    // The respawn a player takes, not the one a library takes for them (see the
+    // `respawn: false` note in `connect`). Held one human beat so the corpse
+    // exists for at least one server tick — which is where the engine's death
+    // edge lives.
+    const takeRespawn = (): void => {
+      try {
+        bot?.respawn();
+      } catch {
+        // A failed respawn is not lost: `recoverFromDeath` bounds its own wait and
+        // reports a missing respawn loudly.
+      }
+    };
+    setTimeout(takeRespawn, DEATH_SCREEN_HOLD_MS).unref?.();
   }
 
   /**
@@ -2117,6 +2256,444 @@ export class MineflayerExecutor implements StepExecutor {
     this.threats.clear();
     this.defenseExempt.clear();
     this.lastHealth = undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // The death loop (task #68): a real player dies, and every consequence the
+  // engine promised is asserted from the observation.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Adopt the build's death contract. Also hands the declared lethal volumes to
+   * the navigator, which has to agree with the compiler that they are impassable.
+   */
+  useDeathPlan(plan: DeathPlan): void {
+    this.deathPlan = plan;
+    this.lethalBoxes = plan.volumes.map((v) => v.region);
+  }
+
+  /** Every walk into a lethal volume this run made, and what it observed. */
+  deathLoopTrials(): readonly LethalTrial[] {
+    return this.lethalTrials;
+  }
+
+  /** Why the stage did not run, when it did not. `undefined` means it ran. */
+  deathLoopSkipReason(): string | undefined {
+    return this.deathLoopSkip;
+  }
+
+  /**
+   * Watch the ledgers off the wire. See {@link scores} for why the raw packet and
+   * not mineflayer's own scoreboard model.
+   */
+  private installScoreObserver(bot: Bot): void {
+    // The unit tests attach a stub bot that models only the high-level API, so a
+    // missing raw client is "there is no wire here", not a fault. Absent → no
+    // ledger is ever observed, and every currency assertion reports that it could
+    // not read rather than passing.
+    const client = bot._client as Bot["_client"] | undefined;
+    if (typeof client?.on !== "function") return;
+    client.on("scoreboard_score", (packet: unknown) => {
+      if (typeof packet !== "object" || packet === null) return;
+      const p = packet as { itemName?: unknown; scoreName?: unknown; value?: unknown };
+      if (typeof p.itemName !== "string" || typeof p.scoreName !== "string") return;
+      if (typeof p.value !== "number") return;
+      let board = this.scores.get(p.scoreName);
+      if (!board) {
+        board = new Map<string, number>();
+        this.scores.set(p.scoreName, board);
+      }
+      board.set(p.itemName, p.value);
+    });
+    client.on("reset_score", (packet: unknown) => {
+      if (typeof packet !== "object" || packet === null) return;
+      const p = packet as { entity_name?: unknown; objective_name?: unknown };
+      if (typeof p.entity_name !== "string") return;
+      if (typeof p.objective_name === "string") {
+        this.scores.get(p.objective_name)?.delete(p.entity_name);
+        return;
+      }
+      for (const board of this.scores.values()) board.delete(p.entity_name);
+    });
+  }
+
+  /**
+   * Put `objective` where the server will report it, and wait until it does.
+   *
+   * A vanilla server only tracks — and therefore only broadcasts — an objective
+   * that occupies a display slot, so reading one means asking for it. This is a
+   * HARNESS action on the world, of exactly the class spec-0023 already sanctions
+   * for `/damage @s` and `/effect give`: it is applied and removed by the harness,
+   * it is named in the run report, and no delve content can reach it. The shipped
+   * image is untouched — the bot is opped by a compose environment variable.
+   *
+   * Returns false when the objective never starts reporting: the bot is not opped,
+   * or the objective does not exist. Either is a finding, never a silent pass.
+   */
+  private async trackScore(objective: string): Promise<boolean> {
+    const bot = this.requireBot();
+    if (this.trackedObjective === objective && this.scores.has(objective)) return true;
+    bot.chat(`/scoreboard objectives setdisplay sidebar ${objective}`);
+    this.trackedObjective = objective;
+    const ok = await this.waitFor(
+      () => this.scores.get(objective) !== undefined,
+      SCORE_TRACK_TIMEOUT_MS,
+      LEDGER_POLL_MS,
+    );
+    if (!ok) {
+      process.stderr.write(
+        `[death-loop] the server never reported objective '${objective}' after it was put on ` +
+          `the sidebar. Either the bot is not opped (compose sets DELVE_OPS_OFFLINE to the bot's ` +
+          `name — check it matches DELVEWRIGHT_BOT_USERNAME) or the delve declares no such ` +
+          `ledger. The currency assertions cannot be made\n`,
+      );
+    }
+    return ok;
+  }
+
+  /** Release the harness's display slot. Idempotent; best effort. */
+  private clearScoreDisplay(): void {
+    if (this.trackedObjective === undefined) return;
+    try {
+      this.requireBot().chat("/scoreboard objectives setdisplay sidebar");
+    } catch {
+      // teardown must never mask the run's own verdict
+    }
+    this.trackedObjective = undefined;
+  }
+
+  /** The bot's own value in a tracked ledger, or `undefined` if it has none. */
+  private myScore(objective: string): number | undefined {
+    return this.scores.get(objective)?.get(this.config.username);
+  }
+
+  /**
+   * Wait until a tracked ledger reads `want`, then return whatever it reads.
+   *
+   * It stops early on the promised value and otherwise runs the ceiling out, so a
+   * correct engine is fast and a wrong one still yields its real number for the
+   * failure message. This is not "waiting for green": the value returned is the
+   * observation, and the caller asserts against it either way.
+   */
+  private async settledScore(objective: string, want: number): Promise<number | undefined> {
+    await this.waitFor(() => this.myScore(objective) === want, LEDGER_SETTLE_MS, LEDGER_POLL_MS);
+    return this.myScore(objective);
+  }
+
+  /** Make every declared lethal volume impassable to the pathfinder. */
+  private applyLethalExclusion(movements: InstanceType<typeof Movements>): void {
+    if (this.lethalExclusionSuspended || this.lethalBoxes.length === 0) return;
+    const boxes = this.lethalBoxes;
+    movements.exclusionAreasStep.push((block): number => {
+      const p = block.position;
+      const cell: Vec3Tuple = [p.x, p.y, p.z];
+      return boxes.some((b) => inBox(cell, b)) ? LETHAL_STEP_COST : 0;
+    });
+  }
+
+  /**
+   * **The stage.** Walk into every declared lethal volume, die there, and assert
+   * every consequence the campaign promised from what was OBSERVED.
+   *
+   * One trial per declared volume, and the loop is self-restoring: collecting the
+   * stake puts the purse back, so the next volume's trial starts from a full
+   * ledger rather than from a zero the previous death left.
+   */
+  async runDeathLoop(): Promise<void> {
+    const plan = this.deathPlan;
+    if (plan === undefined) {
+      this.deathLoopSkip = "this build ships no validation/death-plan.json";
+      return;
+    }
+    if (plan.binding.unbound) {
+      this.deathLoopSkip = plan.binding.reason ?? "the build's death plan binds to nothing";
+      return;
+    }
+    try {
+      for (const volume of plan.volumes) {
+        await this.lethalTrial(plan, volume);
+      }
+    } finally {
+      this.clearScoreDisplay();
+    }
+  }
+
+  /** One volume: approach, step in, die, and assert the aftermath. */
+  private async lethalTrial(plan: DeathPlan, volume: DeathPlan["volumes"][number]): Promise<void> {
+    const bot = this.requireBot();
+    const here = this.feetCell() ?? [0, 0, 0];
+    const entryCell = entryCellOf(volume.region, here);
+    // Which stake this death is supposed to leave. `on_death`'s own declaration
+    // decides — never "the first one declared" — so a campaign whose death drops
+    // one of three stakes is asserted against the one it named.
+    const stake: StakeRule | undefined = plan.stakes.find((s) => plan.dropsStake.includes(s.id));
+    const trial = openLethalTrial(volume, entryCell, stake);
+    this.lethalTrials.push(trial);
+    // The near lip: the cell the placement table already proved is the reachable
+    // point nearest this volume. Nothing new is computed — it is the anchor a
+    // death here would leave its stake at, which is the same question as "where
+    // does a player stand next to this".
+    const lip = plan.rows.find((r) => plan.regions[r.region]?.volume === volume.id)?.anchor;
+    process.stderr.write(
+      `[death-loop] ${volume.id}: standing at [${here.join(", ")}]; walking into ` +
+        `[${entryCell.join(", ")}] to die there via the near lip ` +
+        `${lip ? `[${lip.join(", ")}]` : "(none — the build declares no placement row)"}` +
+        `${stake ? `; expecting stake ${stake.id} on ledger ${stake.currency.objective}` : ""}\n`,
+    );
+
+    // --- the ledger before -------------------------------------------------
+    if (stake) {
+      if (await this.trackScore(stake.currency.objective)) {
+        trial.balanceBefore = this.myScore(stake.currency.objective);
+      }
+      if (trial.balanceBefore !== undefined) {
+        trial.expectedForfeit = expectedForfeit(stake.forfeit, trial.balanceBefore);
+      }
+    }
+
+    // --- the walk toward the volume ----------------------------------------
+    // Armed BEFORE the approach, not between the approach and the step in. The
+    // observation is "the player entered the box and died", and which of the two
+    // legs delivered them there is the harness's business, not the delve's: the
+    // approach ends one block from a hazard, and a pathfinder that overshoots by a
+    // block has still produced exactly the event under test. Attributing that to
+    // "the lip could not be reached" is how a real, correct death got reported as
+    // an infrastructure fault on this stage's first live run.
+    //
+    // The guard that keeps it honest is the POSITION check below: a death anywhere
+    // outside the declared box is not this volume's death and is not credited.
+    this.wordWatch = { needle: volume.message, seen: false };
+    const deathsBefore = this.deathSeq;
+    let navFault: string | undefined;
+    if (lip) {
+      try {
+        await this.walkTo(lip, 1, `death-loop approach to ${volume.id}`);
+      } catch (err) {
+        if (!(err instanceof BotDeathError)) {
+          navFault =
+            `the near lip [${lip.join(", ")}] could not be reached: ` +
+            `${err instanceof Error ? err.message : String(err)}`;
+        }
+      }
+    }
+    // The one leg of the whole run that is ALLOWED into the hazard — skipped when
+    // the approach already delivered the death.
+    if (navFault === undefined && this.deathSeq === deathsBefore) {
+      this.lethalExclusionSuspended = true;
+      try {
+        await this.stepInto(volume.region, entryCell);
+      } catch (err) {
+        if (!(err instanceof BotDeathError)) {
+          navFault =
+            `the walk into [${entryCell.join(", ")}] failed for a reason that is not a death: ` +
+            `${err instanceof Error ? err.message : String(err)}`;
+        }
+      } finally {
+        this.lethalExclusionSuspended = false;
+      }
+    }
+
+    // --- the death ---------------------------------------------------------
+    const observed =
+      navFault !== undefined
+        ? false
+        : await this.waitFor(
+            () => this.deathSeq > deathsBefore,
+            LETHAL_DEATH_TIMEOUT_MS,
+            LEDGER_POLL_MS,
+          ).catch((err: unknown) => {
+            if (err instanceof BotDeathError) return true;
+            throw err;
+          });
+    trial.deathPos = this.death?.position ? [...this.death.position] : undefined;
+    trial.wordingSeen = this.wordWatch?.seen === true;
+    this.wordWatch = undefined;
+    // Credited only when the player died INSIDE the declared box. A death on the
+    // way there is a run fault, not this volume's kill, and crediting it would let
+    // any lethal accident anywhere pass as a proof that this box works.
+    const inside = trial.deathPos !== undefined && inBox(trial.deathPos, volume.region);
+    trial.died = observed && inside;
+    if (navFault !== undefined) {
+      trial.abandoned = navFault;
+      return;
+    }
+    if (observed && !inside) {
+      trial.abandoned =
+        `the bot died at ` +
+        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}, which is ` +
+        `OUTSIDE the declared volume [${volume.region.lo.join(", ")}]..` +
+        `[${volume.region.hi.join(", ")}] — that death is not this volume's kill and is not ` +
+        `credited as one`;
+      return;
+    }
+    if (!trial.died) {
+      // Nothing downstream is meaningful, and every field stays at its honest
+      // default so the report cannot read as if it had checked them.
+      process.stderr.write(
+        `[death-loop] ${volume.id}: the bot is standing in the volume and is still alive\n`,
+      );
+      return;
+    }
+    process.stderr.write(
+      `[death-loop] ${volume.id}: died at ` +
+        `${trial.deathPos ? `[${trial.deathPos.join(", ")}]` : "an unknown position"}` +
+        `; the volume's own line ${trial.wordingSeen ? "reached" : "did NOT reach"} the player\n`,
+    );
+
+    // --- the respawn -------------------------------------------------------
+    await this.recoverFromDeath();
+    const p = bot.entity?.position;
+    trial.respawnPos = p ? [p.x, p.y, p.z] : undefined;
+    const seat =
+      trial.respawnPos === undefined ? undefined : seatAtRespawn(plan.seats, trial.respawnPos);
+    trial.respawnSeat = seat === undefined ? undefined : plan.seats[seat]?.label;
+    if (seat !== undefined) {
+      trial.expectedAnchor = tableAnchor(plan, seat, volume.id);
+    }
+    process.stderr.write(
+      `[death-loop] ${volume.id}: respawned at ` +
+        `${trial.respawnPos ? `[${trial.respawnPos.map((n) => n.toFixed(2)).join(", ")}]` : "?"} ` +
+        `(${trial.respawnSeat ?? "NO declared seat"})\n`,
+    );
+
+    if (stake === undefined) return;
+    const objective = stake.currency.objective;
+
+    // --- the forfeit -------------------------------------------------------
+    if (trial.balanceBefore !== undefined) {
+      trial.balanceAfterDeath = await this.settledScore(
+        objective,
+        trial.balanceBefore - (trial.expectedForfeit ?? 0),
+      );
+    }
+
+    // --- the walk back, and the stake at the end of it ----------------------
+    const anchor = trial.expectedAnchor;
+    if (anchor === undefined) return;
+    try {
+      await this.walkTo(anchor, 1, `death-loop walk back to the ${stake.id} at the near lip`);
+      trial.walkedBack = true;
+    } catch (err) {
+      process.stderr.write(
+        `[death-loop] ${volume.id}: the walk back to [${anchor.join(", ")}] failed: ` +
+          `${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      return;
+    }
+    await this.awaitEntitySettle();
+    const marker = this.stakeHardwareAt(anchor);
+    trial.markerPos = marker ? [marker.position.x, marker.position.y, marker.position.z] : undefined;
+    if (!marker) return;
+
+    // --- the collection, twice in one tick ---------------------------------
+    // AC6 is *idempotent under a double right-click in one tick*, so the two
+    // clicks are issued back to back in one event-loop turn — the client's own way
+    // of putting two `use_entity` packets on the wire inside one server tick — and
+    // the assertion is on the OUTCOME: the purse must end at exactly what it held
+    // before the death, never twice the stake.
+    //
+    // **Stated as the limitation it is** (playtest-methodology rule 1: a gate must
+    // not claim more than it bound). Whether the server ADJUDICATED both clicks in
+    // one tick is not observable from a client, and measurement says it usually
+    // does not: the collect rides an interaction advancement, and vanilla grants an
+    // advancement at most once per tick, so the second packet is normally absorbed.
+    // `collect_clicks` therefore counts packets SENT, not collections adjudicated,
+    // and this exercise is best-effort. What is NOT best-effort is the outcome it
+    // is checked against — a purse that grew twice, or a marker still standing
+    // afterwards, is caught either way, and the second is what actually caught a
+    // deliberately non-idempotent `stk_take` in the red demonstration.
+    const target = bot.entities[marker.id];
+    if (target) {
+      const eye = bot.entity.position;
+      try {
+        await bot.lookAt(
+          eye.offset(
+            marker.position.x - eye.x,
+            marker.position.y - eye.y,
+            marker.position.z - eye.z,
+          ),
+          true,
+        );
+      } catch {
+        // a look failure must not be reported as a collection failure
+      }
+      const clicks = [bot.activateEntity(target), bot.activateEntity(target)];
+      trial.collectClicks = clicks.length;
+      await Promise.allSettled(clicks);
+    }
+    trial.balanceAfterCollect =
+      trial.balanceBefore === undefined
+        ? this.myScore(objective)
+        : await this.settledScore(objective, trial.balanceBefore);
+    trial.markerRetired = await this.waitFor(
+      () => this.stakeHardwareAt(anchor) === undefined,
+      MARKER_RETIRE_TIMEOUT_MS,
+      LEDGER_POLL_MS,
+    );
+    process.stderr.write(
+      `[death-loop] ${volume.id}: collected — ledger ${trial.balanceAfterDeath ?? "?"} → ` +
+        `${trial.balanceAfterCollect ?? "?"}; marker ` +
+        `${trial.markerRetired ? "retired" : "STILL STANDING"}\n`,
+    );
+  }
+
+  /**
+   * Put the bot's feet inside `box`, having already walked to its lip.
+   *
+   * The pathfinder cannot be asked for this: its nearest goal is a range of one
+   * block, so it parks the bot beside a one-cell hazard and calls it arrived. Raw
+   * forward drive is the mechanism this file already trusts against exact cells
+   * (the timed-gate dash, the unstick burst) and it is what a player pressing W
+   * does. Throws whatever the walk threw — including the {@link BotDeathError}
+   * that is the whole point.
+   */
+  private async stepInto(box: Box, cell: Vec3Tuple): Promise<void> {
+    const bot = this.requireBot();
+    const inside = (): boolean => {
+      const feet = this.feetCell();
+      return feet !== undefined && inBox(feet, box);
+    };
+    if (inside()) return;
+    const deadline = Date.now() + LETHAL_DEATH_TIMEOUT_MS;
+    try {
+      while (Date.now() < deadline && !inside()) {
+        if (this.death) throw this.death;
+        const p = bot.entity.position;
+        try {
+          await bot.lookAt(p.offset(cell[0] + 0.5 - p.x, 0, cell[2] + 0.5 - p.z), true);
+        } catch {
+          // best effort — a look failure must not abort the step
+        }
+        bot.setControlState("forward", true);
+        await delay(GATE_DASH_TICK_MS);
+      }
+    } finally {
+      bot.clearControlStates();
+    }
+  }
+
+  /**
+   * The recovery stake's own hardware standing at `anchor`: the `interaction` box
+   * a player right-clicks, provided the glowing `item_display` that says there is
+   * something here is standing with it.
+   *
+   * Both halves are required, and that is the assertion rather than a convenience:
+   * spec-0032 declares the stake to be an interaction for the hitbox AND a glowing
+   * item display for the rendering, so an invisible hitbox is a stake no player
+   * would ever find, not a stake that happens to render oddly.
+   */
+  private stakeHardwareAt(anchor: Vec3Tuple): Hitbox | undefined {
+    const bot = this.bot;
+    if (!bot) return undefined;
+    const near = (x: number, y: number, z: number): boolean =>
+      Math.hypot(x - (anchor[0] + 0.5), y - anchor[1], z - (anchor[2] + 0.5)) <=
+      MARKER_SEARCH_RADIUS;
+    const box = this.hitboxesNear(anchor, MARKER_SEARCH_RADIUS).find((h) => h.name === "interaction");
+    if (!box) return undefined;
+    const rendered = Object.values(bot.entities).some(
+      (e) => e?.position && e.name === "item_display" && near(e.position.x, e.position.y, e.position.z),
+    );
+    return rendered ? box : undefined;
   }
 
   /** Disconnect the bot, if connected. Safe to call more than once. */
@@ -2256,6 +2833,12 @@ export class MineflayerExecutor implements StepExecutor {
     // passable so the bot paths through them — physics-honest, and solid entities
     // (mobs, the mannequin NPC itself) are still avoided.
     allowNonCollidingEntities(movements);
+    // task #68: a declared lethal volume is impassable in every route proof the
+    // compiler runs, and it has to be impassable here too. Without this the walk
+    // BACK from a death routes through the hazard that caused it — the bot dies a
+    // second time on a leg that has nothing to do with the delve's content, and the
+    // run reads as flaky rather than as a navigator that disagreed with the build.
+    this.applyLethalExclusion(movements);
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically

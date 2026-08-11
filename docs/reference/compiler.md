@@ -1532,6 +1532,41 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   green over a runtime mechanism is exactly the vacuity this number exposes).
   **Emitted only for a campaign that declares a volume**, so a file that exists
   and reports zero is a finding rather than an absence.
+- `<out>/validation/death-plan.json` (task #68): **the bot tier's contract for
+  dying** (`compiler::deathplan`). A PackTest fake player is permanently
+  undamageable — measured independently on 2026-08-03 and again on 2026-08-09 —
+  so that tier cannot witness a player death at all, and every runtime claim
+  about the death loop belongs to the mineflayer tier. This file is what lets it
+  make one: the campaign's PROMISES, in the campaign's own terms.
+  - `lethal_volumes[]` — each volume's inclusive box, its canonical-English
+    `message` plus the `message_key` a localized run asserts instead, and its
+    `damage_type`.
+  - `on_death` — how many effects the bundle carries at every nesting depth
+    (read through `QuestEffect::nested_effect_lists`, so a `sequence` is
+    counted), and which stakes it drops.
+  - `stakes[]` — the declared `forfeit` rule (`all` / `proportion` /
+    `fixed` / `none`), `max_live`, `on_full`, `collect_by`, the
+    `collected_message` and the `marker_item`, plus the wagered `currency`: its
+    state id, its **scoreboard objective** (spec-0032 *decided* a currency is a
+    ledger, so the objective is the declaration and not an implementation
+    detail), its `initial`, its scope and its player-visible name.
+  - `placement` — the recovery stake's compile-time table as the bot checks it:
+    `seats[]` (`cp`, label, cell), `regions[]` (each carrying the lethal
+    volume's **id** when it is one, so the harness matches by name rather than
+    re-deriving `compiler::stake`'s region ordering) and `rows[]` as
+    (seat, region) → anchor.
+  - `binding` — what the contract lets the tier examine, and `unbound` +
+    `reason` when it lets it examine nothing. A campaign with a volume and no
+    `on_death`, or an `on_death` and no volume, is unbound: the bot has nowhere
+    to cause a death from content, or no promised consequence to assert. That is
+    reported, never walked.
+
+  It carries **no emitted function name, no generated command and no objective
+  the engine invented for its own bookkeeping** (`dw.kl0_*`, `#stk_amt`, …).
+  That is the whole discipline of the file: an assertion written by reading the
+  emitter cannot fail when the emitter is wrong. **Emitted only for a campaign
+  that declares a lethal volume, an `on_death` or a stake**, so every campaign
+  written before spec-0031 is byte-identical.
 - `<out>/validation/teleport-gate.json`: the `teleport` proof's **binding
   ledger** (`compiler::teleport`, spec-0031, playtest-methodology.md rule 1).
   `teleports.declared` vs `teleports.resolved` (a gap is an anchor no placed
@@ -3693,6 +3728,25 @@ table chose, are not. The first campaign to declare a `stakes[]` entry must carr
 that bot-tier proof, exactly as spec-0031 obliged the first campaign declaring
 `on_death` to carry a bot-tier proof of the corpse-side fire. It is not the
 campaign author's discretion.
+
+**That proof now exists** (task #68): the harness's `death-loop` stage walks a real
+client into every declared lethal volume, dies there, and asserts the volume's
+wording, the declared forfeit, the stake's presence at the table's own anchor, the
+walk back, an exact restore under a double right-click in one tick, the retirement
+of the collected hardware, and the respawn seat — all against
+`validation/death-plan.json`, never against the emission. `.github/workflows/release.yml`
+runs it over `crates/compiler/tests/fixtures/economy`.
+
+**What it found on its first live run**, and what nothing else could have: `on_death`
+and the checkpoint respawn dispatch **never fired on a player's FIRST death**.
+`dw.death_seen` and `dw.death_ack` are `dummy` objectives, so a player who has never
+died has no score in either — and `execute if score @s A > @s B` with B unset does
+not fire (measured on the pinned 1.21.11 server; `scoreboard players add <e> <obj> 0`
+is what creates the entry at zero). Both edges then worked from the second death
+onward, which is why every compile-time shape proof and every manual test that dies
+twice passed. `cp_respawn_check` now seeds each acknowledgement it reads, ahead of
+the comparison; `v06_checkpoints` and `v10_on_death` assert the ORDER, not merely
+the presence.
 
 Binding (playtest-methodology rule 1): a campaign with a stake emits
 `validation/stake-gate.json` — stakes declared, respawn seats and death regions the
