@@ -341,7 +341,7 @@ Pure logic (adapter parse, shot planner, camera/scene math, missing-texture
 detector incl. a real `heavy_core` crop, Chunky-scene golden) runs everywhere:
 
 ```sh
-cargo test -p delvewright-render
+cargo test --manifest-path crates/render/Cargo.toml
 ```
 
 The GPU path (`tests/gpu.rs`) is `#[ignore]` by default — it needs a GPU adapter
@@ -349,7 +349,7 @@ and the client jar:
 
 ```sh
 DELVEWRIGHT_CLIENT_JAR=~/.chunky/resources/minecraft.jar \
-  cargo test -p delvewright-render --test gpu -- --ignored --nocapture
+  cargo test --manifest-path crates/render/Cargo.toml --test gpu -- --ignored --nocapture
 ```
 
 ## The `.nbt` → Nucleation adapter
