@@ -28,6 +28,10 @@ pub const DW_RANK_ORDER: &str = "DW0725";
 /// zero is an error (nothing was ranked), a partial binding a warning. A gate
 /// that binds to nothing is vacuous, not a pass (CLAUDE.md).
 pub const DW_BINDING: &str = "DW0726";
+/// A shot's cutaway removes the whole model: the frame would be empty. Refused
+/// rather than rendered, because an empty picture of a body reads as "there is
+/// nothing here" and not as "you asked for nothing".
+pub const DW_CUTAWAY_EMPTY: &str = "DW0727";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real

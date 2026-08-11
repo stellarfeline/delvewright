@@ -25,7 +25,9 @@ Two renderers, one 1.21.11 **fidelity gate**:
 delve-render [--json] [--textures <jar>] [--size <px>] <command>
 
 piece <prefab.nbt> -o <dir>     deterministic multi-angle set for one prefab
+                                [--cutaway <spec>]  one extra shot, cut to order
 batch <dir> -o <dir>            piece set for every .nbt in a library dir
+                                [--cutaway <spec>]
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
 scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
 panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
@@ -55,6 +57,7 @@ and it is never redistributed.
 | `DW0723` | renderer/GPU error or textures not found |
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
 | `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning |
+| `DW0727` | a shot's cutaway removes the whole model — the frame would be empty (exit 2) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
 except `DW0724`, which the compiler's visual tier holds. Take the next unused
@@ -67,17 +70,62 @@ bounds and optionally aims at a `target` — it does **not** place a free camera
 inside a room. So the deterministic per-piece set is:
 
 - **4 exterior corner-isometric** (`ext-ne/se/sw/nw`, yaw 45/135/225/315, pitch
-  30) of the full schematic — Nucleation's strength.
-- **1 top-down** floor plan (`top`) on a **ceiling-stripped cutaway** so the floor
-  is visible instead of the roof.
+  30) of the full schematic, **uncut** — Nucleation's strength.
+- **3 sections**, each a cutaway read from the side the material came off:
+  `top` (`y-max:1` — the dollhouse), `plan-mid` (`y-max:50%` — the plan section at
+  mid height) and `sec-x` / `sec-z` (`x-min:50%` / `z-min:50%` — the elevations).
 - **interior doorway** (`door-<i>`) — one per socket in the prefab metadata,
-  ceiling-stripped, aimed through the opening.
+  aimed through the opening.
 - **anchor** (`anchor-<name>`) — one per metadata anchor (point → position, gate →
-  region centre), ceiling-stripped.
+  region centre).
+
+The aimed shots (`door-*`, `anchor-*`) cut down to **what they aim at**: the solid
+above the target is, by construction, between the orbit camera and the subject, so
+their cutaway is `y-max:<layers above the target>`. In a five-tall room that is the
+one or two layers the old ceiling-strip removed; in a fourteen-tall tower it is the
+eleven that were hiding the anchor.
 
 Metadata is read from `<basename>.json` beside the `.nbt` (sockets from
 `connectors`, anchors from `anchors`, lighting from `lighting`); it **degrades
-gracefully** — a missing/partial file still yields the exterior + top-down set.
+gracefully** — a missing/partial file still yields the exterior + section set.
+
+Every run prints its **binding** — `cutaway bound to N/M shot(s)` — because a shot
+set in which nothing was cut is a set of exterior pictures and must not read as an
+interior review.
+
+### The cutaway: which solid the viewer is inside
+
+A cutaway is a set of axis-aligned **half-space clips** over the model's own box,
+written `<face>:<depth>` and joined with `+`. Faces are `x-min x-max y-min y-max
+z-min z-max`; depth is a layer count (`4`) or a percentage of that axis' extent
+(`50%`, floored — integer arithmetic, no float in the path). A cell is meshed
+unless some clip removes it, so the kept set is a box: whether a shot leaves
+anything to look at is arithmetic (`DW0727`), not a sampled guess.
+
+| spec | the picture |
+|---|---|
+| `y-max:1` | dollhouse — the roof comes off |
+| `y-max:50%` | plan section: cut the mass at mid height, look down |
+| `z-min:50%` | elevation section: halve the body, read the cut face |
+| `x-min:50%+y-max:2` | corner dollhouse |
+| `y-min:4` | what is under the floor |
+| `z-min:40%+z-max:40%` | a slab through the middle — the compact cut that fills the frame on a long zone |
+
+The renderer used to carry a single `strip_ceiling: bool` — take away the top Y
+layer. That is *one configuration* of this question, hard-coded as the only one,
+and it is right for a small roofed room and useless on a body carved out of solid
+mass, where the layer under the cap is more rock. **Measured** on `cistern_deep`
+(40×10×100, both top courses 100 % solid): a candidate moving five interior
+ceilings two courses differed by 0.00–0.30 % of frame on every pre-cutaway shot —
+`top` itself at **0.00 %** — and by **8.91 % of frame / 35.8 % of the drawn body**
+on `plan-mid`. So the boolean was not accompanied by a second knob, it was
+replaced: `strip_ceiling == true` is exactly `y-max:1`, the degenerate case.
+
+Deliberately not built: oblique clip planes (the models and every planned camera
+are axis-aligned; an oblique plane buys no view these cannot express and costs a
+float comparison per cell), and "hide whatever occludes this anchor" — that is a
+policy for *choosing* clips, which is what the planner does for the aimed shots,
+not a fourth mechanism.
 
 True free-camera **in-room** shots are the **Chunky path** (`scene`), which places
 cameras anywhere in the built world. The per-piece cutaways are the fast
@@ -87,6 +135,8 @@ lighting. Sample output: `docs/samples/` (keep-gate-room, 256²).
 ```sh
 delve-render piece campaigns/prefabs/keep-gate-room.nbt -o /tmp/gate --size 512
 delve-render batch campaigns/prefabs -o /tmp/library
+# one extra shot named `cut`, framed from the side the material came off:
+delve-render piece zone.nbt -o /tmp/zone --cutaway 'z-min:40%+z-max:40%'
 ```
 
 ## `fidelity-gate` — the newest-block gate

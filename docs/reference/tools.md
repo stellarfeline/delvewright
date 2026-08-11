@@ -121,8 +121,8 @@ emission for whole-scene / player-POV review. Needs the 1.21.11 client jar via
 [`../../crates/render/README.md`](../../crates/render/README.md).
 
 ```
-delve-render piece <nbt> -o <dir>            # deterministic multi-angle set for one prefab
-delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
+delve-render piece <nbt> -o <dir> [--cutaway SPEC]   # deterministic multi-angle set for one prefab
+delve-render batch <prefab-dir> -o <dir> [--cutaway SPEC]  # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
@@ -135,6 +135,42 @@ delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot e
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
+
+### The cutaway — which solid the viewer is inside · agent
+
+Every planned shot carries a **cutaway**: a set of axis-aligned half-space clips
+over the model's own box, written `<face>:<depth>` and joined with `+`. Faces are
+`x-min x-max y-min y-max z-min z-max`; depth is a layer count (`4`) or a
+percentage of that axis' extent (`50%`). A cell is meshed unless some clip removes
+it, so the kept set is a box and "does this shot leave anything to look at" is
+arithmetic, not a guess (`DW0727` refuses a cut that keeps nothing, exit 2).
+
+| spec | the picture |
+|---|---|
+| `y-max:1` | dollhouse — the roof comes off. The whole of what the renderer could do before. |
+| `y-max:50%` | plan section: cut the mass at mid height and look down. |
+| `z-min:50%` | elevation section: halve the body and read the cut face. |
+| `x-min:50%+y-max:2` | corner dollhouse. |
+| `z-min:40%+z-max:40%` | a slab through the middle — the compact cut that fills the frame on a long zone. |
+
+The `piece`/`batch` plan is 4 exteriors (`ext-*`, uncut) + `top` (`y-max:1`) +
+`plan-mid` (`y-max:50%`) + `sec-x` (`x-min:50%`) + `sec-z` (`z-min:50%`), plus one
+`door-<i>` per socket and one `anchor-<name>` per anchor, each cut down to the
+point it aims at. Every run prints its binding — `cutaway bound to N/M shot(s)` —
+because a shot set in which nothing was cut is a set of exterior pictures and must
+not read as an interior review.
+
+`--cutaway SPEC` adds ONE more shot, named `cut`, with that cut; its camera stands
+on the side the material came off, framed by the same derivation the planned
+sections use. Point `contact-sheet --shot cut` (or `--shot plan-mid`, `--shot
+sec-z`) at it to curate massing from the section rather than the silhouette.
+
+**Why it matters, measured.** On a zone carved from solid mass the layer under the
+cap is more rock: on `cistern_deep` (40×10×100, two solid top courses), a candidate
+that moves five interior ceilings two courses differed by **0.00–0.30 % of frame**
+on every shot the renderer used to plan — invisible — and by **8.91 % of frame /
+35.8 % of the drawn body** on `plan-mid`. A sheet could show the owner a zone's
+bounding box, not its massing.
 
 ### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
 

@@ -779,6 +779,13 @@ Symptom → tool:
   human-optional. Say plainly that the score only orders the page: every
   candidate is on it, and the low scorer is present, last — she is the selector,
   the number is not.
+  - **If the choice is about MASSING, point the sheet at a section**, not at the
+    silhouette: `--shot plan-mid` (the plan cut at mid height) or `--shot sec-z`.
+    The default `ext-se` is the outside of the body, and on a zone carved from
+    solid mass two very different interiors have the same outside — measured at
+    0.00–0.30 % of frame, against 8.91 % on `plan-mid`. `delve-render batch
+    --cutaway '<face>:<depth>'` adds one more shot named `cut` when neither
+    planned section falls where the difference is.
 
 ### Localization stage (only when the prompt asks for other languages)
 
@@ -962,8 +969,9 @@ Then:
      (needs the 1.21.11 client jar via `--textures`/`$DELVEWRIGHT_CLIENT_JAR`;
      skip with a note if unavailable locally).
    - `delve-render fidelity-gate` must exit 0 before trusting any render.
-   - Open the exterior/top/interior/anchor PNGs and check each against its
-     `expect` line (marker visible? room not dark? NPC faces camera and its name
+   - Open the exterior/section/interior/anchor PNGs and check each against its
+     `expect` line — `top` is the dollhouse, `plan-mid`/`sec-x`/`sec-z` the
+     sections that show interior massing in a body too tall for a roof-off (marker visible? room not dark? NPC faces camera and its name
      is text not JSON? seam clean?). Findings are **DSL-level** — fix the campaign
      (lighting profile, anchor, NPC facing, name string) and rebuild; never
      hand-edit output.

@@ -169,6 +169,30 @@ fn panorama_purges_stale_chunky_caches() {
 }
 
 #[test]
+fn a_malformed_cutaway_spec_is_refused_by_name_before_anything_else() {
+    // The spec is parsed first: neither a GPU, a client jar nor a readable
+    // input is needed to be told the shot cannot be understood. (`y-mid` is the
+    // plausible typo — the faces are the box's, not the middle of it.)
+    let empty_home = tmp("piece-bad-cutaway-home");
+    let out = tmp("piece-bad-cutaway-out");
+
+    let result = Command::new(BIN)
+        .args(["piece"])
+        .arg("nonexistent.nbt")
+        .args(["--out"])
+        .arg(&out)
+        .args(["--cutaway", "y-mid:1"])
+        .env("HOME", &empty_home)
+        .env_remove("DELVEWRIGHT_CLIENT_JAR")
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(2), "{result:?}");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("DW0721"), "expected DW0721: {stderr}");
+    assert!(stderr.contains("y-mid"), "must name the bad face: {stderr}");
+}
+
+#[test]
 fn piece_without_textures_is_dw0723_exit5() {
     // No --textures, and an empty HOME so `~/.chunky/resources/minecraft.jar`
     // cannot exist; DELVEWRIGHT_CLIENT_JAR is stripped too. Texture resolution

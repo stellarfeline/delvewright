@@ -14,6 +14,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use delvewright_render::cache;
+use delvewright_render::cutaway::Cutaway;
 use delvewright_render::detect;
 use delvewright_render::diag::{
     DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
@@ -58,6 +59,14 @@ enum Command {
         /// Output directory for the PNGs.
         #[arg(short, long)]
         out: PathBuf,
+        /// Also render ONE extra shot, named `cut`, with this cutaway: which
+        /// solid the viewer is inside, as `+`-joined `<face>:<depth>` clips —
+        /// `y-max:1` (dollhouse), `y-max:50%` (plan section at mid height),
+        /// `z-min:50%` (elevation section), `x-min:50%+y-max:2` (corner).
+        /// Framed from the side the material was taken off, exactly like a
+        /// planned section.
+        #[arg(long, value_name = "SPEC")]
+        cutaway: Option<String>,
     },
     /// Render the piece set for every `.nbt` in a prefab library directory.
     Batch {
@@ -66,6 +75,10 @@ enum Command {
         /// Output directory (one subdirectory per prefab).
         #[arg(short, long)]
         out: PathBuf,
+        /// Also render the extra `cut` shot for every piece — see
+        /// `delve-render piece --help`.
+        #[arg(long, value_name = "SPEC")]
+        cutaway: Option<String>,
     },
     /// Render the newest-1.21.11-block fixture and FAIL if any missing-texture
     /// placeholder is detected.
@@ -148,8 +161,8 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match &cli.command {
-        Command::Piece { nbt, out } => run_piece(nbt, out, &cli),
-        Command::Batch { dir, out } => run_batch(dir, out, &cli),
+        Command::Piece { nbt, out, cutaway } => run_piece(nbt, out, cutaway.as_deref(), &cli),
+        Command::Batch { dir, out, cutaway } => run_batch(dir, out, cutaway.as_deref(), &cli),
         Command::FidelityGate { out } => run_fidelity_gate(out.as_deref(), &cli),
         Command::Scene {
             build_dir,
@@ -210,21 +223,45 @@ fn resolve_textures(cli: &Cli) -> Result<String, Diagnostic> {
     ))
 }
 
-fn run_piece(nbt_path: &Path, out: &Path, cli: &Cli) -> ExitCode {
+/// Parse a `--cutaway` spec, refusing an unparseable one by name.
+fn parse_cutaway(spec: Option<&str>) -> Result<Option<Cutaway>, Diagnostic> {
+    match spec {
+        None => Ok(None),
+        Some(s) => s
+            .parse::<Cutaway>()
+            .map(Some)
+            .map_err(|e| Diagnostic::error(DW_INPUT, e)),
+    }
+}
+
+fn run_piece(nbt_path: &Path, out: &Path, cutaway: Option<&str>, cli: &Cli) -> ExitCode {
+    let extra = match parse_cutaway(cutaway) {
+        Ok(c) => c,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
+    // Texture *resolution* is a path check and stays first (a run with no jar
+    // says so before anything else). The plan — and with it the refusal of a cut
+    // that would render an empty frame — is settled before the expensive pack
+    // load, so a bad shot is named without a GPU ever being touched.
     let textures = match resolve_textures(cli) {
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
+    };
+    let (st, plan, binding) = match plan_for(nbt_path, extra.as_ref()) {
+        Ok(p) => p,
+        Err((d, code)) => return fail(d, cli.json, code),
     };
     let pack = match render::load_pack(&textures) {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };
-    match render_piece(nbt_path, out, &pack, cli.size, cli.json) {
-        Ok(n) => {
+    match render_piece(nbt_path, out, &st, &plan, &pack, cli.size, cli.json) {
+        Ok(()) => {
             eprintln!(
-                "rendered {n} shot(s) for {} -> {}",
+                "rendered {} shot(s) for {} -> {} ({binding})",
+                plan.len(),
                 nbt_path.display(),
-                out.display()
+                out.display(),
             );
             ExitCode::SUCCESS
         }
@@ -232,19 +269,58 @@ fn run_piece(nbt_path: &Path, out: &Path, cli: &Cli) -> ExitCode {
     }
 }
 
-/// Render every planned shot for one prefab into `out`. Returns the shot count.
-fn render_piece(
+/// How many of a piece's shots the cutaway actually bound to. A validation
+/// artifact states its binding count (CLAUDE.md): a shot set in which nothing
+/// was cut away is a set of exterior pictures, and must not read as an interior
+/// review.
+#[derive(Debug, Clone, Copy, Default)]
+struct CutawayBinding {
+    /// Shots planned (plus the `--cutaway` extra, when asked for).
+    planned: usize,
+    /// Of those, the ones that remove material before meshing.
+    cut: usize,
+}
+
+impl std::fmt::Display for CutawayBinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cutaway bound to {}/{} shot(s)", self.cut, self.planned)
+    }
+}
+
+/// Read a prefab and settle its shot plan (plus the `--cutaway` extra), refusing
+/// any shot whose cut would leave nothing to look at. No GPU, no textures.
+fn plan_for(
     nbt_path: &Path,
-    out: &Path,
-    pack: &nucleation::meshing::ResourcePackSource,
-    size: u32,
-    json: bool,
-) -> Result<usize, (Diagnostic, u8)> {
+    extra_cutaway: Option<&Cutaway>,
+) -> Result<(nbt::Structure, Vec<shots::PieceShot>, CutawayBinding), (Diagnostic, u8)> {
     let st = nbt::parse_structure(nbt_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
     let meta = PrefabMeta::beside_nbt(nbt_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
-    let plan = shots::plan_piece(st.size, meta.as_ref());
+    let mut plan = shots::plan_piece(st.size, meta.as_ref());
+    if let Some(c) = extra_cutaway {
+        plan.push(shots::custom_shot(c.clone(), st.size));
+    }
+    if let Some(d) = shots::refuse_empty_cuts(&plan, st.size) {
+        return Err((d, exit::INPUT));
+    }
+    let binding = CutawayBinding {
+        planned: plan.len(),
+        cut: plan.iter().filter(|s| !s.cutaway.is_empty()).count(),
+    };
+    Ok((st, plan, binding))
+}
+
+/// Render a settled plan for one prefab into `out`.
+fn render_piece(
+    nbt_path: &Path,
+    out: &Path,
+    st: &nbt::Structure,
+    plan: &[shots::PieceShot],
+    pack: &nucleation::meshing::ResourcePackSource,
+    size: u32,
+    json: bool,
+) -> Result<(), (Diagnostic, u8)> {
     std::fs::create_dir_all(out).map_err(|e| {
         (
             Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
@@ -256,7 +332,7 @@ fn render_piece(
         .and_then(|s| s.to_str())
         .unwrap_or("prefab");
 
-    for shot in &plan {
+    for shot in plan {
         let params = RenderParams {
             yaw_deg: shot.yaw_deg,
             pitch_deg: shot.pitch_deg,
@@ -264,7 +340,7 @@ fn render_piece(
             target: shot.target,
             dim: size,
         };
-        let frame = render::render_structure(&st, pack, shot.cutaway, &params)
+        let frame = render::render_structure(st, pack, &shot.cutaway, &params)
             .map_err(|e| (Diagnostic::error(DW_RENDER, e), exit::RENDER))?;
         // Advisory only: note a placeholder in a per-piece render (the gate is
         // the enforcing command).
@@ -281,10 +357,14 @@ fn render_piece(
         let path = out.join(format!("{stem}-{}.png", shot.name));
         save_png(&frame, &path)?;
     }
-    Ok(plan.len())
+    Ok(())
 }
 
-fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
+fn run_batch(dir: &Path, out: &Path, cutaway: Option<&str>, cli: &Cli) -> ExitCode {
+    let extra = match parse_cutaway(cutaway) {
+        Ok(c) => c,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
     let textures = match resolve_textures(cli) {
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
@@ -309,22 +389,28 @@ fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
         .collect();
     nbts.sort();
     let mut total = 0usize;
+    let mut cut = 0usize;
     for nbt_path in &nbts {
         let stem = nbt_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("prefab");
         let sub = out.join(stem);
-        match render_piece(nbt_path, &sub, &pack, cli.size, cli.json) {
-            Ok(n) => {
-                total += n;
-                eprintln!("  {stem}: {n} shot(s)");
+        let (st, plan, binding) = match plan_for(nbt_path, extra.as_ref()) {
+            Ok(p) => p,
+            Err((d, code)) => return fail(d, cli.json, code),
+        };
+        match render_piece(nbt_path, &sub, &st, &plan, &pack, cli.size, cli.json) {
+            Ok(()) => {
+                total += binding.planned;
+                cut += binding.cut;
+                eprintln!("  {stem}: {} shot(s), {binding}", binding.planned);
             }
             Err((d, code)) => return fail(d, cli.json, code),
         }
     }
     eprintln!(
-        "batch: {} prefab(s), {total} shot(s) -> {}",
+        "batch: {} prefab(s), {total} shot(s) ({cut} with a cutaway) -> {}",
         nbts.len(),
         out.display()
     );
@@ -349,7 +435,7 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &Cli) -> ExitCode {
         target: None,
         dim: cli.size,
     };
-    let frame = match render::render_structure(&st, &pack, false, &params) {
+    let frame = match render::render_structure(&st, &pack, &Cutaway::none(), &params) {
         Ok(f) => f,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };

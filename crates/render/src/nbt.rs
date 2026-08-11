@@ -20,6 +20,8 @@ use std::path::Path;
 use fastnbt::Value;
 use flate2::read::GzDecoder;
 
+use crate::cutaway::Cutaway;
+
 /// A parsed vanilla structure template, reduced to what the renderer needs.
 #[derive(Debug, Clone)]
 pub struct Structure {
@@ -145,20 +147,24 @@ pub fn parse_structure_bytes(raw: &[u8]) -> Result<Structure, NbtError> {
     })
 }
 
-/// Rebuild a parsed [`Structure`] as a Nucleation `UniversalSchematic`. When
-/// `strip_ceiling` is set, blocks at the top Y layer are omitted, yielding a
-/// "dollhouse" cutaway so an orbit camera can see the (roofed) interior — used
-/// for the per-piece interior/anchor shots (a validation artifact, never
-/// shipped). `air` states are skipped (they carry no mesh).
+/// Rebuild a parsed [`Structure`] as a Nucleation `UniversalSchematic`, with
+/// `cut` deciding **which solid the viewer is inside**: every cell the
+/// [`Cutaway`] removes is omitted before meshing, so an orbit camera can see
+/// into a body it would otherwise be outside of. [`Cutaway::none`] builds the
+/// whole model; [`Cutaway::top_layer`] is the dollhouse this used to hard-code.
+/// `air` states are skipped (they carry no mesh).
+///
+/// Whether the cut leaves anything to look at is the caller's question, asked
+/// exactly with [`Cutaway::kept_box`] — this function does not silently render
+/// an empty frame *or* silently ignore the cut.
 pub fn build_schematic(
     st: &Structure,
-    strip_ceiling: bool,
+    cut: &Cutaway,
 ) -> Result<nucleation::UniversalSchematic, NbtError> {
     use nucleation::{BlockState, UniversalSchematic};
     let mut schem = UniversalSchematic::new("delve-prefab".to_string());
-    let top_y = st.size[1] - 1;
     for (pos, idx) in &st.blocks {
-        if strip_ceiling && pos[1] >= top_y {
+        if cut.removes(*pos, st.size) {
             continue;
         }
         let state_str = &st.palette[*idx];
