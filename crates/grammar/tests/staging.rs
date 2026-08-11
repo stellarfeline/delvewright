@@ -22,7 +22,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
-use delvewright_grammar::ir::Program;
+use delvewright_grammar::geom::Orientation;
+use delvewright_grammar::ir::{AxisSpec, Node, Program, Split};
 use delvewright_grammar::library::bait_stand::{self, bait_stand};
 use delvewright_grammar::library::causeway::MIN_GATE_RISE;
 use delvewright_grammar::library::disarm_stand::{self, disarm_stand};
@@ -579,6 +580,173 @@ fn the_niche_spacing_is_a_real_control() {
     assert!(
         indexed(&sparse.anchors, "niche").len() < indexed(&tight.anchors, "niche").len(),
         "raising spacing_min did not thin the niches out"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// K — is this rule reachable by a turned frame at all?
+// ---------------------------------------------------------------------------
+//
+// Two rounds of the bell vocabulary recorded that a switchback was unbuildable
+// because "a grammar orientation is a permutation without reflection", and then
+// recorded a doubt about the way out: a rule *body* can be written mirrored
+// (`stair_flight` says so), but whether that reaches `cliff_path`, "whose lane
+// and recesses are placed by `reorient` rather than by split order, has not been
+// checked".
+//
+// It is checked here, and the answer decided the design. **Nothing in
+// `cliff_path` is placed by `reorient`**: the ledge, the recess and the backing
+// are three pieces of an `X` split, and the one `reorient` inside the rule
+// writes no block at all — it exists to aim an anchor. So a mirrored body would
+// have reached it. What a mirrored body could *not* reach is the case a hairpin
+// actually needs, which is not a mirror in one axis but a **half-turn** in two;
+// writing that as a body means a second copy of the rule. The frame carries a
+// sign instead, and the second test below is what that buys.
+
+/// The `reorient` in `recess_slice` moves no block: strip it and the model is
+/// byte-identical. Only the derived facing of `anchor/niche-<i>` changes, which
+/// is the whole of its job.
+///
+/// This is the measurement the module's open question asked for, stated as the
+/// thing it decides rather than as prose: if the recess lane were placed by a
+/// reorientation, removing it would move blocks.
+#[test]
+fn the_recess_reorientation_aims_an_anchor_and_writes_nothing() {
+    fn strip(node: &Node) -> Node {
+        match node {
+            // The anchor-aiming one, and only it: the rule's frame names
+            // `Largest`, never `LocalX`.
+            Node::Reorient { orient, body } if orient.z == Some(AxisSpec::LocalX) => strip(body),
+            Node::Reorient { orient, body } => Node::Reorient {
+                orient: *orient,
+                body: Box::new(strip(body)),
+            },
+            Node::Mark { mark, body } => Node::Mark {
+                mark: mark.clone(),
+                body: Box::new(strip(body)),
+            },
+            Node::Split(split) => Node::Split(Split {
+                children: split.children.iter().map(strip).collect(),
+                ..split.clone()
+            }),
+            other => other.clone(),
+        }
+    }
+
+    let mut flattened = cliff_path();
+    let mut removed = 0usize;
+    for alts in flattened.rules.values_mut() {
+        for alt in alts.iter_mut() {
+            let before = format!("{:?}", alt.body);
+            alt.body = strip(&alt.body);
+            if format!("{:?}", alt.body) != before {
+                removed += 1;
+            }
+        }
+    }
+    assert_eq!(
+        removed, 2,
+        "the strip found {removed} recess reorientations"
+    );
+
+    let plain = expand_at(&cliff_path(), CLIFF_REGION, CLIFF_SEED);
+    let flat = expand_at(&flattened, CLIFF_REGION, CLIFF_SEED);
+    assert_eq!(
+        plain.model.canonical_bytes(),
+        flat.model.canonical_bytes(),
+        "removing the recess reorientation moved blocks, so the lane really is \
+         placed by it"
+    );
+
+    // ...and the control, so the byte-identity above is not the identity
+    // transform quietly doing nothing: the facings it aimed did change.
+    let niches = indexed(&plain.anchors, "niche");
+    assert!(!niches.is_empty());
+    for i in 1..=niches.len() {
+        let name = format!("anchor/niche-{i}");
+        assert_eq!(plain.anchors[&name].facing.as_str(), "west");
+        assert_eq!(
+            flat.anchors[&name].facing.as_str(),
+            "north",
+            "{name} kept its aim without the reorientation that aims it"
+        );
+    }
+}
+
+/// The same rule under a **half-turn about the vertical** is the same piece
+/// turned round: every block of the turned model is the plain model's block at
+/// the mirrored cell, in `X` and `Z` together.
+///
+/// This is what makes a switchback's second leg the *same* rule rather than a
+/// hand-mirrored copy of it, and it is asserted cell by cell over the whole
+/// fixture rather than sampled, because "mostly mirrored" is the failure that
+/// would ship a road with one recess on the wrong side.
+///
+/// Binding: 540 cells, and every anchor the rule declares.
+#[test]
+fn the_cliff_path_turned_round_is_the_same_path_mirrored() {
+    let mut turned = cliff_path();
+    for alt in turned
+        .rules
+        .get_mut("cliff_path")
+        .expect("the frame rule")
+        .iter_mut()
+    {
+        match &mut alt.body {
+            Node::Reorient { orient, .. } => *orient = orient.turned(),
+            other => panic!("the frame is no longer a reorientation: {other:?}"),
+        }
+    }
+
+    let plain = expand_at(&cliff_path(), CLIFF_REGION, CLIFF_SEED);
+    let round = expand_at(&turned, CLIFF_REGION, CLIFF_SEED);
+    let [sx, _, sz] = CLIFF_REGION.size.map(|n| n as i32);
+    let mirror = |[x, y, z]: [i32; 3]| [sx - 1 - x, y, sz - 1 - z];
+
+    let mut compared = 0usize;
+    for pos in CLIFF_REGION.positions() {
+        assert_eq!(
+            round.model.get(pos),
+            plain.model.get(mirror(pos)),
+            "the turned path differs from the plain one mirrored, at {pos:?}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 540, "the gate compared {compared} cells");
+
+    // The anchors turn with it: same names, mirrored cells, and the derived
+    // facings point the other way down both axes — `west`→`east` for a recess
+    // looking out of the wall, `north`→`south` for a watch cell looking down
+    // travel.
+    assert_eq!(
+        round.anchors.keys().collect::<Vec<_>>(),
+        plain.anchors.keys().collect::<Vec<_>>()
+    );
+    let mut turned_anchors = 0usize;
+    for (name, anchor) in &round.anchors {
+        let was = &plain.anchors[name];
+        assert_eq!(anchor.pos, mirror(was.pos), "{name} did not turn with it");
+        let want = match (was.facing.as_str(), name.contains("watch")) {
+            ("west", false) => "east",
+            ("north", true) => "south",
+            other => panic!("{name} faced {other:?} before the turn"),
+        };
+        assert_eq!(anchor.facing.as_str(), want, "{name}");
+        turned_anchors += 1;
+    }
+    assert_eq!(
+        turned_anchors, 6,
+        "the gate turned {turned_anchors} anchors"
+    );
+
+    // The control: the turn is a *rotation*, not a mirror image — a chiral piece
+    // keeps its hand. One reversal would not.
+    assert!(
+        Orientation {
+            reversed: [true, false, true],
+            ..Orientation::IDENTITY
+        }
+        .is_rotation()
     );
 }
 

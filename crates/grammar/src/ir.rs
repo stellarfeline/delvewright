@@ -190,6 +190,13 @@ pub enum Cond {
     /// The scope's orientation is exactly this local-to-world mapping —
     /// upstream's `orientation() == (0, 1, 2)` checks, which pick the correctly
     /// facing stair/door variant.
+    ///
+    /// **Axis names only**: it does not read the orientation's signs, so a
+    /// piece and the same piece turned round answer it identically. That is
+    /// deliberate — every upstream use is "is my length running east-west",
+    /// which a half-turn does not change — and a guard that wants the sign has
+    /// no business being a `Cond` anyway: it would be selecting a variant for a
+    /// mirroring the interpreter already performs on the body it guards.
     Orientation {
         /// World axis of the local `X`.
         x: Axis,
@@ -291,6 +298,12 @@ pub enum AxisSpec {
 
 /// A (possibly partial) reorientation request: unset axes are filled in by
 /// [`crate::orient::reorient`].
+///
+/// Two independent halves. The [`AxisSpec`] fields say **which** parent axis
+/// each of the child's local axes names; `reverse` says whether the child
+/// counts that axis **backwards**. They are independent because the questions
+/// are: a piece can be turned 90° without being turned round, and turned round
+/// without being turned 90°.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Reorient {
     /// What the child should call its local `X`.
@@ -302,14 +315,28 @@ pub struct Reorient {
     /// What the child should call its local `Z`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<AxisSpec>,
+    /// Which of the child's local axes run **backwards** along the parent axis
+    /// they name, indexed by local axis ([`Axis::index`]).
+    ///
+    /// Relative to the parent, never to the world: a rule reasons in the frame
+    /// it was handed, so reversals compose (reversing an already-reversed axis
+    /// puts it back). Defaults to none, and is skipped in JSON when it is.
+    #[serde(default, skip_serializing_if = "no_reversal")]
+    pub reverse: [bool; 3],
+}
+
+/// Serde helper: a request with no reversal writes no `reverse` key.
+fn no_reversal(reverse: &[bool; 3]) -> bool {
+    !reverse[0] && !reverse[1] && !reverse[2]
 }
 
 impl Reorient {
-    /// No reorientation: children keep the parent's axes.
+    /// No reorientation: children keep the parent's axes, running the same way.
     pub const KEEP: Reorient = Reorient {
         x: None,
         y: None,
         z: None,
+        reverse: [false; 3],
     };
 
     /// True when nothing is requested.
@@ -333,6 +360,31 @@ impl Reorient {
     pub fn z(mut self, spec: AxisSpec) -> Reorient {
         self.z = Some(spec);
         self
+    }
+
+    /// Run one of the child's local axes backwards along the parent axis it
+    /// names.
+    ///
+    /// The whole body mirrors along that axis: split pieces are laid from the
+    /// far end, a local offset is measured from the far end, and a derived
+    /// facing points the other way. One reversal is a reflection; two is a
+    /// rotation — see [`Reorient::turned`] and
+    /// [`crate::geom::Orientation::is_rotation`].
+    pub fn reverse(mut self, axis: Axis) -> Reorient {
+        self.reverse[axis.index()] = !self.reverse[axis.index()];
+        self
+    }
+
+    /// A half-turn about the vertical: local `X` and local `Z` both reversed,
+    /// `Y` left alone.
+    ///
+    /// The piece faces the way it came. Named because it is the case a route
+    /// doubling back always wants — a hairpin leg, a spiral stair's return
+    /// flight, a corridor entered from the other end — and because it is the
+    /// one combination that is a *rotation*, so a chiral piece stays the hand
+    /// it was built.
+    pub fn turned(self) -> Reorient {
+        self.reverse(Axis::X).reverse(Axis::Z)
     }
 }
 
