@@ -279,12 +279,23 @@ pub fn build(
         Some(t) => (
             t.regions
                 .iter()
-                .enumerate()
-                .map(|(i, r)| {
+                .map(|r| {
+                    // Matched by BOX, not by index. The table happens to order its
+                    // lethal regions exactly as `plan.lethal_volumes` does today, and
+                    // an index here would inherit that as an invisible contract — a
+                    // later reordering in `compiler::stake` would silently hand the
+                    // bot tier the wrong volume's name and every assertion would
+                    // still be green.
+                    let volume = r.lethal.then(|| {
+                        plan.lethal_volumes
+                            .iter()
+                            .find(|v| v.region == r.region)
+                            .map(|v| v.id.clone())
+                    });
                     json!({
                         "label": r.label,
                         "lethal": r.lethal,
-                        "volume": r.lethal.then(|| plan.lethal_volumes.get(i).map(|v| v.id.clone())).flatten(),
+                        "volume": volume.flatten(),
                         "region": boxed(r.region.0, r.region.1),
                     })
                 })
