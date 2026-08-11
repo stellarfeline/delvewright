@@ -58,6 +58,64 @@ fn a_barred_door_with_nothing_to_say_is_refused() {
     );
 }
 
+/// **RED 1b — the same silence, on the other object of the same class.**
+///
+/// A `close-gate` that seals a wall and authors no `sealed_hint` is the identical
+/// defect: the party presses the stone and the compiler decides what it says. On
+/// `origin/main` it is not merely accepted, it is *defaulted* — the engine picks
+/// the tone and never discloses that it did.
+///
+/// The two must be refused by ONE rule. Two objects of one class with two
+/// defaulting policies is the "capability keyed to the verb" defect this whole
+/// surface is the worked example of.
+#[test]
+fn an_unauthored_seal_is_refused_by_the_same_rule() {
+    let hw = |n: &str| std::fs::read_to_string(common::hello_world_dir().join(n)).unwrap();
+    let quests = r#"{
+  "dsl_version": "0.11.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "id": "obj/talk", "type": "talk-to", "npc": "npc/keeper" },
+          { "id": "obj/exit", "type": "reach-anchor", "anchor": "anchor/exit",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [ { "type": "open-gate", "anchor": "anchor/door" } ]
+        },
+        "on_complete": [
+          { "type": "close-gate", "anchor": "anchor/door",
+            "happening": { "verb": "seals", "text": "The bars come down." } },
+          { "type": "campaign-complete",
+            "happening": { "verb": "survives", "text": "The party is out." } }
+        ]
+      }
+    ]
+  }
+}"#;
+    let raw = delvewright_dsl::RawCampaign {
+        world: hw("world.json"),
+        npcs: hw("npcs.json"),
+        classes: hw("classes.json"),
+        quest_plan: hw("quest-plan.json"),
+        quests: quests.to_string(),
+        dialogue: hw("dialogue.json"),
+        world_edits: None,
+    };
+    let c = parse_campaign(&raw).expect("campaign parses");
+    let diags = diagnostics(&c);
+    assert!(
+        diags.iter().any(|d| d.code == "DW0429"),
+        "a sealed wall nobody worded must be REFUSED by the same rule the door is. \
+         The campaign was accepted with: {diags:#?}"
+    );
+}
+
 /// **RED 2 — and the campaign could not have written that line anyway.**
 ///
 /// The general verb is `EnvTrigger{on: use}` + `narrate`. To say what a

@@ -2112,27 +2112,48 @@ triggers it synthesizes (`trigger/dw-press-seal-<anchor>`,
 **Which bodies get an answer, and who words it.** One site
 (`plan::press_answer_sites`) lists every pressable body — `close-gate` seals, then
 sealed `shortcut` doors — and each carries a **silence policy**: what happens when
-the campaign says nothing. The policy is a property of the body class, so
-extending a ruling from one class to another is a changed arm rather than a
-re-architecture.
+the campaign says nothing. **The policy is keyed to the `dsl_version`, not to the
+verb.** Above the fence there is one rule for the whole class; the two arms below
+it differ from each other only because the two classes historically differed, and
+preserving that is exactly what a fence is for.
 
-| Body | Policy | When the campaign says nothing |
+| Body | at `dsl_version` ≥ 0.11.0 | below 0.11.0 |
 |---|---|---|
-| `close-gate` seal | `Defaulted` | The compiler supplies its `delvewright.ui.gate.sealed` chrome, or the anchor's authored `sealed_hint`. |
-| `shortcut` door, `dsl_version` ≥ 0.11.0 | `Authored` | **`DW0429` — the campaign does not compile.** |
-| `shortcut` door, below 0.11.0 | `Silent` | Nothing is emitted, exactly as before the version existed. |
+| `close-gate` seal | `Authored` — **`DW0429`**, the campaign does not compile | `Defaulted` — the `delvewright.ui.gate.sealed` chrome, as since v0.8 |
+| `shortcut` door | `Authored` — **`DW0429`**, the campaign does not compile | `Silent` — nothing emitted, as before the version existed |
 
-**Why a door errors instead of defaulting** (owner ruling, 2026-08-10). The
-wording may well be "The way is sealed.", and it must be creator-customisable —
-but a baked default is the compiler making a *design statement*, about tone and
-about what this specific door is, on the author's behalf, and then never telling
-them it did. An error makes the author say it. That is the no-hacks rule at a new
-site: if content needs a thing, the DSL exposes it and the author declares it,
-rather than a lower layer inventing it. It is also the only end state where the
-docs, the code and the player agree — this reference and `wrongside.rs` both
-claimed for two versions that a door's wording "defaults", and no code defaulted
-anything, so the door said nothing. The repair was never to make the claimed
-default real.
+The first column is deliberately uniform and the second deliberately is not: one
+rule above the fence, and below it each class keeps precisely what it already had.
+
+Two objects of one class must not get two defaulting policies: that is precisely
+the "capability keyed to the verb" defect CLAUDE.md's worked example describes,
+and this surface **is** that worked example. The shared site is therefore
+load-bearing rather than tidiness.
+
+**Why a sealed body errors instead of defaulting** (owner ruling, 2026-08-10;
+made uniform 2026-08-11). The wording may well be "The way is sealed.", and it
+must be creator-customisable — but a baked default is the compiler making a
+*design statement*, about tone and about what this specific thing is, on the
+author's behalf, and then never telling them it did. An error makes the author say
+it. That is the no-hacks rule at a new site: if content needs a thing, the DSL
+exposes it and the author declares it, rather than a lower layer inventing it. It
+is also the only end state where the docs, the code and the player agree — this
+reference and `wrongside.rs` both claimed for two versions that a door's wording
+"defaults", and no code defaulted anything, so the door said nothing. The repair
+was never to make the claimed default real.
+
+**Grandfathering is the fence's job, not a review's.** The same declared
+`dsl_version` yields the same verdicts and the same behaviour (owner ruling on
+version semantics, 2026-08-11), so an already-approved campaign keeps what it was
+approved with and is never re-reviewed for a rule written after it. That is not a
+promise of byte-identity forever — a released delve reproduces through its pinned
+engine and OCI image (`versions.toml`), not through eternal emission stability.
+
+**Two ways to discharge the obligation**, the same thing said at two layers: a
+`use` trigger anchored on the body (the general verb, available to every pressable
+object), or — for a `close-gate` — an authored `sealed_hint`, which *is* the author
+defining the wording. The compiler lowering an authored wording onto the general
+path is not the compiler putting words in a player's mouth; inventing one is.
 
 "The campaign answers it" is `QuestsContent::answers_press_at`: **any** `use`
 trigger anchored on that body, whatever it does. One predicate, read by both the
@@ -2217,11 +2238,10 @@ shortcut gate already obeys (sealed for the whole model, because the delve must 
 finishable the long way). A later `open-gate` from a forced root still wins the
 region, so the widening reads as a seal the proof must survive, never as a veto.
 
-**Wording (`close-gate` only).** `sealed_hint` is optional and is now **sugar,
-not machinery**: it is the wording of the press answer the compiler synthesizes
-for that gate, and nothing else. `close-gate` is deliberately outside the
-2026-08-10 ruling — it still defaults — and whether the ruling should extend to it
-is an open decision, not an oversight. Unauthored, the line is the `delvewright.ui.gate.sealed` chrome
+**Wording (`close-gate` only).** `sealed_hint` is optional below 0.11.0 and
+**required at 0.11.0 and above** unless a `use` trigger answers the gate instead
+(`DW0429`). Either way it is now **sugar, not machinery**: it is the wording of
+the press answer the compiler synthesizes for that gate, and nothing else. Unauthored, the line is the `delvewright.ui.gate.sealed` chrome
 string — compiler-owned, translated with the compiler, absent from the campaign's
 inventory (spec-0029). Authored, the line is inventoried at
 `<effect-key>.sealed_hint` and translates like any other player-visible string.
@@ -3127,7 +3147,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0426` | **A click trigger is anchored where a player can never click it** (task #50). The unbound-vacuity class as a check, and the rule that would have caught the gap this task came from: the trigger declares an anchor, a click and a full effect bundle, validation passes, emission runs, and the press lands on nothing — so the beat never happens and every board stays green. Fires when a `strike`/`use` trigger's `at` resolves to no placed piece, so there is no cell to give it a body at. (`strike-npc` carries no anchor and rides its NPC's own hitbox; `approach` is a radius test with no entity — neither is in scope.) `compiler::pressable::body_at` + `emit::check_trigger_bodies`, build-tier (exit 3). Prescription: anchor it on a place a prefab provides — anchor names come from prefab metadata, never invented — or drop the trigger. |
 | `DW0427` | **A press answer addressed to a click vanilla cannot attribute** (v0.11). A trigger declares `audience: presser` on something other than an `on: use`. `minecraft:player_interacted_with_entity` is the only vanilla criterion that runs a function as the player who clicked, and it fires on right-clicks alone; a left-click is recorded in the interaction entity's `attack` NBT as a UUID no command can become, and an `approach` has no click at all. Approximating it — polling the record and assuming the nearest player is the striker — is exactly the downstream folklore CLAUDE.md's no-hack rule excludes, so the capability is refused rather than faked. `dsl::validate::press_answer_checks`, validation tier (exit 1). Prescription: make it an `on: use` trigger, or drop `audience` and let the beat address the party. |
 | `DW0428` | **An authored trigger id in the compiler's reserved `dw-` namespace** (v0.11). The compiler synthesizes triggers of its own — today the press answer every sealed gate and shortcut door gives (`trigger/dw-press-seal-<anchor>`, `trigger/dw-press-door-<shortcut>`) — and two triggers sharing an id would share one `dw_trig_…` tag and one emitted function, so one of them would silently disappear. Reserving the prefix makes the collision impossible by construction rather than improbable. `dsl::validate::press_answer_checks`, validation tier (exit 1). Prescription: rename it; any kebab id not opening with `dw-` is the campaign's. |
-| `DW0429` | **A sealed shortcut door the campaign never answers** (v0.11, owner ruling 2026-08-10). A `shortcuts[]` entry bars a gate from world-load and no `use` trigger anywhere in the campaign is anchored on it, so a player who walks the long way round, arrives at the wrong side and pushes on the door is told nothing — the press a shortcut loop most invites. The compiler had every ingredient to invent a line here and deliberately does not: a baked default decides the door's tone on the author's behalf and never discloses that it did, while an error makes the author say it (the no-hacks rule at a new site). **Fenced on the quests stage's `dsl_version`**, because it is a tightening rather than new surface: below 0.11.0 a silent door still compiles and still emits nothing, which is byte-for-byte what it emitted before the version. Discharged by ANY `use` trigger on the gate — `QuestsContent::answers_press_at`, the same predicate the synthesis reads — but not by a `strike`, which is a different gesture. `dsl::validate::shortcut_answer_checks`, validation tier (exit 1). Prescription: the message carries the trigger JSON verbatim, and a test parses that prescription and asserts it clears the diagnostic, so it cannot come to name a field the schema does not have (`DW0425` spent two versions prescribing `on_wrong_side`, which never existed). |
+| `DW0429` | **A sealed body the campaign never answers** (v0.11; owner ruling 2026-08-10, made uniform over the pressable class 2026-08-11). A `shortcuts[]` door bars a gate from world-load, or a `close-gate` seals a wall, and nothing says what it answers when the party presses it — no `use` trigger anchored on it, and for a `close-gate` no authored `sealed_hint`. A player who walks the long way round, arrives at the wrong side of a door and pushes on it is told nothing; that is the press a shortcut loop most invites, and a sealed wall is the same defect one verb over. **One rule for both**, because two objects of one class with two defaulting policies is exactly the "capability keyed to the verb" defect this surface is CLAUDE.md's worked example of. The compiler had every ingredient to invent a line here and deliberately does not: a baked default decides the door's tone on the author's behalf and never discloses that it did, while an error makes the author say it (the no-hacks rule at a new site). **Fenced on the quests stage's `dsl_version`**, because it is a tightening rather than new surface: below 0.11.0 a silent door still compiles and still emits nothing, which is byte-for-byte what it emitted before the version. Discharged by ANY `use` trigger on the body — `QuestsContent::answers_press_at`, the same predicate the synthesis reads — or, for a `close-gate`, by an authored `sealed_hint`; not by a `strike`, which is a different gesture. `dsl::validate::press_obligation_checks`, validation tier (exit 1). **The version gate here is the ordinary per-stage `is_v11(...)` idiom; it should migrate onto task #51's general obligation fence (`feat/obligation-fence`: every diagnostic declares the version at which it became an obligation, and one that declares none does not compile) when that lands — this check is exactly the kind it governs.** Prescription: the message carries the trigger JSON verbatim, and a test parses that prescription and asserts it clears the diagnostic, so it cannot come to name a field the schema does not have (`DW0425` spent two versions prescribing `on_wrong_side`, which never existed). |
 | `DW0386` | A TD `lane` (spec-0016 §6) does not survive contact with the assembled world: a waypoint anchor that resolves nowhere in the wave's area, a waypoint with no standable footing within 3 blocks, a leg the squad cannot walk (routed on the same **no-gate-use** view wave seating uses — lane mobs cannot right-click a fence gate open), or a leg of **10 blocks or less**. The spacing rule is not taste: vanilla re-rolls a patrol target to a random point once the patroller is within 10 blocks of it, so a tighter lane is one the engine quietly stops following — it reads as working-but-drunk, not as a bug. The spike's measured working default is 12. `compiler::nav::plan_lanes`, build-tier (exit 3); the message names the wave, both leg endpoints and the measured length. |
 | `DW0387` | A `summon: aggro-edge` wave (spec-0016 §6) whose perception ring offers fewer valid cells than the stack has mobs. The ring is the standable, walk-reachable, line-of-sight cells on `[follow_range - 1, follow_range]` around the defended anchor, inside the area. An error rather than a silent short spawn on purpose: the round-1 lesson was a wave that never fully appeared, so its `kill` countdown could never reach zero and the delve soft-locked with every other proof green. `compiler::emit::plan_aggro_edge_spawns`, build-tier (exit 3). Prescription: give the arena room at that radius, lower the stack's `follow_range` to a ring the arena actually has, or move the defended anchor off the wall. |
 | `DW0388` | **Hazard observability** (spec-0016 §4 addendum, souls dossier §5.3 / §2.2 axis 5): a timed hazard — a `timed-gate` span or a `volley` kill zone — that the player cannot **watch before committing to it**. The obligation is one standable **watch cell**: (a) at least **5 blocks** (Chebyshev box distance) clear of every cell of the lethal span — one second of sprint at the same `4 t/block` model `DW0355` and `DW0378` use, so sight from the lip of the span does not count as safety; (b) walkable from the campaign entry over the world with that span **sealed**, which is the load-bearing clause — a bay you can only reach by first surviving the hazard is not a bay; and (c) with an unobstructed sightline from eye height (1.62 above its floor) to the player-centre-mass point (1.0 above the floor, the exact point a volley aims at) of some cell the hazard judges, walked by the `DW0308` Amanatides–Woo traversal through the same `blocks_camera` sight predicate — so glass and a grate are transparent to an eye exactly as they are to a camera. Search is bounded to 32 blocks; candidates are tried nearest-first, ties on cell order (ADR-0006). Deliberately **not** required: sight to the whole span — a stair volley read from its foot is observable even though the treads occlude each other, and demanding total visibility would red legitimate geometry while proving nothing more. `collapse` is out of scope (it fires once, its region is a ceiling with no standable cell, and there is no cycle to watch — `DW0445` is its fairness proof); a region with no standable cell, and a campaign with no entry anchor, are left to `DW0444`/`DW0311`/`DW0345`. **Two tiers, one rule**: **error (exit 3)** when the campaign declares a `bonfire` — the same test the flask obligation `DW0476` uses to decide "is this spec-0016 content" — and **warning** otherwise, where the geometry is a design note rather than a broken promise. `compiler::nav::check_hazard_observability`. This is the dossier's gap G1: no source reports a duty cycle for any FromSoft periodic hazard, but every source attests the observe-from-safety rule, and the dossier's verdict is that if only one of the two proofs can be afforded it should be this one, not `DW0378`'s 20%. Prescription is always geometry — open the approach, or move the hazard off the blind side of the corner. Never shorten the standoff. |

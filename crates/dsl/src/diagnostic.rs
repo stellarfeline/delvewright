@@ -634,10 +634,11 @@ pub mod codes {
     /// makes the collision impossible by construction instead of improbable.
     pub const TRIGGER_ID_RESERVED: &str = "DW0428";
 
-    /// (v0.11) **A sealed shortcut door with no press answer** (owner ruling
-    /// 2026-08-10). A `shortcuts[]` entry declares a barred door the party walks
-    /// up to and pushes on, and no `use` trigger in the campaign is anchored on
-    /// its `gate`, so the press produces silence.
+    /// (v0.11) **A sealed body with no press answer** (owner ruling 2026-08-10,
+    /// made uniform over the pressable class 2026-08-11). A `shortcuts[]` door or
+    /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
+    /// party presses it — no `use` trigger anchored on it, and (for a
+    /// `close-gate`) no authored `sealed_hint`.
     ///
     /// The compiler deliberately does **not** fill that silence. A baked default
     /// is the compiler making a design statement — about tone, about what this
@@ -646,8 +647,13 @@ pub mod codes {
     /// layer": if content needs a thing, the DSL exposes it and the author
     /// declares it, rather than a lower layer inventing it.
     ///
+    /// One rule for the whole pressable class: two objects of the same class do
+    /// not get two defaulting policies, which would be the "capability keyed to
+    /// the verb" defect this very surface is CLAUDE.md's worked example of.
+    ///
     /// Fenced on `dsl_version` 0.11.0, because it is a tightening: a campaign
-    /// authored before the obligation existed keeps compiling, and its door keeps
-    /// saying what it always said (nothing).
-    pub const SHORTCUT_DOOR_UNANSWERED: &str = "DW0429";
+    /// authored before the obligation existed keeps its verdicts and its
+    /// behaviour — a door still says nothing, a seal still takes the compiler's
+    /// canonical English.
+    pub const SEALED_BODY_UNANSWERED: &str = "DW0429";
 }

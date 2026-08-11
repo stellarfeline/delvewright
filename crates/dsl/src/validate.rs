@@ -1365,7 +1365,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v10(c, d);
     reserved_v11(c, d);
     press_answer_checks(c, d);
-    shortcut_answer_checks(c, d);
+    press_obligation_checks(c, d);
 }
 
 /// DSL v0.11 reserved-feature gating: **the press-answer lift** — a `narrate`
@@ -1469,37 +1469,96 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// `DW0429`: **a sealed shortcut door the campaign never answers** (DSL v0.11,
-/// owner ruling 2026-08-10).
+/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11; owner
+/// ruling 2026-08-10, made uniform 2026-08-11).
 ///
-/// A `shortcut` is a barred door the party is invited to walk up to and push on
-/// before they have earned it — the souls loop-back's central idiom — and the
-/// press has to say something. The compiler will not say it for them: a baked
-/// default is a design statement (about tone, about what this door is) made on
-/// the author's behalf and never disclosed, so the obligation is stated instead
-/// of filled.
+/// A sealed thing is something the party walks up to and pushes on — a `shortcut`
+/// door on the wrong side of the loop, a `close-gate`'s wall — and the press has
+/// to say something. The compiler will not say it for them: a baked default is a
+/// design statement (about tone, about what this thing is) made on the author's
+/// behalf and never disclosed, so the obligation is stated instead of filled.
 ///
-/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not an
-/// additive surface, so it cannot reach a campaign authored before it existed;
-/// below 0.11.0 a silent door still compiles and still emits exactly what it
-/// emitted before the version (nothing — see `plan::SilencePolicy::Silent`).
+/// **One rule for the whole pressable class, not one per verb.** A shortcut door
+/// and a sealed gate are two objects of the same class, and giving them two
+/// defaulting policies would be exactly the "capability keyed to the verb" defect
+/// CLAUDE.md's worked example is about — which this surface *is*. So above the
+/// fence both are held to the same obligation, and `plan::press_answer_sites`
+/// carries the single shared list they are read from.
 ///
-/// `close-gate`'s `sealed_hint` is deliberately **out of scope**: it still bakes
-/// the compiler's canonical English when unauthored. Whether the ruling extends
-/// there is a separate decision; the policy lives on the body class
-/// (`plan::press_answer_sites`) so extending it is a changed arm.
-fn shortcut_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+/// **Two ways to discharge it**, and they are the same thing said at two layers:
+///
+/// * a `use` trigger anchored on the body — the general verb, available to every
+///   pressable object (`QuestsContent::answers_press_at`);
+/// * for a `close-gate`, an authored `sealed_hint` — the sugar, which *is* the
+///   author defining the wording. The compiler lowering that onto the general
+///   path is not the compiler putting words in a player's mouth.
+///
+/// A `strike` discharges neither: pressing a thing is a right-click, and a
+/// left-click reply is a gesture the player may never make.
+///
+/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not new
+/// surface, and the fence is what makes an already-approved design keep its
+/// verdicts: the same declared version yields the same behaviour (owner ruling on
+/// version semantics, 2026-08-11). Below 0.11.0 a silent door still compiles and
+/// still emits nothing, and an unauthored `close-gate` still takes the compiler's
+/// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
+/// differ from each other only because the two classes historically differed.
+///
+/// **Migration note.** The version gate here is the ordinary per-stage
+/// `is_v11(...)` idiom. Task #51's general form — every diagnostic declaring the
+/// version at which it became an obligation, so an unfenced obligation cannot
+/// compile — is being built on `feat/obligation-fence`; this check is exactly the
+/// kind it governs and should move onto it when it lands.
+fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     if !is_v11(c.quests.dsl_version.as_str()) {
         return;
     }
     let quests = &c.quests.content;
+
+    // Every gate anchor some `close-gate` seals, and whether any firing on it
+    // authored a wording. Keyed by ANCHOR because the seal is a place, not an
+    // event — the same reason `plan::collect_seal_hints` dedups by anchor and
+    // `DW0423` refuses two firings that disagree.
+    let mut sealed: BTreeMap<&str, (bool, String)> = BTreeMap::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(anchor) = eff.close_gate_anchor() else {
+            return;
+        };
+        let entry = sealed
+            .entry(anchor.as_str())
+            .or_insert_with(|| (false, path.to_string()));
+        entry.0 |= eff.close_gate_sealed_hint().is_some();
+    });
+    for (anchor, (authored, path)) in sealed {
+        if authored || quests.answers_press_at(anchor) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SEALED_BODY_UNANSWERED,
+            "quests",
+            path,
+            format!(
+                "this `close-gate` seals `{anchor}`, and nothing says what the wall answers when \
+                 the party presses it. A seal is a thing the party walks back to and pushes on, \
+                 so the press has to say something — and the compiler will not word it for you: a \
+                 baked default decides this wall's tone on your behalf and never tells you it \
+                 did. Two ways to say it, and either is enough: add `\"sealed_hint\": \"<what the \
+                 wall says>\"` to this effect, or anchor a trigger on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the wall says>\"}}]}}`. The trigger form \
+                 is the general one and can carry a sound, a flag gate or any other effect"
+            ),
+        ));
+    }
+
     for (i, sc) in quests.shortcuts.iter().enumerate() {
         let gate = sc.gate.as_str();
         if quests.answers_press_at(gate) {
             continue;
         }
         d.push(Diagnostic::error(
-            codes::SHORTCUT_DOOR_UNANSWERED,
+            codes::SEALED_BODY_UNANSWERED,
             "quests",
             format!("/content/shortcuts/{i}"),
             format!(
@@ -1508,7 +1567,8 @@ fn shortcut_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  round, arrives at the wrong side of the door and pushes on it is told nothing. \
                  That is the press a shortcut loop most invites. The compiler will not word it \
                  for you: a baked default would be the engine deciding this door's tone and \
-                 never saying that it had. Prescription: add a trigger anchored on the gate — \
+                 never saying that it had. A `shortcut` carries no wording field, deliberately — \
+                 the line is a trigger. Prescription: add a trigger anchored on the gate — \
                  `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
                  \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
                  \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \

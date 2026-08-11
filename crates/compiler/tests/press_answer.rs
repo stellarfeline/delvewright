@@ -498,25 +498,37 @@ fn the_press_answers_bind_to_the_pressable_class() {
     );
 }
 
-/// …and the seal half is unchanged by the ruling: a `close-gate` the campaign
-/// never answers still takes the compiler's canonical English. `close-gate` is
-/// deliberately out of the ruling's scope, and the policy that says so lives on
-/// the body class rather than in the synthesis, so extending it later is a
-/// changed arm and not a re-architecture.
+/// **The policy is keyed to the VERSION, not to the verb.** Above the fence every
+/// pressable body carries the same obligation; the two grandfathered arms below
+/// it differ from each other only because the two classes historically did.
+///
+/// This assertion is the guard on the defect CLAUDE.md's worked example is about:
+/// if someone later gives a door and a seal different defaulting rules at one
+/// version, this fails.
 #[test]
-fn a_close_gate_seal_still_takes_the_compilers_wording() {
-    let c = answered_fixture();
+fn the_silence_policy_is_uniform_above_the_fence() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let plan = Plan::build(&c, &prefabs).expect("plan builds");
-    let sites = delvewright_compiler::plan::press_answer_policies(&plan);
+    use delvewright_compiler::plan::SilencePolicy;
+
+    let answered = answered_fixture();
+    let plan = Plan::build(&answered, &prefabs).expect("plan builds");
+    let above = delvewright_compiler::plan::press_answer_policies(&plan);
+    assert!(
+        !above.is_empty() && above.iter().all(|(.., p)| *p == SilencePolicy::Authored),
+        "at 0.11.0 nothing may be worded by the compiler: {above:?}"
+    );
+
+    let pre = fixture();
+    let plan = Plan::build(&pre, &prefabs).expect("plan builds");
+    let below = delvewright_compiler::plan::press_answer_policies(&plan);
     assert_eq!(
-        sites,
+        below,
         vec![(
             "shortcut door",
             "anchor/door".to_string(),
-            delvewright_compiler::plan::SilencePolicy::Authored
+            SilencePolicy::Silent
         )],
-        "the door's class must require an author; nothing else is in scope"
+        "below it, a door keeps the silence it always had"
     );
 }
 

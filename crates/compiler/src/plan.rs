@@ -215,6 +215,11 @@ pub struct SealHintPlan {
     pub block: String,
     /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
     pub text: String,
+    /// Whether [`Self::text`] came from a `sealed_hint` the campaign wrote.
+    /// `false` means it is the compiler's chrome fallback, which above
+    /// `dsl_version` 0.11.0 the compiler is no longer allowed to supply
+    /// (`DW0429`).
+    pub authored: bool,
 }
 
 impl SealHintPlan {
@@ -2824,6 +2829,7 @@ fn collect_seal_hints(
                 Some(h) => h.to_string(),
                 None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
             },
+            authored: e.close_gate_sealed_hint().is_some(),
         });
     });
     out
@@ -2876,6 +2882,15 @@ pub struct PressAnswer {
     /// authored line passes through untouched and keeps its campaign key, so the
     /// l10n inventory is exactly what it was.
     pub text: String,
+    /// Whether [`Self::text`] is the **campaign's** wording rather than the
+    /// compiler's chrome fallback.
+    ///
+    /// This is the distinction the 2026-08-11 ruling turns on. A `close-gate`
+    /// with an authored `sealed_hint` has said what its seal says, and the
+    /// compiler lowering that onto the general path is not the compiler putting
+    /// words in a player's mouth. A `close-gate` with none has said nothing, and
+    /// above the fence that is `DW0429` rather than `The way is sealed.`
+    pub authored: bool,
 }
 
 /// The `trigger/<local>` id a press answer is synthesized under.
@@ -2932,17 +2947,17 @@ impl PressAnswer {
 /// answers is shared; only this decides who supplies the wording.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SilencePolicy {
-    /// The compiler supplies its own wording. `close-gate` seals, at every
-    /// version — its `sealed_hint` has always defaulted to the compiler's
-    /// canonical English, and whether that should change is a separate decision.
-    Defaulted,
-    /// **The campaign must author it.** A `shortcut` door from `dsl_version`
-    /// 0.11.0 (owner ruling 2026-08-10): the compiler supplies nothing and
-    /// `DW0429` refuses the campaign.
+    /// **The campaign must author the wording** — every pressable body, from
+    /// `dsl_version` 0.11.0 (owner ruling 2026-08-10, uniform ruling 2026-08-11).
+    ///
+    /// The compiler still *lowers* an authored wording onto the general path: a
+    /// `close-gate`'s `sealed_hint` is an authored answer and is synthesized from
+    /// as it always was. What it may not do is **invent** one. A body with neither
+    /// an authored wording nor a `use` trigger is `DW0429`.
     ///
     /// The reasoning belongs in the code because it is the project's own rule
     /// arriving at a new site. A baked default is the compiler making a **design
-    /// statement** — about tone, about what this specific door is — on the
+    /// statement** — about tone, about what this specific thing is — on the
     /// author's behalf, and then never telling them it did. An error makes the
     /// author say it. Same rule as "no hacks at any layer": if content needs a
     /// thing, the DSL exposes it and the author declares it, rather than a lower
@@ -2952,20 +2967,33 @@ pub enum SilencePolicy {
     /// agree. `wrongside.rs` and the reference both claimed for two versions that
     /// a shortcut door's wording "defaults", and no code defaulted anything: the
     /// door said nothing. The honest repair was never to make the claimed default
-    /// real — it was to refuse to compile a door with no answer.
+    /// real — it was to refuse to compile a body with no answer.
     Authored,
-    /// **The pre-fence state of a class whose ruling is a tightening.** A
-    /// `shortcut` door below `dsl_version` 0.11.0: the compiler supplies nothing
-    /// and demands nothing, so the door is silent — exactly what it emitted
-    /// before this version existed, byte for byte.
-    ///
-    /// This variant exists because [`SilencePolicy::Authored`] is a
-    /// **tightening**, and a tightening cannot reach a campaign that predates it
-    /// (CLAUDE.md version-adoption discipline: old versions keep compiling). It is
-    /// not a third policy anyone would design — it is the honest name for "the
-    /// obligation has not arrived here yet", and it goes away when the last
-    /// campaign adopts 0.11.0.
+    /// **Grandfathered: a `close-gate` seal below 0.11.0.** The compiler falls
+    /// back to its own `delvewright.ui.gate.sealed` chrome, exactly as it has
+    /// since v0.8.
+    Defaulted,
+    /// **Grandfathered: a `shortcut` door below 0.11.0.** Nothing is emitted and
+    /// nothing is demanded — the door is silent, byte for byte what it emitted
+    /// before this version existed.
     Silent,
+}
+
+impl SilencePolicy {
+    /// May the compiler word this body when the campaign has not?
+    ///
+    /// The two grandfathered arms differ from each other only because the two
+    /// classes *historically* differed — a seal defaulted since v0.8, a door was
+    /// silent — and preserving that is the whole point of a fence: **the same
+    /// declared `dsl_version` yields the same verdicts and the same behaviour**
+    /// (owner ruling on version semantics, 2026-08-11). It is emphatically not a
+    /// policy split by object class. Above the fence there is exactly one rule for
+    /// every pressable body, which is what stops this from becoming the
+    /// "capability keyed to the verb" defect CLAUDE.md's worked example is about —
+    /// and this task IS that worked example.
+    fn compiler_may_word_it(self) -> bool {
+        matches!(self, SilencePolicy::Defaulted)
+    }
 }
 
 /// The pressable bodies a press answer can hang on, each with its silence policy
@@ -2976,7 +3004,7 @@ pub enum SilencePolicy {
 fn press_answer_sites<'p>(
     seal_hints: &'p [SealHintPlan],
     shortcuts: &'p [ShortcutPlan],
-    doors_must_be_authored: bool,
+    authored_required: bool,
 ) -> Vec<(PressAnswer, SilencePolicy)> {
     let mut out: Vec<(PressAnswer, SilencePolicy)> = seal_hints
         .iter()
@@ -2987,8 +3015,13 @@ fn press_answer_sites<'p>(
                     trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
                     owner: "close-gate seal",
                     text: s.text.clone(),
+                    authored: s.authored,
                 },
-                SilencePolicy::Defaulted,
+                if authored_required {
+                    SilencePolicy::Authored
+                } else {
+                    SilencePolicy::Defaulted
+                },
             )
         })
         .collect();
@@ -3002,11 +3035,12 @@ fn press_answer_sites<'p>(
                 anchor: sc.gate_anchor.clone(),
                 trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
                 owner: "shortcut door",
-                // Only ever read under `Defaulted`, i.e. below 0.11.0, where this
-                // class keeps the pre-ruling behaviour of saying nothing at all.
+                // A shortcut carries no wording field, so there is never an
+                // authored wording to lower: its answer is always a trigger.
                 text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
+                authored: false,
             },
-            if doors_must_be_authored {
+            if authored_required {
                 SilencePolicy::Authored
             } else {
                 SilencePolicy::Silent
@@ -3053,12 +3087,15 @@ fn collect_press_answers(
     shortcuts: &[ShortcutPlan],
 ) -> Vec<PressAnswer> {
     let quests = &campaign.quests.content;
-    let doors_authored = delvewright_dsl::is_v11(campaign.quests.dsl_version.as_str());
-    press_answer_sites(seal_hints, shortcuts, doors_authored)
+    let authored_required = delvewright_dsl::is_v11(campaign.quests.dsl_version.as_str());
+    press_answer_sites(seal_hints, shortcuts, authored_required)
         .into_iter()
-        .filter(|(_, policy)| *policy == SilencePolicy::Defaulted)
+        // The compiler lowers a wording it was GIVEN (an authored `sealed_hint`)
+        // at every version; it invents one only where its policy still lets it.
+        .filter(|(a, policy)| a.authored || policy.compiler_may_word_it())
+        // …and stands down entirely where the campaign answers the press itself.
+        .filter(|(a, _)| !quests.answers_press_at(&a.anchor))
         .map(|(a, _)| a)
-        .filter(|a| !quests.answers_press_at(&a.anchor))
         .collect()
 }
 

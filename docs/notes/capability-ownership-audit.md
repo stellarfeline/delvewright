@@ -213,9 +213,11 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
      statement the compiler makes on the author's behalf and never discloses* —
      which is row 23's argument arriving from the opposite direction. Row 23 asks
      for baked defaults to be **authorable**; this asks whether some of them
-     should exist at all. `close-gate` is untouched pending a separate ruling, and
-     the policy lives on the body class (`plan::press_answer_sites`) so extending
-     it is a changed arm;
+     should exist at all. Applied uniformly at 0.11.0 (2026-08-11): a `close-gate`
+     wall and a shortcut door are two objects of one class, and giving them two
+     defaulting policies would have been this very audit's shape S1 committed
+     while closing it. The `dsl_version` fence — not a per-class exemption — is
+     what keeps already-approved campaigns intact;
    * the desugar happens in the **plan**, not in `parse_campaign` where the
      `ambush` sugar expands. An ambush's strings are the author's and belong in
      the campaign inventory under the desugared trigger's keys; a press answer's
