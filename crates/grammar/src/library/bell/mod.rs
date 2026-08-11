@@ -39,8 +39,9 @@
 //! A **partial** zone is one whose spine is composed and whose remaining §4
 //! entries are named below. That a letter is missing from a row no longer means
 //! its rule is missing — since the W3/W4 families landed, every letter in this
-//! table except **B**, **D** and **L**/`counterweight_lift` exists as a rule, and
-//! what those rows wait on is a zone-program round composing them.
+//! table except **B** and **D** exists as a rule, and what those rows wait on is
+//! a zone-program round composing them. `counterweight_lift` used to be a third
+//! entry on that list and has been **struck**: see Z7 below.
 //!
 //! | Zone | State | Composed from | Missing |
 //! |---|---|---|---|
@@ -51,26 +52,51 @@
 //! | Z4 Chapel Ward (hub) | [`chapel_ward`] (partial) | `dumbwaiter` + `tee_passage` + `far_side_bar` + the zone's branch strip | the hearth: a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one. The smallest honest form is a `hearth_ward` rule, which is §5b's business and not a zone's |
 //! | Z5 Great Hall + Keep | [`hall_keep`] (partial) | `rafter_hall` + `ambush_door` + `store_room` | **L** (`dumbwaiter`) and **M** (`threshold_motif`) — both built rules, awaiting a zone round — and the bait-item gallery (**B**), which has no rule |
 //! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` + `tee_passage` + `far_side_bar` + the zone's branch strip | — |
-//! | Z7 Bell Tower | **not programmed** | — | two things, not one. The counterweight lift (**L**) is not built and cannot be with today's IR (`docs/reference/grammar.md` §5b); and there is **no ascending route in the vocabulary at all** — see below. Its loft is `rafter_hall` and its boss ring is `elite_ground` |
+//! | Z7 Bell Tower | **not programmed** | — | a zone round, and one rule. Both recorded blockers are closed or struck — [`crate::library::stair_flight`] ascends, and the counterweight lift is no longer grammar's problem. See below. Its loft is `rafter_hall` and its boss ring is `elite_ground` |
 //!
-//! ## Z7 needs a way up, and nothing in the vocabulary climbs
+//! ## Z7's two blockers: one closed, one struck
 //!
-//! The lift was the recorded blocker, and it is real. It is not the only one, and
-//! the second is larger. Every vertical piece the vocabulary has is one-way
-//! **down** *by construction and by gate*: [`crate::library::drop_shaft`] and
-//! [`crate::library::dumbwaiter`] both assert that their landing does **not**
-//! reach their hatch under the plain step, and [`crate::library::boulder_stair`]
-//! is flat — it is a palette rule, and its own module says why a true rising
-//! staircase is not composable from today's verbs (there is no index the IR
-//! exposes to a `Size`, so a repeated slice cannot climb a block per iteration).
+//! Both are recorded here in full, because each was believed for longer than it
+//! was true and a stale blocker is worse than a missing feature.
 //!
-//! A bell tower is climbed. A Z7 composed as a flat chain would be a tower in
-//! name only, so it is not written. The smallest honest primitive is a
-//! `tower_stair` rule — a walled shaft carrying a switchback or helical run of
-//! ±1 steps between a low landing and a high one, gated on being walkable in
-//! **both** directions, which is the exact negation of the gate `drop_shaft`
-//! owes. Whether that is expressible without a per-iteration index is the first
-//! question such a round has to answer.
+//! **"Nothing in the vocabulary climbs" — CLOSED.** Every vertical piece used to
+//! be one-way **down** *by construction and by gate*:
+//! [`crate::library::drop_shaft`] and [`crate::library::dumbwaiter`] both assert
+//! that their landing does **not** reach their hatch under the plain step, and
+//! [`crate::library::boulder_stair`] is flat.
+//! [`crate::library::stair_flight`] is the way up: a walled shaft, a landing at
+//! each end, a run of single-block treads, gated on the plain ±1-step walk in
+//! **both** directions — the literal negation of `drop_shaft`'s gate, asserted
+//! with the same predicate and cross-checked against it in one test.
+//!
+//! The open question was whether a climbing run is expressible without a
+//! per-iteration index. **It is, and no IR change was made.** The index a stair
+//! needs is not a counter but the box that is left, and a self-call already
+//! carries it; `boulder_stair`'s note, which said otherwise, was right about
+//! `split_repeat` and wrong about the IR, and is corrected at its own module.
+//!
+//! That the piece survives *composition* is asserted rather than assumed —
+//! `tests/zones.rs::a_zone_can_compose_a_route_a_player_walks_up` walks a
+//! composed model from a zone's entry face to `anchor/stair-head`, seven blocks
+//! up. Nothing new was needed at the seam: a flight's foot landing sits on the
+//! same floor course every flat piece uses.
+//!
+//! One caveat for whoever writes Z7. A straight flight climbs at most about
+//! `Z / tread`, so a tall tower over a small footprint wants a **switchback** —
+//! and a switchback is a *rule body*, not an orientation. "A permutation cannot
+//! reflect" is true and is the right answer to a different question: a rule that
+//! peels its treads off the other end of its own split climbs the other way,
+//! and two such lanes side by side in `X` are a dogleg. Not built.
+//!
+//! **The counterweight lift (**L**) — STRUCK, not blocked.** The lift shipped as
+//! a first-class DSL construct (spec-0031): runtime state, region fill/clear and
+//! teleport-by-region composed into one `sequence` in campaign JSON. Nothing
+//! moves, so this crate never has to express motion, and a `counterweight_lift`
+//! *rule* would build a thing that no longer exists as geometry. What a lift
+//! wants from the grammar is a **walled shaft with a station per floor** — a
+//! `lift_shaft` §5b rule, ordinary static work, and the anchors it needs are
+//! exactly the point anchors `mark` already declares. See
+//! `docs/reference/grammar.md` §5b.
 //!
 //! ## The seam's limits: two closed, one open
 //!
@@ -122,7 +148,11 @@
 //! turned round. Building it needs either a mirroring orientation or a
 //! `cliff_turn` landing rule that joins two runs at a corner; neither exists,
 //! and inventing the landing inline is exactly the geometry this module does not
-//! write. What is programmed is the owner-mandated set piece itself: the
+//! write. A third option was overlooked and is now **open rather than
+//! answered**: what an orientation cannot do a *rule body* can, and
+//! [`crate::library::stair_flight`] records the construction. Whether it reaches
+//! `cliff_path`, whose lane and recesses are placed by `reorient` rather than by
+//! split order, has not been checked. What is programmed is the owner-mandated set piece itself: the
 //! one-wide ledge, the niches, and the drop beside them.
 
 pub mod barrow_shore;
