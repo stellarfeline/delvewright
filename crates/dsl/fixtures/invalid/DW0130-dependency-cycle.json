@@ -1,29 +1,29 @@
 {
   "description": "a quest depends on itself",
-  "expect": "DW0130",
   "documents": {
     "quest-plan": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "quest-plan",
       "content": {
+        "finale": "quest/open-the-door",
         "quests": [
           {
-            "id": "quest/open-the-door",
-            "goal": "Get the Keeper to open the door and leave the keep.",
+            "act": 1,
             "area": "area/keep",
-            "npcs": [
-              "npc/keeper"
-            ],
             "depends_on": [
               "quest/open-the-door"
             ],
+            "goal": "Get the Keeper to open the door and leave the keep.",
+            "id": "quest/open-the-door",
             "mandatory": true,
-            "act": 1
+            "npcs": [
+              "npc/keeper"
+            ]
           }
-        ],
-        "finale": "quest/open-the-door"
-      }
+        ]
+      },
+      "dsl_version": "0.2.0",
+      "stage": "quest-plan"
     }
-  }
+  },
+  "expect": "DW0130"
 }

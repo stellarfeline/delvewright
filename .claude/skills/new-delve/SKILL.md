@@ -823,6 +823,27 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
 
 Then:
 
+**`delvec fmt <campaign-dir>` — MANDATORY, before `analyze` and again after every
+later DSL fix, including every playtest-round repair.** It rewrites every stage
+document and l10n sidecar in canonical form: object keys sorted, two-space
+indent, non-ASCII raw, one trailing newline. It exists because a three-key
+insertion into a non-canonical `zh-cn.json` once produced a 103-insertion /
+100-deletion diff, which is unreviewable and conflicts with every other edit in
+flight. **Array order is semantic and it never touches it** (`quests[]`,
+`objectives[]`, `effects[]` are ordered), and it proves that on every file it
+writes — so running it is never a risk to the campaign.
+
+```
+cargo run -q -p delvec --bin delvec -- fmt campaigns/campaigns/<id>
+```
+
+Exit 1 means something is wrong with the JSON itself, not with its layout:
+`DW0770` unparseable (it prints `line:col`), `DW0771` a duplicate object key —
+which means one of the two values is already being silently discarded, so fix the
+document rather than the formatter. Never hand-sort a file, and never "fix" a
+`DW0773` by editing: re-run `fmt`. Full canonical form:
+`docs/reference/compiler.md` §9.
+
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).
 6. `delvec build <campaign-dir> -o <workspace>/out` — must exit 0.
@@ -1141,6 +1162,10 @@ pipeline. Full derivation from the 22-round island run:
   above), never by writing non-English into the stage docs. Owner prompts in
   Chinese still yield English stage docs; add a `zh-cn` sidecar only when the user
   asks for localized in-game text (中文文本).
+- **Commit only canonically formatted JSON.** The last thing you do before any
+  `git add` of a stage document or sidecar is `delvec fmt <campaign-dir>`; CI
+  runs `delvec fmt --check`. A diff that rewrites a file nobody edited is the
+  defect this closes.
 - Homages: original text only, cultural reference never asset ingestion
   (ADR-0007).
 - If a mechanic the prompt wants has no DSL verb, do NOT fake it with adjacent

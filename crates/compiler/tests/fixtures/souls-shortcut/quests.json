@@ -1,78 +1,78 @@
 {
-  "dsl_version": "0.9.0",
   "campaign_id": "souls-shortcut",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/open-the-door",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/talk",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           },
           {
-            "type": "reach-anchor",
-            "id": "obj/exit",
-            "anchor": "anchor/exit",
-            "radius": 2,
             "after": [
               "obj/talk"
-            ]
+            ],
+            "anchor": "anchor/exit",
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
           }
         ],
         "on_objective_complete": {
           "obj/talk": []
         },
-        "on_complete": [
-          {
-            "type": "campaign-complete"
-          }
-        ]
+        "trigger": {
+          "type": "campaign-start"
+        }
       }
     ],
     "shortcuts": [
       {
-        "id": "shortcut/inner-door",
         "gate": "anchor/door",
-        "unlock": "anchor/exit",
+        "id": "shortcut/inner-door",
         "on_unlock": [
           {
-            "type": "narrate",
+            "style": "subtitle",
             "text": "The bars grind up. This door is open for good.",
-            "style": "subtitle"
+            "type": "narrate"
           }
-        ]
+        ],
+        "unlock": "anchor/exit"
       }
     ],
     "triggers": [
       {
-        "id": "trigger/bars-wont-give",
         "at": "anchor/door",
+        "effects": [
+          {
+            "style": "chat",
+            "text": "You set your shoulder to the bars. They do not give, and nothing on this side of them will.",
+            "type": "narrate"
+          },
+          {
+            "at": {
+              "anchor": "anchor/door",
+              "at": "anchor"
+            },
+            "sound": "minecraft:block.chain.hit",
+            "type": "play-sound"
+          }
+        ],
+        "id": "trigger/bars-wont-give",
         "on": {
           "on": "strike"
         },
-        "once": false,
-        "effects": [
-          {
-            "type": "narrate",
-            "style": "chat",
-            "text": "You set your shoulder to the bars. They do not give, and nothing on this side of them will."
-          },
-          {
-            "type": "play-sound",
-            "sound": "minecraft:block.chain.hit",
-            "at": {
-              "at": "anchor",
-              "anchor": "anchor/door"
-            }
-          }
-        ]
+        "once": false
       }
     ]
-  }
+  },
+  "dsl_version": "0.9.0",
+  "stage": "quests"
 }

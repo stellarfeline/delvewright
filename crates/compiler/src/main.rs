@@ -83,6 +83,24 @@ enum Command {
         /// Campaign directory.
         campaign_dir: PathBuf,
     },
+    /// Rewrite authored Delvewright JSON in canonical form — object keys
+    /// sorted, two-space indent, non-ASCII raw, one trailing newline — so an
+    /// insertion is a one-line diff instead of a whole-file rewrite. **Array
+    /// order is semantic and is never touched** (`quests[]`, `objectives[]`,
+    /// `effects[]`); the formatter proves that on every file it writes.
+    ///
+    /// `--check` is the `cargo fmt --check` half: it writes nothing and exits 1
+    /// listing the files that are not canonical.
+    Fmt {
+        /// Files or directories. A directory is walked recursively for `*.json`,
+        /// skipping dot-directories and any `delvec build` output tree (a
+        /// directory holding `manifest.json`).
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Report instead of rewriting; exit 1 if anything is not canonical.
+        #[arg(long)]
+        check: bool,
+    },
     /// Export a stage's JSON Schema (LLM authoring aid).
     Schema {
         /// Stage `1..7` or `all`.
@@ -221,6 +239,7 @@ fn main() -> ExitCode {
         Command::L10nInventory { campaign_dir } => {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
+        Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
         Command::Snapshot {
             campaign_dir,
@@ -1976,6 +1995,152 @@ fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {
         std::fs::write(path, bytes)?;
     }
     Ok(())
+}
+
+/// `delvec fmt [--check] <path>…` — canonical form for authored Delvewright
+/// JSON (task #52; owner directive 2026-08-07).
+///
+/// A formatter AND a check, deliberately in that order: a `--check`-only gate
+/// makes authors hand-sort a 900-key sidecar, which nobody does twice, so the
+/// gate ends up waived. `cargo fmt` is the shape that works.
+///
+/// Exit codes: `0` clean · `1` something is unformatted (`--check`), unparseable
+/// (`DW0770`/`DW0771`), or matched nothing (`DW0774`) · `10` an I/O failure.
+///
+/// Every run states its binding count — how many files it examined. Zero is a
+/// FINDING, not a pass (CLAUDE.md: a green gate that binds to nothing is
+/// vacuous), because the way this gate dies quietly is a path that stops
+/// matching after a directory is renamed.
+fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
+    use delvewright_dsl::fmt;
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    for root in paths {
+        match fmt::discover(root) {
+            Ok(found) => files.extend(found),
+            Err(e) => {
+                eprintln!("internal error: cannot read `{}`: {e}", root.display());
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+
+    let mut diags: Vec<Diagnostic> = Vec::new();
+    let mut changed: Vec<PathBuf> = Vec::new();
+
+    for path in &files {
+        let shown = path.display().to_string();
+        let original = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("internal error: cannot read `{shown}`: {e}");
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        let formatted = match fmt::format_text(&original) {
+            Ok(s) => s,
+            Err(e) => {
+                diags.push(Diagnostic::error(
+                    DwCode::every_version(e.code),
+                    "fmt",
+                    format!("{shown}:{}:{}", e.line, e.col),
+                    e.message,
+                ));
+                continue;
+            }
+        };
+        if formatted == original {
+            continue;
+        }
+        changed.push(path.clone());
+        if check {
+            diags.push(Diagnostic::error(
+                DwCode::every_version(fmt::DW_FMT_UNFORMATTED),
+                "fmt",
+                shown.clone(),
+                format!(
+                    "not in canonical form (first difference at line {}). \
+                     Run `delvec fmt {shown}`.",
+                    first_differing_line(&original, &formatted)
+                ),
+            ));
+        } else if let Err(e) = std::fs::write(path, &formatted) {
+            eprintln!("internal error: cannot write `{shown}`: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+
+    for d in &diags {
+        print_one_diag(d, json);
+    }
+
+    // Vacuity: a formatter that formatted nothing because it found nothing is
+    // not a pass, and this is exactly how the CI gate would rot — a renamed
+    // fixture directory, a path that no longer exists.
+    if files.is_empty() {
+        let d = Diagnostic::error(
+            DwCode::every_version(fmt::DW_FMT_NO_BINDING),
+            "fmt",
+            paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            "matched 0 JSON files. A formatter or a --check that binds to nothing is \
+             vacuous, not a pass: check the paths (a `delvec build` output tree, a \
+             dot-directory and a symlinked directory are all skipped deliberately)."
+                .to_string(),
+        );
+        print_one_diag(&d, json);
+        return ExitCode::from(1);
+    }
+
+    let unreadable = diags.len() - if check { changed.len() } else { 0 };
+    if check {
+        eprintln!(
+            "delvec fmt --check: examined {} file(s); {} not in canonical form, {} unparseable",
+            files.len(),
+            changed.len(),
+            unreadable
+        );
+    } else {
+        eprintln!(
+            "delvec fmt: examined {} file(s); reformatted {}, {} unparseable",
+            files.len(),
+            changed.len(),
+            unreadable
+        );
+    }
+
+    if diags.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// 1-based line of the first difference, so `--check` points an author at a
+/// place rather than at a file.
+fn first_differing_line(a: &str, b: &str) -> usize {
+    for (i, (la, lb)) in a.lines().zip(b.lines()).enumerate() {
+        if la != lb {
+            return i + 1;
+        }
+    }
+    a.lines().count().min(b.lines().count()) + 1
+}
+
+fn print_one_diag(d: &Diagnostic, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(d).expect("diagnostic serializes")
+        );
+    } else {
+        println!("{} [error] {} {}: {}", d.code, d.stage, d.path, d.message);
+    }
 }
 
 fn run_schema(stage: &str) -> ExitCode {

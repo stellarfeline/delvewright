@@ -1,33 +1,59 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "souls-bonfire",
-  "stage": "classes",
   "content": {
     "classes": [
       {
-        "id": "class/warden",
-        "name": "Warden",
         "blurb": "Iron sword and mail — made for the front rank.",
+        "id": "class/warden",
         "kit": [
-          { "item": "minecraft:iron_sword", "count": 1 },
-          { "item": "minecraft:iron_helmet", "count": 1 },
-          { "item": "minecraft:iron_chestplate", "count": 1 },
-          { "item": "minecraft:iron_leggings", "count": 1 },
-          { "item": "minecraft:iron_boots", "count": 1 },
-          { "item": "minecraft:cooked_beef", "count": 8 },
           {
-            "item": "minecraft:potion",
-            "count": 3,
-            "name": "Ashen Flask",
-            "flask": true,
-            "contents": {
-              "effects": [{ "effect": "minecraft:instant_health", "amplifier": 1 }],
-              "color": "#ff9c30"
-            }
+            "count": 1,
+            "item": "minecraft:iron_sword"
           },
-          { "item": "minecraft:torch", "count": 8 }
-        ]
+          {
+            "count": 1,
+            "item": "minecraft:iron_helmet"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_chestplate"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_leggings"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_boots"
+          },
+          {
+            "count": 8,
+            "item": "minecraft:cooked_beef"
+          },
+          {
+            "contents": {
+              "color": "#ff9c30",
+              "effects": [
+                {
+                  "amplifier": 1,
+                  "effect": "minecraft:instant_health"
+                }
+              ]
+            },
+            "count": 3,
+            "flask": true,
+            "item": "minecraft:potion",
+            "name": "Ashen Flask"
+          },
+          {
+            "count": 8,
+            "item": "minecraft:torch"
+          }
+        ],
+        "name": "Warden"
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "classes"
 }

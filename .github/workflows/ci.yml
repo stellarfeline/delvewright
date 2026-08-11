@@ -58,6 +58,29 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
+      # task #52 (owner directive 2026-08-07): authored JSON has ONE canonical
+      # form, so an insertion is a one-line diff instead of a whole-file rewrite
+      # — a three-key insertion into a non-canonical zh-cn sidecar once produced
+      # a 103-insertion/100-deletion diff. `delvec fmt --check` is the `cargo fmt
+      # --check` half of that; the formatter itself is what stops authors
+      # hand-sorting (docs/reference/compiler.md §9).
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited — which is the
+      # shape CLAUDE.md rejects. As a step it gates from the moment it merges.
+      #
+      # The roots are named explicitly rather than `.`: `crates/compiler/data/`
+      # is harvested game registries with their own generator contract, and
+      # `campaigns/` is a pinned checkout of another repository (its own CI is
+      # where its files are gated). `fmt` exits 1 if these paths ever match zero
+      # files (DW0774), so a renamed fixture directory reds here instead of
+      # turning this into a green no-op.
+      - name: authored JSON is in canonical form (delvec fmt --check)
+        run: |
+          cargo run --locked -q -p delvec --bin delvec -- fmt --check \
+            crates/dsl/fixtures \
+            crates/compiler/tests/fixtures \
+            crates/compiler/examples
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
