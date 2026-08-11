@@ -35,6 +35,7 @@
 //! POV-camera self-checks.
 
 use crate::emit::{BuildFailure, BuildOutput};
+use delvewright_dsl::DwCode;
 
 /// `DW0420`: a compiler-owned interact affordance with **no visible hardware**.
 ///
@@ -44,7 +45,7 @@ use crate::emit::{BuildFailure, BuildOutput};
 /// findable only by luck. This is an error and not a warning because the
 /// failure mode is a soft-lock: the drowned bell's shortcut was the only route
 /// back, and an unfindable lever is an unopenable door.
-pub const DW_AFFORDANCE_INVISIBLE: &str = "DW0420";
+pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::every_version("DW0420");
 
 /// `DW0421`: an affordance's visible hardware is destroyed by a function that
 /// does not own the affordance.
@@ -54,7 +55,7 @@ pub const DW_AFFORDANCE_INVISIBLE: &str = "DW0420";
 /// Anything else reaching it (a cleanup pass whose selector widened, a tag
 /// collision of the `DW0361` family) erases the player's only way to find a
 /// live affordance, which is how the drowned bell read as a vanished lever.
-pub const DW_AFFORDANCE_HARDWARE_ERASED: &str = "DW0421";
+pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::every_version("DW0421");
 
 /// The entity tag carried by an affordance's visible hardware, derived from the
 /// affordance's own tag so the pairing is structural and needs no bookkeeping.

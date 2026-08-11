@@ -129,11 +129,12 @@ use delvewright_dsl::{Campaign, Objective, WorldTime, WorldWeather};
 use crate::light::LightModel;
 use crate::nav::{DEFAULT_FOLLOW_RANGE, World};
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0496`: a body vanilla burns in daylight is staged for a fight whose ground
 /// reaches open sky, in a delve pinned to a burning hour, with nothing on its
 /// head.
-pub const DW_DAYLIGHT_BURNS_STAGING: &str = "DW0496";
+pub const DW_DAYLIGHT_BURNS_STAGING: DwCode = DwCode::every_version("DW0496");
 
 /// Vanilla's built-in daylight-burn tag, vendored from Mojang's generated
 /// reports (`data/entity-tags-1.21.11.json`; `data/PROVENANCE.md`).
@@ -162,7 +163,7 @@ const HELMET_PROOF: [&str; 1] = ["minecraft:phantom"];
 #[derive(Debug)]
 pub struct DaylightError {
     /// The stable code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation naming the encounter, the species and the fix.
     pub message: String,
 }

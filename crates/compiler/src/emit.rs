@@ -21,6 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
+use delvewright_dsl::DwCode;
 use delvewright_dsl::{
     CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
     StateScope, Trigger, is_v03, is_v04, is_v06,
@@ -39,7 +40,7 @@ pub enum BuildFailure {
     /// A coded build diagnostic (exit 3), printed like a solver `DW03xx` error.
     Diagnostic {
         /// The stable diagnostic code.
-        code: &'static str,
+        code: DwCode,
         /// Human-readable explanation.
         message: String,
     },
@@ -52,7 +53,16 @@ pub enum BuildFailure {
 /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
 /// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
 /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
-pub const DW_WAVE_NO_ROOM: &str = "DW0312";
+pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312");
+
+/// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
+/// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
+/// and the wave never spawn (see [`check_wave_spawns`]).
+///
+/// It was the workspace's last bare `"DWxxxx"` string literal in a code position
+/// — every other code already went through a named constant — and typing the
+/// codes is what turned that from a style difference into a compile error.
+pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310");
 
 /// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
 /// offers too few valid cells. The ring is the standable, walk-reachable,
@@ -62,7 +72,7 @@ pub const DW_WAVE_NO_ROOM: &str = "DW0312";
 /// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
 /// countdown could never reach zero and the delve soft-locked with every other
 /// proof green.
-pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
+pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
 
 /// `DW0494`: completing ONE objective would cross into two different areas —
 /// one destination on the exported path, another on a branch (task #186).
@@ -74,7 +84,7 @@ pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
 /// the exported path's crossing is unconditional by construction. The content
 /// fix is to split the objective — one crossing objective per branch, each
 /// gated by that branch's own flags.
-pub const DW_BRANCH_TRANSPORT_DIVERGES: &str = "DW0494";
+pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494");
 
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
@@ -1650,7 +1660,7 @@ fn snbt_text_component(s: &str) -> String {
 /// emitter, including ones not yet written. This is the invariant that replaces
 /// "we enumerated every emission site once" with "the compiler re-proves it on
 /// every build" (spec-0029 Risks).
-pub const DW_UNTRANSLATED_LITERAL: &str = "DW0185";
+pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::every_version("DW0185");
 
 /// Lower an authored player-visible string into a JSON **text component**
 /// (spec-0029 §1): a translation-tagged string becomes
@@ -4159,7 +4169,7 @@ fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
 
 /// `DW0362`: a dialogue node declares more conditionally-visible options than the
 /// variant-dialog encoding can carry. Validation-tier content-shape limit.
-pub const DW_DIALOGUE_VARIANT_CAP: &str = "DW0362";
+pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::every_version("DW0362");
 
 /// The most gated options one dialogue node may declare.
 ///
@@ -4212,7 +4222,7 @@ fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
 
 /// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
 /// would silently overwrite the other in the emitted pack.
-pub const DW_NAME_COLLISION: &str = "DW0361";
+pub const DW_NAME_COLLISION: DwCode = DwCode::every_version("DW0361");
 
 /// Insert an emitted artifact, refusing to let one silently overwrite another
 /// (`DW0361`).
@@ -4268,7 +4278,7 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// to no world position in the assembled build. Validation-tier content mistake
 /// (a typo'd or unassembled anchor), reported as a build diagnostic because only
 /// the assembled world knows which anchors actually exist.
-pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0360");
 
 /// Whether [`build`] assembles the voxel world — and therefore whether every
 /// proof that needs it actually runs, including [`plan_payload_verbs`] and its
@@ -4413,7 +4423,7 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
                 return Err(BuildFailure::Diagnostic {
-                    code: "DW0310",
+                    code: DW_WAVE_SPAWN_UNRESOLVED,
                     message: format!(
                         "`spawn-wave` references wave `{id}`, but its spawn anchor is \
                          not placed in any assembled area — the emitted \
@@ -9518,7 +9528,7 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
 /// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
 /// its trigger hardware cannot be removed and put back exactly as authored, so the
 /// compiler refuses to pretend the gate works.
-pub const DW_TRAP_GATE_UNSUPPORTED: &str = "DW0363";
+pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::every_version("DW0363");
 
 /// Trap flag-gating hardware: for every trap that declares a flag gate, the
 /// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
@@ -9902,7 +9912,7 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
 
 /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
 /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
-pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: &str = "DW0447";
+pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0447");
 
 /// A planned `volley`: the proven per-cell geometry plus its authored cadence.
 struct VolleyEmit {

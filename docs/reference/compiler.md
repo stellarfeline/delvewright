@@ -826,6 +826,94 @@ datapack predicate `<ns>:sneak_held` (the cutscene bounce's re-attach gate, §4)
 
 ## 4. Hard invariants
 
+### A campaign is judged at its DECLARED `dsl_version` (the obligation fence)
+
+**Owner ruling, 2026-08-10.** The compiler processes a campaign according to the
+`dsl_version` its stage documents declare. A campaign that compiled before keeps
+its behaviour unchanged; a new engine requirement reaches it only when that stage
+adopts the version which introduced the requirement.
+
+This is **not** a promise of byte-identical emission forever. A released delve
+reproduces through its pinned engine (`versions.toml` + the OCI image, ADR-0010).
+The promise is about **verdicts and behaviour at a declared version**.
+
+#### Why it needed a mechanism
+
+Per-stage fences already guarded new **surface** — "you may not write this field
+below version X" (`DW0141`). Nothing guarded new **obligations** — "you are now
+required to have X" — so whether a check respected a declared version depended on
+whether its author remembered. Measured cost (task #51): `dsl::l10n::each_string`
+was widened onto an actor's own `name` with no version gate, `DW0180` compares key
+SETS and had no version gate either, and the obligation reached every campaign at
+every declared version on the next build. `nobodys-cave-island` (0.6.0/0.8.0) went
+red mid-staging with nothing in its own documents changed.
+
+#### Half 1 — every code declares when it starts binding
+
+A `Diagnostic` can only be built from a `DwCode`, and a `DwCode` can only be built
+by naming which kind of rule it is (`dsl::diagnostic::Binds`):
+
+| Declaration | Meaning | Choose it when |
+|---|---|---|
+| `DwCode::every_version("DWxxxx")` | Applies at every declared `dsl_version`. | The rule judges what the document **says** — a malformed id, an unknown item, a surface used below the version that introduced it. It cannot go red on a campaign whose documents did not change. |
+| `DwCode::since("DWxxxx", n)` | Applies at minor version `n` and above. | The rule **requires** the campaign to have something. Campaigns below `n` are grandfathered and adopt it in their own version round. |
+
+There is no constructor for "did not say", so *forgot to fence* is not a mistake
+that can be made. Both directions are wrong in different ways — fencing a
+wellformedness rule would stop rejecting bad documents in old campaigns — so
+neither is a default, and there is no `Default` impl.
+
+The `&'static str` code constants that remain in `delve-schem`, `delve-admit` and
+`delve-render` are deliberate: those diagnostics are about prefabs, schematics and
+renders, artifacts that carry no `dsl_version`, so there is nothing to grandfather
+against. `tools/check-dw-codes.py` resolves both forms.
+
+#### Half 2 — the fence is the only exit
+
+`dsl::fence::Fenced` is the type `delvec` prints and derives its exit code from,
+and its only campaign-aware constructor is `Fenced::apply(&campaign, diags)`,
+which withholds every `Since(n)` diagnostic whose **stage** declares less than
+`n`. A diagnostic's stage names a stage document (`quests`, `dialogue`, …); any
+other stage (`l10n`, `prefabs`, `build`, empty) is judged at the **minimum**
+across the campaign's stage documents — a campaign is only as adopted as its
+least-adopted stage, and the minimum is the reading that grandfathers.
+`Fenced::structural(diags)` is the pre-parse path (a stage document that did not
+parse, so there is no version to read); it cannot grandfather, so it refuses to
+carry anything version-scoped.
+
+Every run states the fence's **binding count** on stderr when it is non-zero
+(`obligation fence: N finding(s) grandfathered …, DWxxxx xN`), so a green
+campaign also says what it is not yet answerable for. A silent fence and an
+absent one are indistinguishable (CLAUDE.md: a green gate that binds to nothing
+is vacuous, not a pass).
+
+Currently declared `Since`: `DW0480`–`DW0485` (spec-0025, `since 8`). `branch.rs`
+holds no `is_v08` guard of its own any more — a rule with two fences is a rule
+whose two fences can disagree.
+
+#### The other granularity: a check whose BINDING widens
+
+A per-code fence sees a *new check*. It cannot see an *existing check examining
+more objects* — task #51's actual shape, which added no code at all. Such a check
+versions its own binding at whatever granularity that binding has. The worked
+instance is the l10n inventory:
+
+- `l10n::each_string` passes a `KeyEntry` at **every** emission site — the stage
+  whose `dsl_version` governs the key, and whether the key has been inventoried
+  since its surface existed (`KeyEntry::always`) or was added to the walk later
+  over surface older campaigns already had (`KeyEntry::since`). There is no
+  two-argument `f`, so a new site must answer.
+- `l10n::inventory` is unchanged: every key, tagged and translated as before, so
+  **emission does not move**.
+- `l10n::required_inventory` is the subset a campaign's declared versions have
+  reached. `DW0180` (missing) reads it; `DW0181` (orphan) still reads the full
+  inventory, so a campaign that translated a not-yet-demanded key early is never
+  told it is an orphan.
+
+Currently declared `KeyEntry::since`: `actor.<actor>.name` at 0.10 — v0.6 surface
+that PR #317 inventoried in the 0.10 era (task #51). A campaign below 0.10 is not
+asked for actor nameplates; at 0.10 it is.
+
 ### A scheduled bundle has no `@s` (executor contract)
 
 `schedule function <ns>:<f> <n>t` re-invokes `<f>` with the **server** command
@@ -3845,6 +3933,8 @@ Catalogued here so the DW namespace is complete and CI-checked.
 | `DW0722` | `delve-render` | Output file could not be written (exit 3). |
 | `DW0723` | `delve-render` | GPU renderer failed / textures absent (exit 5). |
 | `DW0724` | `delvec` (visual tier) | A player-POV camera eye cell is occupied (solid/water) in the FINAL assembled world — the frame would render the inside of a block, not the player's view. The self-check behind the visual tier (`compiler::nav::verify_pov_cameras`), mirroring the DW0314 waypoint self-check: every POV camera stands at the eye-height (1.62) of a DW0314-proven-standable waypoint, so this can only fire if the eye-height/standing-cell derivation changes to place the eye in a ceiling/wall (or a later pass mutates the cell). Numbered in the `DW072x` visual/render range; emitted by the compiler's nav pass (exit 3). Fix the camera derivation — never nudge the waypoint or the geometry. |
+| `DW0725` | `delve-render` | **Contact-sheet ordering is not a total order over the candidates** — indices dropped, duplicated or out of range (exit 10). The score RANKS the sheet and NEVER gates it (owner ruling, spec-0028 §3): cross-domain calibration between a painterly reference image and a voxel render is unproven, so a similarity number may decide where a candidate sits on the page and never whether it is on the page. `sheet::build_sheet` puts whatever its ordering function returns through `sheet::verify_total_order` before drawing a pixel, so every way rank-only can erode — a threshold shortening the order, a "best of" repeating an index, an off-by-one losing the last cell — lands here as one refusal instead of a silently shorter page. Promoting the score to a threshold requires its own owner-approved amendment backed by accumulated batch data; do not add one to satisfy this diagnostic. |
+| `DW0726` | `delve-render` | A contact sheet's score set bound to fewer candidates than the sheet holds. **Zero binding is an error** (exit 2) — nothing was ranked, and a score file that matched no candidate must not read as a successful ranking run (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). A partial binding is a **warning** naming the counts; the unscored candidates stay on the page, last, labelled unscored — a missing measurement is not a bad one. Score rows matching no candidate warn under the same code (usually an id typo or a stale run). |
 | `DW0730` | `delve-admit` | Audit: a palette block is not in the allowlist. |
 | `DW0731` | `delve-admit` | Audit: a hard-forbidden code-injection vector (command/structure block, NBT spawner, embedded `Command`). |
 | `DW0732` | `delve-admit` | Input error (unreadable `.nbt`/metadata/JSON). |

@@ -126,10 +126,11 @@ use delvewright_dsl::{CastDialogue, CastPlacement, Diagnostic, Npc};
 
 use crate::nav::{entity_dims, npc_body_entity};
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0489`: two crosshair targets stand close enough that a player cannot aim
 /// at one without risking the other.
-pub const DW_CROSSHAIR_CONTEST: &str = "DW0489";
+pub const DW_CROSSHAIR_CONTEST: DwCode = DwCode::every_version("DW0489");
 
 /// The vanilla player hitbox width (1.21.11), in blocks. The player is a body:
 /// its eye can never be nearer than `(PLAYER_WIDTH + w)/2` to another body's
@@ -150,7 +151,7 @@ pub const INTERACTION_REACH: f64 = 3.0;
 #[derive(Debug)]
 pub struct CrosshairError {
     /// The stable diagnostic code ([`DW_CROSSHAIR_CONTEST`]).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, naming both NPCs, the scene and the measure.
     pub message: String,
 }
