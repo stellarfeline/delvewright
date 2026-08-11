@@ -42,6 +42,9 @@ import readline from "node:readline";
 const require = createRequire(new URL("../../harness/package.json", import.meta.url));
 const mineflayer = require("mineflayer");
 
+// The repo's ONE definition of "the server refused that command" — tools/lib/rcon.mjs.
+import { assertAccepted } from "../lib/rcon.mjs";
+
 const CONTAINER = process.env.SPIKE_CONTAINER ?? "dw-spike-arrow";
 const PORT = Number(process.env.SPIKE_PORT ?? 25599);
 const OUT = process.env.SPIKE_OUT ?? new URL("./observations.json", import.meta.url).pathname;
@@ -100,20 +103,22 @@ async function batch(cmds) {
 }
 const rcon = async (cmd) => (await batch([cmd]))[0];
 
-// Rejection shapes that must never pass silently. `No blocks were filled` is a
-// LEGITIMATE answer for the block census below (it means "zero"), so the census
-// uses raw `rcon()` and parses it explicitly; every setup command goes through
-// `ok()` and a rejection aborts the run.
-const ERR = new RegExp(
-  "^(Unknown or incomplete command|Incorrect argument|Expected |Invalid |Unknown " +
-    "|That position is not loaded|Cannot place blocks outside of the world" +
-    "|No blocks were filled|Could not set the block|No entity was found" +
-    "|No targets matched|Malformed |Failed to )",
-);
+// What counts as a rejection is NOT this file's business: it is a property of
+// "a command issued to a live server", and it lives once in tools/lib/rcon.mjs.
+// This rig kept a private copy until the shared rule's own gate found it, and
+// the two disagreed in both directions — so the union went upstream and this is
+// now one import. `assertAccepted` throws on a refusal.
+//
+// The pipelining below is this file's own: `rconChannel` sends one command per
+// `docker exec`, which is right for a handful of setup lines and far too slow
+// for a sweep that fences hundreds of reads per shot. What is shared is the
+// JUDGEMENT, not the transport.
+//
+// `No blocks were filled` is a LEGITIMATE answer for the block census below (it
+// means "zero"), so the census uses raw `rcon()` and parses it explicitly; every
+// setup command goes through `ok()` and a rejection aborts the run.
 async function ok(cmd) {
-  const r = await rcon(cmd);
-  if (ERR.test(r)) throw new Error(`server rejected \`${cmd}\`: ${r}`);
-  return r;
+  return assertAccepted(cmd, await rcon(cmd));
 }
 
 // ------------------------------------------------------------------- parsing
