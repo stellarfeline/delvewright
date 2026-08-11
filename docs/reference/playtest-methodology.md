@@ -62,12 +62,30 @@ observed on the island:
   existed at all, for machine or human. Guarded now by the dangling-function
   check (`DW0497`: no emitted `function <ns>:<name>` may point at a function that
   was never emitted).
+- **Untraversed** — the gate is sound and would have bound, but the RUN stopped
+  before reaching it, and its output still reads like a whole result. `cargo
+  test` without `--no-fail-fast` halts at the first failing binary: integrating
+  PR #362 it stopped at `die_retry_fixture` — alphabetically early — having run
+  **21 of 175** test binaries, and printed `633 passed; 2 failed`. The three test
+  files the PR existed to add (`press_answer`, `press_answer_red`, `seal_hint`)
+  never executed, and a third failure sat invisible behind the halt. Note what
+  this mode does and does not do: truncation cannot turn a red into a green, so
+  it never fakes a *pass*. What it fakes is **coverage** — and that is the more
+  dangerous forgery here, because the two questions actually being asked of a
+  test run ("did my change break anything", "is this failure pre-existing") are
+  both answered by comparing failure SETS between two runs, and a truncated set
+  is short by an unknown amount. Both of my first two answers about the
+  `DW0478` failures were wrong, and this is why the second one was.
 
 **Obligation.** Every validation artifact states its binding count, and a zero
 binding is a finding. Reading a report is not enough — an empty coverage set and
 a clean coverage set look identical to a reader who is not counting. When a
 campaign has hostile bodies but no tiered actor or wave, the floor gate is
-unbound; say so in the round summary rather than reporting a pass.
+unbound; say so in the round summary rather than reporting a pass. The same
+counting applies to the run itself: any conclusion that rests on a test run's
+failure set or pass count is drawn from `--no-fail-fast`, and states how much of
+the suite it traversed (binaries run vs. total). A partial run is evidence about
+the part it reached and about nothing else.
 
 ## Rule 2 — a finding is not closed until its general form is a diagnostic
 

@@ -884,6 +884,18 @@ least-adopted stage, and the minimum is the reading that grandfathers.
 parse, so there is no version to read); it cannot grandfather, so it refuses to
 carry anything version-scoped.
 
+**The library entry point returns the fenced verdict, not the raw list.**
+`dsl::check_campaign` returns `Fenced` (it returned `Vec<Diagnostic>` before
+v0.11). The raw list is an intermediate no consumer of the crate should reason
+about: an obligation fenced on its code is raised unconditionally by its check
+and withheld only here, so a caller reading the pre-fence list reports a
+campaign for a rule it never opted into — a 0.6 campaign answering for
+`DW0429`. `Fenced` derefs to the reported slice, so it reads like the list it
+replaced; `.reported()` / `.to_vec()` are the explicit forms. `validate_campaign`
+and `validate_campaign_with` still return the raw list by design — they are the
+half the fence is applied *to*, and every caller that reaches a verdict wraps
+them in `Fenced::apply`.
+
 Every run states the fence's **binding count** on stderr when it is non-zero
 (`obligation fence: N finding(s) grandfathered …, DWxxxx xN`), so a green
 campaign also says what it is not yet answerable for. A silent fence and an
