@@ -9,10 +9,10 @@ matures at M4, not before.
 ## M0 — Repo scaffolding *(first PR)*
 
 CLAUDE.md + ADRs + spec skeletons + CI skeleton (cargo fmt/clippy/test + markdown
-lint). No feature code. See `docs/scaffolding-plan.md`.
+lint). No feature code.
 
 **Exit**: repo public on GitHub, CI green on an empty Rust workspace, branch
-protection requires green CI.
+protection requires green CI. **Status: COMPLETE (2026-07-29).**
 
 ## M1 — Hello-world delve *(the loop, proven)*
 
@@ -93,6 +93,56 @@ sealing (spec-0002) added as an M2 emission requirement.
 
 **Exit**: two delves produced on demand back-to-back, each with < 1 owner-day of
 non-QA effort.
+
+## M5 — Genre breadth & polish
+
+- **Demo levels** (`docs/demo-levels.md`, owner directive 2026-08-03): every
+  mechanic gets a small first-party level that verifies it and shows it off. That
+  file is the queue and the planning agent's standing idle work.
+- **M5 theme suite** (owner-approved 2026-08-03, five levels — mystery, horror,
+  tower defense, heist, pastoral): genre-diverse levels beyond the Greek-myth and
+  souls lines, each exercising a distinct authoring register. Listed in
+  `docs/demo-levels.md`.
+- **Map editor layers 2+3** (spec-0017): declarative massing of the jigsaw layout,
+  and block-level detailing via deterministic edit scripts.
+- **GeyserMC evaluation** — Bedrock clients joining a Java server, the
+  cross-platform distribution win without a stack switch (ADR-0019).
+
+## M6 — Modpack production line *(recorded, not committed)*
+
+Owner thesis (2026-08-01), planner-endorsed: an LLM-driven production line for
+**[curated modpack + adventure-designed open world]** — the survival-challenge
+genre where designed story pockets are 大号箱庭 embedded in free natural terrain,
+so no effort is spent where no story lives. Market gap: the industry's "dungeons"
+are chest+spawner+boss structures; nobody can produce directed adventure-mode
+content at pack scale. The moat is machine-proven completability plus area-scoped
+rule enforcement.
+
+- **Trial gates** answer gear trivialization: entering a story pocket stashes the
+  survival loadout and issues the pocket's designed kit (Zelda-shrine model), so
+  stealth stays stealth at any progression stage.
+- Self-produced mods demote to an internal capability — thin glue only where
+  vanilla plus library mods cannot express something.
+- **De-risking spikes before commitment**: (1) proofs over real region files (the
+  assembled model reads chunks, not only prefabs); (2) a Carpet fake-player
+  validation ladder (mineflayer breaks under content mods; Carpet is already
+  tooling-whitelisted); (3) a packwiz-as-code pipeline with ADR-0013 license
+  vetting.
+
+**Macro-terrain is composed, not searched** (owner, 2026-08-01). No filler
+between story areas — the macro-journey is authored (village tutorial → river
+ride → colossi strait → grassland → lone mountain, white city at its foot).
+Architecture is the delve pipeline one scale up: landform-scale terrain prefabs,
+a journey-graph layout solver, seamless blending (gradient-domain/Poisson,
+Laplacian pyramids, graph-cut seams, example-based synthesis, a unifying erosion
+pass), and rivers **carved** along the narrative path rather than found. L1
+siting — terrain-feature query over real region files, the LLM picking build
+sites like a player — demotes to garnish. MC 1.18+ worldgen is data-driven
+(density functions in datapack JSON), a possibly mod-free route for macro
+terrain; its ceiling was measured and rejected for single-scene surrounds in
+`docs/notes/horizon-library-dossier.md` §2.5, and is unresolved at journey scale.
+
+Sequenced after M5 polish.
 
 ## Runtime portability (post-v1)
 
