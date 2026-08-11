@@ -15,7 +15,17 @@
 //! upstream, nothing ported, licence `original`. They are the W1 (path and
 //! hazard geometry) and W2 (interior ambush) families of the drowned-bell
 //! remake's grammar vocabulary: not buildings but *encounters*, box grammars
-//! whose reason to exist is a machine gate about how the space plays. They share
+//! whose reason to exist is a machine gate about how the space plays.
+//!
+//! [`hearth_ward`], [`bait_stand`] and [`disarm_stand`] are that family's last
+//! three members, and each is a **mechanism rather than a beat**: somewhere off
+//! the road with one declared focus and one way in; a lure with its watcher in
+//! the same frame; and a hazard's control, put where the hazard cannot reach.
+//! Each module note names what a creator building an entirely different game
+//! would bind to it, because that — and not the fiction the bell remake happens
+//! to want — is what earns a rule a place in this library.
+//!
+//! They share
 //! one local frame, and it is worth stating once because every derived anchor
 //! facing depends on it:
 //!
@@ -43,6 +53,7 @@
 //! building.
 
 pub mod ambush_door;
+pub mod bait_stand;
 pub mod bell;
 pub mod boulder_stair;
 pub mod broken_grate;
@@ -50,10 +61,12 @@ pub mod castle;
 pub mod causeway;
 pub mod church;
 pub mod cliff_path;
+pub mod disarm_stand;
 pub mod drop_shaft;
 pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
+pub mod hearth_ward;
 pub mod rafter_hall;
 pub mod stair_flight;
 pub mod store_room;
@@ -63,6 +76,7 @@ pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
+pub use bait_stand::bait_stand;
 pub use bell::{
     barrow_shore, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward, hall_keep,
 };
@@ -72,10 +86,12 @@ pub use castle::castle;
 pub use causeway::causeway;
 pub use church::church;
 pub use cliff_path::cliff_path;
+pub use disarm_stand::disarm_stand;
 pub use drop_shaft::drop_shaft;
 pub use dumbwaiter::dumbwaiter;
 pub use elite_ground::elite_ground;
 pub use far_side_bar::far_side_bar;
+pub use hearth_ward::hearth_ward;
 pub use rafter_hall::rafter_hall;
 pub use stair_flight::stair_flight;
 pub use store_room::store_room;
