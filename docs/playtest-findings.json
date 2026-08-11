@@ -750,10 +750,11 @@
       "round": 1,
       "finding": "a rest-and-save mechanic was implemented as a plain arrive objective, so the campfire the fiction offered could not be rested at",
       "triage": "capability",
-      "general_form": "resting is a first-class bonfire verb with rest/save semantics, and a campaign that places one is held to the kit it implies",
+      "general_form": "resting is a first-class bonfire verb with rest/save semantics, and a campaign that places one is held to the recovery kit it implies",
       "carrier": {"kind": "dw", "code": "DW0476"},
       "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "bonfire"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}}
+      "applies_when": {"kind": "dsl", "files": ["classes.json"], "match": {"has": ["flask"]}},
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {set-checkpoint, bonfire}` — a claim that a campaign with a plain checkpoint could carry the flask obligation. It cannot: DW0476 binds a bonfire to the recovery item a REST spends, and a `set-checkpoint` has no rest, no dialog and no `on_rest`. The precondition is now the souls recovery surface itself — a declared \"flask\": true kit entry, a different object class in a different stage file from the binding one — so all three verdicts stay meaningful: flask + bonfire = BOUND; a flask nothing refills = UNBOUND, correctly; neither = INAPPLICABLE, the honest reading of a campaign that is not a souls campaign. nobodys-cave-island declares no flask and no bonfire and is INAPPLICABLE — still a red, still a defect class her session on it is not protected from."
     },
     {
       "id": "bell-02",
@@ -791,10 +792,11 @@
       "round": 2,
       "finding": "an encounter killed a full-health player in two hits",
       "triage": "capability",
-      "general_form": "an unavoidable scripted hit on the critical path does not kill a full-health player outright, and a campaign with mandatory combat hands the party sustain",
-      "carrier": {"kind": "dw", "code": "DW0473"},
-      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "encounters"},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}}
+      "general_form": "a campaign with mandatory combat — a wave the party must kill OR a hostile it turns loose on them — is held to the whole spec-0023 winnability pass, sustain included; and no unavoidable scripted hit on that path one-shots a full-health player (DW0473)",
+      "carrier": {"kind": "dw", "code": "DW0474"},
+      "binding": {"kind": "artifact", "file": "combat-plan.json", "path": "fights.total"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "actor/"}}},
+      "note": "carrier + binding corrected 2026-08-11 (staging-gate UNBOUND audit), and the engine fixed with them. The row named DW0473 while probing combat-plan.json:encounters, which quantify over DIFFERENT collections — DW0473 walks unconditional `damage-players` bundles, `encounters` is `kill`-a-wave steps. Worse, the whole spec-0023 pass (DW0470-DW0475) was gated on `has_encounters`, the VERB, so a delve whose combat is entirely actors ran none of it: nobodys-cave-island unleashes three wardens, bills one elite, ships zero `kill` objectives, and reported `encounters: 0` for twenty-two owner rounds with nothing saying that was a coverage fact rather than a content fact. `combat::mandatory_fights` is now the object class — every fight of either shape — the pass is gated on it, DW0474 quantifies over it, and combat-plan.json publishes it as `fights`. Island binding 0 -> 3."
     },
     {
       "id": "bell-06",
@@ -805,7 +807,8 @@
       "general_form": "a timed gate is a timing read, not a coin flip: enough entry phases clear the span",
       "carrier": {"kind": "dw", "code": "DW0378"},
       "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "timed-gate/"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["close-gate", "open-gate"]}}}
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"has_any": ["open_ticks", "closed_ticks", "salvos"]}},
+      "note": "applies_when corrected 2026-08-11 (staging-gate UNBOUND audit). It named `type in {close-gate, open-gate}` — a claim that having any gate means the campaign could carry a timing-window defect. It cannot: close-gate/open-gate are one-shot permanent state changes fired by a quest beat, with no clock and so no window to be a coin flip. That precondition demanded CONTENT (add a portcullis) rather than COVERAGE, and would hold every campaign without one red forever. The precondition is now the object class that can carry a timing read: anything driven by a repeating clock the party must cross — a timed-gate's open_ticks/closed_ticks, or a volley payload's salvos. A campaign with a volley and no timed gate is then UNBOUND, correctly. nobodys-cave-island declares neither and is INAPPLICABLE — still a red, still named to the owner as a class this build is not protected from."
     },
     {
       "id": "bell-07",
@@ -823,10 +826,11 @@
       "round": 4,
       "finding": "rest points sat inside the aggro geometry of the bodies the party was resting from",
       "triage": "capability",
-      "general_form": "a rest checkpoint is outside every hostile force's aggro range, marching drift included",
+      "general_form": "every respawn point — a bonfire and a plain set-checkpoint alike — is outside the aggro range of every hostile force that can be in the world while it governs, marching drift included",
       "carrier": {"kind": "dw", "code": "DW0478"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"eq": {"type": "bonfire"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}}
+      "binding": {"kind": "artifact", "file": "respawn-safety.json", "path": "pairs"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["set-checkpoint", "bonfire"]}}},
+      "note": "binding corrected and the engine widened 2026-08-11 (staging-gate UNBOUND audit). nav::check_bonfire_safe_zone quantified over plan.bonfires() — the verb — so a campaign that spells its respawn points `set-checkpoint` was examined ZERO times and reported green, while the catalog row for the same code had said \"a rest checkpoint\" all along. A bonfire and a set-checkpoint are siblings of one sum type, resolve to one CheckpointPlan distinguished only by `rest`, and deliver a dead player by the identical vanilla spawnpoint: the hazard belongs to the CELL. The proof now quantifies over every CheckpointPlan; a plain checkpoint, being monotonic, is measured only against forces that can exist while it still governs (a bonfire never stops governing and is unchanged); and validation/respawn-safety.json publishes the pair count. Island binding 0 -> 8 pairs over 3 respawn points and 6 hostile forces, SIX of which are live violations — see the round summary."
     },
     {
       "id": "bell-09",
@@ -854,10 +858,11 @@
       "round": 6,
       "finding": "a barred shortcut door answered a press from the wrong side with nothing at all",
       "triage": "capability",
-      "general_form": "the compiler knows which side of a shortcut's gate is the sealed one, and a press from that side is answered",
-      "carrier": {"kind": "dw", "code": "DW0425"},
-      "binding": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "shortcut/"}}},
-      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"in": {"type": ["close-gate", "open-gate"]}}}
+      "general_form": "a click a campaign arms lands on a body the player can actually reach: the compiler owns the clickable SHAPE of the object at an anchor (a seal's shell, a shortcut door's sealed side, an NPC's hitbox, a region's shell), and a click anchored where nothing is clickable is refused",
+      "carrier": {"kind": "dw", "code": "DW0426"},
+      "binding": {"kind": "artifact", "file": "press-bodies.json", "path": "examined"},
+      "applies_when": {"kind": "dsl", "files": ["quests.json"], "match": {"prefix": {"id": "trigger/"}}},
+      "note": "carrier corrected 2026-08-11 (staging-gate UNBOUND audit). It named DW0425, which quantifies over shortcuts[] — the verb the finding happened to arrive on — so it bound zero on every campaign that declares no shortcut, including the one being staged. DW0425 is the narrow corner (the compiler refuses to GUESS a side); the object-class form of \"a press answered with nothing at all\" is DW0426 + pressable::body_at, which quantifies over every strike/use trigger at any anchor kind and is the check that would have caught the original instance. DW0425 remains live and tested in its own right. Island binding 0 -> 1."
     },
     {
       "id": "bell-12",

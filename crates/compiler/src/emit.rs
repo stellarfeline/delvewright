@@ -547,8 +547,15 @@ pub fn build_with_warnings(
                 // the route proof's name (`DW0374`, "opening it must pay") would
                 // send the author looking at their level layout instead.
                 check_shortcut_sides(plan)?;
-                // …and every click trigger must land on something (DW0426).
-                check_trigger_bodies(plan)?;
+                // …and every click trigger must land on something (DW0426). The
+                // ledger it returns is emitted below: "how many clicks did this
+                // proof resolve a body for" is the one fact that distinguishes a
+                // campaign whose presses all land from one that arms none.
+                put_json(
+                    &mut out,
+                    "validation/press-bodies.json",
+                    &check_trigger_bodies(plan)?.to_json(),
+                );
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
@@ -740,8 +747,14 @@ pub fn build_with_warnings(
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the
             // party cannot reach is a property of where it actually lands, not
-            // of where its anchor is. No-op for a campaign with no `kill` step.
-            if crate::combat::has_encounters(plan) {
+            // of where its anchor is.
+            //
+            // Gated on EVERY fight, wave-shaped or actor-shaped
+            // (`combat::mandatory_fights`). It used to be gated on `kill`-a-wave
+            // alone, which meant a delve whose combat is entirely actors ran none
+            // of spec-0023 at all — the whole pass silently inapplicable, with
+            // every board green.
+            if crate::combat::mandatory_fights(plan).any() {
                 warnings.extend(
                     crate::combat::check_winnability(plan, &world, &waves).map_err(|e| {
                         BuildFailure::Diagnostic {
@@ -786,13 +799,22 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
-            // spec-0016 §1 (owner ruling 2026-08-04): the bonfire SAFE ZONE
+            // spec-0016 §1 (owner ruling 2026-08-04): the RESPAWN-POINT safe zone
             // (DW0478). Runs here because it needs both halves of where the
             // hostiles actually are — the seated spawn cells above and the lane
             // polylines just resolved — measured against every rest point. A
-            // bonfire inside a hostile's aggro range is a soft-lock: rest and
-            // death both deliver the party into contact on arrival.
-            crate::nav::check_bonfire_safe_zone(plan, &world, &waves, &lanes)?;
+            // respawn point inside a hostile's aggro range is a soft-lock: rest
+            // and death both deliver the party into contact on arrival.
+            //
+            // "Every rest point" is every `CheckpointPlan`, bonfire or plain
+            // `set-checkpoint`. The ledger states how many pairs were compared,
+            // because a proof that examined nothing must not read as a pass.
+            let respawn_safety = crate::nav::check_respawn_safe_zone(plan, &world, &waves, &lanes)?;
+            put_json(
+                &mut out,
+                "validation/respawn-safety.json",
+                &respawn_safety.to_json(),
+            );
             // spec-0022: resolve and prove every `volley` / `collapse`. Volley
             // coverage is proven by construction (one shot per standable
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
@@ -9278,8 +9300,9 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
 /// declares an anchor, a click and a full effect bundle, and the press lands on
 /// nothing — the beat never happens and every board stays green, which is the
 /// unbound-vacuity class this whole task came out of.
-fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
+fn check_trigger_bodies(plan: &Plan) -> Result<crate::pressable::PressLedger, BuildFailure> {
     use delvewright_dsl::TriggerOn;
+    let mut ledger = crate::pressable::PressLedger::default();
     for t in &plan.campaign.quests.content.triggers {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
@@ -9288,9 +9311,22 @@ fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
             continue;
         };
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            ledger.push(
+                t.id.as_str(),
+                t.on.kind(),
+                at,
+                "rides the NPC's dialogue hitbox",
+            );
             continue;
         }
-        if crate::pressable::body_at(plan, at) != crate::pressable::Body::Nothing {
+        let body = crate::pressable::body_at(plan, at);
+        if body != crate::pressable::Body::Nothing {
+            ledger.push(
+                t.id.as_str(),
+                t.on.kind(),
+                at,
+                &crate::pressable::describe(&body),
+            );
             continue;
         }
         return Err(BuildFailure::Diagnostic {
@@ -9308,7 +9344,7 @@ fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
             ),
         });
     }
-    Ok(())
+    Ok(ledger)
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a

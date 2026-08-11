@@ -1010,3 +1010,117 @@ fn the_combat_plan_names_the_census_probe() {
     assert_eq!(c["brand"], format!("{NS}:wave_brand_guards"));
     assert_eq!(c["unbrand"], format!("{NS}:wave_unbrand_guards"));
 }
+
+// ---------------------------------------------------------------------------
+// `fights` — the binding count for the whole spec-0023 pass (staging-gate row
+// `bell-05`). The pass used to be gated on `kill`-a-wave, the VERB, so a delve
+// whose combat is entirely actors ran none of DW0470–DW0475 and reported
+// `encounters: 0` with nothing saying that was a coverage fact.
+// ---------------------------------------------------------------------------
+
+/// Turn souls-bonfire's `kill` objective into a walk, so the campaign has no
+/// mandatory WAVE fight left — the island's shape, where every hostile is an
+/// actor. The flag chain is untouched: the objective still completes and still
+/// fires its bundle.
+fn no_mandatory_wave(quests: &mut serde_json::Value) {
+    for q in quests["content"]["quests"].as_array_mut().unwrap() {
+        for o in q["objectives"].as_array_mut().unwrap() {
+            if o["id"] == "obj/slay" {
+                o["type"] = serde_json::json!("reach-anchor");
+                o.as_object_mut().unwrap().remove("wave");
+                o["anchor"] = serde_json::json!("anchor/wave");
+                o["radius"] = serde_json::json!(3);
+            }
+        }
+    }
+}
+
+fn strip_food(classes: &mut serde_json::Value) {
+    for class in classes["content"]["classes"].as_array_mut().unwrap() {
+        class["kit"].as_array_mut().unwrap().retain(|item| {
+            let id = item["item"].as_str().unwrap_or_default();
+            !id.contains("bread") && !id.contains("beef") && !id.contains("stew")
+        });
+    }
+}
+
+/// **The red this round was built to produce.** A campaign whose only combat is
+/// an actor it turns loose, with no food anywhere, raised NOTHING before: the
+/// whole winnability pass was gated on `has_encounters`, which is zero here.
+#[test]
+fn a_foodless_party_fighting_only_actors_warns_dw0474() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, classes| {
+        quests["dsl_version"] = serde_json::json!("0.8.0");
+        no_mandatory_wave(quests);
+        quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
+        quests["content"]["triggers"]
+            .as_array_mut()
+            .unwrap()
+            .push(unleash_trigger());
+        strip_food(classes);
+    });
+    let (out, warnings) = build(tmp.path()).expect("no sustain is a warning, not a failure");
+
+    let plan: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    assert_eq!(
+        plan["encounters"].as_array().unwrap().len(),
+        0,
+        "the wave half is genuinely empty — this is the vacuity, not a rigged case: {plan}"
+    );
+    assert_eq!(plan["fights"]["waves"].as_array().unwrap().len(), 0);
+    assert_eq!(plan["fights"]["actors"][0], "actor/barrow-warden");
+    assert_eq!(plan["fights"]["total"], 1);
+    assert_eq!(plan["fights"]["unbound"], false);
+    assert!(plan["fights"]["reason"].is_null());
+
+    assert!(
+        has_code(&warnings, "DW0474"),
+        "a delve with a fight and no food is DW0474 whichever shape the fight takes: {warnings:#?}"
+    );
+}
+
+/// The same campaign WITH food is green — so the warning above is about the
+/// sustain, not about the widening.
+#[test]
+fn the_same_actor_only_campaign_with_food_is_clean() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| {
+        quests["dsl_version"] = serde_json::json!("0.8.0");
+        no_mandatory_wave(quests);
+        quests["content"]["actors"] = serde_json::json!([barrow_warden()]);
+        quests["content"]["triggers"]
+            .as_array_mut()
+            .unwrap()
+            .push(unleash_trigger());
+    });
+    let (_, warnings) = build(tmp.path()).expect("builds");
+    assert!(!has_code(&warnings, "DW0474"), "{warnings:#?}");
+}
+
+/// A combat-free campaign states its own zero rather than being silent about it.
+#[test]
+fn a_campaign_with_no_fight_of_either_shape_says_so() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |quests, _| no_mandatory_wave(quests));
+    let (out, _) = build(tmp.path()).expect("builds");
+    // No `kill` step and no unleashed actor: `combat-plan.json` is not emitted at
+    // all, which is the pre-existing contract. The point of the case is that
+    // `fights` never reports a zero as though it had been measured.
+    assert!(
+        !out.contains_key("validation/combat-plan.json"),
+        "a campaign with no fight of either shape emits no plan"
+    );
+}
+
+#[test]
+fn the_fights_block_counts_a_wave_fight_too() {
+    let tmp = TempCampaign::new();
+    campaign_with(tmp.path(), |_, _| {});
+    let (out, _) = build(tmp.path()).expect("the untouched fixture builds");
+    let plan: serde_json::Value =
+        serde_json::from_slice(out.get("validation/combat-plan.json").unwrap()).unwrap();
+    assert_eq!(plan["fights"]["waves"][0], "wave/guards");
+    assert_eq!(plan["fights"]["total"], 1);
+}
