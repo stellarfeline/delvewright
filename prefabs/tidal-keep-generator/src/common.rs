@@ -161,32 +161,67 @@ pub fn tide_floor() -> Vec<Recipe> {
         r("minecraft:moss_block", 0.08),
     ]
 }
-/// Shore sand (always laid over the solid plinth — never over air).
-pub fn shore_sand() -> Vec<Recipe> {
+/// The shore's upper strand: wet grey shingle over silt, always laid over the
+/// solid plinth — never over air.
+///
+/// Sourced from the campaign's approved reference image for Z0 冢泽潮滩
+/// (`campaigns/the-drowned-bell-r2/design/concept/z0-barrow-shore.jpg`). The
+/// ground there carries **no yellow and no green**: it is a tidal flat, not a
+/// beach and not a field. That is the whole reason this palette exists instead
+/// of a sand mix and a turf mix — a strand of `sand` reads as holiday, and a
+/// field of `grass_block` reads as pasture, and the shore is neither.
+///
+/// Every block below was chosen by **measuring** its texture in the pinned
+/// client jar against colours sampled from that image, not by recalling what
+/// the block looks like. Recall put `packed_mud` here first, which measures
+/// (142,106,79) — a strong orange — against a shore that samples (66,71,74),
+/// a cool neutral grey. The whole shore rendered as desert.
+pub fn tidal_flat() -> Vec<Recipe> {
     vec![
-        r("minecraft:sand", 0.56),
-        r("minecraft:gravel", 0.26),
-        r("minecraft:coarse_dirt", 0.12),
-        r("minecraft:stone", 0.06),
+        r("minecraft:gravel", 0.34),
+        r("minecraft:cobbled_deepslate", 0.22),
+        r("minecraft:tuff", 0.16),
+        r("minecraft:smooth_basalt", 0.12),
+        r("minecraft:stone", 0.16),
     ]
 }
-/// Barrow-field turf.
-pub fn turf() -> Vec<Recipe> {
+/// The band the tide still reaches: siltier and a shade darker than the flat
+/// above it, and no gravel sheen. Sits between the waterline and the wrack line.
+pub fn tide_silt() -> Vec<Recipe> {
     vec![
-        r("minecraft:grass_block", 0.70),
-        r("minecraft:coarse_dirt", 0.14),
-        r("minecraft:podzol", 0.08),
-        r("minecraft:moss_block", 0.08),
+        r("minecraft:cobbled_deepslate", 0.30),
+        r("minecraft:smooth_basalt", 0.22),
+        r("minecraft:gravel", 0.20),
+        r("minecraft:tuff", 0.28),
     ]
 }
-/// Burial-mound stone.
+/// Burial-mound stone: dry-piled grey field cobble, lichen-mottled on the
+/// weather faces.
+///
+/// The reference image's cairns are heaped round stone with pale lichen — not
+/// masonry — so no brick appears here, and the lichen is a sixth of the pile
+/// rather than the plurality of it.
 pub fn barrow_stone() -> Vec<Recipe> {
     vec![
-        r("minecraft:mossy_cobblestone", 0.40),
-        r("minecraft:cobblestone", 0.28),
+        r("minecraft:cobblestone", 0.36),
         r("minecraft:andesite", 0.20),
-        r("minecraft:mossy_stone_bricks", 0.12),
+        r("minecraft:tuff", 0.16),
+        r("minecraft:cobbled_deepslate", 0.14),
+        r("minecraft:mossy_cobblestone", 0.14),
     ]
+}
+/// Wrack: the black kelp the tide banks over everything on the strand, and the
+/// dominant visual mass of the Z0 reference image.
+///
+/// Measured, because the obvious choice is wrong. `dried_kelp_block` is the
+/// block whose NAME says kelp; its texture is olive green with a woven grid,
+/// and a shore dressed in it renders as hedgerow. The image's wrack samples
+/// (21,23,22) — near-black neutral — which is `black_wool` (20,21,25) and
+/// `sculk` (13,27,33). Sculk carries the irregular organic texture; the wool
+/// carries the flat sodden mass; the mix is what keeps it from reading as
+/// either fabric or floor.
+pub fn wrack() -> Vec<Recipe> {
+    vec![r("minecraft:black_wool", 0.62), r("minecraft:sculk", 0.38)]
 }
 /// The WORN lane of the boulder stair: the brick face is gone, polished smooth by
 /// a century of stone rolling over it. This is the 初见杀 tell, in plain sight.
