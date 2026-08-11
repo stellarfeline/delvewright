@@ -151,6 +151,33 @@ INTERACTION_SITES = {
         "dialogue machinery, with its own `prompt`/`rest_label`/`save_label` strings "
         "(check B) instead of `DialogueNode`/`DialogueOption`. Shape 2, twice."
     ),
+    "shop_setup": (
+        "OPEN FINDING, and the SAME finding as `emit_quest_effect`'s bonfire — "
+        "recorded as a new instance rather than folded in, because it is the second "
+        "consumer of one missing capability. A shop's body must open a DIALOG, and a "
+        "dialog has to be shown to a named player. `EnvTrigger` is polled off the "
+        "entity's own `interaction` NBT record, which names no player at all "
+        "(`seal_hint_fns` documents why the record is observed and not consumed), so "
+        "the general construct cannot express 'the player who pressed this' — every "
+        "site in the engine that needs the presser goes through a "
+        "`player_interacted_with_entity` advancement instead. The missing capability "
+        "is therefore not on the shop: it is that `EnvTrigger` has no acting-player "
+        "binding. Shape 3, catalogued rather than closed, because closing it is a "
+        "change to the trigger's own contract and not to this feature."
+    ),
+    "emit_stake_functions": (
+        "ACCEPTED — the general construct genuinely cannot bind here. A recovery "
+        "stake's marker is summoned AT RUNTIME, at a position chosen at runtime from "
+        "the compile-time placement table (or at the death point itself), once per "
+        "death, per player. `EnvTrigger.at` binds a prefab ANCHOR — one cell, known "
+        "at compile time, existing from world load — so there is no `EnvTrigger` a "
+        "campaign could have written that would answer a click on a body that does "
+        "not exist until somebody dies. The collection ANSWER is not private: the "
+        "amount restored is the declared datum, the line said is the stake's own "
+        "l10n-inventoried `collected_message`, and retirement goes through the one "
+        "`retired_by` function `DW0421` polices. What is private is only the "
+        "summoning, which is the half no declaration could have supplied."
+    ),
     "activation_commands": (
         "OPEN FINDING. `Objective::Interact` summons its own affordance, and carries "
         "its own `missing_item_hint` for the refusal reply — a private narrate. The "
@@ -267,17 +294,6 @@ MODIFIER_HOLES = {
         "`happening` field. The branch-contradiction proof (`DW0485`) reasons only "
         "over beats that declare one, so those effects are invisible to it."
     ),
-    ("EffectSite", "quest"): (
-        "ACCEPTED — operand, and the capability IS already on the enum. `quest` "
-        "names the DAG owner of a firing; the ambient roots (trigger, trap, "
-        "dialogue `on_respawn`, shortcut `on_unlock`, campaign `on_death`) have no "
-        "DAG position by definition, and inventing one for them is exactly the "
-        "over-attribution the completability model must not make. The cross-cutting "
-        "question — 'does this site have a quest?' — is answered for EVERY variant "
-        "by `EffectSite::quest() -> Option<&str>`, which is the lift this check "
-        "asks for. Newly visible only because spec-0031's two roots took the enum "
-        "past MODIFIER_MIN_VARIANTS; the shape has been correct since the fifth."
-    ),
 }
 
 
@@ -297,7 +313,8 @@ EFFECT_BUNDLES = {
     "on_objective_complete": "ROOT R1 (`EffectRootKind::ObjectiveComplete`).",
     "on_complete": "ROOT R2 (`EffectRootKind::QuestComplete`).",
     "effects": (
-        "ROOT R3 (`EffectRootKind::Trigger`) for `EnvTrigger.effects`; "
+        "ROOT R3 (`EffectRootKind::Trigger`) for `EnvTrigger.effects`; ROOT R8 "
+        "(`EffectRootKind::ShopOffer`) for `ShopOffer.effects`; "
         "`SequenceStep.effects` is reached as a nested list of "
         "`QuestEffect::Sequence`."
     ),

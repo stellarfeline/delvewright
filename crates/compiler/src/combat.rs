@@ -503,6 +503,10 @@ fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>
             // from either is a beat the floor gate must be able to name.
             EffectSite::ShortcutUnlock { shortcut } => ("shortcut-unlock", shortcut.clone(), None),
             EffectSite::OnDeath => ("on-death", "on_death".to_string(), None),
+            // Effect root 8 (spec-0032). Ambient like the four above: a shop
+            // offer fires when a player presses a button, which they may do at
+            // any time or never.
+            EffectSite::ShopOffer { shop, .. } => ("shop-offer", shop.clone(), None),
         };
         let t = (kind == "trigger")
             .then(|| triggers.get(owner.as_str()))

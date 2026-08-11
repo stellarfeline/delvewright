@@ -338,6 +338,11 @@ pub fn build_with_warnings(
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
     let mut lethal_gate: Option<crate::lethal::LethalGate> = None;
+    // The recovery stake's compile-time placement table (`compiler::stake`), and
+    // the ledger of what its proofs looked at. `None` for a campaign that declares
+    // no stake, which is the whole feature's byte-identity guarantee: no table, no
+    // objectives, no functions, no artifact.
+    let mut stake_table: Option<crate::stake::StakeTable> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -504,6 +509,12 @@ pub fn build_with_warnings(
                         plan.lethal_volumes.len(),
                     ));
                 }
+                // spec-0032: the recovery stake's placement table and its proofs
+                // (`DW0525` no route back, `DW0526` no safe footing). Placed after
+                // the lethal-volume seat proof because it CONSUMES the volumes as
+                // death regions — a volume that strands the party is a worse
+                // finding, and it should be reported first.
+                stake_table = crate::stake::build(plan, &world, campaign_spawn(plan))?;
                 crate::nav::check_stealth_zones(plan, &world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -899,6 +910,7 @@ pub fn build_with_warnings(
         &trap_gates,
         &payload_plans,
         &branch_transport,
+        stake_table.as_ref(),
     );
     for (name, body) in &functions {
         insert_unique(
@@ -1116,6 +1128,15 @@ pub fn build_with_warnings(
     // reports zero is a finding rather than an absence.
     if let Some(gate) = &lethal_gate {
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
+    }
+    // The recovery stake's binding ledger (`compiler::stake`, spec-0032 AC10): how
+    // many stakes were declared, how many respawn seats and death regions the
+    // placement table is keyed on, how many quest states its reachability was
+    // intersected over, and how many rows it proved. Same rule as above — a
+    // campaign that declares no stake emits no file, so a file reporting a zero
+    // binding is a finding rather than an absence.
+    if let Some(t) = &stake_table {
+        put_json(&mut out, "validation/stake-gate.json", &t.gate.to_json());
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
@@ -2028,6 +2049,7 @@ fn emit_functions(
     trap_gates: &BTreeMap<String, String>,
     payloads: &PayloadPlans,
     branch_transport: &BranchTransportOverlay,
+    stake_table: Option<&crate::stake::StakeTable>,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -2139,6 +2161,26 @@ fn emit_functions(
             ));
         }
     }
+    // spec-0032: a named datum's shadow score — the value it was last announced at.
+    // Party-scoped ones are seeded here beside the datum itself, so a world that
+    // has just loaded announces nothing.
+    for st in named_states(plan) {
+        setup.push(format!(
+            "scoreboard objectives add {} dummy",
+            state_shadow_score(st.id.as_str())
+        ));
+        if st.scope == StateScope::Party {
+            setup.push(format!(
+                "scoreboard players set {} {} {}",
+                plan::PARTY,
+                state_shadow_score(st.id.as_str()),
+                st.initial
+            ));
+        }
+    }
+    // spec-0032: the economy's objectives and constants. Empty for a campaign that
+    // declares neither a shop nor a stake → byte-identical.
+    setup.extend(economy_setup(plan));
     // v0.4: the per-player scratch bitmask used by display-gated dialogue choosers
     // (flag axis and/or objective-state axis). Declared only when a gated option
     // exists, so v0.2/v0.3 setup is unchanged.
@@ -2448,6 +2490,9 @@ fn emit_functions(
     // spec-0016 §4: start each timed gate's clock. The gate is sealed from
     // world-load by the prefab, so the clock's first act is always an OPEN.
     setup.extend(timed_gate_setup(plan));
+    // spec-0032: arm each shop's interaction point and its visible marker. A shop
+    // is furniture, so it is armed at world init exactly as a shortcut's lever is.
+    setup.extend(shop_setup(plan));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // `world_edits` writes land — and `place_verify` above has now proven every
@@ -2826,6 +2871,15 @@ fn emit_functions(
             beat.index, beat.index
         ));
     }
+    // spec-0032: the shop answer channel and the stake marker collector. LAST, and
+    // deliberately so — see `economy_tick`: a stake dropped by `on_death` earlier in
+    // this same tick must have written its slot before the collector counts
+    // references, or the marker would be deleted the instant it appeared.
+    // spec-0032: a named datum announces its new balance whenever it changes, from
+    // ANY cause. Before the economy dispatch, so a purchase made in this tick is
+    // announced in the next one rather than being missed entirely.
+    tick.extend(named_state_tick(plan));
+    tick.extend(economy_tick(plan));
     fns.push(("tick".to_string(), lines(&tick)));
 
     // --- v0.6 checkpoint respawn dispatch (spec-0012) ---
@@ -2843,6 +2897,10 @@ fn emit_functions(
     fns.extend(emit_stealth_functions(plan));
     // --- spec-0031 lethal-volume functions ---
     fns.extend(emit_lethal_functions(plan));
+    // --- spec-0032 trade and recovery-stake functions ---
+    fns.extend(emit_shop_functions(plan));
+    fns.extend(emit_stake_functions(plan, stake_table));
+    fns.extend(emit_named_state_functions(plan));
 
     // --- cs_repair: rejoin-after-cutscene repair (see the `tick` driver above) ---
     fns.extend(cutscene_repair_fns(plan));
@@ -2883,6 +2941,17 @@ fn emit_functions(
                 body.push(format!(
                     "scoreboard players set @s {} {}",
                     plan::state_score(st.id.as_str()),
+                    st.initial
+                ));
+            }
+        }
+        // spec-0032: a named datum's shadow is seeded to the same initial, so a
+        // player's first tick announces nothing — the announcement is for a CHANGE.
+        for st in named_states(plan) {
+            if st.scope == StateScope::Player {
+                body.push(format!(
+                    "scoreboard players set @s {} {}",
+                    state_shadow_score(st.id.as_str()),
                     st.initial
                 ));
             }
@@ -4401,6 +4470,9 @@ fn root_audience(kind: delvewright_dsl::EffectRootKind) -> Audience {
         K::ObjectiveComplete | K::QuestComplete => Audience::Party,
         // The dying / respawning player's own beat.
         K::DialogueRespawn | K::OnDeath => Audience::Solo,
+        // The buying player's own beat: the handler is dispatched
+        // `as @a[scores={…}]`, so `@s` is whoever pressed the button.
+        K::ShopOffer => Audience::Solo,
         // Polled on the tick with no executor.
         K::Trigger | K::TrapPayload | K::ShortcutUnlock => Audience::Scheduled,
     }
@@ -4736,6 +4808,17 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 state_holder(plan, state),
                 plan::state_score(state.as_str()),
                 state_initial(plan, state)
+            ));
+        }
+        // spec-0032. The verb is one `function` call, because everything a stake
+        // drop does — the retention policy, the forfeit arithmetic, the
+        // compile-time placement table, the marker — is shared between every site
+        // that can leave one, and a bundle inlined at each site would be that
+        // chain copied per firing.
+        QuestEffect::DropStake { stake, .. } => {
+            body.push(format!(
+                "function {ns}:stk_drop_{}",
+                plan::safe_local(stake.as_str())
             ));
         }
         QuestEffect::SpawnWave { wave, .. } => {
@@ -5102,42 +5185,37 @@ fn center(cell: i32) -> String {
     format!("{:.1}", cell as f64 + 0.5)
 }
 
-/// **The death-position seam — deliberately empty, and the one thing here that a
-/// live measurement decides.**
+/// **The death-position seam — measured, and the answer is that it needs nothing.**
 ///
 /// Every command this returns is prepended to the corpse-side branch of
 /// `cp_respawn_check`, ahead of `on_death_fire`, so whatever records "where the
-/// player died" runs before any authored effect can read it. It emits **nothing**
-/// today, which is why a campaign that declares `on_death` still gets exactly the
-/// commands its bundle asks for and no speculative bookkeeping.
+/// player died" runs before any authored effect can read it. It emits **nothing**,
+/// and since #349 that is a settled answer rather than a deferral.
 ///
-/// It is a named function rather than a comment because the alternative — writing
-/// nothing and remembering — is how a seam becomes folklore. spec-0032's recovery
-/// stake needs the position; nothing in the current surface does.
+/// The seam was carved because spec-0032's recovery stake needs the death position
+/// and there were two candidate vanilla mechanisms — a pre-respawn death
+/// advancement, or the read-only `LastDeathLocation` player NBT — whose behaviour
+/// for non-entity deaths (void, fall, drowning) nobody had measured. CLAUDE.md's
+/// debug doctrine answers a question like that by measurement, never by recall.
 ///
-/// **Why it is not filled in here.** There are two candidate vanilla mechanisms
-/// and the choice between them is a question about the pinned server, not about
-/// this compiler:
+/// **Measured, 5 causes × 3 repeats, every repeat agreeing**
+/// (`docs/notes/death-and-teleport-spike.md`): the `deathCount` edge arms **on the
+/// corpse**, pre-respawn, for void, fall, drowning, lava and a mob kill alike; and
+/// the corpse's own position IS the death position, stable for the whole death
+/// screen (measured drift 0.000 in all 15 trials — a corpse stops falling).
 ///
-/// * the **pre-respawn death advancement**, whose trigger for *non-entity* deaths
-///   (void, fall, drowning) is unverified — a souls-shaped delve kills the player
-///   that way constantly, so a mechanism that only fires on mob kills is not a
-///   mechanism;
-/// * the read-only **`LastDeathLocation`** player NBT, whose availability at the
-///   instant the corpse-side branch runs (as opposed to after the respawn) is
-///   likewise unverified.
+/// So there is nothing to capture. `on_death_fire` already runs `as @s` on that
+/// corpse, and `execute at @s` inside it is positioned at the death point by
+/// construction — no scratch storage, no NBT read, no extra command in any
+/// campaign's tick. An advancement would have been the wrong instrument
+/// (`entity_killed_player` fires for one cause of five; `entity_hurt_player` fires
+/// on the FIRST damage event with the player still at 16–20 HP, so it means "was
+/// hurt", never "died here"), and `LastDeathLocation` would have been a redundant
+/// second reading of a position the executor already stands on.
 ///
-/// CLAUDE.md's debug doctrine answers a question like this by measurement, never
-/// by recall, and that measurement is running separately on a live pinned 1.21.11
-/// server (spec-0031, "Unverified"). Guessing here would bake the wrong primitive
-/// into emitted commands and into every proof written over them.
-///
-/// What is **already settled**, and what this seam therefore does not have to
-/// establish: `deathCount` ticks up on the death rather than on the respawn
-/// (measured, task #145), `@a` matches a player on the death screen (the `alive`
-/// guard exists because it does), and the corpse stands where it fell. The open
-/// question is only how to *record* that position durably enough for a later
-/// effect to place something at it.
+/// It stays a named function rather than becoming a comment for the reason it was
+/// one to begin with: the alternative — writing nothing and remembering — is how a
+/// seam becomes folklore.
 fn death_position_capture() -> Vec<String> {
     Vec::new()
 }
@@ -5598,6 +5676,30 @@ fn affordances(plan: &Plan) -> Vec<crate::affordance::Affordance> {
             tag: format!("dw_bonfire_{}", bf.index),
             // A bonfire is rested at, never used up.
             retired_by: None,
+        });
+    }
+    // spec-0032. A shop is furniture — traded with, never used up. A stake IS
+    // consumed, and `stk_gc_<s>` is the single function permitted to retire it:
+    // every other path (a collection, an eviction under the `replace` policy)
+    // clears the per-player ledger and lets the reference count decide, which is
+    // what keeps one killer for one piece of hardware (`DW0421`).
+    for (i, sh, _) in shops(plan) {
+        out.push(crate::affordance::Affordance {
+            id: sh.id.as_str().to_string(),
+            kind: "shop",
+            tag: format!("dw_shop_{i}"),
+            retired_by: None,
+        });
+    }
+    for (st, safe) in stakes(plan) {
+        if st.max_live() == 0 {
+            continue;
+        }
+        out.push(crate::affordance::Affordance {
+            id: st.id.as_str().to_string(),
+            kind: "recovery stake",
+            tag: stk_tag(&safe),
+            retired_by: Some(format!("stk_gc_{safe}")),
         });
     }
     out
@@ -6434,6 +6536,671 @@ fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     if let Some(f) = emit_flask_function(plan) {
         fns.push(f);
+    }
+    fns
+}
+
+// ---------------------------------------------------------------------------
+// DSL v0.10 trade and the recovery stake (spec-0032)
+// ---------------------------------------------------------------------------
+
+/// The `dw.sys` fake player holding the amount a death is forfeiting, while it is
+/// being computed. Scratch, never read outside one function chain.
+const STK_AMT: &str = "#stk_amt";
+/// `dw.sys` scratch holding the block coordinates of the marker under discussion.
+const STK_X: &str = "#stk_x";
+const STK_Y: &str = "#stk_y";
+const STK_Z: &str = "#stk_z";
+/// `dw.sys` scratch counting how many players still have a live stake at
+/// `#stk_x/y/z` — the reference count that decides whether a marker may be retired.
+const STK_REF: &str = "#stk_ref";
+/// `dw.sys` scratch: whether a `collect_by: anyone` sweep actually took anything.
+const STK_GOT: &str = "#stk_got";
+/// The `dw.sys` fake player holding the constant `100`, for a proportional forfeit.
+const STK_HUNDRED: &str = "#stk_100";
+
+/// The per-player objective holding slot `k`'s **amount** for stake `s`.
+fn stk_amount_obj(s: &str, k: u32) -> String {
+    format!("dw.kv{k}_{s}")
+}
+/// The per-player objective holding whether slot `k` of stake `s` is **live**.
+fn stk_live_obj(s: &str, k: u32) -> String {
+    format!("dw.kl{k}_{s}")
+}
+/// The per-player objective holding one axis of slot `k`'s marker position.
+fn stk_pos_obj(s: &str, k: u32, axis: usize) -> String {
+    format!("dw.k{}{k}_{s}", ["x", "y", "z"][axis])
+}
+/// The interaction hitbox tag for stake `s`'s markers. **One tag for every marker
+/// of a stake**, not one per marker: a marker is a *place*, and which players have
+/// a wager there is the per-player ledger's business, not the entity's.
+fn stk_tag(s: &str) -> String {
+    format!("dw_stk_{s}")
+}
+
+/// Every declared stake, paired with the `safe_local` segment naming its functions
+/// and objectives. Empty for a campaign that declares none, which is what keeps
+/// every existing campaign's emission byte-identical.
+fn stakes<'a>(plan: &'a Plan) -> Vec<(&'a delvewright_dsl::Stake, String)> {
+    plan.campaign
+        .quests
+        .content
+        .stakes
+        .iter()
+        .map(|s| (s, plan::safe_local(s.id.as_str())))
+        .collect()
+}
+
+/// Every declared shop, paired with its index and resolved anchor cell. A shop
+/// whose anchor no placed piece provides is dropped here — already `DW0142` at
+/// validation, and re-reporting it from emission would blame the wrong layer.
+fn shops<'a>(plan: &'a Plan) -> Vec<(usize, &'a delvewright_dsl::Shop, [i32; 3])> {
+    plan.campaign
+        .quests
+        .content
+        .shops
+        .iter()
+        .enumerate()
+        .filter_map(|(i, sh)| plan.point_any(sh.anchor.as_str()).map(|p| (i, sh, p)))
+        .collect()
+}
+
+/// The shadow objective holding the value a **named** datum was last announced at
+/// (DSL v0.10, spec-0032).
+fn state_shadow_score(id: &str) -> String {
+    format!("dw.sh_{}", plan::safe_local(id))
+}
+
+/// Every declared datum that carries a player-visible `name` — i.e. every currency.
+/// Empty for a campaign that names none, which is what keeps a spec-0031 campaign
+/// byte-identical.
+fn named_states<'a>(plan: &'a Plan) -> Vec<&'a delvewright_dsl::StateDecl> {
+    declared_states(plan.campaign)
+        .iter()
+        .filter(|st| st.name.is_some())
+        .collect()
+}
+
+/// **A named datum announces itself when it changes** (DSL v0.10, spec-0032): the
+/// tick driver and the per-datum announcer behind it.
+///
+/// The announcement belongs to the DATUM, not to each verb that writes it — which
+/// is the same rule that put the numeric comparison in the gate rather than in the
+/// shop. Hanging it off the write sites looked simpler and was wrong twice over:
+/// there are five of them (three state verbs, the stake's forfeit, the stake's
+/// restore) so the readout would be five copies, and — the defect this shape was
+/// written to fix, found by reading the generated `shop_pick_0_0` — a readout
+/// emitted inside a gated effect carries that effect's gate, which is evaluated
+/// AFTER the write it reports. Spend your last ember behind a
+/// `requires_state: at-least 1` gate and the balance moves to 0, so the readout's
+/// inherited guard no longer holds and the one change the player most needs to see
+/// is the one they are never told about.
+///
+/// A shadow score per named datum removes the whole class: nothing consults a gate,
+/// the announcement fires on **any** change from any cause — a purchase, a death's
+/// forfeit, a stake collected, a plain `set-state` — and it fires exactly once per
+/// change. The shadow is seeded alongside the datum itself, so joining a world
+/// announces nothing.
+fn named_state_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for st in named_states(plan) {
+        let id = st.id.as_str();
+        let (obj, shadow) = (plan::state_score(id), state_shadow_score(id));
+        let f = format!("st_show_{}", plan::safe_local(id));
+        match st.scope {
+            StateScope::Player => out.push(format!(
+                "execute as @a unless score @s {obj} = @s {shadow} run function {ns}:{f}"
+            )),
+            StateScope::Party => out.push(format!(
+                "execute unless score {p} {obj} = {p} {shadow} run function {ns}:{f}",
+                p = plan::PARTY
+            )),
+        }
+    }
+    out
+}
+
+/// The `st_show_<datum>` functions: say the balance, then remember having said it.
+///
+/// The value travels as vanilla's own `{"score":…}` component, so the line the
+/// player reads is the live balance rather than a number baked at emit time, and
+/// the name travels as a `{translate, fallback}` component like every other
+/// authored string.
+fn emit_named_state_functions(plan: &Plan) -> Vec<(String, String)> {
+    let mut fns = Vec::new();
+    for st in named_states(plan) {
+        let id = st.id.as_str();
+        let (obj, shadow) = (plan::state_score(id), state_shadow_score(id));
+        let name = st.name.as_deref().unwrap_or_default();
+        let (who, holder) = match st.scope {
+            StateScope::Player => ("@s".to_string(), "@s".to_string()),
+            StateScope::Party => ("@a".to_string(), plan::PARTY.to_string()),
+        };
+        let component = json!([
+            { "text": "" },
+            tr(name),
+            { "text": ": " },
+            { "score": { "name": holder, "objective": obj }, "color": "gold" }
+        ]);
+        fns.push((
+            format!("st_show_{}", plan::safe_local(id)),
+            lines(&[
+                format!("title {who} actionbar {component}"),
+                format!("scoreboard players operation {holder} {shadow} = {holder} {obj}"),
+            ]),
+        ));
+    }
+    fns
+}
+
+/// `setup` lines declaring the economy's scoreboard objectives and constants.
+///
+/// Empty for a campaign that declares neither a shop nor a stake — the byte-identity
+/// rule every section of `setup` follows.
+fn economy_setup(plan: &Plan) -> Vec<String> {
+    let mut out = Vec::new();
+    if !shops(plan).is_empty() {
+        // The answer channel and the routing channel, exactly the pair a bonfire
+        // rest uses: `/trigger` is the only command a non-op player may run, so one
+        // trigger objective carries every shop's answer and a dummy says which shop
+        // this player opened.
+        out.push("scoreboard objectives add dw.shop trigger".to_string());
+        out.push("scoreboard objectives add dw.shop_at dummy".to_string());
+    }
+    let sts = stakes(plan);
+    if sts.is_empty() {
+        return out;
+    }
+    // The respawn point in force is the table's key, and `#cp` is where the runtime
+    // keeps it. It is otherwise only written by `set-checkpoint` / a bonfire save,
+    // so before the first checkpoint it would be ABSENT — and an absent score
+    // matches no `matches` range, which would silently drop every entry-seat row of
+    // the table. Seeded to −1, the value the entry seat's rows are keyed on.
+    out.push("scoreboard players set #cp dw.sys -1".to_string());
+    out.push(format!("scoreboard players set {STK_HUNDRED} dw.sys 100"));
+    for (st, safe) in &sts {
+        for k in 0..st.max_live() {
+            out.push(format!(
+                "scoreboard objectives add {} dummy",
+                stk_amount_obj(safe, k)
+            ));
+            out.push(format!(
+                "scoreboard objectives add {} dummy",
+                stk_live_obj(safe, k)
+            ));
+            for axis in 0..3 {
+                out.push(format!(
+                    "scoreboard objectives add {} dummy",
+                    stk_pos_obj(safe, k, axis)
+                ));
+            }
+        }
+        if let delvewright_dsl::Forfeit::Proportion { percent } = st.forfeit() {
+            out.push(format!(
+                "scoreboard players set #stk_p{percent} dw.sys {percent}"
+            ));
+        }
+    }
+    out
+}
+
+/// `setup_finish` lines arming every shop's affordance: the invisible
+/// `minecraft:interaction` the player right-clicks and the glowing
+/// `minecraft:item_display` that says there is something here.
+///
+/// Armed at world init rather than at a beat, because a shop is furniture — the
+/// same reasoning that arms a shortcut's unlock lever at world init. Guarded by an
+/// absence test so a `/reload` cannot stack a second hitbox in one cell (`DW0422`).
+fn shop_setup(plan: &Plan) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, sh, pos) in shops(plan) {
+        let v = ent_xyz(pos);
+        let tag = format!("dw_shop_{i}");
+        out.push(format!(
+            "execute unless entity @e[tag={tag}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+            v[0], v[1], v[2]
+        ));
+        let hw = crate::affordance::hardware_tag(&tag);
+        out.push(format!(
+            "execute unless entity @e[tag={hw}] run {}",
+            affordance_hardware(
+                v.clone(),
+                &tag,
+                sh.marker_item.as_deref().unwrap_or("minecraft:emerald")
+            )
+        ));
+    }
+    out
+}
+
+/// `tick` lines for the economy.
+///
+/// Two dispatches, both the shape the rest of the engine already uses:
+/// a shop answer read off `dw.shop`/`dw.shop_at` exactly as a bonfire's is, and the
+/// stake marker garbage-collector.
+///
+/// **Ordering is load-bearing.** These lines are appended AFTER the death-edge
+/// dispatch, because a stake dropped by `on_death` in this same tick writes its
+/// slot inside that dispatch: a collector running first would see a reference count
+/// of zero and delete the marker it had just been given.
+fn economy_tick(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let mut out = Vec::new();
+    for (i, sh, _) in shops(plan) {
+        for (j, _) in sh.offers.iter().enumerate() {
+            out.push(format!(
+                "execute as @a[scores={{dw.shop={},dw.shop_at={i}}}] run function {ns}:shop_pick_{i}_{j}",
+                j + 1
+            ));
+        }
+    }
+    for (st, safe) in stakes(plan) {
+        // `max_live: 0` is the no-death-cost configuration: no marker is ever
+        // placed, so there is no marker machinery at all — not even a collector
+        // looping over an empty selector.
+        if st.max_live() == 0 {
+            continue;
+        }
+        out.push(format!(
+            "execute as @e[tag={}] at @s run function {ns}:stk_gc_{safe}",
+            stk_tag(&safe)
+        ));
+    }
+    out
+}
+
+/// The commands that compute a death's forfeit into [`STK_AMT`], per the stake's
+/// declared `forfeit` rule.
+///
+/// Integer arithmetic throughout (ADR-0006): vanilla's `*=` and `/=` are the only
+/// operators involved, and `/=` floors — documented rather than papered over,
+/// because a balance is non-negative by the clamp below and flooring and truncation
+/// agree there.
+fn stake_forfeit_lines(plan: &Plan, st: &delvewright_dsl::Stake) -> Vec<String> {
+    let obj = plan::state_score(st.state.as_str());
+    let mut out = Vec::new();
+    match st.forfeit() {
+        delvewright_dsl::Forfeit::None => {
+            out.push(format!("scoreboard players set {STK_AMT} dw.sys 0"));
+        }
+        delvewright_dsl::Forfeit::All => {
+            out.push(format!(
+                "scoreboard players operation {STK_AMT} dw.sys = @s {obj}"
+            ));
+        }
+        delvewright_dsl::Forfeit::Proportion { percent } => {
+            out.push(format!(
+                "scoreboard players operation {STK_AMT} dw.sys = @s {obj}"
+            ));
+            out.push(format!(
+                "scoreboard players operation {STK_AMT} dw.sys *= #stk_p{percent} dw.sys"
+            ));
+            out.push(format!(
+                "scoreboard players operation {STK_AMT} dw.sys /= {STK_HUNDRED} dw.sys"
+            ));
+        }
+        delvewright_dsl::Forfeit::Fixed { amount } => {
+            out.push(format!(
+                "scoreboard players operation {STK_AMT} dw.sys = @s {obj}"
+            ));
+            // min(balance, amount) — a fixed forfeit can never overdraw a purse.
+            if amount < i32::MAX {
+                out.push(format!(
+                    "execute if score {STK_AMT} dw.sys matches {}.. run scoreboard players set {STK_AMT} dw.sys {amount}",
+                    amount.saturating_add(1)
+                ));
+            }
+        }
+    }
+    // A negative balance forfeits nothing: a death must never HAND the player
+    // money, which is what an unclamped `= @s <balance>` would do.
+    out.push(format!(
+        "execute if score {STK_AMT} dw.sys matches ..-1 run scoreboard players set {STK_AMT} dw.sys 0"
+    ));
+    let _ = plan;
+    out
+}
+
+/// Every emitted function the recovery stake needs (DSL v0.10, spec-0032).
+///
+/// The chain, for one stake:
+///
+/// | function | run as | what it does |
+/// |---|---|---|
+/// | `stk_drop_<s>` | the corpse | apply the retention policy, compute and debit the forfeit, then route |
+/// | `stk_route_<s>` | the corpse | **the compile-time table**, as one `execute if` chain — the death region test, the respawn-seat test, and the anchor each pair resolved to |
+/// | `stk_put_<s>_<n>` | the corpse | position at table anchor `n` |
+/// | `stk_here_<s>` | the corpse | position at the death point (the rule's degenerate branch) |
+/// | `stk_fill_<s>` | the corpse, positioned | summon the marker if this place has none, then take the first free slot |
+/// | `stk_slot_<s>_<k>` | the corpse, positioned | write the amount and the marker's position into slot `k` |
+/// | `stk_evict_<s>` | the corpse | the `replace` policy: free slot 0 |
+/// | `stk_collect_<s>` | the collecting player | identify which slot this marker holds, and take it |
+/// | `stk_take_<s>_<k>` | the collecting player | restore the amount, clear the slot, say so |
+/// | `stk_pool_<s>` | each player | the `collect_by: anyone` sweep |
+/// | `stk_ref_<s>` | each player | count live slots at `#stk_x/y/z` |
+/// | `stk_gc_<s>` | each marker | retire a marker nobody has a wager at — **the one legal killer of its hardware** (`DW0421`) |
+///
+/// **Idempotency under a double right-click in one tick** (AC6) is structural, not
+/// timed: `stk_take_<s>_<k>` sets the slot's live flag to 0 as part of taking it, so
+/// a second pass in the same tick matches no slot and does nothing. There is no
+/// second-click window to lose a race in.
+fn emit_stake_functions(
+    plan: &Plan,
+    table: Option<&crate::stake::StakeTable>,
+) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for (st, safe) in stakes(plan) {
+        let max = st.max_live();
+        let tag = stk_tag(&safe);
+        let hw = crate::affordance::hardware_tag(&tag);
+        let obj = plan::state_score(st.state.as_str());
+
+        // --- stk_drop: policy, forfeit, route --------------------------------
+        let mut drop: Vec<String> = Vec::new();
+        if max > 0 {
+            // "every slot is live" as one condition; with `max_live: 1` it is the
+            // single `if score … matches 1` a souls loop wants.
+            let full: String = (0..max)
+                .map(|k| format!(" if score @s {} matches 1", stk_live_obj(&safe, k)))
+                .collect();
+            match st.on_full() {
+                delvewright_dsl::OnFull::Keep => {
+                    drop.push(format!("execute{full} run return fail"));
+                }
+                delvewright_dsl::OnFull::Replace => {
+                    drop.push(format!("execute{full} run function {ns}:stk_evict_{safe}"));
+                }
+            }
+            drop.extend(stake_forfeit_lines(plan, st));
+            drop.push(format!(
+                "scoreboard players operation @s {obj} -= {STK_AMT} dw.sys"
+            ));
+            drop.push(format!("function {ns}:stk_route_{safe}"));
+        }
+        fns.push((format!("stk_drop_{safe}"), lines(&drop)));
+
+        if max > 0 {
+            // --- stk_evict: the `replace` policy -----------------------------
+            // The evicted marker is NOT killed here. Its liveness is decided by the
+            // reference count in `stk_gc_<s>`, which is the one mechanism that
+            // retires a marker — so an eviction whose marker sits in an unloaded
+            // chunk is not a leak, it is a retirement deferred to the tick that
+            // chunk next loads.
+            fns.push((
+                format!("stk_evict_{safe}"),
+                lines(&[
+                    format!("scoreboard players set @s {} 0", stk_live_obj(&safe, 0)),
+                    format!("scoreboard players set @s {} 0", stk_amount_obj(&safe, 0)),
+                ]),
+            ));
+
+            // --- stk_route: THE TABLE ----------------------------------------
+            let mut route: Vec<String> = Vec::new();
+            if let Some(t) = table {
+                for row in &t.rows {
+                    let seat = &t.seats[row.seat];
+                    let region = &t.regions[row.region];
+                    route.push(format!(
+                        "execute if score #cp dw.sys matches {} if entity @s[{}] run return run function {ns}:stk_put_{safe}_{}",
+                        seat.cp,
+                        selector_box(region.region),
+                        row.anchor
+                    ));
+                }
+            }
+            // The degenerate branch, and the common one: a death on ordinary
+            // walkable ground leaves its stake where the player fell, because the
+            // nearest point of the route back to a place you can walk to IS that
+            // place. `DW0525` is what makes that safe to say unconditionally.
+            route.push(format!("function {ns}:stk_here_{safe}"));
+            fns.push((format!("stk_route_{safe}"), lines(&route)));
+
+            if let Some(t) = table {
+                for (n, a) in t.anchors.iter().enumerate() {
+                    let v = ent_xyz(*a);
+                    fns.push((
+                        format!("stk_put_{safe}_{n}"),
+                        lines(&[format!(
+                            "execute positioned {} {} {} run function {ns}:stk_fill_{safe}",
+                            v[0], v[1], v[2]
+                        )]),
+                    ));
+                }
+            }
+            fns.push((
+                format!("stk_here_{safe}"),
+                lines(&[format!("execute at @s run function {ns}:stk_fill_{safe}")]),
+            ));
+
+            // --- stk_fill: the marker, then the first free slot ---------------
+            let mut fill: Vec<String> = vec![
+                format!(
+                    "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                ),
+                format!(
+                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
+                    st.marker_item()
+                ),
+            ];
+            for k in 0..max {
+                fill.push(format!(
+                    "execute unless score @s {} matches 1 run return run function {ns}:stk_slot_{safe}_{k}",
+                    stk_live_obj(&safe, k)
+                ));
+            }
+            fns.push((format!("stk_fill_{safe}"), lines(&fill)));
+
+            for k in 0..max {
+                let mut slot = vec![
+                    format!(
+                        "scoreboard players operation @s {} = {STK_AMT} dw.sys",
+                        stk_amount_obj(&safe, k)
+                    ),
+                    format!("scoreboard players set @s {} 1", stk_live_obj(&safe, k)),
+                ];
+                // The position is read back off the marker rather than written from
+                // the anchor the table chose, so the compile-time branch and the
+                // runtime "here" branch record it the SAME way — and a collector
+                // comparing the two is comparing two `data get`s of one double, not
+                // a coordinate against a rounding of it.
+                for axis in 0..3 {
+                    slot.push(format!(
+                        "execute store result score @s {} run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]",
+                        stk_pos_obj(&safe, k, axis)
+                    ));
+                }
+                fns.push((format!("stk_slot_{safe}_{k}"), lines(&slot)));
+            }
+
+            // --- stk_collect: the right-click ---------------------------------
+            let mut collect: Vec<String> =
+                vec![format!("advancement revoke @s only {ns}:stk_{safe}")];
+            for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
+                collect.push(format!(
+                    "execute at @s store result score {s} dw.sys run data get entity @e[tag={tag},limit=1,sort=nearest] Pos[{axis}]"
+                ));
+            }
+            match st.collect_by() {
+                delvewright_dsl::CollectBy::Owner => {
+                    for k in 0..max {
+                        collect.push(format!(
+                            "execute{} run return run function {ns}:stk_take_{safe}_{k}",
+                            slot_match(&safe, k)
+                        ));
+                    }
+                }
+                delvewright_dsl::CollectBy::Anyone => {
+                    collect.push(format!("scoreboard players set {STK_AMT} dw.sys 0"));
+                    collect.push(format!("scoreboard players set {STK_GOT} dw.sys 0"));
+                    collect.push(format!("execute as @a run function {ns}:stk_pool_{safe}"));
+                    collect.push(format!(
+                        "execute if score {STK_GOT} dw.sys matches 1.. run scoreboard players operation @s {obj} += {STK_AMT} dw.sys"
+                    ));
+                    collect.push(format!(
+                        "execute if score {STK_GOT} dw.sys matches 1.. run title @s actionbar {}",
+                        tr(&st.collected_message)
+                    ));
+                }
+            }
+            fns.push((format!("stk_collect_{safe}"), lines(&collect)));
+
+            if matches!(st.collect_by(), delvewright_dsl::CollectBy::Anyone) {
+                let mut pool: Vec<String> = Vec::new();
+                for k in 0..max {
+                    pool.push(format!(
+                        "execute{} run scoreboard players operation {STK_AMT} dw.sys += @s {}",
+                        slot_match(&safe, k),
+                        stk_amount_obj(&safe, k)
+                    ));
+                    pool.push(format!(
+                        "execute{} run scoreboard players set {STK_GOT} dw.sys 1",
+                        slot_match(&safe, k)
+                    ));
+                    pool.push(format!(
+                        "execute{} run scoreboard players set @s {} 0",
+                        slot_match(&safe, k),
+                        stk_amount_obj(&safe, k)
+                    ));
+                    // Clearing the live flag LAST: the three lines above all test it.
+                    pool.push(format!(
+                        "execute{} run scoreboard players set @s {} 0",
+                        slot_match(&safe, k),
+                        stk_live_obj(&safe, k)
+                    ));
+                }
+                fns.push((format!("stk_pool_{safe}"), lines(&pool)));
+            } else {
+                for k in 0..max {
+                    let mut take = vec![
+                        format!(
+                            "scoreboard players operation @s {obj} += @s {}",
+                            stk_amount_obj(&safe, k)
+                        ),
+                        format!("scoreboard players set @s {} 0", stk_amount_obj(&safe, k)),
+                        format!("scoreboard players set @s {} 0", stk_live_obj(&safe, k)),
+                    ];
+                    take.push(format!("title @s actionbar {}", tr(&st.collected_message)));
+                    fns.push((format!("stk_take_{safe}_{k}"), lines(&take)));
+                }
+            }
+
+            // --- stk_ref / stk_gc: who still has a wager here ------------------
+            let mut refs: Vec<String> = Vec::new();
+            for k in 0..max {
+                refs.push(format!(
+                    "execute{} run scoreboard players add {STK_REF} dw.sys 1",
+                    slot_match(&safe, k)
+                ));
+            }
+            fns.push((format!("stk_ref_{safe}"), lines(&refs)));
+
+            let mut gc: Vec<String> = Vec::new();
+            for (axis, s) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
+                gc.push(format!(
+                    "execute store result score {s} dw.sys run data get entity @s Pos[{axis}]"
+                ));
+            }
+            gc.push(format!("scoreboard players set {STK_REF} dw.sys 0"));
+            gc.push(format!("execute as @a run function {ns}:stk_ref_{safe}"));
+            gc.push(format!(
+                "execute if score {STK_REF} dw.sys matches 0 run kill @e[tag={hw},limit=1,sort=nearest]"
+            ));
+            gc.push(format!(
+                "execute if score {STK_REF} dw.sys matches 0 run kill @s"
+            ));
+            fns.push((format!("stk_gc_{safe}"), lines(&gc)));
+        }
+    }
+    fns
+}
+
+/// The `execute` sub-condition matching *this player's slot `k` is live and sits at
+/// the marker under discussion* (`#stk_x/y/z`). Space-prefixed, so a caller splices
+/// it straight onto `execute`.
+fn slot_match(safe: &str, k: u32) -> String {
+    let mut s = format!(" if score @s {} matches 1", stk_live_obj(safe, k));
+    for (axis, scratch) in [STK_X, STK_Y, STK_Z].iter().enumerate() {
+        s.push_str(&format!(
+            " if score @s {} = {scratch} dw.sys",
+            stk_pos_obj(safe, k, axis)
+        ));
+    }
+    s
+}
+
+/// A box as an entity-selector volume (`x=…,dx=…`) — the test the corpse is put to
+/// so the placement table's death-region axis is a comparison rather than a search.
+///
+/// `dx` is the *span*, and a selector volume is half-open on the far side, so an
+/// inclusive box `[lo, hi]` spans `hi − lo + 1` cells.
+fn selector_box(region: ([i32; 3], [i32; 3])) -> String {
+    let (lo, hi) = region;
+    format!(
+        "x={},y={},z={},dx={},dy={},dz={}",
+        lo[0],
+        lo[1],
+        lo[2],
+        hi[0] - lo[0] + 1,
+        hi[1] - lo[1] + 1,
+        hi[2] - lo[2] + 1
+    )
+}
+
+/// Every emitted function a shop needs (DSL v0.10, spec-0032).
+///
+/// `shop_open_<i>` is the bonfire opener with a different dialog: revoke the
+/// advancement so the shop can be opened again, record which shop this player is
+/// standing at, reset-then-enable the trigger (reset both clears a stale answer and
+/// re-locks the trigger — the order is what stops a previous visit's answer firing
+/// as the screen opens), and show the dialog.
+///
+/// `shop_pick_<i>_<j>` disarms first, then applies the offer's own gate as
+/// `return fail` — the same inert-to-a-direct-`/trigger` discipline a dialogue
+/// option's handler uses, so a bot chatting `/trigger dw.shop set 3` cannot buy
+/// what the gate refuses — and then runs the offer's effects with the buying player
+/// as `@s`.
+fn emit_shop_functions(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    let mut fns: Vec<(String, String)> = Vec::new();
+    for (i, sh, _) in shops(plan) {
+        fns.push((
+            format!("shop_open_{i}"),
+            lines(&[
+                format!("advancement revoke @s only {ns}:shop_{i}"),
+                format!("scoreboard players set @s dw.shop_at {i}"),
+                "scoreboard players reset @s dw.shop".to_string(),
+                "scoreboard players enable @s dw.shop".to_string(),
+                format!("dialog show @s {ns}:shop_{i}"),
+            ]),
+        ));
+        for (j, off) in sh.offers.iter().enumerate() {
+            let mut body: Vec<String> = vec!["scoreboard players reset @s dw.shop".to_string()];
+            for f in &off.requires_flags {
+                body.push(format!(
+                    "execute unless score {} {} matches 1 run return fail",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            for f in &off.forbids_flags {
+                body.push(format!(
+                    "execute if score {} {} matches 1 run return fail",
+                    plan::PARTY,
+                    plan::flag_score(f.as_str())
+                ));
+            }
+            for clause in state_clauses(plan, &off.requires_state, true) {
+                body.push(format!("execute {clause} run return fail"));
+            }
+            body.extend(emit_effect_bundle(
+                plan,
+                &off.effects,
+                root_audience(delvewright_dsl::EffectRootKind::ShopOffer),
+            ));
+            fns.push((format!("shop_pick_{i}_{j}"), lines(&body)));
+        }
     }
     fns
 }
@@ -10365,6 +11132,45 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
         ));
     }
 
+    // spec-0032: one dialog per shop. The offers are the buttons, in declaration
+    // order, and each runs `/trigger dw.shop set <n>` — the same channel the
+    // bonfire's two options use, because `/trigger` is the only command a non-op
+    // player may run. `DW0523` guarantees the action list is non-empty: vanilla's
+    // 1.21.11 dialog codec rejects an empty one at pack load.
+    for (i, sh, _) in shops(plan) {
+        let actions: Vec<Value> = sh
+            .offers
+            .iter()
+            .enumerate()
+            .map(|(j, off)| {
+                let mut a = json!({
+                    "label": tr(&off.label),
+                    "action": {
+                        "type": "minecraft:run_command",
+                        "command": format!("/trigger dw.shop set {}", j + 1)
+                    }
+                });
+                if let Some(t) = &off.tooltip {
+                    a.as_object_mut()
+                        .expect("json! builds an object")
+                        .insert("tooltip".to_string(), tr(t));
+                }
+                a
+            })
+            .collect();
+        dialogs.push((
+            format!("shop_{i}"),
+            json!({
+                "type": "minecraft:multi_action",
+                "title": tr(&sh.title),
+                "columns": 1,
+                "can_close_with_escape": true,
+                "after_action": "close",
+                "actions": actions
+            }),
+        ));
+    }
+
     // per-npc dialogue nodes (stage 6) → one dialog each
     for npc in &plan.npcs {
         let dsl_npc = c
@@ -10572,6 +11378,53 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                     }
                 },
                 "rewards": { "function": format!("{ns}:bonfire_open_{i}") }
+            }),
+        ));
+    }
+
+    // spec-0032: one advancement per shop, and one per stake. Both are the bonfire's
+    // primitive verbatim — the interaction entity's own `interaction` record names
+    // no player, and a shop has to know WHO is buying and a stake WHOSE wager is
+    // being collected. Each handler revokes its own grant, so both are re-usable.
+    for (i, _, _) in shops(plan) {
+        advs.push((
+            format!("shop_{i}"),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"dw_shop_{i}\"]}}")
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:shop_open_{i}") }
+            }),
+        ));
+    }
+    for (st, safe) in stakes(plan) {
+        if st.max_live() == 0 {
+            continue;
+        }
+        let tag = stk_tag(&safe);
+        advs.push((
+            format!("stk_{safe}"),
+            json!({
+                "criteria": {
+                    "interact": {
+                        "trigger": "minecraft:player_interacted_with_entity",
+                        "conditions": {
+                            "entity": {
+                                "type": "minecraft:interaction",
+                                "nbt": format!("{{Tags:[\"{tag}\"]}}")
+                            }
+                        }
+                    }
+                },
+                "rewards": { "function": format!("{ns}:stk_collect_{safe}") }
             }),
         ));
     }
@@ -14069,6 +14922,7 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // spec-0031 lethal volumes: the runtime half, one template per volume.
     emit_lethal_packtests(plan, out);
+    emit_economy_packtests(plan, out);
 }
 
 /// spec-0031 PackTests: one template per resolved lethal volume, each of which
@@ -14093,6 +14947,163 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// through the same `/damage` on a per-player re-bind and is asserted by the
 /// compiler unit tests, which read the emitted command text directly (PackTest's
 /// framework dummies are not a substitute for a real player here).
+/// PackTest templates for the economy (spec-0032) — **exactly the two halves this
+/// tier can genuinely witness, and no template for the half it cannot.**
+///
+/// What a fake player is, measured twice independently (2026-08-03 and 2026-08-09):
+/// permanently undamageable, and unable to die. So this tier **cannot witness a
+/// player death**, and therefore cannot prove the edge from a death to a stake
+/// being placed. spec-0032's acceptance criterion 9 asks for the full loop on the
+/// **bot** tier for exactly that reason, and no template is generated here that
+/// would appear to cover it: a template that bound to nothing and reported green
+/// is the vacuity CLAUDE.md names, and it is worse than an absence because review
+/// cannot see it.
+///
+/// What this tier CAN witness, and does:
+///
+/// 1. **A purchase debits, and an unaffordable one is refused and says so.** The
+///    offer handler is an ordinary function; driving it as the dummy proves the
+///    gate arithmetic and the refusal path without needing a click.
+/// 2. **A stake drop → collect round-trip returns the exact amount.** Both ends
+///    are functions, and the amount travels through the per-player ledger, so the
+///    only thing skipped is the death that would normally call `stk_drop_<s>` —
+///    which is precisely the part this tier cannot have and the bot tier must.
+///
+/// Every template pins its own dummy on the first post-`setup` line and addresses
+/// it exclusively by tag, and suffixes its `dw.sys` scratch holders, per the rules
+/// on [`pin_dummy`].
+fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+
+    // --- 1. the shop ------------------------------------------------------
+    if let Some((i, sh, _)) = shops(plan).into_iter().next()
+        && let Some((j, off)) = sh
+            .offers
+            .iter()
+            .enumerate()
+            .find(|(_, o)| o.effects.iter().any(|e| e.writes_state().is_some()))
+        && let Some((state, _)) = off
+            .effects
+            .iter()
+            .find_map(|e| e.writes_state())
+            .map(|(s, w)| (s.clone(), w))
+    {
+        let obj = plan::state_score(state.as_str());
+        let (pin, me) = pin_dummy("dw_shoptest");
+        let mut t = packtest_header(&format!(
+            "{title}: a purchase debits the purse, and one that cannot be afforded is refused \
+             (spec-0032)"
+        ));
+        t.push(format!("function {ns}:setup"));
+        t.push(pin);
+        // Afford it: the balance the offer's own gate and its effects' gates both
+        // read is set high enough for every comparison in the bundle to open.
+        t.push(format!("scoreboard players set {me} {obj} 100"));
+        t.push(format!(
+            "execute as {me} run function {ns}:shop_pick_{i}_{j}"
+        ));
+        t.push(format!(
+            "execute store result score #sh_paid dw.sys run scoreboard players get {me} {obj}"
+        ));
+        t.push("assert score #sh_paid dw.sys matches ..99".to_string());
+        // …and cannot: with nothing in the purse the same press must move nothing.
+        t.push(format!("scoreboard players set {me} {obj} 0"));
+        t.push(format!(
+            "execute as {me} run function {ns}:shop_pick_{i}_{j}"
+        ));
+        t.push(format!(
+            "execute store result score #sh_broke dw.sys run scoreboard players get {me} {obj}"
+        ));
+        t.push("assert score #sh_broke dw.sys matches 0".to_string());
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v10_shop_purchase.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+
+    // --- 2. the stake's drop → collect round trip -------------------------
+    for (st, safe) in stakes(plan) {
+        if st.max_live() == 0 {
+            continue;
+        }
+        let obj = plan::state_score(st.state.as_str());
+        let tag = stk_tag(&safe);
+        let (pin, me) = pin_dummy(&format!("dw_stktest_{safe}"));
+        let mut t = packtest_header(&format!(
+            "{title}: a stake takes the declared share and gives back exactly what it took \
+             (spec-0032). NOT a death test — a PackTest fake player cannot die; the death edge \
+             is the bot tier's (AC9)."
+        ));
+        t.push(format!("function {ns}:setup"));
+        t.push(pin);
+        // Own entity state: a sibling template's leftover marker would defeat the
+        // guarded summon inside `stk_fill_<s>` and make the collect assert on air.
+        t.push(format!("kill @e[tag={tag}]"));
+        t.push(format!(
+            "kill @e[tag={}]",
+            crate::affordance::hardware_tag(&tag)
+        ));
+        for k in 0..st.max_live() {
+            t.push(format!(
+                "scoreboard players set {me} {} 0",
+                stk_live_obj(&safe, k)
+            ));
+            t.push(format!(
+                "scoreboard players set {me} {} 0",
+                stk_amount_obj(&safe, k)
+            ));
+        }
+        t.push(format!("scoreboard players set {me} {obj} 40"));
+        t.push(format!("execute as {me} run function {ns}:stk_drop_{safe}"));
+        // The forfeit really left the purse…
+        t.push(format!(
+            "execute store result score #stk_lost_{safe} dw.sys run scoreboard players get {me} {obj}"
+        ));
+        let after_drop: i32 = match st.forfeit() {
+            delvewright_dsl::Forfeit::All => 0,
+            delvewright_dsl::Forfeit::None => 40,
+            delvewright_dsl::Forfeit::Fixed { amount } => 40 - amount.clamp(0, 40),
+            delvewright_dsl::Forfeit::Proportion { percent } => {
+                40 - (40 * percent.min(100) as i32) / 100
+            }
+        };
+        t.push(format!(
+            "assert score #stk_lost_{safe} dw.sys matches {after_drop}"
+        ));
+        // …a marker really stands where the drop put it…
+        // Existence via a counted score rather than `assert entity`: `assert score`
+        // is the one assertion form every generated template in this repo already
+        // uses on the pinned toolserver, so this claim is made in a spelling that
+        // is known to run rather than in one that merely reads well.
+        t.push(format!(
+            "execute store result score #stk_mark_{safe} dw.sys if entity @e[tag={tag}]"
+        ));
+        t.push(format!("assert score #stk_mark_{safe} dw.sys matches 1.."));
+        // …and collecting gives back exactly what was taken, no more.
+        t.push(format!(
+            "execute as {me} run function {ns}:stk_collect_{safe}"
+        ));
+        t.push(format!(
+            "execute store result score #stk_back_{safe} dw.sys run scoreboard players get {me} {obj}"
+        ));
+        t.push(format!("assert score #stk_back_{safe} dw.sys matches 40"));
+        // A second press in the same breath is a no-op — the slot went dead as part
+        // of being taken, so idempotence is structural rather than timed (AC6).
+        t.push(format!(
+            "execute as {me} run function {ns}:stk_collect_{safe}"
+        ));
+        t.push(format!(
+            "execute store result score #stk_twice_{safe} dw.sys run scoreboard players get {me} {obj}"
+        ));
+        t.push(format!("assert score #stk_twice_{safe} dw.sys matches 40"));
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v10_stake_{safe}.mcfunction"),
+            lines(&t).into_bytes(),
+        );
+    }
+}
+
 fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);

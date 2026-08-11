@@ -429,6 +429,7 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
         | delvewright_dsl::EffectRootOwner::TrapPayload(_)
         | delvewright_dsl::EffectRootOwner::DialogueRespawn
         | delvewright_dsl::EffectRootOwner::ShortcutUnlock(_)
+        | delvewright_dsl::EffectRootOwner::ShopOffer(_)
         | delvewright_dsl::EffectRootOwner::OnDeath => {
             let reason = match site.owner {
                 delvewright_dsl::EffectRootOwner::Trigger(_) => {
@@ -447,6 +448,10 @@ fn excluded_npcs(c: &Campaign) -> BTreeMap<String, &'static str> {
                 delvewright_dsl::EffectRootOwner::OnDeath => {
                     "its lifecycle is driven from the campaign's `on_death` bundle, \
                      which fires only on a death nobody is forced to take"
+                }
+                delvewright_dsl::EffectRootOwner::ShopOffer(_) => {
+                    "its lifecycle is driven from a shop offer, which the party may \
+                     buy at any time — or never"
                 }
                 _ => {
                     "its lifecycle is driven from a dialogue option's `on_respawn` \

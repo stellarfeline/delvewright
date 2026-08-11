@@ -156,6 +156,17 @@ prefixed_id!(
     /// completability finding blames.
     LethalVolumeId, "lethal");
 prefixed_id!(
+    /// Shop id: `shop/<kebab>` (stage-5 `shops` section, DSL v0.10, spec-0032).
+    /// Unique within the stage-5 shop namespace; it names the shop's interaction
+    /// affordance, its dialog, its `/trigger` routing value and its l10n keys.
+    ShopId, "shop");
+prefixed_id!(
+    /// Recovery-stake id: `stake/<kebab>` (stage-5 `stakes` section, DSL v0.10,
+    /// spec-0032). Unique within the stage-5 stake namespace; it names the
+    /// per-player ledger objectives, the marker hardware's tag and the l10n key of
+    /// the line a collection says.
+    StakeId, "stake");
+prefixed_id!(
     /// Edit-batch id: `batch/<kebab>` (stage-7 `world-edits` batches, DSL v0.6,
     /// spec-0017). Unique within the edit script; also the batch's snapshot name
     /// and its seed-stream label, so renaming a batch deliberately reseeds it.

@@ -65,7 +65,7 @@
 //! [`for_each_effect_root`].
 
 use crate::envelope::Campaign;
-use crate::stages::{EnvTrigger, Quest, QuestEffect, Shortcut, Trap};
+use crate::stages::{EnvTrigger, Quest, QuestEffect, Shop, Shortcut, Trap};
 
 /// The local part of a type-prefixed id (`npc/keeper` → `keeper`), the segment
 /// every l10n key is built from. Duplicated from `l10n::local` deliberately: this
@@ -107,12 +107,22 @@ pub enum EffectRootKind {
     /// visited only when non-empty, so `unbound_roots` tells the truth about a
     /// campaign that declares no death beat.
     OnDeath,
+    /// A `shops[].offers[].effects` bundle (DSL v0.10, spec-0032) — what choosing
+    /// a shop button does, for the player who chose it.
+    ///
+    /// It is a root rather than sugar for the reason spec-0031 states: *add a root
+    /// when the bundle hangs off an object that has runtime machinery of its own.*
+    /// An offer's machinery is a player-interaction advancement, a
+    /// `minecraft:multi_action` dialog, a `/trigger` objective and a tick
+    /// dispatch — the same hardware a bonfire rest runs on. Desugaring it into a
+    /// `use` trigger would put two independent detectors on one right-click.
+    ShopOffer,
 }
 
 impl EffectRootKind {
     /// Every root, in enumeration order. Not the *visit* order — see
     /// [`for_each_effect_root`], which interleaves R1/R2 per quest.
-    pub const ALL: [EffectRootKind; 7] = [
+    pub const ALL: [EffectRootKind; 8] = [
         EffectRootKind::ObjectiveComplete,
         EffectRootKind::QuestComplete,
         EffectRootKind::Trigger,
@@ -120,6 +130,7 @@ impl EffectRootKind {
         EffectRootKind::DialogueRespawn,
         EffectRootKind::ShortcutUnlock,
         EffectRootKind::OnDeath,
+        EffectRootKind::ShopOffer,
     ];
 
     /// How many roots there are. The binding ledger reports coverage against this.
@@ -133,7 +144,8 @@ impl EffectRootKind {
             | EffectRootKind::Trigger
             | EffectRootKind::TrapPayload
             | EffectRootKind::ShortcutUnlock
-            | EffectRootKind::OnDeath => "quests",
+            | EffectRootKind::OnDeath
+            | EffectRootKind::ShopOffer => "quests",
             EffectRootKind::DialogueRespawn => "dialogue",
         }
     }
@@ -164,7 +176,11 @@ impl EffectRootKind {
             EffectRootKind::ObjectiveComplete
             | EffectRootKind::QuestComplete
             | EffectRootKind::DialogueRespawn
-            | EffectRootKind::OnDeath => true,
+            | EffectRootKind::OnDeath
+            // A shop offer's handler is dispatched `as @a[scores={…}]`, so the
+            // choosing player IS the acting player — which is what makes a
+            // `player`-scoped purse debitable from a purchase.
+            | EffectRootKind::ShopOffer => true,
             EffectRootKind::Trigger
             | EffectRootKind::TrapPayload
             | EffectRootKind::ShortcutUnlock => false,
@@ -182,6 +198,7 @@ impl EffectRootKind {
             EffectRootKind::DialogueRespawn => "dialogue set-checkpoint on_respawn",
             EffectRootKind::ShortcutUnlock => "shortcut on_unlock",
             EffectRootKind::OnDeath => "campaign on_death",
+            EffectRootKind::ShopOffer => "shop offer effects",
         }
     }
 }
@@ -231,6 +248,10 @@ pub enum EffectRootOwner<'a> {
     /// nobody is forced to die. Carries no owning object; there is exactly one
     /// per campaign and its path is `/content/on_death`.
     OnDeath,
+    /// A `shops[].offers[].effects` (spec-0032) — fired by the player pressing a
+    /// button, so it has no step of its own and is **optional**: nobody is forced
+    /// to buy anything. Carries the shop; the offer index is in the site's `path`.
+    ShopOffer(&'a Shop),
 }
 
 impl<'a> EffectRootOwner<'a> {
@@ -244,6 +265,7 @@ impl<'a> EffectRootOwner<'a> {
             EffectRootOwner::DialogueRespawn => EffectRootKind::DialogueRespawn,
             EffectRootOwner::ShortcutUnlock(_) => EffectRootKind::ShortcutUnlock,
             EffectRootOwner::OnDeath => EffectRootKind::OnDeath,
+            EffectRootOwner::ShopOffer(_) => EffectRootKind::ShopOffer,
         }
     }
 
@@ -256,7 +278,8 @@ impl<'a> EffectRootOwner<'a> {
             | EffectRootOwner::TrapPayload(_)
             | EffectRootOwner::DialogueRespawn
             | EffectRootOwner::ShortcutUnlock(_)
-            | EffectRootOwner::OnDeath => None,
+            | EffectRootOwner::OnDeath
+            | EffectRootOwner::ShopOffer(_) => None,
         }
     }
 }
@@ -364,6 +387,7 @@ macro_rules! effect_root_walk {
         dialogue_owner: $ownd:expr,
         shortcut_owner: |$s:ident| $owns:expr,
         death_owner: $ownx:expr,
+        shop_owner: |$h:ident| $ownh:expr,
     ) => {{
         #[allow(unused_mut)]
         let mut visit = $visit;
@@ -482,6 +506,22 @@ macro_rules! effect_root_walk {
                 );
             }
         }
+        // R8 `shops[].offers[].effects` (DSL v0.10, spec-0032) — appended after
+        // R7 for the same reason every root is appended: a campaign that predates
+        // it keys and emits byte-identically.
+        note(EffectRootKind::ShopOffer);
+        for (hi, $h) in $c.quests.content.shops.$iter().enumerate() {
+            let hl = local($h.id.as_str()).to_string();
+            let owner = $ownh;
+            for (oi, off) in $h.offers.$iter().enumerate() {
+                visit(
+                    (EffectRootKind::ShopOffer, owner, None),
+                    format!("/content/shops/{hi}/offers/{oi}/effects"),
+                    format!("fx.shop.{hl}.{oi}"),
+                    off.effects.$slice(),
+                );
+            }
+        }
     }};
 }
 
@@ -495,6 +535,7 @@ enum RawOwner<'a> {
     Dialogue,
     Shortcut(&'a Shortcut),
     Death,
+    Shop(&'a Shop),
 }
 
 impl<'a> RawOwner<'a> {
@@ -519,6 +560,7 @@ impl<'a> RawOwner<'a> {
                 EffectRootOwner::ShortcutUnlock(s)
             }
             (RawOwner::Death, EffectRootKind::OnDeath) => EffectRootOwner::OnDeath,
+            (RawOwner::Shop(h), EffectRootKind::ShopOffer) => EffectRootOwner::ShopOffer(h),
             (owner, kind) => unreachable!(
                 "effect root {kind:?} was handed an owner of the wrong shape ({})",
                 match owner {
@@ -528,6 +570,7 @@ impl<'a> RawOwner<'a> {
                     RawOwner::Dialogue => "dialogue",
                     RawOwner::Shortcut(_) => "shortcut",
                     RawOwner::Death => "on_death",
+                    RawOwner::Shop(_) => "shop",
                 }
             ),
         }
@@ -578,6 +621,7 @@ pub fn for_each_effect_root<'a>(
         (EffectRootKind::DialogueRespawn, 0usize),
         (EffectRootKind::ShortcutUnlock, 0usize),
         (EffectRootKind::OnDeath, 0usize),
+        (EffectRootKind::ShopOffer, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -628,6 +672,7 @@ pub fn for_each_effect_root<'a>(
         dialogue_owner: RawOwner::Dialogue,
         shortcut_owner: |s| RawOwner::Shortcut(s),
         death_owner: RawOwner::Death,
+        shop_owner: |h| RawOwner::Shop(h),
     );
 
     let missed: Vec<&str> = EffectRootKind::ALL
@@ -688,6 +733,7 @@ pub fn for_each_effect_root_mut<'a>(c: &'a mut Campaign, f: &mut RootVisitorMut<
         dialogue_owner: (),
         shortcut_owner: |_s| (),
         death_owner: (),
+        shop_owner: |_h| (),
     );
 }
 
@@ -709,6 +755,7 @@ mod tests {
                 (EffectRootKind::DialogueRespawn, 0),
                 (EffectRootKind::ShortcutUnlock, 0),
                 (EffectRootKind::OnDeath, 0),
+                (EffectRootKind::ShopOffer, 0),
             ],
             effects: 0,
         };

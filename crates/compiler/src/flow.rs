@@ -496,6 +496,18 @@ impl<'a> Flow<'a> {
             crate::plan::EffectRoot::ShortcutUnlock => {
                 collect_flags(effs, &[], &mut ambient);
             }
+            // A shop offer is ambient too, and its producer IS gated — by the
+            // offer's own gate, which is the shared gate every other consumer
+            // carries. The flag half of it is what `collect_flags` wants; the
+            // numeric half is a runtime balance no static flag model can date, so
+            // an offer with a price is credited as an ambient producer behind its
+            // flags only, which is the conservative direction (a flag it may never
+            // afford is still not assumed by the mainline — the buyer must reach
+            // the shop, and reaching it is an ordinary route the completability
+            // proof already owns).
+            crate::plan::EffectRoot::ShopOffer => {
+                collect_flags(effs, &[], &mut ambient);
+            }
             // Reaction bundles: they fire only when somebody dies, at a time no
             // static model can name, so nothing inside either is a producer.
             // Exactly what `collect_flags` already refuses for the identical

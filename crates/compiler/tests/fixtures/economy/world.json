@@ -1,0 +1,19 @@
+{
+  "dsl_version": "0.2.0",
+  "campaign_id": "economy",
+  "stage": "world",
+  "content": {
+    "title": "The Ember Toll",
+    "theme": "A keeper who sells warmth, and a drop that takes it back.",
+    "premise": "An economy fixture (spec-0032): a named per-player datum the player reads as a currency, a shop whose price is the shared numeric gate, a recovery stake left by on_death, and a lethal volume so the placement table has a death region to key on.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Keep",
+        "prefab": "prefab/hello-room"
+      }
+    ]
+  }
+}

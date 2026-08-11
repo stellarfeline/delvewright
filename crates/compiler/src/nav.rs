@@ -546,7 +546,7 @@ pub fn entity_footprint(entity: &str) -> Footprint {
 /// How far to search for a standable floor cell when a `move-npc` endpoint anchor
 /// is a solid affordance (altar / gate bars / wall marker) the NPC must stop in
 /// front of rather than stand inside.
-const SNAP_RADIUS: i32 = 3;
+pub const SNAP_RADIUS: i32 = 3;
 
 /// A reachability root: a declared cell, plus the AABB the snap that seats it may
 /// not leave — the assembled piece that DECLARES the anchor.
@@ -922,7 +922,12 @@ impl World {
     /// sealed region for the completability proof (DSL v0.6). The base occupancy
     /// model treats every gate cell as passable; sealing a gate for the legs that
     /// occur after it closes makes a path that must re-cross it fail routing.
-    fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+    ///
+    /// Public since spec-0032: the recovery-stake placement table has to answer
+    /// "where can this player walk from their respawn point" once per quest state,
+    /// and the quest state is exactly a sealed-cell configuration. Computing it any
+    /// other way would be a second passability model beside this one.
+    pub fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
         let mut solid = self.solid.clone();
         solid.extend(extra.iter().copied());
         // A sealed gate cell is a full-cube wall, never a partial floor.
@@ -2844,6 +2849,33 @@ fn sealed_gate_cells(
         }
     }
     sealed
+}
+
+/// **Every distinct passability configuration the campaign can be in**, in a fixed
+/// deterministic order (spec-0032).
+///
+/// A "quest state", for anything that reasons about where a player can walk, is
+/// exactly one thing: which `close-gate`d regions are shut. That is
+/// [`sealed_gate_cells`] evaluated at some arrival step, and the number of
+/// *distinct* answers over the whole critical path is small — a campaign with no
+/// `close-gate` has exactly one (the empty set), which is why a campaign that
+/// declares no seal costs nothing here.
+///
+/// Returned as `(first arrival step that produces it, cells)`, deduplicated by the
+/// cell set, in increasing step order. The step is carried so a diagnostic can name
+/// *when* the configuration first holds rather than describing a set of cells at a
+/// reader.
+pub fn seal_configurations(plan: &Plan) -> Vec<(usize, BTreeSet<[i32; 3]>)> {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut out: Vec<(usize, BTreeSet<[i32; 3]>)> = Vec::new();
+    for arrival in 0..=plan.critical_path.len() {
+        let cells = sealed_gate_cells(&plan.gate_events, arrival, &ancestor);
+        if out.iter().any(|(_, c)| *c == cells) {
+            continue;
+        }
+        out.push((arrival, cells));
+    }
+    out
 }
 
 /// The gate cells sealed for the walked leg `from_step → to_step` — the single

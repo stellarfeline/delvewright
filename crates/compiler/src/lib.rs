@@ -84,6 +84,7 @@ pub mod resourcepack;
 pub mod snapshot;
 pub mod solver;
 pub mod stairs;
+pub mod stake;
 pub mod textfit;
 pub mod timeline;
 pub mod traversal;

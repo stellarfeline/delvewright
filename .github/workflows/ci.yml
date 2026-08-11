@@ -712,6 +712,29 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lethal \
             --output ./delve-output-lethal
 
+      # spec-0032 — trade and the recovery stake. Two templates, and each covers
+      # exactly what THIS tier can witness. `v10_shop_purchase` drives an offer
+      # handler and proves the debit and the refusal; `v10_stake_embers` drives the
+      # drop and the collect and proves the declared share leaves the purse, a
+      # marker really stands where the drop put it, collecting returns exactly what
+      # was taken, and a second collection returns nothing more. Neither asserts a
+      # player DEATH: a PackTest fake player is permanently undamageable (measured
+      # twice, 2026-08-03 and 2026-08-09), so the death edge — and the walk back to
+      # the anchor the placement table chose — is the bot tier's claim (spec-0032
+      # AC9), and no template is generated that would appear to cover it. Same cost
+      # profile as the passes above: one extra toolserver boot, no new pull, no new
+      # compile.
+      - name: build the economy delve output (spec-0032)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/economy \
+            -o validation/delve-output-economy --prefabs campaigns/prefabs
+
+      - name: PackTest suite — economy (a purchase debits; a stake gives back)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-economy \
+            --output ./delve-output-economy
+
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
           cargo run -p delvec --bin delvec -- \

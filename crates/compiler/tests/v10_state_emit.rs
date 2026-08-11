@@ -105,6 +105,22 @@ const QUESTS: &str = r#"{
       { "id": "state/nerve", "scope": "player", "initial": 2,
         "note": "how much of your own nerve is left" }
     ],
+    "shops": [
+      {
+        "id": "shop/keeper-wares",
+        "anchor": "anchor/exit",
+        "title": "What the keeper will part with",
+        "offers": [
+          { "label": "A coin's worth of nerve",
+            "tooltip": "Costs one coin.",
+            "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 1 } ],
+            "effects": [
+              { "type": "add-state", "state": "state/toll", "amount": -1 },
+              { "type": "add-state", "state": "state/nerve", "amount": 1 }
+            ] }
+        ]
+      }
+    ],
     "traps": [
       {
         "id": "trap/step",

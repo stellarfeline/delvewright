@@ -184,7 +184,7 @@ fn load() -> LoadedCampaign {
 
 /// The fixture campaign with `bundle` bound at root `k` and nowhere else.
 ///
-/// **The exhaustive `match` is the point of this file.** An eighth root cannot be
+/// **The exhaustive `match` is the point of this file.** A ninth root cannot be
 /// added without deciding, here, how a campaign binds it — which is the question
 /// nobody was asked when `shortcuts[].on_unlock` was written.
 fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Campaign {
@@ -236,6 +236,18 @@ fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Ca
         }
         EffectRootKind::OnDeath => {
             c.quests.content.on_death = bundle;
+        }
+        // Root 8 (spec-0032). A shop is the smallest object that can host one: an
+        // anchor the fixture prefab already provides, a title, and one offer whose
+        // effects ARE the probe bundle.
+        EffectRootKind::ShopOffer => {
+            let mut shop: delvewright_dsl::Shop = serde_json::from_str(
+                r#"{ "id": "shop/probe", "anchor": "anchor/exit", "title": "Wares",
+                     "offers": [{ "label": "Buy", "effects": [] }] }"#,
+            )
+            .expect("probe shop parses");
+            shop.offers[0].effects = bundle;
+            c.quests.content.shops.push(shop);
         }
     }
     c
@@ -439,6 +451,7 @@ fn site_kind(site: &EffectSite) -> EffectRootKind {
         EffectSite::DialogueRespawn { .. } => EffectRootKind::DialogueRespawn,
         EffectSite::ShortcutUnlock { .. } => EffectRootKind::ShortcutUnlock,
         EffectSite::OnDeath => EffectRootKind::OnDeath,
+        EffectSite::ShopOffer { .. } => EffectRootKind::ShopOffer,
     }
 }
 

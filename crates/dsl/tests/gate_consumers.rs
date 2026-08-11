@@ -19,7 +19,7 @@
 //! Schema**, which `schemars` derives from the Rust types, and requires every
 //! object schema that declares `requires_flags` to declare `requires_state` too.
 //!
-//! So a twenty-ninth gate consumer added tomorrow with only the flag pair on it
+//! So a thirty-first gate consumer added tomorrow with only the flag pair on it
 //! is red here, before it can ship a delve where a numeric gate silently cannot
 //! be written.
 //!
@@ -36,14 +36,17 @@ use serde_json::Value;
 
 /// How many object schemas across the seven stage documents declare a gate.
 ///
-/// Five objective kinds + nineteen gatable effect verbs + the environment
-/// trigger + the trap + the dialogue option + the cast placement. Asserted
+/// Five objective kinds + twenty gatable effect verbs (spec-0032's `drop-stake`
+/// is the twentieth) + the environment trigger + the trap + the dialogue option +
+/// the cast placement + the shop offer (spec-0032 — **a price is a gate**, which
+/// is exactly why the shop appears in this count and declares no comparison of
+/// its own). Asserted
 /// exactly rather than as a lower bound: this is the **binding count** the
 /// generality claim rests on, and a green that bound to fewer sites than it
 /// thinks is vacuous, not a pass (CLAUDE.md). Changing it is a deliberate act —
 /// a new gate consumer, or a verb becoming gatable — and it should be visible in
 /// the diff that does it.
-const GATE_SITES: usize = 28;
+const GATE_SITES: usize = 30;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.
