@@ -100,6 +100,20 @@ use crate::library::{
 use super::composed_renaming;
 
 /// The prefix the flooded crossing — a `causeway` — is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// Twenty cells of lower ward, twenty of junction with the shortcuts strip beside
+/// it, and the remaining twenty of flooded crossing. Nineteen-wide mainline and
+/// twenty-one-deep strip; ten tall because the causeway stacks a berm, a
+/// gatehouse lane and the keepers own headroom.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [40, 10, 60];
+
 const WARD: &str = "ward";
 /// The prefix the lower ward's arena is included under.
 const RING: &str = "ring";

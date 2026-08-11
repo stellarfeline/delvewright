@@ -98,11 +98,33 @@ authoring loop:
 | §3 step | State |
 |---|---|
 | LLM authors a grammar program | built (`crates/grammar`, see `docs/reference/grammar.md`) |
-| expander builds N candidates (seed-varied) | built, but nothing **drives** a sweep — the seed variation is assembled by hand |
+| expander builds N candidates (seed-varied) | **built** (2026-08-11): `delve-grammar sweep` + `tools/zone-sheets.py`. Not seed-varied, though — see the correction below |
 | machine gates (§4) filter | **not built** — the craft diagnostics are still a later phase |
 | contact-sheet render | **built**: `delve-render contact-sheet <dir> -o <png>` |
 | owner curates | AC6 unmet — she has not viewed a sheet yet; that remains the merge gate for this spec's claims |
 | chosen output frozen as `.nbt` with provenance | built (§2 export path) |
+
+**Correction to §3's own wording, measured 2026-08-11.** §3 says "seed-varied",
+and for the programs that exist that is the wrong axis. A box-split grammar picks
+alternatives by guards on the scope's dimensions and only draws from the RNG when
+two alternatives apply at once, so a program whose guards discriminate cleanly is
+**seed-invariant by construction**. Five of the eight bell zones are, and say so
+in their own fixture notes; they are byte-identical across 32 seeds and their
+renders are pixel-identical. `sweep::Candidate` therefore varies **region,
+parameters or seed**, and every sweep reports `distinct_massings` so a page that
+shows one building N times is reported as the finding it is rather than curated
+as if it were a choice. AC2 ("a parameter sweep … parameters are real") was
+always the accurate statement of this step; AC2 is met, and it is the one to
+build on.
+
+**A blocker on AC6 that is not in this spec's layer.** The sheet can be built and
+the owner still cannot curate massing from it: `delve-render`'s per-piece cutaway
+strips exactly one `Y` layer, which shows nothing in a zone 10–14 courses tall
+carved out of solid mass. Region changes are visible on the exterior shot (12–13%
+of the frame); parameter changes that move interior walls are invisible on every
+shot the renderer plans (0–0.3%). AC6 is blocked on a depth-parameterised cutaway
+in `crates/render`, not on anything in `crates/grammar`. Recorded in
+`docs/reference/grammar.md` §7.
 
 The sheet consumes renders and needs no GPU or client jar, so it runs in CI. It
 orders the page by the spec-0028 §3 similarity score when one is supplied — and

@@ -161,6 +161,21 @@ use crate::library::{
 use super::composed;
 
 /// The prefix the Bellkeeper's ring is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// Twenty cells each of boss ring, boss door, loft and BF5s rope room, twenty-one
+/// of lift landing, and the remaining twenty-four of ascent. The mainline is
+/// nineteen wide because the Bellkeepers ring asks for it, and the branch strip
+/// twenty-two; fourteen tall: nine courses for the flight to climb and the upper
+/// storeys own six on top of the eight it stands on.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [41, 14, 125];
+
 const RING: &str = "ring";
 /// The prefix the boss threshold is included under.
 const DOOR: &str = "door";

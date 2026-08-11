@@ -93,6 +93,20 @@ use super::composed;
 use super::gate_ward::MIN_UPPER;
 
 /// The prefix the rafter hall is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// Twelve cells of kitchen duct at the exit end, twelve of boss threshold, twelve
+/// of gallery, twelve of stores, twelve of ward threshold and the remaining
+/// sixteen of hall. Eleven tall, because the keep stands on the ducts own
+/// four-block plinth and the gallery still needs a perch over its pedestal.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [11, 11, 76];
+
 const HALL: &str = "hall";
 /// The prefix the threshold is included under.
 const DOOR: &str = "door";

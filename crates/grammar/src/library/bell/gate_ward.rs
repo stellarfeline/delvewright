@@ -129,6 +129,22 @@ use crate::library::{
 use super::composed_renaming;
 
 /// The prefix the gated passage — a `watch_bay` — is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// The finished zone, and the longest of them. Twelve cells of spill shaft at the
+/// exit end, then ten of boss threshold, ten of sally-port junction, sixteen of
+/// boulder stair, ten of stair head, ten of ward threshold and the remaining
+/// sixteen of gated passage. Nine-wide mainline and an eleven-deep branch strip;
+/// ten tall, because the upper ward stands on a four-block plinth and still owes
+/// the watch bay its headroom.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [20, 10, 84];
+
 const GATE: &str = "gate";
 /// The prefix the ward's threshold is included under.
 const DOOR: &str = "door";

@@ -91,6 +91,7 @@ pub mod model;
 pub mod orient;
 pub mod rng;
 pub mod split;
+pub mod sweep;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};

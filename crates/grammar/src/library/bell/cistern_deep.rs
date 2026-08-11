@@ -122,6 +122,21 @@ use crate::library::{
 use super::composed_renaming;
 
 /// The prefix the elite ground is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// Twenty cells each of arena, sally port, grate wall and dart gallery, and the
+/// remaining twenty of spill shaft. The mainline is nineteen wide because the
+/// arenas flank margins ask for it, and the branch strip twenty-one; ten tall
+/// because the shafts ledge sits four blocks over a room that still needs its
+/// own headroom.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [40, 10, 100];
+
 const ARENA: &str = "arena";
 /// The prefix the sally port's junction — a `tee_passage` — is included under.
 const TEE: &str = "tee";

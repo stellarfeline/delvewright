@@ -56,6 +56,18 @@ use crate::library::{
 use super::composed;
 
 /// The prefix the cliff-path vocabulary is included under.
+/// The zones **design box** — the region the campaign expands this program
+/// over (REMAKE §3).
+///
+/// The crag: three cells of gulf, the road, and the rock it is cut into, over
+/// eight courses of drop.
+///
+/// It lives here, beside the program, because the box a zone is designed for is
+/// a fact about the zone: every guard in the program below is written against
+/// it, and a caller that has the program but not the box has half a zone. The
+/// gates in `tests/zones.rs` and the sweep driver both read it from here.
+pub const REGION: [u32; 3] = [12, 12, 36];
+
 const PATH: &str = "path";
 
 /// The shallowest gulf the zone will build a road beside, in blocks.

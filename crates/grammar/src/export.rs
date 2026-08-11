@@ -379,6 +379,36 @@ pub fn export_prefab(
     })
 }
 
+/// Render a model as a gzip-framed vanilla structure template **for imaging**,
+/// with no cap on its extents.
+///
+/// # Why this exists beside [`export_prefab`], which refuses the same bytes
+///
+/// [`MAX_STRUCTURE_AXIS`] is a limit on *loading*: the game will not place a
+/// template larger than 48 on an axis, so a **prefab** — a thing whose whole
+/// purpose is to be placed — is refused above it, and rightly. A **snapshot** is
+/// never placed. It is handed to `delve-render`, which meshes it and takes a
+/// picture, and a picture has no such limit; the file format does not either
+/// (the cap lives in the game, not in the NBT schema).
+///
+/// Keeping them one function would have forced one of two dishonest answers:
+/// cap the snapshot, and five of the eight bell zones — which are 60 to 125
+/// blocks long by design — could never be seen at all; or lift the cap on the
+/// prefab, and the pipeline would start emitting prefabs that silently fail to
+/// place. So the distinction is the type-level one it actually is, and the
+/// caller says which of the two things it is making.
+///
+/// What a snapshot is **not**: it carries no metadata, no provenance row and no
+/// prefab id, because it is not an asset. It never enters the prefab library and
+/// never reaches a delve (ADR-0013, ADR-0006) — like every render, it is
+/// generation-time working material. Freezing a curated candidate as a real
+/// prefab is still [`export_prefab`]'s job, cap and all.
+///
+/// The bytes are deterministic on the model alone: same model, same bytes.
+pub fn snapshot_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
+    structure_nbt(model)
+}
+
 /// Render a model as a gzip-framed vanilla structure template.
 ///
 /// Goes through the `.schem` pipeline's emitter rather than a second one of our
