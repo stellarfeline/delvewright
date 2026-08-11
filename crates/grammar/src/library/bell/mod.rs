@@ -32,9 +32,9 @@
 //!
 //! # Which zones exist, and what the rest are waiting for
 //!
-//! REMAKE §3 names eight zones. Six are programmed here; the other two need
+//! REMAKE §3 names eight zones. Seven are programmed here; the last one needs
 //! something that does not exist yet, and a zone program that faked it would be
-//! worse than one that does not exist. Each gap names what it waits on.
+//! worse than one that does not exist. The gap names what it waits on.
 //!
 //! A **partial** zone is one whose spine is composed and whose remaining §4
 //! entries are named below. That a letter is missing from a row no longer means
@@ -48,7 +48,7 @@
 //! | Z0 Barrow Shore | [`barrow_shore`] | `elite_ground` | — (**E** is the whole of Z0's vocabulary) |
 //! | Z1 Cliff Road | [`cliff_road`] | `cliff_path` + the zone's gulf | switchback landing (no catalogue entry — see below) |
 //! | Z2 Gatehouse | [`gate_ward`] (partial) | `watch_bay` + `ambush_door` | **W**+**S** (`boulder_stair`), **F** (`far_side_bar`), **L** (`drop_shaft`), **M** (`threshold_motif`) — all built rules, awaiting a zone round — and the boulder jam (**D**), which has no rule |
-//! | Z3 Drowned Lower Ward | **not programmed** | — | nothing in the *vocabulary*: **T**, **E** and **F** are all built rules. One composition blocker left (`causeway` has no exit past its post); the other two are closed — see below |
+//! | Z3 Drowned Lower Ward | [`drowned_ward`] | `causeway` + `tee_passage` + `elite_ground` + `far_side_bar` + the zone's branch strip | — |
 //! | Z4 Chapel Ward (hub) | [`chapel_ward`] (partial) | `dumbwaiter` + `tee_passage` + `far_side_bar` + the zone's branch strip | the hearth: a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one. The smallest honest form is a `hearth_ward` rule, which is §5b's business and not a zone's |
 //! | Z5 Great Hall + Keep | [`hall_keep`] (partial) | `rafter_hall` + `ambush_door` + `store_room` | **L** (`dumbwaiter`) and **M** (`threshold_motif`) — both built rules, awaiting a zone round — and the bait-item gallery (**B**), which has no rule |
 //! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` + `tee_passage` + `far_side_bar` + the zone's branch strip | — |
@@ -98,7 +98,7 @@
 //! exactly the point anchors `mark` already declares. See
 //! `docs/reference/grammar.md` §5b.
 //!
-//! ## The seam's limits: two closed, one open
+//! ## The seam's limits: all three closed
 //!
 //! Each of these is a *seam* limitation, not a missing shape, and each has a
 //! test in `tests/zones.rs` that watches it happen rather than a paragraph
@@ -114,20 +114,26 @@
 //!    at the include site, and only the stems named there move. A ward with a
 //!    causeway keeper and a dormant elite has two genuinely different elites,
 //!    and the zone writes down the two names rather than a prefix deriving them.
-//! 2. **`causeway` has no exit past its guard post — STILL OPEN, re-measured.**
-//!    Its far end is the post's own plinth — solid from the ward floor up to
-//!    `rise + tower_rise`, with the post's floor an island the berm cannot reach
-//!    (deliberately: "not a landing"). The piece is a *terminus*, so any chain
-//!    through it is severed at that face, whichever end of the zone it is placed
-//!    at, and no orientation helps: a grammar orientation is a permutation
-//!    without reflection, so the post cannot be turned to the entry end either.
-//!    Z3 waits on an exit lane past the post — a change to the §5b rule, and not
-//!    something a zone may write. The smallest honest form is a `berm_gate`
-//!    parameter, off by default so every existing expansion stays byte-identical,
-//!    that carries the berm's own column through `guard_support` and
-//!    `guard_cantilever` at berm height: the post becomes a gatehouse you pass
-//!    *under* rather than a plug, and its sightline gate is unaffected because
-//!    the lane is `tower_rise` blocks below the guard's own floor.
+//! 2. **`causeway` has no exit past its guard post — CLOSED.** Its far end was
+//!    the post's own plinth — solid from the ward floor up to `rise +
+//!    tower_rise`, with the post's floor an island the berm cannot reach
+//!    (deliberately: "not a landing"). The piece was a *terminus*, so any chain
+//!    through it was severed at that face, whichever end of the zone it was
+//!    placed at, and no orientation helped: a grammar orientation is a
+//!    permutation without reflection, so the post cannot be turned to the entry
+//!    end either.
+//!
+//!    The rule now carries `berm_gate`, off by default: it runs the berm's own
+//!    column through the guard station at berm height, so the post becomes a
+//!    gatehouse the route passes *under* rather than a plug. It landed on the
+//!    piece's **cross-section** rather than on either `Z`-slice of the post,
+//!    because both slices need it and a capability keyed to the first consumer
+//!    leaves the second with no surface. That the whole piece now shares one
+//!    cross-section is what makes the lane expressible at all — and it closed a
+//!    second defect nobody had reported: the post used to be centred by its own
+//!    arithmetic rather than the berm's, so at every EVEN width it stood over the
+//!    flood and went blind on 20 of the crossing's 22 cells. Both fixtures were
+//!    odd. See [`crate::library::causeway`].
 //! 3. **A shortcut is a branch, and the seam is a chain — CLOSED.** Pieces
 //!    joined only along one axis, end to end, because every vocabulary rule
 //!    walls its own two side faces; a `far_side_bar` laid in that chain
@@ -159,6 +165,7 @@ pub mod barrow_shore;
 pub mod chapel_ward;
 pub mod cistern_deep;
 pub mod cliff_road;
+pub mod drowned_ward;
 pub mod gate_ward;
 pub mod hall_keep;
 
@@ -166,6 +173,7 @@ pub use barrow_shore::barrow_shore;
 pub use chapel_ward::chapel_ward;
 pub use cistern_deep::cistern_deep;
 pub use cliff_road::cliff_road;
+pub use drowned_ward::drowned_ward;
 pub use gate_ward::gate_ward;
 pub use hall_keep::hall_keep;
 

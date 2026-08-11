@@ -63,7 +63,9 @@ pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
-pub use bell::{barrow_shore, chapel_ward, cistern_deep, cliff_road, gate_ward, hall_keep};
+pub use bell::{
+    barrow_shore, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward, hall_keep,
+};
 pub use boulder_stair::boulder_stair;
 pub use broken_grate::broken_grate;
 pub use castle::castle;
@@ -258,6 +260,11 @@ fn all_of(of: Vec<Cond>) -> Cond {
 /// At least one sub-guard has to hold. What a rule reaches for when it needs
 /// the exact complement of an `all_of` guard, so two alternatives are a
 /// decision rather than a weighted draw (`docs/reference/grammar.md` §2).
+///
+/// Its other shape is a clause *inside* an `all_of`, when a knob adds an
+/// obligation rather than replacing one: "the knob is off, **or** the geometry
+/// it needs is there" belongs in the rule's own guard, not in a second rule
+/// (`causeway`'s `berm_gate`).
 fn any_of(of: Vec<Cond>) -> Cond {
     Cond::Any { of }
 }

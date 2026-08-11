@@ -23,6 +23,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::Program;
+use delvewright_grammar::library::causeway::MIN_GATE_RISE;
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
 use delvewright_grammar::library::stair_flight::{self, stair_flight};
@@ -2528,15 +2529,46 @@ fn sealing_the_tee_passage_closes_its_only_opening() {
 // T — the causeway
 // ---------------------------------------------------------------------------
 
-/// The causeway's own standable cells: the raised spline's `X` column and
-/// foot height, over the flooded ward. Filtered on `Y` as well as `X` — the
-/// guard station's own post shares the causeway's `X` by construction (both
-/// are centred), and without the `Y` filter its standable cell would read as
-/// part of the lane.
-fn causeway_cells(model: &VoxelModel, causeway_head: [i32; 3]) -> BTreeSet<[i32; 3]> {
+/// Where the flooded ward begins: the lowest `Z` any water stands in.
+/// Everything short of it is the guard station's own footprint.
+///
+/// Derived from the model rather than from `guard_len`, because "the causeway"
+/// means the part of the spline that crosses the flood, and the flood is what
+/// says where that is.
+fn ward_start(model: &VoxelModel) -> i32 {
+    model
+        .region()
+        .positions()
+        .filter(|&p| model.get(p).is_some_and(|b| b.name == "minecraft:water"))
+        .map(|p| p[2])
+        .min()
+        .expect("the ward built no water at all")
+}
+
+/// The whole spline at berm height: the raised lane's `X` column and foot
+/// height, along the entire piece. Filtered on `Y` as well as `X` — the guard
+/// station's post shares the spline's `X` by construction, and without the `Y`
+/// filter the guard's own standable cell would read as part of the lane.
+fn spine_cells(model: &VoxelModel, causeway_head: [i32; 3]) -> BTreeSet<[i32; 3]> {
     standable_cells(model)
         .into_iter()
         .filter(|c| c[0] == causeway_head[0] && c[1] == causeway_head[1])
+        .collect()
+}
+
+/// The causeway proper: the spline **over the flooded ward**.
+///
+/// With `berm_gate` shut this is the whole spline, because the plinth carries
+/// no standable cell. With it open the spline additionally runs under the
+/// guard station, and those cells are the *gatehouse's* passage rather than the
+/// crossing — see [`the_berm_gate_opens_a_lane_past_the_post`], which counts
+/// them and states what the post can and cannot see of them, instead of leaving
+/// them quietly inside a gate that is about the crossing.
+fn causeway_cells(model: &VoxelModel, causeway_head: [i32; 3]) -> BTreeSet<[i32; 3]> {
+    let ward = ward_start(model);
+    spine_cells(model, causeway_head)
+        .into_iter()
+        .filter(|c| c[2] >= ward)
         .collect()
 }
 
@@ -2601,22 +2633,55 @@ fn the_causeway_is_standable_and_the_flood_is_not() {
     assert!(elite[2] < flooded.iter().map(|c| c[2]).min().unwrap());
 }
 
-/// The second gate: the guard station sees every standable causeway cell.
+/// The second gate: the guard station sees every standable causeway cell —
+/// **at every width the rule accepts**, not at the one the fixture happens to
+/// use.
+///
+/// The sweep is the gate, and it is the gate because the narrow form was
+/// passing for the wrong reason. The post used to mark the centre of its own
+/// full-width column while the berm sat at the centre of a five-way section;
+/// those are the same cell only when `X` is odd, and both fixtures in the repo
+/// were odd. At even widths the guard stood over the flood one cell off its own
+/// causeway and went blind on 20 of the 22 lane cells — green gate, wrong
+/// geometry. A rule whose claim is "the post commands the spine" has to make
+/// that claim at every box it accepts.
+///
+/// Binding: 9 widths (5..=13, five odd and four even), 22 lane cells each,
+/// 198 sightlines, plus 9 assertions that the post is over the berm at all.
 #[test]
 fn the_guard_station_sees_the_whole_causeway() {
-    let out = expand_at(&causeway(), CAUSEWAY_REGION, CAUSEWAY_SEED);
-    let model = &out.model;
-    let elite = out.anchors["anchor/elite"].pos;
-    let head = out.anchors["anchor/causeway-head"].pos;
-    let lane = causeway_cells(model, head);
-    assert!(!lane.is_empty());
-    for cell in &lane {
-        if let Err(blocker) = sees(model, elite, *cell) {
-            panic!(
-                "the post {elite:?} cannot see the causeway cell {cell:?}: {blocker:?} is in the way"
-            );
+    let mut widths = 0;
+    let mut sightlines = 0;
+    for x in 5u32..=13 {
+        let region = Box3::at_origin([x, 14, 24]);
+        let out = expand_at(&causeway(), region, CAUSEWAY_SEED);
+        let model = &out.model;
+        let elite = out.anchors["anchor/elite"].pos;
+        let head = out.anchors["anchor/causeway-head"].pos;
+        assert_eq!(
+            elite[0], head[0],
+            "at width {x} the post stands at X={} and the berm at X={} — the guard is not \
+             over its own causeway",
+            elite[0], head[0]
+        );
+        let lane = causeway_cells(model, head);
+        assert!(lane.len() >= 6, "width {x}: {lane:?}");
+        for cell in &lane {
+            if let Err(blocker) = sees(model, elite, *cell) {
+                panic!(
+                    "at width {x} the post {elite:?} cannot see the causeway cell {cell:?}: \
+                     {blocker:?} is in the way"
+                );
+            }
+            sightlines += 1;
         }
+        widths += 1;
     }
+    assert_eq!(
+        (widths, sightlines),
+        (9, 198),
+        "the sweep examined {widths} widths and {sightlines} sightlines"
+    );
 }
 
 /// ...and the gate has teeth. `obstruct = 1` stands one solid cell in the
@@ -2649,6 +2714,204 @@ fn a_pillar_in_the_causeway_blinds_the_post() {
     let far_end: BTreeSet<[i32; 3]> = causeway_far_end(&lane);
     let near_end: BTreeSet<[i32; 3]> = [head].into_iter().collect();
     assert!(connected(&lane, &near_end, &far_end));
+}
+
+/// The causeway's two faces along travel: what is standable at local `Z`-max
+/// (the approach the player arrives on) and at `Z`-min (the far side of the
+/// guard post). A zone chains pieces by exactly these faces, so "can a route
+/// pass through this piece" is "does one face reach the other".
+fn causeway_faces(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let region = model.region();
+    let cells = standable_cells(model);
+    let near = region.origin[2];
+    let far = near + region.size[2] as i32 - 1;
+    (
+        cells.iter().copied().filter(|c| c[2] == far).collect(),
+        cells.iter().copied().filter(|c| c[2] == near).collect(),
+    )
+}
+
+/// A box wide enough to show the lane is not a fixture accident, tall enough
+/// for the default post, and long enough that `z(Largest)` keeps travel on
+/// world `Z`.
+const CAUSEWAY_GATE_REGION: Box3 = Box3::at_origin([9, 14, 24]);
+
+/// The third gate: `berm_gate` carries the berm through the post, and changes
+/// nothing else about the post.
+///
+/// Four claims, and the fourth is the one that makes the first three worth
+/// having — a lane that opened the piece by demolishing the guard post would
+/// satisfy "chainable" and destroy the rule.
+///
+/// 1. **With the gate open the piece is walkable through**: its `Z`-max face
+///    reaches its `Z`-min face under [`connected`] — the same ±1-step walk over
+///    standable cells every other gate in this file uses. That model is
+///    *test-local* (see [`reachable_with_fall`]'s note) and it does **not**
+///    model a horizontal jump; here that only ever under-counts routes, so a
+///    green means the lane is walkable, never merely jumpable.
+/// 2. **With the gate shut it is not** — the terminus the rule is by default,
+///    which is also the teeth for claim 1: the two runs differ in one
+///    parameter, and only in that parameter.
+/// 3. **The post is still not a landing.** The guard's own floor is unreachable
+///    from either face under the same walk *and* under the permissive
+///    walk-and-fall model, so the lane did not turn the post into a mezzanine.
+/// 4. **The post is still a post**: the sightline gate above re-run with the
+///    lane open, every width, every lane cell.
+///
+/// Binding: 2 configurations of the fixture, 9 widths swept for the sightline
+/// with the lane open, 198 sightlines, 1 exit-lane cell open vs 0 shut.
+#[test]
+fn the_berm_gate_opens_a_lane_past_the_post() {
+    let mut open = causeway();
+    open.set_param("berm_gate", 1).expect("the knob exists");
+    let out = expand_at(&open, CAUSEWAY_GATE_REGION, CAUSEWAY_SEED);
+    let model = &out.model;
+    let head = out.anchors["anchor/causeway-head"].pos;
+    let elite = out.anchors["anchor/elite"].pos;
+    let cells = standable_cells(model);
+    let (entry, exit) = causeway_faces(model);
+
+    // 1. The lane runs through.
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the gate is open and the piece still does not cross itself"
+    );
+    // ...and the cell it comes out at is the berm's own column at berm height,
+    // not some other way round: exactly one exit cell at the berm's `X` and `Y`.
+    let exit_lane: BTreeSet<[i32; 3]> = exit
+        .iter()
+        .copied()
+        .filter(|c| c[0] == head[0] && c[1] == head[1])
+        .collect();
+    assert_eq!(
+        exit_lane.len(),
+        1,
+        "the far face carries {} cells of berm-height lane, not one: {exit_lane:?}",
+        exit_lane.len()
+    );
+
+    // 2. The teeth: shut the gate, change nothing else.
+    let shut = expand_at(&causeway(), CAUSEWAY_GATE_REGION, CAUSEWAY_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    let (shut_entry, shut_exit) = causeway_faces(&shut.model);
+    assert!(
+        !connected(&shut_cells, &shut_entry, &shut_exit),
+        "the gate is shut and the piece crosses anyway — claim 1 proves nothing"
+    );
+    assert!(
+        !shut_exit.iter().any(|c| c[0] == head[0] && c[1] == head[1]),
+        "the shut piece already had a berm-height cell on its far face"
+    );
+
+    // 3. Still not a landing: the guard's floor is off the walk from both ends
+    // of the lane, under the plain step and under the permissive fall model.
+    // The sources are the *lane*, not the faces: the guard's own cell is on the
+    // far face (it is standable, at the far face's `Z`), so "the exit face
+    // reaches the post" would be true by containment and prove nothing.
+    let post: BTreeSet<[i32; 3]> = [elite].into_iter().collect();
+    assert!(standable(model, elite), "the guard has no floor: {elite:?}");
+    for (name, from) in [("entry", &entry), ("exit lane", &exit_lane)] {
+        assert!(
+            !connected(&cells, from, &post),
+            "the {name} face walks up onto the guard post {elite:?} — it is a landing now"
+        );
+        assert!(
+            !reachable_with_fall(model, &cells, from, &post),
+            "the {name} face reaches the guard post {elite:?} even before jumping is considered"
+        );
+    }
+
+    // 4. The post is still a post, at every width the sweep above covers, and
+    // over the same 22 crossing cells per width that the shut piece offers.
+    let mut sightlines = 0;
+    for x in 5u32..=13 {
+        let out = expand_at(&open, Box3::at_origin([x, 14, 24]), CAUSEWAY_SEED);
+        let model = &out.model;
+        let elite = out.anchors["anchor/elite"].pos;
+        let head = out.anchors["anchor/causeway-head"].pos;
+        assert_eq!(elite[0], head[0], "width {x}, lane open");
+        let crossing = causeway_cells(model, head);
+        assert_eq!(crossing.len(), 22, "width {x}, lane open");
+        for cell in &crossing {
+            if let Err(blocker) = sees(model, elite, *cell) {
+                panic!(
+                    "with the lane open at width {x} the post {elite:?} cannot see {cell:?}: \
+                     {blocker:?} is in the way"
+                );
+            }
+            sightlines += 1;
+        }
+    }
+    assert_eq!(
+        sightlines, 198,
+        "the open-lane sweep saw {sightlines} cells"
+    );
+
+    // 5. ...and the cells the lane adds are named rather than absorbed. The
+    // gatehouse's own passage runs under the guard's floor, so the guard cannot
+    // see it — that is what "pass under" means, and it is stated and counted
+    // here instead of being quietly inside gate 2's binding. It is bounded: the
+    // whole of it is `guard_len` cells at the very end of the crossing, and
+    // every one of them is under the post's own floor.
+    let gatehouse: BTreeSet<[i32; 3]> = spine_cells(model, head)
+        .difference(&causeway_cells(model, head))
+        .copied()
+        .collect();
+    assert_eq!(
+        gatehouse.len(),
+        2,
+        "the lane adds cells outside the guard station: {gatehouse:?}"
+    );
+    for cell in &gatehouse {
+        assert!(
+            cell[1] < elite[1],
+            "a gatehouse cell {cell:?} is not below the guard's floor {elite:?}"
+        );
+        assert!(
+            sees(model, elite, *cell).is_err(),
+            "the guard can see {cell:?} under its own floor — then the lane is not a way past"
+        );
+    }
+}
+
+/// ...and a post too short to be tunnelled is refused, not built with a
+/// crawlspace under it.
+///
+/// The lane needs the two cells `standable` wants clear plus the course of
+/// stone that is the post's own floor — [`MIN_GATE_RISE`] in all. One less and
+/// there is no applicable alternative, which is the same refusal every other
+/// undersized causeway gets; one more and the piece walks through.
+///
+/// Binding: `tower_rise` at `MIN_GATE_RISE - 1` (refused, by rule name) and at
+/// `MIN_GATE_RISE` (built, and crossed).
+#[test]
+fn a_post_too_short_to_tunnel_refuses_the_lane() {
+    let mut low = causeway();
+    low.set_param("berm_gate", 1).unwrap();
+    low.set_param("tower_rise", MIN_GATE_RISE - 1).unwrap();
+    let err = expand(
+        &low,
+        CAUSEWAY_GATE_REGION,
+        &ExpandOptions::seeded(CAUSEWAY_SEED),
+    )
+    .expect_err("a post that cannot carry a lane must refuse the lane");
+    let text = err.to_string();
+    assert!(
+        text.contains("ward_alts") && text.contains("no alternative"),
+        "the refusal does not name the rule that refused: {text}"
+    );
+    // ...and the same knob one notch higher is a piece that crosses, so what
+    // was refused is the geometry and not the knob.
+    let mut just_enough = causeway();
+    just_enough.set_param("berm_gate", 1).unwrap();
+    just_enough.set_param("tower_rise", MIN_GATE_RISE).unwrap();
+    let out = expand_at(&just_enough, CAUSEWAY_GATE_REGION, CAUSEWAY_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = causeway_faces(&out.model);
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the shortest post the rule will tunnel does not actually carry a lane"
+    );
 }
 
 // ---------------------------------------------------------------------------
