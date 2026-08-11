@@ -111,6 +111,48 @@ fn build(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     )
 }
 
+/// Declare a `quests.json` `dsl_version` — the document whose declaration decides
+/// whether a plain `set-checkpoint` is inside `DW0478`'s binding yet
+/// (`nav::PLAIN_CHECKPOINT_BINDS_AT`). The fixture ships 0.6.0, so a test that
+/// wants the widened binding has to say so, which is the whole point: adoption is
+/// something a campaign DOES, never something an engine build does to it.
+fn adopt_v011(quests: &mut serde_json::Value) {
+    quests
+        .as_object_mut()
+        .unwrap()
+        .insert("dsl_version".into(), serde_json::json!("0.11.0"));
+}
+
+/// Move the fixture's `bonfire` where it stands — same verb, new anchor.
+fn move_bonfire(quests: &mut serde_json::Value, anchor: &str) {
+    fn walk(v: &mut serde_json::Value, anchor: &str, hit: &mut bool) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if o.get("type").and_then(|t| t.as_str()) == Some("bonfire") {
+                    *hit = true;
+                    o.insert("anchor".into(), serde_json::json!(anchor));
+                    return;
+                }
+                for (_, child) in o.iter_mut() {
+                    walk(child, anchor, hit);
+                }
+            }
+            serde_json::Value::Array(a) => {
+                for child in a {
+                    walk(child, anchor, hit);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut hit = false;
+    walk(quests, anchor, &mut hit);
+    assert!(
+        hit,
+        "the fixture must carry the one bonfire this suite moves"
+    );
+}
+
 /// Rewrite the fixture's `bonfire` effect into a plain `set-checkpoint`,
 /// optionally moving it to a different anchor.
 fn respell_as_checkpoint(quests: &mut serde_json::Value, anchor: Option<&str>) {
@@ -192,7 +234,10 @@ fn a_bonfire_is_examined_and_the_ledger_states_the_count() {
 #[test]
 fn a_plain_set_checkpoint_is_examined_by_the_same_proof() {
     let tmp = TempCampaign::new("checkpoint");
-    campaign_with(tmp.path(), |q| respell_as_checkpoint(q, None));
+    campaign_with(tmp.path(), |q| {
+        respell_as_checkpoint(q, None);
+        adopt_v011(q);
+    });
     let out = build(tmp.path()).expect("a safe cell is safe whichever verb placed it");
     let l = ledger(&out);
     assert_eq!(l["examined"], 1);
@@ -220,6 +265,7 @@ fn a_set_checkpoint_on_a_seated_wave_is_dw0478() {
     let tmp = TempCampaign::new("unsafe");
     campaign_with(tmp.path(), |q| {
         respell_as_checkpoint(q, Some("anchor/keeper-stand"));
+        adopt_v011(q);
     });
     let err = build(tmp.path()).expect_err("a respawn cell inside a perception radius is a red");
     let BuildFailure::Diagnostic { code, message } = err else {
@@ -244,4 +290,155 @@ fn a_set_checkpoint_on_a_seated_wave_is_dw0478() {
         "the message must also refuse the other cheap green — deleting the \
          checkpoint the retry proof binds on: {message}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The obligation fence on the widening (owner ruling 2026-08-10, restated
+// 2026-08-11 against the argument that this particular widening was exempt).
+//
+// The code is `every_version` and stays that way; the BINDING is what widened,
+// so the binding is what carries the version — per respawn point, keyed to the
+// stage document that authored the verb. These four tests are the two directions
+// of that split, and the third is the one that matters most: the fence must not
+// have bought the island's green with a weaker rule.
+// ---------------------------------------------------------------------------
+
+/// **The grandfather direction.** The identical geometry the test above rejects,
+/// on a campaign whose `quests.json` still declares 0.6.0: it builds. Nothing in
+/// this campaign's own documents changed, so no engine build may change its
+/// verdict — the whole content of the ruling.
+///
+/// And the green is not silent. A fenced-out respawn point is published, named,
+/// with the version that will bind it, because "this campaign has no respawn
+/// point" and "this campaign has one and it was never looked at" are different
+/// findings and the ledger has to be able to tell them apart.
+#[test]
+fn a_pre_0_11_set_checkpoint_on_a_seated_wave_is_grandfathered() {
+    let tmp = TempCampaign::new("grandfathered");
+    campaign_with(tmp.path(), |q| {
+        respell_as_checkpoint(q, Some("anchor/keeper-stand"));
+    });
+    let out = build(tmp.path()).expect(
+        "a 0.6.0 campaign compiled before the widening and must compile after it: the \
+         compiler judges a campaign at the dsl_version it declares",
+    );
+    let l = ledger(&out);
+    assert_eq!(l["examined"], 0);
+    assert_eq!(l["unbound"], true);
+    let g = l["grandfathered"]
+        .as_array()
+        .expect("the ledger publishes what the fence withheld");
+    assert_eq!(g.len(), 1, "the one respawn point this campaign has: {l}");
+    assert_eq!(g[0]["anchor"], "anchor/keeper-stand");
+    assert_eq!(g[0]["kind"], "set-checkpoint");
+    assert_eq!(
+        g[0]["stage"], "quests",
+        "the version question is asked of the document the verb was authored in: {l}"
+    );
+    assert_eq!(g[0]["binds_at_dsl_version"], "0.11.0");
+    let why = l["reason"].as_str().expect("a zero binding names itself");
+    assert!(
+        why.contains("GRANDFATHERED") && why.contains("anchor/keeper-stand"),
+        "the zero must read as an adoption worklist, not as a pass: {why}"
+    );
+}
+
+/// **The bind direction, same bytes.** The one difference between this campaign
+/// and the one above is the number in `quests.json` — and it is a red.
+///
+/// This is what keeps the fence from being a deletion: at and above 0.11 the rule
+/// demands exactly what it demanded before, on exactly the same geometry.
+#[test]
+fn the_same_geometry_at_0_11_is_dw0478() {
+    let old = TempCampaign::new("fence-old");
+    campaign_with(old.path(), |q| {
+        respell_as_checkpoint(q, Some("anchor/keeper-stand"));
+    });
+    let adopted = TempCampaign::new("fence-new");
+    campaign_with(adopted.path(), |q| {
+        respell_as_checkpoint(q, Some("anchor/keeper-stand"));
+        adopt_v011(q);
+    });
+    // The two campaigns differ in one field, and it is not a geometric one.
+    let read = |t: &TempCampaign| {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(t.path().join("quests.json")).unwrap())
+                .unwrap();
+        v.as_object_mut().unwrap().remove("dsl_version");
+        v
+    };
+    assert_eq!(
+        read(&old),
+        read(&adopted),
+        "the pair must differ ONLY in the declared version, or this proves nothing about \
+         the fence"
+    );
+
+    build(old.path()).expect("0.6.0: grandfathered");
+    let err = build(adopted.path())
+        .expect_err("0.11.0: the same cell inside the same perception radius is the same red");
+    let BuildFailure::Diagnostic { code, .. } = err else {
+        panic!("expected a diagnostic");
+    };
+    assert_eq!(code, "DW0478");
+}
+
+/// **The half that was never fenced and must never be.** A `bonfire` has been in
+/// this proof's binding since the proof existed, at every declared version. The
+/// campaign here declares 0.6.0 — below the widening — and its bonfire on the
+/// guard's cell is still a red.
+///
+/// A `DwCode::since` on `DW0478` would have made this green. That is why the
+/// version lives on the binding and not on the code: fencing the code would have
+/// grandfathered a rule that had already bound, which is a weakening, not a
+/// fence.
+#[test]
+fn a_bonfire_on_a_seated_wave_is_dw0478_below_the_widening_version() {
+    let tmp = TempCampaign::new("bonfire-unsafe");
+    campaign_with(tmp.path(), |q| move_bonfire(q, "anchor/keeper-stand"));
+    let err = build(tmp.path())
+        .expect_err("a bonfire in a perception radius is a soft-lock at every declared version");
+    let BuildFailure::Diagnostic { code, message } = err else {
+        panic!("expected a diagnostic");
+    };
+    assert_eq!(code, "DW0478");
+    assert!(
+        message.contains("bonfire") || message.contains("respawn point"),
+        "{message}"
+    );
+}
+
+/// A campaign that mixes the two kinds is judged per object, not per campaign: the
+/// bonfire is examined at 0.6.0 while its sibling is withheld. Binding is a
+/// property of the respawn point, so a campaign is never all-or-nothing.
+#[test]
+fn a_mixed_campaign_examines_the_bonfire_and_withholds_the_checkpoint() {
+    let tmp = TempCampaign::new("mixed");
+    campaign_with(tmp.path(), |q| {
+        // Keep the fixture's bonfire and add a plain checkpoint on the guard's
+        // cell — geometry that is DW0478 the moment `quests.json` adopts 0.11.
+        let quests = q["content"]["quests"].as_array_mut().unwrap();
+        let first = quests[0].as_object_mut().unwrap();
+        let on_complete = first
+            .entry("on_complete")
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .unwrap();
+        on_complete.push(serde_json::json!({
+            "type": "set-checkpoint",
+            "anchor": "anchor/keeper-stand"
+        }));
+    });
+    let out = build(tmp.path()).expect("the bonfire is where it always was, and it is safe");
+    let l = ledger(&out);
+    assert_eq!(l["examined"], 1, "the bonfire, at 0.6.0: {l}");
+    assert_eq!(l["rest_points"][0]["kind"], "bonfire");
+    assert_eq!(l["unbound"], false, "so the proof is NOT vacuous here: {l}");
+    let g = l["grandfathered"].as_array().unwrap();
+    assert_eq!(
+        g.len(),
+        1,
+        "and the sibling is withheld, not forgotten: {l}"
+    );
+    assert_eq!(g[0]["kind"], "set-checkpoint");
 }

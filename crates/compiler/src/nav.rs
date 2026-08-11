@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
 use crate::plan::{Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan};
+use delvewright_dsl::Binds;
 use delvewright_dsl::Diagnostic;
 use delvewright_dsl::DwCode;
 
@@ -211,15 +212,41 @@ pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
 /// capability belongs to the object class it acts on*; the staging gate's
 /// `UNBOUND` verdict, row `bell-08`).
 ///
-/// [`Binds::EveryVersion`], and the widening onto `set-checkpoint` does not
-/// change that. A [`Binds::Since`] fence grandfathers campaigns against a new
-/// **authoring obligation** — a field they must now write. This rule asks for
-/// nothing to be written: its verdict is a function of geometry the campaign
-/// already declares, and a campaign that trips it was always soft-locked. The
-/// widening is a defect fixed in the proof, not a requirement added to the
-/// document, so fencing it would grandfather the soft-lock rather than the
-/// paperwork — and the six live violations it found on the shipped island are
-/// what that would have preserved.
+/// # The code binds at every version; the WIDENING is fenced at 0.11
+///
+/// The owner's standing ruling (2026-08-10) is that the compiler processes a
+/// campaign according to its DECLARED `dsl_version`, so a campaign that compiled
+/// before keeps its verdicts unchanged. It admits no exception for a rule whose
+/// verdict is "a function of geometry the campaign already declares" — every
+/// widened check is that, `DW0180`'s l10n coverage included, and an engine that
+/// reddens an untouched old campaign is the outcome the ruling forbids however
+/// right the new red is. The widening above shipped unfenced and did exactly
+/// that: `nobodys-cave-island`, declaring `quests` 0.8.0 with nothing in its own
+/// documents changed, stopped compiling on an engine change alone.
+///
+/// So the split is where the split actually is. The **code** stays
+/// [`Binds::EveryVersion`]: `DW0478` was always allowed to fire, it has bound
+/// every bonfire since it was written, and a [`Binds::Since`] on the code would
+/// grandfather that half too — a 0.6 campaign resting inside a wave would go
+/// green, which is a weakening, not a fence. The **binding** is what widened, so
+/// the binding is what carries the version, at the granularity it has: **per
+/// respawn point**, keyed to the stage document its verb was authored in
+/// ([`crate::plan::CheckpointPlan::stage`], read through
+/// [`delvewright_dsl::stage_version_of`]). A `bonfire` is examined at every
+/// declared version; a plain `set-checkpoint` from
+/// [`PLAIN_CHECKPOINT_BINDS_AT`]. This is the second granularity
+/// [`delvewright_dsl::Fenced`]'s module docs name — same shape as
+/// [`delvewright_dsl::l10n::required_inventory`], where an l10n key declares the
+/// version at which it entered the inventory and a sidecar is never asked for a
+/// key from above its campaign's version.
+///
+/// Nothing about the check is weaker at or above 0.11: every respawn point is
+/// examined against every contemporaneous force, on exactly the geometry it was
+/// before. A grandfathered soft-lock is not forgiven, it is **deferred to the
+/// campaign's own adoption round** (CLAUDE.md §version-adoption discipline) —
+/// and it is not silent while it waits: [`RespawnSafetyLedger`] names every
+/// respawn point it did not examine and why, so a round summary reads a count
+/// instead of a green.
 ///
 /// # The joint constraint with the die-retry proof, and what it excludes
 ///
@@ -4526,20 +4553,31 @@ pub fn check_respawn_safe_zone(
     lanes: &LaneRoutes,
 ) -> Result<RespawnSafetyLedger, NavError> {
     let reign_ends = plan.respawn_reign_ends();
-    let rest_points: Vec<RestPoint> = plan
+    let all: Vec<RestPoint> = plan
         .checkpoints
         .iter()
         .zip(&reign_ends)
         .map(|(c, end)| RestPoint {
             anchor: c.anchor.clone(),
             kind: if c.rest { "bonfire" } else { "set-checkpoint" },
+            stage: c.stage,
             pos: c.pos,
             reign_end: *end,
         })
         .collect();
+    // The obligation fence, at the granularity this binding has (see
+    // [`DW_RESPAWN_IN_AGGRO`]): a respawn point whose own stage document has not
+    // adopted the version at which the object class widened is withheld from the
+    // proof — and named in the ledger, never silently dropped.
+    let (rest_points, grandfathered): (Vec<RestPoint>, Vec<RestPoint>) =
+        all.into_iter()
+            .partition(|r| match respawn_binds(r.kind == "bonfire") {
+                Binds::EveryVersion => true,
+                Binds::Since(n) => delvewright_dsl::stage_version_of(plan.campaign, r.stage) >= n,
+            });
     let onsets = plan.hostile_onsets();
     let sources = aggro_sources(plan, world, placements, lanes);
-    let ledger = RespawnSafetyLedger::new(&rest_points, &sources, &onsets);
+    let ledger = RespawnSafetyLedger::new(&rest_points, &grandfathered, &sources, &onsets);
     if ledger.pairs == 0 {
         return Ok(ledger);
     }
@@ -4565,6 +4603,35 @@ fn contemporaneous(rest: &RestPoint, hostile_onset: usize) -> bool {
     rest.reign_end.is_none_or(|end| hostile_onset < end)
 }
 
+/// The `dsl_version` minor ordinal from which `DW0478` examines a **plain
+/// `set-checkpoint`** — the version current when the proof's binding widened from
+/// the `bonfire` verb to the respawn-point object class (`0.11.0`; the same
+/// version `DW0429`'s obligation was fenced at, and the version
+/// `delvewright_dsl::SUPPORTED_DSL_VERSION` names).
+///
+/// The choice is the rule from [`delvewright_dsl::l10n::KeyEntry::since`],
+/// applied one layer up: a widening onto surface older campaigns already had
+/// takes *the version current when the widening lands*, so those campaigns adopt
+/// it in their own explicit, proof-carrying round rather than on the next engine
+/// build. A `bonfire` is not covered by it — see [`DW_RESPAWN_IN_AGGRO`] for why
+/// the code stays [`Binds::EveryVersion`] while its binding does not.
+pub const PLAIN_CHECKPOINT_BINDS_AT: u32 = 11;
+
+/// When `DW0478` starts examining a respawn point of this kind — [`Binds`] at the
+/// granularity the binding has.
+///
+/// `rest == true` is a `bonfire`, which this proof has examined since it was
+/// written, at every declared version. `rest == false` is a plain
+/// `set-checkpoint`, which entered the binding at
+/// [`PLAIN_CHECKPOINT_BINDS_AT`].
+const fn respawn_binds(rest: bool) -> Binds {
+    if rest {
+        Binds::EveryVersion
+    } else {
+        Binds::Since(PLAIN_CHECKPOINT_BINDS_AT)
+    }
+}
+
 /// One cell a dead player can materialise on, as the `DW0478` proof sees it.
 #[derive(Clone, Debug)]
 pub struct RestPoint {
@@ -4574,6 +4641,10 @@ pub struct RestPoint {
     /// respawn points were examined, and notice at a glance if one kind is
     /// missing from a campaign that has them.
     pub kind: &'static str,
+    /// The stage document the verb was authored in (`"quests"` / `"dialogue"`) —
+    /// the document whose `dsl_version` decides whether this respawn point is
+    /// inside the binding yet ([`respawn_binds`]).
+    pub stage: &'static str,
     /// The resolved absolute respawn cell.
     pub pos: [i32; 3],
     /// The step at which this respawn point stops governing, `None` = never
@@ -4591,9 +4662,21 @@ pub struct RestPoint {
 /// unleashed hostiles, zero comparisons — and nothing anywhere said so.
 #[derive(Clone, Debug)]
 pub struct RespawnSafetyLedger {
-    /// Every respawn point in content order, with the forces it was measured
-    /// against and the forces it was not.
+    /// Every **examined** respawn point in content order, with the forces it was
+    /// measured against and the forces it was not.
     pub rest_points: Vec<RestPoint>,
+    /// Respawn points the obligation fence withheld: a plain `set-checkpoint`
+    /// whose stage document declares below [`PLAIN_CHECKPOINT_BINDS_AT`], the
+    /// version at which this proof's object class widened.
+    ///
+    /// Published for the same reason `pairs` is. A fenced-out object is the
+    /// difference between "this campaign has no respawn point" and "this campaign
+    /// has three and none of them was looked at", and a ledger that could not
+    /// tell those apart would report the second as the first — which is how the
+    /// original bonfire-only binding stayed invisible for twenty-two rounds. It
+    /// is also the campaign's adoption-round worklist: these are exactly the
+    /// objects that start binding when the stage adopts 0.11.
+    pub grandfathered: Vec<RestPoint>,
     /// Every hostile force's id, in content order.
     pub hostiles: Vec<String>,
     /// Per respawn point, in the same order: the ids it was compared against.
@@ -4607,6 +4690,7 @@ pub struct RespawnSafetyLedger {
 impl RespawnSafetyLedger {
     fn new(
         rest_points: &[RestPoint],
+        grandfathered: &[RestPoint],
         sources: &[AggroSource],
         onsets: &BTreeMap<String, usize>,
     ) -> Self {
@@ -4640,6 +4724,7 @@ impl RespawnSafetyLedger {
         }
         Self {
             rest_points: rest_points.to_vec(),
+            grandfathered: grandfathered.to_vec(),
             hostiles: sources.iter().map(|s| s.id.clone()).collect(),
             compared,
             skipped,
@@ -4657,6 +4742,29 @@ impl RespawnSafetyLedger {
     pub fn reason(&self) -> Option<String> {
         if self.pairs > 0 {
             return None;
+        }
+        // Asked FIRST, because otherwise a campaign whose every respawn point was
+        // fenced out reads as a campaign that declares none — the fenced-out case
+        // wearing the empty case's sentence, which is the one thing this ledger
+        // exists to make impossible.
+        if !self.grandfathered.is_empty() {
+            return Some(format!(
+                "this campaign declares {} respawn point(s), and {} of them are plain \
+                 `set-checkpoint`s in a stage document below dsl_version 0.{}.0 — the version \
+                 at which this proof's binding widened from the `bonfire` verb to the \
+                 respawn-point object class. They are GRANDFATHERED, not cleared: the rule \
+                 binds them in this campaign's own adoption round, and this list is that \
+                 round's worklist ({}). {} hostile force(s) went unmeasured against them",
+                self.rest_points.len() + self.grandfathered.len(),
+                self.grandfathered.len(),
+                PLAIN_CHECKPOINT_BINDS_AT,
+                self.grandfathered
+                    .iter()
+                    .map(|r| format!("`{}` (stage `{}`)", r.anchor, r.stage))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                self.hostiles.len(),
+            ));
         }
         Some(
             match (self.rest_points.is_empty(), self.hostiles.is_empty()) {
@@ -4711,6 +4819,26 @@ impl RespawnSafetyLedger {
                 }))
                 .collect::<Vec<_>>(),
             "examined": self.rest_points.len(),
+            // Withheld by the obligation fence, never silently absent: anchor,
+            // kind, the stage document whose `dsl_version` withheld it, and the
+            // version that would bind it.
+            "grandfathered": self
+                .grandfathered
+                .iter()
+                .map(|r| serde_json::json!({
+                    "anchor": r.anchor,
+                    "kind": r.kind,
+                    "pos": r.pos,
+                    "stage": r.stage,
+                    "binds_at_dsl_version": format!("0.{PLAIN_CHECKPOINT_BINDS_AT}.0"),
+                    "reason": format!(
+                        "a plain `set-checkpoint` entered this proof's binding at dsl_version \
+                         0.{}.0; `{}.json` declares less, so it is examined in this campaign's \
+                         own adoption round rather than on an engine change",
+                        PLAIN_CHECKPOINT_BINDS_AT, r.stage,
+                    ),
+                }))
+                .collect::<Vec<_>>(),
             "hostiles": self.hostiles,
             "pairs": self.pairs,
             "unbound": self.unbound(),
@@ -6930,6 +7058,7 @@ mod tests {
         RestPoint {
             anchor: anchor.to_string(),
             kind: "bonfire",
+            stage: "quests",
             pos,
             reign_end: None,
         }
@@ -6940,6 +7069,7 @@ mod tests {
         RestPoint {
             anchor: anchor.to_string(),
             kind: "set-checkpoint",
+            stage: "quests",
             pos,
             reign_end: Some(reign_end),
         }
@@ -7159,13 +7289,14 @@ mod tests {
                 fire("anchor/a", [99, 64, 0]),
                 checkpoint("anchor/b", [98, 64, 0], 5),
             ],
+            &[],
             &sources,
             &from_the_start(),
         );
         assert_eq!(bound.pairs, 2, "two rest points x one force");
         assert!(!bound.unbound() && bound.reason().is_none());
 
-        let no_rest = RespawnSafetyLedger::new(&[], &sources, &from_the_start());
+        let no_rest = RespawnSafetyLedger::new(&[], &[], &sources, &from_the_start());
         assert!(no_rest.unbound());
         assert!(
             no_rest.reason().unwrap().contains("no `set-checkpoint`"),
@@ -7173,7 +7304,7 @@ mod tests {
         );
 
         let no_hostiles =
-            RespawnSafetyLedger::new(&[fire("anchor/a", [0, 64, 0])], &[], &from_the_start());
+            RespawnSafetyLedger::new(&[fire("anchor/a", [0, 64, 0])], &[], &[], &from_the_start());
         assert!(no_hostiles.unbound());
         assert!(
             no_hostiles
@@ -7182,10 +7313,33 @@ mod tests {
                 .contains("no hostile force at all")
         );
 
+        // The fourth zero, and the one that would lie loudest if it fell through
+        // to the sentence above it: every respawn point the campaign declares was
+        // withheld by the obligation fence. "Declares none" and "declares three
+        // and none was looked at" are different findings.
+        let all_fenced = RespawnSafetyLedger::new(
+            &[],
+            &[checkpoint("anchor/b", [0, 64, 0], 5)],
+            &sources,
+            &from_the_start(),
+        );
+        assert!(all_fenced.unbound());
+        let why = all_fenced.reason().unwrap();
+        assert!(
+            why.contains("GRANDFATHERED") && why.contains("`anchor/b`"),
+            "a fenced-out respawn point must be named as an adoption worklist, never read as \
+             a campaign that has none: {why}"
+        );
+        assert!(
+            !why.contains("no `set-checkpoint`"),
+            "and it must not borrow the empty campaign's sentence: {why}"
+        );
+
         // The third zero, and the one a reader would otherwise never suspect:
         // both halves exist and no pair is ever contemporaneous.
         let never_meet = RespawnSafetyLedger::new(
             &[checkpoint("anchor/b", [0, 64, 0], 3)],
+            &[],
             &sources,
             &[("wave/x".to_string(), 9)].into(),
         );
