@@ -63,9 +63,19 @@ services:
   server:
     profiles: ["play", "validate"]
     build:
-      context: ./delve-output
+      # WHICH build output tree this ladder boots. `DELVE_OUTPUT` used to select the
+      # tree for the `packtest` profile only, so `bot-run.sh --output <tree>` set a
+      # variable nothing on this path read and the bot ladder silently booted
+      # `./delve-output` whatever was asked for — a flag that does nothing is worse
+      # than a missing one, because the caller believes it. Same default, so an
+      # invocation that names no tree is unchanged.
+      context: ${DELVE_OUTPUT:-./delve-output}
       dockerfile: ../Dockerfile.delve
-    image: delvewright/delve:local
+    # …and the TAG follows the tree, for the same reason the compose project
+    # follows the ladder: an image tag is global to the daemon, so two ladders
+    # building different trees into one tag race, and the loser boots the other's
+    # delve. `bot-run.sh` sets it per project; the bare default is unchanged.
+    image: ${DELVE_IMAGE:-delvewright/delve:local}
     environment:
       # Never TRUE in this file — the owner must set EULA=TRUE in their environment.
       EULA: ${EULA:?set EULA=TRUE in your environment to accept Mojang's EULA (https://aka.ms/MinecraftEULA)}
@@ -184,15 +194,41 @@ services:
       # ordinary single-path run, unchanged.
       DELVEWRIGHT_BRANCHES: ${DELVEWRIGHT_BRANCHES:-all}
       DELVEWRIGHT_BRANCH: ${DELVEWRIGHT_BRANCH:-}
+      # task #68 — the death-loop stage: walk into every declared lethal volume,
+      # die there, and assert the wording, the `on_death` forfeit, the recovery
+      # stake's placement, its collection and the respawn seat. ON whenever the
+      # build ships `validation/death-plan.json`; `0` skips it for local iteration
+      # and the report records that it was skipped, never that it passed.
+      DELVEWRIGHT_DEATH_LOOP: ${DELVEWRIGHT_DEATH_LOOP:-1}
+      # task #64 — the four `src/` reads this file used to DROP, so a ladder could
+      # not set them at all: `bot-run.sh`'s header promises that "every environment
+      # variable src/run.ts reads is forwarded by the compose file", and for these
+      # four it was not true. Each keeps its own default from the module that reads
+      # it, so naming them here changes no run that does not set them.
+      #
+      #   * DELVEWRIGHT_ACTOR_FLOOR   — skip the tiered-actor engagements (run.ts)
+      #   * DELVEWRIGHT_RETRY_ON_DEATH — resume once after an UNSCRIPTED death (run.ts)
+      #   * DELVEWRIGHT_CUTSCENE_GRACE_MS / _ENTITY_SETTLE_TIMEOUT_MS — the two
+      #     executor waits a slow runner has to be able to lengthen (executor.ts)
+      #
+      # Written with `:-` and no value so an unset variable stays unset inside the
+      # container rather than becoming an empty string: `DELVEWRIGHT_ACTOR_FLOOR=""`
+      # is not `"0"`, but an empty `_TIMEOUT_MS` is parsed, and the modules that read
+      # them already treat absent and empty alike. Compose's `VAR:` short form (no
+      # value at all) is what actually omits the key when the host has not set it.
+      DELVEWRIGHT_ACTOR_FLOOR:
+      DELVEWRIGHT_RETRY_ON_DEATH:
+      DELVEWRIGHT_CUTSCENE_GRACE_MS:
+      DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
     volumes:
-      - ./delve-output/critical-path.json:/delve/critical-path.json:ro
+      - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
       # task #38: the compiler-proven per-leg waypoint artifact
       # (validation/critical-path-waypoints.json). The harness discovers it at
       # `<dir-of-critical-path.json>/validation/…` and navigates leg-by-leg so no
       # single distant A* solve strands the bot on a large open cave. Validation
       # metadata only (never in the shipped delve image); absent → single-goal
       # fallback, so the mount is harmless for a campaign that emits none.
-      - ./delve-output/validation:/delve/validation:ro
+      - ${DELVE_OUTPUT:-./delve-output}/validation:/delve/validation:ro
       # spec-0023: the run report the bot writes (stage results, every combat-assist
       # window with its ticks, every scripted death of the die-retry stage, and the
       # inverted floor gate's findings). Writable, unlike the read-only build mounts

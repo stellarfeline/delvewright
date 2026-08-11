@@ -177,12 +177,38 @@ fn on_respawn_dispatch_is_emitted() {
     // task #145: `deathCount` ticks on the DEATH, not on the respawn, so both the
     // fire and the acknowledgement wait for a living player — otherwise the whole
     // bundle would land on the corpse and the edge would be spent.
+    //
+    // Read off the `edge` partition rather than off every line, because the seeds
+    // above deliberately carry no guard at all. The invariant this test exists for
+    // is unchanged — nothing that READS the counter may land on a corpse.
     assert!(
         !edge.is_empty()
             && edge
                 .iter()
                 .all(|l| l.contains("unless data entity @s {Health:0.0f}")),
         "the death edge is held until the player is alive again:\n{check}"
+    );
+    // …and the seeds must PRECEDE every read, which the assertion above does not
+    // say: `partition` preserves order within each half but relates neither half to
+    // the other, so a build that emitted both seeds AFTER the comparison would
+    // satisfy it while still swallowing the first death. Asserted over both seeds
+    // and every reader, so the union that `DW0495` produced is checked as a whole
+    // rather than one objective at a time.
+    let last_seed = check
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with("scoreboard players add @s dw."))
+        .map(|(i, _)| i)
+        .max()
+        .expect("the edge's scores are seeded so they EXIST before they are compared to");
+    let first_read = check
+        .lines()
+        .position(|l| l.contains("if score @s dw.deaths > @s dw.death_ack"))
+        .expect("the edge reads the acknowledgement");
+    assert!(
+        last_seed < first_read,
+        "every seed must land before the edge reads it, or the first death still \
+         compares against an entry that does not exist:\n{check}"
     );
     let fire = fn_body(&out, "cp_respawn_fire");
     assert!(

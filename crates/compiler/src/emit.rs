@@ -360,6 +360,12 @@ pub fn build_with_warnings(
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
     // objectives, no functions, no artifact.
     let mut stake_table: Option<crate::stake::StakeTable> = None;
+    // The bot tier's contract for DYING (`compiler::deathplan`): the lethal volumes
+    // it may walk into, the wording each promises, the `on_death` consequences, the
+    // stake rules and the placement table's rows. `None` for a campaign that
+    // declares none of the three, and for one that assembles no world — a
+    // contract nobody can walk is not the same fact as an empty one.
+    let mut death_plan: Option<Value> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -552,6 +558,17 @@ pub fn build_with_warnings(
                 // death regions — a volume that strands the party is a worse
                 // finding, and it should be reported first.
                 stake_table = crate::stake::build(plan, &world, campaign_spawn(plan))?;
+                // …and the contract the bot tier needs to prove any of it at
+                // runtime. Built here, from the SAME table the proofs above ran
+                // on, because a PackTest fake player is permanently undamageable
+                // (measured 2026-08-03 and 2026-08-09) and so the whole death loop
+                // is the mineflayer tier's claim to make.
+                death_plan = crate::deathplan::build(
+                    plan,
+                    &world,
+                    campaign_spawn(plan),
+                    stake_table.as_ref(),
+                );
                 crate::nav::check_stealth_zones(plan, &world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -1221,6 +1238,13 @@ pub fn build_with_warnings(
     // binding is a finding rather than an absence.
     if let Some(t) = &stake_table {
         put_json(&mut out, "validation/stake-gate.json", &t.gate.to_json());
+    }
+    // The bot tier's death contract (`compiler::deathplan`): what the campaign
+    // PROMISES a death does, so the mineflayer tier can assert it against a real
+    // client that really died. Same rule again — a campaign that declares no
+    // volume, no `on_death` and no stake emits no file at all.
+    if let Some(dp) = &death_plan {
+        put_json(&mut out, "validation/death-plan.json", dp);
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
@@ -5472,6 +5496,9 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let dead = "if data entity @s {Health:0.0f}";
     let mut check: Vec<String> = Vec::new();
     // **The three scores this edge compares have to EXIST before it compares them.**
+    // Found live by the bot tier's death-loop stage (task #68), which is the only
+    // tier that can witness a player death at all; generalised into `DW0495`, which
+    // then named a third objective the instance fix had missed.
     //
     // On the pinned 1.21.11 server a scoreboard entry that was never written is
     // NOT zero: every comparison against it is false, so `execute if score @s A >

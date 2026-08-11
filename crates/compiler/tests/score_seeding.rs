@@ -89,6 +89,9 @@ fn shipped_fixtures_emit_only_backed_score_reads() {
         (fixture("souls-bonfire"), 300, 25),
         (fixture("v06-checkpoints"), 300, 25),
         (fixture("lethal-volume"), 30, 15),
+        // task #68: the die-retry fixture. A shipped fixture outside this sweep is a
+        // hole in DW0495's binding, and this one emits the death edge the rule exists for.
+        (fixture("die-retry"), 40, 15),
     ] {
         let campaign = parse_dir(&dir);
         let ns = campaign.world.campaign_id.as_str().to_string();

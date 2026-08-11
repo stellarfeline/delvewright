@@ -148,6 +148,27 @@ fn the_death_beat_rides_the_existing_edge_on_the_corpse_side() {
         "…and acknowledges on the corpse side, so it fires ONCE per death rather \
          than every tick of the death screen: {check}"
     );
+    // task #68, found live by the bot tier's death-loop stage: `dw.death_seen` is
+    // a `dummy` objective, so a player who has never died has NO score in it — and
+    // `execute if score @s A > @s B` with B unset does not fire (measured on the
+    // pinned 1.21.11 server; `scoreboard players add <e> <obj> 0` is what creates
+    // the entry). The whole `on_death` bundle was therefore dead on a player's
+    // FIRST death — no forfeit, no recovery stake — and worked from the second
+    // onward, which is exactly why compile-time shape proofs never saw it. The
+    // seed must PRECEDE the read, so the order is what is asserted.
+    let seed = check
+        .lines()
+        .position(|l| l.trim() == "scoreboard players add @s dw.death_seen 0")
+        .unwrap_or_else(|| panic!("the corpse-side acknowledgement is seeded: {check}"));
+    let read = check
+        .lines()
+        .position(|l| l.contains("if score @s dw.deaths > @s dw.death_seen"))
+        .expect("the corpse-side edge reads it");
+    assert!(
+        seed < read,
+        "the acknowledgement must EXIST before the edge compares against it, or a \
+         player's first death fires nothing at all: {check}"
+    );
     // The v0.6 half is untouched and still waits for a living player.
     assert!(
         check.contains(
