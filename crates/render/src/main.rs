@@ -17,10 +17,12 @@ use delvewright_render::cache;
 use delvewright_render::cutaway::Cutaway;
 use delvewright_render::detect;
 use delvewright_render::diag::{
-    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
+    DW_BINDING, DW_INPUT, DW_KEY_BINDING, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER,
+    Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
+use delvewright_render::key;
 use delvewright_render::meta::PrefabMeta;
 use delvewright_render::nbt;
 use delvewright_render::panorama::{self, Bearing, PanoramaOptions};
@@ -247,7 +249,7 @@ fn run_piece(nbt_path: &Path, out: &Path, cutaway: Option<&str>, cli: &Cli) -> E
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
     };
-    let (st, plan, binding) = match plan_for(nbt_path, extra.as_ref()) {
+    let piece = match plan_for(nbt_path, extra.as_ref()) {
         Ok(p) => p,
         Err((d, code)) => return fail(d, cli.json, code),
     };
@@ -255,18 +257,43 @@ fn run_piece(nbt_path: &Path, out: &Path, cutaway: Option<&str>, cli: &Cli) -> E
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };
-    match render_piece(nbt_path, out, &st, &plan, &pack, cli.size, cli.json) {
+    let stem = stem_of(nbt_path);
+    if let Some(d) = refuse_unresolved(&stem, &piece.st, &pack) {
+        return fail(d, cli.json, exit::INPUT);
+    }
+    match render_piece(
+        nbt_path,
+        out,
+        &piece.st,
+        &piece.plan,
+        &pack,
+        cli.size,
+        cli.json,
+    ) {
         Ok(()) => {
+            let key_binding = match write_key(&stem, out, &piece, cli.size, cli.json) {
+                Ok(b) => b,
+                Err((d, code)) => return fail(d, cli.json, code),
+            };
             eprintln!(
-                "rendered {} shot(s) for {} -> {} ({binding})",
-                plan.len(),
+                "rendered {} shot(s) + plan key for {} -> {} ({}, {key_binding})",
+                piece.plan.len(),
                 nbt_path.display(),
                 out.display(),
+                piece.binding,
             );
             ExitCode::SUCCESS
         }
         Err((d, code)) => fail(d, cli.json, code),
     }
+}
+
+fn stem_of(nbt_path: &Path) -> String {
+    nbt_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prefab")
+        .to_string()
 }
 
 /// How many of a piece's shots the cutaway actually bound to. A validation
@@ -289,10 +316,7 @@ impl std::fmt::Display for CutawayBinding {
 
 /// Read a prefab and settle its shot plan (plus the `--cutaway` extra), refusing
 /// any shot whose cut would leave nothing to look at. No GPU, no textures.
-fn plan_for(
-    nbt_path: &Path,
-    extra_cutaway: Option<&Cutaway>,
-) -> Result<(nbt::Structure, Vec<shots::PieceShot>, CutawayBinding), (Diagnostic, u8)> {
+fn plan_for(nbt_path: &Path, extra_cutaway: Option<&Cutaway>) -> Result<Piece, (Diagnostic, u8)> {
     let st = nbt::parse_structure(nbt_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
     let meta = PrefabMeta::beside_nbt(nbt_path)
@@ -308,7 +332,52 @@ fn plan_for(
         planned: plan.len(),
         cut: plan.iter().filter(|s| !s.cutaway.is_empty()).count(),
     };
-    Ok((st, plan, binding))
+    Ok(Piece {
+        st,
+        meta,
+        plan,
+        binding,
+    })
+}
+
+/// One piece, settled: its blocks, what its metadata says about it, and the
+/// shots it will be imaged with.
+struct Piece {
+    st: nbt::Structure,
+    meta: Option<PrefabMeta>,
+    plan: Vec<shots::PieceShot>,
+    binding: CutawayBinding,
+}
+
+/// The pack's verdict on every block of a piece, as a diagnostic.
+fn refuse_unresolved(
+    stem: &str,
+    st: &nbt::Structure,
+    pack: &nucleation::meshing::ResourcePackSource,
+) -> Option<Diagnostic> {
+    render::refuse_unresolved(stem, &render::unresolved_blocks(st, render::resolver(pack)))
+}
+
+/// Draw the piece's plan key beside its shots, and report what it bound to.
+fn write_key(
+    stem: &str,
+    out: &Path,
+    piece: &Piece,
+    size: u32,
+    json: bool,
+) -> Result<key::KeyBinding, (Diagnostic, u8)> {
+    let (img, binding) = key::draw(stem, &piece.st, piece.meta.as_ref(), size);
+    let path = out.join(format!("{stem}-key.png"));
+    img.save(&path).map_err(|e| {
+        (
+            Diagnostic::error(DW_OUTPUT, format!("save {}: {e}", path.display())),
+            exit::OUTPUT,
+        )
+    })?;
+    if let Some(d) = binding.diagnose(stem) {
+        d.print(json);
+    }
+    Ok(binding)
 }
 
 /// Render a settled plan for one prefab into `out`.
@@ -390,30 +459,70 @@ fn run_batch(dir: &Path, out: &Path, cutaway: Option<&str>, cli: &Cli) -> ExitCo
     nbts.sort();
     let mut total = 0usize;
     let mut cut = 0usize;
+    let mut anchors_drawn = 0usize;
+    let mut anchors_total = 0usize;
+    let mut keys_binding_nothing: Vec<String> = Vec::new();
     for nbt_path in &nbts {
-        let stem = nbt_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("prefab");
-        let sub = out.join(stem);
-        let (st, plan, binding) = match plan_for(nbt_path, extra.as_ref()) {
+        let stem = stem_of(nbt_path);
+        let sub = out.join(&stem);
+        let piece = match plan_for(nbt_path, extra.as_ref()) {
             Ok(p) => p,
             Err((d, code)) => return fail(d, cli.json, code),
         };
-        match render_piece(nbt_path, &sub, &st, &plan, &pack, cli.size, cli.json) {
+        if let Some(d) = refuse_unresolved(&stem, &piece.st, &pack) {
+            return fail(d, cli.json, exit::INPUT);
+        }
+        match render_piece(
+            nbt_path,
+            &sub,
+            &piece.st,
+            &piece.plan,
+            &pack,
+            cli.size,
+            cli.json,
+        ) {
             Ok(()) => {
-                total += binding.planned;
-                cut += binding.cut;
-                eprintln!("  {stem}: {} shot(s), {binding}", binding.planned);
+                let kb = match write_key(&stem, &sub, &piece, cli.size, cli.json) {
+                    Ok(b) => b,
+                    Err((d, code)) => return fail(d, cli.json, code),
+                };
+                total += piece.binding.planned;
+                cut += piece.binding.cut;
+                anchors_drawn += kb.anchors_drawn;
+                anchors_total += kb.anchors_total;
+                if kb.binds_to_nothing() {
+                    keys_binding_nothing.push(stem.clone());
+                }
+                eprintln!(
+                    "  {stem}: {} shot(s) + key, {}, {kb}",
+                    piece.binding.planned, piece.binding
+                );
             }
             Err((d, code)) => return fail(d, cli.json, code),
         }
     }
+    // The batch's own binding line. A run of pictures that named nothing must
+    // say so once, in the place a reader looks, and not only per piece.
     eprintln!(
-        "batch: {} prefab(s), {total} shot(s) ({cut} with a cutaway) -> {}",
+        "batch: {} prefab(s), {total} shot(s) ({cut} with a cutaway) + {} plan key(s), \
+         {anchors_drawn}/{anchors_total} anchor(s) annotated -> {}",
+        nbts.len(),
         nbts.len(),
         out.display()
     );
+    if !keys_binding_nothing.is_empty() {
+        Diagnostic::warning(
+            DW_KEY_BINDING,
+            format!(
+                "{} of {} piece(s) have a plan key that annotates NOTHING: {}. Those pages show \
+                 a shape and name nothing on it",
+                keys_binding_nothing.len(),
+                nbts.len(),
+                keys_binding_nothing.join(", ")
+            ),
+        )
+        .print(cli.json);
+    }
     ExitCode::SUCCESS
 }
 

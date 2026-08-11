@@ -8,7 +8,10 @@
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
-//! - [`meta`] — prefab metadata (sockets/anchors) for interior shots.
+//! - [`meta`] — prefab metadata (sockets, anchors, the walkable floor, the
+//!   boundary openings) — what a piece's blocks do not say.
+//! - [`key`] — the plan key: the piece's semantics drawn back into the
+//!   reviewer's medium (floor by level, openings, every declared anchor named).
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (free-camera path — the renderer for the first-person player-POV shots).
 //! - [`panorama`] — the whole-map 45° oblique release panorama.
@@ -27,6 +30,7 @@ pub mod diag;
 pub mod fidelity;
 pub mod font;
 pub mod index;
+pub mod key;
 pub mod meta;
 pub mod nbt;
 pub mod panorama;

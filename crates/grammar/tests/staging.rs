@@ -1691,8 +1691,11 @@ fn the_narrate_anchor_recentres_at_different_widths() {
 }
 
 /// Curtain strands in the doorway: the first `y` above the narrate anchor's
-/// floor that carries any `chain` block is the curtain band, and the count
-/// is how many distinct `x` columns carry one there.
+/// floor that carries a curtain block is the curtain band, and the count is how
+/// many distinct `x` columns carry one there. The block id comes from the rule
+/// ([`threshold_motif::CURTAIN_BLOCK`]) rather than being spelled again here —
+/// a gate that named the block itself went on passing when the rule started
+/// placing one the pinned version does not have.
 fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
     let narrate = out.anchors["anchor/threshold-narrate"].pos;
     let y = (narrate[1] + 1..region.maximum()[1])
@@ -1700,7 +1703,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
             (region.origin[0]..region.maximum()[0]).any(|x| {
                 out.model
                     .get([x, y, narrate[2]])
-                    .is_some_and(|b| b.name == "minecraft:chain")
+                    .is_some_and(|b| b.name == threshold_motif::CURTAIN_BLOCK)
             })
         })
         .expect("the doorband has a curtain band somewhere above the floor");
@@ -1708,7 +1711,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
         .filter(|&x| {
             out.model
                 .get([x, y, narrate[2]])
-                .is_some_and(|b| b.name == "minecraft:chain")
+                .is_some_and(|b| b.name == threshold_motif::CURTAIN_BLOCK)
         })
         .count()
 }

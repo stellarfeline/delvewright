@@ -1556,11 +1556,50 @@ jigsaw-socketed prefabs, exactly as the refusal says.
 
 ## 6c. Sweeps — many expansions, one page (spec-0027 §3)
 
-`sweep::run(manifest, dir)` expands one program many ways and writes one
-`<candidate-id>.nbt` per candidate, flat, plus `sweep.json`. Flat because that is
-what `delve-render batch` consumes, so the expander hands the render layer its
-input with no adapter between them. `delve-grammar sweep` is the CLI;
-`tools/zone-sheets.py` runs the whole chain to a finished page.
+`sweep::run(manifest, dir)` expands one program many ways and writes, per
+candidate, `<candidate-id>.nbt` (the blocks) and `<candidate-id>.json` (its
+semantics), flat, plus `sweep.json`. Flat and named that way because it is what
+`delve-render batch` consumes — including the sidecar, which is exactly where the
+render layer already looks for a piece's metadata — so the expander hands the
+render layer both halves with no adapter between them. `delve-grammar sweep` is
+the CLI; `tools/zone-sheets.py` runs the whole chain to a finished page.
+
+### The sidecar — what the program knows, carried to the picture
+
+A massing decision is not made of shape alone. The reviewer's questions are
+*where does the party come in, where does it leave, which cells can be walked on,
+and where is every declared anchor* — and an expansion answers all four before
+anything is drawn. The sidecar
+(`delvewright.snapshot-semantics/1`, `sweep::Semantics`) carries them:
+
+- **`anchors`** — exactly the `mark` declarations of §2b, as `{pos, facing,
+  declared_by}`. Declared, so free and never inferred. `declared_by` is the rule
+  that placed it, which is what turns "a marker at 12,1,40" into "the ambush
+  alcove at 12,1,40" on a page.
+- **`floor`** — the walkable plan: per `(x, z)` column, the `y` of the **lowest**
+  standable cell and how many standable levels that column carries, plus
+  `standable_cells` and `multi_level_columns`. Derived, by `floor::standable` —
+  the same rule `tests/staging.rs` and `tests/support` assert every "the lane is
+  a chain segment" claim with, moved into the library precisely so the picture
+  and the gate cannot disagree. The compiler's `nav.rs` rule is a **different**
+  authority over a different structure (a compiled `World`, which knows water,
+  lethal volumes and multi-column footprints); it is strictly stricter and the
+  divergence is named in `floor`'s module doc rather than left to be discovered.
+- **`openings`** — the standable cells lying on each of the four horizontal
+  boundary faces: every place a body could cross into or out of the box.
+  Derived. `y-min`/`y-max` are deliberately absent — nobody walks out through
+  the ceiling.
+- **`declared_entries` / `declared_exits`** — anchors whose last name segment is
+  one of the engine's reserved way-in/way-out names (`spawn`, `entry`, `exit`).
+
+**Entrance and exit are authored, and today nothing declares them.** `openings`
+is where a body *could* cross; which of those is the door is a design decision,
+and `mark` has no way to say it yet (§7). Measured on the current library: all
+eight zones report `declared_entries: []` and `declared_exits: []`. The sweep
+says so in a `FINDING` line, the plan key prints `entry/exit NOT DECLARED` on the
+page, and nothing anywhere guesses — a fabricated entrance on a curation page is
+a fabricated version of the decision the page exists to ask for. The fix belongs
+in the rule library, not here.
 
 **A candidate is a variation, not a seed.** An expansion has four inputs —
 program, region, parameters, seed — and `sweep::Candidate` can override any of
@@ -1583,6 +1622,16 @@ nothing to decide. `SweepReport::massing_is_uniform` names that condition so eac
 consumer says it out loud rather than re-deriving `== 1`. Both counts come from
 the models, never from the pictures — two renders can differ by a shadow, and two
 identical renders can hide a moved wall behind a roof.
+
+It also reports **what the pictures will be able to annotate**:
+`anchors_declared`, `rows_with_anchors`, `rows_with_entry`, `rows_with_exit`,
+and per row `anchors` / `standable_cells` / `boundary_openings`. Zero anchors
+across a sweep is the same class of finding as one massing —
+`SweepReport::anchors_bind_to_nothing` and `ways_are_undeclared` name both
+conditions — because a page that annotated nothing is indistinguishable from a
+page of buildings with nothing to annotate, and that indistinguishability is
+exactly how anchors went sixteen-per-zone uncomputed-onto-any-picture for as
+long as they did. Nothing ever said *0 anchors drawn*.
 
 ### What "the same building" means
 
@@ -1679,6 +1728,17 @@ it should" finding in CLAUDE.md.
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
 treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
 yet by a rule — each needs its own declaration, not a widened `mark`.
+
+**The way in and the way out are the live cost of that gap**, and it is now
+measured rather than latent: every one of the eight zones expands with
+`declared_entries: []` and `declared_exits: []` (§6c), so the one question a
+curation page is most often asked — *where does the party come in* — is the one
+question no artifact can answer. Every artifact says so instead of guessing
+(`FINDING` on the sweep, `entry/exit NOT DECLARED` on the plan key, a `WAYS`
+column of `0` in `tools/zone-sheets.py`), and what they can offer in its place is
+the derived `openings`: every boundary cell a body *could* cross. Closing it is a
+library change — a rule declares which of its openings is the mouth — and it is
+the same family as the socket convention below, one layer down.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the

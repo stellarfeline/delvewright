@@ -32,6 +32,15 @@ pub const DW_BINDING: &str = "DW0726";
 /// rather than rendered, because an empty picture of a body reads as "there is
 /// nothing here" and not as "you asked for nothing".
 pub const DW_CUTAWAY_EMPTY: &str = "DW0727";
+/// The supplied pack has no blockstate for a block the piece contains, so the
+/// mesher would leave those cells out and the picture would show a building the
+/// `.nbt` does not describe. Refused: a renderer that silently omits blocks
+/// lies to whoever reviews the render.
+pub const DW_UNRESOLVED_BLOCK: &str = "DW0728";
+/// A plan key annotated nothing: the piece's metadata declares no anchor the key
+/// could place. A page that annotated nothing must not read like a page with
+/// nothing to annotate (CLAUDE.md: a gate that binds to nothing is vacuous).
+pub const DW_KEY_BINDING: &str = "DW0729";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real

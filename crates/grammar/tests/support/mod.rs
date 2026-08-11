@@ -7,6 +7,10 @@
 //! generator's idea of a sightline and the compiler's must not drift apart, so
 //! the shape is copied rather than reinvented.
 //!
+//! Standability itself is no longer copied at all: it lives in
+//! [`delvewright_grammar::floor`], because the sweep needs the same rule to say
+//! what the owner's contact sheet draws.
+//!
 //! `tests/staging.rs` carries its own copy of these helpers: it landed first,
 //! and two more vocabulary families are in review against that file right now.
 //! Folding it onto this module is a follow-up that costs nothing to do later and
@@ -28,40 +32,13 @@ pub fn expand_at(program: &Program, region: Box3, seed: u64) -> Expansion {
         .unwrap_or_else(|e| panic!("{}: {e}", program.name))
 }
 
-/// Cells a body and a sightline pass through.
-///
-/// Everything the staging vocabulary places is a full block except air and the
-/// teaching niche's floor skull, which is neither a barrier nor an occluder —
-/// and which sits on the exact cell an anchor names, so a naive "not air means
-/// solid" predicate would report that niche unreachable and invisible. Outside
-/// the region counts as blocking: a ray that has left the model has left the
-/// thing being proved.
-pub fn passable(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    match model.get(pos) {
-        None => false,
-        Some(block) => block.is_air() || block.name.ends_with("_skull"),
-    }
-}
-
-/// A full block: what a floor is made of, and what stops an eye.
-pub fn solid(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    model.get(pos).is_some() && !passable(model, pos)
-}
-
-/// A cell a player can stand in: two blocks of clearance over a full floor.
-pub fn standable(model: &VoxelModel, pos: [i32; 3]) -> bool {
-    let [x, y, z] = pos;
-    passable(model, pos) && passable(model, [x, y + 1, z]) && solid(model, [x, y - 1, z])
-}
-
-/// Every standable cell of the model.
-pub fn standable_cells(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
-    model
-        .region()
-        .positions()
-        .filter(|&p| standable(model, p))
-        .collect()
-}
+// What a body can occupy is the LIBRARY's rule, not this module's: `floor`
+// carries `passable` / `solid` / `standable` / `standable_cells`, and the sweep
+// draws the owner's contact sheet from the same functions these gates assert
+// with. A picture that disagreed with a gate about which cells a player can
+// walk on would be worse than no picture, so there is one definition and both
+// read it.
+pub use delvewright_grammar::floor::{passable, solid, standable, standable_cells};
 
 /// Can a walker get from any cell of `from` to any cell of `to`, moving one cell
 /// horizontally at a time and stepping at most one block up or down?

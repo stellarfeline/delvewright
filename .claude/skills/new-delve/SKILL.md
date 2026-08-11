@@ -656,11 +656,21 @@ have caught gets paid for twice once stages 5–6 are written against it.
   score only ORDERS the page, it never removes a candidate from it.
   For grammar-generated candidates, do not assemble that page by hand:
   `python3 tools/zone-sheets.py --out DIR` runs sweep → render → sheet for every
-  grammar program in one command. **Read its `MASSINGS` column before showing
-  her anything.** It counts how many genuinely different buildings reached the
-  page, measured on the models rather than the pictures; if it is 1, the page is
-  one building drawn N times and putting it in front of her asks her to choose
-  between identical things. Varying only the **seed** usually produces exactly
+  grammar program in one command. It writes **two** pages per program and both
+  go to her: `<program>.png` is the massing page (what shape is it) and
+  `<program>-key.png` is the plan key (the walkable floor, every boundary
+  opening, every declared anchor named with its facing). Hand her the massing
+  page alone and she is being asked to choose a building from a grey solid —
+  which is what she said she could not do. **Read the `MASSINGS`, `ANCHORS` and
+  `WAYS` columns before showing her anything.** `MASSINGS` counts how many
+  genuinely different buildings reached the page, measured on the models rather
+  than the pictures; if it is 1, the page is one building drawn N times and
+  putting it in front of her asks her to choose between identical things.
+  `ANCHORS` of 0 means the key page annotates nothing — report it as a finding
+  about the program (an anchor is declared by a rule's `mark`), never work
+  around it. `WAYS` of 0 means no program says where the party enters or leaves;
+  say so when you hand the page over, because the key marks every boundary cell
+  a body *could* cross and no tool guesses which is the door. Varying only the **seed** usually produces exactly
   that — a box-split grammar chooses by guards on the box, not by the RNG — so
   vary region or parameters, and treat a one-massing sheet as a finding to
   report rather than a gate to hold.
@@ -840,7 +850,9 @@ Symptom → tool:
   the number is not. When the candidates come from a grammar program, build the
   page with `python3 tools/zone-sheets.py --out DIR` rather than by hand, and
   check its `MASSINGS` count first — a page of one repeated building is a
-  finding to report, not a choice to hand her.
+  finding to report, not a choice to hand her. Hand her the **plan-key page**
+  (`<program>-key.png`) alongside the massing page: it names where every anchor
+  is and which cells can be walked on, which a silhouette cannot.
   - **If the choice is about MASSING, point the sheet at a section**, not at the
     silhouette: `--shot plan-mid` (the plan cut at mid height) or `--shot sec-z`.
     The default `ext-se` is the outside of the body, and on a zone carved from

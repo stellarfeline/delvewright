@@ -100,8 +100,23 @@ delve-grammar sweep -o <dir>
     [--save-manifest]                    # write back the manifest that was run
 ```
 
-One `<candidate-id>.nbt` per candidate plus `sweep.json`, flat — which is exactly
-what `delve-render batch` consumes, so the two commands chain with no adapter.
+Per candidate, `<candidate-id>.nbt` (the blocks) and `<candidate-id>.json` (its
+**semantics**), flat, plus `sweep.json` — which is exactly what `delve-render
+batch` consumes, sidecar included, so the two commands chain with no adapter.
+
+**The sidecar is what makes a candidate reviewable.** It carries the anchors the
+rules declared (`{pos, facing, declared_by}`), the derived walkable floor as a
+per-column plan, the derived boundary openings (every cell a body could cross
+at), and `declared_entries`/`declared_exits`. `delve-render` reads it where it
+already reads prefab metadata, so those facts reach the anchor shots and the plan
+key instead of stopping at the `.nbt`. `sweep.json` carries the counts —
+`anchors_declared`, `rows_with_anchors`, `rows_with_entry`, `rows_with_exit`,
+and per row `anchors`/`standable_cells`/`boundary_openings` — so the report alone
+answers "was there anything to annotate". **Zero anchors across a sweep is a
+finding** and is printed as one; so is "no candidate declares an entry or an
+exit", which is the current state of all eight bell zones. Which opening is the
+door is authored and nothing here guesses at it
+([`grammar.md` §6c](grammar.md)).
 
 **Read `distinct_massings` before you read the page.** `sweep.json` states, per
 sweep: candidates asked for, built, refused, distinct **models** (block for
@@ -185,7 +200,7 @@ delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs f
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
                                              # the whole-map 45° oblique release panorama
 delve-render index <build-dir> -o <file>     # image <-> expect pairs for a reviewing agent
-delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
+delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se|key|…]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
 ```
@@ -213,9 +228,44 @@ arithmetic, not a guess (`DW0727` refuses a cut that keeps nothing, exit 2).
 The `piece`/`batch` plan is 4 exteriors (`ext-*`, uncut) + `top` (`y-max:1`) +
 `plan-mid` (`y-max:50%`) + `sec-x` (`x-min:50%`) + `sec-z` (`z-min:50%`), plus one
 `door-<i>` per socket and one `anchor-<name>` per anchor, each cut down to the
-point it aims at. Every run prints its binding — `cutaway bound to N/M shot(s)` —
-because a shot set in which nothing was cut is a set of exterior pictures and must
-not read as an interior review.
+point it aims at — and one **`<stem>-key.png`**, the plan key. Every run prints
+two bindings — `cutaway bound to N/M shot(s)` and `key bound to N/M anchor(s), …`
+— because a shot set in which nothing was cut is a set of exterior pictures and
+must not read as an interior review, and a key that annotated nothing must not
+read as a piece with nothing to annotate.
+
+### The plan key — the piece's semantics, drawn · agent builds it, owner reads it
+
+`<stem>-key.png` is not a render: it is a **diagram**, drawn on the CPU with no
+GPU and no textures, and byte-identical per input (stronger than the shots, which
+are pixel-stable). It answers the questions a grey three-quarter solid cannot:
+
+- the **walkable floor** as a plan, shaded by level, from the piece's metadata —
+  never derived here, so there is one authority on where a body can stand
+  (`delvewright-grammar`'s `floor`, the rule the generator's own gates assert
+  with) and a picture can never disagree with a gate;
+- every **boundary opening** in blue: the cells a body could cross at;
+- every **declared anchor**, numbered on the plan with a facing tick and named
+  underneath with its position, facing and the rule that declared it;
+- a header stating the binding counts, and stating in warning colour whatever
+  nobody supplied — `NO FLOOR SUPPLIED`, `entry/exit NOT DECLARED`, `0 ANCHORS
+  DRAWN`.
+
+**It never nominates an entrance.** Which opening is the door is authored; a key
+that guessed would be inventing the decision the curation page exists to ask for.
+`DW0729` (warning) is the zero-anchor finding; a piece with no metadata at all
+still gets a key, drawn as a footprint and saying so.
+
+Put it on a page with `contact-sheet --shot key` — `tools/zone-sheets.py` builds
+that page for every program automatically, beside the massing page.
+
+**A block the pack cannot draw is a refusal, not a warning** (`DW0728`, exit 2).
+The mesher's own answer to an unresolvable block is to drop it and print one line
+per occurrence, so the frame shows a building the `.nbt` does not describe.
+Resolution is now decided over the palette before any GPU work, naming each block
+and its cell count. Measured: 1.21.11 renamed the plain chain to
+`minecraft:iron_chain`, and `minecraft:chain` silently emptied 127 cells across
+three of the eight zone sheets.
 
 `--cutaway SPEC` adds ONE more shot, named `cut`, with that cut; its camera stands
 on the side the material came off, framed by the same derivation the planned
@@ -402,7 +452,7 @@ Never shipped inside a delve.
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
 | `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
-| `tools/zone-sheets.py` | agent (the contact-sheet step of spec-0027 §3) | `python3 tools/zone-sheets.py --out DIR [--program ID …] [--seeds 1,2,3] [--manifest-dir D] [--scores-dir D] [--thumb N] [--size N] [--shot NAME] [--require-choice]` — runs the whole curation chain in one command: `delve-grammar sweep` → `delve-render batch` → `delve-render contact-sheet`, once per program, defaulting to every program `delve-grammar list` knows. Writes one sheet per program plus `sheets.json` indexing every sweep report. **The summary column to read is `MASSINGS`**, not `built`: it is how many genuinely different buildings reached the page, measured on the models rather than the pictures. A program whose sheet has one distinct massing is flagged `<-- ONE BUILDING, NO CHOICE` and named again in a closing FINDING block, because such a page is evidence about the sweep rather than a decision for the owner; `--require-choice` turns that into a non-zero exit so a curation gate cannot be passed by a page that offers none. Every **refused** candidate also gets one stderr line naming the guard clause that decided it, with both sides and the distance — read back out of each `sweep.json`'s structured `refusal` (§2a), not re-derived from prose, so the digest says *which* clause refused rather than only how many did. Needs the GPU + client jar that `delve-render batch` needs. Output is working material — write it outside the repo. |
+| `tools/zone-sheets.py` | agent (the contact-sheet step of spec-0027 §3) | `python3 tools/zone-sheets.py --out DIR [--program ID …] [--seeds 1,2,3] [--manifest-dir D] [--scores-dir D] [--thumb N] [--size N] [--shot NAME] [--require-choice]` — runs the whole curation chain in one command: `delve-grammar sweep` → `delve-render batch` → `delve-render contact-sheet`, once per program, defaulting to every program `delve-grammar list` knows. Writes **two** pages per program plus `sheets.json` indexing every sweep report: `<program>.png`, the massing page (one three-quarter render per candidate — what shape is it), and `<program>-key.png`, the plan-key page (the same candidates in the same order, each drawn as a plan with its walkable floor, its boundary openings and every declared anchor named). The key page is never score-ranked: a similarity score measures a render against concept art and has nothing to say about a diagram. **The summary column to read is `MASSINGS`**, not `built`: it is how many genuinely different buildings reached the page, measured on the models rather than the pictures. A program whose sheet has one distinct massing is flagged `<-- ONE BUILDING, NO CHOICE` and named again in a closing FINDING block, because such a page is evidence about the sweep rather than a decision for the owner; `--require-choice` turns that into a non-zero exit so a curation gate cannot be passed by a page that offers none. Two more columns state what the key page could annotate: `ANCHORS` (anchors declared across the sweep — `0` is flagged `<-- NOTHING ANNOTATED` and named in a FINDING block) and `WAYS` (candidates declaring an entry or an exit — `0` on all eight bell zones today, also a FINDING). Neither gates: an unannotated page is a finding about the *programs*, and the repair is a rule declaring a `mark`, never a tool guessing. Every **refused** candidate also gets one stderr line naming the guard clause that decided it, with both sides and the distance — read back out of each `sweep.json`'s structured `refusal` (§2a), not re-derived from prose, so the digest says *which* clause refused rather than only how many did. Needs the GPU + client jar that `delve-render batch` needs. Output is working material — write it outside the repo. |
 | `tools/derive-client-langs.py` | human | `python3 tools/derive-client-langs.py [--version V] [--rust]` — re-derives `dsl::mclang::CLIENT_LANGS` (the language files the **pinned** client loads) from Mojang's version manifest → version metadata → asset index, printing the sha1 of every document it read so the derivation is auditable. Run it when ADR-0009's Minecraft pin moves, diff the printed table into `crates/dsl/src/mclang.rs`, `cargo fmt`. Never run by CI or by a build — the compiler must not reach the network (ADR-0006) |
 | `tools/skin/` (`delve_skin`) | agent | `python -m delve_skin all <cast.json> --skins-dir D --catalog-dir D --preview-dir D [--id ID] [--scale N]`, or the `build` / `preview` / `catalog` stages individually. Needs its own venv (`pip install -r tools/skin/requirements.txt`); see [`../../tools/skin/README.md`](../../tools/skin/README.md) |
 | `tools/build-every-campaign.py` | CI + agent (run it before proposing any engine change that touches emission, layout or validation) | `python3 tools/build-every-campaign.py --delvec <binary> [--content <checkout>]` — builds **every campaign** the pinned content repo carries, in **every language its `world.json` declares**, and reds if one stops building. Closes the gap that let PR #260 reach 10/10 green while stopping the flagship released campaign `nobodys-cave-island` from building at all (26 × `DW0364`): every other gate builds a FIXTURE, and a fixture exercises one verb, where a campaign is the only place the verbs meet a real prefab library, a real layout solve and a real translation sidecar. Campaigns are **discovered** (any dir under `<content>/campaigns/` with a `world.json`), never listed, so the next content re-pin gates a new campaign with nobody remembering. `--delvec` is required and never inferred — the gate's whole subject is *which engine* built the campaign. A campaign that cannot build today goes in `.github/campaign-build-exclusions.toml`, which **inverts** the assertion rather than removing it: still built, must still fail, and must fail with **exactly** the recorded `expect_codes` — an extra code is a new break that was hiding behind the exclusion, and a SUCCESS is an expired exclusion, both red. Currently one entry: `hollow-vigil`, `DW0331` (task #34). States its binding count every run (discovered / built green / known-red, each named); discovering zero campaigns, building zero campaigns, or an exclusion naming a campaign that no longer exists are each a red. Runs in CI as `campaign builds (every campaign in the content repo)`, on every push |
