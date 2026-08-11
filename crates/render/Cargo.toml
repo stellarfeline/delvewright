@@ -1,3 +1,23 @@
+# Its OWN workspace, excluded from the repo root's (see the note beside
+# `exclude` in /Cargo.toml). This crate is the only one in the repo with a git
+# dependency, a git dependency is cloned during RESOLUTION rather than during the
+# build of whatever uses it, and a workspace resolves all of its members — so as a
+# member of the root workspace this crate's 227 MB Nucleation clone was a
+# precondition for every `cargo` command in the repo, including the `cargo run -p
+# delvec` steps of four required CI jobs that never build it. It is quarantined
+# here so that reach belongs to the one crate that needs it.
+#
+# Nothing about the crate's own build changes: `cargo … --manifest-path
+# crates/render/Cargo.toml` fmt/clippy/tests it exactly as `--workspace` did, and
+# the `rust` CI job runs all three.
+[workspace]
+
+# The root workspace's rationale for this profile applies verbatim (see
+# /Cargo.toml): a separate workspace does not inherit it, and an `opt-level = 0`
+# `delve-render` reads as a hang rather than as a wrong profile.
+[profile.dev]
+opt-level = 1
+
 [package]
 name = "delvewright-render"
 version = "0.0.0"

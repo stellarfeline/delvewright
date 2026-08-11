@@ -6,9 +6,35 @@ members = [
     "crates/compiler",
     "crates/orchestrator",
     "crates/schem",
-    "crates/render",
     "crates/admit",
 ]
+
+# `crates/render` is its own workspace (it carries a `[workspace]` table of its
+# own), and this line is what keeps it out of THIS one's resolution.
+#
+# A git dependency is loaded during RESOLUTION of the workspace that declares it,
+# not during the build of the crate that uses it: cargo must read the manifest at
+# the pinned rev to validate `Cargo.lock`, so it clones before it decides what to
+# compile. `delvewright-render` pins Nucleation by git rev (`versions.toml
+# [render]`, and no crates.io release carries the `rendering` feature). Inside
+# this workspace that made EVERY cargo command in the repo — `cargo run -p delvec`
+# included, which never builds render — clone 227 MB from two repositories it does
+# not use, before doing anything. That put five required status checks behind a
+# network reach they have no use for, and a transient TLS failure on that reach
+# reddened `tier 2` on a docs-only PR (#388: `the SSL certificate is invalid;
+# class=Ssl (16)`), a shape this repo already refuses at two other sites (the
+# `docs` job's `lychee --offline`; task #41's single Mojang fetch).
+#
+# Scope is the only lever that works here, and this is measured rather than
+# assumed: a workspace resolves ALL its members, so neither `-p delvec` nor
+# `--locked` narrows it, and marking the dependency `optional` does not either —
+# an optional dependency is still resolved, so cargo still clones it. Excluding
+# the crate is what removes the reach; `tools/check-workspace-git-deps.py` is what
+# keeps it removed.
+#
+# The render crate keeps full fmt/clippy/test coverage — the `rust` job runs them
+# against `crates/render/Cargo.toml` behind one explicitly named fetch step.
+exclude = ["crates/render"]
 
 # An unoptimized `delvec` is unusable on a real campaign, and nothing used to say
 # so: `cargo build` hands you `target/debug/delvec`, and on `nobodys-cave-island`

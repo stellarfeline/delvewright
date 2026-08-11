@@ -991,7 +991,8 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
    from the DSL). Render the per-prefab sets with Nucleation and read them against
    each shot's `expect`:
-   - `cargo run -q -p delvewright-render --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
+   - `cargo run -q --manifest-path crates/render/Cargo.toml --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
+     (`--manifest-path`, not `-p`: the render crate is its own cargo workspace)
      (needs the 1.21.11 client jar via `--textures`/`$DELVEWRIGHT_CLIENT_JAR`;
      skip with a note if unavailable locally).
    - `delve-render fidelity-gate` must exit 0 before trusting any render.
