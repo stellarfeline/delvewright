@@ -149,6 +149,28 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   each ride on the pinned toolserver, and no template exercises the sequence's
   own timeline, because the engine generates templates per verb and has none for
   a `sequence`.
+- **The generated `campaign` template does not meet the batch model's own "own
+  init" rule, and the first red was a batch-order coin flip.** Found on CI by the
+  lift fixture (`lift:campaign`: *Expected #party dw.campaign to match 1, but got
+  0 on tick 0*) after the same tree had gone green locally — byte-identical
+  packs, verdict decided by order, which is the `v06_spawn_idempotent` class of
+  §"PackTest batch model" arriving from a new direction. The template resets
+  `dw.campaign` and the FIRST quest's `dw.qa_<q>` and then re-drives
+  `complete_o_<obj>`; the chain it drives is latched by `dw.q_<q>`, which
+  `check_q_<q>` reads as `unless score #party dw.q_<q> matches 1` and which the
+  template never clears. So any campaign whose quests can advance by a route
+  other than this template — a sibling test, or the ordinary world tick — makes
+  the replay a no-op and the assert fail. The lift fixture reached it because
+  `join_place` teleports every joining player onto the spawn cell and its whole
+  critical path sat in a box around that cell, so the tick finished the delve
+  unaided. **Two defects, one fixed:** the fixture now gates its finale on a flag
+  only a ride sets (`v10_lift::the_finale_cannot_be_completed_by_standing_still`,
+  measured red→green by deleting the `requires_flags`), while the template's own
+  init gap is open and belongs to its own round — the fix is clearing `dw.o_*` /
+  `dw.q_*` for the quests it re-drives, in `emit.rs`, which moves
+  `packtest-datapack/` bytes for every campaign. Reading: a **green** PackTest
+  run cannot prove order-independence; only a statement about the emission can,
+  which is why the fixture's guarantee is a Rust test and not a suite run.
 
 ---
 

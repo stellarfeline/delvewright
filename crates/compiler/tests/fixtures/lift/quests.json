@@ -21,11 +21,21 @@
       {
         "id": "trigger/call-lower",
         "at": "spawn",
-        "on": { "on": "use" },
+        "on": {
+          "on": "use"
+        },
         "once": false,
         "requires_state": [
-          { "state": "state/car-at-floor", "op": "not-equals", "value": 1 },
-          { "state": "state/ride-in-progress", "op": "equals", "value": 0 }
+          {
+            "state": "state/car-at-floor",
+            "op": "not-equals",
+            "value": 1
+          },
+          {
+            "state": "state/ride-in-progress",
+            "op": "equals",
+            "value": 0
+          }
         ],
         "effects": [
           {
@@ -34,13 +44,24 @@
               {
                 "at_ticks": 0,
                 "effects": [
-                  { "type": "set-state", "state": "state/ride-in-progress", "value": 1 },
+                  {
+                    "type": "set-state",
+                    "state": "state/ride-in-progress",
+                    "value": 1
+                  },
                   {
                     "type": "give-effect",
                     "effect": "minecraft:blindness",
                     "seconds": 1,
                     "hide_particles": true,
-                    "in": { "anchor": "anchor/exit", "extent": [1, 1, 1] }
+                    "in": {
+                      "anchor": "anchor/exit",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    }
                   }
                 ]
               },
@@ -49,7 +70,14 @@
                 "effects": [
                   {
                     "type": "fill-region",
-                    "region": { "anchor": "anchor/keeper-stand", "extent": [1, 0, 1] },
+                    "region": {
+                      "anchor": "anchor/keeper-stand",
+                      "extent": [
+                        1,
+                        0,
+                        1
+                      ]
+                    },
                     "block": "minecraft:polished_andesite_slab[type=bottom]"
                   }
                 ]
@@ -59,7 +87,14 @@
                 "effects": [
                   {
                     "type": "teleport",
-                    "from": { "anchor": "anchor/exit", "extent": [1, 1, 1] },
+                    "from": {
+                      "anchor": "anchor/exit",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    },
                     "to": "anchor/keeper-stand"
                   }
                 ]
@@ -69,15 +104,34 @@
                 "effects": [
                   {
                     "type": "clear-region",
-                    "region": { "anchor": "anchor/exit", "extent": [1, 0, 1] }
+                    "region": {
+                      "anchor": "anchor/exit",
+                      "extent": [
+                        1,
+                        0,
+                        1
+                      ]
+                    }
                   }
                 ]
               },
               {
                 "at_ticks": 4,
                 "effects": [
-                  { "type": "set-state", "state": "state/car-at-floor", "value": 1 },
-                  { "type": "set-state", "state": "state/ride-in-progress", "value": 0 }
+                  {
+                    "type": "set-state",
+                    "state": "state/car-at-floor",
+                    "value": 1
+                  },
+                  {
+                    "type": "set-state",
+                    "state": "state/ride-in-progress",
+                    "value": 0
+                  },
+                  {
+                    "type": "set-flag",
+                    "flag": "flag/rode"
+                  }
                 ]
               }
             ]
@@ -87,11 +141,21 @@
       {
         "id": "trigger/call-upper",
         "at": "anchor/door",
-        "on": { "on": "use" },
+        "on": {
+          "on": "use"
+        },
         "once": false,
         "requires_state": [
-          { "state": "state/car-at-floor", "op": "not-equals", "value": 2 },
-          { "state": "state/ride-in-progress", "op": "equals", "value": 0 }
+          {
+            "state": "state/car-at-floor",
+            "op": "not-equals",
+            "value": 2
+          },
+          {
+            "state": "state/ride-in-progress",
+            "op": "equals",
+            "value": 0
+          }
         ],
         "effects": [
           {
@@ -100,13 +164,24 @@
               {
                 "at_ticks": 0,
                 "effects": [
-                  { "type": "set-state", "state": "state/ride-in-progress", "value": 1 },
+                  {
+                    "type": "set-state",
+                    "state": "state/ride-in-progress",
+                    "value": 1
+                  },
                   {
                     "type": "give-effect",
                     "effect": "minecraft:blindness",
                     "seconds": 1,
                     "hide_particles": true,
-                    "in": { "anchor": "anchor/keeper-stand", "extent": [1, 1, 1] }
+                    "in": {
+                      "anchor": "anchor/keeper-stand",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    }
                   }
                 ]
               },
@@ -115,7 +190,14 @@
                 "effects": [
                   {
                     "type": "fill-region",
-                    "region": { "anchor": "anchor/exit", "extent": [1, 0, 1] },
+                    "region": {
+                      "anchor": "anchor/exit",
+                      "extent": [
+                        1,
+                        0,
+                        1
+                      ]
+                    },
                     "block": "minecraft:polished_andesite_slab[type=bottom]"
                   }
                 ]
@@ -125,7 +207,14 @@
                 "effects": [
                   {
                     "type": "teleport",
-                    "from": { "anchor": "anchor/keeper-stand", "extent": [1, 1, 1] },
+                    "from": {
+                      "anchor": "anchor/keeper-stand",
+                      "extent": [
+                        1,
+                        1,
+                        1
+                      ]
+                    },
                     "to": "anchor/exit"
                   }
                 ]
@@ -135,15 +224,34 @@
                 "effects": [
                   {
                     "type": "clear-region",
-                    "region": { "anchor": "anchor/keeper-stand", "extent": [1, 0, 1] }
+                    "region": {
+                      "anchor": "anchor/keeper-stand",
+                      "extent": [
+                        1,
+                        0,
+                        1
+                      ]
+                    }
                   }
                 ]
               },
               {
                 "at_ticks": 4,
                 "effects": [
-                  { "type": "set-state", "state": "state/car-at-floor", "value": 2 },
-                  { "type": "set-state", "state": "state/ride-in-progress", "value": 0 }
+                  {
+                    "type": "set-state",
+                    "state": "state/car-at-floor",
+                    "value": 2
+                  },
+                  {
+                    "type": "set-state",
+                    "state": "state/ride-in-progress",
+                    "value": 0
+                  },
+                  {
+                    "type": "set-flag",
+                    "flag": "flag/rode"
+                  }
                 ]
               }
             ]
@@ -154,7 +262,9 @@
     "quests": [
       {
         "id": "quest/board",
-        "trigger": { "type": "campaign-start" },
+        "trigger": {
+          "type": "campaign-start"
+        },
         "happening": {
           "verb": "arrives",
           "text": "The party comes up the stair and finds the hoist chain still moving.",
@@ -174,12 +284,18 @@
           }
         ],
         "on_complete": [
-          { "type": "narrate", "text": "A lever hangs at each landing. Either one calls the cage." }
+          {
+            "type": "narrate",
+            "text": "A lever hangs at each landing. Either one calls the cage."
+          }
         ]
       },
       {
         "id": "quest/ride",
-        "trigger": { "type": "quest-complete", "quest": "quest/board" },
+        "trigger": {
+          "type": "quest-complete",
+          "quest": "quest/board"
+        },
         "happening": {
           "verb": "departs",
           "text": "The cage takes them across and brings them back.",
@@ -193,9 +309,12 @@
             "radius": 2,
             "happening": {
               "verb": "arrives",
-              "text": "They step off at the landing they started from.",
+              "text": "They step off at the landing they started from, having ridden.",
               "subject": "anchor/exit"
-            }
+            },
+            "requires_flags": [
+              "flag/rode"
+            ]
           }
         ],
         "on_complete": [

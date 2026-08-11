@@ -41,6 +41,46 @@
 //! 3. [`the_car_always_exists_invariant_is_unenforced`] — "create before clear,
 //!    never the reverse". The fixture obeys it; nothing checks it, and a campaign
 //!    that clears its only car before filling the next one compiles green.
+//!
+//! ## A fourth finding, paid for on a real server
+//!
+//! The first draft of this fixture put BOTH critical-path objectives on `spawn`
+//! — hello-room has four anchors, two are car stations whose cells a
+//! `fill-region` makes solid (so `DW0314` forbids routing through them) and one
+//! is the upper call lever, which left exactly one. `join_place` teleports every
+//! joining player onto the spawn cell, and both objectives' completion boxes
+//! contain it, so **the world tick completed the whole campaign with no player
+//! doing anything** — for every dummy of every sibling PackTest test.
+//!
+//! The generated `campaign` template then reds, and the reason is worth keeping:
+//! it re-drives `complete_o_<obj>` after resetting only `dw.campaign` and the
+//! first quest's `dw.qa_<q>`, while the chain it drives is latched by
+//! `dw.q_<q>` (`check_q_<q>` carries `unless score #party dw.q_<q> matches 1`).
+//! Once the tick has set those, the replay is a no-op and the assert fails **on
+//! tick 0** — which is what CI reported, and which a local run can equally well
+//! *pass*, because whether `campaign` executes before any dummy has been placed
+//! and ticked is batch order the compiler does not control. Byte-identical
+//! packs, pass/fail decided by order: the `v06_spawn_idempotent` class named in
+//! `docs/reference/compiler.md` §"PackTest batch model", arriving from a new
+//! direction.
+//!
+//! Two things are wrong there and only one is fixed here.
+//!
+//! * **The fixture was wrong**, and is fixed: a delve that finishes itself while
+//!   the party stands still is not a lift proof. The finale objective is now
+//!   gated on `flag/rode`, which only a ride sets, so the tick cannot reach it.
+//!   [`the_finale_cannot_be_completed_by_standing_still`] is what holds that,
+//!   and it is a statement about the EMISSION rather than about one server run —
+//!   a green suite cannot prove order-independence, it can only fail to disprove
+//!   it.
+//! * **The generated `campaign` template is also wrong**, generally, and is NOT
+//!   fixed here: it does not meet the batch model's own "own init" rule, because
+//!   the scores its drive depends on are not the scores it initializes. Any
+//!   campaign whose quests can advance by any other route makes it a coin flip.
+//!   The fix is one line in its preamble (clear `dw.o_*` / `dw.q_*` for the
+//!   quests it re-drives) and it belongs to its own round: it is an `emit.rs`
+//!   change that moves `packtest-datapack/` bytes for every campaign, and this
+//!   PR's whole claim is that it changes no engine source at all.
 
 mod common;
 
@@ -456,6 +496,74 @@ fn the_lift_binds_the_teleport_ledger() {
         gate["affordances_examined"].as_u64().unwrap() >= 2,
         "the two call levers are affordances and must have been examined: {gate}"
     );
+}
+
+/// **The finale is not reachable by standing still** — the fix for the fourth
+/// finding, asserted on the emission rather than on a server run.
+///
+/// The hazard is concrete: `join_place` teleports every joining player onto the
+/// spawn cell, and a `reach-anchor` objective completes from a box around its
+/// anchor on the ordinary world tick. With the whole critical path on `spawn`,
+/// the campaign finished itself for every PackTest dummy in the batch, and the
+/// generated `campaign` template — which re-drives the chain but never clears
+/// the `dw.q_<q>` latch `check_q_<q>` reads — then asserted against a campaign
+/// that had already run. It passed or failed by batch order.
+///
+/// So the finale carries a flag no idle world can set. Three things make that
+/// real, and all three are read off the emitted functions:
+/// 1. the tick's completion line for the finale objective is guarded by the flag;
+/// 2. nothing in `tick` writes that flag; and
+/// 3. the only writers are the ride sequences' last step — i.e. the flag costs a
+///    right-click on a lever, which no dummy performs.
+#[test]
+fn the_finale_cannot_be_completed_by_standing_still() {
+    let out = build("standing-still");
+    let tick = func(&out, "tick");
+
+    let line = tick
+        .lines()
+        .find(|l| l.contains(&format!("run function {NS}:complete_o_return")))
+        .unwrap_or_else(|| panic!("no finale completion line on the tick:\n{tick}"));
+    assert!(
+        line.contains("if score #party dw.f_rode matches 1"),
+        "the finale must cost a ride: `join_place` puts every joining player on the spawn \
+         cell, and an unguarded `reach-anchor` there completes on the ordinary tick with \
+         nobody doing anything — which finishes the delve, and makes the generated \
+         `campaign` template a batch-order coin flip. Emitted: {line}"
+    );
+    assert!(
+        !tick.contains("dw.f_rode 1"),
+        "…and the tick itself must not be able to set it:\n{tick}"
+    );
+
+    // Bound, not assumed: the flag really is written, and only where a player's
+    // right-click can reach.
+    let writers: Vec<String> = out
+        .keys()
+        .filter(|p| p.starts_with(&format!("datapack/data/{NS}/function/")))
+        .filter(|p| {
+            String::from_utf8_lossy(&out[*p]).contains("scoreboard players set #party dw.f_rode 1")
+        })
+        .map(|p| {
+            p.rsplit('/')
+                .next()
+                .unwrap()
+                .trim_end_matches(".mcfunction")
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        writers.len(),
+        2,
+        "exactly one writer per ride — a flag nothing writes would make the finale \
+         unreachable, which is the opposite failure: {writers:?}"
+    );
+    for w in &writers {
+        assert!(
+            w.starts_with("seq_") && w.ends_with("_4"),
+            "the flag must be set by the ride's last step and nowhere else: {writers:?}"
+        );
+    }
 }
 
 // ------------------------------------------------- what is NOT expressible --

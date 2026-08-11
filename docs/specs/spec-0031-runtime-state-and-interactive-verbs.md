@@ -327,6 +327,38 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    timeline is **debt**: the engine generates templates per verb and has none for
    a `sequence`. The bot tier is debt too, and for the reason spec-0032 records
    for the stake — no bot run exists for a fixture campaign.
+
+   **A fourth finding, from the first CI run of that pass.** `lift:campaign`
+   failed on CI — *Expected #party dw.campaign to match 1, but got 0 on tick 0* —
+   over a tree that had gone green locally. Root cause, read off the emission and
+   not re-run: the generated `campaign` template resets `dw.campaign` and the
+   first quest's `dw.qa_<q>`, then re-drives `complete_o_<obj>`; the chain is
+   latched by `dw.q_<q>` (`check_q_<q>` reads `unless score #party dw.q_<q>
+   matches 1`), which the template never clears. The draft fixture put both
+   critical-path objectives on `spawn` — hello-room has four anchors, two are car
+   stations whose cells a `fill-region` makes solid (`DW0314` forbids routing
+   through them) and one is the upper call lever — and `join_place` teleports
+   every joining player onto that cell, so the world tick completed the campaign
+   with nobody doing anything and the template's replay was a no-op. Whether it
+   red depended on batch order, which the compiler does not control:
+   byte-identical packs, verdict by ordering — the `v06_spawn_idempotent` class
+   from a new direction.
+
+   Two defects, one fixed here. The **fixture** was wrong — a delve that finishes
+   itself while the party stands still is not a lift proof — and its finale is
+   now gated on a flag only a ride sets, held by
+   `v10_lift::the_finale_cannot_be_completed_by_standing_still` (measured
+   red→green by deleting the `requires_flags`). The **generated template** is
+   also wrong, generally: it does not meet the batch model's own "own init" rule,
+   because the scores its drive depends on are not the scores it initializes.
+   That is an open finding for its own round — the fix is clearing `dw.o_*` /
+   `dw.q_*` for the quests it re-drives, which moves `packtest-datapack/` bytes
+   for every campaign and cannot ride a PR whose whole claim is that it changes
+   no engine source.
+
+   The reusable half: **a green PackTest suite cannot prove order-independence.**
+   It can only fail to disprove it. Anything that must hold whatever the batch
+   order is has to be asserted about the emission.
 10. Every gate above states its binding count, and a zero binding is a failure.
 
 ## Settled by live measurement (#349, pinned 1.21.11)
