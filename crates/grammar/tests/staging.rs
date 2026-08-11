@@ -28,6 +28,7 @@ use delvewright_grammar::library::causeway::MIN_GATE_RISE;
 use delvewright_grammar::library::disarm_stand::{self, disarm_stand};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::hearth_ward::{self, hearth_ward};
+use delvewright_grammar::library::lift_shaft::{self, lift_shaft};
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
 use delvewright_grammar::library::stair_flight::{self, stair_flight};
 use delvewright_grammar::library::tee_passage::{self, tee_passage};
@@ -122,6 +123,17 @@ const DUCT_TEETH_REGION: Box3 = Box3::at_origin([6, 5, 8]);
 /// remaining run, so a fixture whose `Y` ran out first would put the break
 /// nowhere. Eight treads, seven blocks of rise; the gates pin both.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The lift shaft fixture: five across (mass, a three-wide lane, mass), sixteen
+/// tall — a six-cell sill and two whole five-cell storeys — and seven deep, so
+/// the frame turns the landing face onto the long axis the way a zone hands it.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
+/// The same shaft with a **one-block** drop under its lowest station: the
+/// calibration control for the one-way gate, the same short-drop pairing
+/// `drop_shaft` uses for `rescue_ladder`.
+const LIFT_SHALLOW_REGION: Box3 = Box3::at_origin([5, 12, 7]);
+/// Neither the shaft nor the flight draws from the seed; it is stated, not
+/// chosen.
+const LIFT_SEED: u64 = 1;
 /// `stair_flight` draws nothing from the seed; it is stated, not chosen.
 const FLIGHT_SEED: u64 = 1;
 
@@ -3178,6 +3190,19 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [stair_flight::MIN_WIDTH as u32, 7, 12],
         &[[2, 7, 12], [3, 6, 12], [3, 7, 11]],
     );
+    // lift_shaft: lane + 2 across and the same deep (mass, the lane, mass — and
+    // on the deep axis the landing face takes the last of it), sill + storey
+    // tall, since a shaft with no whole storey in it has no station.
+    check(
+        "lift_shaft",
+        &lift_shaft(),
+        [
+            lift_shaft::MIN_LANE as u32 + 2,
+            11,
+            lift_shaft::MIN_LANE as u32 + 2,
+        ],
+        &[[4, 11, 5], [5, 10, 5], [5, 11, 4]],
+    );
     // elite_ground: both horizontal extents >= diameter + 2*flank_margin + 2
     // (the wider of the rule's two checks — see the module note), head + 2
     // tall — at `radius`'s enforced floor of 4 (a 9×9 circle) and the default
@@ -3221,6 +3246,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (lift_shaft(), LIFT_REGION),
         (hearth_ward(), HEARTH_REGION),
         (bait_stand(), BAIT_REGION),
         (disarm_stand(), DISARM_REGION),
@@ -3773,5 +3799,266 @@ fn a_head_too_narrow_for_a_stand_is_refused() {
         &program,
         Box3::at_origin([disarm_stand::MIN_WIDTH as u32, 7, 16]),
         DISARM_SEED,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// L/4 — the lift shaft
+// ---------------------------------------------------------------------------
+//
+// The lift itself is campaign JSON (spec-0031): runtime state, region
+// fill/clear and teleport-by-region, nothing moving. So every gate here is
+// about the two things a prefab still owes it — cells the ride can *name*, and
+// a hole that behaves like a hole. The one-way pair is read with the same
+// `standable` predicate and the same two walks `drop_shaft` and `stair_flight`
+// are gated on, for the reason that section states: one model of "can a body
+// get there", not three.
+
+/// Every air cell on the outer surface of a box — i.e. every way in or out of
+/// the shell, counted rather than eyeballed.
+fn shell_openings(model: &VoxelModel) -> Vec<[i32; 3]> {
+    let region = model.region();
+    let (sx, sy, sz) = (
+        region.size[0] as i32,
+        region.size[1] as i32,
+        region.size[2] as i32,
+    );
+    let mut found = Vec::new();
+    for y in 0..sy {
+        for x in 0..sx {
+            for z in 0..sz {
+                let on_shell = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let cell = [
+                    region.origin[0] + x,
+                    region.origin[1] + y,
+                    region.origin[2] + z,
+                ];
+                if on_shell && passable(model, cell) {
+                    found.push(cell);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The landing cells: every standable cell that is not on the shaft floor, i.e.
+/// the doorway sills a body steps through.
+fn landings(model: &VoxelModel, floor_top: i32) -> BTreeSet<[i32; 3]> {
+    standable_cells(model)
+        .into_iter()
+        .filter(|c| c[1] > floor_top)
+        .collect()
+}
+
+#[test]
+fn a_lift_shaft_expands_deterministically() {
+    let program = lift_shaft();
+    let a = expand_at(&program, LIFT_REGION, LIFT_SEED);
+    let b = expand_at(&program, LIFT_REGION, LIFT_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/lift-pit"));
+    assert_eq!(
+        (
+            indexed(&a.anchors, "lift-station").len(),
+            indexed(&a.anchors, "lift-call").len()
+        ),
+        (2, 2),
+        "the fixture's two storeys are the binding count every gate below reads"
+    );
+}
+
+/// **The contract the shipped lift reads, asserted on the geometry.**
+///
+/// `crates/compiler/tests/fixtures/lift` builds its car with `fill-region
+/// {anchor, extent [1,0,1]}` — a box *centred* on the station with unsigned
+/// half-extents, so 3×3 at the station's own level — clears the same box at the
+/// floor it leaves, and teleports its riders to the anchor itself. Three things
+/// have to be true of the prefab for that to be a lift rather than a hole
+/// punched through a wall, and none of them is visible to the compiler:
+///
+/// 1. every cell of the car's 3×3 footprint is air, so the fill writes the deck
+///    and not through the shaft wall;
+/// 2. the station is *not* standable — a station a body can stand on is a floor,
+///    and the whole point is that the deck arrives;
+/// 3. the call control's cell is outside that footprint and solid, or the first
+///    `fill-region` of a ride buries the lever that started it.
+///
+/// Binding: 2 stations × 9 footprint cells = 18, and 2 call cells.
+#[test]
+fn every_station_can_hold_the_car_the_campaign_fills() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let model = &out.model;
+    let stations = indexed(&out.anchors, "lift-station");
+    let calls = indexed(&out.anchors, "lift-call");
+    assert_eq!((stations.len(), calls.len()), (2, 2));
+
+    let mut footprint = 0;
+    for (station, call) in stations.iter().zip(&calls) {
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let cell = [station[0] + dx, station[1], station[2] + dz];
+                assert!(
+                    passable(model, cell),
+                    "the car's own footprint cell {cell:?} is solid, so a runtime \
+                     `fill-region` at {station:?} writes through the shaft"
+                );
+                footprint += 1;
+            }
+        }
+        assert!(
+            !standable(model, *station),
+            "{station:?} is standable — a station with a floor under it is not a \
+             shaft, it is a alcove, and the car has nothing to arrive as"
+        );
+        assert!(
+            solid(model, *call),
+            "the call control at {call:?} has no block to sit on"
+        );
+        let inside = (call[0] - station[0]).abs() <= 1 && (call[2] - station[2]).abs() <= 1;
+        assert!(
+            !inside,
+            "the call control at {call:?} is inside the car's footprint at \
+             {station:?} — the first ride would bury it"
+        );
+        assert_eq!(
+            call[1], station[1],
+            "the call control is not on its own storey's landing level"
+        );
+    }
+    assert_eq!(footprint, 18, "the gate examined {footprint} car cells");
+}
+
+/// **One opening per storey, and nothing else.** Every cell of the shell's four
+/// side planes is solid but for the `door_height` cells of each landing
+/// doorway, counted rather than argued — a second gap would be a way into the
+/// shaft nobody declared and no campaign could gate.
+///
+/// Teeth: `sealed` fills every doorway with the shell material and nothing else
+/// changes, so the count drops to zero and the landings stop being standable.
+///
+/// Binding: 4 openings (2 storeys × `door_height` 2), and the 11 standable cells
+/// they are read against.
+#[test]
+fn the_shell_opens_exactly_once_a_storey() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let openings = shell_openings(&out.model);
+    assert_eq!(
+        openings.len(),
+        4,
+        "the shaft's shell openings: {openings:?}"
+    );
+    // ...and they are two doorways, not four scattered holes: one column of
+    // `door_height` cells per storey.
+    let columns: BTreeSet<[i32; 2]> = openings.iter().map(|c| [c[0], c[2]]).collect();
+    assert_eq!(columns.len(), 1, "the doorways are not one above the other");
+    assert_eq!(standable_cells(&out.model).len(), 11);
+
+    let mut sealed = lift_shaft();
+    sealed.set_param("sealed", 1).unwrap();
+    let shut = expand_at(&sealed, LIFT_REGION, LIFT_SEED);
+    assert!(
+        shell_openings(&shut.model).is_empty(),
+        "sealing the doorways left {:?} open, so the count above proves nothing",
+        shell_openings(&shut.model)
+    );
+    assert_eq!(
+        standable_cells(&shut.model).len(),
+        9,
+        "sealing the doorways took away exactly the two landings"
+    );
+}
+
+/// **The L family's pair, the third time.** A body steps off a landing into an
+/// empty shaft and falls to `anchor/lift-pit` (`reachable_with_fall`, the
+/// player's own movement model); the pit does **not** walk back up to any
+/// landing under the plain ±1 step, because a fall edge only ever points down
+/// and proving the negative under the generous model would be circular.
+///
+/// The control is what `sill` is for, and it is the same short-drop pairing
+/// `drop_shaft` uses: at `sill = 2` the pit is one block under the lowest
+/// station and the identical check must find a way back. Both programs are the
+/// same rule; the one variable is the knob.
+///
+/// Binding: 11 standable cells (2 landings, the 3×3 shaft floor), 1 pit.
+#[test]
+fn the_shaft_drops_a_body_and_will_not_carry_one_back() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let model = &out.model;
+    let pit = out.anchors["anchor/lift-pit"].pos;
+    assert!(standable(model, pit), "{pit:?}");
+    let cells = standable_cells(model);
+    assert_eq!(cells.len(), 11);
+    let sills = landings(model, pit[1]);
+    assert_eq!(sills.len(), 2, "the fixture's landings: {sills:?}");
+
+    let to: BTreeSet<[i32; 3]> = [pit].into_iter().collect();
+    assert!(
+        reachable_with_fall(model, &cells, &sills, &to),
+        "a body cannot even fall down its own shaft"
+    );
+    assert!(
+        !connected(&cells, &to, &sills),
+        "the pit walks back up to a landing — the shaft is not one-way"
+    );
+
+    // The control: one block of drop, and the same walk finds the way back.
+    let mut shallow = lift_shaft();
+    shallow.set_param("sill", 2).unwrap();
+    let low = expand_at(&shallow, LIFT_SHALLOW_REGION, LIFT_SEED);
+    let low_cells = standable_cells(&low.model);
+    let low_pit: BTreeSet<[i32; 3]> = [low.anchors["anchor/lift-pit"].pos].into_iter().collect();
+    let low_sills = landings(&low.model, low.anchors["anchor/lift-pit"].pos[1]);
+    assert_eq!(low_sills.len(), 2, "the control's landings: {low_sills:?}");
+    assert!(
+        connected(&low_cells, &low_pit, &low_sills),
+        "a one-block sill still reports no way back, so the negative above is the \
+         walk being broken rather than the shaft being deep"
+    );
+}
+
+/// The stations are numbered bottom up and stand exactly `storey` apart, so a
+/// campaign that binds `lift-station-1` to "the ground floor" is right by
+/// construction rather than by luck.
+///
+/// Binding: 2 stations, 2 call controls, 1 gap between them.
+#[test]
+fn the_stations_climb_by_one_storey_each() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let stations = indexed(&out.anchors, "lift-station");
+    let calls = indexed(&out.anchors, "lift-call");
+    assert_eq!((stations.len(), calls.len()), (2, 2));
+    let storey =
+        out.anchors["anchor/lift-station-2"].pos[1] - out.anchors["anchor/lift-station-1"].pos[1];
+    assert_eq!(storey, 5, "the fixture's `storey`, read off the anchors");
+    for pair in stations.windows(2) {
+        assert!(
+            pair[1][1] > pair[0][1],
+            "the stations are not numbered bottom up: {stations:?}"
+        );
+    }
+    assert_eq!(
+        out.anchors["anchor/lift-station-1"].pos[1] - out.anchors["anchor/lift-pit"].pos[1],
+        5,
+        "the drop under the lowest station is not `sill - 1`"
+    );
+
+    // A shaft whose storeys do not divide the rise it is given is refused, not
+    // built with its top course of face wall missing.
+    let mut ragged = lift_shaft();
+    ragged.set_param("storey", 4).unwrap();
+    let err = expand(&ragged, LIFT_REGION, &ExpandOptions::seeded(LIFT_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+    // ...and so is a lane too narrow for the car the campaign fills.
+    let mut narrow = lift_shaft();
+    narrow.set_param("lane", lift_shaft::MIN_LANE - 1).unwrap();
+    let err = expand(&narrow, LIFT_REGION, &ExpandOptions::seeded(LIFT_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
     );
 }
