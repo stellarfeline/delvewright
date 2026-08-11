@@ -1193,8 +1193,16 @@ for a command block meant to, so shipping a silent hole is refused instead.
 
 ## 7. Not built yet
 
-The §4 craft diagnostics, jigsaw connector emission, the JSON schema stage in
-front of the IR, and the contact-sheet/curation loop. Later phases of spec-0027.
+The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage in
+front of the IR. Later phases of spec-0027.
+
+The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
+candidate renders out as one page, optionally ordered by a similarity score
+against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
+the page and never gates it). What is still missing between the expander and
+that page is the automatic part: nothing yet drives "expand N seed-varied
+candidates → `batch`-render them → sheet", so the sweep is assembled by hand
+today.
 
 `mark` declares point anchors only. Gate-region anchors (`region` + `block`),
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine

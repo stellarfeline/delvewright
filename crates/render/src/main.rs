@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand};
 use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
-    DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RENDER, Diagnostic, exit,
+    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
@@ -25,6 +25,7 @@ use delvewright_render::nbt;
 use delvewright_render::panorama::{self, Bearing, PanoramaOptions};
 use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
+use delvewright_render::sheet::{self, ScoreSet, SheetOptions};
 use delvewright_render::shots;
 
 #[derive(Parser)]
@@ -102,6 +103,37 @@ enum Command {
         #[arg(long, default_value_t = panorama::DEFAULT_SPP)]
         spp: u32,
     },
+    /// Lay candidate renders out as ONE contact sheet for the owner to curate
+    /// massing from (spec-0027 §3). With `--scores`, the similarity score
+    /// ORDERS the page — it never removes a candidate (spec-0028 §3).
+    ContactSheet {
+        /// Directory of candidates: one subdirectory of renders per candidate
+        /// (`delve-render batch` output), or a flat directory of `.png` renders.
+        dir: PathBuf,
+        /// Output PNG. The manifest naming every cell is always written beside
+        /// it as `<stem>.json` — a sheet whose ranks cannot be resolved back to
+        /// candidate ids is not a curation page.
+        #[arg(short, long)]
+        out: PathBuf,
+        /// Similarity scores from `tools/refscore.py`. Absent → id order.
+        #[arg(long)]
+        scores: Option<PathBuf>,
+        /// Representative shot per candidate in the per-directory layout
+        /// (default `ext-se`, falling back to the first render by name). Given
+        /// explicitly, a candidate missing that shot is an error, never a
+        /// silent substitution of another angle.
+        #[arg(long)]
+        shot: Option<String>,
+        /// Cells per row (default: the squarest page, `ceil(sqrt(n))`).
+        #[arg(long)]
+        columns: Option<u32>,
+        /// Thumbnail side, in pixels.
+        #[arg(long, default_value_t = 256)]
+        thumb: u32,
+        /// Header title.
+        #[arg(long)]
+        title: Option<String>,
+    },
     /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
     /// for handing shots to a reviewing agent / vision model.
     Index {
@@ -131,6 +163,24 @@ fn main() -> ExitCode {
             bearing,
             spp,
         } => run_panorama(build_dir, out, world, *bearing, *spp, &cli),
+        Command::ContactSheet {
+            dir,
+            out,
+            scores,
+            shot,
+            columns,
+            thumb,
+            title,
+        } => run_contact_sheet(
+            dir,
+            out,
+            scores.as_deref(),
+            shot.as_deref(),
+            *columns,
+            *thumb,
+            title.as_deref(),
+            &cli,
+        ),
         Command::Index { build_dir, out } => run_index(build_dir, out, &cli),
     }
 }
@@ -528,6 +578,120 @@ fn run_index(build_dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
     }
     eprintln!("wrote shot index -> {}", out.display());
     ExitCode::SUCCESS
+}
+
+/// Which exit code a contact-sheet diagnostic carries. `DW0725` is the
+/// rank-never-gate guard tripping — a defect in the ordering itself, not in the
+/// user's input, so it exits `10` (internal) rather than `2`.
+fn sheet_exit(d: &Diagnostic) -> u8 {
+    match d.code {
+        DW_RANK_ORDER => exit::INTERNAL,
+        DW_OUTPUT => exit::OUTPUT,
+        DW_INPUT | DW_BINDING => exit::INPUT,
+        _ => exit::INTERNAL,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_contact_sheet(
+    dir: &Path,
+    out: &Path,
+    scores_path: Option<&Path>,
+    shot: Option<&str>,
+    columns: Option<u32>,
+    thumb: u32,
+    title: Option<&str>,
+    cli: &Cli,
+) -> ExitCode {
+    let scores = match scores_path.map(read_scores).transpose() {
+        Ok(s) => s,
+        Err(d) => return fail_sheet(d, cli.json),
+    };
+    let (candidates, layout) = match sheet::discover(dir, shot) {
+        Ok(c) => c,
+        Err(d) => return fail_sheet(d, cli.json),
+    };
+    let opts = SheetOptions {
+        columns,
+        thumb,
+        // The directory's NAME, not its path: a long absolute path would push
+        // every other header claim off the page, and the full path is in the
+        // manifest's `source` anyway.
+        title: title.map(str::to_string).unwrap_or_else(|| {
+            format!(
+                "contact sheet: {}",
+                dir.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("candidates")
+            )
+        }),
+    };
+    let built = match sheet::build_sheet(
+        dir,
+        &candidates,
+        scores.as_ref(),
+        layout,
+        shot,
+        &opts,
+        // The ordering seam. `rank_by_score` ORDERS; `build_sheet` then puts
+        // whatever comes back through the total-order guard, so no ranker —
+        // this one or a later one — can turn the score into a filter.
+        sheet::rank_by_score,
+    ) {
+        Ok(s) => s,
+        Err(d) => return fail_sheet(d, cli.json),
+    };
+    for d in &built.diagnostics {
+        d.print(cli.json);
+    }
+    if let Some(parent) = out.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", parent.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    if let Err(e) = built.image.save(out) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("save {}: {e}", out.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    let manifest_path = out.with_extension("json");
+    if let Err(e) = std::fs::write(&manifest_path, &built.manifest) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", manifest_path.display())),
+            cli.json,
+            exit::OUTPUT,
+        );
+    }
+    let b = &built.binding;
+    eprintln!(
+        "contact sheet: {} candidate(s), {} scored / {} unscored ({} unmatched score row(s)) \
+         -> {} + {}",
+        b.candidates,
+        b.scored,
+        b.unscored.len(),
+        b.unmatched_score_rows.len(),
+        out.display(),
+        manifest_path.display()
+    );
+    ExitCode::SUCCESS
+}
+
+fn read_scores(path: &Path) -> Result<ScoreSet, Diagnostic> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))?;
+    ScoreSet::parse(&bytes)
+}
+
+fn fail_sheet(d: Diagnostic, json: bool) -> ExitCode {
+    let code = sheet_exit(&d);
+    fail(d, json, code)
 }
 
 fn save_png(frame: &render::Frame, path: &Path) -> Result<(), (Diagnostic, u8)> {
