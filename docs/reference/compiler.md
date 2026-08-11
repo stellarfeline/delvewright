@@ -219,6 +219,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
+delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
@@ -3898,7 +3899,10 @@ therefore not optional for a branching campaign.
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
-Catalogued here so the DW namespace is complete and CI-checked.
+Catalogued here so the DW namespace is complete and CI-checked. Two ranges are
+`delvec`'s own and are numbered by DOMAIN rather than by binary: `DW0724` (the
+visual/render range) and `DW077x` (`delvec fmt`, §9) — a code names a rule, and
+the rule's domain is the more useful thing for the number to say.
 
 | Code | Tool | Meaning |
 |------|------|---------|
@@ -3921,6 +3925,11 @@ Catalogued here so the DW namespace is complete and CI-checked.
 | `DW0750` | `delve-admit` | Admission tooling (socket/anchor/lighting) failure. |
 | `DW0751` | `delve-admit` | Lighting probe: a `dark` interior was measured (advisory; no longer gates — spec-0010). |
 | `DW0760` | `delve-admit` | Gallery emission / curation failure. |
+| `DW0770` | `delvec fmt` | Authored JSON is not valid JSON, located at `line:col` (exit 1). Reported instead of formatted — `fmt` never guesses at a repair. |
+| `DW0771` | `delvec fmt` | **A duplicate object key.** JSON's grammar allows one and `serde_json` silently keeps the LAST, so one of the two values is already being discarded without a word; formatting would make that loss permanent and invisible, so `fmt` refuses and writes nothing (exit 1). Delete or rename whichever occurrence is wrong. |
+| `DW0772` | `delvec fmt` | Internal error: the formatter's own output is not equivalent to its input, so nothing was written (exit 1). The self-check runs on **every** file `fmt` writes — it re-parses the rendered text and compares arrays index-wise, objects as maps. Its whole purpose is that an array reordering (which changes the game) fails here instead of shipping. A `DW0772` is a compiler bug; report it. |
+| `DW0773` | `delvec fmt --check` | A file is not in canonical form, with the line of the first difference (exit 1). Fix by running `delvec fmt <path>` — never by hand. |
+| `DW0774` | `delvec fmt` | The given paths matched **zero** JSON files (exit 1). A formatter or a `--check` that binds to nothing is vacuous, not a pass (CLAUDE.md), and a stale path in a CI step is exactly how this gate would rot into a green no-op. |
 
 `delve-render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
@@ -4549,3 +4558,98 @@ The patch is **never applied here**: nothing writes to a stage document from the
 game. The agent applies it, reruns `delvec build`, and the normal proofs
 (`DW0308` air corridors, `DW0347` angular budget) gate the result exactly as
 they gate a hand-written shot.
+
+---
+
+## 9. `delvec fmt` — canonical form for authored JSON
+
+Owner directive 2026-08-07 (task #52), from a live accident: a **three-key**
+insertion into `nobodys-cave-island/l10n/zh-cn.json` produced a
+**103-insertion / 100-deletion** diff, because the file was not canonically
+ordered and the writing tool's `sort_keys` re-laid it out. Canonical order makes
+an insertion a one-line insertion, and makes two authors editing different keys a
+non-conflict.
+
+```
+delvec fmt <path>…            # rewrite in canonical form
+delvec fmt --check <path>…    # report; write nothing; exit 1 if anything is off
+```
+
+A formatter **and** a check, in that order and for a reason: a `--check`-only
+gate makes an author hand-sort a 900-key sidecar, which nobody does twice, so the
+gate ends up waived. `cargo fmt` is the shape that works.
+
+### The hard constraint
+
+**Only object keys may be sorted. Array order is semantic** — `quests[]`,
+`objectives[]`, `effects[]`, `options[]`, `steps[]` are ordered, and reordering
+one changes the game. So this is a correctness property, not a style property,
+and it is *proved* rather than promised: `fmt::format_text` re-parses its own
+output and runs `fmt::equivalent`, which compares **arrays index-wise** and
+objects as key→value maps. A renderer that sorted an array fails its own check
+and writes nothing (`DW0772`). The guard is demonstrated firing — the unit test
+`the_guard_catches_a_renderer_that_sorts_arrays` injects a deliberately
+array-sorting renderer and asserts `DW0772`.
+
+### The canonical form
+
+| rule | why (argued from *minimal diff on insertion* / *no semantic change ever*) |
+|---|---|
+| object keys sorted by Unicode scalar value | an inserted key lands in exactly one place. UTF-8 byte order == code-point order, so Rust's `str` `Ord` and Python's `sorted()` agree and the existing Python authoring tools already emit this order. |
+| 2-space indent, one value per line | the motivating file and every `tools/*.py` writer already use `indent=2` (also `serde_json`'s pretty default), so the one-time normalization is smallest exactly where the files are largest. One value per line makes an inserted array element a whole-line insertion, not a rewrite of a long line. |
+| non-ASCII written raw, never `\uXXXX` | the campaigns are half Chinese; escaping would triple every sidecar and make its diffs unreadable — a direct defeat of the motivation. |
+| control characters escaped in the shortest legal form (`\n`, `\t`, `\b`, `\f`, `\r`, else `\u00xx` lowercase) | required by JSON, and it is the form every other writer here already emits, so it is the fixed point. |
+| **number literals preserved byte-for-byte** | the one rule that is not about diffs. Re-rendering through `f64` loses integers above 2^53 and can move a decimal's last digit — a silent semantic change. `9007199254740993`, `1.50`, `1e3` and `-0.0` all survive unchanged. |
+| exactly one trailing newline | POSIX text, and without it appending anything rewrites the last line. |
+| duplicate object keys refused (`DW0771`) | see the catalog row: the data loss is already happening silently; formatting would make it permanent. |
+| empty containers stay on one line (`[]`, `{}`) | matches `serde_json` and `json.dumps`. |
+
+Not canonicalized, deliberately: number literals (above), and Unicode
+normalization of string contents (NFC vs NFD is the author's text, not the
+formatter's). The formatter knows the **JSON grammar and nothing about the DSL** —
+it must handle an l10n sidecar, a stage document, a prefab metadata card and
+whatever stage 8 turns out to be, with no per-schema list to keep in step.
+
+### Which files, and how they are found
+
+A path argument may be a file (taken as given — you pointed at it) or a
+directory, walked recursively for `*.json` with entries **sorted**, never
+`read_dir` order (ADR-0006). Two things are skipped:
+
+- dot-directories (`.git`, `.github`);
+- any directory holding a `manifest.json` — the marker `delvec build` itself
+  stamps on an output root. Emitted trees are not authored content, several are
+  checked in (`campaigns/*/out/`), and rewriting one would break the
+  byte-identity record it exists to hold.
+
+Symlinked directories are not followed (`campaigns/` is a symlink to the content
+repo in a dev tree; a walk that followed it would silently reach a second
+repository).
+
+**Out of scope, by decision**: `crates/compiler/data/*.json` — harvested game
+registries with their own generator contract (`tools/extract-*.py`,
+`data/PROVENANCE.md`), not content anyone authors by hand.
+
+### What formatting does and does not change in a build
+
+Proved end-to-end by `crates/compiler/tests/fmt.rs::formatting_a_campaign_changes_only_the_manifest_input_hashes`,
+and measured on `nobodys-cave-island` in both languages: **every emitted file is
+byte-identical** (609 EN / 594 ZH outputs). The single exception is stated rather
+than smoothed — `manifest.json`'s `inputs` map is the sha256 of the **source**
+bytes, i.e. provenance of exactly what the author checked in, so it *must* move
+when the sources are rewritten. `manifest.json`'s `outputs` map, and every other
+key, are unchanged. A formatter that left `inputs` alone would have broken the
+provenance record instead of preserving it.
+
+### CI
+
+A step of the `rust (fmt, clippy, test)` job (a step, not a job: every job name
+in `ci.yml` is a required status context). It runs `--check` over this repo's
+authored JSON corpus and states its binding count on every run.
+
+**Not yet covering the content repo.** `campaigns/` is pinned by
+`versions.toml [content].sha`, so a `--check` over it here could only go green
+after a content-repo normalization merges and the pin moves — an ordering this
+repo cannot perform. The same one-line `--check` belongs in the content repo's
+own CI, which is where its files are gated; until then, the accident this tool
+exists to prevent is prevented for engine fixtures only.

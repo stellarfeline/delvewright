@@ -64,6 +64,7 @@ pub mod eclipse;
 pub mod edit;
 pub mod emit;
 pub mod flow;
+pub mod fmt;
 pub mod gates;
 pub mod integrity;
 pub mod lethal;
