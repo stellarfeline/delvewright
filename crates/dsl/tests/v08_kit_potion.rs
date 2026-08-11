@@ -45,9 +45,10 @@ fn campaign(classes: &str) -> RawCampaign {
 
 /// Every code raised for a classes doc.
 fn codes_for(classes: &str) -> Vec<String> {
+    // `check_campaign` returns the FENCED verdict, which derefs to a slice.
     check_campaign(&campaign(classes))
-        .into_iter()
-        .map(|d| d.code)
+        .iter()
+        .map(|d| d.code.clone())
         .collect()
 }
 

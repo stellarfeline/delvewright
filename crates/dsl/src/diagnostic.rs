@@ -783,6 +783,65 @@ pub mod codes {
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::every_version("DW0527");
 
+    // -- DSL v0.11 the press answer -----------------------------------------
+
+    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
+    /// A trigger declares `audience: presser` on something other than an
+    /// `on: use`.
+    ///
+    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
+    /// that runs a function as the player who clicked, and it fires on
+    /// right-clicks alone. A left-click is recorded in the interaction entity's
+    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
+    /// click at all. Approximating it (polling the record and assuming the nearest
+    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
+    /// capability is refused rather than faked.
+    ///
+    /// [`Binds::EveryVersion`]: it judges a contradiction between two authored
+    /// fields on one trigger, and `audience` itself cannot be written below
+    /// 0.11.0 (`DW0141`), so there is no campaign for a fence to grandfather.
+    pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::every_version("DW0427");
+
+    /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
+    /// compiler synthesizes triggers of its own — today the press answer every
+    /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
+    /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
+    /// function, so one of them would silently disappear. Reserving the prefix
+    /// makes the collision impossible by construction instead of improbable.
+    ///
+    /// [`Binds::EveryVersion`]: a malformed-id rule, judging what the document
+    /// SAYS, and the collision it prevents is real at every version — the
+    /// compiler synthesizes `trigger/dw-press-…` for a pre-0.11 `close-gate`
+    /// seal too. Fencing it would let exactly that collision through in the
+    /// campaigns most likely to hit it.
+    pub const TRIGGER_ID_RESERVED: DwCode = DwCode::every_version("DW0428");
+
+    /// (v0.11) **A sealed body with no press answer** (owner ruling 2026-08-10,
+    /// made uniform over the pressable class 2026-08-11). A `shortcuts[]` door or
+    /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
+    /// party presses it — no `use` trigger anchored on it, and (for a
+    /// `close-gate`) no authored `sealed_hint`.
+    ///
+    /// The compiler deliberately does **not** fill that silence. A baked default
+    /// is the compiler making a design statement — about tone, about what this
+    /// specific door is — on the author's behalf, and then never telling them it
+    /// did; an error makes the author say it. Same rule as "no hacks at any
+    /// layer": if content needs a thing, the DSL exposes it and the author
+    /// declares it, rather than a lower layer inventing it.
+    ///
+    /// One rule for the whole pressable class: two objects of the same class do
+    /// not get two defaulting policies, which would be the "capability keyed to
+    /// the verb" defect this very surface is CLAUDE.md's worked example of.
+    ///
+    /// [`Binds::Since`]`(11)` — the textbook case. It is a NEW AUTHORING
+    /// OBLIGATION: the campaign must now HAVE a wording it was never asked for,
+    /// so without the fence every already-approved campaign would go red with
+    /// nothing in its own documents changed (task #51's shape). Below 0.11.0 a
+    /// door still says nothing and a seal still takes the compiler's canonical
+    /// English — [`crate::fence`] carries that, so the check itself runs
+    /// unconditionally and the grandfathered count is the binding evidence.
+    pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::since("DW0429", 11);
+
     /// (v0.11, spec-0033) **A declared locomotion the engine cannot hold the
     /// body to** — today exactly one value, `aquatic`.
     ///

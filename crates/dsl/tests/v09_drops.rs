@@ -69,9 +69,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 }
 
 fn codes(quests: &str) -> Vec<String> {
+    // `check_campaign` returns the FENCED verdict, which derefs to a slice.
     check_campaign(&campaign_with_quests(quests))
-        .into_iter()
-        .map(|d| d.code)
+        .iter()
+        .map(|d| d.code.clone())
         .collect()
 }
 

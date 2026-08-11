@@ -425,9 +425,11 @@ For each stage in order — world → npcs → classes → quest-plan → quests
        reading a datum nothing writes is `DW0501`, and a datum no gate reads is
        `DW0502`. Both mean the mechanism is decoration.
      - A `player`-scoped datum can only be touched where a player is acting — a
-       dialogue option, a cast placement, an `on_death` beat, or an effect on a
-       quest beat a player completes. These have **no** acting player and reject
-       one (`DW0503`): an objective/trigger/trap *gate*, a trigger's `effects`, a
+       dialogue option, a cast placement, an `on_death` beat, an effect on a
+       quest beat a player completes, or a trigger declaring
+       `audience: "presser"` (0.11.0), which runs as the player who clicked.
+       These have **no** acting player and reject one (`DW0503`): an
+       objective/trigger/trap *gate*, a party-audience trigger's `effects`, a
        trap's `payload`, a shortcut's `on_unlock`, a `sequence` step and a
        `move-npc`/`move-actor` `on_arrive`. Use `party` scope there.
      - Needs `dsl_version` 0.10.0 on the stage that declares or reads it.
@@ -710,15 +712,35 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
-- **A sealed gate answers a right-click by itself — never build the hint by hand.**
-  `close-gate` arms the sealed region so pressing it puts a line on the presser's
-  actionbar; `sealed_hint` on the effect is only the *wording* (unauthored, the
-  compiler says "The way is sealed."). Do **not** add a `use` trigger on the gate
-  anchor to get this — that is the co-located second hitbox the compiler now
-  rejects (`DW0422`). A `strike`/`use` trigger anchored on the gate anchor is still
-  legitimate for a *different* line (it rides the seal's own hitboxes and is live
-  only while the gate is sealed); two `close-gate`s on one anchor must agree on the
-  wording (`DW0423`).
+- **Anything you seal, you must say what it says** (`dsl_version` 0.11.0; owner
+  ruling 2026-08-10). A `shortcut`'s barred door and a `close-gate`'s wall are
+  both things the party walks up to and pushes on, and one with nothing to say is
+  `DW0429` — the build refuses. The compiler will not decide the tone of your
+  door or your wall for you and then not tell you it did. One rule for both: they
+  are two objects of the same class.
+  - A `close-gate` discharges it either way — `"sealed_hint": "<what the wall
+    says>"` on the effect, or a trigger. `sealed_hint` is only the *wording*.
+  - A `shortcut` has no wording field, deliberately: its line is a trigger.
+- **Write the reply with the general verb:**
+  `{"id": "trigger/…", "at": "<the gate anchor>", "on": {"on": "use"},
+  "once": false, "audience": "presser", "effects": [{"type": "narrate",
+  "style": "actionbar", "text": "The door cannot be opened from this side."}]}`.
+  Anchoring it on the gate is what makes it *ride* the sealed body's own hitboxes
+  instead of summoning a co-located second one (`DW0422`), and on a shortcut door
+  the body stands on the sealed side only — so the line fires where it is true and
+  nowhere else, and retires when the door opens. Once you write one, the compiler
+  supplies nothing: one press, one answer. ANY `use` trigger on the gate
+  discharges `DW0429`, whatever it does — but a `strike` does not, because
+  pressing a thing is a right-click.
+  - `audience: "presser"` addresses the one player who clicked, and works on
+    `on: use` only — vanilla can attribute right-clicks and nothing else
+    (`DW0427`). Leave it out and the beat addresses the whole party, which is
+    right for a lever that opens a gate and wrong for a reply.
+  - `style: "actionbar"` is the reply strip above the hotbar: it does not
+    interrupt, does not stack, and is not width-checked. Use it for replies; use
+    `title`/`subtitle` for beats.
+  - Trigger ids starting with `dw-` are reserved for the compiler (`DW0428`).
+  - Two `close-gate`s on one anchor must still agree on the wording (`DW0423`).
 
 ### Authoring tools (know these exist; reach for them by symptom)
 

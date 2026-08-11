@@ -232,6 +232,7 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
     })
+    .to_vec()
 }
 
 /// A `despawn-npc` **nested in a `sequence` step** removes the NPC just as surely

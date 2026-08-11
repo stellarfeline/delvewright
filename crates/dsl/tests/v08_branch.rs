@@ -90,6 +90,8 @@ const POINTS: &str = r#"[
 ]"#;
 
 fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagnostic> {
+    // `check_campaign` returns the FENCED verdict; this file compares whole
+    // lists, so it takes an owned copy of the reported half.
     check_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
@@ -99,6 +101,7 @@ fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagno
         dialogue: dialogue_doc.to_string(),
         world_edits: None,
     })
+    .to_vec()
 }
 
 fn green() -> Vec<Diagnostic> {

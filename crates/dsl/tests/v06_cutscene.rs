@@ -66,7 +66,9 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 }
 
 fn diags(version: &str, cutscene: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(&quests(version, cutscene)))
+    // `check_campaign` returns the FENCED verdict; this helper hands back an
+    // owned copy of the reported half.
+    check_campaign(&campaign_with_quests(&quests(version, cutscene))).to_vec()
 }
 
 /// The pre-0.6 single-shot spelling still validates clean under 0.4.0 — the

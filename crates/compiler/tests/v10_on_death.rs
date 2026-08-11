@@ -72,11 +72,17 @@ fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
 
 fn build(loaded: &LoadedCampaign, c: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    // Fenced, never the raw list: a verdict is what `delvec` reports, and an
+    // obligation fenced on its code (`Binds::Since`) is not something a fixture
+    // below that version answers for.
+    let diags = delvewright_dsl::Fenced::apply(
         c,
-        &FullItemRegistry::v1_21_11(),
-        &prefabs,
-        &FullEntityRegistry::v1_21_11(),
+        validate_campaign_with(
+            c,
+            &FullItemRegistry::v1_21_11(),
+            &prefabs,
+            &FullEntityRegistry::v1_21_11(),
+        ),
     );
     assert!(diags.is_empty(), "fixture must validate clean: {diags:#?}");
     let plan = Plan::build(c, &prefabs).expect("plan builds");

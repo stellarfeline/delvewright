@@ -34,9 +34,12 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
 /// comparison on every gate consumer — the campaign-wide `on_death` effect
 /// root, the bundle that runs at the moment a player dies, and the stage-5
-/// `lethal_volumes` declaration; v0.11 (spec-0033) adds the per-body
-/// `traversal` declaration — what a body can do when it moves — on the stage-2
-/// NPC and the stage-5 actor.
+/// `lethal_volumes` declaration; v0.11 adds two independent surfaces —
+/// (spec-0033) the per-body `traversal` declaration, what a body can do when it
+/// moves, on the stage-2 NPC and the stage-5 actor, and the **press-answer
+/// lift**: the `narrate` `actionbar` style plus a trigger's `audience: presser`,
+/// with which a pressable thing answering the player who pressed it is an
+/// ordinary trigger carrying an ordinary effect.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
@@ -189,10 +192,13 @@ pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
 }
 
-/// True if `version` enables the DSL v0.11 surface (spec-0033, owner ruling
-/// 2026-08-09): the per-body **`traversal` declaration** — what a body can do
-/// when it moves — carried by the stage-2 NPC and the stage-5 actor through one
-/// shared [`crate::stages::BodyTraversal`] type.
+/// True if `version` enables the DSL v0.11 surface. **Two independent surfaces
+/// land in this version**, and this one predicate fences both.
+///
+/// ## The per-body `traversal` declaration (spec-0033, owner ruling 2026-08-09)
+///
+/// What a body can do when it moves, carried by the stage-2 NPC and the stage-5
+/// actor through one shared [`crate::stages::BodyTraversal`] type.
 ///
 /// Spiders really do climb, so the traversal proof's rules cannot be absolute;
 /// what was missing was the author's side of that. A declaration is not an
@@ -206,6 +212,31 @@ pub fn is_v10(version: &str) -> bool {
 /// that declares none compiles byte-identically (the derived class is exactly
 /// what every pre-0.11 build used), and declaring it in an earlier campaign is
 /// rejected with `DW0141`.
+///
+/// ## The press-answer lift
+///
+/// Two additions, and they are one lift — each alone leaves the general
+/// mechanism unable to say what `close-gate`'s private copy said:
+///
+/// * `narrate` gains the **`actionbar`** style — the reply strip every string the
+///   compiler writes itself already used, and the one channel the general effect
+///   could not reach;
+/// * an environment trigger gains **`audience: presser`** — dispatch by the
+///   `player_interacted_with_entity` advancement, so the bundle runs as the
+///   player who right-clicked instead of addressing the whole party.
+///
+/// With both, "a pressable thing answers the player who pressed it" is an
+/// ordinary trigger with an ordinary effect, and `close-gate.sealed_hint` stops
+/// being a mechanism and becomes what it always was — a wording. Declaring
+/// either below 0.11.0 is `DW0141`.
+///
+/// Unlike `traversal`, this half **does** carry a requirement: from 0.11.0 a
+/// sealed body the campaign never answers is `DW0429` (owner ruling 2026-08-10,
+/// made uniform over the pressable class 2026-08-11). That obligation is fenced
+/// on the code itself ([`crate::Binds::Since`]) rather than here, so below
+/// 0.11.0 a door still says nothing and a seal still takes the compiler's
+/// canonical English — a pre-0.11 campaign's verdicts and behaviour are
+/// unchanged.
 pub fn is_v11(version: &str) -> bool {
     ordinal(version) >= 11
 }
@@ -402,11 +433,22 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
     }
 }
 
-/// Parse then validate. Convenience over [`parse_campaign`] +
-/// [`crate::validate::validate_campaign`].
-pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
+/// Parse then validate, and **fence the result** — the whole-campaign verdict,
+/// the same three steps `delvec` takes.
+///
+/// Convenience over [`parse_campaign`] + [`crate::validate::validate_campaign`] +
+/// [`crate::fence::Fenced`]. It returns a `Fenced` rather than a raw list
+/// because a raw list is an intermediate no consumer of this crate should reason
+/// about: an obligation fenced on its code ([`crate::Binds::Since`]) is raised
+/// unconditionally by its check and withheld here, so reading the pre-fence list
+/// would report a campaign for a rule it never opted into. `Fenced` derefs to
+/// the reported slice, so it reads exactly like the list it replaced.
+pub fn check_campaign(raw: &RawCampaign) -> crate::fence::Fenced {
     match parse_campaign(raw) {
-        Ok(campaign) => crate::validate::validate_campaign(&campaign),
-        Err(diags) => diags,
+        Ok(campaign) => {
+            let diags = crate::validate::validate_campaign(&campaign);
+            crate::fence::Fenced::apply(&campaign, diags)
+        }
+        Err(diags) => crate::fence::Fenced::structural(diags),
     }
 }

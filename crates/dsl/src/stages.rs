@@ -1525,6 +1525,24 @@ impl QuestsContent {
         out
     }
 
+    /// **Does the campaign itself answer a right-click at `anchor`?**
+    ///
+    /// One predicate, read by both consumers of the press-answer rule, so they can
+    /// never disagree about what "the campaign answered it" means: the compiler's
+    /// synthesis (`plan::collect_press_answers`, which stands down where this is
+    /// true) and the obligation on a shortcut door (`DW0429`, which fires where it
+    /// is false). Split across the two crates they would drift, and the drift
+    /// would read as "the compiler refused a door I answered".
+    ///
+    /// Deliberately the widest reading — *any* `use` trigger anchored there.
+    /// Pressing it already does something the author chose, and the engine does
+    /// not adjudicate whether what they chose counts as an answer.
+    pub fn answers_press_at(&self, anchor: &str) -> bool {
+        self.all_triggers()
+            .iter()
+            .any(|t| matches!(t.on, TriggerOn::Use) && t.at_anchor() == Some(anchor))
+    }
+
     /// Desugar every `ambush` into a real environment trigger and clear the
     /// ambush list (spec-0016 §3). Called once, by
     /// [`parse_campaign`](crate::parse_campaign); idempotent by construction
@@ -2080,6 +2098,9 @@ impl Ambush {
             forbids_flags: Vec::new(),
             requires_state: Vec::new(),
             once: true,
+            // An ambush is a party beat by construction — it springs actors at
+            // the room, not a reply to the one who walked in.
+            audience: TriggerAudience::Party,
             effects,
         }
     }
@@ -2163,6 +2184,23 @@ pub struct EnvTrigger {
     /// `false` to allow re-firing every time the condition is met.
     #[serde(default = "default_true")]
     pub once: bool,
+    /// **Who the trigger's effects address** (DSL v0.11). Default
+    /// [`TriggerAudience::Party`], so every campaign written before this field
+    /// existed is byte-identical.
+    ///
+    /// A trigger is two different things depending on what the author means by
+    /// it. A pressure plate that opens a gate and narrates the room is a **party
+    /// beat**: everyone should see it, and it does not matter who stepped on the
+    /// plate. A barred door that answers *"this cannot be opened from this
+    /// side"* is a **reply to one person**: broadcasting it tells four players
+    /// about a door three of them are nowhere near.
+    ///
+    /// Until this field the second was inexpressible, which is why the two verbs
+    /// that needed it (`close-gate`'s seal answer, and nothing at all for a
+    /// shortcut door) grew their own private reply machinery instead. The
+    /// capability belongs to the press, not to the verb.
+    #[serde(default, skip_serializing_if = "TriggerAudience::is_party")]
+    pub audience: TriggerAudience,
     /// Effects fired when the trigger matches.
     pub effects: Vec<QuestEffect>,
 }
@@ -2172,6 +2210,43 @@ impl EnvTrigger {
     /// for `strike-npc`, whose target is a character.
     pub fn at_anchor(&self) -> Option<&str> {
         self.at.as_ref().map(|a| a.as_str())
+    }
+
+    /// Whether this trigger's bundle is addressed to the player who pressed it.
+    pub fn addresses_presser(&self) -> bool {
+        self.audience == TriggerAudience::Presser
+    }
+}
+
+/// Who an [`EnvTrigger`]'s effects address (DSL v0.11).
+///
+/// **This is a dispatch decision, not a cosmetic one.** A `party` trigger is
+/// polled on the tick with no executor, so `@s` does not exist and every
+/// player-facing command addresses `@a`. A `presser` trigger is dispatched by a
+/// `minecraft:player_interacted_with_entity` advancement — the one vanilla
+/// primitive that runs a function *as the player who clicked* — so `@s` is the
+/// presser and the bundle addresses them alone.
+///
+/// That primitive exists for **right-clicks only**. Vanilla records a left-click
+/// on an interaction entity in NBT (which names a UUID no command can become) and
+/// offers no criterion for it, so `presser` on a `strike` is refused (`DW0427`)
+/// rather than approximated: per CLAUDE.md's no-hack rule, a capability with no
+/// vanilla primitive under it is excluded, never faked downstream.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TriggerAudience {
+    /// The whole party (the default, and what every trigger did before v0.11).
+    #[default]
+    Party,
+    /// The one player whose click fired it.
+    Presser,
+}
+
+impl TriggerAudience {
+    /// Serde skip predicate: the default needs no field on the wire, so a
+    /// canonical round-trip of a pre-0.11 campaign is byte-identical.
+    fn is_party(&self) -> bool {
+        *self == TriggerAudience::Party
     }
 }
 
@@ -5636,16 +5711,31 @@ pub enum NarrateStyle {
     /// renders in the vanilla title slot, so it is width-checked like any title
     /// (`DW0330`) — roughly 15 glyphs fit on screen.
     Art,
+    /// The **actionbar** — the one-line strip above the hotbar (DSL v0.11).
+    ///
+    /// This is the channel a *reply* uses: it does not interrupt, it does not
+    /// stack, and it is overwritten by the next one. Every reply the compiler
+    /// itself writes has always used it — a sealed gate's answer, a checkpoint
+    /// return, the lobby's party count — but `narrate` could not reach it, which
+    /// is the mechanical reason `close-gate.sealed_hint` could not have been an
+    /// ordinary `narrate` even had someone tried (capability-ownership audit
+    /// finding 3b). A channel is a property of the message, not of the verb that
+    /// first wanted it.
+    ///
+    /// Unlike a title it is never width-checked: vanilla truncates nothing and
+    /// draws it at GUI width, and a reply is a fragment rather than a banner.
+    Actionbar,
 }
 
 impl NarrateStyle {
-    /// The kebab tag (`chat` / `title` / `subtitle` / `art`).
+    /// The kebab tag (`chat` / `title` / `subtitle` / `art` / `actionbar`).
     pub fn token(self) -> &'static str {
         match self {
             NarrateStyle::Chat => "chat",
             NarrateStyle::Title => "title",
             NarrateStyle::Subtitle => "subtitle",
             NarrateStyle::Art => "art",
+            NarrateStyle::Actionbar => "actionbar",
         }
     }
 }

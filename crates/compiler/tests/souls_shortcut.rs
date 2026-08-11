@@ -26,7 +26,13 @@ fn build_fixture() -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    // Fenced, never the raw list: a verdict is what `delvec` reports, and an
+    // obligation fenced on its code (`Binds::Since`) is not something this
+    // pre-0.11 fixture answers for.
+    let diags = delvewright_dsl::Fenced::apply(
+        &campaign,
+        validate_campaign_with(&campaign, &items, &prefabs, &entities),
+    );
     assert!(
         diags.is_empty(),
         "souls-shortcut must validate clean: {diags:#?}"

@@ -71,8 +71,9 @@ fn talk_effects(c: &delvewright_dsl::Campaign) -> &[delvewright_dsl::QuestEffect
 }
 
 fn codes(quests: String) -> Vec<String> {
+    // `check_campaign` returns the FENCED verdict, which derefs to a slice.
     check_campaign(&raw(quests))
-        .into_iter()
+        .iter()
         .map(|d| d.code.to_string())
         .collect()
 }

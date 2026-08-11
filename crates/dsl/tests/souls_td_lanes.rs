@@ -71,7 +71,9 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 }
 
 fn diags_for(quests: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(quests))
+    // `check_campaign` returns the FENCED verdict; this helper hands back an
+    // owned copy of the reported half.
+    check_campaign(&campaign_with_quests(quests)).to_vec()
 }
 
 /// A well-formed lane and a well-formed aggro-edge wave validate clean.

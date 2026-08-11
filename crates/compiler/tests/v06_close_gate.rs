@@ -160,7 +160,13 @@ fn close_gate_emits_fill_with_declared_block() {
     // Validation-tier gate-block check passes (anchor/door declares iron_bars).
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let mut diags = validate_campaign_with(&c, &items, &prefabs, &entities);
+    // Fenced, never the raw list: a verdict is what `delvec` reports, and an
+    // obligation fenced on its code (`Binds::Since`) is not something this 0.6
+    // fixture answers for.
+    let mut diags: Vec<_> =
+        delvewright_dsl::Fenced::apply(&c, validate_campaign_with(&c, &items, &prefabs, &entities))
+            .reported()
+            .to_vec();
     diags.extend(gates::check_close_gates(&c, &prefabs));
     assert!(
         diags.is_empty(),

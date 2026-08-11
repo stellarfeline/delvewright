@@ -38,9 +38,16 @@ fn version_line() {
     // `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
     // numeric comparison carried by every gate consumer — the campaign-wide
     // `on_death` bundle, effect root R7, and the stage-5 `lethal_volumes`
-    // declaration. spec-0033 raised it again to 0.11.0: the per-body `traversal`
-    // declaration — what a body can do when it moves — carried by the stage-2
-    // NPC and the stage-5 actor through one shared type.
+    // declaration.
+    //
+    // 0.11.0 carries two independent surfaces. spec-0033: the per-body
+    // `traversal` declaration — what a body can do when it moves — carried by
+    // the stage-2 NPC and the stage-5 actor through one shared type. And the
+    // press-answer lift, two additive parts that are one capability: a `narrate`
+    // `actionbar` style (the reply strip every compiler-written line already
+    // used) and a trigger's `audience: presser` (dispatch as the player who
+    // right-clicked). Together they make "a pressable thing answers the presser"
+    // an ordinary trigger, and retire `close-gate`'s private copy of it.
     assert!(s.contains("dsl 0.11.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }

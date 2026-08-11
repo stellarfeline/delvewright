@@ -62,9 +62,10 @@ fn quests_with(version: &str, effects: &str) -> String {
 }
 
 fn codes(quests: &str) -> Vec<String> {
+    // `check_campaign` returns the FENCED verdict, which derefs to a slice.
     check_campaign(&campaign_with(quests))
-        .into_iter()
-        .map(|d| d.code)
+        .iter()
+        .map(|d| d.code.clone())
         .collect()
 }
 

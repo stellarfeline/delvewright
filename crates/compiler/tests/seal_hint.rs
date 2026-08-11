@@ -19,8 +19,8 @@ use delvewright_compiler::commands::CommandTree;
 use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
 use delvewright_compiler::gates;
 use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
 
 /// A hello-world `quests` doc at `dsl_version`, opening `anchor/door` on the talk
 /// objective and running `on_complete` after the exit is reached — where a
@@ -177,6 +177,23 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
     try_build(campaign, prefabs).expect("every emitted command validates")
 }
 
+/// Full validation, **fenced** — the verdict `delvec` reports, for the checks
+/// that are validation-tier (`DW0429`). `DW0429` is fenced on its own code
+/// (`DwCode::since("DW0429", 11)`), so the pre-fence list would report a 0.6
+/// fixture for a rule it never opted into.
+fn diagnostics(c: &Campaign) -> delvewright_dsl::Fenced {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    delvewright_dsl::Fenced::apply(
+        c,
+        validate_campaign_with(
+            c,
+            &FullItemRegistry::v1_21_11(),
+            &prefabs,
+            &FullEntityRegistry::v1_21_11(),
+        ),
+    )
+}
+
 /// One emitted `.mcfunction` body, by unqualified name.
 fn function(out: &BuildOutput, name: &str) -> String {
     let suffix = format!("/function/{name}.mcfunction");
@@ -230,22 +247,138 @@ fn a_sealed_gate_answers_a_right_click() {
         "the seal must arm hitboxes that protrude past the sealed block: {arm}"
     );
 
-    let adv = advancement(&out, "seal_door");
+    // DSL v0.11: the answer is no longer `close-gate`'s own machinery. It is the
+    // synthesized press-answer trigger — an ordinary `use` trigger with
+    // `audience: presser`, riding the seal's hitboxes — so what the advancement
+    // watches is the TRIGGER's tag, which `seal_arm_door` puts on those same
+    // entities. Same three parts, none of them keyed to the verb any more.
+    assert!(
+        arm.contains("\"dw_trig_dw_press_seal_door\""),
+        "the press answer must ride the seal's hitboxes, not summon its own: {arm}"
+    );
+
+    let adv = advancement(&out, "press_dw_press_seal_door");
     assert!(
         adv.contains("minecraft:player_interacted_with_entity")
-            && adv.contains("dw_seal_door")
-            && adv.contains("seal_hint_door"),
+            && adv.contains("dw_trig_dw_press_seal_door")
+            && adv.contains("press_dw_press_seal_door"),
         "a right-click on the seal must dispatch the answer as the clicking player: {adv}"
     );
 
-    let hint = function(&out, "seal_hint_door");
+    let dispatch = function(&out, "press_dw_press_seal_door");
+    assert!(
+        dispatch.contains("advancement revoke @s only"),
+        "the stone answers EVERY press, not only the first: {dispatch}"
+    );
+
+    let hint = function(&out, "trig_dw_press_seal_door");
     assert!(
         hint.contains("title @s actionbar") && hint.contains("The way is sealed."),
         "the answer must reach the presser's actionbar: {hint}"
     );
+}
+
+// --- the 2026-08-11 ruling: above the fence, nobody defaults ----------------
+
+/// **`DW0429` over a `close-gate`.** At 0.11.0 a seal with neither an authored
+/// `sealed_hint` nor a `use` trigger on its gate does not compile. The wall is a
+/// thing the party walks back to and presses; the compiler will not decide what
+/// it says.
+///
+/// This is the same obligation a shortcut door carries, deliberately: they are
+/// two objects of one class, and two defaulting policies for one class is the
+/// "capability keyed to the verb" defect this whole surface is the worked example
+/// of.
+#[test]
+fn an_unanswered_seal_is_dw0429_at_0_11() {
+    let c = parse_hw(&quests_doc("0.11.0", SEAL_IT));
+    let diags = diagnostics(&c);
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0429")
+        .unwrap_or_else(|| panic!("expected DW0429, got {diags:#?}"));
     assert!(
-        hint.contains("advancement revoke @s only"),
-        "the stone answers EVERY press, not only the first: {hint}"
+        d.message.contains("anchor/door") && d.message.contains("sealed_hint"),
+        "DW0429 names the gate and both ways to discharge it: {}",
+        d.message
+    );
+}
+
+/// An authored `sealed_hint` **is** the author saying it, so it discharges the
+/// obligation — and the compiler still lowers that wording onto the general path,
+/// which is the point of keeping the sugar at all.
+#[test]
+fn an_authored_hint_discharges_the_obligation_at_0_11() {
+    let c = parse_hw(&quests_doc(
+        "0.11.0",
+        r#"{ "type": "close-gate", "anchor": "anchor/door",
+             "sealed_hint": "The bars will not lift for you.",
+             "happening": { "verb": "seals", "text": "The bars come down." } },
+           { "type": "campaign-complete",
+             "happening": { "verb": "survives", "text": "The party is out." } }"#,
+    ));
+    assert!(
+        diagnostics(&c).is_empty(),
+        "an authored wording is an answer: {:#?}",
+        diagnostics(&c)
+    );
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    assert!(
+        function(&out, "trig_dw_press_seal_door").contains("The bars will not lift for you."),
+        "and it is still lowered onto the general path"
+    );
+}
+
+/// **Grandfathering, which is what the fence is for.** The same campaign at 0.6.0
+/// — an unauthored `close-gate` — keeps the verdict *and* the behaviour it has
+/// had since v0.8: it validates, and the wall says the compiler's canonical
+/// English. Same declared `dsl_version`, same answer, forever.
+#[test]
+fn a_pre_0_11_seal_keeps_its_default() {
+    let c = parse_hw(&quests_doc("0.6.0", SEAL_IT));
+    assert!(
+        diagnostics(&c).is_empty(),
+        "the obligation cannot reach a campaign that predates it: {:#?}",
+        diagnostics(&c)
+    );
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    assert!(
+        function(&build(&c, &prefabs), "trig_dw_press_seal_door")
+            .contains("delvewright.ui.gate.sealed"),
+        "and it still takes the compiler's canonical English"
+    );
+}
+
+/// **The engine does not talk over the campaign.** Once the author answers the
+/// press at that anchor themselves, the compiler supplies nothing — one press,
+/// one answer. (For a `close-gate` the compiler still *may* speak; the owner's
+/// 2026-08-10 ruling withdrew that licence for shortcut doors only, and
+/// `plan::SilencePolicy` is where the two classes differ.)
+#[test]
+fn an_authored_trigger_replaces_the_compilers_seal_answer() {
+    let c = parse_hw(&quests_doc_with(
+        "0.11.0",
+        SEAL_IT,
+        r#"{ "id": "trigger/the-stone", "at": "anchor/door", "on": { "on": "use" },
+             "once": false, "audience": "presser",
+             "effects": [ { "type": "narrate", "style": "actionbar",
+                            "text": "The stone does not care." } ] }"#,
+    ));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    let all = all_functions(&out);
+    assert!(
+        all.contains("The stone does not care."),
+        "the author's line is what the seal says: {all}"
+    );
+    assert!(
+        !all.contains("dw_press_seal_door"),
+        "the compiler's own answer must stand down: {all}"
+    );
+    assert!(
+        !all.contains("delvewright.ui.gate.sealed"),
+        "…and its chrome must not ship either: {all}"
     );
 }
 
@@ -293,7 +426,7 @@ fn an_authored_hint_replaces_the_canonical_english() {
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
-    let hint = function(&out, "seal_hint_door");
+    let hint = function(&out, "trig_dw_press_seal_door");
     assert!(
         hint.contains("The bars will not lift for you."),
         "the authored wording must be what the seal says: {hint}"

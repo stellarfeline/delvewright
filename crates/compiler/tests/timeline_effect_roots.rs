@@ -160,7 +160,13 @@ fn prefabs() -> PrefabRegistry {
 fn assert_validates(c: &Campaign) {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = delvewright_dsl::validate_campaign_with(c, &items, &prefabs(), &entities);
+    // Fenced, never the raw list: a verdict is what `delvec` reports, and an
+    // obligation fenced on its code (`Binds::Since`) is not something a fixture
+    // below that version answers for.
+    let d = delvewright_dsl::Fenced::apply(
+        c,
+        delvewright_dsl::validate_campaign_with(c, &items, &prefabs(), &entities),
+    );
     assert!(d.is_empty(), "fixture must validate cleanly: {d:#?}");
 }
 

@@ -43,11 +43,17 @@ fn fixture() -> Campaign {
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    // Fenced, never the raw list: a verdict is what `delvec` reports, and an
+    // obligation fenced on its code (`Binds::Since`) is not something this
+    // pre-0.11 fixture answers for.
+    let diags = delvewright_dsl::Fenced::apply(
         &campaign,
-        &FullItemRegistry::v1_21_11(),
-        &prefabs,
-        &FullEntityRegistry::v1_21_11(),
+        validate_campaign_with(
+            &campaign,
+            &FullItemRegistry::v1_21_11(),
+            &prefabs,
+            &FullEntityRegistry::v1_21_11(),
+        ),
     );
     assert!(diags.is_empty(), "fixture must validate clean: {diags:#?}");
     campaign

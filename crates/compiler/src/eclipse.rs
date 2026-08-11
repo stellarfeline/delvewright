@@ -91,18 +91,28 @@ use delvewright_dsl::DwCode;
 /// body instead of the affordance.
 pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 
-/// `DW0422`: a **seal's answer hitbox** shares space with another compiler-owned
-/// interaction affordance (DSL v0.8, task #142).
+/// `DW0422`: a **pressable body's hitbox** shares a cell with another
+/// compiler-owned interaction affordance (DSL v0.8, task #142; widened to the
+/// whole pressable class in v0.11).
 ///
-/// A `close-gate` arms one `minecraft:interaction` per clickable cell of the
-/// sealed region so the wall can answer a right-click. Any other affordance whose
-/// own 1.0 × 2.0 box overlaps one of those cells is in an exact ray-pick contest
-/// with it, and the client resolves such a contest by iteration order — so one of
-/// the two silently stops receiving clicks, which is precisely the defect
-/// (`DESIGN.md`, island round 13) that made a second hitbox on the boulder
-/// unshippable. Triggers anchored **on the gate itself** are not a collision: they
-/// ride the seal's hitboxes and summon nothing (`emit::env_trigger_setup`), the
-/// same merge `strike`-on-an-NPC's-anchor has used since round 6.
+/// A compiler-owned press body is one `minecraft:interaction` per clickable cell
+/// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
+/// occupies one of those cells is in an exact ray-pick contest with it, and the
+/// client resolves such a contest by iteration order — so one of the two silently
+/// stops receiving clicks, which is precisely the defect (`DESIGN.md`, island
+/// round 13) that made a second hitbox on the boulder unshippable. Triggers
+/// anchored **on the body itself** are not a collision: they ride its hitboxes and
+/// summon nothing (`emit::env_trigger_setup`), the same merge
+/// `strike`-on-an-NPC's-anchor has used since round 6.
+///
+/// **Two things about the binding.** It walks [`pressable_bodies`] — seals *and*
+/// sealed shortcut doors — because a ray-pick contest is a property of having
+/// hitboxes, not of the verb that first had them; keyed to `close-gate` it
+/// examined zero objects on any campaign whose only pressable thing was a door.
+/// And the contest is tested against the **cell**, not the emitted `1.02f` box:
+/// the protrusion exists to beat the block the body stands in, and
+/// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
+/// into a neighbouring cell's affordances.
 pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
 
 /// A build failure raised by the eclipse proof (mapped to exit 3, like the
@@ -360,7 +370,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             });
         }
     }
-    for t in &c.quests.content.triggers {
+    for t in &plan.emitted_triggers_unlocalized() {
         // `approach` triggers are a per-tick radius test, not an entity.
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
@@ -505,19 +515,38 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, EclipseError> 
 /// the player than the sealed block it stands in (an exactly-coincident box loses
 /// the client's ray-pick to the block, and the seal answers with silence).
 fn seal_box(cell: [i32; 3]) -> [Span; 3] {
-    let m = crate::emit::SEAL_MARGIN;
+    // **The cell, not the emitted box.** The shipped entity is one
+    // `SEAL_MARGIN` larger on every face, and that protrusion exists for exactly
+    // one purpose: to be strictly nearer the eye than the BLOCK it stands in, so
+    // the press reaches the entity instead of the wall. `SEAL_MARGIN`'s own doc
+    // states the other half of that contract — *a hundredth of a block never
+    // reaches into a neighbouring cell's own affordances*.
+    //
+    // Testing the protruded box against a neighbour's affordance breaks that
+    // contract from the proof side: two boxes sharing a 1 cm sliver are at
+    // genuinely different ray distances and the client picks the nearer one, so
+    // there is no tie and nothing to report. What `DW0422` is about is
+    // **co-location** — an affordance standing in a cell the body occupies —
+    // which is an exact tie the client resolves by iteration order.
+    //
+    // The distinction was invisible while this bound to `close-gate` seals alone
+    // (no fixture had an affordance in an adjoining cell). Widening it to every
+    // pressable body immediately produced a false `DW0422` on the `souls-shortcut`
+    // fixture: `npc/keeper`'s dialogue hitbox stands at `[5,65,4]`, edge-adjacent
+    // to the door's press cell `[4,65,5]`, overlapping it by one centimetre on
+    // two axes and by nothing a player could ever experience.
     [
         Span {
-            lo: cell[0] as f64 - m,
-            hi: cell[0] as f64 + 1.0 + m,
+            lo: cell[0] as f64,
+            hi: cell[0] as f64 + 1.0,
         },
         Span {
-            lo: cell[1] as f64 - m,
-            hi: cell[1] as f64 + 1.0 + m,
+            lo: cell[1] as f64,
+            hi: cell[1] as f64 + 1.0,
         },
         Span {
-            lo: cell[2] as f64 - m,
-            hi: cell[2] as f64 + 1.0 + m,
+            lo: cell[2] as f64,
+            hi: cell[2] as f64 + 1.0,
         },
     ]
 }
@@ -549,13 +578,13 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
                 pos: b.pos,
             }),
     );
-    for s in &plan.seal_hints {
-        for cell in s.shell_cells() {
+    for body in pressable_bodies(plan) {
+        for cell in body.cells {
             let sbox = seal_box(cell);
             for a in &affordances {
                 let abox = affordance_box(a.pos);
                 if (0..3).all(|i| sbox[i].overlaps(abox[i])) {
-                    return Err(seal_collision_error(s, cell, a));
+                    return Err(seal_collision_error(body.kind, &body.anchor, cell, a));
                 }
             }
         }
@@ -563,24 +592,87 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), EclipseError> {
     Ok(())
 }
 
+/// A compiler-owned set of press hitboxes: what owns it, where it hangs, and the
+/// cells it occupies.
+struct PressableBody {
+    /// What owns the set (`close-gate seal` / `shortcut door`).
+    kind: &'static str,
+    /// The anchor it hangs on, for the diagnostic.
+    anchor: String,
+    /// The cells its boxes stand in.
+    cells: Vec<[i32; 3]>,
+}
+
+/// **Every compiler-owned press hitbox set in the campaign**, seals then shortcut
+/// doors, each in its planner's order.
+///
+/// `DW0422` was written over `plan.seal_hints` alone, because a `close-gate` seal
+/// was the only thing in the engine that had press hitboxes. Task #50 gave a
+/// sealed `shortcut` door its own set (`ws_arm_<safe>`, standing in the open air
+/// on the sealed side — precisely where a lever or an objective marker plausibly
+/// stands) and nothing widened the proof, so the collision that made the island's
+/// boulder unshippable was unchecked on the newer of the two bodies. On the
+/// `souls-shortcut` fixture the check bound to **zero** objects: a green that
+/// meant nothing.
+///
+/// The fix is not a second check. A ray-pick contest is a property of *having
+/// hitboxes*, so the proof is stated once over the class that has them, and a
+/// third pressable object class enters it by being listed here.
+/// The binding ledger `DW0422` examined, as `(what owns it, its anchor, how many
+/// cells)`.
+///
+/// CLAUDE.md: *a green gate that binds to nothing is vacuous, not a pass*. This
+/// proof was silently unbound on every campaign that seals nothing, and — until
+/// v0.11 — was structurally unbindable on a shortcut door however many the
+/// campaign had. Stating the count is what makes that visible from outside.
+pub fn pressable_body_binding(plan: &Plan) -> Vec<(&'static str, String, usize)> {
+    pressable_bodies(plan)
+        .into_iter()
+        .map(|b| (b.kind, b.anchor, b.cells.len()))
+        .collect()
+}
+
+fn pressable_bodies(plan: &Plan) -> Vec<PressableBody> {
+    let mut out: Vec<PressableBody> = plan
+        .seal_hints
+        .iter()
+        .map(|s| PressableBody {
+            kind: "close-gate seal",
+            anchor: s.anchor.clone(),
+            cells: s.shell_cells(),
+        })
+        .collect();
+    out.extend(plan.shortcuts.iter().filter_map(|sc| {
+        Some(PressableBody {
+            kind: "shortcut door",
+            anchor: sc.gate_anchor.clone(),
+            // A door whose sealed side did not resolve places no bodies at all
+            // (`DW0425` has already failed the build).
+            cells: sc.sealed_side.as_ref()?.approach_cells(),
+        })
+    }));
+    out
+}
+
 /// The `DW0422` error: another affordance stands inside a sealed region.
 fn seal_collision_error(
-    s: &crate::plan::SealHintPlan,
+    kind: &'static str,
+    anchor: &str,
     cell: [i32; 3],
     a: &Affordance,
 ) -> EclipseError {
     EclipseError {
         code: DW_SEAL_HITBOX_COLLISION,
         message: format!(
-            "the {} `{}` at `{}` {:?} shares space with the seal of gate anchor `{}`, which arms \
-             an answer hitbox at {:?}. Both are `minecraft:interaction` boxes in the same cell, so \
-             the client's entity ray-pick is an exact tie and resolves by iteration order — one of \
-             the two silently stops receiving clicks, and which one is not decidable from the \
-             campaign. Prescription: move the affordance out of the sealed region, or — when the \
-             thing being clicked really IS the sealed gate — anchor the trigger on the gate anchor \
-             `{}` itself, which makes it ride the seal's own hitboxes instead of summoning a \
-             second one.",
-            a.kind, a.id, a.anchor, a.pos, s.anchor, cell, s.anchor,
+            "the {} `{}` at `{}` {:?} shares space with the {kind} at anchor `{anchor}`, which \
+             arms a press hitbox at {cell:?}. Both are `minecraft:interaction` boxes in the same \
+             cell, so the client's entity ray-pick is an exact tie and resolves by iteration \
+             order — one of the two silently stops receiving clicks, and which one is not \
+             decidable from the campaign. Prescription: move the affordance out of the pressable \
+             body's cells, or — when the thing being clicked really IS that body — anchor the \
+             trigger on `{anchor}` itself, which makes it ride the body's own hitboxes instead of \
+             summoning a second one.",
+            a.kind, a.id, a.anchor, a.pos,
         ),
     }
 }
@@ -717,5 +809,36 @@ mod tests {
     #[test]
     fn code_is_dw0359() {
         assert_eq!(DW_BODY_ECLIPSE, "DW0359");
+    }
+}
+
+#[cfg(test)]
+mod press_hitbox_tests {
+    use super::*;
+
+    /// **The cell-not-box correction, as geometry.** A press body and an
+    /// affordance in the SAME cell are an exact ray-pick tie — that is `DW0422`.
+    /// Two in *adjoining* cells are not, and must not be reported: the shipped
+    /// entity is one `SEAL_MARGIN` larger on every face, and that centimetre
+    /// exists to beat the block it stands in, never to claim the neighbour's
+    /// space (`emit::SEAL_MARGIN`'s own contract).
+    ///
+    /// Both directions are asserted, because a check that can only fail in the
+    /// direction that never happens is the fourth way to be vacuous.
+    #[test]
+    fn a_press_cell_contests_its_own_cell_and_not_the_next_one() {
+        let cell = [4, 65, 5];
+        let same = affordance_box(cell);
+        assert!(
+            (0..3).all(|i| seal_box(cell)[i].overlaps(same[i])),
+            "an affordance in the body's own cell IS the tie DW0422 is about"
+        );
+        // `npc/keeper` on the `souls-shortcut` fixture: edge-adjacent on two axes,
+        // which the protruded box read as a collision and a player never could.
+        let next = affordance_box([5, 65, 4]);
+        assert!(
+            !(0..3).all(|i| seal_box(cell)[i].overlaps(next[i])),
+            "an affordance in an adjoining cell is at a different ray distance"
+        );
     }
 }

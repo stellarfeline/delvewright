@@ -54,7 +54,9 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 }
 
 fn diags_for(seq_effects: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(&quests_with_sequence(seq_effects)))
+    // `check_campaign` returns the FENCED verdict; this helper hands back an
+    // owned copy of the reported half.
+    check_campaign(&campaign_with_quests(&quests_with_sequence(seq_effects))).to_vec()
 }
 
 /// A valid `narrate` nested in a sequence validates clean (baseline: the deep scan
