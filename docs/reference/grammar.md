@@ -815,6 +815,110 @@ the two things that block it, and neither is an IR-motion problem:
 **Do not build a `counterweight_lift` rule.** The zone table's claim that Z7
 waits on one is stale and is corrected in §5c.
 
+### `hearth_ward` — the rest point's nook
+
+A chain segment with a two-wide pocket walled on three sides beside the lane,
+and one declared focus cell inside it. The mechanism a rest point needs
+(`bonfire{anchor}`, spec-0016 §1) stated without the fiction: **somewhere off
+the road, approachable from one direction only, with one cell declared as its
+focus**. A checkpoint binds there; so would a shrine, a vendor, a save crystal.
+
+| | |
+|---|---|
+| Controls | `head` (3), `nook_len` (3), `nook_height` (2 — must be under `head`), `mouth_sealed` (0) and `back_door` (0 — test knobs); roles `rock`, `hearth_floor` |
+| Smallest region | `MIN_WIDTH` (6) × (`head` + 2) × (`nook_len` + 3), and at least as long as it is wide |
+| Anchors | `anchor/hearth` — the floor cell at the centre of the nook's inner half, facing out through the mouth (the back wall is at `Z`-max so the derived facing does that) |
+
+**Not a `watch_bay` with a different anchor on it, and the reason is the
+claim.** The shape is deliberately the bay's. What is not shareable is what it
+proves: `watch_bay` exists to prove a sightline to a hazard span *it builds
+itself*, and a rest ward has no span — composing a bay here would drag in a
+hazard the zone does not want and bind that rule's only gate to zero cells,
+which is a green that measures nothing. That three rules now build a
+pocket-off-a-lane is filed as an open question in §7.
+
+Gates:
+
+1. **The lane walks end to end** (78 cells, 6 at each end), so a rest ward in a
+   zone's piece run does not sever it. Red: the refusal a box under `MIN_WIDTH`
+   gets, against the same box one cell wider, which builds.
+2. **The focus is reachable, and reaching it is a detour** — the lane reaches
+   `anchor/hearth`, and deleting all 6 nook cells leaves the lane connected end
+   to end. A rest you walk *through* is a corridor with a campfire in it. Teeth:
+   `mouth_sealed` (76 cells) — the hearth stands, unreachable, and the lane walks
+   unchanged.
+3. **Exactly one way in** — the nook's standable neighbours are counted and
+   there are exactly `NOOK_WIDTH` (2) of them, both in front of the mouth. Teeth:
+   `back_door` opens the outer wall behind it and the count goes to 5.
+
+### `bait_stand` — the lure and its watcher
+
+A chain segment carrying a pedestal on the room floor and a standable perch on a
+corbel **directly above it**, with the corbel carried in from the side wall so it
+cannot hide what it holds. §4 entry **B**, and specifically the dossier's
+*variant 1 only*: variant 3 (the displaced trigger) is banned as resented, and
+this geometry cannot express it — the rule's whole gate is that the two are in
+one frame.
+
+| | |
+|---|---|
+| Controls | `head` (5 — must clear the perch by a cell), `perch_rise` (4, at least `MIN_RISE`), `bracket` (1), `canopy` (0 — a test knob); roles `stone`, `timber`, `pedestal` |
+| Smallest region | (`bracket` + 4, ≥ `MIN_WIDTH` 5) × (`head` + 2) × 4, and at least as long as it is wide |
+| Anchors | `anchor/bait` — the pedestal's own top **block**, the call `store_room`'s `tell` already makes for its barrel. `anchor/bait-perch` — the standable cell over it |
+
+**Why the corbel comes in from the side wall.** `rafter_hall` worked this out
+for a whole truss: an eye on the floor is below the beam plane and a perch above
+it, so a ray from the approach crosses that plane between the two and a beam
+lying in the crossing hides the body it carries. Here the beam occupies only the
+perch's own `Z` slice, so a ray down the lane crosses the plane at a `Z` the beam
+does not occupy. Fairness is bought by the form, not by a box size.
+
+Both anchors take the derived down-travel facing — the same price `rafter_hall`
+pays for its perches, and for the same missing primitive (§7).
+
+Gates:
+
+1. **The watcher stands over the lure** — same column, perch above, perch
+   standable, pedestal solid, and open air over the pedestal for the lure to sit
+   in. Bound over 3 box shapes, because a motif that lines up at one width is a
+   coincidence.
+2. **Wherever the lure is visible, so is the watcher** — all 42 approach cells
+   see `anchor/bait`, and all 42 see `anchor/bait-perch`. Teeth: `canopy` hangs a
+   valance in front of the perch — the lure's 42 does not move and the watcher's
+   drops to 0, so the red is an *ambush* defect and not a walled-off room.
+3. **The room walks end to end** (99 cells, 7 at each end).
+
+### `disarm_stand` — the hazard's control
+
+The **actuation** dual of `watch_bay`'s observation: a hazard run with a walled
+stand at its head, and the mechanism set into the stand's *outer* wall — so every
+position it can be worked from lies outside the run it governs. §4 entry **D**
+("the boulder release can be jammed from the stair head").
+
+| | |
+|---|---|
+| Controls | `head` (4), `stand_height` (2 — must be under `head`), `release_in_lane` (0) and `stand_sealed` (0 — test knobs); roles `rock`, `mechanism` |
+| Smallest region | `MIN_WIDTH` (6) × (`head` + 2) × (`STAND_ZONE` + 2 = 5), and at least as long as it is wide |
+| Anchors | `anchor/release` — the mechanism's own block, in the outer wall a cell over the floor. `anchor/run-head` — the floor cell where what is released starts |
+
+A control cell is a **point**; what a campaign hangs on it — an `EnvTrigger` with
+`on: use`, a `timed-gate` disarm — is the campaign's business. This rule declares
+no trap: trap and trigger anchors are not yet expressible by a rule (§7), and the
+same call `boulder_stair`'s `volley-slot` already makes.
+
+Gates:
+
+1. **The lane walks end to end** (107 cells). Red: the refusal an undersized box
+   gets.
+2. **The release cannot be worked from the run** — all 103 standable cells that
+   are not the stand's own pocket are checked for adjacency to `anchor/release`,
+   and none is. The binding is the run's size, so the claim cannot go vacuous on
+   a shorter box. Teeth: `release_in_lane` sets the mechanism into the divider
+   instead and the count rises to 1.
+3. **...and it can be worked at all** — the one operating position is standable
+   and reachable from the run. Teeth: `stand_sealed` fills the stand's mouth: the
+   position stands, unreachable, and the lane walks unchanged.
+
 ## 5c. Zone programs — the vocabulary composed
 
 `library::bell::{barrow_shore, cliff_road, gate_ward, drowned_ward,
@@ -823,9 +927,11 @@ programs** (REMAKE §3;
 build-sequence step 3). A zone is one grammar program, and these contain no
 encounter geometry of their own: they split the zone's box and `call` §5b's
 rules. The only blocks a zone writes itself are `cliff_road`'s crag and the air
-beside it, and the inert `margin` rock filling the side strip `drowned_ward`,
-`chapel_ward` and `cistern_deep` park a branch in — the mass a zone is carved out of, which no
-piece handed a sub-box can know about. The other three write nothing at all.
+beside it, the inert `margin` rock filling the side strip `drowned_ward`,
+`chapel_ward`, `cistern_deep` and `gate_ward` park a branch in, and the **plinth**
+`gate_ward` and `hall_keep` stand on (below) — the mass a zone is carved out of,
+which no piece handed a sub-box can know about. Only `barrow_shore` writes
+nothing at all.
 
 ### `compose::include` — how one program calls another's rules
 
@@ -885,22 +991,22 @@ the `local_*` facing spec of §7, one layer out. Not built.
 
 ### The seven zones, and the one that is a named gap
 
-Rows for Z2, Z4, Z5 and Z7 name §4 entries whose *rules* exist (the W3/W4
-families above) — what those zones wait on is a zone program composing them, or
-the seam limit named beside them, not the vocabulary. Only **B** (bait-item
-gallery) and **D** (boulder jam) have no rule at all; `counterweight_lift` is no
-longer on that list and never will be — the lift is a DSL construct now, and
-what a shaft owes the grammar is geometry (§5b). Rows are rewritten in the round
-that builds them; nothing here claims a zone was built.
+**Every §4 entry now has a rule, and every programmed zone composes the entries
+its row names.** The three that had none — **B** (bait gallery), **D** (boulder
+jam) and the hearth — are `bait_stand`, `disarm_stand` and `hearth_ward` (§5b);
+`counterweight_lift` is struck and never will be one, because the lift is a DSL
+construct now and what a shaft owes the grammar is geometry. Only Z7 is
+unprogrammed. Rows are rewritten in the round that builds them; nothing here
+claims a zone was built.
 
 | Zone | Program | Composed from | Missing |
 |---|---|---|---|
 | Z0 Barrow Shore | `barrow_shore` | `elite_ground` | — (**E** is the whole of Z0) |
 | Z1 Cliff Road | `cliff_road` | `cliff_path` + the zone's gulf | switchback landing — see below |
-| Z2 Gatehouse | `gate_ward` (partial) | `watch_bay`, `ambush_door` | **W**+**S**, **F**, **L**, **M** — built rules awaiting a zone round — and **D**, which has no rule |
+| Z2 Gatehouse | `gate_ward` | `watch_bay`, `ambush_door`, `disarm_stand`, `boulder_stair`, `tee_passage`, `far_side_bar`, `threshold_motif`, `drop_shaft` + the zone's plinth and branch strip | — |
 | Z3 Drowned Lower Ward | `drowned_ward` | `causeway`, `tee_passage`, `elite_ground`, `far_side_bar` + the zone's branch strip | — |
-| Z4 Chapel Ward (hub) | `chapel_ward` (partial) | `dumbwaiter`, `tee_passage`, `far_side_bar` + the zone's branch strip | the hearth — a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one; the smallest honest form is a `hearth_ward` §5b rule |
-| Z5 Great Hall + Keep | `hall_keep` (partial) | `rafter_hall`, `ambush_door`, `store_room` | **L**, **M** — built rules awaiting a zone round — and **B**, which has no rule |
+| Z4 Chapel Ward (hub) | `chapel_ward` | `dumbwaiter`, `hearth_ward`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
+| Z5 Great Hall + Keep | `hall_keep` | `rafter_hall`, `ambush_door`, `store_room`, `bait_stand`, `threshold_motif`, `dumbwaiter` + the zone's plinth | — |
 | Z6 Cistern Deep | `cistern_deep` | `drop_shaft`, `watch_bay`, `broken_grate`, `elite_ground`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
 | Z7 Bell Tower | — | | a zone round, and one rule. **The ascent blocker is closed**: `stair_flight` (§5b) climbs, gated both ways. `counterweight_lift` is **struck** — the lift is authored in campaign JSON (spec-0031) and needs a `lift_shaft` rule, not a moving-platform one. Its loft is `rafter_hall`, its boss ring `elite_ground` |
 
@@ -932,6 +1038,31 @@ straight flight climbs at most about `Z / tread`, so a tall tower over a small
 footprint wants a **switchback**, and a switchback is a rule body rather than an
 orientation (§5b) — the "permutation without reflection" answer is the right
 answer to a different question.
+
+**The plinth, as a zone leaves one level down.** Every vertical piece builds its
+entry ledge `drop` blocks up and its landing at the floor, so a zone that puts
+one anywhere but its own `Z`-max end has to raise everything above the drop to
+meet that ledge. Z6 sidestepped this by being *entered* by falling; Z2 and Z5 are
+walked into and left down a shaft, so they cannot. The construction is the branch
+strip's sibling, licensed by the same clause: split the shaft's slice off the `Z`
+end, and give the remainder a `Y` split whose lower piece is inert `margin` rock.
+Two details keep it honest:
+
+- the plinth's thickness is **read from the piece** (`par("shaft/drop")`,
+  `par("duct/drop")`), never restated as a zone constant, so dialling the fall
+  moves the floor with it — which is the only reason the one-way gate's teeth (a
+  short drop plus a rescue ladder) still describe a zone that builds;
+- the zone guards that a plinth leaves an upper ward at all (`MIN_UPPER` = 5). A
+  piece handed too little refuses for itself, loudly; a *remainder of zero* would
+  be written silently, which is the failure mode a guard is owed for.
+
+**The tolerance is measured, not assumed.** Build the plinth one block thin and
+every gate stays green — correctly, because a one-block mismatch is a step and a
+step walks both ways. At **two** it is a drop the plain walk cannot climb and
+five gates go red at once (Z2's route-down, the span cut, the sally port, and the
+zone-wide walkability). The tempting stronger claim — "the plinth must equal the
+drop or the seam is a wall" — is false in one direction, and stating it would
+have made a green look stronger than it is.
 
 **The branch, as a zone builds it.** Z4 and Z6 both hang a `far_side_bar` off a
 `tee_passage` (seam limit 3, below), and both do it the same way, which is now
@@ -1043,10 +1174,10 @@ Each is asserted rather than asserted-about: every one has a test in
 |---|---|---|---|
 | `barrow_shore` | 19 × 6 × 24 | `arena/*` only; role `arena/stone` | `elite` |
 | `cliff_road` | 12 × 12 × 36 | `sea` (3), `fall` (8), `ledge_shelf` (0 — a test knob), plus `path/*`; role `crag` | the cliff path's `niche-<i>` / `niche-watch-<i>` |
-| `gate_ward` | 11 × 7 × 28 | `door_run` (12), plus `gate/*` and `door/*` | `watch`, `gate`, `threshold`, `alcove` |
+| `gate_ward` | 20 × 10 × 84 | `shaft_run` (12), `motif_run` (10), `tee_run` (10), `stair_run` (16), `stand_run` (10), `door_run` (10) — the gated passage takes the rest — `strip_depth` (11), plus `gate/*`, `door/*`, `stand/*`, `stair/*`, `tee/*`, `sally/*`, `motif/*`, `shaft/*`; role `margin`. The upper ward stands on a plinth `shaft/drop` thick | `watch`, `gate`, `threshold`, `alcove`, `release`, `run-head`, `stair-run`, `volley-slot`, `pocket-<i>`, `branch-door`, `sally-gate`, `unlock`, `threshold-narrate`, `spill`, `landing` |
 | `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor within the one-block step `connected` allows, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
-| `chapel_ward` | 12 × 9 × 20 | `strip_depth` (7), `junction_run` (6) — the chute takes the rest — plus `chute/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `branch-door`, `gate`, `unlock` |
-| `hall_keep` | 11 × 9 × 40 | `door_run` (12), `store_run` (12), plus `hall/*`, `door/*`, `stores/*` | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell` |
+| `chapel_ward` | 16 × 9 × 26 | `strip_depth` (9), `junction_run` (8), `hearth_run` (8) — the chute takes the rest — plus `chute/*`, `hearth/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `hearth`, `branch-door`, `gate`, `unlock` |
+| `hall_keep` | 11 × 11 × 76 | `duct_run` (12), `motif_run` (12), `gallery_run` (12), `store_run` (12), `door_run` (12) — the hall takes the rest — plus `hall/*`, `door/*`, `stores/*`, `gallery/*`, `motif/*`, `duct/*`; role `margin`. The keep stands on a plinth `duct/drop` thick | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell`, `bait`, `bait-perch`, `threshold-narrate`, `hatch`, `landing` |
 | `cistern_deep` | 40 × 10 × 100 | `arena_run` (20), `sally_run` (20), `vent_run` (20), `gallery_run` (20) — the shaft takes the rest — `strip_depth` (21), plus `arena/*`, `tee/*`, `sally/*`, `vent/*`, `gallery/*`, `shaft/*`; role `margin` | `spill`, `landing`, `watch`, `gate`, `grate-secret`, `branch-door`, `sally-gate`, `unlock`, `elite` |
 
 **Z3 does not claim a zone-length bypass, and says why.** Z0 and Z6 re-bind
@@ -1071,31 +1202,37 @@ the piece-level claims stay in §5b.
 
 | Gate | Binding | Red demonstrated by |
 |---|---|---|
-| Every zone is a route end to end | 438 / 40 / 239 / 1100 / 81 / 368 / 2078 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
+| Every zone is a route end to end | 438 / 40 / 655 / 1100 / 165 / 677 / 2078 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
 | Z0 a lane each side of the fight | 2 routes, bands of 111 cells | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, shore still walkable |
 | Z0 a square box is refused | 1 refusal | — (the refusal is the gate; one cell longer builds) |
 | Z1 the ledge is the only route | 36 ledge cells of 40 | deleting the lane severs the zone |
 | Z1 the gulf is beside every ledge cell | 36 cells × 3 seeds = 108 columns | `ledge_shelf = 1` → all 36 shallow, road still walkable |
 | Z1 every niche opens onto that ledge | 4 niches, 4 watch cells | — (measured against the model, not the params) |
-| Z2 the hazard cannot be walked round | 27 span cells | deleting the span severs the zone |
-| Z2 the bay sees the whole span *composed* | 27 span cells | `gate/obstruct = 1` → 6 blind, passage still walkable |
-| Z2 the alcove is blind from the whole zone | 184 approach cells (54 in the piece's own fixture) | `door/expose = 1` → 147 see it |
-| Z5 the doorway is the only route | 205 approach / 162 inside cells | plugging the door column severs the keep |
-| Z5 every perch visible from the hall door | 4 perches | `hall/span_beams = 1` → 2 blind, keep still walkable |
-| Z5 the alcove is blind from the whole hall | 205 cells, 4 of them rafters | `door/expose = 1` → 152 see it |
-| Z5 exactly one tell | 8 seeds, 5 distinct positions | — (the recursion is the invariant; a broken include reds it) |
+| Z2 the hazard cannot be walked round | 21 span cells, 634 cells re-walked without them **under the fall model** | deleting the span severs the zone |
+| Z2 the bay sees the whole span *composed* | 21 span cells | `gate/obstruct = 1` → 6 blind, passage still walkable |
+| Z2 the alcove is blind from the whole zone | 135 approach cells (54 in the piece's own fixture) | `door/expose = 1` → 121 see it |
+| Z2 a route down, and none back up | 4 entry / 7 exit cells, 655 standable | `shaft/rescue_ladder = 1` (+ `shaft/drop = 2`) → the ward climbs back; two controls |
+| Z2 the release is out of reach of the composed run | 603 run cells examined, 0 in reach; 1 operating position, reachable | `stand/release_in_lane = 1` → 1 in-run position |
+| Z2 the sally port is sealed, and reached through one doorway | 655 standable, 40 the branch's near room, 1 doorway column cut | `sally/unbarred = 1` (663) opens it; `tee/sealed = 1` (654) makes the branch unreachable, ward still a route down |
+| Z5 the doorway is the only route | 205 approach / 471 inside cells, cut re-walked under the fall model too | plugging the door column severs the keep |
+| Z5 every perch visible from the hall door | 4 perches | `hall/span_beams = 1` → 3 blind, keep still walkable |
+| Z5 the alcove is blind from the whole hall | 205 cells, 4 of them rafters | `door/expose = 1` → 155 see it |
+| Z5 exactly one tell | 8 seeds, 6 distinct positions | — (the recursion is the invariant; a broken include reds it) |
+| Z5 a route down, and none back up | 9 entry / 9 exit cells, 677 standable | `duct/rescue_ladder = 1` (+ `duct/drop = 2`) → the keep climbs back; two controls |
+| Z5 the lure's watcher is legible from the composed gallery | 144 gallery cells, all 144 seeing both | `gallery/canopy = 1` → the lure's 144 holds, the watcher's drops to 0 |
 | Z3 a route **both ways**, and only through the gatehouse | 1100 standable, 1 entry cell (the berm is one wide), 19 exit | `ward/berm_gate = 0` restores the plinth → severed under walk *and* walk-and-fall, while the 18-cell crossing still walks |
 | Z3 the keeper commands the crossing *composed* | 18 crossing cells, 18 sightlines | `ward/obstruct = 1` → blind cells, ward still walkable |
 | Z3 a lane each side of the fight, bound over the **arena's own run** | 2 routes at the default | `ring/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0 |
 | Z3 the shortcut is sealed, and reached through one doorway | 1100 standable, 180 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` opens it; `junction/sealed = 1` makes the branch unreachable, ward still walks |
-| Z4 a route down, and none back up | 3 ledge / 3 exit cells, 81 standable | `chute/rescue_ladder = 1` (+ `chute/drop = 2`) → the hub climbs back; two controls |
-| Z4 the shortcut is sealed, and reached through one doorway | 81 standable, 12 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` (85 standable) opens it; `junction/sealed = 1` (80) makes the branch unreachable, hub still walks |
+| Z4 a route down, and none back up | 5 ledge / 5 exit cells, 165 standable | `chute/rescue_ladder = 1` (+ `chute/drop = 2`) → the hub climbs back; two controls |
+| Z4 the shortcut is sealed, and reached through one doorway | 165 standable, 24 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` (171 standable) opens it; `junction/sealed = 1` (164) makes the branch unreachable, hub still walks |
+| Z4 the hearth is reachable, and off the route | 165 standable, 6 of them the nook, re-walked without them | `hearth/mouth_sealed = 1` (163) → the hearth stands unreachable, hub still crosses |
 | Z4 a branch no deeper than its junction is refused | 2 refusals | — (the refusal is the gate; the same box builds at the defaults) |
 | Z6 a route down, and none back up | 17 ledge / 19 floor cells, 2078 standable | `shaft/rescue_ladder = 1` (+ `shaft/drop = 2`) → the deep climbs back; two controls |
 | Z6 the span cannot be walked round *or fallen past* | 51 span cells, re-walked under the fall model | deleting the span severs the zone |
 | Z6 a lane each side of the fight | 2 routes, bands of 767 / 411 cells (the west band is the larger only because the branch's own rooms fall inside it; they span the sally run alone and carry no route) | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, cistern still a route down |
 | Z6 the sally port is sealed, and reached through one doorway | 2078 standable, 180 the branch's near room, 1 doorway column cut | `sally/unbarred = 1` (2096) opens it; `tee/sealed = 1` (2077) makes the branch unreachable, cistern still a route down |
-| No piece was turned | 42 anchors, travel order + facing; exactly 17 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused; the same boxes turn `ambush_door` / `watch_bay` alone (`west`) |
+| No piece was turned | 60 anchors, travel order + facing; exactly 22 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused; the same boxes turn `ambush_door` / `watch_bay` alone (`west`) |
 | Seam limit 1 closed: a rename lets two pieces declare one stem | 2 pairs, 4 anchors read back by name and declaring rule | dropping the rewrite in `compose::node` → the same `AnchorCollision` |
 | Seam limit 1: no rename, still a collision | 2 pairs | — (the collision *is* the gate, named by rule both times) |
 | Seam limit 2 closed: `causeway` is a terminus until `berm_gate` opens | 2 `Z`-slices, a 22-cell berm | — (with the gate shut no walk crosses it while the berm still crosses the ward; with it open the faces connect) |
@@ -1104,15 +1241,15 @@ the piece-level claims stay in §5b.
 | ...and the branch's teeth | 42 standable, 9 near-room | `tee/sealed = 1` → the branch is unreachable, mainline still walks |
 | A composed route the player walks **up** | 133 standable, 3 in the entry face, 7 blocks of rise | the level walk to the flight's own foot landing is the control; a flat chain reads 0 |
 
-**Z4's and Z6's movement model.** Five zones are crossed with the ±1 step
-`connected` uses; Z4 and Z6 are entered by stepping off a ledge, so they are
-crossed under
-`reachable_with_fall` — `connected`'s walk plus a one-way fall — and they are the
-only zones that also owe the negative, that the extra freedom still does not
-carry a player back up (asserted under the plain step, since proving a negative
-under the generous model would be circular). The fall model is also used as the
-*adversary*: a fall edge only ever adds routes, so Z6's "the span is on the
-route" cut is re-walked under it. `tests/support/mod.rs` carries it, with one
+**Which zones fall.** Three of the seven are crossed with the ±1 step
+`connected` uses. The other four have a drop on the route — Z4 and Z6 are
+*entered* by stepping off a ledge, Z2 and Z5 are *left* down one — so they are
+crossed under `reachable_with_fall` (`connected`'s walk plus a one-way fall), and
+each of the four also owes the negative: the extra freedom still does not carry a
+player back up (asserted under the plain step, since proving a negative under the
+generous model would be circular). The fall model is also the *adversary*: a fall
+edge only ever adds routes, so Z2's and Z6's "the span is on the route" cuts and
+Z5's doorway cut are re-walked under it. `tests/support/mod.rs` carries it, with one
 deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing must
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
@@ -1222,6 +1359,18 @@ because the rule declares `anchor/branch-door` at the opening, so a zone reads
 where the face is from the expansion rather than from prose; larger because there
 is now a mating pair to get wrong, where before every rule was sealed and the
 convention had nothing to bind.
+
+**A pocket off a lane has no owner.** Three §5b rules now build the same shape —
+a lane with a pocket walled on three sides beside it: `watch_bay`'s bay,
+`hearth_ward`'s nook and `disarm_stand`'s stand. Each proves a *different* claim
+about it (a sightline to a span, shelter and detour, actuation from outside a
+run), which is why each is its own rule rather than a knob on one; but the
+construction itself is written three times, and a fourth consumer would write it
+a fourth. The general form is a shared pocket construction the three configure —
+not attempted here, for one concrete reason rather than for taste: `watch_bay` is
+shipped and composed into two zones, and re-expressing its bay would move the
+bytes of zones the byte-identity gate pins. It is named here so the *second*
+site is on the record, since generality is decided at the first.
 
 **A facing a rule cannot ask for.** A derived facing is the negative direction of
 the world axis the scope calls local `Z`, and an explicit `facing` is a *world*

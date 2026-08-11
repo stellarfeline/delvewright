@@ -9,6 +9,9 @@ use delvewright_grammar::library::{
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
 use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
+// The mechanism family (task #182 zone round): the rest point, the lure and the
+// hazard control.
+use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
 /// Regions each program is comfortably sized for. Sizes below these are a
 /// documented error, not a silent nothing — see `undersized_regions_are_loud`.
@@ -37,6 +40,11 @@ const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The mechanism family: a rest point's nook, a lure with its watcher, and a
+/// hazard's control at the head of its run.
+const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
+const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
+const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 
 fn programs() -> Vec<(Program, Box3)> {
     vec![
@@ -58,6 +66,9 @@ fn programs() -> Vec<(Program, Box3)> {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (hearth_ward(), HEARTH_REGION),
+        (bait_stand(), BAIT_REGION),
+        (disarm_stand(), DISARM_REGION),
     ]
 }
 
