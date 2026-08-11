@@ -184,7 +184,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
     replaces her.
   - **New campaigns** merge to content-repo main only after the owner has
     played them; machine-ladder green alone is not a merge gate (it remains
-    the prerequisite).
+    the prerequisite). **An in-progress campaign lives on its own development
+    branch, and EVERYTHING of it lands there** — design of record, prefabs,
+    stage JSON, l10n sidecars, generation logs. However many sub-pieces the
+    work is split across, each merges into that branch; the branch reaches
+    main once, after acceptance. Clarified by owner rebuke 2026-08-11: the
+    planner merged the bell remake's `REMAKE.md` straight to content main by
+    classing a design document as *docs* rather than as *the campaign*, so
+    `campaigns/the-drowned-bell/` on main held a design and no source — the
+    rule broken at the campaign's first commit. **The test is which artifact
+    the file belongs to, never what kind of file it is**; if it would be
+    deleted when the campaign is abandoned, it is the campaign. Engine work is
+    untouched by this: a general-purpose primitive is not campaign content.
   Until its gate is passed a PR stays open. Unit/CI tests alone prove the
   change broke nothing, not that it fixed the target.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
