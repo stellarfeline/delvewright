@@ -15,7 +15,7 @@ use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
-    rafter_hall, store_room, tee_passage, temple, watch_bay,
+    rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 // W3: the palette/prop family (W + S + M + X).
@@ -38,6 +38,9 @@ const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
 const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
 const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
 const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
+/// The vertical family's two-way member: five across (two walls and a
+/// three-wide lane), fourteen tall, twenty-two long.
+const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -249,6 +252,16 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
             elite_ground(),
             ARENA_REGION,
             vec!["anchor/elite"],
+        ),
+        (
+            "grammar-stair-flight",
+            stair_flight(),
+            FLIGHT_REGION,
+            vec![
+                "anchor/stair-foot",
+                "anchor/stair-head",
+                "anchor/stair-step-1",
+            ],
         ),
     ] {
         let dir = library_dir(name);
