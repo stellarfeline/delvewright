@@ -261,6 +261,38 @@ fn a_sealed_gate_answers_a_right_click() {
     );
 }
 
+/// **The engine does not talk over the campaign.** Once the author answers the
+/// press at that anchor themselves, the compiler supplies nothing — one press,
+/// one answer. (For a `close-gate` the compiler still *may* speak; the owner's
+/// 2026-08-10 ruling withdrew that licence for shortcut doors only, and
+/// `plan::SilencePolicy` is where the two classes differ.)
+#[test]
+fn an_authored_trigger_replaces_the_compilers_seal_answer() {
+    let c = parse_hw(&quests_doc_with(
+        "0.11.0",
+        SEAL_IT,
+        r#"{ "id": "trigger/the-stone", "at": "anchor/door", "on": { "on": "use" },
+             "once": false, "audience": "presser",
+             "effects": [ { "type": "narrate", "style": "actionbar",
+                            "text": "The stone does not care." } ] }"#,
+    ));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    let all = all_functions(&out);
+    assert!(
+        all.contains("The stone does not care."),
+        "the author's line is what the seal says: {all}"
+    );
+    assert!(
+        !all.contains("dw_press_seal_door"),
+        "the compiler's own answer must stand down: {all}"
+    );
+    assert!(
+        !all.contains("delvewright.ui.gate.sealed"),
+        "…and its chrome must not ship either: {all}"
+    );
+}
+
 /// The `close-gate` itself is what arms the answer, and it is idempotent: a beat
 /// that fires twice must not stack a second set of hitboxes.
 #[test]

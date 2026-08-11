@@ -1,135 +1,80 @@
-//! The two reds, in a form that COMPILES on `origin/main` as well as on the
-//! branch — no new API is touched, only the shipped datapack and the DSL parser.
+//! The two reds, in a form that COMPILES on `origin/main` as well as on this
+//! branch — no new API is touched, only the DSL parser and the validator.
 //!
 //! Run it on either tree with:
 //!   cp <this file> crates/compiler/tests/press_answer_red.rs
 //!   cargo test -p delvec --test press_answer_red
+
 mod common;
 
-use std::collections::BTreeMap;
-
-use delvewright_compiler::commands::CommandTree;
-use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
-use delvewright_compiler::plan::Plan;
-use delvewright_compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
+use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
+use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign, validate_campaign_with};
 
+/// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
+/// from the far side, carrying the author's own **left**-click line. Its
+/// right-click — the press a shortcut loop invites — is the silence.
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
     let loaded = load_campaign_dir(&dir).unwrap();
     parse_campaign(&loaded.raw).expect("souls-shortcut parses")
 }
 
-fn build(c: &Campaign) -> BuildOutput {
+fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let plan = Plan::build(c, &prefabs).expect("plan builds");
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
-        }
-    }
-    emit::build(
-        &plan,
-        &BTreeMap::new(),
-        &structures,
-        &CommandTree::v1_21_11(),
+    validate_campaign_with(
+        c,
+        &FullItemRegistry::v1_21_11(),
         &prefabs,
-        None,
-        "unpinned",
-        &BTreeMap::new(),
+        &FullEntityRegistry::v1_21_11(),
     )
-    .expect("every emitted command validates")
 }
 
-fn text(out: &BuildOutput, ext: &str) -> String {
-    let mut s = String::new();
-    for (path, bytes) in out {
-        if path.starts_with("datapack/") && path.ends_with(ext) {
-            s.push_str(path);
-            s.push('\n');
-            s.push_str(std::str::from_utf8(bytes).unwrap());
-            s.push('\n');
-        }
-    }
-    s
-}
+/// The campaign's own wrong-side answer, on the general click verb.
+const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/door",
+     "on": { "on": "use" }, "once": false, "audience": "presser",
+     "effects": [ { "type": "narrate", "style": "actionbar",
+                    "text": "The door cannot be opened from this side." } ] }"#;
 
-/// RED 1 — pressing the barred door from the wrong side answers nothing.
+/// **RED 1 — a barred door with nothing to say ships.**
 ///
-/// The door's hitboxes are tagged `dw_ws_inner_door` (task #50). For a press on
-/// them to say anything, SOME advancement must watch a tag those bodies carry and
-/// reward a function that writes to the presser's screen. On `origin/main` no
-/// advancement in the whole shipped tree mentions the door at all.
+/// The campaign seals a doorway the party is invited to walk up to and push on,
+/// and nothing anywhere answers a right-click on it. That must not compile: the
+/// press produces silence, and the compiler will not word the door on the
+/// author's behalf (owner ruling 2026-08-10).
+///
+/// On `origin/main` there is no such obligation, so the campaign is accepted and
+/// ships the silence. This is the direction that drifts — a door is added, nobody
+/// writes its line, and every board stays green.
 #[test]
-fn the_sealed_door_answers_a_right_click() {
-    let out = build(&fixture());
-    let arm = text(&out, ".mcfunction");
-    let door_tags: Vec<String> = arm
-        .lines()
-        .filter(|l| l.starts_with("summon minecraft:interaction") && l.contains("dw_ws_inner_door"))
-        .flat_map(|l| {
-            l.split('"')
-                .filter(|s| s.starts_with("dw_"))
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    assert!(!door_tags.is_empty(), "the door must have bodies at all");
-
-    let advs = text(&out, ".json");
-    let watcher = door_tags.iter().find(|t| advs.contains(*t));
-    let t = watcher.unwrap_or_else(|| {
-        panic!(
-            "NOTHING watches a press on the sealed shortcut door. Its bodies carry {door_tags:?} \
-         and no advancement in the shipped tree names any of them, so a right-click on the \
-         barred door produces silence — the finding."
-        )
-    });
-
-    // …and what it rewards must address the PRESSER, on the reply strip.
-    let reward = advs
-        .lines()
-        .find(|l| l.contains("\"function\"") && l.contains("press"))
-        .map(|l| {
-            l.rsplit(':')
-                .next()
-                .unwrap()
-                .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
-                .to_string()
-        })
-        .unwrap_or_else(|| panic!("the watcher on `{t}` rewards no press function:\n{advs}"));
+fn a_barred_door_with_nothing_to_say_is_refused() {
+    let mut c = fixture();
+    c.quests.dsl_version = "0.11.0".to_string();
+    let diags = diagnostics(&c);
     assert!(
-        arm.contains("title @s actionbar"),
-        "the reward `{reward}` must put the answer on the presser's actionbar:\n{arm}"
+        diags.iter().any(|d| d.code == "DW0429"),
+        "a shortcut door that answers no press must be REFUSED (DW0429). \
+         The campaign was accepted with: {diags:#?}"
     );
 }
 
-/// RED 2 — a campaign cannot write that answer either.
+/// **RED 2 — and the campaign could not have written that line anyway.**
 ///
-/// The general verb is `EnvTrigger{on: use}` + `narrate`. To say what a wrong-side
-/// answer says it needs the reply CHANNEL (`actionbar`) and the ADDRESSEE
-/// (`presser`). On `origin/main` neither exists, so the document does not parse.
+/// The general verb is `EnvTrigger{on: use}` + `narrate`. To say what a
+/// wrong-side answer says it needs the reply CHANNEL (`actionbar`) and the
+/// ADDRESSEE (`presser`). On `origin/main` neither exists, so the document does
+/// not even parse — which is what made the refusal above impossible to demand.
 #[test]
 fn the_campaign_can_write_a_wrong_side_answer() {
-    let json = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/door",
-                    "on": { "on": "use" }, "once": false, "audience": "presser",
-                    "effects": [ { "type": "narrate", "style": "actionbar",
-                                   "text": "The door cannot be opened from this side." } ] }"#;
-    let t = serde_json::from_str::<EnvTrigger>(json).unwrap_or_else(|e| {
+    let t = serde_json::from_str::<EnvTrigger>(ANSWER).unwrap_or_else(|e| {
         panic!("a campaign CANNOT express a wrong-side press answer on the general verb: {e}")
     });
     let mut c = fixture();
     c.quests.dsl_version = "0.11.0".to_string();
     c.quests.content.triggers.push(t);
-    let out = build(&c);
+    let diags = diagnostics(&c);
     assert!(
-        text(&out, ".mcfunction")
-            .lines()
-            .any(|l| l.starts_with("title @s actionbar")
-                && l.contains("The door cannot be opened from this side.")),
-        "the authored line must reach the presser's actionbar"
+        diags.is_empty(),
+        "one authored line must clear the refusal: {diags:#?}"
     );
 }

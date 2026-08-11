@@ -1334,6 +1334,24 @@ impl QuestsContent {
         out
     }
 
+    /// **Does the campaign itself answer a right-click at `anchor`?**
+    ///
+    /// One predicate, read by both consumers of the press-answer rule, so they can
+    /// never disagree about what "the campaign answered it" means: the compiler's
+    /// synthesis (`plan::collect_press_answers`, which stands down where this is
+    /// true) and the obligation on a shortcut door (`DW0429`, which fires where it
+    /// is false). Split across the two crates they would drift, and the drift
+    /// would read as "the compiler refused a door I answered".
+    ///
+    /// Deliberately the widest reading — *any* `use` trigger anchored there.
+    /// Pressing it already does something the author chose, and the engine does
+    /// not adjudicate whether what they chose counts as an answer.
+    pub fn answers_press_at(&self, anchor: &str) -> bool {
+        self.all_triggers()
+            .iter()
+            .any(|t| matches!(t.on, TriggerOn::Use) && t.at_anchor() == Some(anchor))
+    }
+
     /// Desugar every `ambush` into a real environment trigger and clear the
     /// ambush list (spec-0016 §3). Called once, by
     /// [`parse_campaign`](crate::parse_campaign); idempotent by construction

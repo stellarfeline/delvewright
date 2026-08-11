@@ -1365,6 +1365,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v10(c, d);
     reserved_v11(c, d);
     press_answer_checks(c, d);
+    shortcut_answer_checks(c, d);
 }
 
 /// DSL v0.11 reserved-feature gating: **the press-answer lift** — a `narrate`
@@ -1465,6 +1466,57 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
+    }
+}
+
+/// `DW0429`: **a sealed shortcut door the campaign never answers** (DSL v0.11,
+/// owner ruling 2026-08-10).
+///
+/// A `shortcut` is a barred door the party is invited to walk up to and push on
+/// before they have earned it — the souls loop-back's central idiom — and the
+/// press has to say something. The compiler will not say it for them: a baked
+/// default is a design statement (about tone, about what this door is) made on
+/// the author's behalf and never disclosed, so the obligation is stated instead
+/// of filled.
+///
+/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not an
+/// additive surface, so it cannot reach a campaign authored before it existed;
+/// below 0.11.0 a silent door still compiles and still emits exactly what it
+/// emitted before the version (nothing — see `plan::SilencePolicy::Silent`).
+///
+/// `close-gate`'s `sealed_hint` is deliberately **out of scope**: it still bakes
+/// the compiler's canonical English when unauthored. Whether the ruling extends
+/// there is a separate decision; the policy lives on the body class
+/// (`plan::press_answer_sites`) so extending it is a changed arm.
+fn shortcut_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    if !is_v11(c.quests.dsl_version.as_str()) {
+        return;
+    }
+    let quests = &c.quests.content;
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        let gate = sc.gate.as_str();
+        if quests.answers_press_at(gate) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SHORTCUT_DOOR_UNANSWERED,
+            "quests",
+            format!("/content/shortcuts/{i}"),
+            format!(
+                "shortcut `{}` bars the gate `{gate}` from world-load, and nothing in the \
+                 campaign answers a right-click on it — so a player who walks the long way \
+                 round, arrives at the wrong side of the door and pushes on it is told nothing. \
+                 That is the press a shortcut loop most invites. The compiler will not word it \
+                 for you: a baked default would be the engine deciding this door's tone and \
+                 never saying that it had. Prescription: add a trigger anchored on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \
+                 the door's own hitboxes, fires only from the sealed side, and retires when the \
+                 door opens. Any `use` trigger on `{gate}` discharges this, whatever it does",
+                sc.id
+            ),
+        ));
     }
 }
 

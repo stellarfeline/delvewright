@@ -675,12 +675,16 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
-- **Anything sealed answers a press by itself — never build the reply by hand.**
-  A `close-gate` seal and a `shortcut`'s barred door both give the player a
-  clickable body, and the compiler puts a line on the presser's actionbar when the
-  campaign does not: "The way is sealed." A `close-gate`'s `sealed_hint` is only
-  the *wording* of that line; a `shortcut` has no wording field, deliberately.
-- **To write your own reply, write the general verb** (`dsl_version` 0.11.0):
+- **A `close-gate` seal answers a press by itself — never build that reply by
+  hand.** The compiler puts a line on the presser's actionbar when the campaign
+  does not: "The way is sealed." `sealed_hint` on the effect is only the *wording*.
+- **A `shortcut`'s barred door does NOT, and you must write its line**
+  (`dsl_version` 0.11.0; owner ruling 2026-08-10). A door the party walks up to
+  and pushes on with nothing to say is `DW0429` and the build refuses — the
+  compiler will not decide this door's tone for you and then not tell you it did.
+  A `shortcut` has no wording field, deliberately: the line is a trigger.
+- **Write the reply with the general verb** — this is also how you override a
+  seal's default:
   `{"id": "trigger/…", "at": "<the gate anchor>", "on": {"on": "use"},
   "once": false, "audience": "presser", "effects": [{"type": "narrate",
   "style": "actionbar", "text": "The door cannot be opened from this side."}]}`.
@@ -688,7 +692,9 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   instead of summoning a co-located second one (`DW0422`), and on a shortcut door
   the body stands on the sealed side only — so the line fires where it is true and
   nowhere else, and retires when the door opens. Once you write one, the compiler
-  supplies nothing: one press, one answer.
+  supplies nothing: one press, one answer. ANY `use` trigger on the gate
+  discharges `DW0429`, whatever it does — but a `strike` does not, because
+  pressing a door is a right-click.
   - `audience: "presser"` addresses the one player who clicked, and works on
     `on: use` only — vanilla can attribute right-clicks and nothing else
     (`DW0427`). Leave it out and the beat addresses the whole party, which is

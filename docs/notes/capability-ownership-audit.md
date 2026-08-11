@@ -77,7 +77,7 @@ can say anything back** — the seal.
 
 | # | Feature | Private emission | Duplicates | Sev |
 |---|---|---|---|---|
-| 4 | **CLOSED (DSL v0.11).** ~~`close-gate.sealed_hint` — the live instance. Own body fleet, own actionbar reply, own baked default.~~ The verb keeps only the body; `seal_hint_fns` and the `seal_<safe>` advancement are deleted. A press answer is an `EnvTrigger{on: use, audience: presser}` + `narrate{style: actionbar}`, synthesized by `plan::collect_press_answers` for any sealed body the campaign leaves silent — one rule over the pressable class, seals and shortcut doors alike. `sealed_hint` survives as **sugar**: the wording of that answer, keeping its `fx.….sealed_hint` l10n key (the synthesis is in the plan, below `localize`, so no sidecar key moved). | `plan::collect_press_answers`, `emit::press_dispatch_fn` | `EnvTrigger{on:use}` + `narrate` | closed |
+| 4 | **CLOSED (DSL v0.11).** ~~`close-gate.sealed_hint` — the live instance. Own body fleet, own actionbar reply, own baked default.~~ The verb keeps only the body; `seal_hint_fns` and the `seal_<safe>` advancement are deleted. A press answer is an `EnvTrigger{on: use, audience: presser}` + `narrate{style: actionbar}`, synthesized by `plan::collect_press_answers` for any sealed body whose class licenses the compiler to speak — one rule over the pressable class, seals and shortcut doors alike. `sealed_hint` survives as **sugar**: the wording of that answer, keeping its `fx.….sealed_hint` l10n key (the synthesis is in the plan, below `localize`, so no sidecar key moved). | `plan::collect_press_answers`, `emit::press_dispatch_fn` | `EnvTrigger{on:use}` + `narrate` | closed |
 | 5 | `traps[].disarm{via, sets_flag}` — own interaction + own flag-set. | `emit.rs:7560` | `EnvTrigger{on:use, effects:[set-flag]}` | **B** |
 | 6 | `timed_gates[].disarm{via, sets_flag}` — a **second copy** of #5's private machinery. | `emit.rs:4478` | same | **B** |
 | 7 | `shortcuts[].unlock` — interaction half private; `on_unlock` already uses the general effect vocabulary. | `emit.rs:4749` | `EnvTrigger{on:use}` | L |
@@ -207,6 +207,15 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
      dispatched from the tick with **no executor**, so even with the channel it
      addressed `@a` and could not answer the one player who pressed. The
      addressee was as much a narrow binding as the channel;
+   * the owner then withdrew half the licence (2026-08-10): a **shortcut door**
+     the campaign never answers is `DW0429`, not a defaulted line. Worth
+     recording as a general finding about defaults — *a baked default is a design
+     statement the compiler makes on the author's behalf and never discloses* —
+     which is row 23's argument arriving from the opposite direction. Row 23 asks
+     for baked defaults to be **authorable**; this asks whether some of them
+     should exist at all. `close-gate` is untouched pending a separate ruling, and
+     the policy lives on the body class (`plan::press_answer_sites`) so extending
+     it is a changed arm;
    * the desugar happens in the **plan**, not in `parse_campaign` where the
      `ambush` sugar expands. An ambush's strings are the author's and belong in
      the campaign inventory under the desugared trigger's keys; a press answer's

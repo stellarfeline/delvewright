@@ -2924,68 +2924,142 @@ impl PressAnswer {
     }
 }
 
-/// Collect the compiler's press answers: **one per pressable body the campaign
-/// does not answer itself**, seals first then shortcut doors, each in the order
-/// its own planner produced.
+/// **What happens when the campaign leaves a pressable body silent.**
 ///
-/// ## The one rule, stated once
+/// The policy is a property of the **body class**, not of this function, so
+/// extending an owner ruling from one class to another is a changed arm in
+/// [`press_answer_sites`] rather than a re-architecture. The site that builds the
+/// answers is shared; only this decides who supplies the wording.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SilencePolicy {
+    /// The compiler supplies its own wording. `close-gate` seals, at every
+    /// version — its `sealed_hint` has always defaulted to the compiler's
+    /// canonical English, and whether that should change is a separate decision.
+    Defaulted,
+    /// **The campaign must author it.** A `shortcut` door from `dsl_version`
+    /// 0.11.0 (owner ruling 2026-08-10): the compiler supplies nothing and
+    /// `DW0429` refuses the campaign.
+    ///
+    /// The reasoning belongs in the code because it is the project's own rule
+    /// arriving at a new site. A baked default is the compiler making a **design
+    /// statement** — about tone, about what this specific door is — on the
+    /// author's behalf, and then never telling them it did. An error makes the
+    /// author say it. Same rule as "no hacks at any layer": if content needs a
+    /// thing, the DSL exposes it and the author declares it, rather than a lower
+    /// layer inventing it.
+    ///
+    /// It is also the only end state where the docs, the code and the player
+    /// agree. `wrongside.rs` and the reference both claimed for two versions that
+    /// a shortcut door's wording "defaults", and no code defaulted anything: the
+    /// door said nothing. The honest repair was never to make the claimed default
+    /// real — it was to refuse to compile a door with no answer.
+    Authored,
+    /// **The pre-fence state of a class whose ruling is a tightening.** A
+    /// `shortcut` door below `dsl_version` 0.11.0: the compiler supplies nothing
+    /// and demands nothing, so the door is silent — exactly what it emitted
+    /// before this version existed, byte for byte.
+    ///
+    /// This variant exists because [`SilencePolicy::Authored`] is a
+    /// **tightening**, and a tightening cannot reach a campaign that predates it
+    /// (CLAUDE.md version-adoption discipline: old versions keep compiling). It is
+    /// not a third policy anyone would design — it is the honest name for "the
+    /// obligation has not arrived here yet", and it goes away when the last
+    /// campaign adopts 0.11.0.
+    Silent,
+}
+
+/// The pressable bodies a press answer can hang on, each with its silence policy
+/// — seals first, then shortcut doors, each in its own planner's order.
 ///
-/// > A sealed body that the campaign never answers is answered by the compiler.
+/// **This list is the class.** A third pressable object gets an answer by joining
+/// it, not by growing a field on the verb that owns it.
+fn press_answer_sites<'p>(
+    seal_hints: &'p [SealHintPlan],
+    shortcuts: &'p [ShortcutPlan],
+    doors_must_be_authored: bool,
+) -> Vec<(PressAnswer, SilencePolicy)> {
+    let mut out: Vec<(PressAnswer, SilencePolicy)> = seal_hints
+        .iter()
+        .map(|s| {
+            (
+                PressAnswer {
+                    anchor: s.anchor.clone(),
+                    trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
+                    owner: "close-gate seal",
+                    text: s.text.clone(),
+                },
+                SilencePolicy::Defaulted,
+            )
+        })
+        .collect();
+    out.extend(shortcuts.iter().filter_map(|sc| {
+        // A door whose sealed side the geometry does not name has no body to hang
+        // an answer on; `emit::check_shortcut_sides` (`DW0425`) fails the build
+        // before this could matter.
+        sc.sealed_side.as_ref()?;
+        Some((
+            PressAnswer {
+                anchor: sc.gate_anchor.clone(),
+                trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
+                owner: "shortcut door",
+                // Only ever read under `Defaulted`, i.e. below 0.11.0, where this
+                // class keeps the pre-ruling behaviour of saying nothing at all.
+                text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
+            },
+            if doors_must_be_authored {
+                SilencePolicy::Authored
+            } else {
+                SilencePolicy::Silent
+            },
+        ))
+    }));
+    out
+}
+
+/// **The silence-policy ledger**: every pressable body in the campaign, what owns
+/// it, and who supplies its wording when the campaign says nothing.
 ///
-/// "The campaign answers it" is deliberately the widest reading: *any* `use`
-/// trigger the author anchored on that body. Pressing it already does something
-/// the author chose, and the engine does not talk over the campaign — the same
-/// judgment `world.boundary.message` and the bonfire labels make, one layer up
-/// from a per-verb `Option<String>`.
+/// CLAUDE.md: every validation artifact states its binding count. Here the count
+/// that matters is not how many answers the compiler produced — since the
+/// 2026-08-10 ruling that is zero for a door, by design — but how many bodies
+/// were **examined** and under which policy. A reader can see at a glance that
+/// the door was considered and its wording withheld on purpose, rather than
+/// missed.
+pub fn press_answer_policies(plan: &Plan) -> Vec<(&'static str, String, SilencePolicy)> {
+    press_answer_sites(
+        &plan.seal_hints,
+        &plan.shortcuts,
+        delvewright_dsl::is_v11(plan.campaign.quests.dsl_version.as_str()),
+    )
+    .into_iter()
+    .map(|(a, p)| (a.owner, a.anchor, p))
+    .collect()
+}
+
+/// Collect the compiler's press answers: **one per pressable body whose class is
+/// `Defaulted` and which the campaign does not answer itself**.
 ///
-/// This is the single site where a default is baked. It replaces one baked
-/// default per verb (`close-gate` had one; `shortcut` had none, which is the
-/// finding), so a *third* pressable object class gets an answer by being added to
-/// this list rather than by growing a field.
+/// ## The rule, stated once
+///
+/// > A sealed body the campaign never answers is answered by the compiler —
+/// > where, and only where, its class says the compiler may speak for it.
+///
+/// "The campaign answers it" is `QuestsContent::answers_press_at`, the one
+/// predicate `DW0429` also reads, so the refusal and the synthesis can never
+/// disagree about what counts as an answer.
 fn collect_press_answers(
     campaign: &Campaign,
     seal_hints: &[SealHintPlan],
     shortcuts: &[ShortcutPlan],
 ) -> Vec<PressAnswer> {
-    use delvewright_dsl::TriggerOn;
-    let answered: BTreeSet<&str> = campaign
-        .quests
-        .content
-        .triggers
-        .iter()
-        .filter(|t| matches!(t.on, TriggerOn::Use))
-        .filter_map(|t| t.at_anchor())
-        .collect();
-    let mut out = Vec::new();
-    for s in seal_hints {
-        if answered.contains(s.anchor.as_str()) {
-            continue;
-        }
-        out.push(PressAnswer {
-            anchor: s.anchor.clone(),
-            trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
-            owner: "close-gate seal",
-            text: s.text.clone(),
-        });
-    }
-    for sc in shortcuts {
-        // A door whose sealed side the geometry does not name has no body to hang
-        // an answer on; `emit::check_shortcut_sides` (`DW0425`) fails the build
-        // before this could matter.
-        if sc.sealed_side.is_none() || answered.contains(sc.gate_anchor.as_str()) {
-            continue;
-        }
-        out.push(PressAnswer {
-            anchor: sc.gate_anchor.clone(),
-            trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
-            owner: "shortcut door",
-            // A shortcut has no wording field and does not get one: a campaign
-            // that wants its own line writes the trigger, which is the same
-            // surface every other pressable object uses.
-            text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
-        });
-    }
-    out
+    let quests = &campaign.quests.content;
+    let doors_authored = delvewright_dsl::is_v11(campaign.quests.dsl_version.as_str());
+    press_answer_sites(seal_hints, shortcuts, doors_authored)
+        .into_iter()
+        .filter(|(_, policy)| *policy == SilencePolicy::Defaulted)
+        .map(|(a, _)| a)
+        .filter(|a| !quests.answers_press_at(&a.anchor))
+        .collect()
 }
 
 /// Which of the five effect roots a visited effect hangs off — the part of a

@@ -3,13 +3,15 @@
 //! **No `shortcuts[]` field names this.** Earlier drafts of this module's docs
 //! promised one — `on_wrong_side` in one paragraph, `sealed_hint` in another, and
 //! neither ever existed in the schema — which is the second bespoke field
-//! CLAUDE.md names as the defect rather than the fix, twice, under two names. A
-//! shortcut door's wrong-side answer is an ordinary
+//! CLAUDE.md names as the defect rather than the fix, twice, under two names.
+//! Those drafts also claimed the wording "defaults" while no code baked one, so
+//! the door in fact said nothing: the docs, the code and the player each believed
+//! something different. A shortcut door's wrong-side answer is an ordinary
 //! `EnvTrigger{on: use, audience: presser}` carrying a `narrate{style: actionbar}`,
-//! anchored on the `gate`, exactly like every other pressable object's; the
-//! compiler supplies one for a door the campaign leaves silent
-//! ([`crate::plan::PressAnswer`]). What lives here is only the geometry: WHERE
-//! that trigger's body stands, and therefore from which side it can be pressed.
+//! anchored on the `gate`, exactly like every other pressable object's — and from
+//! `dsl_version` 0.11.0 the campaign must write it or the build refuses
+//! (`DW0429`). What lives here is only the geometry: WHERE that trigger's body
+//! stands, and therefore from which side it can be pressed.
 //!
 //! ## The gap this closes
 //!
@@ -48,9 +50,10 @@
 //! This module supplies the body, and with it both layers:
 //!
 //! * the right-click half is a press answer — the campaign's own `use` trigger at
-//!   the `gate` if it wrote one, otherwise the compiler's
-//!   `delvewright.ui.gate.sealed` chrome — on the presser's actionbar, re-armed
-//!   every press;
+//!   the `gate`, on the presser's actionbar, re-armed every press. From
+//!   `dsl_version` 0.11.0 the campaign **must** write it: the compiler does not
+//!   word a door for its author, and a door with nothing to say is `DW0429`
+//!   (owner ruling 2026-08-10, [`crate::plan::SilencePolicy`]);
 //! * the left-click half is the author's: an ordinary `strike` trigger anchored
 //!   on the `gate` now **rides these hitboxes** instead of summoning its own dead
 //!   co-located box, so it can carry whatever prose and sound the campaign wants.

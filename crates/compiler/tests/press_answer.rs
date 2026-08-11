@@ -36,8 +36,28 @@
 //! compiler for a sealed body the campaign leaves silent — and the shortcut door
 //! is not a special case at all. It is a consumer.
 //!
-//! These tests pin the two reds (the door says nothing; the campaign cannot say
-//! it either), the one mechanism, and the lifetime.
+//! ## And then: the compiler does not word it either
+//!
+//! Owner ruling, 2026-08-10. The wording *may* be "The way is sealed." and it
+//! must be creator-customisable — but the better design is **no default at all:
+//! if it is not defined, the compiler errors.** So a sealed shortcut door the
+//! campaign never answers is `DW0429`, not a line the engine invents.
+//!
+//! A baked default is the compiler making a design statement — about tone, about
+//! what this specific door is — on the author's behalf, and then never telling
+//! them it did. An error makes the author say it. It is also the only end state
+//! where the docs, the code and the player agree: `wrongside.rs` and the
+//! reference claimed for two versions that a door's wording "defaults", no code
+//! defaulted anything, and the door said nothing. The repair was never to make
+//! the claimed default real.
+//!
+//! `close-gate`'s `sealed_hint` is out of scope and still bakes its canonical
+//! English; the policy is a property of the body class
+//! (`plan::press_answer_sites`), so extending the ruling is a changed arm.
+//!
+//! These tests pin the two reds (a barred door with nothing to say is refused;
+//! the campaign could not have said it either), the one mechanism, and the
+//! lifetime.
 
 mod common;
 
@@ -128,26 +148,28 @@ fn all_functions(out: &BuildOutput) -> String {
     s
 }
 
-/// The door's own press-answer names, derived exactly as the compiler derives
-/// them (`plan::press_answer_trigger_id` → `safe_local`).
-const DOOR_TRIG: &str = "dw_press_door_inner_door";
+/// The `safe_local` form of the authored answer's trigger id — what names its
+/// function, its advancement and its entity tag. There is no compiler-derived
+/// name here any more: since the 2026-08-10 ruling a door's answer is the
+/// campaign's, so its id is the campaign's too.
+const DOOR_TRIG: &str = "from_the_wrong_side";
 
 // ---------------------------------------------------------------------------
 // Red 1 — the door said nothing
 // ---------------------------------------------------------------------------
 
-/// **The owner's finding, as a machine test.** A sealed shortcut door answers a
-/// right-click: an advancement watching its bodies, a dispatch that runs as the
-/// presser, and a line on that player's actionbar.
+/// **The finding, as a machine test.** A campaign that bars a door must answer a
+/// right-click on it, and that answer is an ordinary trigger: an advancement
+/// watching the door's own bodies, a dispatch that runs as the presser, and a
+/// line on that player's actionbar.
 ///
-/// On `origin/main` the shipped tree contained **none** of the three for a
-/// shortcut door — `seal_hint_fns` and the `seal_<safe>` advancement were built
-/// over `plan.seal_hints` alone, and `DW0372` structurally forbids a `close-gate`
-/// on a shortcut gate, so there was no way for a door ever to enter that list.
-/// The module docs claimed the wording "defaults"; no code defaulted it.
+/// On `origin/main` a shortcut door had none of the three and no way to acquire
+/// them — `seal_hint_fns` and the `seal_<safe>` advancement were built over
+/// `plan.seal_hints` alone, and `DW0372` structurally forbids a `close-gate` on a
+/// shortcut gate, so no door could ever enter that list.
 #[test]
 fn a_sealed_shortcut_door_answers_a_press() {
-    let out = build(&fixture());
+    let out = build(&answered_fixture());
 
     let adv = advancement(&out, &format!("press_{DOOR_TRIG}"));
     assert!(
@@ -164,12 +186,9 @@ fn a_sealed_shortcut_door_answers_a_press() {
 
     let answer = function(&out, &format!("trig_{DOOR_TRIG}"));
     assert!(
-        answer.contains("title @s actionbar"),
-        "the answer reaches the presser's actionbar, not the party's chat: {answer}"
-    );
-    assert!(
-        answer.contains("delvewright.ui.gate.sealed"),
-        "an unauthored answer is translatable chrome, not a baked English literal: {answer}"
+        answer.contains("title @s actionbar")
+            && answer.contains("The door cannot be opened from this side."),
+        "the CAMPAIGN'S line reaches the presser's actionbar, not the party's chat: {answer}"
     );
 }
 
@@ -178,7 +197,7 @@ fn a_sealed_shortcut_door_answers_a_press() {
 /// ray-pick tie `DW0422` forbids.
 #[test]
 fn the_answer_rides_the_door_it_does_not_build_a_second_one() {
-    let out = build(&fixture());
+    let out = build(&answered_fixture());
     let arm = function(&out, "ws_arm_inner_door");
     assert_eq!(
         arm.matches(&format!("\"dw_trig_{DOOR_TRIG}\"")).count(),
@@ -200,7 +219,7 @@ fn the_answer_rides_the_door_it_does_not_build_a_second_one() {
 /// about, structurally, in the same function that lifts the bars.
 #[test]
 fn the_answer_dies_with_the_door() {
-    let out = build(&fixture());
+    let out = build(&answered_fixture());
     let open = function(&out, "shortcut_open_inner_door");
     assert!(
         open.contains("kill @e[tag=dw_ws_inner_door]"),
@@ -216,6 +235,102 @@ fn the_answer_dies_with_the_door() {
     assert_eq!(
         armed, 6,
         "every body carrying the answer is one `ws_arm_inner_door` summons"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The ruling: the compiler does not word a door for the author
+// ---------------------------------------------------------------------------
+
+/// **`DW0429`.** A campaign at 0.11.0 that bars a door and says nothing about it
+/// does not compile. The compiler had every ingredient to invent a line here and
+/// deliberately does not: a baked default decides this door's tone on the
+/// author's behalf and never discloses that it did.
+#[test]
+fn a_barred_door_with_nothing_to_say_is_dw0429() {
+    let mut c = fixture();
+    c.quests.dsl_version = "0.11.0".to_string();
+    let diags = diagnostics(&c);
+    let d = diags
+        .iter()
+        .find(|d| d.code == "DW0429")
+        .unwrap_or_else(|| panic!("expected DW0429, got {diags:#?}"));
+    assert!(
+        d.message.contains("shortcut/inner-door") && d.message.contains("anchor/door"),
+        "DW0429 names the door and its gate: {}",
+        d.message
+    );
+    // The prescription must be writable as given: every field it names exists on
+    // the surface it points at. This PR's own history is the reason to check —
+    // `DW0425` spent two versions telling authors to write `on_wrong_side`, a
+    // field no schema has ever had.
+    let prescription = d
+        .message
+        .split("Prescription:")
+        .nth(1)
+        .expect("DW0429 prescribes a fix");
+    let json = prescription[prescription.find('{').unwrap()..prescription.rfind('}').unwrap() + 1]
+        .replace("<name>", "the-bars")
+        .replace(
+            "<what the door says>",
+            "The door cannot be opened from this side.",
+        );
+    let parsed = serde_json::from_str::<EnvTrigger>(&json)
+        .unwrap_or_else(|e| panic!("DW0429's own prescription does not parse: {e}\n{json}"));
+    let mut fixed = c.clone();
+    fixed.quests.content.triggers.push(parsed);
+    assert!(
+        diagnostics(&fixed).is_empty(),
+        "…and writing exactly what it prescribes clears it: {:#?}",
+        diagnostics(&fixed)
+    );
+}
+
+/// **The fence.** `DW0429` is a tightening, so it cannot reach a campaign written
+/// before it existed. The `souls-shortcut` fixture is a 0.9.0 campaign whose door
+/// says nothing: it still validates, still builds, and still emits exactly what
+/// it emitted before this version — no answer at all.
+#[test]
+fn a_pre_0_11_campaign_with_a_silent_door_still_compiles() {
+    let c = fixture();
+    assert_eq!(c.quests.dsl_version, "0.9.0");
+    assert!(
+        diagnostics(&c).is_empty(),
+        "a pre-0.11 campaign is not held to the obligation: {:#?}",
+        diagnostics(&c)
+    );
+    let out = build(&c);
+    assert!(
+        !all_functions(&out).contains("dw_press_"),
+        "and the compiler invents nothing for it either: {}",
+        all_functions(&out)
+    );
+}
+
+/// Any `use` trigger on the gate discharges the obligation, whatever it does —
+/// the same predicate the synthesis reads (`QuestsContent::answers_press_at`), so
+/// the refusal and the synthesis can never disagree about what counts as an
+/// answer. A `strike` does **not**: pressing a door is a right-click, and a
+/// left-click answer is a different gesture the player may never make.
+#[test]
+fn the_obligation_is_discharged_by_any_use_trigger_and_not_by_a_strike() {
+    let mut c = fixture();
+    c.quests.dsl_version = "0.11.0".to_string();
+    // The fixture already carries a `strike` answer on this very gate.
+    assert!(
+        diagnostics(&c).iter().any(|d| d.code == "DW0429"),
+        "a left-click answer leaves the press unanswered"
+    );
+    let mut door_opener = authored_answer();
+    door_opener.effects = vec![
+        serde_json::from_str(r#"{ "type": "play-sound", "sound": "minecraft:block.chain.hit" }"#)
+            .expect("effect parses"),
+    ];
+    c.quests.content.triggers.push(door_opener);
+    assert!(
+        !diagnostics(&c).iter().any(|d| d.code == "DW0429"),
+        "a `use` trigger that only plays a sound is still the author answering: {:#?}",
+        diagnostics(&c)
     );
 }
 
@@ -277,23 +392,18 @@ fn the_campaign_can_write_its_own_wrong_side_answer() {
     );
 }
 
-/// **The engine does not talk over the campaign.** Once the author answers the
-/// press at that anchor, the compiler supplies nothing — one press, one answer.
-#[test]
-fn an_authored_answer_replaces_the_compilers() {
+/// The fixture with its wrong-side answer authored, at 0.11.0 — the shape every
+/// 0.11 campaign that bars a door must have.
+fn answered_fixture() -> Campaign {
     let mut c = fixture();
     c.quests.dsl_version = "0.11.0".to_string();
     c.quests.content.triggers.push(authored_answer());
-    let out = build(&c);
     assert!(
-        !all_functions(&out).contains(&format!("trig_{DOOR_TRIG}")),
-        "the compiler's default must stand down: {}",
-        all_functions(&out)
+        diagnostics(&c).is_empty(),
+        "the answered fixture validates clean: {:#?}",
+        diagnostics(&c)
     );
-    assert!(
-        !all_functions(&out).contains("delvewright.ui.gate.sealed"),
-        "…and its chrome must not ship either"
-    );
+    c
 }
 
 /// The campaign's own wrong-side answer, on the general verb.
@@ -343,7 +453,8 @@ fn an_authored_trigger_in_the_reserved_namespace_is_dw0428() {
     let mut c = fixture();
     c.quests.dsl_version = "0.11.0".to_string();
     let mut t = authored_answer();
-    t.id = delvewright_dsl::TriggerId(format!("trigger/{DOOR_TRIG}").replace('_', "-"));
+    // The exact id `plan::press_answer_trigger_id` would mint for this door.
+    t.id = delvewright_dsl::TriggerId("trigger/dw-press-door-inner-door".to_string());
     c.quests.content.triggers.push(t);
     let diags = diagnostics(&c);
     let d = diags
@@ -361,13 +472,17 @@ fn an_authored_trigger_in_the_reserved_namespace_is_dw0428() {
 // Binding — a green gate that binds to nothing is vacuous
 // ---------------------------------------------------------------------------
 
-/// **The binding count, stated.** The compiler's press answers bind to the union
-/// of `close-gate` seals and shortcut doors, and on this fixture that union is
-/// exactly one door — which is one more than the zero the old, verb-keyed answer
-/// bound to here.
+/// **The binding count, stated.** The compiler's press answers bind to the
+/// pressable bodies whose class lets it speak — which, since the ruling, is
+/// `close-gate` seals alone. A shortcut door is in the same list and carries
+/// `SilencePolicy::Authored`, so it is examined and deliberately produces nothing.
+///
+/// Zero synthesized answers here is therefore a *pass*, not the vacuity CLAUDE.md
+/// warns about: the door is bound (the obligation `DW0429` fires on it), and what
+/// binds to nothing is only the compiler's licence to invent.
 #[test]
 fn the_press_answers_bind_to_the_pressable_class() {
-    let c = fixture();
+    let c = answered_fixture();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     assert_eq!(
@@ -376,14 +491,33 @@ fn the_press_answers_bind_to_the_pressable_class() {
         "this fixture has no `close-gate`, which is why the old answer bound to nothing"
     );
     assert_eq!(plan.shortcuts.len(), 1);
-    assert_eq!(
-        plan.press_answers.len(),
-        1,
-        "one pressable body, one answer: {:?}",
+    assert!(
+        plan.press_answers.is_empty(),
+        "a door's wording is the author's; the compiler supplies none: {:?}",
         plan.press_answers
     );
-    assert_eq!(plan.press_answers[0].owner, "shortcut door");
-    assert_eq!(plan.press_answers[0].anchor, "anchor/door");
+}
+
+/// …and the seal half is unchanged by the ruling: a `close-gate` the campaign
+/// never answers still takes the compiler's canonical English. `close-gate` is
+/// deliberately out of the ruling's scope, and the policy that says so lives on
+/// the body class rather than in the synthesis, so extending it later is a
+/// changed arm and not a re-architecture.
+#[test]
+fn a_close_gate_seal_still_takes_the_compilers_wording() {
+    let c = answered_fixture();
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let sites = delvewright_compiler::plan::press_answer_policies(&plan);
+    assert_eq!(
+        sites,
+        vec![(
+            "shortcut door",
+            "anchor/door".to_string(),
+            delvewright_compiler::plan::SilencePolicy::Authored
+        )],
+        "the door's class must require an author; nothing else is in scope"
+    );
 }
 
 /// **`DW0422`'s binding, stated.** The hitbox-contest proof was written over

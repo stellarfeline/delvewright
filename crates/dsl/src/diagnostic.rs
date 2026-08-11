@@ -633,4 +633,21 @@ pub mod codes {
     /// function, so one of them would silently disappear. Reserving the prefix
     /// makes the collision impossible by construction instead of improbable.
     pub const TRIGGER_ID_RESERVED: &str = "DW0428";
+
+    /// (v0.11) **A sealed shortcut door with no press answer** (owner ruling
+    /// 2026-08-10). A `shortcuts[]` entry declares a barred door the party walks
+    /// up to and pushes on, and no `use` trigger in the campaign is anchored on
+    /// its `gate`, so the press produces silence.
+    ///
+    /// The compiler deliberately does **not** fill that silence. A baked default
+    /// is the compiler making a design statement — about tone, about what this
+    /// specific door is — on the author's behalf, and then never telling them it
+    /// did; an error makes the author say it. Same rule as "no hacks at any
+    /// layer": if content needs a thing, the DSL exposes it and the author
+    /// declares it, rather than a lower layer inventing it.
+    ///
+    /// Fenced on `dsl_version` 0.11.0, because it is a tightening: a campaign
+    /// authored before the obligation existed keeps compiling, and its door keeps
+    /// saying what it always said (nothing).
+    pub const SHORTCUT_DOOR_UNANSWERED: &str = "DW0429";
 }
