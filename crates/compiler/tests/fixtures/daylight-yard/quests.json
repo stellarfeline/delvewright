@@ -29,6 +29,10 @@
         "on_objective_complete": {
           "obj/muster": [
             {
+              "type": "open-gate",
+              "anchor": "anchor/door"
+            },
+            {
               "type": "spawn-wave",
               "wave": "wave/garrison"
             }

@@ -2309,10 +2309,72 @@ only grazed through a corner and certify the shot clear (task #78).
 Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build (never a
 runtime glitch).
 
+**The world-load gate seal — what a gate's state is *before* any verb fires
+(`DW0317`).** A gate region is not empty because it is a gate; it holds whatever
+the prefab `.nbt` authors there, and both cases ship in the library:
+`hello-room`'s `anchor/door` is six cells of `iron_bars`, `island-mountain`'s
+`anchor/boulder` is twenty-seven cells of air. **Which one a gate is, is measured,
+never defaulted** (`assembled::measure_gate_seals`, taken immediately before the
+base model clears the gate cells), and a gate the world authors shut re-enters the
+model as a `Fill` at step 0 — the identical shape a shortcut gate's world-load seal
+already used. Before that measurement, a gate's state in the static model was a
+function of what *sealed* it and never of what *opened* it: "passable unless a
+`close-gate` seals it" can only fail to notice an obstruction, never invent one,
+and the mistake an author makes is forgetting to open a door. Measured: the
+`die-retry` fixture (PR #371) with its single `open-gate` deleted compiled clean and the
+runtime bot said *"No path to the goal!"*.
+
+The base occupancy model still clears every gate cell, and that is now a statement
+about the **base** world only. It has to pick one state, and "open" is the one that
+keeps `RegionWrite::Unseal` expressible — an `open-gate` is `replace`-filtered to
+the gate's own block, so a base world holding the bars would need a block-aware
+clear and would then wrongly delete a `collapse`'s debris (`DW0445`). The
+world-load `Fill` supplies the other half, and an `Unseal` cancels it by ordinary
+latest-write-wins.
+
+Three things this deliberately does **not** decide, each of them a stated gap
+rather than a silent one:
+
+* **A `timed-gate`'s region** (spec-0016 §4) is measured and never modelled shut:
+  its clock fills and clears it twice a cycle from world-load, so a permanent seal
+  would refuse a campaign that plays. `DW0378`/`DW0388` own that region.
+* **A leg whose start is inside a declared `teleport` source volume**
+  (`Plan::transit_teleports`) is judged with the seals lifted — the party may be
+  carried off that cell rather than walk away from it, and nothing in the critical
+  path records an intra-area ride the way `transport_before` records an inter-area
+  one. That restores exactly the pre-measurement verdict for such a leg, so
+  `DW0311`'s binding is unchanged; the cost is that a genuinely-blocked leg with a
+  teleport anywhere over its start is not judged.
+* **A gate opened only by an optional firing** — a trap payload, `on_death`, a shop
+  offer, a dialogue `on_respawn`, a shortcut's far-side unlock — is treated as
+  never opened, by the pre-existing rule that an optional firing may seal a region
+  and may never open one (`plan::collect_region_events`), which is also what keeps
+  every shortcut gate sealed so the delve is finishable the long way. A delve whose
+  only door-opener is a sprung trap is therefore refused; the first-class way to
+  spell "the party walks/presses here and the door opens" is an environment
+  `trigger`, which the model does credit.
+
+The `foreign_blocks` count in the ledger below exposes a fourth, older gap the
+measurement made visible: an `open-gate`'s fill is `replace`-filtered to the
+anchor's **declared** block, so any other block authored inside the gate region
+survives the opening, while this model credits the `Unseal` with the whole region.
+`cave-mouth.nbt` really does author five `mossy_cobblestone` cells inside a gate
+declaring `cobblestone` — latent, since no campaign in either repo places it today.
+
+**Binding ledger — `validation/gate-seal.json`.** Every gate the layout resolved,
+sealed or not: `gates_examined`, `sealed_at_world_load`, `modelled_as_sealed`, a
+per-gate row (`area`, `anchor`, region, `cells`, `blocked_at_world_load`,
+`foreign_blocks`), and `unbound` when the model treats none of them as shut. A
+campaign whose layout resolves no gate anchor emits no file at all, so a file that
+exists and reports zero is a finding rather than an absence — `nobodys-cave-island`
+is exactly that case, its one gate anchor being the boulder the campaign
+`close-gate`s later.
+
 **Runtime region solidity (v0.6 as `close-gate`, generalised in v0.10 by
 spec-0031; DAG-causal).** The base occupancy model treats every
 gate region as **passable** (the conservative "assume the gate the player needs is
-opened" stance `DW0306` separately proves at the piece-connectivity level) — so
+opened" stance `DW0306` separately proves at the piece-connectivity level, and the
+world-load seal above supplies the state that stance was standing in for) — so
 `open-gate` does not dynamically flip cells at nav time, and an `open-gate`-only
 campaign routes exactly as before. `close-gate` is the physical dual: the compiler
 collects every runtime region write with its firing objective's critical-path step
@@ -3120,6 +3182,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship (task #45). Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
+| `DW0317` | **A gate the campaign never opens.** A forced critical-path leg has no collision-free path once the gates the placed prefabs author SHUT at world-load are solid, but routes fine without them — or a visited objective's only footing is inside such a gate's region. Build-tier (exit 3), `compiler::nav`. The message names the gate anchor, its area, its region, how many of its cells the world fills, and what the campaign does to it: nothing forced opens it, or it is opened only at a later / non-ancestor step. Derived by counterfactual, exactly like `DW0510`. Prescription: fire `open-gate` from an objective the party is FORCED to complete before the leg, or route the forced path off the gate — never delete the gate, and never strip the anchor's fill block out of the prefab. `every_version`: it asks for no new surface (`open-gate` is v0.4) and states a contradiction between what the campaign places and what it requires; fencing it would leave it vacuous on every live campaign, all of which declare below the current version. |
 | `DW0378` | A `timed-gate` (spec-0016 §4) is a **coin flip, not a timing read**: the entry phases from which a walking player clears the span before it shuts cover less than **20%** of the cycle. All-phase passability is explicitly NOT the requirement (owner ruling 2026-08-02) — punishing bad timing is the point; punishing *every* timing is a slot machine no amount of learning the level makes fair. The crossing cost is the A* step count between the footings either side of the region with the gate open, charged at the same 4 t/block sprint model `DW0355` uses; the admitting window is `max(0, open_ticks − cross + 1)` of `open_ticks + closed_ticks`, computed in integers (no float rounding in a proof, ADR-0006) and rounded DOWN. `compiler::nav::check_timed_gates`, build-tier (exit 3). Prescription: lengthen `open_ticks`, shorten `closed_ticks`, or narrow the span — never lower the floor. The runtime counterpart is the waypoint artifact's `timed_gates` table + per-leg crossing marks (see above): the harness bot waits out the window instead of failing a leg the gate shut on. The window proof has a companion the dossier rates higher: `DW0388`, which proves the window can be **read** — that there is safe ground with a sightline to the span. |
 | `DW0376` | An `ambush` (spec-0016 §3) with **no counterplay**: standing every ambusher on the cell it will occupy, no checkpoint, bonfire or campaign entry is walkable from the trigger cell any more — the party is sealed in a pocket with the ambush and can only trade blows blind. The `DW0342` trap-avoidability machinery generalized from one hazard cell to an occupied cell set. This is NOT a telegraph requirement: 初见杀 is legitimate and determinism guarantees the second attempt meets the same ambushers in the same cells; what this proves is that the second attempt has a *play* — a retreat, luring ground, an exit. `compiler::nav::check_ambushes`, build-tier (exit 3). |
 | `DW0373` | A `shortcut` (spec-0016 §2) has **no long route**: with its gate sealed, the far-side `unlock` affordance is not walkable from the campaign entry, so the mechanism that opens the shortcut sits behind the shortcut and can never be pulled. `compiler::nav::check_shortcuts`, build-tier (exit 3). Prescription: connect the far side by a long route, or move the unlock onto one — never open the gate at world-load to silence it. |

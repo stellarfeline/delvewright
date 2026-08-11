@@ -68,6 +68,12 @@ const DIALOGUE: &str = r#"{
 /// The stage-5 document. `scout_to` is where the scout is walked when quest/one
 /// completes — the whole variable of this fixture — and `cast_two` is the scene
 /// that walk produces.
+///
+/// The `open-gate` on quest/one is load-bearing and not decoration: `anchor/exit`
+/// is on the far side of `hello-room`'s barred doorway, so without it the party
+/// can never reach quest/two's objective and the delve is refused (`DW0317`). It
+/// fires FIRST in the bundle so the scout's own walk is planned through an open
+/// door.
 fn quests(scout_to: &str, cast_two: &str) -> String {
     format!(
         r#"{{
@@ -75,7 +81,8 @@ fn quests(scout_to: &str, cast_two: &str) -> String {
   "content": {{ "quests": [
     {{ "id": "quest/one", "trigger": {{ "type": "campaign-start" }},
        "objectives": [ {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }} ],
-       "on_complete": [ {{ "type": "move-npc", "npc": "npc/scout", "to_anchor": "{scout_to}" }} ],
+       "on_complete": [ {{ "type": "open-gate", "anchor": "anchor/door" }},
+                        {{ "type": "move-npc", "npc": "npc/scout", "to_anchor": "{scout_to}" }} ],
        "cast": {{
          "npc/keeper": {{ "at": "anchor/keeper-stand", "doing": "barring the door", "dialogue": "dlg/greeting" }},
          "npc/scout":  {{ "at": "anchor/exit", "doing": "watching the road", "dialogue": {{ "barks": ["Nothing yet."] }} }}
