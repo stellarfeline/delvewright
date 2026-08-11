@@ -543,3 +543,23 @@ by this rig and worth copying into the next one: every rcon response is checked
 politely and change nothing), and every sample batch is fenced by a `#sync`
 scoreboard round-trip so a desynchronised read aborts instead of shifting every
 later value by one.
+
+`tools/spike-area-effect-arrow/run.sh` (`EULA=TRUE
+tools/spike-area-effect-arrow/run.sh [--out <path>]`) answers whether a datapack
+alone can give a projectile a non-block-breaking explosion or a splash-potion
+area effect on impact, and **where that behaviour has to live**. It dumps the
+pinned jar's own registry report (`--reports`) to `registries-1.21.11.json` — so
+"no advancement trigger exists for a landed projectile" is read off the shipped
+build — then measures the `minecraft:hit_block` enchantment effect against block
+census, damage-versus-distance with a vanilla-TNT calibration row, decorations,
+and the multi-player / restart / mob-shot / water / slab / entity-hit axes.
+Findings: [`../notes/area-effect-arrow-spike.md`](../notes/area-effect-arrow-spike.md);
+raw observations beside the rig (`observations.json`). It publishes an
+**ephemeral** loopback port and never takes the 25565 mutex. Three things it
+carries that the next rig should copy: a **positive control on every negative
+claim** (the block census only means something because the `block_interaction:
+"tnt"` row destroys 257 blocks with the same instrument); `fill()`/`killq()`
+separating "nothing to do" from "rejected", since `No blocks were filled` and
+`Could not set the block` are legitimate answers that sit inside the shared
+rejection regex; and a `--phase 1`/restart/`--phase 2` split so "survives a
+reload" is measured rather than assumed.
