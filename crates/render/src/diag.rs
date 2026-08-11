@@ -16,6 +16,18 @@ pub const DW_INPUT: &str = "DW0721";
 pub const DW_OUTPUT: &str = "DW0722";
 /// The GPU renderer failed (device init, mesh, or frame) or textures are absent.
 pub const DW_RENDER: &str = "DW0723";
+// Note the gap: `DW0724` belongs to the COMPILER's visual tier (player-POV
+// camera eye cell), not to this crate — the `DW072x` block is shared with it, so
+// take the next unused number from the catalog in `docs/reference/compiler.md`
+// rather than from the highest constant here.
+/// The contact sheet's ordering is not a total order over the candidates: the
+/// score RANKS the page and never gates it (spec-0028 §3, owner ruling), so an
+/// ordering that drops, duplicates or overruns a candidate is refused.
+pub const DW_RANK_ORDER: &str = "DW0725";
+/// A contact sheet's score set bound to fewer candidates than the sheet holds —
+/// zero is an error (nothing was ranked), a partial binding a warning. A gate
+/// that binds to nothing is vacuous, not a pass (CLAUDE.md).
+pub const DW_BINDING: &str = "DW0726";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real
@@ -66,6 +78,12 @@ impl Diagnostic {
             severity: Severity::Warning,
             message: message.into(),
         }
+    }
+
+    /// True for the error tier. A caller collecting a mixed list needs to tell
+    /// "a finding worth printing" from "a finding worth stopping for".
+    pub fn is_error(&self) -> bool {
+        self.severity == Severity::Error
     }
 
     /// Print to stderr, honoring `--json` (one JSON object per line).
