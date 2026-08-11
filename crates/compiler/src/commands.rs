@@ -25,6 +25,13 @@
 //! NBT/JSON token is well-formed, or that an item/block id exists (item ids are
 //! covered by the DSL registry; the rest is mecha's job). This is enough to catch
 //! misspelled commands, wrong argument arity, and bogus subcommand paths.
+//!
+//! One value-level exception, added after it cost a whole tool (task #70): an
+//! **SNBT integer literal whose suffix cannot hold it**. `text_opacity:255b` is
+//! structurally perfect and unparseable — NBT bytes are signed, so the server
+//! answers "Failed to parse number: Value out of range" and drops the entire
+//! function. The check is cheap, needs no NBT grammar, and cannot mistake a
+//! string for a number because quoted spans are skipped; see [`snbt_range_error`].
 
 use std::collections::BTreeMap;
 
@@ -88,6 +95,12 @@ impl CommandTree {
             line: line.to_string(),
             reason,
         })?;
+        if let Some(reason) = snbt_range_error(body) {
+            return Err(CommandError {
+                line: line.to_string(),
+                reason,
+            });
+        }
         if self.matches(&self.root, &tokens, 0) {
             Ok(())
         } else {
@@ -203,6 +216,99 @@ fn single_entity_violation(node: &Node, tok: &str) -> bool {
     }
     let multi = tok.starts_with("@a") || tok.starts_with("@e");
     multi && !tok.contains("limit=1")
+}
+
+/// An SNBT integer literal whose suffix cannot hold its value, e.g. the
+/// `text_opacity:255b` that made 1.21.11 refuse to load a whole function
+/// (task #70). NBT bytes and shorts are **signed**: `b` is -128..=127 and `s` is
+/// -32768..=32767, so "fully opaque" is `-1b`, never `255b`.
+///
+/// Deliberately narrow, so it cannot mistake text for a number:
+/// - quoted spans (`"…"`, `'…'`) are skipped entirely — a literal `255b` inside
+///   a `text:'{"text":"…"}'` component is prose, not a value;
+/// - the number must sit in an SNBT **value position**: the first non-space
+///   character before it is one of `:,[{;=`;
+/// - and it must END there: the character after the suffix may not continue an
+///   identifier (so `minecraft:music_disc_11`, `room2b`, `dw.o_5b` are not
+///   numbers and are never examined).
+///
+/// Everything outside that shape is left to mecha and the server, exactly as the
+/// rest of this validator's value-blindness is — including a bare
+/// `… set value 200b`, where the number stands alone as its own token and is
+/// therefore indistinguishable from a word in a `/say`. Narrow and sound beats
+/// wide and guessing: the shape that actually ships NBT is `key:value`.
+fn snbt_range_error(s: &str) -> Option<String> {
+    let b: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    while i < b.len() {
+        let ch = b[i];
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            i += 1;
+            continue;
+        }
+        if !ch.is_ascii_digit() && ch != '-' {
+            i += 1;
+            continue;
+        }
+        // Candidate number start: must sit in an SNBT value position.
+        let mut before = i;
+        while before > 0 && b[before - 1].is_whitespace() {
+            before -= 1;
+        }
+        let opens = before > 0 && matches!(b[before - 1], ':' | ',' | '[' | '{' | ';' | '=');
+        let mut j = i;
+        if b[j] == '-' {
+            j += 1;
+        }
+        let digits_start = j;
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j == digits_start || !opens {
+            // Not a number here, or not a value position: skip the whole run so a
+            // digit inside an identifier is never re-examined as a fresh start.
+            i = j.max(i + 1);
+            continue;
+        }
+        let suffix = b.get(j).copied();
+        let ends = b
+            .get(j + 1)
+            .is_none_or(|c| !c.is_ascii_alphanumeric() && *c != '_' && *c != '.');
+        if ends && let Some(sfx) = suffix {
+            let range = match sfx {
+                'b' | 'B' => Some((-128i64, 127i64, "byte")),
+                's' | 'S' => Some((-32768i64, 32767i64, "short")),
+                _ => None,
+            };
+            if let Some((lo, hi, name)) = range {
+                let text: String = b[i..j].iter().collect();
+                let value: i64 = text.parse().unwrap_or(i64::MAX);
+                if value < lo || value > hi {
+                    return Some(format!(
+                        "SNBT `{text}{sfx}` is out of range for an NBT {name} ({lo}..={hi}) — \
+                         1.21.11 answers \"Failed to parse number: Value out of range\" and \
+                         refuses to load the whole function"
+                    ));
+                }
+            }
+        }
+        i = j + usize::from(suffix.is_some());
+    }
+    None
 }
 
 /// Token arity of an argument parser.
@@ -375,6 +481,41 @@ mod tests {
             "kill @e[tag=dw_actor_giant]",
             "effect give @a[tag=x] minecraft:night_vision 12 0 true",
             "tag @e[tag=dw_tmp] remove dw_tmp",
+        ] {
+            assert!(t.validate_line(line).is_ok(), "should accept: {line}");
+        }
+    }
+
+    /// An SNBT byte/short literal that overflows its suffix (task #70).
+    ///
+    /// `delve-admit`'s gallery summoned its labels with `text_opacity:255b`. The
+    /// command is structurally flawless, so every structural check passed — and
+    /// 1.21.11 dropped `admit:finish` in its entirety ("Failed to parse number:
+    /// Value out of range. Value:\"255\""), taking the spawn platform, the
+    /// worldspawn and every label with it. Nothing read the server's answer, so
+    /// nothing failed until someone looked at an empty world.
+    #[test]
+    fn rejects_an_snbt_integer_its_suffix_cannot_hold() {
+        let t = tree();
+        for line in [
+            "summon minecraft:text_display 0 64 0 {text:'{\"text\":\"x\"}',text_opacity:255b}",
+            "summon minecraft:armor_stand 0 64 0 {Invisible:200b}",
+            "summon minecraft:zombie 0 64 0 {Health:40000s}",
+            "data modify entity @s Tags set value [{a:-129b}]",
+        ] {
+            assert!(t.validate_line(line).is_err(), "should reject: {line}");
+        }
+        // In range, and the shapes that merely LOOK like numbers: a suffixed
+        // digit run inside an identifier, and one inside a quoted string.
+        for line in [
+            "summon minecraft:text_display 0 64 0 {text:'{\"text\":\"x\"}',text_opacity:-1b}",
+            "summon minecraft:armor_stand 0 64 0 {Invisible:1b,NoGravity:1b}",
+            "summon minecraft:zombie 0 64 0 {Health:20000s}",
+            "give @s minecraft:music_disc_11 1",
+            "scoreboard players set #t admit.sys 0",
+            "say the wall is 255b thick",
+            "tellraw @s [{\"text\":\"255b\"}]",
+            "execute if entity @s[x=0,dx=255,y=64,dy=5,z=0,dz=255] run say in",
         ] {
             assert!(t.validate_line(line).is_ok(), "should accept: {line}");
         }

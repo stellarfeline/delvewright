@@ -39,6 +39,8 @@ import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import readline from "node:readline";
 
+import { REJECTION, assertAccepted } from "../lib/rcon.mjs";
+
 const require = createRequire(new URL("../../harness/package.json", import.meta.url));
 const mineflayer = require("mineflayer");
 
@@ -90,20 +92,17 @@ async function batch(cmds) {
 }
 const rcon = async (cmd) => (await batch([cmd]))[0];
 
-// Rejection shapes that must never pass silently. The last three are the ones
-// that bite a world-building rig: `fill` into an unloaded chunk answers "That
-// position is not loaded" and changes nothing, which is exactly how a rig ends
-// up measuring a player falling through a floor that was never placed.
-const ERR = new RegExp(
-  "^(Unknown or incomplete command|Incorrect argument|Expected |Invalid |Unknown " +
-    "|That position is not loaded|Cannot place blocks outside of the world" +
-    "|No blocks were filled|Could not set the block|No entity was found)",
-);
+// The rejection shapes now live in `tools/lib/rcon.mjs`, keyed to the object
+// class they are about — "a command issued to a live server" — rather than to
+// this one spike (task #70). They were written here first and correctly, and
+// that is precisely why the jump-arc rig and the gallery had nothing to reuse:
+// a general mechanism re-implemented privately inside one verb leaves the next
+// caller writing the unchecked version. `ERR` is kept as a local alias because
+// the two probes below are ASKING whether the server rejects something.
+const ERR = REJECTION;
 /** Run a setup/mutation command and FAIL LOUDLY if the server rejected it. */
 async function ok(cmd) {
-  const r = await rcon(cmd);
-  if (ERR.test(r)) throw new Error(`server rejected \`${cmd}\`: ${r}`);
-  return r;
+  return assertAccepted(cmd, await rcon(cmd));
 }
 
 // ------------------------------------------------------------------- parsing

@@ -495,7 +495,28 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
             Err(e) => return input_err(&format!("{}: {e}", p.display()), json),
         }
     }
-    let tree = gallery::emit(&gallery_id, &cands, cols);
+    // Emission validates every line it wrote against the pinned 1.21.11 command
+    // tree, so a gallery that the server would refuse to load is never written
+    // at all (task #70: four legacy gamerules and an out-of-range byte had been
+    // silently costing `admit:load` and `admit:finish` in their entirety).
+    let tree = match gallery::emit(&gallery_id, &cands, cols) {
+        Ok(t) => t,
+        Err(errors) => {
+            for e in &errors {
+                Diagnostic::error(
+                    DW_GALLERY,
+                    format!(
+                        "emitted command is not valid on Minecraft {}: `{}` — {}",
+                        delvewright_compiler::MC_VERSION,
+                        e.line.trim(),
+                        e.reason
+                    ),
+                )
+                .print(json);
+            }
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+    };
     if let Err(e) = write_tree(out, &tree) {
         Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {e}")).print(json);
         return ExitCode::from(EXIT_OUTPUT);

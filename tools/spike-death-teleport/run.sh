@@ -23,6 +23,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tools/lib/rcon.sh
+. "${REPO_ROOT}/tools/lib/rcon.sh"
 HERE="${REPO_ROOT}/tools/spike-death-teleport"
 CONTAINER="${SPIKE_CONTAINER:-dw-spike-death-tp}"
 OUT="${HERE}/observations.json"
@@ -71,7 +73,9 @@ echo "[spike] ephemeral host port: 127.0.0.1:${PORT}"
 echo "[spike] waiting for RCON ..."
 READY=0
 for _ in $(seq 1 120); do
-  if docker exec "${CONTAINER}" rcon-cli list >/dev/null 2>&1; then READY=1; break; fi
+  # Liveness poll: the unjudged channel on purpose (tools/lib/rcon.sh) — a
+  # refusal here means "not up yet".
+  if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then READY=1; break; fi
   sleep 5
 done
 [ "${READY}" = 1 ] || { echo "[spike] server did not become ready in 10m" >&2; docker logs --tail 50 "${CONTAINER}" >&2; exit 1; }
@@ -79,8 +83,8 @@ done
 # --- the measurement-only datapack (two advancements, no mcfunction) -----------
 docker exec "${CONTAINER}" mkdir -p /data/world/datapacks
 docker cp "${HERE}/spikepack" "${CONTAINER}:/data/world/datapacks/dw-spike"
-docker exec "${CONTAINER}" rcon-cli "reload" >/dev/null
-PACKS="$(docker exec "${CONTAINER}" rcon-cli 'datapack list enabled')"
+dw_rcon "${CONTAINER}" "reload" >/dev/null
+PACKS="$(dw_rcon "${CONTAINER}" 'datapack list enabled')"
 echo "[spike] ${PACKS}"
 case "${PACKS}" in
   *dw-spike*) ;;

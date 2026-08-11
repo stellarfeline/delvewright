@@ -210,6 +210,16 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   function down with it, silently. The tree already carries the fact, so the
   compiler enforces it rather than leaving it to folklore; the party form of
   `damage-players` is `execute as @a[…] run damage @s …`.
+  **One value-level exception** (task #70): an SNBT integer literal in a
+  `key:value` position whose suffix cannot hold it — NBT bytes and shorts are
+  signed, so `text_opacity:255b` is structurally flawless and unparseable, and
+  1.21.11 answers "Failed to parse number: Value out of range" by dropping the
+  entire function. Quoted spans are skipped, and a bare standalone number is not
+  examined, so it cannot mistake prose for a value. `delve-admit`'s gallery is the
+  second consumer of this validator: it emits `.mcfunction` into a datapack
+  exactly as `delvec` does, so it now runs the same tree over its own output
+  before writing anything (`gallery::validate_functions`, `DW0760`) rather than
+  carrying a private copy of the rule.
 - Determinism (ADR-0006): all map/set iteration is `BTreeMap`/sorted; the only
   randomness is stage-1 `seed` → a named splitmix64 per-area stream.
 

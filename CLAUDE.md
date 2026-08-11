@@ -249,6 +249,20 @@ validation/          # docker compose: headless server + bot, same image as CI &
   shaped so it cannot become habit; a convenient override is the same defect one
   layer out. (Staging gate, task #341: the enumeration found a third path —
   the release workflow — that neither reviewer had named.)
+- **A command whose response nobody reads cannot fail** (task #70). A site that
+  issues a command to a server and discards the reply is asserting an effect it
+  has not established, and it stays green forever: `delve-admit`'s gallery
+  emitted four legacy camelCase gamerules and a `text_opacity:255b`, 1.21.11
+  refused to load `admit:load` and `admit:finish` **in their entirety** — one bad
+  line costs the whole function — and the tool shipped a world with no
+  objectives, nothing forceloaded and nothing placed, for as long as it existed.
+  So: a live command goes through the shared rejection rule
+  (`tools/lib/rcon.{sh,mjs}`); an EMITTED command is checked against the pinned
+  command tree by the emitter, not by a test, because the operator running the
+  tool does not run `cargo test`. Both are bound in CI by
+  `tools/check-live-commands.py`. The generalisable half is not the identifier
+  list — it is that **the rule lived, correct, inside ONE spike's `ok()`**, so
+  the next two callers had nothing to reuse and wrote the unchecked version.
 - **A finding is not closed until its general form is a diagnostic** (island
   r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
   immediately found a second live instance the owner had by then hit herself).
