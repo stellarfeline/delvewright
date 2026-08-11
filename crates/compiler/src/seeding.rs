@@ -81,6 +81,7 @@
 //! ordering is the emitter's to guarantee, and the check would only guess. Both
 //! limits are directional: they admit, they never accuse.
 
+use delvewright_dsl::DwCode;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::integrity::{IntegrityError, Tier};
@@ -91,7 +92,15 @@ use crate::integrity::{IntegrityError, Tier};
 /// Build-tier (exit 3). The command compiles, the datapack loads, and the branch
 /// simply never takes — the failure shape that cost every campaign with a
 /// checkpoint its players' FIRST death.
-pub const DW_UNSEEDED_SCORE_READ: &str = "DW0495";
+///
+/// **`every_version`**, and the reason is the same one `DW0497` has: this rule
+/// judges the COMPILER's own output, never the campaign's documents. A campaign
+/// can neither cause nor fix an unbacked comparison — it cannot name the
+/// objective, cannot write it, and cannot see the command — so there is no
+/// obligation here for a `dsl_version` to grandfather. Fencing it would mean
+/// deciding that campaigns below some version keep shipping a first death that
+/// does nothing, which is the opposite of what a fence is for.
+pub const DW_UNSEEDED_SCORE_READ: DwCode = DwCode::every_version("DW0495");
 
 // ---------------------------------------------------------------------------
 // ranges
