@@ -625,6 +625,11 @@ have caught gets paid for twice once stages 5–6 are written against it.
   inverts the gate. `tools/refimg.py` draws reference images when a provider is
   configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
   human in the loop for prompt iteration.
+  When candidate prefabs DO exist and the owner is choosing between them, that
+  later step has its own tool: `delve-render contact-sheet <renders> -o <png>`
+  puts them all on one page, optionally ordered by similarity to this gate's
+  reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
+  score only ORDERS the page, it never removes a candidate from it.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
@@ -767,6 +772,13 @@ Symptom → tool:
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
   line, human-optional.
+- **Several candidate prefabs for one slot, and she has to pick**: mention
+  `delve-render contact-sheet <renders> -o <png>` — all the candidates on one
+  page, each labelled with its rank and id, with `tools/refscore.py` optionally
+  ordering the page by similarity to the design-gate reference image. One line,
+  human-optional. Say plainly that the score only orders the page: every
+  candidate is on it, and the low scorer is present, last — she is the selector,
+  the number is not.
 
 ### Localization stage (only when the prompt asks for other languages)
 

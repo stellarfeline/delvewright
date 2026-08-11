@@ -18,12 +18,13 @@ use std::collections::BTreeMap;
 use crate::assembled::base_id;
 use crate::nav::NavError;
 use crate::plan::{CollectFillPlan, LootPlan};
+use delvewright_dsl::DwCode;
 
-const DW_LOOT_NOT_A_CONTAINER: &str = "DW0431";
+const DW_LOOT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0431");
 
 /// A `collect` objective adopts a container the assembled world does not have —
 /// or one too small for its fill (DSL v0.8, task #95).
-const DW_COLLECT_NOT_A_CONTAINER: &str = "DW0438";
+const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0438");
 
 /// The container blocks a `loot` fill accepts, with their slot counts.
 ///

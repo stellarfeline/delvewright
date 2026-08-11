@@ -3,11 +3,8 @@
 Status: **Implemented and shipped** (owner directive in conversation, 2026-08-06;
 built and released in `nobodys-cave-island v1.1.0`).
 
-> This line read `Proposed` for days after the feature shipped, and on
-> 2026-08-10 it caused the planner to tell the owner that i18n v2 was still
-> outstanding. She had asked whether it was not already done at v1.1 — it was.
-> Verified by measurement, on the island built from `delvec 1.1.0` with no
-> `--lang`:
+> The status above is verified by measurement, on the island built from
+> `delvec 1.1.0` with no `--lang`:
 >
 > - the resource pack carries `assets/delvewright/lang/en_us.json` **and**
 >   `assets/delvewright/lang/zh_cn.json`, **447 keys each**;
@@ -18,7 +15,8 @@ built and released in `nobodys-cave-island v1.1.0`).
 >
 > A spec's `Status` is an approval record and nothing binds it to whether the
 > thing exists, so it drifts in the one direction that matters — a shipped
-> feature still reading as unbuilt. See the open finding on binding it.
+> feature still reading as unbuilt, which is then reported to the owner as
+> outstanding work. See the open finding on binding it.
 
 ## Context
 

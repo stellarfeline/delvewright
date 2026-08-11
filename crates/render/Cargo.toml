@@ -37,3 +37,9 @@ image = "0.24"
 # `pollster` blocks on the renderer's async init. Both MIT/Apache-2.0.
 nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
 pollster = "0.4"
+
+[dev-dependencies]
+# The contact-sheet tests build their own candidate renders (no GPU, no client
+# jar) and read the composited page back. Same version the crate already links.
+image = "0.24"
+serde_json = "1"

@@ -46,6 +46,7 @@
 //! boulder hint. One cell, one hitbox.
 
 use crate::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::DwCode;
 
 /// `DW0426`: a click trigger is anchored where a player can never click.
 ///
@@ -54,7 +55,7 @@ use crate::plan::{Plan, ResolvedAnchor};
 /// press lands on nothing — so the beat simply never happens and every board
 /// stays green. This is the shape of the gap the whole task came from, and the
 /// single most valuable thing here: it is the check that would have caught it.
-pub const DW_TRIGGER_UNPRESSABLE: &str = "DW0426";
+pub const DW_TRIGGER_UNPRESSABLE: DwCode = DwCode::every_version("DW0426");
 
 /// What a click at an anchor lands on.
 #[derive(Clone, Debug, PartialEq, Eq)]

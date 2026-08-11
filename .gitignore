@@ -63,3 +63,15 @@ dist/
 # Reference images are generation-time working material: never shipped,
 # never in the content repo (see [refimg] in delvewright.toml).
 .refimg/
+
+# Contact sheets + their score files, same rule: candidate renders laid out for
+# the owner to curate massing from (`delve-render contact-sheet`,
+# `tools/refscore.py`). Generation-time working material — never shipped, never
+# in the content repo, so nothing on a sheet can carry licensing into a delve
+# (ADR-0013) or move its bytes (ADR-0006).
+.sheets/
+
+# The opt-in local virtualenv holding the similarity-metric backends
+# (open_clip_torch, t2v-metrics). Multi-GB with their PyTorch dependency and
+# deliberately absent from CI — see [refscore] in delvewright.toml.
+.refscore-venv/

@@ -43,6 +43,7 @@
 //!   different hat. The two overlays load *beside* the shipped pack, so their
 //!   own functions may call either their own tier or the shipped one.
 
+use delvewright_dsl::DwCode;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0497`: an emitted `function <ns>:<name>` call whose target function is not
@@ -51,14 +52,14 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
 /// simply never happens — the failure shape that cost the island round 21 two of
 /// its three storm waves.
-pub const DW_DANGLING_FUNCTION_CALL: &str = "DW0497";
+pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::every_version("DW0497");
 
 /// A build-integrity failure: a stable DW code plus the message naming the
 /// caller, the line and the missing target.
 #[derive(Debug, Clone)]
 pub struct IntegrityError {
     /// The stable DW code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, with the whole fix list.
     pub message: String,
 }

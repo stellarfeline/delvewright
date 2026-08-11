@@ -30,16 +30,17 @@ use delvewright_dsl::{
 };
 
 use crate::registry::FullSoundRegistry;
+use delvewright_dsl::DwCode;
 
 /// `DW0326`: a `play-sound` / `narrate.sound` id is not a known 1.21.11 sound
 /// event (validated against the vendored `sound_event` registry).
-pub const DW_SOUND_UNKNOWN: &str = "DW0326";
+pub const DW_SOUND_UNKNOWN: DwCode = DwCode::every_version("DW0326");
 /// `DW0328`: an art-styled `narrate` string (source or a sidecar translation) uses
 /// a character outside the `delve:art` font's glyph inventory.
-pub const DW_ART_GLYPH_UNCOVERED: &str = "DW0328";
+pub const DW_ART_GLYPH_UNCOVERED: DwCode = DwCode::every_version("DW0328");
 /// `DW0335`: a `play-sound` targets `at: actor`, which is accepted by the schema
 /// but not yet wired — the actors surface (spec-0014 `actors[]`) has not landed.
-pub const DW_PLAYSOUND_ACTOR_DEFERRED: &str = "DW0335";
+pub const DW_PLAYSOUND_ACTOR_DEFERRED: DwCode = DwCode::every_version("DW0335");
 
 // ---------------------------------------------------------------------------
 // Sound-event validation (DW0326) + deferred actor gate (DW0335)

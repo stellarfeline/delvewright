@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use delvewright_dsl::DwCode;
 use delvewright_dsl::{
     AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId,
 };
@@ -15,7 +16,7 @@ use serde::Deserialize;
 /// `DW0300` "prefab not found"; the parse failure itself is the information.
 /// Reported at **validation tier (exit 1)**; loading continues for the other
 /// files (report-all, not fail-fast).
-pub const DW_PREFAB_META_INVALID: &str = "DW0346";
+pub const DW_PREFAB_META_INVALID: DwCode = DwCode::every_version("DW0346");
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.
