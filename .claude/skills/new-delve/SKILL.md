@@ -440,6 +440,21 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      the mainline depends on: nothing inside it is credited as a flag producer,
      deliberately, so a door it alone opens is a door only a corpse can open.
      Needs `dsl_version` 0.10.0 on the quests stage.
+   - **A region can be filled or cleared while the delve runs, and no gate need
+     be involved.** `fill-region {region{anchor,extent}, block}` writes a block
+     over a declared box; `clear-region {region{anchor,extent}}` empties it.
+     `open-gate`/`close-gate` are the same operation with the box and the block
+     read off a prefab gate anchor — reach for those when a prefab already
+     declares the threshold, and for these when the box is yours: a bridge that
+     materialises, a floor that sinks, a wall that opens, a platform summoned
+     under the party. Both need `dsl_version` 0.10.0 on the quests stage. The
+     completability proof honours them from the point in the quest DAG where the
+     effect fires: a fill the only route must cross afterwards fails the build
+     (`DW0311`), and a clear is credited as passable, so a route may legitimately
+     depend on one. Two things it will not model, so do not build on them: a clear
+     that opens a box into water (the water flows back in and the proof does not
+     know), and a clear over rubble another mechanism dropped there (a `collapse`
+     debris field, a shut timed gate) — those stay solid.
    - **A place that kills is DECLARED, never faked with the art.** A cliff whose
      fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
      declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
@@ -455,6 +470,34 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      inside one (`DW0511`). Put the volume where a player can SEE what will happen
      before they commit to it; a killing box nobody can read is 初见杀 with no
      lesson in it.
+   - **A status effect is a verb now — and it ends by expiring, never by being
+     cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
+     grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
+     the players inside a box, so "blind whoever is riding" does not blind the
+     delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
+     effect whose only removal is a later step is one the player keeps forever
+     whenever that step does not run — a logout, a crash, a death mid-chain. So
+     **do not write "grant, then clear at the end"**; write a duration that covers
+     the beat plus slack and let it expire. Pairing a live grant with a
+     `clear-effect` of the same effect in the same bundle is `DW0540`.
+     `clear-effect {effect?, in?}` exists for effects the campaign did NOT grant
+     (a potion the player drank, a `wither` a mob applied); omit `effect` to clear
+     everything. Needs `dsl_version` 0.10.0 on the quests stage.
+   - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
+     extent}, to}` moves **everything** inside the box to the destination anchor —
+     players and entities alike, which is what makes a cargo platform the same
+     mechanism as a passenger one. Nothing is exempt, so do not draw the volume
+     over an affordance the engine anchors to a block (an interact objective, a
+     click trigger, a bonfire, a shortcut lever, a disarm, a sealed gate): the
+     hitbox would ride and the hardware would stay, and the build refuses it
+     (`DW0542`). Two things to design AROUND rather than against, both measured on
+     the pinned server: **a teleport is not a rescue** — accumulated fall distance
+     carries across it unchanged and is charged in full at the destination, so a
+     platform arriving under a falling player past ~20 blocks is the surface they
+     die on; and **nav does not know about it** — a route that exists only through
+     a teleport still fails the completability proof, so keep a walked route to
+     anything the critical path needs. Needs `dsl_version` 0.10.0 on the quests
+     stage.
    - **A currency is a NAMED datum, and a price is a GATE.** There is no
      `currencies` section and no `price` field, on purpose. Give a `state[]` datum
      a `name` and it becomes a purse the player reads: the engine states

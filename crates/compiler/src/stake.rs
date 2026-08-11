@@ -36,10 +36,41 @@
 //!
 //! 1. a death inside a **lethal volume** — the case that commissioned the rule;
 //! 2. a death on a block **runtime can remove** — a lift car, a `close-gate`
-//!    region, a `collapse`'s floor. spec-0031's ruling: *a recovery stake may
-//!    never be placed on a block that runtime can remove*, because the next ride
-//!    would delete it. That is not a separate mechanism; it is the same
-//!    projection, applied to a second family of place a stake may not stand.
+//!    region, a `fill-region` or `clear-region` volume, a `collapse`'s floor.
+//!    spec-0031's ruling: *a recovery stake may never be placed on a block that
+//!    runtime can remove*, because the next ride would delete it. That is not a
+//!    separate mechanism; it is the same projection, applied to a second family
+//!    of place a stake may not stand.
+//!
+//! # The three ways a stake can be pulled out from under itself, and which are here
+//!
+//! Two are, one is not, and the third is named rather than left silent.
+//!
+//! * **Runtime-mutable ground** (`close-gate`, `set-block`, `collapse`, a
+//!   shortcut's or a timed gate's seal) — in scope, and the case the ruling was
+//!   written for. `DW0526`.
+//! * **`fill-region` / `clear-region`** (spec-0031) — in scope, and *the same
+//!   defect*: a `clear-region` deletes the block a marker stands on exactly as a
+//!   departing lift car does. They enter through
+//!   [`runtime_mutable_regions`] by way of `QuestEffect::region_write`, the DSL's
+//!   own answer to "which verbs rewrite a box", so a later verb of that family is
+//!   covered by existing rather than by being remembered.
+//! * **A `teleport`'s `from` box** (spec-0031) — **NOT in scope, and this is a
+//!   deliberate ruling rather than an omission.** A teleport moves *entities*,
+//!   not blocks, so the ground under a marker is untouched; what moves is the
+//!   marker itself, away from the position the collecting player's ledger
+//!   recorded. That is a different defect with a different fix, and it is not one
+//!   a box check on `DW0526`'s axis could state: `DW0526` is about **footing**,
+//!   and a marker's position is chosen at RUNTIME, so no compile-time geometry
+//!   test can know where it will be. Recorded as a follow-up finding rather than
+//!   bolted onto a rule it does not belong to.
+//!
+//!   The reason it cannot simply inherit the teleport's own `DW0542` is worth
+//!   stating, because it is the shape spec-0031 warned about when it refused to
+//!   inherit `lethal_volumes[]`'s exemption list into a verb that *moves* rather
+//!   than *deletes*: `DW0542` tests the affordance authority, which carries
+//!   compile-time cells, and a stake has none to offer it. Inheriting the list
+//!   would have produced a green that examined nothing.
 //!
 //! Both are boxes, so both are a selector the corpse can be tested against at
 //! runtime (`@s[x=…,dx=…]`), which is what makes the lookup a comparison rather
@@ -284,12 +315,42 @@ pub fn runtime_mutable_regions(plan: &Plan) -> Vec<LabelledBox> {
             &mut out,
         );
     }
-    // Effect-level block writes: `set-block` rewrites one cell at its anchor, and
-    // `collapse` empties its whole declared volume and paves a floor under it. Read
-    // through `timeline::walk`, the one traversal that reaches every effect at every
-    // root including nested `sequence` steps — a hand-rolled walk here would be the
-    // #301/#302/#321 defect in a new place.
+    // Effect-level block writes. `region_write()` is the DSL's own answer to
+    // "which verbs rewrite a box" (spec-0031) — `fill-region` and `clear-region`
+    // today, and whatever a later version adds — so reading it means this set
+    // widens with the language instead of with somebody's memory. `set-block`
+    // rewrites one cell at its anchor and `collapse` empties its declared volume;
+    // neither is a region write, so both are named here.
+    //
+    // **Why this is not `plan.region_events`**, which is the completability
+    // model's list of the same thing. That list deliberately DROPS a non-fill
+    // write fired from an optional root (`collect_region_events`: an optional
+    // firing may fill, never open), because a proof about routes must not lean on
+    // a clear the party might never trigger. This set needs the opposite
+    // conservatism: a `clear-region` in a trap payload the party may never spring
+    // is still ground a stake must not stand on, because if they DO spring it the
+    // marker is gone. Same geometry, opposite direction, so the two lists cannot
+    // be one — and saying so here is cheaper than the next reader assuming they
+    // should be.
+    //
+    // Read through `timeline::walk`, the one traversal that reaches every effect
+    // at every root including nested `sequence` steps — a hand-rolled walk here
+    // would be the #301/#302/#321 defect in a new place.
     for (eff, _) in crate::timeline::walk(plan) {
+        if let Some((zone, block)) = eff.region_write()
+            && let Some(r) = plan.zone_box(zone)
+        {
+            let verb = if block.is_some() {
+                "`fill-region`"
+            } else {
+                "`clear-region`"
+            };
+            push(
+                format!("the {verb} volume at anchor `{}`", zone.anchor),
+                r,
+                &mut out,
+            );
+        }
         match eff {
             delvewright_dsl::QuestEffect::SetBlock { anchor, .. } => {
                 if let Some(cell) = plan.point_any(anchor.as_str()) {
@@ -427,34 +488,19 @@ pub fn build(
         return Ok(None);
     }
     let seats = seats(plan, world, entry);
-    let configs = crate::nav::seal_configurations(plan);
 
     // --- the reachable set per seat, intersected over its quest states ---------
-    // `with_sealed` is the one passability model; intersecting over the
-    // configurations that can hold while a seat is in force is what makes the
-    // answer independent of a runtime quest-state discriminator (module header).
+    // One call into the navigation module, which owns the region model: a "quest
+    // state" is a `RegionState` (which regions are filled, which are cleared), and
+    // computing it here would be a second passability model beside the one
+    // spec-0031 spent a whole PR consolidating.
     let mut reach: Vec<BTreeSet<[i32; 3]>> = Vec::new();
+    let mut configurations = 0usize;
     for seat in &seats {
-        let mut acc: Option<BTreeSet<[i32; 3]>> = None;
-        for (step, cells) in &configs {
-            if *step < seat.from_step {
-                continue;
-            }
-            let w = if cells.is_empty() {
-                None
-            } else {
-                Some(world.with_sealed(cells))
-            };
-            let r = w.as_ref().unwrap_or(world).reachable_walkable(&[seat.cell]);
-            acc = Some(match acc {
-                None => r,
-                Some(prev) => prev.intersection(&r).copied().collect(),
-            });
-        }
-        // A seat whose span admits no configuration at all (its `from_step` is past
-        // the last one) still gets the base world's answer rather than an empty set,
-        // which would silently make every proof below vacuous.
-        reach.push(acc.unwrap_or_else(|| world.reachable_walkable(&[seat.cell])));
+        let (n, r) =
+            crate::nav::reachable_under_every_quest_state(plan, world, seat.cell, seat.from_step);
+        configurations = configurations.max(n);
+        reach.push(r);
     }
 
     // --- the death regions ----------------------------------------------------
@@ -535,13 +581,10 @@ pub fn build(
                         code,
                         message: format!(
                             "a death in {} with {} in force has nowhere to leave its recovery stake: \
-                         {why}. Quest states examined: {} (the sealing configurations reachable \
-                         from that seat's step {}). Move the region, open a route back to it, or \
-                         change what the runtime rewrites near it.",
-                            region.label,
-                            seat.label,
-                            configs.iter().filter(|(s, _)| *s >= seat.from_step).count(),
-                            seat.from_step,
+                         {why}. Quest states examined: {} (every distinct region state that can \
+                         hold from that seat's step {} onward). Move the region, open a route back \
+                         to it, or change what the runtime rewrites near it.",
+                            region.label, seat.label, configurations, seat.from_step,
                         ),
                     });
                 }
@@ -563,7 +606,7 @@ pub fn build(
         seats: seats.len(),
         regions: regions.len(),
         lethal_regions,
-        configurations: configs.len(),
+        configurations,
         rows: rows.len(),
         anchors: anchors.len(),
         mutable_cells: unsafe_cells.len(),

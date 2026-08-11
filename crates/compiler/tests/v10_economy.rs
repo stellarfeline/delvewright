@@ -551,6 +551,62 @@ fn an_ordinary_death_leaves_the_stake_where_the_player_fell() {
     );
 }
 
+/// **A `clear-region` is ground the runtime removes, exactly as a lift car is.**
+///
+/// The merge-induced coverage question, answered rather than assumed: spec-0031's
+/// `fill-region` / `clear-region` are two new ways a block stops being there, and
+/// a stake standing on one would be destroyed by the next firing — the same defect
+/// `DW0526` was written for, arriving from a new verb.
+///
+/// They enter through `QuestEffect::region_write`, the DSL's own answer to "which
+/// verbs rewrite a box", so a later verb of that family is covered by existing.
+/// Asserted with a binding count, because a walk that found no region write would
+/// pass this by examining nothing.
+#[test]
+fn a_region_write_is_ground_a_stake_may_not_stand_on() {
+    // The clear rides `on_death`, which is an OPTIONAL root — nobody is forced to
+    // die — so the completability model deliberately drops it. That is the whole
+    // point of the second half of this test.
+    let with_clear = PURSE_AND_STAKE.replace(
+        r#""on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ]"#,
+        r#""on_death": [ { "type": "drop-stake", "stake": "stake/embers" },
+                     { "type": "clear-region",
+                       "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] } } ]"#,
+    );
+    assert_ne!(
+        with_clear, PURSE_AND_STAKE,
+        "the clear really was spliced in"
+    );
+    let c = parse_hw(&quests_doc(&with_clear, ""));
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mutable = delvewright_compiler::stake::runtime_mutable_regions(&plan);
+
+    let named: Vec<&String> = mutable.iter().map(|(l, _)| l).collect();
+    assert!(
+        named.iter().any(|l| l.contains("clear-region")),
+        "the `clear-region` volume is ground a stake may not stand on: {named:#?}"
+    );
+    // …and the trigger it hangs off is an OPTIONAL root, which the completability
+    // model deliberately drops. This set must not: a clear the party may never
+    // trigger is still ground the marker cannot survive if they do.
+    let clears = plan
+        .region_events
+        .iter()
+        .filter(|e| e.write == delvewright_compiler::plan::RegionWrite::Clear)
+        .count();
+    assert_eq!(
+        clears, 0,
+        "the completability model dropped this optional-root clear (an optional \
+          firing may fill, never open) — which is exactly why \
+         `runtime_mutable_regions` cannot simply BE `plan.region_events`: a clear \
+          the party may never trigger is still ground the marker cannot survive if \
+          they do. Same geometry, opposite conservatism."
+    );
+    eprintln!("mutable regions examined: {}", mutable.len());
+    assert!(mutable.len() >= 2, "binding count: {mutable:#?}");
+}
+
 /// A stake anchor never sits on a block runtime can remove. The gate region of
 /// `anchor/door` is rewritten by `open-gate`, so its cells and the cells standing
 /// on them are excluded from every candidate set — asserted by comparing the

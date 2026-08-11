@@ -1,0 +1,28 @@
+{
+  "dsl_version": "0.10.0",
+  "campaign_id": "teleport-volume",
+  "stage": "dialogue",
+  "content": {
+    "dialogues": [
+      {
+        "npc": "npc/keeper",
+        "root": "dlg/greeting",
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "text": "Halt. The door stays shut until the toll is paid.",
+            "options": [
+              { "label": "Pay what he asks.",
+                "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": "npc/sleeper",
+        "root": "dlg/snore",
+        "nodes": [ { "id": "dlg/snore", "text": "...mm. Not my watch.", "options": [] } ]
+      }
+    ]
+  }
+}

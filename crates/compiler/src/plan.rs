@@ -402,23 +402,69 @@ pub struct TrapPlan {
     pub requires_state: Vec<delvewright_dsl::StateCompare>,
 }
 
-/// A gate open/close firing (DSL v0.6), collected in deterministic content order.
-/// `close-gate` seals the gate region (fills it with the anchor's declared block)
-/// from its firing beat; `open-gate` clears it back to air. The occupancy model
-/// (`crate::assembled`) otherwise treats every gate cell as always passable — the
-/// conservative "assume the gate the player needs is opened" stance DW0306 checks.
-/// `close-gate` is the physical dual: the critical-path / checkpoint reachability
-/// proofs treat the region as **solid** on any walked leg reached *after* the
-/// latest firing at or before it is a close (and not reopened by a later
-/// `open-gate`), so a path that must cross a sealed gate fails `DW0311`/`DW0315`.
+/// **One runtime region write**, collected in deterministic content order — the
+/// single completability model of "a box the delve fills or clears while it is
+/// running", whichever verb spelled it.
+///
+/// Four verbs produce these and none of them owns the rule: `close-gate` fills a
+/// prefab gate anchor's region with the block that anchor declares and `open-gate`
+/// clears it (DSL v0.6); `fill-region` and `clear-region` do the same to an
+/// author-declared box (DSL v0.10, spec-0031); a `shortcut`'s gate is registered
+/// filled from world-load. The occupancy model (`crate::assembled`) treats every
+/// *gate* cell as always passable — the conservative "assume the gate the player
+/// needs is opened" stance `DW0306` checks — and a `fill` is the physical dual:
+/// the critical-path / checkpoint reachability proofs treat the region as
+/// **solid** on any walked leg reached *after* the latest write at or before it is
+/// a fill, so a path that must cross it fails `DW0311`/`DW0315`. A `clear` is the
+/// other direction, and is credited the same way: the region is **passable** from
+/// the DAG point at which it fires (`nav::World::with_cleared`).
+///
+/// The type is named for the object it acts on — a region — and not for the verb
+/// that first needed it (CLAUDE.md): the third consumer inherits this proof
+/// instead of re-deriving it, which is exactly what `open-gate`/`close-gate`
+/// having owned it privately prevented.
+/// What a runtime region write leaves in the region — read straight off the
+/// command the verb emits, because that is the only thing the model may conclude.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegionWrite {
+    /// Every cell becomes solid: `close-gate` (the gate anchor's declared block),
+    /// `fill-region` (the author's block), a `shortcut`'s world-load seal.
+    Fill,
+    /// Every cell becomes empty: `clear-region`, whose emitted
+    /// `fill … minecraft:air` carries no `replace` filter and so removes whatever
+    /// is there.
+    Clear,
+    /// **Only the gate's own block** becomes empty: `open-gate`, whose emitted fill
+    /// is `replace`-filtered to the block the gate anchor declares.
+    ///
+    /// A third case rather than a synonym for [`RegionWrite::Clear`], because the
+    /// emitted commands differ and so does what may be concluded from them. The
+    /// assembled world already holds every gate cell empty, so an unseal removes
+    /// nothing the model believed was there — an unfiltered clear does. Collapsing
+    /// the two says an `open-gate` deletes a `collapse`'s debris resting in the
+    /// doorway, which in game it plainly does not (`DW0445`, measured:
+    /// `v06_trap_payloads::collapse_that_buries_the_critical_path_is_dw0445` goes
+    /// green — i.e. stops proving anything — the moment they are collapsed). An
+    /// unseal still takes part in latest-write-wins, which is how a later
+    /// `open-gate` cancels an earlier `close-gate`.
+    Unseal,
+}
+
 #[derive(Clone, Debug)]
-pub struct GateEvent {
-    /// The gate region's inclusive corners (absolute world coords).
+pub struct RegionEvent {
+    /// The region's inclusive corners (absolute world coords).
     pub region: ([i32; 3], [i32; 3]),
-    /// `true` for `close-gate` (seals the region), `false` for `open-gate` (clears).
-    pub closes: bool,
+    /// What this write leaves in the region.
+    pub write: RegionWrite,
     /// The `critical_path` step index at which this firing happens.
     pub fire_step: usize,
+}
+
+impl RegionEvent {
+    /// Whether this write makes the region solid.
+    pub fn fills(&self) -> bool {
+        self.write == RegionWrite::Fill
+    }
 }
 
 /// A resolved trap disarm affordance (DSL v0.6, spec-0011).
@@ -509,7 +555,7 @@ pub struct Plan<'a> {
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
-    pub gate_events: Vec<GateEvent>,
+    pub region_events: Vec<RegionEvent>,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
     /// (spec-0017 PR 3), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
@@ -1479,21 +1525,21 @@ impl<'a> Plan<'a> {
         let seal_hints = collect_seal_hints(campaign, &anchors);
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
-        let mut gate_events = collect_gate_events(campaign, &anchors, &objective_steps);
+        let mut region_events = collect_region_events(campaign, &anchors, &objective_steps);
         // A shortcut gate is sealed from world-load and is opened only by an
         // OPTIONAL far-side interaction no proof can order (spec-0016 §2). Seal it
         // for the whole completability model — `fire_step: 0` precedes every leg —
         // so the critical path, the checkpoints and the traps are all proven over
         // a world where no shortcut has been taken. The delve must be finishable
         // the long way; the shortcut is a reward, never a requirement.
-        gate_events.extend(shortcuts.iter().map(|sc| GateEvent {
+        region_events.extend(shortcuts.iter().map(|sc| RegionEvent {
             region: sc.gate_region,
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
 
-        let gate_events = gate_events;
+        let region_events = region_events;
 
         Ok(Self {
             campaign,
@@ -1520,7 +1566,7 @@ impl<'a> Plan<'a> {
             ambushes,
             timed_gates,
             seal_hints,
-            gate_events,
+            region_events,
             strict_ancestor_steps,
             massing_bounds,
         })
@@ -1556,7 +1602,7 @@ impl<'a> Plan<'a> {
     /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
     /// the **branch path's own step space**, plus the strict DAG-ancestor relation
     /// over that space — exactly the model [`Plan::build`] computes for the
-    /// exported path (`gate_events` / `strict_ancestor_steps`), driven by the
+    /// exported path (`region_events` / `strict_ancestor_steps`), driven by the
     /// branch's own objective→step map instead of the default playthrough's.
     ///
     /// A branch path is a *different sequence* of steps, so the default path's
@@ -1571,15 +1617,15 @@ impl<'a> Plan<'a> {
     pub fn branch_gate_model(
         &self,
         cp: &CriticalPath,
-    ) -> (Vec<GateEvent>, BTreeMap<usize, BTreeSet<usize>>) {
-        let mut gate_events = collect_gate_events(self.campaign, &self.anchors, &cp.obj_step);
-        gate_events.extend(self.shortcuts.iter().map(|sc| GateEvent {
+    ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
+        let mut region_events = collect_region_events(self.campaign, &self.anchors, &cp.obj_step);
+        region_events.extend(self.shortcuts.iter().map(|sc| RegionEvent {
             region: sc.gate_region,
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         }));
         let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
-        (gate_events, ancestors)
+        (region_events, ancestors)
     }
 
     /// Whether a gate firing at critical-path step `g` is guaranteed to have fired
@@ -1654,12 +1700,7 @@ impl<'a> Plan<'a> {
     /// piece provides the name. First match in `anchors` order (a `BTreeMap`, so
     /// deterministic).
     pub fn point_any(&self, anchor: &str) -> Option<[i32; 3]> {
-        self.anchors.iter().find_map(|((_, name), resolved)| {
-            (name == anchor).then_some(match resolved {
-                ResolvedAnchor::Point { pos, .. } => *pos,
-                ResolvedAnchor::Gate { from, .. } => *from,
-            })
-        })
+        point_any_in(&self.anchors, anchor)
     }
 
     /// Resolve an anchor-centred box (spec-0022) to absolute inclusive corners:
@@ -1673,12 +1714,7 @@ impl<'a> Plan<'a> {
     /// ceiling declared as a region anchor would be deleted at build time, and a
     /// `volley` kill zone would silently punch a hole in the geometry it names.
     pub fn zone_box(&self, zone: &delvewright_dsl::StealthZone) -> Option<([i32; 3], [i32; 3])> {
-        let c = self.point_any(zone.anchor.as_str())?;
-        let e = zone.extent;
-        Some((
-            [c[0] - e[0] as i32, c[1] - e[1] as i32, c[2] - e[2] as i32],
-            [c[0] + e[0] as i32, c[1] + e[1] as i32, c[2] + e[2] as i32],
-        ))
+        zone_box_in(&self.anchors, zone)
     }
 
     /// Whether any collected checkpoint carries an `on_respawn` hook — gates the
@@ -2823,7 +2859,7 @@ pub(crate) struct EffectRootSite<'a> {
 /// single enumeration of effect roots in the workspace. It exists to re-present
 /// the DSL's [`delvewright_dsl::EffectRootOwner`] as this crate's [`EffectRoot`],
 /// which carries the same owners plus the completability model's reading of them
-/// (see [`collect_gate_events`]); it enumerates nothing itself.
+/// (see [`collect_region_events`]); it enumerates nothing itself.
 ///
 /// A list is a root if `emit::emit_quest_effect` can reach it, not if the quests
 /// stage happens to own it. Five lists are. Their order, and the reasoning, live
@@ -2872,7 +2908,7 @@ pub(crate) fn for_each_effect_root<'a>(
 ///
 /// Every consumer that reasons about emitted gate commands walks THIS: the seal
 /// planner ([`collect_seal_hints`]), the wording check (`gates::check_seal_hints`,
-/// `DW0423`) and the completability model ([`collect_gate_events`], which feeds
+/// `DW0423`) and the completability model ([`collect_region_events`], which feeds
 /// `DW0311`/`DW0315`/`DW0342`/`DW0410`). Sharing the traversal is what makes the
 /// checks and the emission unable to disagree about which firings exist.
 pub(crate) fn for_each_gate_effect<'a>(
@@ -2921,6 +2957,37 @@ fn gate_region_block_any(
         }
     }
     None
+}
+
+/// Resolve an anchor by name alone over a resolved-anchor map — the free-function
+/// core of [`Plan::point_any`], so the planning stage can resolve a box *while*
+/// building the `Plan` (which is where the region-write model is collected) rather
+/// than needing a finished one.
+fn point_any_in(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    anchor: &str,
+) -> Option<[i32; 3]> {
+    anchors.iter().find_map(|((_, name), resolved)| {
+        (name == anchor).then_some(match resolved {
+            ResolvedAnchor::Point { pos, .. } => *pos,
+            ResolvedAnchor::Gate { from, .. } => *from,
+        })
+    })
+}
+
+/// Resolve an anchor-centred box (`anchor ± extent`) over a resolved-anchor map —
+/// the free-function core of [`Plan::zone_box`], for the same reason
+/// [`point_any_in`] exists.
+fn zone_box_in(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    zone: &delvewright_dsl::StealthZone,
+) -> Option<([i32; 3], [i32; 3])> {
+    let c = point_any_in(anchors, zone.anchor.as_str())?;
+    let e = zone.extent;
+    Some((
+        [c[0] - e[0] as i32, c[1] - e[1] as i32, c[2] - e[2] as i32],
+        [c[0] + e[0] as i32, c[1] + e[1] as i32, c[2] + e[2] as i32],
+    ))
 }
 
 /// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
@@ -2972,11 +3039,11 @@ fn gate_region_any(
 /// must be finishable the long way. Environment triggers keep their older
 /// both-directions treatment unchanged; narrowing that is a different proof's
 /// verdict and is not this function's call to make.
-fn collect_gate_events(
+fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     obj_step: &BTreeMap<String, usize>,
-) -> Vec<GateEvent> {
+) -> Vec<RegionEvent> {
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
         let (fire_step, forced) = match site.root {
@@ -2998,23 +3065,44 @@ fn collect_gate_events(
             | EffectRoot::OnDeath
             | EffectRoot::ShopOffer => (0, false),
         };
-        let gate = e
-            .open_gate_anchor()
-            .map(|a| (a, false))
-            .or_else(|| e.close_gate_anchor().map(|a| (a, true)));
-        let Some((anchor, closes)) = gate else {
-            return;
+        // The two spellings of one write. A gate names a prefab gate anchor and
+        // takes that anchor's box and its `replace`-filtered clear; a
+        // `fill-region`/`clear-region` names its own anchor-centred box and clears
+        // it outright. Neither owns the model.
+        let resolved = match (e.gate_region_write(), e.region_write()) {
+            (Some((anchor, fills)), _) => gate_region_any(anchors, anchor.as_str()).map(|r| {
+                (
+                    r,
+                    if fills {
+                        RegionWrite::Fill
+                    } else {
+                        RegionWrite::Unseal
+                    },
+                )
+            }),
+            (_, Some((zone, block))) => zone_box_in(anchors, zone).map(|r| {
+                (
+                    r,
+                    if block.is_some() {
+                        RegionWrite::Fill
+                    } else {
+                        RegionWrite::Clear
+                    },
+                )
+            }),
+            _ => return,
         };
-        if !closes && !forced {
-            return; // an optional firing may seal, never unseal
+        let Some((region, write)) = resolved else {
+            return; // an unresolvable anchor is DW0142/DW0343/DW0355's finding
+        };
+        if write != RegionWrite::Fill && !forced {
+            return; // an optional firing may fill, never open
         }
-        if let Some(region) = gate_region_any(anchors, anchor.as_str()) {
-            out.push(GateEvent {
-                region,
-                closes,
-                fire_step,
-            });
-        }
+        out.push(RegionEvent {
+            region,
+            write,
+            fire_step,
+        });
     });
     out
 }
@@ -3770,7 +3858,7 @@ fn gate_open_indices(
     // from a `sequence` step opens at the step that fires the sequence, and a
     // trigger-fired gate is conservatively treated as open from step 0 (a trigger
     // has no place in the objective DAG — the same conservative rooting
-    // `collect_gate_events` uses). Treating either as "never opened" is what made
+    // `collect_region_events` uses). Treating either as "never opened" is what made
     // the deadlock proof reject a perfectly playable delve.
     let deep = |e: &QuestEffect, idx: usize, out: &mut BTreeMap<String, usize>| {
         e.visit_deep(&mut |inner| {

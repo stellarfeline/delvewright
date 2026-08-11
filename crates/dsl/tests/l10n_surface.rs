@@ -158,6 +158,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("PotionEffect", "effect", Reference),
     ("Prop", "block", Reference),
     ("QuestEffect", "block", Reference),
+    ("QuestEffect", "effect", Reference),
     ("QuestEffect", "falling_block", Reference),
     ("QuestEffect", "item", Reference),
     ("QuestEffect", "name", Inventoried),
