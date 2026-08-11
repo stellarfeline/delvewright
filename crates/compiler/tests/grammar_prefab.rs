@@ -15,7 +15,7 @@ use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::{AnchorRegistry, LightingProfile, PrefabId};
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, cliff_path, drop_shaft, dumbwaiter, elite_ground, far_side_bar,
-    rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
+    lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, export_prefab};
 // W3: the palette/prop family (W + S + M + X).
@@ -49,6 +49,9 @@ const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The vertical family's stationary member: five across, sixteen tall (a sill
+/// and two whole storeys), seven deep.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
 
 fn library_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("dw-grammar-prefab-{}-{tag}", std::process::id()));
@@ -269,6 +272,16 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
                 "anchor/stair-foot",
                 "anchor/stair-head",
                 "anchor/stair-step-1",
+            ],
+        ),
+        (
+            "grammar-lift-shaft",
+            lift_shaft(),
+            LIFT_REGION,
+            vec![
+                "anchor/lift-pit",
+                "anchor/lift-station-1",
+                "anchor/lift-call-1",
             ],
         ),
         (
