@@ -333,6 +333,19 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
+      # A command whose response nobody reads cannot fail. `delve-admit`'s gallery
+      # emitted four legacy camelCase gamerules and a `text_opacity:255b`; 1.21.11
+      # refused `admit:load` and `admit:finish` outright, so the gallery world came
+      # up with no objectives, nothing forceloaded and nothing placed — and every
+      # test was green, because nothing had ever read a reply. The jump-arc rig set
+      # `gamerule fallDamage false` one line above a comment asserting the bot took
+      # no fall damage; the warden pad used `doMobSpawning`/`randomTickSpeed`. This
+      # binds two rules to the tree: a live command site goes through the shared
+      # rejection rule (tools/lib/rcon.{sh,mjs}), and a `gamerule` line names a rule
+      # the PINNED command tree actually has, so it can never drift from ADR-0009.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no command is issued to a server that cannot answer back (task #70)
+        run: python3 tools/check-live-commands.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
       #

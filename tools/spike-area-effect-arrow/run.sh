@@ -30,6 +30,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tools/lib/rcon.sh
+. "${REPO_ROOT}/tools/lib/rcon.sh"
 HERE="${REPO_ROOT}/tools/spike-area-effect-arrow"
 CONTAINER="${SPIKE_CONTAINER:-dw-spike-arrow}"
 OUT="${HERE}/observations.json"
@@ -68,7 +70,13 @@ start_server() {
 wait_ready() {
   echo "[spike] waiting for RCON ..."
   for _ in $(seq 1 120); do
-    if docker exec "${CONTAINER}" rcon-cli list >/dev/null 2>&1; then return 0; fi
+    # Liveness poll: the deliberately unjudged channel (tools/lib/rcon.sh) — a
+    # refusal here means "not up yet". Readiness is the REPLY, never the exit
+    # status of a discarded pipe: a `>/dev/null` probe cannot tell a server
+    # that answered from one that answered an error, and the sibling idiom
+    # (`| grep -q` under pipefail) read as flakiness for months, cost two owner
+    # playtest stagings, and is task #173.
+    if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then return 0; fi
     sleep 5
   done
   echo "[spike] server did not become ready in 10m" >&2
