@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use delvewright_dsl::{CameraWaypoint, Lethality, QuestEffect, TrapReset};
 
-use crate::plan::{GateEvent, Plan, ResolvedAnchor, Step, TrapPlan};
+use crate::plan::{Plan, RegionEvent, RegionWrite, ResolvedAnchor, Step, TrapPlan};
 use delvewright_dsl::Diagnostic;
 
 /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
@@ -764,6 +764,17 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// Cells another proof has FORCED solid as its own premise — a `collapse`'s
+    /// settled debris, an ambush's occupied cells, a timed gate's shut span, an
+    /// aggro sphere ([`World::with_sealed`]).
+    ///
+    /// A runtime `clear-region` may not remove one. Clearing a region says "the
+    /// blocks the campaign put here are gone"; it does not say "the hazard another
+    /// proof is reasoning about never happened". Without this, a `clear-region`
+    /// laid over a collapse's rubble would delete the rubble from that proof's
+    /// world and `DW0445` would go quietly green — a new verb weakening an existing
+    /// check, which is the one thing a new verb may never do.
+    pinned: BTreeSet<[i32; 3]>,
     /// What the *unmodelled* columns contain (spec-0013 `horizon`). Defaults to
     /// [`Ambient::Void`] — the pre-0.6 world and every synthetic test world —
     /// and is set from the plan by [`World::from_plan`] /
@@ -839,6 +850,7 @@ impl World {
             partial: self.partial.clone(),
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
+            pinned: self.pinned.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -886,6 +898,7 @@ impl World {
             partial: occ.partial,
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
+            pinned: BTreeSet::new(),
             ambient: Ambient::Void,
         }
     }
@@ -930,6 +943,10 @@ impl World {
         for c in extra {
             partial.remove(c);
         }
+        // These cells are this proof's premise from here on: a later runtime clear
+        // may not undo them (see `World::pinned`).
+        let mut pinned = self.pinned.clone();
+        pinned.extend(extra.iter().copied());
         World {
             solid,
             tall: self.tall.clone(),
@@ -938,8 +955,66 @@ impl World {
             partial,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            pinned,
             ambient: self.ambient.clone(),
         }
+    }
+
+    /// A copy of this world with `extra` cells **emptied of blocks** — the dual of
+    /// [`World::with_sealed`], and what a runtime `clear-region` (or an
+    /// `open-gate`, whose gate cells the assembled model already holds empty) does
+    /// to the geometry from its point in the quest DAG.
+    ///
+    /// "Emptied of blocks" is exactly the four block-derived classes: a cleared
+    /// cell is no longer a full cube, a 1.5-tall barrier, a closed fence gate, or a
+    /// partial floor. `flooded` is deliberately **left alone**: a `fill … air`
+    /// against a cell the model floods does not remove the water, it lets the water
+    /// back in, so a cleared cell the model already knows is wet stays impassable.
+    ///
+    /// The one case this does not model is a clear that *opens* a dry region into
+    /// adjacent water — the model would call the new cells dry and the server would
+    /// flood them. Re-deriving the flood needs the block map, which this collision
+    /// view does not carry; until it does, that campaign's route proof is optimistic
+    /// and the limitation is stated here and in `docs/reference/compiler.md` rather
+    /// than left to be discovered.
+    fn with_cleared(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        let mut w = World {
+            solid: self.solid.clone(),
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
+            flooded: self.flooded.clone(),
+            partial: self.partial.clone(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            pinned: self.pinned.clone(),
+            ambient: self.ambient.clone(),
+        };
+        for c in extra {
+            if w.pinned.contains(c) {
+                continue; // another proof's premise, not a block this write owns
+            }
+            w.solid.remove(c);
+            w.tall.remove(c);
+            w.use_gates.remove(c);
+            w.partial.remove(c);
+        }
+        w
+    }
+
+    /// This world as of one point in the quest DAG: every region a runtime write
+    /// has filled forced solid, every region a runtime write has cleared emptied
+    /// ([`RegionState`]).
+    ///
+    /// **The one place** that knows what a runtime region write does to the
+    /// geometry a proof reasons over. `close-gate`, `open-gate`, `fill-region`,
+    /// `clear-region` and a shortcut's world-load seal all arrive here as
+    /// [`crate::plan::RegionEvent`]s and none of them carries its own copy of the
+    /// rule.
+    fn with_region_state(&self, st: &RegionState) -> World {
+        // Fills are applied last, so where two regions overlap the wall wins: a
+        // proof that survives the seal is the conservative answer, and it is
+        // deterministic without needing a tie-break on declaration order.
+        self.with_cleared(&st.cleared).with_sealed(&st.solid)
     }
 
     /// A copy of this world for **autonomous** walkers that cannot use gates —
@@ -963,6 +1038,7 @@ impl World {
             partial: self.partial.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            pinned: self.pinned.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -991,6 +1067,7 @@ impl World {
             partial: BTreeMap::new(),
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
+            pinned: BTreeSet::new(),
             ambient: Ambient::Void,
         }
     }
@@ -1006,6 +1083,7 @@ impl World {
             partial: BTreeMap::new(),
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
+            pinned: BTreeSet::new(),
             ambient: Ambient::Void,
         }
     }
@@ -1170,7 +1248,7 @@ impl World {
         route_walked_legs(
             self,
             &critical_positions(plan),
-            &plan.gate_events,
+            &plan.region_events,
             &|g, s| plan.gate_fired_before(g, s),
         )
     }
@@ -2802,73 +2880,103 @@ pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
     route_visited(
         world,
         &critical_positions(plan),
-        &plan.gate_events,
+        &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
     )
 }
 
-/// The gate-region cells sealed on a walked leg arriving at the objective at
-/// critical-path step `arrival` (DSL v0.6 close-gate completability). A gate event
-/// counts only if its firing objective is a **causal (DAG) ancestor** of the leg's
-/// objective — `ancestor(ev.fire_step, arrival)` — i.e. it is guaranteed to have
-/// fired before this leg in *every* valid play order. That excludes a gate on a
-/// parallel quest branch that the lineariser merely happens to interleave ahead of
-/// this leg (which would falsely seal it). Among the causally-preceding events on a
-/// region, the **latest** (max `fire_step`, respecting the DAG linearisation) wins;
-/// the region is sealed iff that latest firing is a `close-gate` (a later
-/// `open-gate` reopens it). Regions with no qualifying close contribute nothing, so
-/// an open-gate-only campaign yields an empty set and routes byte-identically to the
-/// base world.
-fn sealed_gate_cells(
-    gate_events: &[GateEvent],
-    arrival: usize,
-    ancestor: &dyn Fn(usize, usize) -> bool,
-) -> BTreeSet<[i32; 3]> {
-    // Per region, the causally-latest closed-state among firings that precede this
-    // leg (ancestor of the arrival objective); higher `fire_step` overrides.
-    let mut state: BTreeMap<([i32; 3], [i32; 3]), (usize, bool)> = BTreeMap::new();
-    for ev in gate_events {
-        if ancestor(ev.fire_step, arrival) {
-            let e = state.entry(ev.region).or_insert((ev.fire_step, ev.closes));
-            if ev.fire_step >= e.0 {
-                *e = (ev.fire_step, ev.closes);
-            }
-        }
-    }
-    let mut sealed = BTreeSet::new();
-    for (region, (_, closed)) in state {
-        if closed {
-            for cell in crate::assembled::region_cells(region.0, region.1) {
-                sealed.insert(cell);
-            }
-        }
-    }
-    sealed
+/// What every runtime-written region has become, as of one point in the quest DAG:
+/// the cells a write has made solid, and the cells a write has cleared.
+///
+/// One value, because it is one question. A proof that asked only "what is walled
+/// off" is the shape the capability had while `close-gate` owned it privately, and
+/// it is why the other half — "what is now open" — had no answer for anything but a
+/// gate, whose cells the assembled model happens to hold open unconditionally.
+#[derive(Debug, Default, Clone)]
+struct RegionState {
+    /// Cells a runtime fill has made solid by this point.
+    solid: BTreeSet<[i32; 3]>,
+    /// Cells a runtime clear has emptied by this point.
+    cleared: BTreeSet<[i32; 3]>,
 }
 
-/// The gate cells sealed for the walked leg `from_step → to_step` — the single
-/// definition of "which gates are shut while the player walks this leg", shared by
-/// the completability proof, the forced-cell set the trap proof reasons about, and
-/// the exported harness waypoints (task #78).
+impl RegionState {
+    /// Nothing has been written by this point — the caller routes the base world
+    /// and clones nothing.
+    fn is_empty(&self) -> bool {
+        self.solid.is_empty() && self.cleared.is_empty()
+    }
+}
+
+/// The state of every runtime-written region on a walked leg arriving at the
+/// objective at critical-path step `arrival` (DSL v0.6 `close-gate`, generalised in
+/// v0.10 by spec-0031). A write counts only if its firing objective is a **causal
+/// (DAG) ancestor** of the leg's objective — `ancestor(ev.fire_step, arrival)` —
+/// i.e. it is guaranteed to have happened before this leg in *every* valid play
+/// order. That excludes a write on a parallel quest branch that the lineariser
+/// merely happens to interleave ahead of this leg (which would falsely seal it).
+/// Among the causally-preceding writes on a region, the **latest** (max
+/// `fire_step`, respecting the DAG linearisation) wins: the region is solid iff
+/// that latest write is a fill, and cleared iff it is a clear.
 ///
-/// Only a **causal** leg is sealed — one whose start objective is a DAG ancestor of
+/// A campaign that writes no region yields an empty state and routes byte-
+/// identically to the base world; so does an `open-gate`-only campaign, whose gate
+/// cells the assembled model already holds empty — clearing them again removes
+/// nothing.
+fn region_state_at(
+    region_events: &[RegionEvent],
+    arrival: usize,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+) -> RegionState {
+    // Per region, the causally-latest write that precedes this leg (ancestor of
+    // the arrival objective); higher `fire_step` overrides.
+    let mut latest: BTreeMap<([i32; 3], [i32; 3]), (usize, RegionWrite)> = BTreeMap::new();
+    for ev in region_events {
+        if ancestor(ev.fire_step, arrival) {
+            let e = latest.entry(ev.region).or_insert((ev.fire_step, ev.write));
+            if ev.fire_step >= e.0 {
+                *e = (ev.fire_step, ev.write);
+            }
+        }
+    }
+    let mut st = RegionState::default();
+    for (region, (_, write)) in latest {
+        // An `Unseal` contributes to neither set: it removes only the gate's own
+        // block, which the assembled world already holds absent. It mattered
+        // above, in latest-write-wins, where it is what cancels an earlier fill.
+        let into = match write {
+            RegionWrite::Fill => &mut st.solid,
+            RegionWrite::Clear => &mut st.cleared,
+            RegionWrite::Unseal => continue,
+        };
+        into.extend(crate::assembled::region_cells(region.0, region.1));
+    }
+    st
+}
+
+/// The runtime-region state for the walked leg `from_step → to_step` — the single
+/// definition of "which regions are filled and which are cleared while the player
+/// walks this leg", shared by the completability proof, the forced-cell set the
+/// trap proof reasons about, and the exported harness waypoints (task #78).
+///
+/// Only a **causal** leg is written — one whose start objective is a DAG ancestor of
 /// the arrival objective, i.e. a step the player is genuinely forced to walk to
 /// reach the arrival. The lineariser concatenates parallel quest branches, producing
 /// artifact "legs" between objectives with no causal order (e.g. a `take-the-cheese`
 /// beat followed by a `nobody` beat on a sibling branch); the player never actually
-/// walks that pairing under the arrival's gate state, so sealing it would falsely
+/// walks that pairing under the arrival's region state, so sealing it would falsely
 /// fail. A genuinely-forced re-crossing (start IS a causal ancestor) is still
 /// sealed, preserving the proof. Base DW0311 (open world) already checked every leg.
-fn leg_seal(
-    gate_events: &[GateEvent],
+fn leg_region_state(
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
     from_step: usize,
     to_step: usize,
-) -> BTreeSet<[i32; 3]> {
+) -> RegionState {
     if ancestor(from_step, to_step) {
-        sealed_gate_cells(gate_events, to_step, ancestor)
+        region_state_at(region_events, to_step, ancestor)
     } else {
-        BTreeSet::new()
+        RegionState::default()
     }
 }
 
@@ -2880,7 +2988,7 @@ fn leg_seal(
 fn route_walked_legs(
     world: &World,
     positions: &[VisitedPos],
-    gate_events: &[GateEvent],
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<(LegRoute, BTreeSet<[i32; 3]>)> {
     let mut out = Vec::new();
@@ -2888,14 +2996,15 @@ fn route_walked_legs(
         if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let sealed = leg_seal(gate_events, ancestor, pair[0].src_step, pair[1].src_step);
+        let st = leg_region_state(region_events, ancestor, pair[0].src_step, pair[1].src_step);
         let leg_world_owned;
-        let leg_world: &World = if sealed.is_empty() {
+        let leg_world: &World = if st.is_empty() {
             world
         } else {
-            leg_world_owned = world.with_sealed(&sealed);
+            leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
+        let sealed = st.solid;
         let (Some(start), Some(goal)) = (
             leg_world.snap_endpoint(pair[0].pos, false),
             leg_world.snap_endpoint(pair[1].pos, pair[1].talk_to),
@@ -2948,7 +3057,7 @@ fn names_of(ids: &[&str]) -> String {
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
-    gate_events: &[GateEvent],
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), NavError> {
     for pair in positions.windows(2) {
@@ -2957,14 +3066,15 @@ fn route_visited(
         if pair[1].transport_before {
             continue; // an inter-area teleport hop: the player is moved, not walking
         }
-        let sealed = leg_seal(gate_events, ancestor, pair[0].src_step, pair[1].src_step);
+        let st = leg_region_state(region_events, ancestor, pair[0].src_step, pair[1].src_step);
         let leg_world_owned;
-        let leg_world: &World = if sealed.is_empty() {
+        let leg_world: &World = if st.is_empty() {
             world
         } else {
-            leg_world_owned = world.with_sealed(&sealed);
+            leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
+        let sealed = st.solid;
         // The lethal-free view of this same leg, built once and only when the
         // campaign declares a volume at all. Every failure below asks it first:
         // a leg that routes here and nowhere else failed *because of* lethality,
@@ -3103,7 +3213,7 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
         world,
         &cps,
         &critical_positions(plan),
-        &plan.gate_events,
+        &plan.region_events,
         &|g, s| plan.gate_fired_before(g, s),
     )
 }
@@ -3115,7 +3225,7 @@ fn verify_checkpoints(
     world: &World,
     checkpoints: &[(String, [i32; 3], usize)],
     positions: &[VisitedPos],
-    gate_events: &[GateEvent],
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), NavError> {
     for (anchor, pos, fire_step) in checkpoints {
@@ -3142,12 +3252,12 @@ fn verify_checkpoints(
         // Seal any gate closed by the time the party reaches the target (the same
         // per-leg gate state DW0311 routes under), so a checkpoint whose forward
         // path is walled off by a `close-gate` strands the party (DSL v0.6).
-        let sealed = sealed_gate_cells(gate_events, target.src_step, ancestor);
+        let st = region_state_at(region_events, target.src_step, ancestor);
         let leg_world_owned;
-        let leg_world: &World = if sealed.is_empty() {
+        let leg_world: &World = if st.is_empty() {
             world
         } else {
-            leg_world_owned = world.with_sealed(&sealed);
+            leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
         let Some(goal) = leg_world.snap_endpoint(target.pos, target.talk_to) else {
@@ -4544,14 +4654,14 @@ pub fn check_stealth_onset(plan: &Plan, world: &World) -> Result<(), NavError> {
                 c.pos,
             ));
         }
-        let sealed = sealed_gate_cells(&plan.gate_events, beat.fire_step, &|g, s| {
+        let st = region_state_at(&plan.region_events, beat.fire_step, &|g, s| {
             plan.gate_fired_before(g, s)
         });
         let leg_world_owned;
-        let leg_world: &World = if sealed.is_empty() {
+        let leg_world: &World = if st.is_empty() {
             world
         } else {
-            leg_world_owned = world.with_sealed(&sealed);
+            leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
         verify_stealth_onset(
@@ -4867,7 +4977,7 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
 /// [`check_critical_path`] quantifies over the DEFAULT playthrough only; a
 /// branch-divergent leg — one the fork adds or resequences — was walked by the
 /// harness with no compile-time proof behind it. This is the same
-/// [`route_visited`] core over the branch's own step list, with `gate_events` /
+/// [`route_visited`] core over the branch's own step list, with `region_events` /
 /// `ancestor` in the **branch path's step space**
 /// ([`Plan::branch_gate_model`]) — never the default path's indices, which
 /// belong to a different sequence.
@@ -4875,13 +4985,13 @@ pub fn check_branch_path(
     world: &World,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
-    gate_events: &[GateEvent],
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), NavError> {
     route_visited(
         world,
         &positions_of(steps, transports),
-        gate_events,
+        region_events,
         ancestor,
     )
 }
@@ -4896,13 +5006,13 @@ pub fn branch_path_routes(
     world: &World,
     steps: &[Step],
     transports: &[Option<[i32; 3]>],
-    gate_events: &[GateEvent],
+    region_events: &[RegionEvent],
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<LegRoute> {
     route_walked_legs(
         world,
         &positions_of(steps, transports),
-        gate_events,
+        region_events,
         ancestor,
     )
     .into_iter()
@@ -7075,9 +7185,9 @@ mod tests {
             "the open corridor must route with no gate events"
         );
         // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
-        let close = GateEvent {
+        let close = RegionEvent {
             region: ([2, 65, 0], [2, 65, 0]),
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         };
         let err =
@@ -7089,15 +7199,102 @@ mod tests {
             err.message
         );
         // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
-        let open = GateEvent {
+        let open = RegionEvent {
             region: ([2, 65, 0], [2, 65, 0]),
-            closes: false,
+            write: RegionWrite::Unseal,
             fire_step: 1,
         };
         assert!(
             route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
             "a gate reopened by open-gate before the leg must route again"
         );
+    }
+
+    // --- the region write, generalised (DSL v0.10, spec-0031) ---------------
+
+    /// A `fill-region` seals a forced leg exactly as a `close-gate` does, and a
+    /// later `clear-region` over the same box reopens it.
+    ///
+    /// Same world, same predicate, same proof as the gate pair above — which is the
+    /// claim: the completability rule belongs to the region, and a verb that names
+    /// no gate inherits it rather than re-deriving it.
+    #[test]
+    fn fill_region_seals_a_forced_leg_and_clear_region_reopens_it() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let fill = RegionEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            write: RegionWrite::Fill,
+            fire_step: 0,
+        };
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&fill), &linear).unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        let clear = RegionEvent {
+            region: ([2, 65, 0], [2, 65, 0]),
+            write: RegionWrite::Clear,
+            fire_step: 1,
+        };
+        assert!(
+            route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
+            "a region cleared before the leg must route again"
+        );
+    }
+
+    /// The half no gate could ever exercise: a `clear-region` credits a route
+    /// through geometry the **prefab** put there, not merely through a wall an
+    /// earlier effect built. The assembled model holds every gate cell open
+    /// unconditionally, so `open-gate` never had to prove this and never did.
+    #[test]
+    fn clear_region_opens_prefab_geometry() {
+        // A wall cell across the corridor: no route at all in the base world.
+        let world = floored(5, 1, 65, &[[2, 65, 0], [2, 66, 0]]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            "the walled corridor must not route before the clear"
+        );
+        let clear = RegionEvent {
+            region: ([2, 65, 0], [2, 66, 0]),
+            write: RegionWrite::Clear,
+            fire_step: 0,
+        };
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&clear), &linear).is_ok(),
+            "the cleared wall must be passable from the DAG point the clear fires at"
+        );
+    }
+
+    /// An `open-gate` is **not** an unfiltered clear: it removes only the gate's own
+    /// block. So it cannot delete geometry another proof has forced solid — a
+    /// `collapse`'s debris resting in the doorway stays exactly where it fell.
+    ///
+    /// The guard is [`World::pinned`], and it holds for an authored `clear-region`
+    /// too: clearing a region says "the blocks the campaign put here are gone", not
+    /// "the hazard another proof is reasoning about never happened".
+    #[test]
+    fn a_runtime_clear_does_not_undo_another_proofs_premise() {
+        let world = floored(5, 1, 65, &[]);
+        let debris: BTreeSet<[i32; 3]> = [[2, 65, 0], [2, 66, 0]].into_iter().collect();
+        let buried = world.with_sealed(&debris);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&buried, &[a, b], &[], &linear).is_err(),
+            "the debris blocks the corridor"
+        );
+        for write in [RegionWrite::Unseal, RegionWrite::Clear] {
+            let ev = RegionEvent {
+                region: ([2, 65, 0], [2, 66, 0]),
+                write,
+                fire_step: 0,
+            };
+            assert!(
+                route_visited(&buried, &[a, b], std::slice::from_ref(&ev), &linear).is_err(),
+                "{write:?} must not delete another proof's forced-solid cells"
+            );
+        }
     }
 
     /// The seal is **DAG-causal**, not linear: a `close-gate` fired on a parallel
@@ -7108,9 +7305,9 @@ mod tests {
     #[test]
     fn close_gate_seal_is_dag_causal_not_linear() {
         let world = floored(5, 1, 65, &[]);
-        let close = GateEvent {
+        let close = RegionEvent {
             region: ([2, 65, 0], [2, 65, 0]),
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 8,
         };
         let a = at_step([0, 65, 0], 9);
@@ -7141,9 +7338,9 @@ mod tests {
         // Open gate → reachable.
         assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
-        let close = GateEvent {
+        let close = RegionEvent {
             region: ([2, 65, 0], [2, 65, 0]),
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         };
         let err = verify_checkpoints(
@@ -8249,9 +8446,9 @@ mod tests {
         world.solid.remove(&[4, 66, 1]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let close = GateEvent {
+        let close = RegionEvent {
             region: ([2, 65, 0], [2, 66, 0]),
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         };
         let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
@@ -8286,9 +8483,9 @@ mod tests {
         world.solid.remove(&[4, 66, 1]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let close = GateEvent {
+        let close = RegionEvent {
             region: ([2, 65, 0], [2, 66, 0]),
-            closes: true,
+            write: RegionWrite::Fill,
             fire_step: 0,
         };
         let tc = [2, 65, 2];

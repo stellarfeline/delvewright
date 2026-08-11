@@ -440,6 +440,21 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      the mainline depends on: nothing inside it is credited as a flag producer,
      deliberately, so a door it alone opens is a door only a corpse can open.
      Needs `dsl_version` 0.10.0 on the quests stage.
+   - **A region can be filled or cleared while the delve runs, and no gate need
+     be involved.** `fill-region {region{anchor,extent}, block}` writes a block
+     over a declared box; `clear-region {region{anchor,extent}}` empties it.
+     `open-gate`/`close-gate` are the same operation with the box and the block
+     read off a prefab gate anchor — reach for those when a prefab already
+     declares the threshold, and for these when the box is yours: a bridge that
+     materialises, a floor that sinks, a wall that opens, a platform summoned
+     under the party. Both need `dsl_version` 0.10.0 on the quests stage. The
+     completability proof honours them from the point in the quest DAG where the
+     effect fires: a fill the only route must cross afterwards fails the build
+     (`DW0311`), and a clear is credited as passable, so a route may legitimately
+     depend on one. Two things it will not model, so do not build on them: a clear
+     that opens a box into water (the water flows back in and the proof does not
+     know), and a clear over rubble another mechanism dropped there (a `collapse`
+     debris field, a shut timed gate) — those stay solid.
    - **A place that kills is DECLARED, never faked with the art.** A cliff whose
      fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
      declaration, `lethal_volumes[] {id, region{anchor,extent}, message,

@@ -7,7 +7,7 @@
 //! the roots they happened to know about.
 //!
 //! Six separate investigations each found one such walk and fixed it in place
-//! (`plan::collect_gate_events`, `l10n::each_string`, `timeline::walk_campaign` /
+//! (`plan::collect_region_events`, `l10n::each_string`, `timeline::walk_campaign` /
 //! `nav::all_effects`, `flow::read_flags`, `emit::check_effect_anchors`,
 //! `emit::declared_flags`). A sweep after the sixth found **thirteen more**
 //! walkers still enumerating three or four of the five. None of them was red:

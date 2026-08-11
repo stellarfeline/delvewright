@@ -26,6 +26,20 @@
 //! while a teleport's harm is to what the **compiler itself placed**, which it
 //! can. A proof beats a list that grows with the engine.
 //!
+//! **This is CLAUDE.md's "a capability belongs to the object class it acts on,
+//! not to the verb that first needed it" paying off in the direction people
+//! forget.** The rule is usually cited to stop a second verb re-implementing a
+//! capability privately. Here it earns its keep the other way round: the
+//! exemption list is keyed to what a *lethal volume* does to an entity — delete
+//! it — and that keying is invisible in the list itself, which reads like a
+//! neutral roster of "engine machinery". Inherited by a verb that *moves*
+//! entities rather than deleting them, the same roster is not merely
+//! unnecessary, it is **actively wrong**, and wrong in the silent direction: the
+//! delve keeps its speaker, at the right coordinates, and simply cannot be
+//! talked to. Nothing reds. Reusing a list because it names the right *types* —
+//! without asking what the verb that wrote it was doing to them — is how a
+//! second consumer inherits a first consumer's assumptions in the dark.
+//!
 //! ## What is refused: an affordance bound to hardware the teleport cannot move
 //!
 //! Every interaction affordance the engine summons is anchored to a compile-time

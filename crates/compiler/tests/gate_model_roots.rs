@@ -1,7 +1,7 @@
 //! The close-gate **completability model** sees every root emission can fill a
 //! gate from (task #167).
 //!
-//! `plan::collect_gate_events` feeds the nav proofs (`DW0311`/`DW0315`/`DW0342`/
+//! `plan::collect_region_events` feeds the nav proofs (`DW0311`/`DW0315`/`DW0342`/
 //! `DW0410`) their picture of which gate regions are solid on which walked leg.
 //! It used to walk three effect roots where emission reaches five, so a
 //! `close-gate` inside a `traps[].payload` or a dialogue option's `set-checkpoint`
@@ -139,7 +139,7 @@ fn failure_code(err: BuildFailure) -> (String, String) {
 /// model. The forced path must cross `anchor/door`, so the build fails `DW0311`.
 ///
 /// Red against `origin/main`: the build **succeeds**, because
-/// `collect_gate_events` never looked inside `traps[].payload`.
+/// `collect_region_events` never looked inside `traps[].payload`.
 #[test]
 fn a_trap_payload_close_gate_is_modelled() {
     let c = parse_hw(&quests_doc(TRAP_SEALS_THE_DOOR), None);

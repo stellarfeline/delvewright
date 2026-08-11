@@ -36,18 +36,29 @@ use serde_json::Value;
 
 /// How many object schemas across the seven stage documents declare a gate.
 ///
-/// Five objective kinds + twenty-two gatable effect verbs + the environment
+/// Five objective kinds + twenty-four gatable effect verbs + the environment
 /// trigger + the trap + the dialogue option + the cast placement. Asserted
 /// exactly rather than as a lower bound: this is the **binding count** the
 /// generality claim rests on, and a green that bound to fewer sites than it
 /// thinks is vacuous, not a pass (CLAUDE.md). Changing it is a deliberate act —
 /// a new gate consumer, or a verb becoming gatable — and it should be visible in
 /// the diff that does it.
-/// 28 → 31 (spec-0031 §"Status effect" / §"Teleport player"): `give-effect`,
-/// `clear-effect` and `teleport` are per-player, per-beat verbs, so they carry
-/// the whole gate at their first site. Deciding that at the SECOND site would
-/// have cost a `dsl_version` bump and an adoption round on every live campaign.
-const GATE_SITES: usize = 31;
+/// **Re-derived, not adjusted to fit** (spec-0031 §"Status effect" /
+/// §"Teleport players", merging after §"Region fill / clear"). The count is
+/// `5 + 24 + 1 + 1 + 1 + 1`, and the 24 gatable effect verbs are, in the order
+/// the schema declares them: `open-gate`, `close-gate`, `give-item`, `set-flag`,
+/// `set-state`, `add-state`, `clear-state`, `spawn-wave`, `narrate`,
+/// `set-block`, `fill-region`, `clear-region`, `despawn-npc`, `move-npc`,
+/// `cutscene`, `set-time`, `set-weather`, `play-sound`, `damage-players`,
+/// `volley`, `collapse`, `give-effect`, `clear-effect`, `teleport`.
+///
+/// Ledger of the moves: 28 (spec-0031 §1, the gate's third field) → 30
+/// (`fill-region` / `clear-region`, #354) → 33 (`give-effect` / `clear-effect` /
+/// `teleport`). Each of the three added here is a per-player, per-beat verb, so
+/// it carries the whole gate at its FIRST site; deciding that at the second
+/// would have cost a `dsl_version` bump and an adoption round on every live
+/// campaign.
+const GATE_SITES: usize = 33;
 
 /// The gate's fields, as they are spelled in the schema. Every site must declare
 /// all of them.

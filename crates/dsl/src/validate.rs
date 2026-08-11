@@ -4624,6 +4624,19 @@ fn check_effect_v04(
                 d,
             );
         }
+        // The v0.10 region write (spec-0031) places the same kind of block over a
+        // box instead of a cell, so it is the same `DW0193` check — the registry
+        // belongs to "a block id an author wrote", not to `set-block`.
+        QuestEffect::FillRegion { block, .. } => {
+            check_block_field(
+                blocks,
+                block,
+                format!("{base_path}/block"),
+                "fill-region",
+                "minecraft:stone",
+                d,
+            );
+        }
         // NPC-lifecycle refs. `spawn-npc` (v0.6) joins the v0.4 `despawn-npc`/
         // `move-npc` family: an unknown npc id is the same `DW0112` dangling ref.
         QuestEffect::DespawnNpc { npc, .. }

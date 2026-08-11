@@ -3668,6 +3668,77 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
     },
+    /// **Fill a declared region with a block** at runtime (DSL v0.10, spec-0031).
+    ///
+    /// The general spelling of the capability `open-gate` / `close-gate` carried
+    /// privately: a region, filled or cleared, from a point in the quest DAG.
+    /// `close-gate` is this verb with the region and the block read off a prefab
+    /// gate anchor instead of authored; `set-block` is the one-cell case at a
+    /// point anchor. All three lower through one emission
+    /// (`emit::fill_region_command`) and are modelled by one completability rule
+    /// (`plan::RegionEvent`), so a third consumer inherits the proof instead of
+    /// re-deriving it.
+    ///
+    /// The completability model treats the filled cells as **solid** from the
+    /// DAG point at which this fires, exactly as a `close-gate` seal is: a
+    /// critical path that must cross the region afterwards fails `DW0311`.
+    FillRegion {
+        /// The volume to fill, as an anchor-centred box (`anchor ± extent`).
+        ///
+        /// Deliberately the existing [`StealthZone`] — the engine's one
+        /// anchor-centred box object class, already shared by `damage-players`'s
+        /// `in` filter, `collapse`'s `region_anchor`, a `volley` kill zone and a
+        /// `lethal_volumes[]` region, and resolved through the single
+        /// `Plan::zone_box`. A private twin with the same two fields would be
+        /// `tools/check-capability-ownership.py` check C by construction.
+        ///
+        /// An anchor-centred box rather than a prefab `region` anchor for the
+        /// reason `collapse` states: the assembled model deletes every gate-region
+        /// anchor's cells, so a slab declared that way would already be gone.
+        region: StealthZone,
+        /// The block the region is filled with (validated against the pinned
+        /// 1.21.11 block registry, `DW0193`).
+        block: String,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
+    /// **Clear a declared region to air** at runtime (DSL v0.10, spec-0031) — the
+    /// physical dual of [`QuestEffect::FillRegion`], and the general spelling of
+    /// what `open-gate` does to a gate anchor's region.
+    ///
+    /// The completability model treats the cleared cells as **passable** from the
+    /// DAG point at which this fires, with one exception it states out loud: a
+    /// cleared cell the model already floods stays impassable, because clearing a
+    /// block does not remove water (`nav::World::with_cleared`).
+    ClearRegion {
+        /// The volume to clear, as an anchor-centred box (`anchor ± extent`) —
+        /// the same object class [`QuestEffect::FillRegion`] fills.
+        region: StealthZone,
+        /// Per-effect flag gate (DSL v0.6); see [`QuestEffect::requires_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_flags: Vec<FlagId>,
+        /// Per-effect negative flag gate (DSL v0.6); see
+        /// [`QuestEffect::forbids_flags`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        forbids_flags: Vec<FlagId>,
+        /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
+        /// must hold for this gate to be open. The third field of the one gate,
+        /// carried by every gate consumer — never by the verb that first wanted
+        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requires_state: Vec<StateCompare>,
+    },
     /// Despawns an NPC and its interaction hitbox (DSL v0.4, spec-0008 §5).
     DespawnNpc {
         /// The NPC (stage-2 ref) to remove.
@@ -4336,7 +4407,7 @@ impl std::fmt::Debug for QuestEffect {
         }
         /// Append `requires_state` only when non-empty (DSL v0.10; see the impl
         /// doc). Read off `self.requires_state()` rather than bound per arm, so
-        /// the gate tail is written once for all nineteen gated variants.
+        /// the gate tail is written once for all twenty-one gated variants.
         fn rs<'c, 'a, 'b: 'a>(
             d: &'c mut std::fmt::DebugStruct<'a, 'b>,
             requires_state: &[StateCompare],
@@ -4706,6 +4777,38 @@ impl std::fmt::Debug for QuestEffect {
             // rendering to preserve: every authored field prints. The gate tail
             // still prints only when non-empty — one rendering rule for one
             // field, everywhere.
+            QuestEffect::FillRegion {
+                region,
+                block,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("FillRegion")
+                        .field("region", region)
+                        .field("block", block)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
+            QuestEffect::ClearRegion {
+                region,
+                requires_flags,
+                forbids_flags,
+                ..
+            } => rs(
+                ff(
+                    f.debug_struct("ClearRegion")
+                        .field("region", region)
+                        .field("requires_flags", requires_flags),
+                    forbids_flags,
+                ),
+                self.requires_state(),
+            )
+            .finish(),
             QuestEffect::SetState {
                 state,
                 value,
@@ -5323,6 +5426,8 @@ impl QuestEffect {
             QuestEffect::SpawnWave { .. } => "spawn-wave",
             QuestEffect::Narrate { .. } => "narrate",
             QuestEffect::SetBlock { .. } => "set-block",
+            QuestEffect::FillRegion { .. } => "fill-region",
+            QuestEffect::ClearRegion { .. } => "clear-region",
             QuestEffect::DespawnNpc { .. } => "despawn-npc",
             QuestEffect::MoveNpc { .. } => "move-npc",
             QuestEffect::Cutscene { .. } => "cutscene",
@@ -5479,10 +5584,13 @@ impl QuestEffect {
             // spec-0022 trap-payload verbs are v0.6 — they report via `v06_effect`.
             | QuestEffect::Volley { .. }
             | QuestEffect::Collapse { .. }
-            // spec-0031 state verbs are v0.10 — they report via `v10_effect`.
+            // spec-0031 state verbs and region writes are v0.10 — they report via
+            // `v10_effect`.
             | QuestEffect::SetState { .. }
             | QuestEffect::AddState { .. }
             | QuestEffect::ClearState { .. }
+            | QuestEffect::FillRegion { .. }
+            | QuestEffect::ClearRegion { .. }
             | QuestEffect::GiveEffect { .. }
             | QuestEffect::ClearEffect { .. }
             | QuestEffect::Teleport { .. } => None,
@@ -5544,16 +5652,53 @@ impl QuestEffect {
     }
 
     /// The v0.10 effect name if this effect is one introduced in DSL v0.10
-    /// (`set-state`/`add-state`/`clear-state`, spec-0031). These validate in
-    /// v0.10 campaigns and are reserved (`DW0141`) earlier.
+    /// (`set-state`/`add-state`/`clear-state` and the region writes
+    /// `fill-region`/`clear-region`, spec-0031). These validate in v0.10
+    /// campaigns and are reserved (`DW0141`) earlier.
     pub fn v10_effect(&self) -> Option<&'static str> {
         match self {
             QuestEffect::SetState { .. } => Some("set-state"),
             QuestEffect::AddState { .. } => Some("add-state"),
             QuestEffect::ClearState { .. } => Some("clear-state"),
+            QuestEffect::FillRegion { .. } => Some("fill-region"),
+            QuestEffect::ClearRegion { .. } => Some("clear-region"),
             QuestEffect::GiveEffect { .. } => Some("give-effect"),
             QuestEffect::ClearEffect { .. } => Some("clear-effect"),
             QuestEffect::Teleport { .. } => Some("teleport"),
+            _ => None,
+        }
+    }
+
+    /// **The one region write**, whichever verb spelled it (DSL v0.10,
+    /// spec-0031): the box to write and the block to write it with — `None` for
+    /// the block meaning *clear to air*.
+    ///
+    /// This is the accessor the capability belongs to. It answers for
+    /// `fill-region` / `clear-region`, which name their own box; `open-gate` /
+    /// `close-gate` are the same operation over a box a prefab gate anchor
+    /// declares, so they answer through
+    /// [`QuestEffect::gate_region_write`](Self::gate_region_write) — the anchor
+    /// is theirs, the *operation* is shared.
+    pub fn region_write(&self) -> Option<(&StealthZone, Option<&str>)> {
+        match self {
+            QuestEffect::FillRegion { region, block, .. } => Some((region, Some(block.as_str()))),
+            QuestEffect::ClearRegion { region, .. } => Some((region, None)),
+            _ => None,
+        }
+    }
+
+    /// The gate anchor this effect writes, and whether the write **fills** it:
+    /// `Some((anchor, true))` for `close-gate`, `Some((anchor, false))` for
+    /// `open-gate`, `None` for everything else.
+    ///
+    /// The gate half of [`QuestEffect::region_write`]: same operation, but the box
+    /// and the fill block come from the prefab's gate anchor rather than from the
+    /// author. Everything that reasons about runtime region writes reads both
+    /// accessors and nothing else.
+    pub fn gate_region_write(&self) -> Option<(&AnchorId, bool)> {
+        match self {
+            QuestEffect::CloseGate { anchor, .. } => Some((anchor, true)),
+            QuestEffect::OpenGate { anchor, .. } => Some((anchor, false)),
             _ => None,
         }
     }
@@ -5888,6 +6033,13 @@ impl QuestEffect {
             QuestEffect::Collapse { region_anchor, .. } => {
                 vec![("region_anchor/anchor".to_string(), &region_anchor.anchor)]
             }
+            // The v0.10 region writes: the box's anchor is load-bearing for both
+            // the emission and the completability model, so a typo'd one must be a
+            // dangling-reference error (`DW0142`/`DW0355`), never a silently
+            // unwritten — and therefore vacuously proven — region.
+            QuestEffect::FillRegion { region, .. } | QuestEffect::ClearRegion { region, .. } => {
+                vec![("region/anchor".to_string(), &region.anchor)]
+            }
             // Both cutscene spellings (`DW0199` polices mixing them): the v0.6
             // multi-shot list, or the v0.4 single-shot fields flattened at the
             // effect's own level.
@@ -6062,6 +6214,8 @@ impl QuestEffect {
             | QuestEffect::SetWeather { requires_flags, .. }
             | QuestEffect::PlaySound { requires_flags, .. }
             | QuestEffect::DamagePlayers { requires_flags, .. }
+            | QuestEffect::FillRegion { requires_flags, .. }
+            | QuestEffect::ClearRegion { requires_flags, .. }
             | QuestEffect::Volley { requires_flags, .. }
             | QuestEffect::Collapse { requires_flags, .. }
             | QuestEffect::GiveEffect { requires_flags, .. }
@@ -6115,6 +6269,8 @@ impl QuestEffect {
             | QuestEffect::SetWeather { forbids_flags, .. }
             | QuestEffect::PlaySound { forbids_flags, .. }
             | QuestEffect::DamagePlayers { forbids_flags, .. }
+            | QuestEffect::FillRegion { forbids_flags, .. }
+            | QuestEffect::ClearRegion { forbids_flags, .. }
             | QuestEffect::Volley { forbids_flags, .. }
             | QuestEffect::Collapse { forbids_flags, .. }
             | QuestEffect::GiveEffect { forbids_flags, .. }
@@ -6158,6 +6314,8 @@ impl QuestEffect {
             | QuestEffect::SetWeather { requires_state, .. }
             | QuestEffect::PlaySound { requires_state, .. }
             | QuestEffect::DamagePlayers { requires_state, .. }
+            | QuestEffect::FillRegion { requires_state, .. }
+            | QuestEffect::ClearRegion { requires_state, .. }
             | QuestEffect::Volley { requires_state, .. }
             | QuestEffect::Collapse { requires_state, .. }
             | QuestEffect::GiveEffect { requires_state, .. }
