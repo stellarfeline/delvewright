@@ -348,3 +348,59 @@ fn a_campaign_without_shortcuts_emits_no_door_bodies() {
         "no door machinery without a shortcut"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `validation/press-bodies.json` — DW0426's binding count (staging-gate row
+// `bell-11`). DW0426 is error-tier, so a build that ships proves "no press
+// lands on nothing"; that sentence is equally true of a campaign that arms no
+// press at all, and only the count separates the two.
+// ---------------------------------------------------------------------------
+
+fn press_ledger(out: &BuildOutput) -> serde_json::Value {
+    serde_json::from_slice(
+        out.get("validation/press-bodies.json")
+            .expect("every build that assembles a world states this proof's binding count"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_press_ledger_names_every_click_and_the_body_it_landed_on() {
+    let l = press_ledger(&build());
+    assert_eq!(l["code"], "DW0426");
+    assert_eq!(l["unbound"], false);
+    assert!(l["reason"].is_null());
+    let n = l["examined"].as_u64().unwrap();
+    assert!(n >= 1, "the fixture arms a click on the door: {l}");
+    assert_eq!(l["presses"].as_array().unwrap().len() as u64, n);
+    let door = l["presses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["anchor"] == "anchor/door")
+        .unwrap_or_else(|| panic!("the door's own press is in the ledger: {l}"));
+    assert!(
+        door["body"].as_str().unwrap().contains("shortcut door"),
+        "the ledger records WHICH body the click landed on, not merely that it landed: {door}"
+    );
+}
+
+/// The zero, named. A campaign that arms no click at all has not PASSED
+/// `DW0426`; it is outside it, and the ledger says so rather than shipping an
+/// empty array a reader has to notice.
+#[test]
+fn a_campaign_that_arms_no_click_states_its_own_zero() {
+    let mut c = fixture();
+    c.quests.content.triggers.clear();
+    let out = try_build(&c).expect("a campaign with no trigger builds");
+    let l = press_ledger(&out);
+    assert_eq!(l["examined"], 0);
+    assert_eq!(l["unbound"], true);
+    assert!(
+        l["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("has not passed it, it is outside it"),
+        "the zero must be a named finding, never silence: {l}"
+    );
+}
