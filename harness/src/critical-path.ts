@@ -46,6 +46,12 @@
  * do, and the compiler proves no forced leg crosses a volume — `DW0510`), so a
  * v0.10 path is walked exactly as a v0.9 one is.
  *
+ * **v0.11** (spec-0033) adds the per-body `traversal` declaration — what a body
+ * can do when it moves. It is a compile-time claim about `move-npc`/`move-actor`
+ * puppets, proven by `delvec` before anything ships (`DW0454`), and it exports no
+ * step, reorders none, and changes nothing the bot walks: a v0.11 path is walked
+ * exactly as a v0.10 one is.
+ *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
  * enforces that in CI (task #157: a v0.9.0 campaign was refused at this gate,
@@ -61,6 +67,7 @@ export const SUPPORTED_DSL_VERSIONS = [
   "0.8.0",
   "0.9.0",
   "0.10.0",
+  "0.11.0",
 ] as const;
 
 /**

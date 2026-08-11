@@ -538,6 +538,19 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      `lethal_volume`, never deleting the stake. Souls behaviour is
      `max_live: 1, on_full: "replace"`; no death cost at all is `max_live: 0`; a
      memorial at every death site is a larger `max_live` with `on_full: "keep"`.
+   - **A body that moves unlike its species DECLARES it, and the build holds it to
+     the claim.** `traversal { locomotion: ground|climber|flier }` on a stage-2 NPC
+     or a stage-5 actor (`dsl_version` 0.11.0 on that body's own stage). By default
+     the compiler reads locomotion off the entity id — spiders climb, ghasts fly,
+     everything else walks and is checked — so a walked leg that goes OVER a wall
+     line instead of round to its opening is `DW0453`. If that is your fiction (a
+     sheep that climbs), declare it and the advisory is answered. It is **not** an
+     off switch: a declaration that changes no verdict is refused (`DW0454`), so
+     you may only claim a climber where the route really climbs; `aquatic` is
+     refused outright (`DW0455`) because nothing in the model could hold a body to
+     it; and no declaration touches the error tier — a declared climber still
+     cannot walk through a closed fence gate (`DW0452`). Declare it on the body,
+     never on the beat.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket

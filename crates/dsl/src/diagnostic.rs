@@ -782,4 +782,27 @@ pub mod codes {
     /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::every_version("DW0527");
+
+    /// (v0.11, spec-0033) **A declared locomotion the engine cannot hold the
+    /// body to** — today exactly one value, `aquatic`.
+    ///
+    /// The declaration surface exists so an author can claim a capability and
+    /// have the claim PROVEN (owner ruling, 2026-08-09). `aquatic` is the one
+    /// class that carries no exemption and governs no rule: it is a ledger
+    /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
+    /// Declaring it could therefore never change a verdict, so it would always
+    /// land in `DW0454` — and a value whose only possible outcome is another
+    /// diagnostic is a trap, not a surface.
+    ///
+    /// The gap it names, stated rather than left to folklore (CLAUDE.md's
+    /// no-hack rule): the compiler routes **every** body on standable ground,
+    /// and `flooded` cells are impassable and never floor for every body. There
+    /// is no water-traversal model for a declaration to feed, so there is
+    /// nothing to hold an aquatic claim to. When routing grows one, this
+    /// refusal is what has to be deleted to enable the value.
+    ///
+    /// Error tier (exit 2). Prescription: remove the declaration — a body whose
+    /// route crosses water is governed by the flooded-cell rules already, and
+    /// the derived aquatic class still reaches the binding ledger.
+    pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::every_version("DW0455");
 }
