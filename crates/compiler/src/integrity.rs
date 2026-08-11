@@ -43,6 +43,7 @@
 //!   different hat. The two overlays load *beside* the shipped pack, so their
 //!   own functions may call either their own tier or the shipped one.
 
+use delvewright_dsl::DwCode;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// `DW0497`: an emitted `function <ns>:<name>` call whose target function is not
@@ -51,22 +52,26 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Build-tier (exit 3). The call compiles, the datapack loads, and the verb
 /// simply never happens — the failure shape that cost the island round 21 two of
 /// its three storm waves.
-pub const DW_DANGLING_FUNCTION_CALL: &str = "DW0497";
+pub const DW_DANGLING_FUNCTION_CALL: DwCode = DwCode::every_version("DW0497");
 
 /// A build-integrity failure: a stable DW code plus the message naming the
 /// caller, the line and the missing target.
 #[derive(Debug, Clone)]
 pub struct IntegrityError {
     /// The stable DW code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, with the whole fix list.
     pub message: String,
 }
 
 /// Which emitted datapack a function belongs to. Determines what it may call:
 /// the shipped pack ships alone, the overlays ship beside it.
+///
+/// Shared with [`crate::seeding`], the other feature-blind proof read off the
+/// finished tree: the tier a body ships in is a fact about the build output, not
+/// about either check, so both read it from here rather than each keeping a copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Tier {
+pub(crate) enum Tier {
     /// `datapack/` — the delve itself (ADR-0010).
     Shipped,
     /// `packtest-datapack/` — the generated PackTest overlay (validation only).
@@ -78,7 +83,7 @@ enum Tier {
 impl Tier {
     /// The tier a build-output path belongs to, or `None` for a non-datapack
     /// artifact (`server/`, `critical-path.json`, the resource pack, …).
-    fn of(path: &str) -> Option<Tier> {
+    pub(crate) fn of(path: &str) -> Option<Tier> {
         match path.split_once('/')?.0 {
             "datapack" => Some(Tier::Shipped),
             "packtest-datapack" => Some(Tier::PackTest),

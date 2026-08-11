@@ -98,6 +98,7 @@ use delvewright_dsl::Campaign;
 
 use crate::nav::{NavError, World};
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0525`: a death region has **no walkable route back** — from some respawn
 /// seat, under some quest state, there is no reachable cell at all that a stake
@@ -108,7 +109,7 @@ use crate::plan::Plan;
 /// your purse at the bottom, and the way back does not exist. The message names the
 /// death region and the quest state, because those are the two things the author has
 /// to change.
-pub const DW_STAKE_NO_ROUTE_BACK: &str = "DW0525";
+pub const DW_STAKE_NO_ROUTE_BACK: DwCode = DwCode::every_version("DW0525");
 
 /// `DW0526`: every cell a stake could be projected onto for a death region sits on
 /// a block **runtime removes** — so the marker would be destroyed by the next ride,
@@ -116,7 +117,7 @@ pub const DW_STAKE_NO_ROUTE_BACK: &str = "DW0525";
 ///
 /// Distinguished from [`DW_STAKE_NO_ROUTE_BACK`] because the prescription is
 /// opposite: there *is* a route back, and the ground it ends on is the problem.
-pub const DW_STAKE_UNSAFE_ANCHOR: &str = "DW0526";
+pub const DW_STAKE_UNSAFE_ANCHOR: DwCode = DwCode::every_version("DW0526");
 
 /// One respawn seat the table is keyed on: the value `#cp dw.sys` holds while it is
 /// in force, a human label, the standable cell, and the earliest critical-path step
@@ -412,7 +413,7 @@ pub fn choose_anchor(
     reachable: &BTreeSet<[i32; 3]>,
     unsafe_cells: &BTreeSet<[i32; 3]>,
     region: ([i32; 3], [i32; 3]),
-) -> Result<[i32; 3], &'static str> {
+) -> Result<[i32; 3], DwCode> {
     let outside: Vec<[i32; 3]> = reachable
         .iter()
         .filter(|c| !in_box(**c, region))
@@ -680,7 +681,7 @@ mod tests {
         let reachable: BTreeSet<[i32; 3]> = [[1, 1, 1], [2, 2, 2]].into_iter().collect();
         assert_eq!(
             choose_anchor(&reachable, &BTreeSet::new(), region),
-            Err("DW0525")
+            Err(DW_STAKE_NO_ROUTE_BACK)
         );
     }
 
@@ -694,7 +695,7 @@ mod tests {
         let unsafe_cells: BTreeSet<[i32; 3]> = [[3, 0, 0], [4, 0, 0]].into_iter().collect();
         assert_eq!(
             choose_anchor(&reachable, &unsafe_cells, region),
-            Err("DW0526"),
+            Err(DW_STAKE_UNSAFE_ANCHOR),
             "the distinction matters: DW0525 says there is no way back, DW0526 says \
              the way back ends on ground that will not hold a marker"
         );

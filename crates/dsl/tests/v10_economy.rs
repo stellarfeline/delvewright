@@ -313,7 +313,7 @@ fn a_shop_offer_is_a_gate_consumer() {
 fn every_new_player_visible_string_is_inventoried() {
     let mut c = campaign("0.10.0", GOOD);
     let mut keys: Vec<String> = Vec::new();
-    delvewright_dsl::l10n::each_string(&mut c, &mut |k, _| keys.push(k.to_string()));
+    delvewright_dsl::l10n::each_string(&mut c, &mut |k, _, _| keys.push(k.to_string()));
     for want in [
         "state.embers.name",
         "shop.brazier.title",

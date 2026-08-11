@@ -128,10 +128,74 @@ delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs f
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
                                              # the whole-map 45° oblique release panorama
 delve-render index <build-dir> -o <file>     # image <-> expect pairs for a reviewing agent
+delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
+                                             # [--columns N] [--thumb 256] [--title T]
+                                             # many candidates, ONE page, for the owner to curate
 ```
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
+
+### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
+
+Lays candidate renders out as one page the owner picks massing from. **Building
+the page is agent work; choosing from it is hers** — the tool exists to put the
+decision in front of her eye, never to make it. It needs **no GPU and no client
+jar** — it composites images the renderer already made — so unlike the rest of
+this section it runs anywhere, including CI.
+
+Input is a directory in either shape: one subdirectory of shots per candidate
+(`delve-render batch` output — the representative angle is `--shot`, default
+`ext-se`, falling back to the first render by name), or a flat directory of
+`.png` renders. `--shot` given **explicitly** and missing for some candidate is
+an error, never a silent substitution of another angle: a page whose cells face
+different directions is not a comparison.
+
+A manifest is **always** written beside the PNG as `<stem>.json` — cell → rank,
+id, image, score, plus the binding counts and the layout used. That is how "she
+picked number 7" resolves back to a prefab id, and it is also the input
+`tools/refscore.py` reads, which keeps `delve-render` the single discoverer of
+what a candidate is and what it is called.
+
+**The score RANKS the page; it NEVER gates it** (owner ruling, spec-0028 §3).
+With `--scores` the page is ordered best-match first, ties and unscored last, by
+id — and every candidate is on it. The low scorer is present, last. An unscored
+candidate is present, last, and labelled unscored, because a missing measurement
+is not a bad one. This is enforced, not documented: the ordering is a seam, and
+whatever it returns must be a permutation of the candidate set or the command
+refuses with `DW0725` before drawing a pixel. The binding count is printed and
+recorded on every run; a score set that bound to **zero** candidates is an error
+(`DW0726`, exit 2), not a page in id order that looks like a successful ranking.
+
+```sh
+delve-render batch prefabs/zone2 -o .sheets/renders          # (GPU + client jar)
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+python3 tools/refscore.py --sheet .sheets/zone2.json \
+    --reference .refimg/zone2.png --backend open-clip -o .sheets/zone2-scores.json
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \
+    --scores .sheets/zone2-scores.json                        # the ranked page
+```
+
+The **real** metric backends are not installed by anything in this repo and are
+deliberately absent from CI (PyTorch plus multi-GB weights). Make the venv once,
+by hand, and only if you want them — the loop works without them:
+
+```sh
+python3 -m venv .refscore-venv && .refscore-venv/bin/pip install open_clip_torch
+.refscore-venv/bin/python tools/refscore.py --sheet ... --backend open-clip ...
+# VQAScore instead (text-conditioned, needs --prompt): pip install t2v-metrics
+```
+
+CI runs the same loop with `--backend stub` — deterministic, offline, keyless,
+**not a similarity measure**, and loudly labelled as such on the page and in the
+score file. That is what makes the ranking verifiable without a model; it is not
+a substitute for one, and an uninstalled real backend exits 4 rather than
+quietly becoming the stub.
+
+Sheets are generation-time working material like renders and reference images:
+`.sheets/` is gitignored, nothing here ships, and nothing here can move a delve's
+bytes. Two runs over the same inputs produce the same page byte for byte (CI
+asserts it) so a cell number means one thing.
 
 `panorama` computes its camera from `render-plan.json`'s `layout_aabb`: a 45°
 oblique on a corner bearing (`se` default), solved back until every corner of the
@@ -244,6 +308,7 @@ Never shipped inside a delve.
 |---|---|---|
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
+| `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
 | `tools/derive-client-langs.py` | human | `python3 tools/derive-client-langs.py [--version V] [--rust]` — re-derives `dsl::mclang::CLIENT_LANGS` (the language files the **pinned** client loads) from Mojang's version manifest → version metadata → asset index, printing the sha1 of every document it read so the derivation is auditable. Run it when ADR-0009's Minecraft pin moves, diff the printed table into `crates/dsl/src/mclang.rs`, `cargo fmt`. Never run by CI or by a build — the compiler must not reach the network (ADR-0006) |
 | `tools/skin/` (`delve_skin`) | agent | `python -m delve_skin all <cast.json> --skins-dir D --catalog-dir D --preview-dir D [--id ID] [--scale N]`, or the `build` / `preview` / `catalog` stages individually. Needs its own venv (`pip install -r tools/skin/requirements.txt`); see [`../../tools/skin/README.md`](../../tools/skin/README.md) |
 | `tools/build-every-campaign.py` | CI + agent (run it before proposing any engine change that touches emission, layout or validation) | `python3 tools/build-every-campaign.py --delvec <binary> [--content <checkout>]` — builds **every campaign** the pinned content repo carries, in **every language its `world.json` declares**, and reds if one stops building. Closes the gap that let PR #260 reach 10/10 green while stopping the flagship released campaign `nobodys-cave-island` from building at all (26 × `DW0364`): every other gate builds a FIXTURE, and a fixture exercises one verb, where a campaign is the only place the verbs meet a real prefab library, a real layout solve and a real translation sidecar. Campaigns are **discovered** (any dir under `<content>/campaigns/` with a `world.json`), never listed, so the next content re-pin gates a new campaign with nobody remembering. `--delvec` is required and never inferred — the gate's whole subject is *which engine* built the campaign. A campaign that cannot build today goes in `.github/campaign-build-exclusions.toml`, which **inverts** the assertion rather than removing it: still built, must still fail, and must fail with **exactly** the recorded `expect_codes` — an extra code is a new break that was hiding behind the exclusion, and a SUCCESS is an expired exclusion, both red. Currently one entry: `hollow-vigil`, `DW0331` (task #34). States its binding count every run (discovered / built green / known-red, each named); discovering zero campaigns, building zero campaigns, or an exclusion naming a campaign that no longer exists are each a red. Runs in CI as `campaign builds (every campaign in the content repo)`, on every push |

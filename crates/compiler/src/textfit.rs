@@ -87,15 +87,16 @@ use delvewright_dsl::{
 };
 
 use crate::atmos::{ART_GLYPH_ADVANCE, ART_SPACE_ADVANCE};
+use delvewright_dsl::DwCode;
 
 /// `DW0330`: an on-screen `narrate` string (`title` / `subtitle` / `art`), in the
 /// English source or a sidecar translation, is wider than the screen renders.
-pub const DW_TEXT_OVERRUNS_SCREEN: &str = "DW0330";
+pub const DW_TEXT_OVERRUNS_SCREEN: DwCode = DwCode::every_version("DW0330");
 
 /// `DW0331`: a dialogue option label, in the English source or a sidecar
 /// translation, is wider than the dialog button vanilla draws it on, so the caption
 /// scrolls instead of sitting still.
-pub const DW_OPTION_LABEL_SCROLLS: &str = "DW0331";
+pub const DW_OPTION_LABEL_SCROLLS: DwCode = DwCode::every_version("DW0331");
 
 // ---------------------------------------------------------------------------
 // Screen geometry

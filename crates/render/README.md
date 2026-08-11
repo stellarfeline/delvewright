@@ -31,6 +31,9 @@ scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
 panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
                                 [--bearing se|sw|ne|nw] [--spp 300]
 index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision review
+contact-sheet <dir> -o <png>    many candidate renders on ONE page, for curation
+                                [--scores f] [--shot ext-se] [--columns N]
+                                [--thumb 256] [--title T]
 ```
 
 **Exit codes**: `0` ok · `2` input/usage · `3` output · `4` **fidelity-gate
@@ -47,11 +50,15 @@ and it is never redistributed.
 | Code | Meaning |
 | --- | --- |
 | `DW0720` | missing-texture (magenta) placeholder detected — the fidelity gate's failure |
-| `DW0721` | input error (unreadable/unparseable `.nbt` / metadata / render-plan) |
+| `DW0721` | input error (unreadable/unparseable `.nbt` / metadata / render-plan / scores) |
 | `DW0722` | output error (cannot write) |
 | `DW0723` | renderer/GPU error or textures not found |
+| `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
+| `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning |
 
-(schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block.)
+(schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
+except `DW0724`, which the compiler's visual tier holds. Take the next unused
+number from `docs/reference/compiler.md`, not from the highest constant here.)
 
 ## `piece` — per-prefab shot set
 
@@ -253,6 +260,66 @@ Order and bytes mirror `render-plan.json` (deterministic).
 The ladder step `validation/render-shots.sh <build-dir>` runs `scene` +
 `panorama` + `index` together, producing the Chunky scene set (review shots plus
 `<campaign>_panorama_se`) and the index in one shot.
+
+## `contact-sheet` — many candidates, one page, the owner's eye is the selector
+
+`delve-render contact-sheet <dir> -o <sheet.png>` is the curation step of the
+prefab authoring loop (spec-0027 §3): the grammar expander builds N seed-varied
+candidates, `batch` images them, and this puts them on one page the owner picks
+massing from. **It needs no GPU and no client jar** — it composites renders that
+already exist — so it is the one command in this crate that runs everywhere,
+including CI.
+
+Two input layouts, chosen by what is there: one subdirectory of shots per
+candidate (`batch` output; the representative angle is `--shot`, default
+`ext-se`, else the first render by name), or a flat directory of `.png` renders.
+An **explicitly given** `--shot` that some candidate lacks is an error — a page
+whose cells face different directions is not a comparison, and silently
+substituting another angle would make the comparison a lie.
+
+`<stem>.json` is **always** written beside the PNG: cell → rank, id, image,
+score, plus binding counts, layout and the rank source. It is how "she picked
+number 7" resolves back to a prefab id, and it is the input `tools/refscore.py`
+reads — which keeps this command the *single* discoverer of what a candidate is
+and what it is called, so the scorer's ids cannot drift from the sheet's.
+
+### The score RANKS; it never GATES
+
+Owner ruling, spec-0028 §3. Cross-domain calibration between a painterly
+reference image and a voxel render is unproven, so a similarity number may decide
+**where** a candidate sits on the page and never **whether** it is on the page.
+
+- The low scorer is present, **last**.
+- An unscored candidate is present, **last**, and labelled unscored — a missing
+  measurement is not a bad one.
+- The ordering is a **seam**: `sheet::build_sheet` takes the order function and
+  puts its result through `sheet::verify_total_order` before drawing a pixel.
+  Anything that is not a permutation of the candidate set — a threshold that
+  drops, a "best of" that duplicates, an off-by-one that loses the last cell —
+  is refused with `DW0725`, exit 10.
+- Every run states its **binding count**, on stderr and in the manifest. A score
+  set that bound to zero candidates is `DW0726` at error tier (exit 2): it
+  ordered nothing, and must not read as a successful ranking run.
+
+Promoting the score to a threshold requires its own owner-approved amendment
+backed by accumulated batch data. Until that exists, `DW0725` is the amendment's
+absence spelled in code — do not satisfy it by relaxing the guard.
+
+```sh
+delve-render batch prefabs/zone2 -o .sheets/renders        # GPU + client jar
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+python3 ../../tools/refscore.py --sheet .sheets/zone2.json \
+    --reference .refimg/zone2.png --backend open-clip -o .sheets/zone2-scores.json
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \
+    --scores .sheets/zone2-scores.json
+```
+
+Cells are labelled with a built-in 5×7 bitmap font rather than a TrueType
+rasterizer: hinting and antialiasing are the one part of this path that would
+differ between a laptop and a runner, and a curation page that shifted between
+runs would make "cell 7" mean two things. Two runs over the same inputs produce
+the same page byte for byte (`tests/sheet.rs`). Sheets are working material like
+every render — `.sheets/` is gitignored, nothing here ships.
 
 ## Stability (double-render)
 

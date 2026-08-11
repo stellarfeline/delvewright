@@ -70,3 +70,44 @@
 # api_key_env = "DELVEWRIGHT_IDEOGRAM_API_KEY"
 # rendering_speed = "TURBO"                    # TURBO | DEFAULT | QUALITY
 # resolution = "1344x768"
+
+# ---------------------------------------------------------------------------
+# [refscore] — score candidate RENDERS against a REFERENCE IMAGE, to ORDER a
+# contact sheet (spec-0028 §3).
+#
+#   consumed by: tools/refscore.py         ·   docs: docs/reference/tools.md
+#
+# THE SCORE RANKS; IT NEVER GATES (owner ruling). Cross-domain calibration
+# between a painterly reference and a voxel render is unproven, so a number here
+# decides where a candidate sits on the page, never whether it is on the page. A
+# low-scoring candidate is still present, last. `delve-render contact-sheet`
+# refuses (DW0725) any ordering that is not a permutation of the candidate set;
+# promoting the score to a threshold needs its own owner-approved amendment
+# backed by accumulated batch data.
+#
+# The real backends pull PyTorch and multi-GB weights. They are NOT in CI and
+# nothing in this repo installs them — make a local virtualenv once. A missing
+# dependency is an error naming the install line; the tool never falls back to
+# the stub, because a stub number that looks like a measurement is worse than no
+# number at all.
+#
+# Absent config + no --backend exits 2 saying what to add; MALFORMED config is a
+# hard error. Today's backends run locally and need no key; an inline `api_key`
+# is refused outright regardless of that.
+#
+# [refscore]
+# backend = "open-clip"                        # "open-clip" | "vqascore" | "stub"
+# model = "ViT-L-14"                           # open_clip model (MIT)
+# pretrained = "laion2b_s32b_b82k"             # open_clip weights tag
+# device = "cpu"                               # cpu | cuda | mps
+#
+# VQAScore instead — note it is TEXT-conditioned: it asks a VLM how well each
+# render answers a PROMPT and never looks at the reference image, so it requires
+# --prompt and refuses a --reference it would silently ignore:
+#
+# backend = "vqascore"                         # t2v_metrics (Apache-2.0)
+# model = "clip-flant5-xl"
+#
+# `stub` is a deterministic, dependency-free, offline hash of the file bytes —
+# NOT a similarity measure. It exists to exercise the whole loop (and is what CI
+# runs); every artifact it touches says so in its header.

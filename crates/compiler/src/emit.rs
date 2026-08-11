@@ -21,6 +21,7 @@ use crate::plan::{
 };
 use crate::{DELVEC_VERSION, MC_VERSION, PACK_FORMAT};
 
+use delvewright_dsl::DwCode;
 use delvewright_dsl::{
     CompareOp, EquipItem, Gate, MobEquipment, Objective, QuestEffect, StateCompare, StateId,
     StateScope, Trigger, is_v03, is_v04, is_v06,
@@ -39,7 +40,7 @@ pub enum BuildFailure {
     /// A coded build diagnostic (exit 3), printed like a solver `DW03xx` error.
     Diagnostic {
         /// The stable diagnostic code.
-        code: &'static str,
+        code: DwCode,
         /// Human-readable explanation.
         message: String,
     },
@@ -52,7 +53,16 @@ pub enum BuildFailure {
 /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
 /// (exit 2, like reachability `DW02xx`): the fix is a content-design capacity
 /// choice — shrink the wave or use a larger room — not a compiler/geometry defect.
-pub const DW_WAVE_NO_ROOM: &str = "DW0312";
+pub const DW_WAVE_NO_ROOM: DwCode = DwCode::every_version("DW0312");
+
+/// `DW0310`: a `spawn-wave` references a wave whose spawn anchor resolves in no
+/// assembled area, so the emitted `function <ns>:spawn_<wave>` call would dangle
+/// and the wave never spawn (see [`check_wave_spawns`]).
+///
+/// It was the workspace's last bare `"DWxxxx"` string literal in a code position
+/// — every other code already went through a named constant — and typing the
+/// codes is what turned that from a style difference into a compile error.
+pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310");
 
 /// `DW0387`: a `summon: aggro-edge` wave (spec-0016 §6) whose perception ring
 /// offers too few valid cells. The ring is the standable, walk-reachable,
@@ -62,7 +72,7 @@ pub const DW_WAVE_NO_ROOM: &str = "DW0312";
 /// round-1 lesson was a "kill" objective whose wave never fully appeared, so the
 /// countdown could never reach zero and the delve soft-locked with every other
 /// proof green.
-pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
+pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
 
 /// `DW0494`: completing ONE objective would cross into two different areas —
 /// one destination on the exported path, another on a branch (task #186).
@@ -74,7 +84,7 @@ pub const DW_AGGRO_EDGE_NO_RING: &str = "DW0387";
 /// the exported path's crossing is unconditional by construction. The content
 /// fix is to split the objective — one crossing objective per branch, each
 /// gated by that branch's own flags.
-pub const DW_BRANCH_TRANSPORT_DIVERGES: &str = "DW0494";
+pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::every_version("DW0494");
 
 impl From<crate::nav::NavError> for BuildFailure {
     fn from(e: crate::nav::NavError) -> Self {
@@ -1065,6 +1075,19 @@ pub fn build_with_warnings(
         message: e.message,
     })?;
 
+    // ---- score-seeding integrity (DW0495) ----
+    // Every `if score` / `unless score` / `scores={…}` the compiler just wrote
+    // must read an entry the pack itself creates, or be written so a missing entry
+    // cannot change its answer. On the pinned 1.21.11 server a score that was never
+    // written is not zero — every comparison against it is false — which is how
+    // `if score @s dw.deaths > @s dw.death_ack` silently swallowed every player's
+    // FIRST death for as long as checkpoints have existed (see `crate::seeding`).
+    // Feature-blind and read off the finished tree, beside the call-graph proof.
+    crate::seeding::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
@@ -1661,7 +1684,7 @@ fn snbt_text_component(s: &str) -> String {
 /// emitter, including ones not yet written. This is the invariant that replaces
 /// "we enumerated every emission site once" with "the compiler re-proves it on
 /// every build" (spec-0029 Risks).
-pub const DW_UNTRANSLATED_LITERAL: &str = "DW0185";
+pub const DW_UNTRANSLATED_LITERAL: DwCode = DwCode::every_version("DW0185");
 
 /// Lower an authored player-visible string into a JSON **text component**
 /// (spec-0029 §1): a translation-tagged string becomes
@@ -4170,7 +4193,7 @@ fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
 
 /// `DW0362`: a dialogue node declares more conditionally-visible options than the
 /// variant-dialog encoding can carry. Validation-tier content-shape limit.
-pub const DW_DIALOGUE_VARIANT_CAP: &str = "DW0362";
+pub const DW_DIALOGUE_VARIANT_CAP: DwCode = DwCode::every_version("DW0362");
 
 /// The most gated options one dialogue node may declare.
 ///
@@ -4223,7 +4246,7 @@ fn check_dialogue_variant_cap(plan: &Plan) -> Result<(), BuildFailure> {
 
 /// `DW0361`: two distinct generated artifacts sanitize to the same name, so one
 /// would silently overwrite the other in the emitted pack.
-pub const DW_NAME_COLLISION: &str = "DW0361";
+pub const DW_NAME_COLLISION: DwCode = DwCode::every_version("DW0361");
 
 /// Insert an emitted artifact, refusing to let one silently overwrite another
 /// (`DW0361`).
@@ -4279,7 +4302,7 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 /// to no world position in the assembled build. Validation-tier content mistake
 /// (a typo'd or unassembled anchor), reported as a build diagnostic because only
 /// the assembled world knows which anchors actually exist.
-pub const DW_EFFECT_ANCHOR_UNRESOLVED: &str = "DW0360";
+pub const DW_EFFECT_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0360");
 
 /// Whether [`build`] assembles the voxel world — and therefore whether every
 /// proof that needs it actually runs, including [`plan_payload_verbs`] and its
@@ -4424,7 +4447,7 @@ fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
                 return Err(BuildFailure::Diagnostic {
-                    code: "DW0310",
+                    code: DW_WAVE_SPAWN_UNRESOLVED,
                     message: format!(
                         "`spawn-wave` references wave `{id}`, but its spawn anchor is \
                          not placed in any assembled area — the emitted \
@@ -5428,29 +5451,31 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let alive = "unless data entity @s {Health:0.0f}";
     let dead = "if data entity @s {Health:0.0f}";
     let mut check: Vec<String> = Vec::new();
-    // **The acknowledgements have to EXIST before they can be compared to.**
+    // **The three scores this edge compares have to EXIST before it compares them.**
+    // Found live by the bot tier's death-loop stage (task #68), which is the only
+    // tier that can witness a player death at all; generalised into `DW0495`, which
+    // then named a third objective the instance fix had missed.
     //
-    // Found by the bot tier's death-loop stage (task #68) on its first live run,
-    // and it had been silently true since spec-0012: `dw.death_ack` and
-    // `dw.death_seen` are `dummy` objectives, so a player who has never died has
-    // no score in either — and `execute if score @s A > @s B` with B UNSET does
-    // not fire. Measured on the pinned 1.21.11 server: an unset right-hand side
-    // makes the test false, and `scoreboard players add <entity> <obj> 0` is what
-    // creates the entry at zero.
-    //
-    // The consequence was that a player's FIRST death fired neither edge: no
-    // `on_death` (so no forfeit and no recovery stake), and no `cp_respawn_fire`
-    // (so no `on_respawn` bundle and no re-seat — the party landed wherever
-    // vanilla's own `/spawnpoint` hint happened to put them, which is exactly the
-    // hint task #145 established cannot be trusted). Both then worked from the
-    // second death onward, which is why it survived: every manual test of "does
-    // dying work" that dies twice passes.
+    // On the pinned 1.21.11 server a scoreboard entry that was never written is
+    // NOT zero: every comparison against it is false, so `execute if score @s A >
+    // @s B` does not fire when B has no entry (measured — see `crate::seeding`,
+    // which now refuses this shape anywhere in the emitted tree as `DW0495`).
+    // `dw.death_ack` and `dw.death_seen` are `dummy` objectives and `dw.deaths` is
+    // `deathCount`, and a player who has never died has an entry in none of the
+    // three — so the whole edge was dead on a player's FIRST death: no `on_death`
+    // (no forfeit, no recovery stake), no `cp_respawn_fire` (no `on_respawn`, no
+    // engine re-seat — the party landed wherever vanilla's own `/spawnpoint` hint
+    // put them, the hint task #145 established cannot be trusted). Both then
+    // worked from the second death onward, which is why it survived since
+    // spec-0012: every manual test of "does dying work" dies twice.
     //
     // Seeded here rather than at a join hook because this is the one function that
-    // reads them, so the two facts cannot drift apart; `add 0` is idempotent, so
-    // running it every tick is a no-op after the first. Emitted only for the edge
-    // the campaign actually declares, so a campaign with no `on_death` moves no
-    // byte it did not already have.
+    // reads them, so the two facts cannot drift apart; `add … 0` is idempotent
+    // (and, on `deathCount`, does not disturb the criterion — measured: 0 before
+    // the first death, 1 after), so running it every tick is a no-op after the
+    // first. Emitted only for the edge the campaign declares, so a campaign with
+    // neither `on_death` nor a checkpoint moves no byte.
+    check.push("scoreboard players add @s dw.deaths 0".to_string());
     if !on_death.is_empty() {
         check.push("scoreboard players add @s dw.death_seen 0".to_string());
     }
@@ -9530,7 +9555,7 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
 /// `DW0363`: a trap declares a flag gate (`requires_flags` / `forbids_flags`) but
 /// its trigger hardware cannot be removed and put back exactly as authored, so the
 /// compiler refuses to pretend the gate works.
-pub const DW_TRAP_GATE_UNSUPPORTED: &str = "DW0363";
+pub const DW_TRAP_GATE_UNSUPPORTED: DwCode = DwCode::every_version("DW0363");
 
 /// Trap flag-gating hardware: for every trap that declares a flag gate, the
 /// trigger block its `anchor/trap` prefab metadata declares — the thing the gate
@@ -9914,7 +9939,7 @@ fn trap_fns(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<(Strin
 
 /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
 /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
-pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: &str = "DW0447";
+pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::every_version("DW0447");
 
 /// A planned `volley`: the proven per-cell geometry plus its authored cadence.
 struct VolleyEmit {

@@ -13,16 +13,22 @@
 //! - [`panorama`] — the whole-map 45° oblique release panorama.
 //! - [`cache`] — Chunky's derived per-scene caches, and their invalidation.
 //! - [`index`] — shot index: (image ↔ expect) pairs for the vision reviewer.
+//! - [`sheet`] — the contact sheet: many candidate renders on one page, ordered
+//!   by a similarity score that RANKS and never gates (spec-0027 §3 curation,
+//!   spec-0028 §3).
+//! - [`font`] — the built-in 5×7 bitmap font the sheet labels cells with.
 //! - [`diag`] — diagnostics + exit codes (`DW072x`).
 
 pub mod cache;
 pub mod detect;
 pub mod diag;
 pub mod fidelity;
+pub mod font;
 pub mod index;
 pub mod meta;
 pub mod nbt;
 pub mod panorama;
 pub mod render;
 pub mod scene;
+pub mod sheet;
 pub mod shots;
