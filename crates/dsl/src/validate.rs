@@ -52,6 +52,12 @@ pub fn validate_campaign_with(
     // loop inside is empty for a campaign that declares no datum and no
     // comparison, and the version fence itself lives in `reserved_v10`.
     state_checks(c, &mut d);
+    // DSL v0.10 (spec-0031): the status-effect verbs. Unconditional for the same
+    // reason `state_checks` is — every walk inside is empty for a campaign that
+    // declares neither verb, and the version fence lives in `reserved_v10`. The
+    // status-effect registry is the fixed vanilla list v0.4 already validates
+    // wave-mob effects against, so no injected registry is needed.
+    status_effect_checks(c, &VendoredEffectRegistry::v1_21_11(), &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
@@ -1069,7 +1075,10 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// * the campaign-wide `on_death` bundle — effect root R7, the effects that run
 ///   at the moment a player dies;
 /// * the stage-5 `lethal_volumes` declaration — a box that kills whatever enters
-///   it.
+///   it;
+/// * the status-effect pair `give-effect` / `clear-effect` and the region
+///   `teleport` — three more verbs reported by `v10_effect`, so they ride the
+///   same one walk rather than adding a fence of their own.
 ///
 /// The same asymmetry every version ledger uses: *declaring* any of it below
 /// 0.10.0 is `DW0141`. There is no requirement half — nothing obliges a campaign
@@ -1158,8 +1167,9 @@ fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "quests",
             path.to_string(),
             format!(
-                "the `{verb}` effect (writing a declared runtime datum) requires dsl_version \
-                 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the effect"
+                "the `{verb}` effect (DSL v0.10, spec-0031: runtime state, status effects and \
+                 the region teleport) requires dsl_version 0.10.0 — raise this stage's \
+                 `dsl_version` to 0.10.0, or remove the effect"
             ),
         ));
     });
@@ -1181,6 +1191,223 @@ fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// [`for_each_campaign_effect`](crate::stages::for_each_campaign_effect) — the
 /// two closed enumerations — so neither side of the ledger can drift narrower
 /// than the surface it polices.
+/// DSL v0.10 status-effect checks (spec-0031): a real effect id, a duration that
+/// is actually a duration, and the one *pattern* that reintroduces the hazard the
+/// mandatory duration exists to remove.
+///
+/// ## Why the duration is not enough on its own
+///
+/// `give-effect` has no infinite form: `seconds` is required and bounded, so a
+/// grant always ends by itself. That is the whole design, and it can still be
+/// defeated by two effects that are individually fine — grant blindness for an
+/// hour, clear it four ticks later. The clear is then the real removal, and a
+/// bundle that does not reach it (a logout, a crash, a death mid-chain, a
+/// `sequence` whose remaining `schedule` never runs) leaves the player blind for
+/// the rest of the hour. `DW0540` is that pattern, and it fires on exactly the
+/// grants that are still LIVE when their clear arrives: where the duration
+/// expires first, the duration is the removal and there is nothing to say.
+///
+/// ## What "the same sequence" means, mechanically
+///
+/// A bundle's own timeline: every effect it fires, at the tick offset it fires
+/// on. A plain member runs at offset 0; a directly-nested `sequence`'s members
+/// run at their step's `at_ticks` (nested sequences are `DW0329`, so the
+/// expansion terminates). Conditional continuations — `on_arrive`, `on_caught`,
+/// `on_respawn`, `on_rest` — are NOT folded in: they are separate bundles with
+/// their own timelines, and each is walked as one. A clear that hangs off an
+/// arrival is strictly more fragile than one on a fixed tick, and it is the
+/// mandatory duration, not this rule, that keeps that case survivable.
+fn status_effect_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Diagnostic>) {
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        status_effect_bundle(site.stage, &site.path, list, effects, d);
+    });
+}
+
+/// One effect bundle: its own timeline is checked for the grant/clear pattern,
+/// then each member is checked individually and its nested bundles are walked.
+fn status_effect_bundle(
+    stage: &'static str,
+    path: &str,
+    list: &[QuestEffect],
+    effects: &dyn EffectRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let tl = effect_timeline(path, list);
+    check_grant_removal(stage, &tl, d);
+    for (_, p, eff) in &tl {
+        check_one_status_effect(stage, p, eff, effects, d);
+        for (pseg, _key, inner) in eff.nested_effect_lists_labeled() {
+            status_effect_bundle(stage, &format!("{p}/{pseg}"), inner, effects, d);
+        }
+    }
+}
+
+/// A bundle's timeline: `(tick offset, json pointer, effect)` for every effect
+/// that runs on it, in declaration order.
+///
+/// A `sequence` is REPLACED by its steps' effects at their `at_ticks`, so the
+/// timeline is what actually happens rather than what is written — which is the
+/// only view in which "the grant is still live when the clear fires" is a
+/// question with an answer.
+fn effect_timeline<'a>(path: &str, list: &'a [QuestEffect]) -> Vec<(u32, String, &'a QuestEffect)> {
+    let mut out = Vec::new();
+    for (i, eff) in list.iter().enumerate() {
+        match eff {
+            QuestEffect::Sequence { steps } => {
+                for (s, step) in steps.iter().enumerate() {
+                    for (k, inner) in step.effects.iter().enumerate() {
+                        out.push((
+                            step.at_ticks,
+                            format!("{path}/{i}/steps/{s}/effects/{k}"),
+                            inner,
+                        ));
+                    }
+                }
+            }
+            _ => out.push((0, format!("{path}/{i}"), eff)),
+        }
+    }
+    out
+}
+
+/// `DW0540`: a grant that is still live when a clear in the same bundle removes
+/// it.
+///
+/// Each grant is paired with the EARLIEST clear that could remove it: the one
+/// smallest in `(tick, declaration position)` among those strictly after the
+/// grant, that either names the same effect or names none at all (vanilla's
+/// `effect clear <targets>` with no id clears everything, and so does this verb).
+///
+/// **Ordered by the key, never by the loop index.** A bundle's steps are declared
+/// in whatever order the author wrote them, not in tick order, so "the next clear
+/// in the list" and "the clear that actually fires first" are different effects
+/// the moment a `sequence` declares `at_ticks: 40` above `at_ticks: 5`. Taking
+/// the first in declaration order made the rule miss exactly the live removal it
+/// exists to find — and, symmetrically, miss a clear declared *above* a grant but
+/// scheduled after it.
+fn check_grant_removal(
+    stage: &'static str,
+    timeline: &[(u32, String, &QuestEffect)],
+    d: &mut Vec<Diagnostic>,
+) {
+    for (gi, (g_tick, g_path, g_eff)) in timeline.iter().enumerate() {
+        let Some((id, seconds, _, _, _)) = g_eff.give_effect() else {
+            continue;
+        };
+        // `blindness` and `minecraft:blindness` are one effect to vanilla and to
+        // the registry, so they are one effect here (`namespaced_effect_id`) —
+        // an exact string compare would have made the rule silently miss the
+        // pair whenever the two sites spelled the id differently.
+        let granted = crate::registry::namespaced_effect_id(id);
+        let removal = timeline
+            .iter()
+            .enumerate()
+            .filter(|(ci, (t, _, _))| (*t, *ci) > (*g_tick, gi))
+            .filter_map(|(ci, (t, p, e))| match e.clear_effect() {
+                Some((None, _)) => Some(((*t, ci), t, p, "clears every effect")),
+                Some((Some(c), _)) if crate::registry::namespaced_effect_id(c) == granted => {
+                    Some(((*t, ci), t, p, "clears it"))
+                }
+                _ => None,
+            })
+            .min_by_key(|(key, _, _, _)| *key)
+            .map(|(_, t, p, what)| (*t, p, what));
+        let Some((c_tick, c_path, what)) = removal else {
+            continue;
+        };
+        let live_ticks = seconds.saturating_mul(20);
+        let elapsed = c_tick - g_tick;
+        if elapsed >= live_ticks {
+            // The duration ended first, so the duration IS the removal and the
+            // clear is inert. That is a different (and much milder) finding than
+            // this rule makes, so this rule says nothing about it.
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::EFFECT_CLEARED_LIVE,
+            stage,
+            g_path.clone(),
+            format!(
+                "this `give-effect` grants `{id}` for {seconds}s ({live_ticks} ticks) and the \
+                 `clear-effect` at `{c_path}`, {elapsed} tick(s) later in the same bundle, {what} \
+                 while it is still live — so the CLEAR is what ends this grant, not its duration. \
+                 Every path that does not reach that clear (a logout, a crash, a death mid-chain, \
+                 a `sequence` whose remaining schedule never runs) leaves the player holding \
+                 `{id}` for the rest of the {seconds}s. Set `seconds` to how long the effect \
+                 should actually last — {elapsed} tick(s) here, so {} — and drop the \
+                 `clear-effect`: a duration expires with no cooperation from anything. \
+                 `clear-effect` is for effects this campaign did not grant.",
+                if elapsed == 0 {
+                    "the grant is doing nothing at all".to_string()
+                } else {
+                    format!("`seconds`: {}", elapsed.div_ceil(20).max(1))
+                }
+            ),
+        ));
+    }
+}
+
+/// The per-effect half: a real status-effect id (`DW0192`, the same registry
+/// wave-mob effects and kit potions validate against) and a duration/amplifier
+/// inside vanilla's own field widths (`DW0541`).
+fn check_one_status_effect(
+    stage: &'static str,
+    path: &str,
+    eff: &QuestEffect,
+    effects: &dyn EffectRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    for (sub, id) in eff.status_effect_refs() {
+        if !effects.contains(id) {
+            d.push(Diagnostic::error(
+                codes::EFFECT_UNKNOWN,
+                stage,
+                format!("{path}/{sub}"),
+                format!(
+                    "`{}` names status effect `{id}`, which is not in the pinned 1.21.11 \
+                     `mob_effect` registry — use a valid namespaced effect id (e.g. \
+                     `minecraft:blindness`)",
+                    eff.verb()
+                ),
+            ));
+        }
+    }
+    let Some((_, seconds, amplifier, _, _)) = eff.give_effect() else {
+        return;
+    };
+    if seconds == 0 || seconds > crate::stages::MAX_EFFECT_SECONDS {
+        d.push(Diagnostic::error(
+            codes::EFFECT_GRANT_BOUNDS,
+            stage,
+            format!("{path}/seconds"),
+            format!(
+                "`give-effect` duration {seconds}s is out of range — it must be between 1 and {} \
+                 seconds. {}",
+                crate::stages::MAX_EFFECT_SECONDS,
+                if seconds == 0 {
+                    "Zero grants nothing at all: the effect is applied and gone before the next \
+                     tick, so the beat reports green and the player sees nothing."
+                } else {
+                    "The ceiling is vanilla's own field width (past the 10-hour delve ceiling), \
+                     so a value above it is a duration typed in ticks or milliseconds."
+                }
+            ),
+        ));
+    }
+    if amplifier > crate::stages::MAX_POTION_AMPLIFIER {
+        d.push(Diagnostic::error(
+            codes::EFFECT_GRANT_BOUNDS,
+            stage,
+            format!("{path}/amplifier"),
+            format!(
+                "`give-effect` amplifier {amplifier} is out of range — vanilla stores it in an \
+                 unsigned byte, so {} is the end of the field, not a policy",
+                crate::stages::MAX_POTION_AMPLIFIER
+            ),
+        ));
+    }
+}
+
 fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let decls = &c.quests.content.state;
     // --- the declarations themselves ------------------------------------------

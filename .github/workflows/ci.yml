@@ -712,6 +712,31 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lethal \
             --output ./delve-output-lethal
 
+      # spec-0031 — a `teleport`'s TOTALITY is half a compiler fact and half a
+      # vanilla fact. The Rust test proves the compiler wrote no filter into the
+      # selector; only a live server can say that vanilla's `@e[<box>]` really
+      # reaches every entity type, and that half is the whole acceptance
+      # criterion. The template calls the campaign's REAL generated
+      # `teleport_<key>` function — not a command it re-typed — puts one
+      # `zombie`, `interaction`, `marker`, `text_display` and `item` in the
+      # volume (the four an exemption list of `LETHAL_EXEMPT_TYPES`'s shape would
+      # have dropped, beside a content body), asserts all five are inside the
+      # box, runs the function and asserts the box is empty. Measured red->green
+      # on the pinned toolserver: with `,type=!minecraft:interaction` added to
+      # the emitted selector the template fails "Expected #tp_left 0, but got 1".
+      # Same cost profile as the passes above: one extra toolserver boot, no new
+      # pull, no new compile.
+      - name: build the teleport-volume delve output (spec-0031)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/teleport-volume \
+            -o validation/delve-output-teleport --prefabs campaigns/prefabs
+
+      - name: PackTest suite — teleport-volume (everything in the box moves)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-teleport \
+            --output ./delve-output-teleport
+
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
           cargo run -p delvec --bin delvec -- \

@@ -485,6 +485,24 @@ pub const TECHNICAL_BLOCK_IDS: &[&str] = &[
     "minecraft:lava",
 ];
 
+/// A status-effect id in its canonical namespaced form: `blindness` and
+/// `minecraft:blindness` are the same effect to vanilla and must be the same
+/// effect to the compiler.
+///
+/// One spelling for one fact. This normalization existed twice — inside
+/// [`VendoredEffectRegistry::contains`] and inside
+/// [`crate::stages::MobEffect::is_instant`] — before `DW0540` needed a third
+/// copy to decide whether a `clear-effect` removes the effect a `give-effect`
+/// granted. Two ids that the registry accepts as the same must not be two ids to
+/// a rule that pairs them, and a private third copy is how they drift apart.
+pub fn namespaced_effect_id(id: &str) -> String {
+    if id.contains(':') {
+        id.to_string()
+    } else {
+        format!("minecraft:{id}")
+    }
+}
+
 /// True if `id` (optionally un-namespaced) is a technical/fluid block.
 pub fn is_technical_block(id: &str) -> bool {
     let norm = if id.contains(':') {
@@ -538,12 +556,7 @@ impl Default for VendoredEffectRegistry {
 
 impl EffectRegistry for VendoredEffectRegistry {
     fn contains(&self, effect_id: &str) -> bool {
-        let norm = if effect_id.contains(':') {
-            effect_id.to_string()
-        } else {
-            format!("minecraft:{effect_id}")
-        };
-        self.ids.contains(norm.as_str())
+        self.ids.contains(namespaced_effect_id(effect_id).as_str())
     }
 }
 

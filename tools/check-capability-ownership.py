@@ -259,14 +259,6 @@ MODIFIER_HOLES = {
         "ACCEPTED — operand. `of` is the sub-shape a COMPOSITE shape wraps; a "
         "primitive shape (`box`, `surface-band`) has nothing to wrap."
     ),
-    ("QuestEffect", "happening"): (
-        "OPEN FINDING. Story-beat declaration (spec-0025), on eleven of twenty-six. "
-        "The vocabulary anticipates consumers it was never given: `HappeningVerb` "
-        "has `gains` and `loses` — 'the party gains/loses a thing' — while "
-        "`give-item`, the effect that actually gives the party a thing, carries no "
-        "`happening` field. The branch-contradiction proof (`DW0485`) reasons only "
-        "over beats that declare one, so those effects are invisible to it."
-    ),
     ("EffectSite", "quest"): (
         "ACCEPTED — operand, and the capability IS already on the enum. `quest` "
         "names the DAG owner of a firing; the ambient roots (trigger, trap, "

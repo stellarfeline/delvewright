@@ -470,6 +470,34 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      inside one (`DW0511`). Put the volume where a player can SEE what will happen
      before they commit to it; a killing box nobody can read is 初见杀 with no
      lesson in it.
+   - **A status effect is a verb now — and it ends by expiring, never by being
+     cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
+     grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
+     the players inside a box, so "blind whoever is riding" does not blind the
+     delve. `seconds` is REQUIRED and there is no infinite form, on purpose: an
+     effect whose only removal is a later step is one the player keeps forever
+     whenever that step does not run — a logout, a crash, a death mid-chain. So
+     **do not write "grant, then clear at the end"**; write a duration that covers
+     the beat plus slack and let it expire. Pairing a live grant with a
+     `clear-effect` of the same effect in the same bundle is `DW0540`.
+     `clear-effect {effect?, in?}` exists for effects the campaign did NOT grant
+     (a potion the player drank, a `wither` a mob applied); omit `effect` to clear
+     everything. Needs `dsl_version` 0.10.0 on the quests stage.
+   - **A teleport selects a REGION, never a block.** `teleport {from {anchor,
+     extent}, to}` moves **everything** inside the box to the destination anchor —
+     players and entities alike, which is what makes a cargo platform the same
+     mechanism as a passenger one. Nothing is exempt, so do not draw the volume
+     over an affordance the engine anchors to a block (an interact objective, a
+     click trigger, a bonfire, a shortcut lever, a disarm, a sealed gate): the
+     hitbox would ride and the hardware would stay, and the build refuses it
+     (`DW0542`). Two things to design AROUND rather than against, both measured on
+     the pinned server: **a teleport is not a rescue** — accumulated fall distance
+     carries across it unchanged and is charged in full at the destination, so a
+     platform arriving under a falling player past ~20 blocks is the surface they
+     die on; and **nav does not know about it** — a route that exists only through
+     a teleport still fails the completability proof, so keep a walked route to
+     anything the critical path needs. Needs `dsl_version` 0.10.0 on the quests
+     stage.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
