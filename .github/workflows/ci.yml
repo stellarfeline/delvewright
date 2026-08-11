@@ -759,6 +759,36 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-economy \
             --output ./delve-output-economy
 
+      # spec-0031 acceptance criterion 9 — the LIFT, authored entirely in campaign
+      # JSON. The compiler gains nothing for it: `tests/fixtures/lift` is the
+      # owner's timing table written as the steps of one `sequence` over the five
+      # v0.10 primitives, and `tests/v10_lift.rs` reads it back off the emission.
+      # This pass is what stops that from being a compile-time-only green: the
+      # campaign really loads, and BOTH rides' `teleport_<key>` templates — step 5
+      # of the table, the only step this tier has a generated template for — run
+      # on the pinned server. Binding, measured on the pinned toolserver: 8 tests,
+      # 8 passed, of which 2 are the lift's own teleports
+      # (`validation/teleport-gate.json`: declared 2, resolved 2,
+      # packtest_templates 2, unbound false).
+      #
+      # What this pass deliberately does NOT claim: the sequence's own TIMELINE.
+      # The engine generates PackTest templates per verb and has none for a
+      # `sequence`, so ticks 0/1/3/4 — the ride latch, the fill, the clear and the
+      # floor record — are proven off the emitted functions in Rust and not on a
+      # server. That is named debt, not an oversight (docs/reference/compiler.md,
+      # the criterion-9 bullet). Same cost profile as the passes above: one extra
+      # toolserver boot, no new pull, no new compile.
+      - name: build the lift delve output (spec-0031 AC9)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/lift \
+            -o validation/delve-output-lift --prefabs campaigns/prefabs
+
+      - name: PackTest suite — lift (both rides move everything in the car)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-lift \
+            --output ./delve-output-lift
+
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
           cargo run -p delvec --bin delvec -- \
