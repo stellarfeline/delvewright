@@ -3825,6 +3825,17 @@ of the collected hardware, and the respawn seat — all against
 `validation/death-plan.json`, never against the emission. `.github/workflows/release.yml`
 runs it over `crates/compiler/tests/fixtures/economy`.
 
+**And the die-retry loop, which had never run.** That stage — death → respawn at
+the governing checkpoint → walk back → re-engage — needs an ARMED checkpoint
+before a mandatory encounter, and measured 2026-08-11 across both repos, no build
+had one: `keep-trial` and `hollow-vigil` field encounters with no checkpoint
+before them, `nobodys-cave-island` compiles to zero mandatory encounters, the
+drowned bell has no stage documents. The stage had therefore reported green over
+zero scripted deaths everywhere it had ever run.
+`crates/compiler/tests/fixtures/die-retry` is the smallest campaign that lets it
+bind, `crates/compiler/tests/die_retry_fixture.rs` holds it to that shape, and the
+run report's `die_retry_binding` makes the zero loud on every other build.
+
 **What it found on its first live run**, and what nothing else could have: `on_death`
 and the checkpoint respawn dispatch **never fired on a player's FIRST death**.
 `dw.death_seen` and `dw.death_ack` are `dummy` objectives, so a player who has never

@@ -19,6 +19,7 @@ import type {
   AssistWindow,
   BindingCount,
   DeathTrial,
+  DieRetryBinding,
   EncounterPhase,
   EncounterTier,
   FloorLedger,
@@ -126,6 +127,8 @@ export class RunReport {
   /** task #68: every walk into a lethal volume, and what the stage examined. */
   private readonly lethalTrials: LethalTrial[] = [];
   private deathLoopBinding: DeathLoopBinding | undefined;
+  /** What the die-retry stage examined — recorded on EVERY run, zero included. */
+  private dieRetryBinding: DieRetryBinding | undefined;
   /** spec-0029: the name-preference binding, zero until the run records one. */
   private namePreference: NamePreference = {
     decisions: 0,
@@ -218,6 +221,20 @@ export class RunReport {
   recordDeathLoop(binding: DeathLoopBinding, trials: readonly LethalTrial[]): void {
     this.deathLoopBinding = binding;
     this.lethalTrials.push(...trials);
+  }
+
+  /**
+   * Record what the die-retry stage examined (playtest-methodology rule 1).
+   *
+   * Recorded on every run, including — especially — a run where it is all zeros.
+   * The stage's per-encounter arithmetic runs over an already-emptied list when
+   * every encounter is excluded for want of a governing checkpoint, so it reports
+   * `passed: true` having scripted no death at all; measured 2026-08-11, that is
+   * the state of EVERY campaign and fixture in both repos. Without this a reader
+   * has to notice an empty `die_retry` array to learn it.
+   */
+  recordDieRetryBinding(binding: DieRetryBinding): void {
+    this.dieRetryBinding = binding;
   }
 
   /**
@@ -456,6 +473,23 @@ export class RunReport {
         opened_at_ms: w.openedAtMs,
         closed_at_ms: w.closedAtMs ?? null,
       })),
+      // What the die-retry stage EXAMINED, beside what it found. `unbound: true`
+      // means zero scripted deaths were taken, whatever the stage's `passed` says
+      // — the two are different questions and only this one answers "was anything
+      // about dying looked at".
+      die_retry_binding:
+        this.dieRetryBinding === undefined
+          ? null
+          : {
+              declared_encounters: this.dieRetryBinding.declared,
+              engaged: this.dieRetryBinding.engaged,
+              deaths_scripted: this.dieRetryBinding.deathsScripted,
+              trials_completed: this.dieRetryBinding.trialsCompleted,
+              skipped_no_checkpoint: this.dieRetryBinding.skippedNoCheckpoint,
+              skipped_unarmed_checkpoint: this.dieRetryBinding.skippedUnarmed,
+              unbound: this.dieRetryBinding.unbound,
+              reason: this.dieRetryBinding.reason ?? null,
+            },
       die_retry: this.trials.map((t) => ({
         encounter: t.encounter,
         wave: t.wave,

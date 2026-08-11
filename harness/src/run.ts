@@ -22,6 +22,7 @@ import {
 import {
   actorExercise,
   assistPolicy,
+  dieRetryBinding,
   dieRetryCoverageFailures,
   dieRetryFindings,
   loadCombatPlanForCriticalPath,
@@ -377,6 +378,26 @@ async function main(): Promise<number> {
           )
         : []),
     ];
+    // playtest-methodology rule 1, for the stage that most needed it. Measured
+    // 2026-08-11: NO campaign or fixture in either repo exercises a scripted
+    // death, and every one of those runs reported this stage green. A green that
+    // examined nothing is vacuous, and the only way a reader learns that today is
+    // by noticing an empty `die_retry` array — which is exactly how the island's
+    // combat floor gate examined zero enemies for nineteen rounds.
+    const retryBinding = dieRetryBinding(
+      dieRetry,
+      combatPlan?.encounters.length ?? 0,
+      executor.dieRetryEngagements(),
+      trials,
+      executor.dieRetryPreconditionAdvisories().length,
+      executor.dieRetryPreconditionFindings().length,
+    );
+    if (retryBinding.unbound) {
+      process.stderr.write(
+        `die-retry: stage is UNBOUND (0 scripted deaths of ${retryBinding.declared} declared ` +
+          `encounter(s)) — ${retryBinding.reason ?? "no reason given"}\n`,
+      );
+    }
     const leaked = executor.leakedAssists();
     report.recordAssists(assists);
     report.recordTrials(trials);
@@ -545,17 +566,32 @@ async function main(): Promise<number> {
           ],
       failures: deathLoopFailures,
     });
+    report.recordDieRetryBinding(retryBinding);
     report.stage({
       stage: "die-retry",
       ran: dieRetry,
       passed: dieRetry && dieRetryFailures.length === 0,
       findings: dieRetry
-        ? // #223: an encounter the campaign fires NO checkpoint before had its
+        ? // A zero binding is a FINDING, not a pass (playtest-methodology rule 1).
+          // Advisory rather than red on purpose: whether a campaign owes a
+          // checkpoint before a fight is `DW0379`/`DW0315`/`DW0316`'s judgement,
+          // not this stage's — but a stage that scripted no death may never read
+          // as one that proved dying is safe.
+          [
+            ...(retryBinding.unbound
+              ? [
+                  `die-retry examined ZERO scripted deaths across ` +
+                    `${retryBinding.declared} declared encounter(s): ` +
+                    `${retryBinding.reason ?? "no reason given"}`,
+                ]
+              : []),
+            // #223: an encounter the campaign fires NO checkpoint before had its
           // scripted death skipped, and the stage says so out loud rather than
           // passing quietly. Advisory, not a failure — every death there is a full
           // restart, which is a content staging fact the compiler's retry-cost and
-          // checkpoint rules judge, not this stage.
-          [...executor.dieRetryPreconditionAdvisories()]
+            // checkpoint rules judge, not this stage.
+            ...executor.dieRetryPreconditionAdvisories(),
+          ]
         : [
             combatPlan === undefined
               ? "no combat plan in this build — the campaign declares no mandatory combat"
