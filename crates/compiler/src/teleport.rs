@@ -18,13 +18,37 @@
 //! old car, and nothing anywhere would notice: the NPC is present at the
 //! destination and simply cannot be talked to.
 //!
-//! So the teleport's selector is **total** — `tp @e[<box>] <cell>`, no `type=`,
-//! no `tag=`, no `limit=`, no `sort=` — and the cases an exemption list would
-//! have hidden are refused at compile time instead. That trade is available here
-//! and was not available to the lethal volume, for a reason worth stating: a
-//! volume damages whatever *wanders* in, which the compiler cannot enumerate,
-//! while a teleport's harm is to what the **compiler itself placed**, which it
-//! can. A proof beats a list that grows with the engine.
+//! So the teleport's selector is **total over bodies** — `tp
+//! @e[<box>,tag=!dw_fixture] <cell>`, no `type=`, no `limit=`, no `sort=` — and
+//! the cases an exemption list would have hidden are refused at compile time
+//! instead. That trade is available here and was not available to the lethal
+//! volume, for a reason worth stating: a volume damages whatever *wanders* in,
+//! which the compiler cannot enumerate, while a teleport's harm is to what the
+//! **compiler itself placed**, which it can. A proof beats a list that grows with
+//! the engine.
+//!
+//! ## The one narrowing, and why it is not an exemption list (`DW0543`)
+//!
+//! `tag=!dw_fixture` is not a roster of types wearing a tag's clothes. It is a
+//! **class the object declares about itself** at the moment the engine summons
+//! it: *my position IS engine state*. See [`crate::affordance`] for the class and
+//! its proof; the short form is that types and classes answer different
+//! questions, and only one of them is the question a moving verb has.
+//!
+//! An NPC's dialogue hitbox and a recovery stake's marker are the same vanilla
+//! type — `minecraft:interaction` — and must be treated in opposite ways by a
+//! teleport. The hitbox travels, or the delve keeps its speaker and loses its
+//! speech. The marker stays, or the delve carries a fact away from the position
+//! that recorded it: the stake's ledger holds the marker's coordinates, and
+//! `stk_gc_<s>` retires a marker no player holds a wager *at that position*, so
+//! the tick after the ride the marker is gone and the wager with it. A `type=`
+//! term cannot tell the two apart. A class can, and it is decided once, at the
+//! object, rather than once per verb.
+//!
+//! This is also why the stake could not simply enter [`DW_TELEPORT_BOUND_AFFORDANCE`]
+//! below. That proof is compile-time geometry and a marker's position is chosen
+//! at RUNTIME; the class needs no position at all, which is exactly the property
+//! the runtime-placed half of the engine's furniture requires.
 //!
 //! **This is CLAUDE.md's "a capability belongs to the object class it acts on,
 //! not to the verb that first needed it" paying off in the direction people
@@ -59,6 +83,13 @@
 //! Content bodies — NPCs, actor puppets, wave mobs — are deliberately NOT
 //! refused: moving them is the mechanism working, and it is exactly what the
 //! cargo-lift ruling asks for.
+//!
+//! Engine furniture with **no** compile-time cell — a recovery stake's marker,
+//! a cutscene's return mark — is not refused here either, and cannot be: an
+//! author cannot move a thing whose position the runtime chooses. It is excluded
+//! from the selector instead (`DW0543`). The split is the whole design: **a place
+//! the author can move is refused; a place only the runtime can put down is
+//! skipped.**
 //!
 //! ## Binding (`docs/reference/playtest-methodology.md` rule 1)
 //!

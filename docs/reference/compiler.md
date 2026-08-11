@@ -192,7 +192,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 10 | Nav checks (**boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space (task #117); talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
-| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), and the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) | `compiler::affordance` + `compiler::integrity` | `DW0420`/`DW0421`/`DW0497` (exit 3) |
+| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0543`), and the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) | `compiler::affordance` + `compiler::integrity` | `DW0420`/`DW0421`/`DW0543`/`DW0497` (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
@@ -1632,6 +1632,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   this number exposes). **Emitted only for a campaign that declares a
   teleport**, so a file that exists and reports zero is a finding rather than an
   absence.
+- `<out>/validation/fixture-gate.json`: the fixture-class proof's **binding
+  ledger** (`compiler::affordance`, `DW0543`, playtest-methodology.md rule 1).
+  `fixtures_declared` and `borne_declared` (every engine-summoned hitbox, mark
+  and display, split by the class it declared), `box_selectors_examined` (every
+  `@e[…]` selector narrowed by a positional box — the region verbs of this
+  build), and `packtest_templates` (the runtime half, one per `teleport` × `stake`
+  pair; the original defect has no compile-time form at all, so this is the only
+  number that binds to it). Unlike the ledgers above this one is emitted for
+  **every** campaign, because the class binds to any build that summons an
+  affordance: `unbound` is true when either of the first two counts is zero — an
+  empty class makes every exclusion decorative, and zero selectors means the
+  clause the defect lives in looked at nothing.
 - `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
   ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
   the traversal proof actually examined — `legs`, `route_cells`, and
@@ -3539,7 +3551,7 @@ into silently — a comparison whose datum nothing drives is rejected outright �
 but a datum that is written and still never reaches the required range is not
 caught today. Stated here rather than left to be discovered.
 
-### DW0540–DW0542 — status effects and the region teleport (`dsl::validate` / `compiler::teleport`; spec-0031, DSL v0.10)
+### DW0540–DW0543 — status effects, the region teleport, and the fixture class (`dsl::validate` / `compiler::teleport` / `compiler::affordance`; spec-0031, DSL v0.10)
 
 `DW0540` is the one rule in this family that is about a *pattern* rather than a
 value, and it is the reason the surface is shaped the way it is. `give-effect`
@@ -3562,15 +3574,15 @@ fragile than one on a fixed tick, and it is the mandatory duration, not this
 rule, that keeps that case survivable.
 
 `DW0542` is what stands where a runtime exemption list would otherwise be. A
-`teleport`'s selector is total, so a volume drawn over an affordance the engine
-anchored to a *block* would move the entity and leave the hardware: a campfire, a
-lever or a sealed door still visible, still reachable, answering nothing. The
-affordance set is not enumerated by this proof — it is `eclipse::affordances`,
-the same authority `DW0359` measures bodies against, plus the seal shells
-`DW0422` owns — so an affordance added to the engine enters this proof by
-existing. Content bodies (NPCs, actor puppets, wave mobs) are deliberately not
-refused: moving them is the mechanism working, and it is what the cargo-lift
-ruling asks for.
+`teleport`'s selector is total over bodies, so a volume drawn over an affordance
+the engine anchored to a *block* would move the entity and leave the hardware: a
+campfire, a lever or a sealed door still visible, still reachable, answering
+nothing. The affordance set is not enumerated by this proof — it is
+`eclipse::affordances`, the same authority `DW0359` measures bodies against, plus
+the seal shells `DW0422` owns — so an affordance added to the engine enters this
+proof by existing. Content bodies (NPCs, actor puppets, wave mobs) are
+deliberately not refused: moving them is the mechanism working, and it is what
+the cargo-lift ruling asks for.
 
 Binding: `validation/teleport-gate.json` states how many teleports were declared
 and resolved, how many cells their volumes cover, how many affordances were
@@ -3579,11 +3591,93 @@ green over a runtime mechanism is the vacuity that last number exists to make
 visible. A campaign that declares no teleport emits no file at all, so a file
 that exists and reports zero is a finding rather than an absence.
 
+#### DW0543 — the fixture class: what a region verb selects
+
+`DW0542` reaches every place whose cell the compiler knows. **A recovery stake's
+marker has no such cell** — its position is the death point, or a row of the
+compile-time placement table picked by the respawn seat in force — so a lift and
+a stake in one room shipped a silent defect: the ride carried the marker away
+from the position its ledger recorded, and the next tick `stk_gc_<s>` found
+nobody holding a wager there and retired it. The wager was not uncollectable, it
+was deleted.
+
+The two obvious fixes are both defects CLAUDE.md names. *Teleport exempts engine
+machinery* re-implements a general mechanism privately inside one verb; *the
+stake ledger survives its marker moving* keys a capability to the wrong object,
+making the stake compensate for a selector that grabbed something it should never
+have grabbed. The question is upstream of both — **what does a content-authored
+region verb select?** — and the measurement answering it is short:
+
+| region verb | what its emitted selector reaches |
+|---|---|
+| `teleport` (`from`) | every **entity** in the box — the only verb with no filter at all |
+| `lethal_volumes[]` (`region`) | every entity in the box minus six **types** (`@e`), plus every player (`@a`) |
+| `give-effect` / `clear-effect` (`in`), `damage-players` (`in`), stealth zones, the night-vision area grant | **players only** (`@a`/`@s`) — no engine entity is reachable |
+| `fill-region`, `clear-region`, `collapse`, `close-gate` | **blocks**; no entity selector exists |
+
+So exactly two verbs quantify over non-player entities, and only they had the
+question to answer. They answered it differently, and one of them not at all.
+
+The fix is a **class the object declares about itself**, not a roster any verb
+holds. Every entity the engine summons carries one of two tags:
+
+- **`dw_fixture`** — *a place.* Its position IS engine state: an affordance's
+  `minecraft:interaction` hitbox, the `dw_marker` display beside it, a stake
+  marker, a cutscene's return mark. Moving it does not move a thing, it rewrites
+  a fact.
+- **`dw_borne`** — *carried by a body.* Today exactly one: an NPC's co-located
+  dialogue hitbox, which must ride whatever its speaker rides (owner ruling
+  2026-08-08).
+
+A cutscene *camera* declares neither and that is deliberate: its own driver
+re-asserts its position every tick, so it is a body the engine flies rather than
+a place it recorded. Neither tag is authorable, and no campaign JSON can turn
+either off.
+
+Every box-narrowed entity selector then carries `tag=!dw_fixture` — **one negated
+tag for the whole engine, forever**, which is what a type roster can never be. A
+type cannot answer this question at all: an NPC's hitbox and a stake's marker are
+both `minecraft:interaction`, and a teleport must move the first and leave the
+second. `lethal_volumes[]` keeps its type roster as well, because that roster
+makes a different and still-true claim — *do not aim `/damage` at a thing that
+cannot take it*.
+
+The two arms of the rule divide by **who can act on the defect**: a place whose
+cell is known at compile time is *refused* (`DW0542`), because the author can
+move it; a place only the runtime puts down is *skipped by the selector*
+(`DW0543`), because nobody can.
+
+`DW0543` is an emission self-check over the shipped datapack, in the `DW0420` /
+`DW0421` family — it is `DW0421`'s rule (*only the owner may disturb an
+affordance's hardware*) one verb wider, since moving hardware is disturbing it,
+and one binding wider, since a region verb selects by box where `DW0421` reads a
+tag. It fires on two clauses, and both are compiler defects rather than authoring
+ones: a summon that declares neither class (the exclusion then protects nothing),
+and a box-narrowed `@e` selector with no exclusion (the class exists and this verb
+does not read it). Because it can never be caused or fixed by campaign JSON it is
+`every_version`: fencing an engine self-check by `dsl_version` would let an older
+campaign ship the defect in silence.
+
+**The runtime half is the only half that can witness the original defect**, and it
+is generated rather than argued: one PackTest template per (`teleport` × `stake`)
+pair leaves a real marker in a real volume through the campaign's own
+`stk_fill_<s>`, rides the campaign's own `teleport_<key>`, and asserts a plain
+body **left** the box while both halves of the marker stayed. The body assertion
+is what stops it being one-directional — without it, an engine whose teleport did
+nothing at all would pass.
+
+Binding: `validation/fixture-gate.json` states how many entities declared each
+class, how many box-narrowed selectors were examined, and how many runtime
+templates were generated. Zero on either of the first two counts is reported as
+`unbound` and is a finding: an empty class makes every exclusion decorative, and
+zero selectors means the clause the defect lives in looked at nothing.
+
 | Code | Meaning |
 |------|---------|
 | `DW0540` | **A grant whose removal is a later effect, not its own duration.** A `give-effect` is still live at the moment a `clear-effect` for the same effect fires in the same bundle. Validation-tier (exit 1), `dsl::validate`. The message carries both numbers the author needs — how long the grant runs, and how long the bundle actually needs it for. Prescription: set `seconds` to the span the effect should last and delete the `clear-effect`; a duration expires with no cooperation from anything. `clear-effect` is for effects this campaign did not grant. |
 | `DW0541` | **A duration that is not a duration.** A `give-effect`'s `seconds` is zero or past `MAX_EFFECT_SECONDS` (50 000, derived from `MAX_POTION_DURATION_TICKS`), or its `amplifier` is past vanilla's unsigned byte. Validation-tier (exit 1), `dsl::validate`. Zero is the grant that never happens — the unbound-vacuity class as a number; the ceiling is vanilla's own field width, so a value above it is a duration typed in ticks or milliseconds. |
 | `DW0542` | **A teleport volume over an affordance bound to hardware.** A `teleport`'s `from` volume covers an interaction affordance the engine placed on a block it also places — an interact objective, a click trigger, a bonfire, a shortcut unlock, a trap or timed-gate disarm, a sealed gate's answer. Build-tier (exit 3), `compiler::teleport`. The teleport moves the entity and not the block, so the player is left with something they can see and reach that answers nothing. Prescription: move the affordance out of the volume, or shrink the volume's `extent`; do NOT add a type exemption to the selector — that would tear an NPC's dialogue hitbox off its body. |
+| `DW0543` | **An engine fixture is reachable by a box.** Either an engine-summoned hitbox, mark or display declares neither class tag (`dw_fixture` / `dw_borne`), or a selector narrowed by a positional box (`@e[x=…]`) does not carry `tag=!dw_fixture`. Build-tier (exit 3), `compiler::affordance`, emission self-check over the shipped datapack. **A compiler defect, never an authoring one** — no campaign JSON can cause it and none can fix it; the message is addressed to whoever is changing the engine. Prescription for a new affordance: summon it declaring the class. For a new region verb: negate the class, never a `type=…` roster — a type cannot tell an NPC's dialogue hitbox from a recovery stake's marker, and a moving verb must carry the first and leave the second. |
 
 ### DW0510–DW0512 — lethal volumes (`compiler::nav` / `compiler::lethal` / `dsl::validate`; spec-0031, DSL v0.10)
 
@@ -3729,13 +3823,23 @@ Two are `DW0526`'s, one is not, and the third is named rather than left silent.
 |---|---|---|
 | **Runtime-mutable ground** — `close-gate`, `set-block`, `collapse`, a shortcut's or a timed gate's seal | yes | the case spec-0031's ruling was written for: a stake left on a lift car is deleted by the next ride. |
 | **`fill-region` / `clear-region`** | yes, and it is *the same defect* | a `clear-region` deletes the block a marker stands on exactly as a departing car does. They enter through `QuestEffect::region_write` — the DSL's own answer to "which verbs rewrite a box" — so a later verb of that family is covered by existing rather than by being remembered. |
-| **A `teleport`'s `from` box** | **no — a deliberate ruling, follow-up finding** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
+| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0543` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc_<s>` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
 
 The teleport case cannot simply inherit the teleport's own `DW0542` either, and the
 reason is the shape spec-0031 named when it refused to inherit `lethal_volumes[]`'s
 exemption list into a verb that *moves* rather than *deletes*: `DW0542` tests the
 affordance authority, which carries compile-time cells, and a stake has none to
 offer it. Inheriting it would have produced a green that examined nothing.
+
+**Neither of the two fixes the finding proposed was taken, and nothing in
+`compiler::stake` changed.** "The teleport exempts engine machinery" builds a
+roster into one verb; "the stake ledger survives its marker moving" makes the
+stake compensate for a selector that grabbed something it should never have
+grabbed. The question was upstream of both — *what does a region verb select?* —
+and a marker being a **place** is a property of the marker, not of any verb. So
+the class is declared where the marker is summoned and every box-narrowed
+selector reads it (`DW0543` above). That a capability keyed to the object needed
+no cooperation from this module is the point rather than a coincidence.
 
 **Note the direction of the conservatism, because it is why this set is not
 `Plan::region_events`.** The completability model deliberately drops a non-fill

@@ -55,22 +55,36 @@
 //!   [`runtime_mutable_regions`] by way of `QuestEffect::region_write`, the DSL's
 //!   own answer to "which verbs rewrite a box", so a later verb of that family is
 //!   covered by existing rather than by being remembered.
-//! * **A `teleport`'s `from` box** (spec-0031) — **NOT in scope, and this is a
-//!   deliberate ruling rather than an omission.** A teleport moves *entities*,
-//!   not blocks, so the ground under a marker is untouched; what moves is the
-//!   marker itself, away from the position the collecting player's ledger
-//!   recorded. That is a different defect with a different fix, and it is not one
-//!   a box check on `DW0526`'s axis could state: `DW0526` is about **footing**,
-//!   and a marker's position is chosen at RUNTIME, so no compile-time geometry
-//!   test can know where it will be. Recorded as a follow-up finding rather than
-//!   bolted onto a rule it does not belong to.
+//! * **A `teleport`'s `from` box** (spec-0031) — **NOT in scope here, and this is
+//!   a deliberate ruling rather than an omission. Closed by `DW0543`, task #74,
+//!   one layer away from this file.** A teleport moves *entities*, not blocks, so
+//!   the ground under a marker is untouched; what moves is the marker itself,
+//!   away from the position the collecting player's ledger recorded — after which
+//!   [`crate::emit`]'s `stk_gc_<s>` finds nobody holding a wager at the marker's
+//!   new position and retires it, taking the wager with it. That is a different
+//!   defect with a different fix, and it is not one a box check on `DW0526`'s
+//!   axis could state: `DW0526` is about **footing**, and a marker's position is
+//!   chosen at RUNTIME, so no compile-time geometry test can know where it will
+//!   be.
 //!
-//!   The reason it cannot simply inherit the teleport's own `DW0542` is worth
-//!   stating, because it is the shape spec-0031 warned about when it refused to
+//!   The reason it could not simply inherit the teleport's own `DW0542` is worth
+//!   keeping, because it is the shape spec-0031 warned about when it refused to
 //!   inherit `lethal_volumes[]`'s exemption list into a verb that *moves* rather
 //!   than *deletes*: `DW0542` tests the affordance authority, which carries
 //!   compile-time cells, and a stake has none to offer it. Inheriting the list
 //!   would have produced a green that examined nothing.
+//!
+//!   **Neither of the two fixes the finding proposed was taken, and the reason is
+//!   the finding's own framing.** "The teleport exempts engine machinery" builds
+//!   a roster into one verb; "the stake ledger survives its marker moving" makes
+//!   this module compensate for a selector that grabbed something it should never
+//!   have grabbed. The question was upstream of both — *what does a region verb
+//!   select?* — and the answer is that a marker is a **place**, which is a
+//!   property of the marker and not of any verb. So the class is declared where
+//!   the marker is summoned and every box-narrowed selector reads it
+//!   ([`crate::affordance`], `DW0543`). **Nothing in this module changed**, which
+//!   is the point: a capability keyed to the object needs no cooperation from the
+//!   objects around it.
 //!
 //! Both are boxes, so both are a selector the corpse can be tested against at
 //! runtime (`@s[x=…,dx=…]`), which is what makes the lookup a comparison rather

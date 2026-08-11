@@ -803,6 +803,42 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lift \
             --output ./delve-output-lift
 
+      # task #74 — the fixture class (`DW0543`). `tests/fixtures/lift-stake` is the
+      # lift with a recovery stake standing in the same room, which is the one
+      # arrangement where a region verb can carry a piece of ENGINE state out from
+      # under itself: a ride moves the marker away from the position the collecting
+      # player's ledger recorded, and the next tick `stk_gc_<s>` finds nobody
+      # holding a wager there and retires it — the wager is not uncollectable, it
+      # is deleted.
+      #
+      # This pass is not decoration on the Rust tests, it is the only tier that can
+      # witness the defect at all. A stake marker's position is chosen at RUNTIME,
+      # so no compile-time geometry test knows where it will be (which is exactly
+      # why `DW0526` and `DW0542` both correctly decline it). The compile-time half
+      # proves the compiler wrote the exclusion and the marker declares the class;
+      # whether vanilla's `tag=!…` really keeps that entity out of a real `tp`'s
+      # reach is vanilla's fact, and only a live server states it.
+      #
+      # Binding: the fixture emits 12 templates, two of them `fixture_<ride>_embers`
+      # — one per (teleport × stake) pair, as `validation/fixture-gate.json` reports
+      # (`packtest_templates: 2`, `box_selectors_examined: 2`, `unbound: false`).
+      # Each puts a REAL marker in the car through the campaign's own
+      # `stk_fill_embers`, rides the campaign's own `teleport_<key>`, and asserts a
+      # plain body LEFT the box while both halves of the marker stayed. The body
+      # assertion is what stops the template being one-directional: without it, an
+      # engine whose teleport did nothing at all would pass. Same cost profile as
+      # the passes above: one extra toolserver boot, no new pull, no new compile.
+      - name: build the lift-stake delve output (task #74)
+        run: |
+          cargo run -p delvec --bin delvec -- \
+            build crates/compiler/tests/fixtures/lift-stake \
+            -o validation/delve-output-lift-stake --prefabs campaigns/prefabs
+
+      - name: PackTest suite — lift-stake (the ride leaves the wager standing)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-lift-stake \
+            --output ./delve-output-lift-stake
+
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
           cargo run -p delvec --bin delvec -- \

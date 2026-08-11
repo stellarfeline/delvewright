@@ -270,7 +270,8 @@ fn the_trigger_rides_the_door_rather_than_contesting_it() {
         "the trigger's tag rides every one of the door's bodies: {arm}"
     );
     assert!(
-        !function(&out, "setup_finish").contains("Tags:[\"dw_trig_bars_wont_give\"]"),
+        !function(&out, "setup_finish")
+            .contains("Tags:[\"dw_fixture\",\"dw_trig_bars_wont_give\"]"),
         "and it summons nothing of its own"
     );
 }

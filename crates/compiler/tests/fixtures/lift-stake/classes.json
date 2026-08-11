@@ -1,0 +1,29 @@
+{
+  "dsl_version": "0.7.0",
+  "campaign_id": "lift-stake",
+  "stage": "classes",
+  "content": {
+    "classes": [
+      {
+        "id": "class/wanderer",
+        "name": "Wanderer",
+        "blurb": "Sturdy boots, no questions.",
+        "kit": [
+          {
+            "item": "minecraft:iron_sword",
+            "count": 1,
+            "name": "Keeper's Gift"
+          },
+          {
+            "item": "minecraft:leather_boots",
+            "count": 1
+          },
+          {
+            "item": "minecraft:bread",
+            "count": 3
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -174,7 +174,7 @@ fn deferred_npc_strike_trigger_has_no_world_init_hitbox() {
         &format!("datapack/data/{NS}/function/spawn_npc_keeper.mcfunction"),
     );
     assert!(
-        entrance.contains(r#"Tags:["dw_npc_keeper","dw_trig_wake"]"#),
+        entrance.contains(r#"Tags:["dw_borne","dw_npc_keeper","dw_trig_wake"]"#),
         "the entrance hitbox carries the strike trigger's tag:\n{entrance}"
     );
 }
