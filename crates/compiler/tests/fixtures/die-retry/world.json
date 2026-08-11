@@ -4,15 +4,19 @@
   "stage": "world",
   "content": {
     "title": "The Keeper's Trial",
-    "theme": "A guarded room, and a stone the party comes back to.",
-    "premise": "The smallest campaign that lets the bot tier's die-retry stage BIND: one mandatory encounter, and a checkpoint that fires before it. Measured 2026-08-11, no campaign or fixture in either repo had both, so the stage reported green over zero scripted deaths everywhere. This fixture exists so that stage has something to examine.",
+    "theme": "A gate, a hall beyond it, and a stone the party comes back to.",
+    "premise": "The smallest campaign that lets the bot tier's die-retry stage BIND: one mandatory encounter, and a checkpoint that fires before it. Measured 2026-08-11, no campaign or fixture in either repo had both, so the stage reported green over zero scripted deaths everywhere. This fixture exists so that stage has something to examine. The keep is a five-piece assembly and not one room because the marked stone must ALSO clear the guard's perception radius (DW0478): a checkpoint the party respawns on inside the aggro range of the body that killed them is a soft-lock, and a single 11x11 room cannot hold both.",
     "seed": 20260811,
     "target_minutes": 5,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Keep",
-        "prefab": "prefab/hello-room"
+        "prefab_pool": "pool/stone-keep",
+        "pieces": {
+          "min": 5,
+          "max": 5
+        }
       }
     ]
   }

@@ -56,6 +56,28 @@ pub enum DimRef {
     Largest,
 }
 
+impl DimRef {
+    /// The dimension as a grammar author reads it (`Dimension.X`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DimRef::X => "Dimension.X",
+            DimRef::Y => "Dimension.Y",
+            DimRef::Z => "Dimension.Z",
+            DimRef::WorldX => "Dimension.WorldX",
+            DimRef::WorldY => "Dimension.WorldY",
+            DimRef::WorldZ => "Dimension.WorldZ",
+            DimRef::Smallest => "Dimension.Smallest",
+            DimRef::Largest => "Dimension.Largest",
+        }
+    }
+}
+
+impl fmt::Display for DimRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Integer arithmetic available inside constraints and split sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -74,6 +96,43 @@ pub enum ArithOp {
     Max,
     /// Minimum of the two operands.
     Min,
+}
+
+impl ArithOp {
+    /// The operator as a grammar author reads it: an infix symbol, or the name
+    /// of the two-argument form for [`ArithOp::Max`] / [`ArithOp::Min`].
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ArithOp::Add => "+",
+            ArithOp::Sub => "-",
+            ArithOp::Mul => "*",
+            ArithOp::Div => "/",
+            ArithOp::Rem => "%",
+            ArithOp::Max => "max",
+            ArithOp::Min => "min",
+        }
+    }
+
+    /// True when the operator reads as `op(a, b)` rather than `a op b`.
+    pub fn is_call(self) -> bool {
+        matches!(self, ArithOp::Max | ArithOp::Min)
+    }
+
+    /// How tightly the operator binds, for parenthesising a rendered
+    /// expression. Higher binds tighter; a leaf and a call form are `3`.
+    fn precedence(self) -> u8 {
+        match self {
+            ArithOp::Add | ArithOp::Sub => 1,
+            ArithOp::Mul | ArithOp::Div | ArithOp::Rem => 2,
+            ArithOp::Max | ArithOp::Min => 3,
+        }
+    }
+}
+
+impl fmt::Display for ArithOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// An integer expression over constants, program parameters and scope
@@ -133,6 +192,94 @@ impl Expr {
             rhs: Box::new(rhs),
         }
     }
+
+    /// How tightly this expression binds; leaves bind tightest.
+    fn precedence(&self) -> u8 {
+        match self {
+            Expr::Int { .. } | Expr::Param { .. } | Expr::Dim { .. } => 3,
+            Expr::Arith { op, .. } => op.precedence(),
+        }
+    }
+
+    /// True when the expression is one name or one literal, so a rendering of
+    /// it says everything there is to say and its value needs no breakdown.
+    pub fn is_leaf(&self) -> bool {
+        matches!(
+            self,
+            Expr::Int { .. } | Expr::Param { .. } | Expr::Dim { .. }
+        )
+    }
+
+    /// The named quantities this expression reads, in reading order, each once.
+    ///
+    /// A guard operand's *number* says how far off a scope is; these say which
+    /// knob moves it. Empty for a literal, and one entry for a bare name.
+    pub fn inputs(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        self.collect_inputs(&mut out);
+        out
+    }
+
+    fn collect_inputs(&self, out: &mut Vec<String>) {
+        match self {
+            Expr::Int { .. } => {}
+            Expr::Param { name } => {
+                if !out.iter().any(|n| n == name) {
+                    out.push(name.clone());
+                }
+            }
+            Expr::Dim { dim } => {
+                let name = dim.as_str();
+                if !out.iter().any(|n| n == name) {
+                    out.push(name.to_string());
+                }
+            }
+            Expr::Arith { lhs, rhs, .. } => {
+                lhs.collect_inputs(out);
+                rhs.collect_inputs(out);
+            }
+        }
+    }
+}
+
+impl fmt::Display for Expr {
+    /// The expression as a grammar author reads it, bracketed conservatively:
+    /// a nested operand keeps its brackets when it binds *less* tightly than
+    /// its parent, and, on the **right** of an infix operator, when it binds no
+    /// more tightly. Never fewer than the tree's meaning requires, sometimes one
+    /// pair more (`a + (b + c)` is bracketed though it need not be).
+    ///
+    /// Integer division makes this load-bearing rather than cosmetic:
+    /// `a * (b / c)` and `a * b / c` are genuinely different values, so an
+    /// operand of equal binding strength on the **right** of an infix operator
+    /// always keeps its brackets. Left-nested chains — the common shape, and
+    /// the one the zone guards are written in — stay flat:
+    /// `Dimension.Z - junction_run - hearth_run`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expr::Int { value } => write!(f, "{value}"),
+            Expr::Param { name } => f.write_str(name),
+            Expr::Dim { dim } => write!(f, "{dim}"),
+            Expr::Arith { lhs, op, rhs } if op.is_call() => {
+                write!(f, "{op}({lhs}, {rhs})")
+            }
+            Expr::Arith { lhs, op, rhs } => {
+                let here = op.precedence();
+                if lhs.precedence() < here {
+                    write!(f, "({lhs})")?;
+                } else {
+                    write!(f, "{lhs}")?;
+                }
+                write!(f, " {op} ")?;
+                let bracket_rhs = matches!(rhs.as_ref(), Expr::Arith { op, .. } if op.precedence() <= here && !op.is_call());
+                if bracket_rhs {
+                    write!(f, "({rhs})")
+                } else {
+                    write!(f, "{rhs}")
+                }
+            }
+        }
+    }
 }
 
 /// A comparison operator.
@@ -151,6 +298,26 @@ pub enum CmpOp {
     Eq,
     /// `!=`
     Ne,
+}
+
+impl CmpOp {
+    /// The operator as a grammar author reads it (`>`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CmpOp::Lt => "<",
+            CmpOp::Le => "<=",
+            CmpOp::Gt => ">",
+            CmpOp::Ge => ">=",
+            CmpOp::Eq => "==",
+            CmpOp::Ne => "!=",
+        }
+    }
+}
+
+impl fmt::Display for CmpOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// A rule guard, evaluated against the scope the rule is about to expand into.
@@ -1192,5 +1359,95 @@ impl Program {
                 self.check_expr(symbol, rhs)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A guard operand is reported back to its author as text, so the text has
+    /// to mean the same number the tree does. Integer division makes that a
+    /// correctness question rather than a cosmetic one.
+    #[test]
+    fn an_expression_renders_as_the_number_it_means() {
+        let x = || Expr::dim(DimRef::X);
+        let p = |n: &str| Expr::param(n);
+
+        assert_eq!(x().to_string(), "Dimension.X");
+        assert_eq!(Expr::int(-3).to_string(), "-3");
+        assert_eq!(p("strip_depth").to_string(), "strip_depth");
+
+        // The zone guards' own shape: a left-nested chain stays flat.
+        assert_eq!(
+            Expr::dim(DimRef::Z)
+                .arith(ArithOp::Sub, p("junction_run"))
+                .arith(ArithOp::Sub, p("hearth_run"))
+                .to_string(),
+            "Dimension.Z - junction_run - hearth_run"
+        );
+        // A right operand of equal or lower binding keeps its brackets, because
+        // `a - (b - c)` and `a - b - c` are different numbers...
+        assert_eq!(
+            x().arith(ArithOp::Sub, p("a").arith(ArithOp::Sub, p("b")))
+                .to_string(),
+            "Dimension.X - (a - b)"
+        );
+        // ...and so are `a * (b / c)` and `a * b / c` under floor division.
+        assert_eq!(
+            x().arith(ArithOp::Mul, p("a").arith(ArithOp::Div, p("b")))
+                .to_string(),
+            "Dimension.X * (a / b)"
+        );
+        // A weaker-binding operand keeps them on either side.
+        assert_eq!(
+            x().arith(ArithOp::Sub, Expr::int(1))
+                .arith(ArithOp::Mul, Expr::int(2))
+                .to_string(),
+            "(Dimension.X - 1) * 2"
+        );
+        assert_eq!(
+            x().arith(ArithOp::Mul, Expr::int(2))
+                .arith(ArithOp::Sub, Expr::int(1))
+                .to_string(),
+            "Dimension.X * 2 - 1"
+        );
+        // `max`/`min` read as the two-argument forms they are, and need no
+        // brackets of their own.
+        assert_eq!(
+            x().arith(ArithOp::Max, Expr::int(4))
+                .arith(ArithOp::Add, Expr::int(1))
+                .to_string(),
+            "max(Dimension.X, 4) + 1"
+        );
+        assert_eq!(
+            x().arith(ArithOp::Rem, Expr::int(2)).to_string(),
+            "Dimension.X % 2"
+        );
+    }
+
+    /// The named quantities an operand reads, which is what tells an author
+    /// which knob moves a derived number.
+    #[test]
+    fn an_expression_lists_the_names_it_reads_once_each_in_reading_order() {
+        let e = Expr::dim(DimRef::Z)
+            .arith(ArithOp::Sub, Expr::param("run"))
+            .arith(ArithOp::Sub, Expr::param("run"))
+            .arith(ArithOp::Add, Expr::dim(DimRef::Smallest));
+        assert_eq!(
+            e.inputs(),
+            vec![
+                "Dimension.Z".to_string(),
+                "run".to_string(),
+                "Dimension.Smallest".to_string()
+            ]
+        );
+        assert!(!e.is_leaf());
+
+        for leaf in [Expr::int(2), Expr::param("run"), Expr::dim(DimRef::Y)] {
+            assert!(leaf.is_leaf(), "{leaf}");
+        }
+        assert!(Expr::int(2).inputs().is_empty());
+        assert_eq!(Expr::param("run").inputs(), vec!["run".to_string()]);
     }
 }

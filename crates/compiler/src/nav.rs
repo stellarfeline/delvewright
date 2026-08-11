@@ -220,6 +220,29 @@ pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
 /// document, so fencing it would grandfather the soft-lock rather than the
 /// paperwork — and the six live violations it found on the shipped island are
 /// what that would have preserved.
+///
+/// # The joint constraint with the die-retry proof, and what it excludes
+///
+/// The bot ladder's die-retry stage binds only on a **mandatory encounter with
+/// an armed checkpoint before it**, so for that checkpoint the two demands are
+/// live at once: it must exist ahead of the fight, and it must clear the fight's
+/// perception radius. Note what is NOT available to it — the contemporaneity
+/// relief a plain `set-checkpoint` gets (its reign ending before the force's
+/// onset, see [`contemporaneous`]) can never apply, because a checkpoint retired
+/// before the wave is staged is by definition not that encounter's governing
+/// checkpoint. Geometry is the only free variable.
+///
+/// That makes the pair satisfiable at any world scale above one perception
+/// radius of **walkable** separation — the loop is respawn → walk back →
+/// re-engage, so a second area 256 blocks across the void does not count — and
+/// unsatisfiable below it. The excluded shapes are exact: a single-room delve
+/// whose room is no wider than the radius, an arena campaign that rests inside
+/// the arena, and a lane wave whose polyline passes within `aggro_radius` +
+/// [`LANE_MARCH_DRIFT`] of the only rest point. Such campaigns still ship — they
+/// simply cannot prove the retry loop, and the run report states that as a zero
+/// binding rather than as a pass. `tests/fixtures/die-retry` is the worked
+/// example: as one 11x11 room it could satisfy neither demand, and it is now the
+/// smallest assembly that satisfies both.
 pub const DW_RESPAWN_IN_AGGRO: DwCode = DwCode::every_version("DW0478");
 /// `DW0327`: a `begin-stealth` (spec-0014) zone that is unstandable, or unreachable
 /// from the player's position at the beat that activates the stealth check.
@@ -4886,7 +4909,15 @@ fn verify_respawn_safe_zone(
                      never of the verb that named it. Move the respawn point out of the danger — \
                      into a side room, behind the threshold, past the end of the lane — or move \
                      the force's anchor / lane. Do NOT shrink `follow_range` to buy the \
-                     clearance: that retunes the fight to hide a placement bug.",
+                     clearance: that retunes the fight to hide a placement bug. And do NOT \
+                     delete or retire the checkpoint to buy it either: an armed respawn point \
+                     ahead of a mandatory encounter is exactly what the bot ladder's die-retry \
+                     stage binds on, so removing it trades this red for a proof that scripts no \
+                     death and examines nothing. Both cheap ways out of this message are a \
+                     vacuous green; the world's geometry is the only honest lever. The two \
+                     obligations are jointly satisfiable wherever more than one perception \
+                     radius of walkable ground separates the respawn point from the fight it \
+                     governs — and only there: a room narrower than that cannot hold both.",
                     id = src.id,
                 ),
             });

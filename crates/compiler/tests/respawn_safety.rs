@@ -230,4 +230,18 @@ fn a_set_checkpoint_on_a_seated_wave_is_dw0478() {
         message.contains("respawn point") && message.contains("set-checkpoint"),
         "the message must name the class it is talking about, not just the bonfire verb: {message}"
     );
+    // Both cheap ways out of this red are a vacuous green, and the message has to
+    // close both. Shrinking `follow_range` retunes the fight; deleting the
+    // checkpoint deletes the die-retry stage's precondition, so the ladder goes
+    // back to passing over zero scripted deaths — the state every campaign in
+    // both repos was in on 2026-08-11.
+    assert!(
+        message.contains("Do NOT shrink `follow_range`"),
+        "the message must still refuse the retune: {message}"
+    );
+    assert!(
+        message.contains("die-retry"),
+        "the message must also refuse the other cheap green — deleting the \
+         checkpoint the retry proof binds on: {message}"
+    );
 }

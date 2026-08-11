@@ -30,11 +30,11 @@
           "obj/talk": [
             {
               "type": "open-gate",
-              "anchor": "anchor/door",
+              "anchor": "anchor/gate",
               "happening": {
                 "verb": "opens",
                 "text": "The bar comes off the inner gate and it swings wide.",
-                "subject": "anchor/door"
+                "subject": "anchor/gate"
               }
             },
             {
@@ -116,7 +116,7 @@
     "waves": [
       {
         "id": "wave/guards",
-        "anchor": "anchor/exit",
+        "anchor": "anchor/boss",
         "mobs": [
           {
             "entity": "minecraft:zombie",

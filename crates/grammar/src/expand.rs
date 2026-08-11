@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
-use crate::eval::{EvalError, Scope};
+use crate::eval::{EvalError, GuardRefusal, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
     Alternative, Cond, Facing, Mark, MarkAt, Material, Node, Paint, Program, ProgramError, Side,
@@ -148,9 +148,14 @@ pub enum ExpandError {
     /// The program did not pass [`Program::validate`].
     Program(ProgramError),
     /// Every alternative's guard failed and none was `otherwise`.
+    ///
+    /// Carries the whole reading — see [`GuardRefusal`]. A refusal is a guard
+    /// working correctly, and it is the most informative event an author gets
+    /// out of a sweep; naming only the rule left them re-authoring by guesswork.
     NoApplicableRule {
-        /// The rule.
-        symbol: String,
+        /// The rule, the box, and every clause of every alternative's guard with
+        /// both sides measured.
+        refusal: GuardRefusal,
     },
     /// A size or guard expression could not be evaluated.
     Eval {
@@ -240,9 +245,10 @@ impl fmt::Display for ExpandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExpandError::Program(e) => write!(f, "invalid program: {e}"),
-            ExpandError::NoApplicableRule { symbol } => write!(
+            ExpandError::NoApplicableRule { refusal } => write!(
                 f,
-                "no alternative of rule {symbol:?} applies to this scope, and none is `otherwise`"
+                "no alternative of rule {:?} applies to this scope, and none is `otherwise`\n{}",
+                refusal.symbol, refusal
             ),
             ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
             ExpandError::Split { symbol, error } => match error {
@@ -452,8 +458,11 @@ impl<'a> Expander<'a> {
                 .collect();
         }
         if candidates.is_empty() {
+            // Measured only here: the report costs a second pass over the
+            // guards, and it is paid exactly when there is nothing left to do
+            // with the expansion.
             return Err(ExpandError::NoApplicableRule {
-                symbol: symbol.to_string(),
+                refusal: GuardRefusal::of(symbol, &self.scope(state), alts),
             });
         }
 

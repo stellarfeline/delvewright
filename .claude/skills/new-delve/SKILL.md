@@ -1325,20 +1325,36 @@ pipeline. Full derivation from the 22-round island run:
   `prompt`/`rest_label`/`save_label` only when the fiction wants its own words,
   and keep the two labels button captions (`DW0331`: ~20 Latin / ~12 Han).
   Both the flask and the labels need `dsl_version 0.8.0` on their stage.
-- **Place a bonfire OUT of every hostile's reach.** A rest point is where the
-  party respawns and where every `respawns_on_rest` wave is put back on its
-  feet, so a fire inside a hostile's `follow_range` delivers the party straight
-  into combat on arrival — the build error `DW0478`. The clearance is measured
-  against where the force actually IS: a wave's seated spawn cells, and for a
-  `lane` wave the whole marched polyline (a lane wave walks its corridor while
-  you are elsewhere, so a fire beside the far end of a lane is a fire in the
-  lane). Fighting actors — anything `unleash-actor`ed, or staged `vulnerable` —
-  count too, at their staging anchor. Put fires in side rooms, past the
-  threshold, or beyond the end of the lane; never buy the clearance by
-  shrinking `follow_range`, which retunes the fight to hide the placement.
+- **Place every RESPAWN POINT out of every hostile's reach** — a `bonfire` and a
+  plain `set-checkpoint` alike; the rule is about the cell the party comes back
+  to life on, never about the verb that placed it. A respawn point is also where
+  every `respawns_on_rest` wave is put back on its feet, so one inside a
+  hostile's `follow_range` delivers the party straight into combat on arrival —
+  the build error `DW0478`. The clearance is measured against where the force
+  actually IS: a wave's seated spawn cells, and for a `lane` wave the whole
+  marched polyline (a lane wave walks its corridor while you are elsewhere, so a
+  fire beside the far end of a lane is a fire in the lane). Fighting actors —
+  anything `unleash-actor`ed, or staged `vulnerable` — count too, at their
+  staging anchor. Put respawn points in side rooms, past the threshold, or
+  beyond the end of the lane; never buy the clearance by shrinking
+  `follow_range`, which retunes the fight to hide the placement.
   A re-seated wave always comes back **stationed** — a lane wave at its lane
   start, a plain wave at its anchor — so the safe zone stays true across every
   rest and every death.
+- **Size the room before you place the checkpoint.** The checkpoint that governs
+  a mandatory encounter carries two demands at once: the retry loop wants it
+  armed *before* the fight, and `DW0478` wants it *outside* the fight's
+  perception radius. There is no relief from the second for a checkpoint the
+  retry loop needs, so the world has to be big enough: **more than one perception
+  radius of walkable ground between the marked stone and the fight it governs** —
+  more than 16 blocks by default, more than `aggro_radius + 7.9` for a lane wave.
+  Walkable, not merely distant: the loop is respawn → walk back → re-engage, so
+  putting the fight in a *second area* does not buy clearance, it breaks the walk
+  back. A single room narrower than that cannot hold both, and neither can an
+  arena you rest inside; design the beat as *rest point → threshold → fight*, or
+  accept that this encounter ships without a retry proof. Deleting the checkpoint
+  is not the way out of a `DW0478` on it — that turns a red into a green that
+  proves nothing.
 
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even

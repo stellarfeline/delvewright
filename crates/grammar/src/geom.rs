@@ -72,6 +72,21 @@ impl Axis {
 
     /// All three axes in canonical order.
     pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+
+    /// The axis's name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Axis::X => "X",
+            Axis::Y => "Y",
+            Axis::Z => "Z",
+        }
+    }
+}
+
+impl std::fmt::Display for Axis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 /// A half-open integer box: `origin` inclusive, `origin + size` exclusive.

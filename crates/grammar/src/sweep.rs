@@ -46,7 +46,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::expand::{ExpandOptions, expand};
+use crate::eval::GuardRefusal;
+use crate::expand::{ExpandError, ExpandOptions, expand};
 use crate::export::{ExportError, program_hash, snapshot_nbt};
 use crate::geom::Box3;
 use crate::ir::Program;
@@ -275,6 +276,17 @@ pub struct Built {
     /// row would make the sweep look smaller rather than the zone look stricter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The refusal, structured, when a **guard** was what refused.
+    ///
+    /// `error` carries the same reading as prose. This carries it as data,
+    /// because the sweep report is what `tools/zone-sheets.py` and any other
+    /// driver read: a refusal reason a human can act on and a tool cannot is
+    /// half a diagnostic. Absent when the candidate built, and when it failed
+    /// for a reason that is not a guard declining (an export refusal, a write
+    /// error) — those say so in `error` alone rather than being flattened into
+    /// a shape they are not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<GuardRefusal>,
 }
 
 /// The whole sweep, as it goes on disk beside the snapshots.
@@ -423,6 +435,7 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
             model_digest: String::new(),
             massing_digest: String::new(),
             error: None,
+            refusal: None,
         };
 
         match expand(&prog, region, &ExpandOptions::seeded(seed)) {
@@ -463,6 +476,9 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
             }
             Err(err) => {
                 row.error = Some(err.to_string());
+                if let ExpandError::NoApplicableRule { refusal } = err {
+                    row.refusal = Some(refusal);
+                }
                 refused += 1;
             }
         }
@@ -654,6 +670,77 @@ mod tests {
         assert_eq!(report.refused, 1);
         assert_eq!(report.built, 1);
         assert!(report.rows[0].error.is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A refusal reason a human can act on and a tool cannot is half a fix.
+    /// `tools/zone-sheets.py` reads this file, so the reading a refused row
+    /// carries has to be data — the whole guard, both sides of the clause that
+    /// decided it, and the distance — not only the prose in `error`.
+    ///
+    /// Binding: 2 candidates, 1 refused by a guard, 1 built; the refused row
+    /// carries a structured refusal and the built row carries none.
+    #[test]
+    fn a_refused_row_carries_its_reading_as_data_not_only_as_prose() {
+        let dir = std::env::temp_dir().join("dw-sweep-refusal-json");
+        std::fs::create_dir_all(&dir).unwrap();
+        let m = manifest(
+            "bell:chapel-ward",
+            vec![
+                // The real case: a rest ward long enough to starve the chute.
+                Candidate {
+                    id: "great-hearth".into(),
+                    seed: None,
+                    region: None,
+                    params: BTreeMap::from([("hearth_run".to_string(), 14i64)]),
+                },
+                Candidate {
+                    id: "as-designed".into(),
+                    seed: None,
+                    region: None,
+                    params: BTreeMap::new(),
+                },
+            ],
+        );
+        let report = run(&m, &dir).unwrap();
+        assert_eq!(
+            (report.refused, report.built),
+            (1, 1),
+            "{}",
+            report.summary()
+        );
+        assert!(
+            report.rows[1].refusal.is_none(),
+            "a candidate that built has nothing to explain"
+        );
+
+        let refusal = report.rows[0]
+            .refusal
+            .as_ref()
+            .expect("a guard refusal reaches the report as data");
+        assert_eq!(refusal.symbol, "ward_plan");
+        assert_eq!(refusal.scope.size, [16, 9, 26]);
+
+        // ...and survives the round trip a driver actually makes.
+        let text = serde_json::to_string(&report).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let clause = &json["rows"][0]["refusal"]["alternatives"][0]["guard"]["of"][3];
+        assert_eq!(clause["holds"], false);
+        assert_eq!(
+            clause["lhs"]["source"],
+            "Dimension.Z - junction_run - hearth_run"
+        );
+        assert_eq!(clause["lhs"]["value"], 4);
+        assert_eq!(clause["rhs"]["value"], 7);
+        assert_eq!(clause["shortfall"]["blocks"], 4);
+        assert_eq!(clause["shortfall"]["lhs_must_reach"], 8);
+        assert!(
+            json["rows"][0]["error"]
+                .as_str()
+                .unwrap()
+                .contains("4 short"),
+            "the prose reading stays on `error` as well"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

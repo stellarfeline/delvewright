@@ -93,6 +93,92 @@ def list_programs(grammar_bin: str) -> list[str]:
     return out
 
 
+# `sweep.json` spells a comparison with the IR's own operator names, because
+# that field is the same `CmpOp` a grammar program is written with.
+OPS = {"lt": "<", "le": "<=", "gt": ">", "ge": ">=", "eq": "==", "ne": "!="}
+
+
+def clause_holds(trace: dict) -> bool:
+    """Whether one LEAF clause held, by the same rule `CondTrace::holds` uses."""
+    cond = trace["cond"]
+    if cond == "cmp":
+        return trace["holds"]
+    if cond == "orientation":
+        return trace["want"] == trace["got"]
+    if cond == "always":
+        return True
+    # `otherwise` never holds of its own accord, and a clause that could not be
+    # measured counts as not holding — the weight the interpreter gave it.
+    return False
+
+
+def render_clause(trace: dict) -> str:
+    """One leaf clause as its author wrote it, with what it came to here."""
+    cond = trace["cond"]
+    if cond == "cmp":
+        short = trace.get("shortfall", {})
+        return (
+            f"{trace['lhs']['source']} {OPS.get(trace['op'], trace['op'])} "
+            f"{trace['rhs']['source']} "
+            f"({trace['lhs']['value']} vs {trace['rhs']['value']}), "
+            f"{short.get('blocks', '?')} short"
+        )
+    if cond == "orientation":
+        want = ",".join(trace["want"])
+        got = ",".join(trace["got"])
+        return f"orientation is {want}, the scope's is {got}"
+    if cond == "unreadable":
+        return f"{trace['source']} cannot be measured here: {trace['reason']}"
+    return cond
+
+
+def decisive_clauses(trace: dict, want: bool = True):
+    """Every leaf clause that did NOT do what its guard needed, in reading order.
+
+    `want` is what the enclosing node needed of this one — hold, or, under a
+    `none_of`, not hold — which is the same bookkeeping the Rust reader does, so
+    a clause inside a `none_of` is named for holding rather than skipped for it.
+
+    A guard can decline on a comparison, on an `orientation` that did not match,
+    or on a clause that could not be measured at all. All three are reported: a
+    refusal whose digest line is silently absent would be the exact defect this
+    digest exists to remove.
+    """
+    cond = trace["cond"]
+    if cond in ("all", "any"):
+        for clause in trace["of"]:
+            yield from decisive_clauses(clause, want)
+    elif cond == "none_of":
+        for clause in trace["of"]:
+            yield from decisive_clauses(clause, not want)
+    elif clause_holds(trace) != want:
+        yield trace
+
+
+def refusal_digest(report: dict) -> list[str]:
+    """One line per guard clause that decided a refusal, over every refused row.
+
+    `delve-grammar sweep` prints the full reading on stderr; this is the same
+    thing read back out of `sweep.json` as data, so the summary a driver
+    assembles says WHICH clause refused rather than only how many did. A rule
+    that declines on several clauses, or over several alternatives, contributes
+    a line each — the digest names what refused, and does not pick among them.
+    A candidate refused for a reason that is not a guard (an export refusal, a
+    write error) has no structured refusal and keeps its prose `error`.
+    """
+    lines = []
+    for row in report["rows"]:
+        refusal = row.get("refusal")
+        if not refusal:
+            continue
+        for alt in refusal["alternatives"]:
+            for clause in decisive_clauses(alt["guard"]):
+                lines.append(
+                    f"{row['id']}: rule {refusal['symbol']} — {render_clause(clause)}"
+                )
+    return lines
+
+
 def build_one(
     program: str,
     out_root: Path,
@@ -125,6 +211,8 @@ def build_one(
     run(sweep_cmd, quiet=quiet)
 
     report = json.loads((nbt_dir / "sweep.json").read_text())
+    for line in refusal_digest(report):
+        print(f"  {line}", file=sys.stderr)
     if report["built"] == 0:
         print(
             f"  {program}: 0 of {report['candidates']} candidates built — nothing to render",
