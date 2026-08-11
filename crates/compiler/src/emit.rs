@@ -344,6 +344,13 @@ pub fn build_with_warnings(
     // which is not the same fact as "examined nothing", so the artifact is
     // omitted entirely rather than emitted claiming a zero it never measured.
     let mut traversal_gate: Option<crate::traversal::TraversalGate> = None;
+    // The world-load gate ledger (`compiler::assembled`,
+    // playtest-methodology.md rule 1): what the completability model measured
+    // about every gate the layout resolved, and how many of them it treats as
+    // shut. `None` for a campaign whose layout resolves no gate anchor, so a file
+    // that exists and reports `"modelled_as_sealed": 0` is a finding rather than
+    // an absence.
+    let mut gate_seal_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -442,13 +449,25 @@ pub fn build_with_warnings(
                     // against a void world that does not exist. Harmless while
                     // nothing here read it — `verify_boundary_safety` below now
                     // does.
+                    // The world-load gate seals travel with this arm too, and
+                    // they are the prefab's measurement, not the edit script's:
+                    // a batch that writes INTO a gate region already appears as
+                    // ordinary solid blocks above (and is `DW0353`'s advisory).
+                    // Missing this line is how an edit-carrying campaign — the
+                    // island is one — would have got a vacuous green out of the
+                    // completability model while every fixture went red.
                     crate::nav::World::from_occupancy(occ)
                         .with_ambient(crate::nav::Ambient::of_plan(plan))
+                        .with_world_load_seals(plan, er.assembled.gate_seals.clone())
                 }
                 None => {
                     crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
                 }
             };
+
+            if world.has_gate_anchors() {
+                gate_seal_ledger = Some(world.gate_seal_ledger());
+            }
 
             // DW0322 over the FINISHED world, for every campaign that assembles
             // one (task #170).
@@ -1172,6 +1191,9 @@ pub fn build_with_warnings(
     // body regardless of class, so the count itself shows that rule is total.
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
+    if let Some(ledger) = &gate_seal_ledger {
+        put_json(&mut out, "validation/gate-seal.json", ledger);
     }
     // The lethal-volume proofs' binding ledger (`compiler::lethal`,
     // playtest-methodology.md rule 1): how many volumes were declared, how many

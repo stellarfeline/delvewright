@@ -251,21 +251,36 @@ fn respawn_dialogue(effects: &str) -> String {
 
 /// Control for root 4: an `open-gate` in a `traps[].payload` on a real anchor
 /// builds, and its fill really is in the shipped pack.
+///
+/// **The forced beat opens the door too, and that is not padding.** The party is
+/// never made to spring a trap, so `plan::collect_region_events` does not credit an
+/// `open-gate` from a payload — and since the completability model started
+/// measuring what the prefab authors inside a gate region (`DW0317`), a delve whose
+/// only opener is a trap payload is refused as unfinishable-the-long-way, which is
+/// the same rule that keeps every shortcut gate sealed. This control is about
+/// LOWERING, so it states a completable delve and then asserts the payload's own
+/// function — not the whole pack, which the forced opener would satisfy on its own
+/// and leave the control vacuous.
 #[test]
 fn open_gate_in_a_trap_payload_emits_its_fill() {
     let out = build_campaign(
         &quests_doc_with(
             &trap_prelude(r#"{ "type": "open-gate", "anchor": "anchor/door" }"#),
-            r#"{ "type": "narrate", "style": "chat", "text": "The bar lifts." }"#,
+            r#"{ "type": "open-gate", "anchor": "anchor/door" }"#,
         ),
         None,
     )
     .expect("an open-gate in a trap payload must build");
-    let all = all_function_text(&out);
+    let trap_fn = out
+        .iter()
+        .find(|(p, _)| p.ends_with("/trap_fire_alarm_chest.mcfunction"))
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .expect("the trap payload is lowered into its own function");
     assert!(
-        all.lines()
+        trap_fn
+            .lines()
             .any(|l| l.trim_start().starts_with("fill ") && l.contains("minecraft:air replace")),
-        "a trap payload is lowered — its open-gate must emit a fill:\n{all}"
+        "a trap payload is lowered — its open-gate must emit a fill:\n{trap_fn}"
     );
 }
 

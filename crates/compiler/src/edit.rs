@@ -1989,6 +1989,7 @@ mod tests {
             blocks,
             settled: Vec::new(),
             open_gates: BTreeSet::new(),
+            gate_seals: Vec::new(),
         }
     }
 
