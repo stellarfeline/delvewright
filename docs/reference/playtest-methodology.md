@@ -114,7 +114,7 @@ missing first-class primitive. None was a forgotten task:
 |---|---|---|
 | Cheese must fill the room's OWN barrel, and be named | r12 → r18 | `collect` had no `container`/`item_name`/`fill_count`; the compiler stamped its own chest |
 | Boulder hint should answer right-click too | r12 → engine #142 | co-located click triggers had to merge onto one hitbox |
-| Wait branch: a body vanishes and walks back | r15 → PR #244 | a walk must start where ITS branch left the body (`DW0486`) |
+| Wait branch: a body vanishes and walks back | r15 → PR #244 | a walk must start where ITS branch left the body (`DW0488`) |
 | Ending night-vision expires and flickers | r15 → PR #246 | granted sight must outlast the camera it has to survive |
 
 Refusing to hack these downstream was correct (CLAUDE.md, *No hacks at any
@@ -150,6 +150,88 @@ places where a reading pause exists; it was never a target.
 **Obligation.** Apply a ruling at the scope it was given. If a wider rule seems
 right, propose it in one line and wait — a generalization is a design decision,
 not an inference to make silently.
+
+## Rule 7 — the ledger is a machine-readable artifact, and a gate reads it
+
+Rules 2 and 4 were written down and obeyed by hand, which meant they were obeyed
+exactly as well as whoever remembered them. Both are now enforced:
+`docs/playtest-findings.json` is the ledger — **every finding the owner has
+reported, on any campaign, from the first M2 dress rehearsal (2026-07-30)
+onward** — and `tools/staging-gate.py` refuses to stage a build while any row's
+general form is not a live, binding check on THAT build.
+
+The gate asks a question no other check in this repo asks, and it is the reason
+a green ladder does not discharge the owner's standing directive (2026-08-09:
+*her playtest is content QC only*). Most island findings were things **no check
+existed for at the time**, so "everything is green" and "she will not find a
+mechanical bug" are different claims and only the first was ever measurable.
+The gate re-runs nothing. Per row it asks: does a general-form check exist, and
+does it BIND — non-zero — here.
+
+**Six reds, one per way a green has really lied**, because folding them together
+would be the seventh:
+
+| Verdict | What it means | Its real instance |
+|---|---|---|
+| `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
+| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test) | four rows in the ledger's own first run named invariants that did not exist under those names |
+| `UNBOUND` | the check matched zero objects | rule 1's floor gate, nineteen rounds |
+| `INAPPLICABLE` | zero binding **and** zero precondition — the campaign declares none of the objects the class needs | the island has no trap, so no volley-saturation proof can say anything about it |
+| `UNFENCED` | the campaign's `dsl_version` never reached the surface the check keys off | rule 1's branch proofs before round 19 |
+| `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | the drowned-bell remake today |
+
+`INAPPLICABLE` is a **red**, not an exemption. The temptation is to let a row
+excuse itself by declaring its own binding class as its own precondition, which
+is not a gate; and "this build cannot exercise the class" is exactly what the
+round summary must say rather than fold away. The `applies_when` probe names
+*which* zero a zero is; it never changes the verdict.
+
+**The one permitted non-red** is rule 2's own escape, no wider: a row may close
+`DECLARED-UNCOVERABLE` with a `disposition` (`no-machine-form` / `owner-ruled`)
+**and** a substantive justification. Sixteen island rows qualify and every one is
+a judgement — prose register, pacing, whether a space reads as open. A bare
+label buys nothing; the gate checks the justification is there and says
+something. Their count is in the headline because rule 4 makes each a standing
+risk item at that staging review.
+
+**Obligation.** Every playtest APPENDS its findings to the ledger, the same day,
+with the triage rule 4 requires. No build is handed to the owner until
+`tools/staging-gate.py` has been run against that exact campaign and build tree,
+and its red list is carried into the round summary item by item — a red is not
+permission to stop, it is the list of classes she is not protected from. The
+gate is deliberately **not** a CI status check: it is red today by design, and
+making an honest red list blocking would force the one move CLAUDE.md forbids.
+Its falsification suite is in CI instead (`tools/tests/test_staging_gate.py`).
+
+### What this ledger is reconstructed from, and what is missing
+
+Stated because a findings ledger that silently starts at round 12 is precisely
+the defect the gate exists to prevent. Sources: the island's own 52-row ledger
+and round records (`GENERATION.md`, rounds 3–22); the private notes (gitignored,
+`docs/notes/private/`) — the island ledger audit and the evidence log, read end
+to end — and the two session handoffs; `hollow-vigil`'s `GENERATION.md`; the bell's
+records on `campaign/the-drowned-bell-r3` and `REMAKE.md`, the on-disk task
+archive (`~/.claude/tasks/`, 281 cards, 2026-07-30 → 2026-08-10), and the
+diagnostics catalogue in `compiler.md`, whose `(owner playtest, …)` attributions
+turned out to be the single best finding→diagnostic index in the repo.
+
+Known gaps, each a reason a row may be missing rather than closed:
+
+- **hollow-vigil's round-1 findings are not enumerated anywhere.** Four are
+  recoverable from `spec-0002`; PRs #28–#36 may hold more.
+- **The island ledger audit's r17 addendum was lost** and is recorded as lost.
+- **The bell's round-6 batch of eight owner findings** is carried as pending
+  work with no diagnostic coverage for any of the eight; only those with a clear
+  general form are in the ledger as rows.
+- **`the-wake` and `the-toll-road` were never staged for the owner**, so their
+  records hold worker findings only — deliberately not in this ledger.
+- The record contained one **wrong DW number** for a real finding (the
+  branch-aware walk origin was written as `DW0486`, which is a different rule;
+  it is `DW0488`). The catalogue is authoritative over any narrative log, and a
+  ledger row citing a code must be checked against it — the gate reports the
+  mismatch as `MISSING-CHECK` only when the cited code is absent entirely, so a
+  wrong-but-existing code passes silently. That is the gate's own known blind
+  spot.
 
 ## Why the final round was clean
 

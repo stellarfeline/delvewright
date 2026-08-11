@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.1.0
+version: 1.2.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -1066,17 +1066,32 @@ pipeline. Full derivation from the 22-round island run:
    deliverable, not the code. `DW0489` found a second live instance the moment it
    landed — one the owner had already lost a click to. Where no diagnostic is
    possible, write that down; it becomes a risk item at the next staging review.
-4. **Audit the FULL ledger from round 1 before staging any build** — never from
-   the last round. Nothing she has reported may survive into a build you hand
-   her.
-5. **Pre-flight, in this order, before the invitation**: full ladder green
-   (PackTest → bot critical path + die-retry → every branch run) → ledger audit →
-   localized builds + double-build byte-identical → server boots and self-checks
-   → then invite. Not "the build compiled, come look".
-6. **Update `DESIGN.md` in the same round and run its conformance review.** The
+4. **Append every finding to the engine repo's `docs/playtest-findings.json`**,
+   the same day, with its general form and the check that carries it — this is
+   the cross-campaign ledger, and `GENERATION.md`'s table is the per-campaign
+   view of it. A finding recorded only in the campaign is a finding the NEXT
+   campaign learns nothing from.
+5. **Audit the FULL ledger from round 1 before staging any build** — never from
+   the last round, and never by reading. Run it:
+
+       python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md
+
+   The gate answers the question rules 3 and 4 are about — for every finding
+   ever reported, on any campaign, does its general form exist and does it BIND,
+   non-zero, on THIS build — and it distinguishes the ways a green has lied
+   here: never built, check gone, matched nothing, the campaign has none of the
+   objects, or the campaign's `dsl_version` never reached the surface the check
+   keys off. **A red is not permission to stop**: it is the list of defect
+   classes she is not protected from, and it goes into the round summary item by
+   item. Never backfill a weak diagnostic to turn a row green.
+6. **Pre-flight, in this order, before the invitation**: full ladder green
+   (PackTest → bot critical path + die-retry → every branch run) → staging gate
+   (step 5) → localized builds + double-build byte-identical → server boots and
+   self-checks → then invite. Not "the build compiled, come look".
+7. **Update `DESIGN.md` in the same round and run its conformance review.** The
    island's design record went eight rounds unupdated and the audit that caught
    up found seven changes no one had asked for.
-7. **Close the round in `GENERATION.md` with its machine record**, not just
+8. **Close the round in `GENERATION.md` with its machine record**, not just
    prose: how many validation-loop iterations it took to reach green, and every
    DW code the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`).
    Write it even when the count is zero — a round that hit nothing is the
