@@ -2333,6 +2333,11 @@ export class MineflayerExecutor implements StepExecutor {
   private async trackScore(objective: string): Promise<boolean> {
     const bot = this.requireBot();
     if (this.trackedObjective === objective && this.scores.has(objective)) return true;
+    // Swapping the slot STOPS the server tracking the previous objective, so its
+    // cached values freeze at whatever they last were — and a frozen ledger read as
+    // a live one is the exact shape of a currency assertion that passes over a
+    // forfeit that never happened. Drop it rather than keep it.
+    if (this.trackedObjective !== undefined) this.scores.delete(this.trackedObjective);
     bot.chat(`/scoreboard objectives setdisplay sidebar ${objective}`);
     this.trackedObjective = objective;
     const ok = await this.waitFor(
@@ -2359,6 +2364,7 @@ export class MineflayerExecutor implements StepExecutor {
     } catch {
       // teardown must never mask the run's own verdict
     }
+    this.scores.delete(this.trackedObjective);
     this.trackedObjective = undefined;
   }
 
