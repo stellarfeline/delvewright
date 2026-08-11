@@ -6,8 +6,10 @@
 //! not read.
 
 use delvewright_grammar::eval::EvalError;
+use delvewright_grammar::expand::ExpandError;
 use delvewright_grammar::geom::Axis;
 use delvewright_grammar::ir::{Program, ProgramError};
+use delvewright_grammar::library::bell::chapel_ward;
 use delvewright_grammar::orient::OrientError;
 use delvewright_grammar::{Box3, ExpandOptions, Limits, expand};
 
@@ -149,4 +151,119 @@ fn nested_errors_read_as_sentences_not_as_debug_structs() {
             .starts_with("rule \"all\": the reorientation names"),
         "{err}"
     );
+}
+
+/// **A refusal is the most informative event in a sweep, and it used to carry
+/// the least information of anything the tool printed.**
+///
+/// `bell:chapel-ward`'s frame guard is a four-clause conjunction, and candidates
+/// breaking different clauses of it all printed the same sentence, because the
+/// message named the rule and withheld the reading — an author could not even
+/// tell those cases apart. This is the `great-hearth` candidate, held to what
+/// they must be able to deduce the next candidate from.
+#[test]
+fn a_guard_refusal_states_the_clause_the_values_and_the_distance() {
+    let mut zone = chapel_ward();
+    // `great-hearth`: a rest ward long enough to starve the chute of its run.
+    zone.set_param("hearth_run", 14).unwrap();
+    let region = Box3::at_origin(chapel_ward::REGION);
+    let err = expand(&zone, region, &ExpandOptions::seeded(11)).unwrap_err();
+
+    let ExpandError::NoApplicableRule { refusal } = &err else {
+        panic!("a guard refused, so the error is a refusal: {err}");
+    };
+    assert_eq!(refusal.symbol, "ward_plan");
+
+    let text = err.to_string();
+    // The sentence that was the whole message before is still its first line.
+    assert_eq!(
+        text.lines().next().unwrap(),
+        "no alternative of rule \"ward_plan\" applies to this scope, and none is `otherwise`"
+    );
+
+    // The box, in the frame the rule reads it in — the zone opens with
+    // `z(Largest)`, so `Dimension.Z` is the long axis and not the box's Z by
+    // luck. An author who cannot see that cannot use any of the numbers below.
+    assert!(text.contains("scope: 16x9x26 at 0,0,0"), "{text}");
+    assert!(text.contains("Dimension.Z = 26 (world Z)"), "{text}");
+
+    // The conjunct that was false, named, with both sides measured...
+    assert!(
+        text.contains(
+            "FALSE  Dimension.Z - junction_run - hearth_run > Dimension.X - strip_depth  4 > 7"
+        ),
+        "{text}"
+    );
+    // ...the derived operands broken into the knobs that move them — the number
+    // alone would say how far off it is and nothing about what to change...
+    assert!(
+        text.contains("left  = 4   from Dimension.Z = 26, junction_run = 8, hearth_run = 14"),
+        "{text}"
+    );
+    assert!(
+        text.contains("right = 7   from Dimension.X = 16, strip_depth = 9"),
+        "{text}"
+    );
+    // ...and the distance, from both sides.
+    assert!(
+        text.contains("4 short: the left must rise to 8, or the right fall to 3"),
+        "{text}"
+    );
+    // The three clauses that held are shown holding, with their numbers: an
+    // author fixing one clause must be able to see the headroom on the others
+    // rather than discovering it on the next run.
+    assert!(text.contains("ok     strip_depth > junction_run"), "{text}");
+    assert!(
+        text.contains("every clause must hold; 1 of 4 does not"),
+        "{text}"
+    );
+
+    // The deduction the report is for: `26 - 8 - hearth_run` must reach 8, so
+    // `hearth_run <= 10`. Ten builds; eleven is the same refusal one block on.
+    let mut deduced = chapel_ward();
+    deduced.set_param("hearth_run", 10).unwrap();
+    expand(&deduced, region, &ExpandOptions::seeded(11)).expect("the deduced candidate builds");
+
+    let mut one_over = chapel_ward();
+    one_over.set_param("hearth_run", 11).unwrap();
+    let err = expand(&one_over, region, &ExpandOptions::seeded(11)).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("1 short: the left must rise to 8, or the right fall to 6"),
+        "{err}"
+    );
+}
+
+/// The report belongs to guard evaluation, not to the sweep that surfaced it:
+/// a guard refusing anywhere says the same thing, including deep inside a
+/// derivation where the scope is a sub-box no caller ever named.
+#[test]
+fn a_refusal_inside_a_derivation_reports_the_sub_box_it_was_handed() {
+    let p = program(
+        r#"{ "name": "nested", "start": "all", "params": { "floor": 6 },
+             "rules": {
+               "all": [{ "body": {
+                 "op": "split", "axis": "z",
+                 "sizes": [{ "size": "absolute", "blocks": { "expr": "int", "value": 3 } },
+                           { "size": "relative", "weight": { "expr": "int", "value": 1 } }],
+                 "children": [{ "op": "call", "symbol": "wing" }, { "op": "void" }] } }],
+               "wing": [{ "when": { "cond": "cmp",
+                   "lhs": { "expr": "dim", "dim": "z" }, "op": "ge",
+                   "rhs": { "expr": "param", "name": "floor" } },
+                 "body": { "op": "fill", "material": "minecraft:stone" } }] } }"#,
+    );
+    let err = expand(&p, Box3::at_origin([8, 4, 20]), &ExpandOptions::seeded(0)).unwrap_err();
+    let text = err.to_string();
+    // The whole region is 20 deep and passes the guard; the piece the rule was
+    // actually handed is 3 deep, and that is the number the report must state.
+    assert!(text.contains("scope: 8x4x3 at 0,0,0"), "{text}");
+    assert!(
+        text.contains("FALSE  Dimension.Z >= floor  3 >= 6"),
+        "{text}"
+    );
+    assert!(
+        text.contains("3 short: the left must rise to 6, or the right fall to 3"),
+        "{text}"
+    );
+    assert!(text.contains("its one clause does not hold"), "{text}");
 }
