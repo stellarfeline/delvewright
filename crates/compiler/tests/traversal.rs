@@ -144,7 +144,7 @@ fn build(edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
 /// can provoke is one, and unwrapping it at each call site buried the assertion.
 fn coded(err: BuildFailure) -> (&'static str, String) {
     match err {
-        BuildFailure::Diagnostic { code, message } => (code, message),
+        BuildFailure::Diagnostic { code, message } => (code.id(), message),
         other => panic!("expected a coded build diagnostic, got {other:?}"),
     }
 }

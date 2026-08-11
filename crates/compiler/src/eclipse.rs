@@ -84,11 +84,12 @@ use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: &str = "DW0359";
+pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 
 /// `DW0422`: a **seal's answer hitbox** shares space with another compiler-owned
 /// interaction affordance (DSL v0.8, task #142).
@@ -102,14 +103,14 @@ pub const DW_BODY_ECLIPSE: &str = "DW0359";
 /// unshippable. Triggers anchored **on the gate itself** are not a collision: they
 /// ride the seal's hitboxes and summon nothing (`emit::env_trigger_setup`), the
 /// same merge `strike`-on-an-NPC's-anchor has used since round 6.
-pub const DW_SEAL_HITBOX_COLLISION: &str = "DW0422";
+pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
 
 /// A build failure raised by the eclipse proof (mapped to exit 3, like the
 /// `nav`/`edit` build errors it sits beside).
 #[derive(Debug)]
 pub struct EclipseError {
     /// The stable diagnostic code ([`DW_BODY_ECLIPSE`]).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, naming both entities and both cells.
     pub message: String,
 }

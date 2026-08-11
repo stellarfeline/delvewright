@@ -29,6 +29,7 @@ use delvewright_dsl::{
 use crate::flow::objectives_in_order;
 use crate::registry::{AnchorMeta, PrefabRegistry};
 use crate::solver::{self, Facing, Rotation, SealFill, Splitmix64};
+use delvewright_dsl::DwCode;
 
 /// World-space distance between successive area origins.
 pub const AREA_SPACING: i32 = 256;
@@ -1078,7 +1079,7 @@ pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
 #[derive(Debug)]
 pub struct PlanError {
     /// The stable `DW03xx` code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation.
     pub message: String,
     /// Advisory findings that were raised before this error stopped planning,
@@ -1091,7 +1092,7 @@ pub struct PlanError {
 
 impl PlanError {
     /// Build a plan error with an explicit code.
-    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: DwCode, message: impl Into<String>) -> Self {
         PlanError {
             code,
             message: message.into(),
@@ -1108,7 +1109,7 @@ impl PlanError {
 
 /// `DW0300`: generic build/resolution failure (missing prefab metadata, unknown
 /// anchor, dependency cycle in the critical path).
-pub const DW_BUILD: &str = "DW0300";
+pub const DW_BUILD: DwCode = DwCode::every_version("DW0300");
 
 /// `DW0306`: gate-aware reachability deadlock (M2 fix 7). After the solver produces
 /// a layout, sealed gates are modelled as cut edges in the piece-connectivity
@@ -1116,11 +1117,11 @@ pub const DW_BUILD: &str = "DW0300";
 /// earlier objective (in the quest/objective DAG order) has opened is a deadlock —
 /// the delve is unwinnable even though every anchor resolves. The canonical case:
 /// a key chest sealed behind the very gate its key opens.
-pub const DW_GATE_DEADLOCK: &str = "DW0306";
+pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306");
 
 /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
 /// land at sea level — the piece floats above the sea or is drowned by it.
-pub const DW_OCEAN_WATERLINE: &str = "DW0344";
+pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
 
 /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
 /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
@@ -1128,7 +1129,7 @@ pub const DW_OCEAN_WATERLINE: &str = "DW0344";
 /// world then falls back to the vanilla spawn search, which a dedicated server
 /// resolves to the surface but the integrated (singleplayer) server resolves to
 /// the build floor — inside solid stone. Silent before; a hard build error now.
-pub const DW_NO_ENTRY_ANCHOR: &str = "DW0345";
+pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 
 /// The prefab-metadata anchor names that mark a campaign's **entry point**, in
 /// resolution order. One concept, two spellings in the shipped tileset library:
