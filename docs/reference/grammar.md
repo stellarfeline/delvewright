@@ -169,6 +169,47 @@ than 65 536 distinct block states in one model), `MarkOutsideScope`,
 `VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
 `Debug` struct.
 
+### A refusal states what it measured
+
+`NoApplicableRule` is the one failure that is also a *design answer*: the program
+saying, in its own terms, what the scope would have to be. Naming the rule threw
+that away: `bell:chapel-ward`'s frame guard is a **four-clause conjunction**, and
+candidates breaking different clauses of it all printed the same sentence — an
+author could not tell those cases apart, let alone read the distance. So the
+error
+carries `GuardRefusal`: the scope's box **and its local-to-world axis mapping**
+(a rule reasons in the frame it was handed, so the same box passes under one
+orientation and refuses under another), then every alternative in declaration
+order, and within each every clause of its guard — as written and as measured,
+with the named quantities a *derived* operand is built from, and, for a clause
+that decided the refusal, the distance to satisfaction **from both sides**
+(either can move, and the guard does not know which one the author may touch).
+Clauses that held are shown holding, with their numbers: an author fixing one
+clause must be able to see the headroom on the others rather than discovering it
+on the next run.
+
+```
+no alternative of rule "ward_plan" applies to this scope, and none is `otherwise`
+    scope: 16x9x26 at 0,0,0; the rule reads Dimension.X = 16 (world X), …
+    alternative 1 of 1 — every clause must hold; 1 of 4 does not:
+      ok     strip_depth > junction_run                                           9 > 8
+      FALSE  Dimension.Z - junction_run - hearth_run > Dimension.X - strip_depth  4 > 7
+        left  = 4   from Dimension.Z = 26, junction_run = 8, hearth_run = 14
+        right = 7   from Dimension.X = 16, strip_depth = 9
+        4 short: the left must rise to 8, or the right fall to 3
+```
+
+The reporting belongs to **guard evaluation** (`Scope::explain` → `CondTrace`),
+not to the command that surfaced it, so a rule refusing anywhere — including deep
+inside a derivation, on a sub-box no caller named — says the same thing. It runs
+only on the refusal path, so the happy path pays nothing.
+
+`Scope::test` short-circuits and a report may not, so a clause `test` never
+consulted can be unevaluable; it becomes a `CondTrace::Unreadable` node that says
+why and counts as not holding — exactly the weight `test` gave it — rather than
+replacing the author's diagnostic with one about a clause that decided nothing.
+`explain(c).holds() == test(c)` wherever `test` returns at all.
+
 The three budgets live on `Limits` and are inputs, never silent clamps:
 `max_depth` and `max_scopes` turn an unguarded recursive rule into a diagnostic
 instead of a hang; `max_volume` (default 2²⁴ cells) is checked *before* the dense
@@ -1549,6 +1590,15 @@ the zone look stricter. An override naming a parameter the program does not
 declare is refused outright, because a silently-dropped override produces a
 candidate that reads as varied on the manifest and renders as a duplicate on the
 page.
+
+The row carries that fact **as data, not only as prose**: alongside `error` it
+has `refusal`, the serialised `GuardRefusal` of §4, whenever a guard was what
+declined. A refusal reason a human can act on and a tool cannot is half a
+diagnostic — `sweep.json` is what `tools/zone-sheets.py` and any other driver
+read, so ranking, grouping or auto-widening candidates does not mean parsing a
+sentence. A candidate that failed for a reason that is *not* a guard declining
+(an export refusal, a write error) has no `refusal` and says so in `error`
+alone, rather than being flattened into a shape it is not.
 
 Each zone's **design box** is a constant on its own module (`bell::gate_ward::
 REGION`) and the registry `bell::ZONES` pairs it with its constructor, so a tool
