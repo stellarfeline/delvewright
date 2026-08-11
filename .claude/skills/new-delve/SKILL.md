@@ -1072,7 +1072,11 @@ pipeline. Full derivation from the 22-round island run:
    view of it. A finding recorded only in the campaign is a finding the NEXT
    campaign learns nothing from.
 5. **Audit the FULL ledger from round 1 before staging any build** — never from
-   the last round, and never by reading. Run it:
+   the last round, and never by reading. You do not have to remember to: the
+   staging paths REQUIRE it. `tools/playtest-server.sh up` runs the gate between
+   the build and the container and refuses to serve a red build; the compose
+   owner-play path requires the admission token the gate mints. Run it yourself
+   first so the red list is in the round summary before she is invited:
 
        python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md
 
@@ -1083,7 +1087,10 @@ pipeline. Full derivation from the 22-round island run:
    objects, or the campaign's `dsl_version` never reached the surface the check
    keys off. **A red is not permission to stop**: it is the list of defect
    classes she is not protected from, and it goes into the round summary item by
-   item. Never backfill a weak diagnostic to turn a row green.
+   item. Never backfill a weak diagnostic to turn a row green. To show her a red
+   build deliberately (a framing check, not a QC round), the override is
+   `--stage-anyway "<reason>" --acknowledge-red <N>` — it prints every class
+   being overridden and the server announces it at boot.
 6. **Pre-flight, in this order, before the invitation**: full ladder green
    (PackTest → bot critical path + die-retry → every branch run) → staging gate
    (step 5) → localized builds + double-build byte-identical → server boots and

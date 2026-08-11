@@ -18,6 +18,7 @@ grows.
 import importlib.util
 import json
 import pathlib
+import sys
 
 import pytest
 
@@ -326,3 +327,183 @@ def test_the_live_ledger_parses_and_every_row_is_well_formed(gate):
         if r.get("carrier") is None and r.get("disposition"):
             assert len(r.get("justification", "")) >= gate.MIN_JUSTIFICATION, r["id"]
         assert r["finding"][:1].islower() or r["finding"][:1].isupper(), r["id"]
+
+
+# ---------------------------------------------------------------------------
+# Admission: the part that makes the gate impossible to skip
+#
+# The gate shipped invoked by nothing but these tests — the UNRUN shape. What
+# closes it is not a doc line but an artifact the owner-facing paths REQUIRE:
+# `tools/playtest-server.sh` runs the gate itself, and
+# `validation/owner-play.yaml` runs `validation/staging-admission.sh` as a
+# service both 25565 binders `depends_on`. These drive the real verifier
+# script, so a change to the token format reds here instead of silently
+# admitting an unadmitted build.
+# ---------------------------------------------------------------------------
+
+import subprocess
+
+VERIFIER = pathlib.Path(__file__).resolve().parents[2] / "validation" / "staging-admission.sh"
+
+
+def verify(tree: pathlib.Path):
+    return subprocess.run(
+        ["bash", str(VERIFIER), str(tree)], capture_output=True, text=True
+    )
+
+
+def admitted_tree(tmp_path, gate, *, overridden=False):
+    """A build tree carrying a real token, minted by the real gate."""
+    tree = tmp_path / "out"
+    (tree / "validation").mkdir(parents=True, exist_ok=True)
+    (tree / "manifest.json").write_text('{"outputs": {"a": "b"}}')
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    ledger = tmp_path / "led.json"
+    rows = [dict(BOUND_ROW, id="ok")]
+    if overridden:
+        rows.append({"id": "red", "finding": "an uncovered class", "carrier": None})
+    ledger.write_text(json.dumps({"findings": rows}))
+    cmd = [
+        sys.executable, str(SCRIPT),
+        "--campaign", str(camp), "--build", str(tree), "--ledger", str(ledger),
+    ]
+    if overridden:
+        cmd += [
+            "--stage-anyway", "a deliberate look at one beat, not a QC round",
+            "--acknowledge-red", "1",
+        ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    return tree
+
+
+def test_an_unadmitted_build_is_refused_by_the_verifier(gate, tmp_path):
+    tree = tmp_path / "out"
+    tree.mkdir()
+    (tree / "manifest.json").write_text("{}")
+    r = verify(tree)
+    assert r.returncode == 1
+    assert "no admission token" in r.stderr
+
+
+def test_an_admitted_build_is_accepted(gate, tmp_path):
+    r = verify(admitted_tree(tmp_path, gate))
+    assert r.returncode == 0
+    assert "admitted" in r.stderr
+
+
+def test_a_refusal_revokes_an_existing_token(gate, tmp_path):
+    """A tree green once and red now must not still carry its old token —
+    that stale token is the bypass."""
+    tree = admitted_tree(tmp_path, gate)
+    assert (tree / "staging-admission.json").is_file()
+    camp = tmp_path / "camp"
+    red = tmp_path / "red.json"
+    red.write_text(json.dumps({"findings": [{"id": "r", "finding": "uncovered", "carrier": None}]}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(red)],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 1
+    assert not (tree / "staging-admission.json").exists()
+    assert verify(tree).returncode == 1
+
+
+def test_a_token_minted_for_another_build_is_rejected(gate, tmp_path):
+    """Run the gate green on one tree, serve another — the obvious bypass."""
+    tree = admitted_tree(tmp_path, gate)
+    (tree / "manifest.json").write_text('{"outputs": {"a": "CHANGED"}}')
+    r = verify(tree)
+    assert r.returncode == 1
+    assert "DIFFERENT build tree" in r.stderr
+
+
+def test_a_build_with_no_manifest_cannot_be_admitted(gate, tmp_path):
+    tree = tmp_path / "out"
+    tree.mkdir()
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    ledger = tmp_path / "led.json"
+    ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(ledger)],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 2
+    assert "no manifest.json" in proc.stderr
+
+
+def test_an_overridden_token_is_announced_not_waved_through(gate, tmp_path):
+    """The banner failing open is the defect this pins: the first cut used
+    BASIC sed with a `true\\|false` alternation, which matches nothing, so an
+    overridden build reported as a clean one."""
+    r = verify(admitted_tree(tmp_path, gate, overridden=True))
+    assert r.returncode == 0
+    assert "UNDER OVERRIDE" in r.stderr
+    assert "not a new finding" in r.stderr
+    assert "a deliberate look at one beat" in r.stderr
+
+
+def test_the_override_needs_a_substantive_reason(gate, tmp_path):
+    tree, camp, ledger = _red_setup(tmp_path)
+    proc = _gate(tree, camp, ledger, "too busy", "1")
+    assert proc.returncode == 2
+    assert "needs a real reason" in proc.stderr
+
+
+def test_the_override_needs_the_exact_current_red_count(gate, tmp_path):
+    """A bare flag becomes habit; a number that moves cannot."""
+    tree, camp, ledger = _red_setup(tmp_path)
+    proc = _gate(tree, camp, ledger, "one framing check, deliberately not a QC round", "7")
+    assert proc.returncode == 2
+    assert "does not match" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+
+def test_the_override_refuses_when_nothing_is_red(gate, tmp_path):
+    """An override that overrode nothing would normalise the flag."""
+    tree = tmp_path / "out"
+    tree.mkdir()
+    (tree / "manifest.json").write_text("{}")
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    ledger = tmp_path / "led.json"
+    ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
+    proc = _gate(tree, camp, ledger, "a reason long enough to pass the floor", "0")
+    assert proc.returncode == 2
+    assert "overrode nothing" in proc.stderr
+
+
+def _red_setup(tmp_path):
+    tree = tmp_path / "out"
+    tree.mkdir()
+    (tree / "manifest.json").write_text("{}")
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    ledger = tmp_path / "led.json"
+    ledger.write_text(json.dumps({"findings": [{"id": "r", "finding": "uncovered", "carrier": None}]}))
+    return tree, camp, ledger
+
+
+def _gate(tree, camp, ledger, reason, ack):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         "--ledger", str(ledger), "--stage-anyway", reason, "--acknowledge-red", ack],
+        capture_output=True, text=True,
+    )
+
+
+def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
+    """The UNRUN tripwire. This gate was correct and called by nothing; a doc
+    line is not an invocation. If either owner-facing path stops requiring
+    admission, that is this test, not a review someone has to remember."""
+    root = pathlib.Path(__file__).resolve().parents[2]
+    server = (root / "tools" / "playtest-server.sh").read_text()
+    assert "staging-gate.py" in server, "playtest-server.sh no longer runs the gate"
+    # and it must run BEFORE the container exists, or a refusal costs a session
+    assert server.index("staging-gate.py") < server.index("docker run"), \
+        "the gate must run before the container is created"
+
+    owner_play = (root / "validation" / "owner-play.yaml").read_text()
+    assert "staging-admission" in owner_play
+    assert owner_play.count("service_completed_successfully") >= 2, \
+        "both 25565-publishing services must depend on the admission check"

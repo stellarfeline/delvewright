@@ -102,6 +102,7 @@ Deterministic, offline, Python 3 stdlib only.
 
 import argparse
 import fnmatch
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -732,6 +733,51 @@ def esc(s: str) -> str:
     return str(s).replace("|", "\\|").replace("\n", " ")
 
 
+def build_fingerprint(build: pathlib.Path) -> str | None:
+    """This build tree's identity, for an admission token to bind to.
+
+    `manifest.json` is the compiler's reproducibility index over the WHOLE
+    output tree, so hashing it identifies the build without walking it — and a
+    rebuilt or edited tree cannot reuse an older token. A tree with no manifest
+    has no identity and therefore cannot be admitted at all.
+    """
+    m = build / "manifest.json"
+    if not m.is_file():
+        return None
+    return hashlib.sha256(m.read_bytes()).hexdigest()
+
+
+def write_admission(
+    path: pathlib.Path,
+    subj: Subject,
+    results: list[dict],
+    fingerprint: str,
+    ledger_digest: str,
+    override: dict | None,
+) -> None:
+    """Mint the token the owner-facing paths require.
+
+    The token is not a receipt that the gate ran — it is a statement about ONE
+    build tree. It carries the fingerprint so a verifier can refuse a token
+    minted for a different build, which is what stops the obvious bypass: run
+    the gate green on some tree, then serve another.
+    """
+    reds = [r for r in results if r["verdict"] in RED_VERDICTS]
+    doc = {
+        "schema": 1,
+        "campaign": subj.name,
+        "build_fingerprint": fingerprint,
+        "ledger_digest": ledger_digest,
+        "findings_total": len(results),
+        "red_count": len(reds),
+        "reds": [{"id": r["id"], "verdict": r["verdict"]} for r in reds],
+        "overridden": override is not None,
+        "override": override,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--campaign", required=True, type=pathlib.Path)
@@ -743,6 +789,33 @@ def main() -> int:
         "--strict",
         action="store_true",
         help="also fail on DECLARED-UNCOVERABLE rows (the absolute floor)",
+    )
+    ap.add_argument(
+        "--admit",
+        type=pathlib.Path,
+        help=(
+            "write the admission token here on a pass (default: "
+            "<build>/staging-admission.json). The owner-facing paths refuse to "
+            "serve a build whose token is absent, stale or for another tree."
+        ),
+    )
+    ap.add_argument(
+        "--stage-anyway",
+        metavar="REASON",
+        help=(
+            "DELIBERATE OVERRIDE: admit a red build, recording REASON in the "
+            "token. Requires --acknowledge-red with the exact current red count."
+        ),
+    )
+    ap.add_argument(
+        "--acknowledge-red",
+        type=int,
+        metavar="N",
+        help=(
+            "the number of red findings you are overriding. Must equal the real "
+            "count exactly — it changes as the ledger does, so it cannot become "
+            "a flag you type from memory."
+        ),
     )
     args = ap.parse_args()
 
@@ -785,6 +858,16 @@ def main() -> int:
     fail = [r for r in results if r["verdict"] in RED_VERDICTS]
     if args.strict:
         fail += [r for r in results if r["verdict"] in EXEMPT_VERDICTS]
+
+    admit_path = args.admit or (args.build / "staging-admission.json")
+    fingerprint = build_fingerprint(args.build)
+    ledger_digest = hashlib.sha256(args.ledger.read_bytes()).hexdigest()
+
+    # A stale token must never survive a refusal: if this build was admitted
+    # once and has since gone red, the old token is the bypass.
+    if admit_path.is_file():
+        admit_path.unlink()
+
     if fail:
         print(
             f"staging-gate: REFUSED — {len(fail)} of {len(results)} findings have no "
@@ -793,10 +876,105 @@ def main() -> int:
         )
         for r in fail:
             print(f"  {r['id']:<14} {r['verdict']:<16} {r['detail']}", file=sys.stderr)
-        return 1
+
+        if args.stage_anyway is None:
+            print(
+                "staging-gate: this build is NOT stageable. Fix the red list, or "
+                "override deliberately:\n"
+                f'  --stage-anyway "<why this session needs a red build>" '
+                f"--acknowledge-red {len(fail)}",
+                file=sys.stderr,
+            )
+            return 1
+
+        # ---- the deliberate override -----------------------------------
+        # Explicit, loud, and re-typed against a number that moves. The failure
+        # mode being designed against is not "someone overrides once", it is
+        # "the override becomes the way the tool is run".
+        reason = args.stage_anyway.strip()
+        if len(reason) < MIN_JUSTIFICATION:
+            print(
+                f"staging-gate: --stage-anyway needs a real reason "
+                f"(≥{MIN_JUSTIFICATION} chars); got {len(reason)}",
+                file=sys.stderr,
+            )
+            return 2
+        if args.acknowledge_red is None:
+            print(
+                "staging-gate: --stage-anyway requires --acknowledge-red "
+                f"{len(fail)} — the count is the acknowledgement",
+                file=sys.stderr,
+            )
+            return 2
+        if args.acknowledge_red != len(fail):
+            print(
+                f"staging-gate: --acknowledge-red {args.acknowledge_red} does not "
+                f"match the {len(fail)} red finding(s) above. The number moved "
+                "since you last looked; read the list and try again.",
+                file=sys.stderr,
+            )
+            return 2
+
+        by_verdict: dict[str, list[str]] = {}
+        for r in fail:
+            by_verdict.setdefault(r["verdict"], []).append(r["id"])
+        print("", file=sys.stderr)
+        print("=" * 72, file=sys.stderr)
+        print(
+            f"OVERRIDE — staging `{subj.name}` with {len(fail)} UNCOVERED "
+            "finding class(es).",
+            file=sys.stderr,
+        )
+        print(f"Reason given: {reason}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("These are the defect classes this session is NOT protected from:", file=sys.stderr)
+        for verdict, ids in sorted(by_verdict.items()):
+            print(f"  {verdict:<16} {', '.join(ids)}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(
+            "Every one of them is a class the owner has already hit once. If she "
+            "hits one again in this session it is not a finding — it is this "
+            "override.",
+            file=sys.stderr,
+        )
+        print("=" * 72, file=sys.stderr)
+
+        if fingerprint is None:
+            print(
+                "staging-gate: build tree has no manifest.json — it has no "
+                "identity to admit, override or not",
+                file=sys.stderr,
+            )
+            return 2
+        write_admission(
+            admit_path,
+            subj,
+            results,
+            fingerprint,
+            ledger_digest,
+            {"reason": reason, "acknowledged_red": len(fail)},
+        )
+        print(f"staging-gate: admitted UNDER OVERRIDE -> {admit_path}", file=sys.stderr)
+        return 0
+
+    if args.stage_anyway is not None:
+        print(
+            "staging-gate: --stage-anyway given but nothing is red; refusing to "
+            "record an override that overrode nothing",
+            file=sys.stderr,
+        )
+        return 2
+    if fingerprint is None:
+        print(
+            f"staging-gate: {subj.name} is clean, but the build tree has no "
+            "manifest.json — nothing to bind an admission token to",
+            file=sys.stderr,
+        )
+        return 2
+    write_admission(admit_path, subj, results, fingerprint, ledger_digest, None)
     print(
         f"staging-gate: {subj.name} is stageable — all {len(results)} findings carry a "
-        f"live, binding check or a justified exemption",
+        f"live, binding check or a justified exemption; admitted -> {admit_path}",
         file=sys.stderr,
     )
     return 0

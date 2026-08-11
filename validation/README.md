@@ -25,6 +25,27 @@ at compose time only and never leak into the shipped delve image; CI asserts the
 absence. Every tool in the repo, including the scripts below, is indexed in
 [`../docs/reference/tools.md`](../docs/reference/tools.md).
 
+
+## The owner-play path is gated
+
+`validation/owner-play.yaml` is the only compose file that publishes host 25565,
+which makes it the only compose path to the owner's client — so it carries a
+`staging-admission` service that `server` and `playtest` both
+`depends_on: service_completed_successfully`. It runs
+`validation/staging-admission.sh`, which refuses any build tree not admitted by
+`tools/staging-gate.py` for THAT EXACT tree (the token binds the tree's
+`manifest.json` sha256). Mint the token on the host first:
+
+```sh
+python3 tools/staging-gate.py --campaign <campaign-dir> --build validation/delve-output
+EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+    --profile play up
+```
+
+Worker ladders never name `owner-play.yaml` and are unaffected. Full rationale —
+including why this is bound to the staging event instead of a checklist line —
+is `docs/reference/playtest-methodology.md` rule 7.
+
 ## Sharing the Docker host (isolation by construction)
 
 **Run your ladder in its own compose project. There is nothing to queue for.**

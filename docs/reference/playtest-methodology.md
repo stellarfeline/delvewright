@@ -194,14 +194,63 @@ label buys nothing; the gate checks the justification is there and says
 something. Their count is in the headline because rule 4 makes each a standing
 risk item at that staging review.
 
+### The gate is wired to the staging EVENT, not to a doc line
+
+The first cut of this rule ended at "no build is handed to the owner until the
+gate has been run". That is a process obligation, and a process obligation is
+what **UNRUN** is made of: a correct gate — right verdicts, fails in the
+direction that drifts — that nothing calls. This project has shipped that shape
+five times, most recently `bin/lab-audit.py`, whose own commit message promised
+staleness would be "measured not remembered" and then shipped a script that had
+to be remembered. The record went stale twice more.
+
+**A doc line is not an invocation.** So the staging surface requires the gate's
+output rather than asking for it. The surface is exactly the set of paths that
+put a build in front of the owner, and every one is covered:
+
+| Staging path | How the gate is bound to it |
+|---|---|
+| `tools/playtest-server.sh up` (throwaway `docker run`, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and `docker run`; a refusal dies before any container exists |
+| `docker compose -f compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
+| `.github/workflows/release.yml` → multi-arch delve image to GHCR (she runs it on the Pi) | the gate runs before the GHCR login, so a refusal publishes nothing |
+
+The compose path cannot run the gate itself — the gate needs the campaign
+SOURCE, which the build tree does not carry, and Python, which the delve image
+must never gain (ADR-0003). So the gate **mints an admission token** into the
+build tree and `validation/staging-admission.sh` verifies it. The token binds
+the sha256 of `manifest.json`, the compiler's reproducibility index over the
+whole output tree, which closes the obvious bypass: run the gate green on one
+tree and serve another. A refusal **deletes** any existing token, so a tree that
+was green once and is red now carries nothing.
+
+Not covered, and deliberately: `validation/playtest-note-flow.sh` and
+`rehearsal-flow.sh` boot a server for a *bot* on an ephemeral port, and the
+worker ladders (`--profile validate`, plain `compose.yaml`) never name
+`owner-play.yaml`. None of them is a path to her client, and gating them would
+slow every ladder to protect nobody.
+
+### The override, and why it is shaped the way it is
+
+She will sometimes want to look at one beat mid-work. That is legitimate, and an
+override that did not exist would simply be routed around. It is
+`--stage-anyway "<reason>" --acknowledge-red <N>`, and it is deliberately
+awkward: the reason must be substantive, and **`N` must equal the current red
+count exactly**. The count moves as the ledger does, so it cannot be typed from
+memory — the failure mode being designed against is not "someone overrides
+once", it is "the override becomes how the tool is run". It prints every class
+being overridden, stamps the reason into the token, and
+`staging-admission.sh` re-announces it at boot: *anything she hits from those
+classes in this session is the override, not a new finding.*
+
 **Obligation.** Every playtest APPENDS its findings to the ledger, the same day,
-with the triage rule 4 requires. No build is handed to the owner until
-`tools/staging-gate.py` has been run against that exact campaign and build tree,
-and its red list is carried into the round summary item by item — a red is not
-permission to stop, it is the list of classes she is not protected from. The
-gate is deliberately **not** a CI status check: it is red today by design, and
-making an honest red list blocking would force the one move CLAUDE.md forbids.
-Its falsification suite is in CI instead (`tools/tests/test_staging_gate.py`).
+with the triage rule 4 requires. The gate's red list is carried into the round
+summary item by item — a red is not permission to stop, it is the list of
+classes she is not protected from. The gate is deliberately **not** a CI status
+check: it is red today by design, and making an honest red list blocking would
+force the one move CLAUDE.md forbids. Its falsification suite is in CI instead
+(`tools/tests/test_staging_gate.py`), including a tripwire asserting that both
+owner-facing paths still require admission — so the UNRUN shape reds here rather
+than waiting for a reviewer to notice it again.
 
 ### What this ledger is reconstructed from, and what is missing
 

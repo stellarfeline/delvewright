@@ -213,6 +213,25 @@ validation/          # docker compose: headless server + bot, same image as CI &
   validation artifact states its binding count; a zero binding is a finding and
   is named in the round summary. Full derivation and the other playtest-round
   obligations: `docs/reference/playtest-methodology.md`.
+- **A gate nothing INVOKES is not a gate — it is UNRUN**, the fourth vacuity
+  mode, and this project has shipped it five times. A check can be correct in
+  every way that is reviewable — right verdicts, honest red list, fails in the
+  direction that actually drifts — and still protect nothing, because the
+  obligation to run it lives in a doc line. `bin/lab-audit.py` is the worked
+  example: its own commit message promised staleness would be "measured not
+  remembered", and it shipped a script that had to be remembered; the record
+  went stale twice more and needed four backfills. **A doc line is not an
+  invocation.** So a new gate is not done when it is correct — it is done when
+  the event it guards cannot happen without it, and the review question is
+  always *what calls this, and what happens if someone does the guarded thing
+  without calling it?* Bind it to the event (a script step, a compose
+  `depends_on`, a required token), never to a checklist. Where the event has
+  several entry points, enumerate them — an existence check that only looks
+  where someone pointed is how the shape survives review. Where a gate must be
+  skippable, the override is explicit, prints what is being overridden, and is
+  shaped so it cannot become habit; a convenient override is the same defect one
+  layer out. (Staging gate, task #341: the enumeration found a third path —
+  the release workflow — that neither reviewer had named.)
 - **A finding is not closed until its general form is a diagnostic** (island
   r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
   immediately found a second live instance the owner had by then hit herself).
