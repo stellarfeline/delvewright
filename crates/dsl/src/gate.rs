@@ -174,10 +174,25 @@ impl crate::stages::CastPlacement {
     }
 }
 
+impl crate::stages::ShopOffer {
+    /// This offer's whole gate, as one value (DSL v0.10, spec-0032) — a **price
+    /// is a gate**, so a shop declares no comparison surface of its own.
+    ///
+    /// Defined beside the other six rather than on the type, for the reason the
+    /// section header gives: the list of gate consumers is one fact.
+    pub fn gate_view(&self) -> Gate<'_> {
+        Gate::of(
+            &self.requires_flags,
+            &self.forbids_flags,
+            &self.requires_state,
+        )
+    }
+}
+
 /// The object classes that carry a gate. **A closed set.**
 ///
 /// `ALL` is the enumeration; [`GateConsumer::label`] and every consumer that
-/// matches on one is exhaustive, so a seventh class is a compile error at every
+/// matches on one is exhaustive, so an eighth class is a compile error at every
 /// site where the answer would have to change.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum GateConsumer {
@@ -197,18 +212,24 @@ pub enum GateConsumer {
     /// A stage-5 `quests[].cast[]` placement — the gate decides which branch's
     /// scene describes the world.
     CastPlacement,
+    /// A stage-5 `shops[].offers[]` (DSL v0.10, spec-0032) — the gate decides
+    /// whether the button is shown, and whether a direct `/trigger` on it does
+    /// anything. **This is where a price lives**: a shop declares no comparison
+    /// surface of its own, because "may this happen yet?" already has an owner.
+    ShopOffer,
 }
 
 impl GateConsumer {
     /// Every consumer class, in enumeration order (= visit order in
     /// [`for_each_gate`]).
-    pub const ALL: [GateConsumer; 6] = [
+    pub const ALL: [GateConsumer; 7] = [
         GateConsumer::Objective,
         GateConsumer::Effect,
         GateConsumer::Trigger,
         GateConsumer::Trap,
         GateConsumer::DialogueOption,
         GateConsumer::CastPlacement,
+        GateConsumer::ShopOffer,
     ];
 
     /// How many consumer classes there are.
@@ -223,6 +244,7 @@ impl GateConsumer {
             GateConsumer::Trap => "trap",
             GateConsumer::DialogueOption => "dialogue option",
             GateConsumer::CastPlacement => "cast placement",
+            GateConsumer::ShopOffer => "shop offer",
         }
     }
 
@@ -252,10 +274,15 @@ impl GateConsumer {
     ///
     /// It is what makes a `player`-scoped datum's readability decidable
     /// (`DW0503`) from the closed consumer set rather than from a list somebody
-    /// maintains — a seventh consumer class must answer this to compile.
+    /// maintains — an eighth consumer class must answer this to compile.
     pub fn evaluates_per_player(self) -> Option<bool> {
         match self {
-            GateConsumer::DialogueOption | GateConsumer::CastPlacement => Some(true),
+            // A shop offer's gate is computed into `dw.dmask` per player and its
+            // `/trigger` handler runs `as @s`, exactly as a dialogue option's does
+            // — which is what makes a `player`-scoped purse a legal price.
+            GateConsumer::DialogueOption
+            | GateConsumer::CastPlacement
+            | GateConsumer::ShopOffer => Some(true),
             GateConsumer::Objective | GateConsumer::Trigger | GateConsumer::Trap => Some(false),
             // Ask the root (and then the seams inside the bundle).
             GateConsumer::Effect => None,
@@ -268,7 +295,8 @@ impl GateConsumer {
             GateConsumer::Objective
             | GateConsumer::Trigger
             | GateConsumer::Trap
-            | GateConsumer::CastPlacement => "quests",
+            | GateConsumer::CastPlacement
+            | GateConsumer::ShopOffer => "quests",
             // An effect root hangs off the quests stage four times out of five and
             // off dialogue once; the site's own path says which.
             GateConsumer::Effect => "quests",
@@ -349,6 +377,7 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
         (GateConsumer::Trap, 0usize),
         (GateConsumer::DialogueOption, 0usize),
         (GateConsumer::CastPlacement, 0usize),
+        (GateConsumer::ShopOffer, 0usize),
     ];
     debug_assert_eq!(
         sites.map(|(k, _)| k),
@@ -459,6 +488,22 @@ pub fn for_each_gate(c: &Campaign, f: &mut dyn FnMut(&GateSite, Gate<'_>)) -> Ga
                     &mut terms,
                 );
             }
+        }
+    }
+
+    // C7 shop offers (DSL v0.10, spec-0032). A price is a gate term, so every
+    // offer is visited here and nowhere else.
+    enumerated[slot_of(GateConsumer::ShopOffer)] = true;
+    for (si, shop) in c.quests.content.shops.iter().enumerate() {
+        for (oi, off) in shop.offers.iter().enumerate() {
+            visit(
+                GateConsumer::ShopOffer,
+                format!("/content/shops/{si}/offers/{oi}"),
+                off.gate_view(),
+                &mut sites,
+                &mut gated,
+                &mut terms,
+            );
         }
     }
 

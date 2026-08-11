@@ -121,7 +121,7 @@ fn quests_doc_versioned(
 // 1. the enumeration itself
 // ---------------------------------------------------------------------------
 
-/// The walk enumerates all seven roots on **every** campaign, including one that
+/// The walk enumerates all eight roots on **every** campaign, including one that
 /// uses none of them — the distinction the binding ledger exists to draw.
 ///
 /// "This walk reached the root" and "this campaign has a bundle there" are
@@ -141,9 +141,9 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     );
     assert_eq!(
         EffectRootKind::COUNT,
-        7,
-        "seven roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
-         and R7 campaign `on_death`)"
+        8,
+        "eight roots (spec-0022 + v0.6, then spec-0031's R6 shortcut `on_unlock` \
+         and R7 campaign `on_death`, then spec-0032's R8 shop offer)"
     );
 
     // hello-world has one quest with one `on_objective_complete` bundle and one
@@ -156,6 +156,7 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
     assert_eq!(n(EffectRootKind::DialogueRespawn), 0);
     assert_eq!(n(EffectRootKind::ShortcutUnlock), 0);
     assert_eq!(n(EffectRootKind::OnDeath), 0);
+    assert_eq!(n(EffectRootKind::ShopOffer), 0);
 
     // …and the ledger says so out loud, rather than leaving a reader to notice an
     // empty count on their own.
@@ -167,18 +168,19 @@ fn the_walk_enumerates_every_root_and_reports_what_it_bound_to() {
             EffectRootKind::DialogueRespawn,
             EffectRootKind::ShortcutUnlock,
             EffectRootKind::OnDeath,
+            EffectRootKind::ShopOffer,
         ],
         "a root this campaign has no bundle at is NAMED as unbound"
     );
     assert!(
-        binding.summary().contains("roots 7/7"),
+        binding.summary().contains("roots 8/8"),
         "{}",
         binding.summary()
     );
 }
 
-/// A campaign that exercises all seven roots binds all seven. The control for the
-/// test above: without it, "enumerated 7" could be true of a walk that visits seven
+/// A campaign that exercises all eight roots binds all eight. The control for the
+/// test above: without it, "enumerated 8" could be true of a walk that visits eight
 /// roots and finds nothing at any of them.
 #[test]
 fn a_campaign_using_every_root_binds_every_root() {
@@ -228,6 +230,11 @@ const ALL_ROOTS_PRELUDE: &str = r#""triggers": [
     "shortcuts": [
       { "id": "shortcut/inner-door", "gate": "anchor/door", "unlock": "anchor/exit",
         "on_unlock": [ { "type": "set-flag", "flag": "flag/opened" } ] }
+    ],
+    "shops": [
+      { "id": "shop/wares", "anchor": "anchor/exit", "title": "Wares",
+        "offers": [ { "label": "A favour",
+                      "effects": [ { "type": "set-flag", "flag": "flag/bought" } ] } ] }
     ],"#;
 
 /// The campaign's `on_death` bundle — root 7, the only one that is a single list

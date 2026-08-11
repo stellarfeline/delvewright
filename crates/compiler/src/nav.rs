@@ -546,7 +546,7 @@ pub fn entity_footprint(entity: &str) -> Footprint {
 /// How far to search for a standable floor cell when a `move-npc` endpoint anchor
 /// is a solid affordance (altar / gate bars / wall marker) the NPC must stop in
 /// front of rather than stand inside.
-const SNAP_RADIUS: i32 = 3;
+pub const SNAP_RADIUS: i32 = 3;
 
 /// A reachability root: a declared cell, plus the AABB the snap that seats it may
 /// not leave — the assembled piece that DECLARES the anchor.
@@ -2952,6 +2952,75 @@ fn region_state_at(
         into.extend(crate::assembled::region_cells(region.0, region.1));
     }
     st
+}
+
+/// **Where a player can walk from `seat`, under EVERY quest state that can hold
+/// while that seat is the respawn point in force** (spec-0032).
+///
+/// Returns `(quest states examined, the intersected reachable set)`.
+///
+/// # Why an intersection, and why it lives here
+///
+/// spec-0032's placement rule says "under the quest state in force at that
+/// moment". Nothing observable at runtime says WHICH point of a respawn point's
+/// DAG span a death happened at — `#cp` names the seat, not the step — so the
+/// table cannot key on quest state without inventing a runtime discriminator for
+/// it. Intersecting instead makes the answer independent of that: a cell in this
+/// set is reachable under every configuration the seat can be in force across, so
+/// an anchor chosen from it is reachable whenever the player comes back.
+///
+/// **That is strictly stronger than the rule as written, not a simplification of
+/// it** — the sentence a future reader needs, because it looks like a shortcut and
+/// is the opposite. The rule permits an anchor reachable under the one quest state
+/// that held at the moment of death; this permits only anchors reachable under all
+/// of them.
+///
+/// It lives in this module, beside the model it reads, so `RegionState`,
+/// [`region_state_at`] and [`World::with_region_state`] stay private: a second
+/// passability model beside this one is exactly what spec-0031 refused when it
+/// moved fill/clear out of the two verbs that held it privately.
+///
+/// A campaign with no runtime-written region has exactly one configuration and
+/// pays one flood fill for it. Deterministic (ADR-0006): iteration is over a slice
+/// in step order and over `BTreeSet` keys.
+pub fn reachable_under_every_quest_state(
+    plan: &Plan,
+    world: &World,
+    seat: [i32; 3],
+    from_step: usize,
+) -> (usize, BTreeSet<[i32; 3]>) {
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut seen: Vec<RegionState> = Vec::new();
+    let mut acc: Option<BTreeSet<[i32; 3]>> = None;
+    for arrival in from_step..=plan.critical_path.len() {
+        let st = region_state_at(&plan.region_events, arrival, &ancestor);
+        // Distinct configurations only. The number of them over a whole critical
+        // path is small, and re-flooding an identical one would only cost time.
+        if seen
+            .iter()
+            .any(|p| p.solid == st.solid && p.cleared == st.cleared)
+        {
+            continue;
+        }
+        let w = if st.is_empty() {
+            None
+        } else {
+            Some(world.with_region_state(&st))
+        };
+        let r = w.as_ref().unwrap_or(world).reachable_walkable(&[seat]);
+        seen.push(st);
+        acc = Some(match acc {
+            None => r,
+            Some(prev) => prev.intersection(&r).copied().collect(),
+        });
+    }
+    // A seat whose span admits no configuration at all (its `from_step` is past the
+    // last one) still gets the base world's answer rather than an empty set, which
+    // would silently make every proof over it vacuous.
+    (
+        seen.len().max(1),
+        acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
+    )
 }
 
 /// The runtime-region state for the walked leg `from_step → to_step` — the single

@@ -498,6 +498,37 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      a teleport still fails the completability proof, so keep a walked route to
      anything the critical path needs. Needs `dsl_version` 0.10.0 on the quests
      stage.
+   - **A currency is a NAMED datum, and a price is a GATE.** There is no
+     `currencies` section and no `price` field, on purpose. Give a `state[]` datum
+     a `name` and it becomes a purse the player reads: the engine states
+     `<name>: <value>` on that player's action bar on every write, translated like
+     any other line. A shop is `shops[] {id, anchor, title, marker_item?,
+     offers[{label, tooltip?, effects[], + the ordinary gate}]}` on the quests stage
+     (`dsl_version` 0.10.0), and its prices are `requires_state` comparisons —
+     exactly the ones a door or a dialogue line would use. **Write the refusal
+     yourself**: put the purchase behind `at-least <price>` and an apology
+     `narrate` behind `at-most <price − 1>`, both as gated effects of the same
+     offer, so a player who cannot afford something is told rather than left
+     pressing a dead button. An offer with no effects at all is `DW0523`.
+     **Order matters and the compiler will tell you (`DW0527`):** put the refusal
+     and any confirmation BEFORE the debit. Sibling effects are consecutive
+     commands, so a gate written after the debit reads the balance the debit just
+     produced — buy your last coin and you are charged and apologised to in the
+     same breath.
+   - **A death that costs something leaves a stake, and the engine decides where.**
+     `stakes[] {id, state, forfeit?, max_live?, on_full?, collect_by?,
+     collected_message, marker_item?}` on the quests stage, dropped by a
+     `drop-stake` effect in `on_death`. The datum must be `player`-scoped
+     (`DW0520`) — a stake is one player's wager, never the party's. You do **not**
+     choose where it lands: the compiler computes the point, on the walkable way
+     back from the respawn point in force, nearest to where they died, so a death
+     in a lethal volume leaves its stake at the near lip rather than inside the
+     hazard, and a death on a lift car leaves it on solid ground. If your geometry
+     can strand one — a one-way drop with no shortcut back — the build fails
+     naming the place (`DW0525`), and the fix is a route back or a
+     `lethal_volume`, never deleting the stake. Souls behaviour is
+     `max_live: 1, on_full: "replace"`; no death cost at all is `max_live: 0`; a
+     memorial at every death site is a larger `max_live` with `on_full: "keep"`.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket

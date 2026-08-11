@@ -1,0 +1,191 @@
+{
+  "dsl_version": "0.10.0",
+  "campaign_id": "economy",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": {
+          "type": "campaign-start"
+        },
+        "happening": {
+          "verb": "arrives",
+          "text": "The party comes in out of the moor and finds the Keeper at his post.",
+          "subject": "npc/keeper"
+        },
+        "objectives": [
+          {
+            "type": "talk-to",
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "happening": {
+              "verb": "learns",
+              "text": "The Keeper warns them the road's edge has gone, and lifts the gate.",
+              "subject": "npc/keeper"
+            }
+          },
+          {
+            "type": "reach-anchor",
+            "id": "obj/exit",
+            "anchor": "anchor/exit",
+            "radius": 2,
+            "after": [
+              "obj/talk"
+            ],
+            "happening": {
+              "verb": "survives",
+              "text": "They reach the road's edge and stop short of the drop."
+            }
+          }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "type": "open-gate",
+              "anchor": "anchor/door",
+              "happening": {
+                "verb": "opens",
+                "text": "The bar comes off the inner gate and it swings wide.",
+                "subject": "anchor/door"
+              }
+            },
+            {
+              "type": "set-checkpoint",
+              "anchor": "anchor/keeper-stand"
+            }
+          ]
+        },
+        "on_complete": [
+          {
+            "type": "campaign-complete",
+            "happening": {
+              "verb": "gains",
+              "text": "The delve ends with the road open and the drop behind them."
+            }
+          }
+        ],
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "doing": "standing well back from the broken edge, one hand on the bar",
+              "dialogue": "dlg/greeting"
+            }
+          ]
+        }
+      }
+    ],
+    "lethal_volumes": [
+      {
+        "id": "lethal/the-drop",
+        "region": {
+          "anchor": "anchor/exit",
+          "extent": [
+            0,
+            0,
+            0
+          ]
+        },
+        "message": "The stone floor gives way beneath you.",
+        "damage_type": "fall"
+      }
+    ],
+    "state": [
+      {
+        "id": "state/embers",
+        "scope": "player",
+        "initial": 5,
+        "name": "Embers",
+        "note": "what the keeper takes, and what the drop takes back"
+      }
+    ],
+    "stakes": [
+      {
+        "id": "stake/embers",
+        "state": "state/embers",
+        "forfeit": {
+          "kind": "all"
+        },
+        "max_live": 1,
+        "on_full": "replace",
+        "collect_by": "owner",
+        "collected_message": "You take back what the drop took.",
+        "marker_item": "minecraft:soul_lantern"
+      }
+    ],
+    "shops": [
+      {
+        "id": "shop/keeper-brazier",
+        "anchor": "spawn",
+        "title": "The keeper's brazier",
+        "marker_item": "minecraft:campfire",
+        "offers": [
+          {
+            "label": "Bank an ember",
+            "tooltip": "Costs one ember.",
+            "effects": [
+              {
+                "type": "narrate",
+                "text": "You have nothing left to give.",
+                "requires_state": [
+                  {
+                    "state": "state/embers",
+                    "op": "at-most",
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "type": "narrate",
+                "text": "The keeper takes an ember and nods.",
+                "requires_state": [
+                  {
+                    "state": "state/embers",
+                    "op": "at-least",
+                    "value": 1
+                  }
+                ]
+              },
+              {
+                "type": "add-state",
+                "state": "state/embers",
+                "amount": -1,
+                "requires_state": [
+                  {
+                    "state": "state/embers",
+                    "op": "at-least",
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "label": "Ask for warmth",
+            "requires_state": [
+              {
+                "state": "state/embers",
+                "op": "at-most",
+                "value": 0
+              }
+            ],
+            "effects": [
+              {
+                "type": "add-state",
+                "state": "state/embers",
+                "amount": 1
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "on_death": [
+      {
+        "type": "drop-stake",
+        "stake": "stake/embers"
+      }
+    ]
+  }
+}

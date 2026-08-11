@@ -2820,6 +2820,12 @@ pub(crate) enum EffectRoot<'a> {
     /// so it has no step and is optional in the strongest sense the model has:
     /// nobody is forced to die.
     OnDeath,
+    /// A `shops[].offers[].effects` (spec-0032) — fired by a player pressing a
+    /// button, so it has no step and is optional: nobody is forced to buy
+    /// anything. Carries nothing for the same reason `ShortcutUnlock` does — the
+    /// gate that decides whether the button exists is the offer's own, and the
+    /// site's `path` already names it.
+    ShopOffer,
 }
 
 /// Where an effect was declared: which stage document, the JSON pointer inside it,
@@ -2883,6 +2889,7 @@ pub(crate) fn for_each_effect_root<'a>(
             delvewright_dsl::EffectRootOwner::DialogueRespawn => EffectRoot::DialogueRespawn,
             delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => EffectRoot::ShortcutUnlock,
             delvewright_dsl::EffectRootOwner::OnDeath => EffectRoot::OnDeath,
+            delvewright_dsl::EffectRootOwner::ShopOffer(_) => EffectRoot::ShopOffer,
         };
         f(
             &EffectRootSite {
@@ -3050,10 +3057,13 @@ fn collect_region_events(
             // registered sealed at step 0 so the delve is finishable the long way,
             // which is precisely "this bundle may never fire". R7 is optional
             // because nobody is forced to die.
+            // R8 is optional for the same reason: nobody is forced to buy
+            // anything, so an `open-gate` bought at a shop may not be leaned on.
             EffectRoot::TrapPayload(_)
             | EffectRoot::DialogueRespawn
             | EffectRoot::ShortcutUnlock
-            | EffectRoot::OnDeath => (0, false),
+            | EffectRoot::OnDeath
+            | EffectRoot::ShopOffer => (0, false),
         };
         // The two spellings of one write. A gate names a prefab gate anchor and
         // takes that anchor's box and its `replace`-filtered clear; a

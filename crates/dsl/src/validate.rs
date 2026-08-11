@@ -58,6 +58,10 @@ pub fn validate_campaign_with(
     // status-effect registry is the fixed vanilla list v0.4 already validates
     // wave-mob effects against, so no injected registry is needed.
     status_effect_checks(c, &VendoredEffectRegistry::v1_21_11(), &mut d);
+    // DSL v0.10 (spec-0032): the trade and recovery-stake surface. Unconditional
+    // for the same reason — every loop inside is empty for a campaign that
+    // declares neither, and the version fence lives in `reserved_v10`.
+    economy_checks(c, &mut d);
     prefab_binding(c, anchors, &mut d);
     anchors_and_items(c, items, anchors, &mut d);
     cross_stage(c, &mut d);
@@ -126,6 +130,9 @@ pub fn validate_campaign_with(
     // is compiler-tier, because it needs the solved layout.
     if is_v10(c.quests.dsl_version.as_str()) {
         lethal_volume_checks(c, anchors, &mut d);
+        // DSL v0.10 (spec-0032): a shop stands on a prefab anchor, and an anchor
+        // no bound prefab provides is the same defect a lethal volume's is.
+        shop_anchor_checks(c, anchors, &mut d);
     }
 
     d
@@ -205,6 +212,297 @@ fn lethal_volume_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<
                     v.id
                 ),
             ));
+        }
+    }
+}
+
+/// `DW0527` — a gate that reads a datum an earlier effect in the same bundle has
+/// already written.
+///
+/// Sibling effects in one bundle are consecutive commands in one generated
+/// function, and vanilla evaluates each `execute` condition when it reaches it. So
+/// a comparison placed after a write is a comparison against the post-write value —
+/// which is exactly what the shop pattern spec-0032 recommends walks into if the
+/// refusal is written after the purchase instead of before it.
+///
+/// Scope is deliberately one flat sibling list: a `sequence` step runs on a later
+/// tick and a nested lifecycle bundle runs at a different moment entirely, so
+/// "earlier in the same breath" is precisely a list index. Warning tier — an author
+/// who means to write then compare is doing something legitimate, and the
+/// diagnostic's job is to make sure they meant it.
+fn read_after_write_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        // Only a **conditional** write counts, and that narrowing is the whole
+        // precision of this rule. An UNCONDITIONAL write followed by a comparison
+        // is the ordinary sequenced idiom — *pay the toll, then the door opens
+        // because the toll is now zero* — where the author plainly means the value
+        // the bundle just produced. A write that is itself gated on the SAME datum
+        // is the other thing: the bundle asks about the datum, changes it across
+        // the boundary it just asked about, and then asks again — which is the
+        // shape that pays for something and apologises for it in the same breath.
+        let mut written: BTreeMap<&str, usize> = BTreeMap::new();
+        for (i, eff) in list.iter().enumerate() {
+            for cmp in eff.requires_state() {
+                let Some(at) = written.get(cmp.state.as_str()) else {
+                    continue;
+                };
+                d.push(Diagnostic::warning(
+                    codes::STATE_READ_AFTER_WRITE,
+                    site.stage,
+                    format!("{}/{i}/requires_state", site.path),
+                    format!(
+                        "this `{}` compares `{}`, and effect {at} of the same bundle already \
+                         changes `{}` behind a gate on `{}` itself — so this comparison is made \
+                         against the value THIS bundle just produced, on the far side of the \
+                         boundary it just tested. The shape that bites is a purchase followed by \
+                         its own refusal: buying the LAST coin debits it, and the `at-most` \
+                         apology written after the debit then holds as well, so the player is \
+                         charged AND told they cannot afford it. Move every reading effect ahead \
+                         of the write. (An UNCONDITIONAL write followed by a comparison is not \
+                         this: `set-state toll 0` and then a door gated on `toll at-most 0` \
+                         plainly means the value the bundle just produced, and is not \
+                         diagnosed.)",
+                        eff.verb(),
+                        cmp.state.as_str(),
+                        cmp.state.as_str(),
+                        cmp.state.as_str()
+                    ),
+                ));
+            }
+            if let Some((id, _)) = eff.writes_state()
+                && eff
+                    .requires_state()
+                    .iter()
+                    .any(|c| c.state.as_str() == id.as_str())
+            {
+                written.entry(id.as_str()).or_insert(i);
+            }
+        }
+    });
+}
+
+/// A shop's anchor must be provided by some prefab bound in this campaign
+/// (DSL v0.10, spec-0032) — the same rule, and the same message shape, every
+/// other stage-5 anchor reference follows.
+fn shop_anchor_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
+    if c.quests.content.shops.is_empty() {
+        return;
+    }
+    let mut known_anchor: BTreeSet<&str> = BTreeSet::new();
+    let mut has_pool_area = false;
+    for a in &c.world.content.areas {
+        if let Some(prefab) = &a.prefab {
+            if let Some(set) = anchors.anchors_for(prefab) {
+                known_anchor.extend(set.iter().map(String::as_str));
+            }
+        } else if a.prefab_pool.is_some() {
+            has_pool_area = true;
+        }
+    }
+    for (i, sh) in c.quests.content.shops.iter().enumerate() {
+        if has_pool_area || known_anchor.contains(sh.anchor.as_str()) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::ANCHOR_UNRESOLVED,
+            "quests",
+            format!("/content/shops/{i}/anchor"),
+            format!(
+                "shop anchor `{}` is not provided by any prefab bound in this campaign — use an \
+                 anchor the prefab exposes (anchor names come from prefab metadata; do NOT invent \
+                 one)",
+                sh.anchor
+            ),
+        ));
+    }
+}
+
+/// Stage-5 economy checks (DSL v0.10, spec-0032): the shop's structural
+/// obligations and the stake's declaration obligations.
+///
+/// **What is deliberately NOT here.** Everything about *where* a stake lands —
+/// the placement table, its walkability, its reachability from the respawn point
+/// in force, and whether the block under it is one runtime removes — is a
+/// question about the solved layout and the navigation world, which the DSL crate
+/// does not have. Those live in `crate::stake` on the compiler side, exactly as a
+/// lethal volume's geometry does.
+///
+/// **No price check appears here either**, and that is the design showing
+/// through: a price is a [`crate::gate::Gate`] term, so it is already covered by
+/// `DW0500`–`DW0503` — the datum must be declared, must be written somewhere,
+/// must be read somewhere, and must be reachable at the scope the site evaluates
+/// at. A shop that added a comparison field of its own would have needed all four
+/// rules written a second time.
+fn economy_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let stakes = &c.quests.content.stakes;
+    let shops = &c.quests.content.shops;
+    if stakes.is_empty() && shops.is_empty() {
+        return;
+    }
+
+    // --- stakes: id hygiene, the datum, the scope, the forfeit range ----------
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, s) in stakes.iter().enumerate() {
+        if !s.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/stakes/{i}/id"),
+                format!(
+                    "malformed stake id `{}` — stake ids are `stake/<kebab-case>`",
+                    s.id
+                ),
+            ));
+        }
+        if !seen.insert(s.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/stakes/{i}/id"),
+                format!("duplicate stake id `{}`", s.id),
+            ));
+        }
+        match c.quests.content.state_decl(s.state.as_str()) {
+            None => d.push(Diagnostic::error(
+                codes::STAKE_STATE_SCOPE,
+                "quests",
+                format!("/content/stakes/{i}/state"),
+                format!(
+                    "stake `{}` forfeits `{}`, which the campaign never declares. Add it to the \
+                     stage-5 `state` list with `\"scope\": \"player\"` — a stake is one player's \
+                     wager, and a datum's scope is a fact no use site can supply",
+                    s.id,
+                    s.state.as_str()
+                ),
+            )),
+            Some(decl) if decl.scope != crate::stages::StateScope::Player => {
+                d.push(Diagnostic::error(
+                    codes::STAKE_STATE_SCOPE,
+                    "quests",
+                    format!("/content/stakes/{i}/state"),
+                    format!(
+                        "stake `{}` forfeits `{}`, which is declared `party`-scoped. A stake is a \
+                         PERSONAL wager: one shared purse turns a teammate's death into a penalty \
+                         on everyone, and nothing in the JSON would say so. Declare the datum \
+                         `player`-scoped, or point the stake at one that is.",
+                        s.id,
+                        s.state.as_str()
+                    ),
+                ));
+            }
+            Some(_) => {}
+        }
+        if let Some(crate::stages::Forfeit::Proportion { percent }) = s.forfeit
+            && percent > 100
+        {
+            d.push(Diagnostic::error(
+                codes::STAKE_FORFEIT_RANGE,
+                "quests",
+                format!("/content/stakes/{i}/forfeit/percent"),
+                format!(
+                    "stake `{}` forfeits {percent}% of `{}` — more than the whole purse. Use \
+                     0–100, or `{{\"kind\": \"all\"}}`.",
+                    s.id,
+                    s.state.as_str()
+                ),
+            ));
+        }
+    }
+
+    // --- `drop-stake`: every reference resolves, every declaration is dropped --
+    // Both halves, for the reason `DW0501`/`DW0502` state for a datum: a
+    // reference with no declaration is a runtime no-op, and a declaration no beat
+    // fires is a whole mechanism that binds to nothing.
+    let mut dropped: BTreeSet<String> = BTreeSet::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let crate::stages::QuestEffect::DropStake { stake, .. } = eff else {
+            return;
+        };
+        if c.quests.content.stake_decl(stake.as_str()).is_none() {
+            d.push(Diagnostic::error(
+                codes::STAKE_UNDECLARED,
+                "quests",
+                path.to_string(),
+                format!(
+                    "`drop-stake` leaves `{}`, which the campaign never declares. Add it to the \
+                     stage-5 `stakes` list, or fix the id",
+                    stake.as_str()
+                ),
+            ));
+            return;
+        }
+        dropped.insert(stake.as_str().to_string());
+    });
+    for (i, s) in stakes.iter().enumerate() {
+        if dropped.contains(s.id.as_str()) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::STAKE_NEVER_DROPPED,
+            "quests",
+            format!("/content/stakes/{i}/id"),
+            format!(
+                "stake `{}` is declared and no `drop-stake` effect anywhere in the campaign ever \
+                 leaves one. Its forfeit rule, its retention policy and its whole compile-time \
+                 placement table describe a mechanism no beat can fire. Drop it from a beat — \
+                 `on_death` is the usual one — or delete the declaration.",
+                s.id
+            ),
+        ));
+    }
+
+    read_after_write_checks(c, d);
+
+    // --- shops: id hygiene, and no button that cannot answer ------------------
+    let mut seen_shop: BTreeSet<&str> = BTreeSet::new();
+    for (i, sh) in shops.iter().enumerate() {
+        if !sh.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "quests",
+                format!("/content/shops/{i}/id"),
+                format!(
+                    "malformed shop id `{}` — shop ids are `shop/<kebab-case>`",
+                    sh.id
+                ),
+            ));
+        }
+        if !seen_shop.insert(sh.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "quests",
+                format!("/content/shops/{i}/id"),
+                format!("duplicate shop id `{}`", sh.id),
+            ));
+        }
+        if sh.offers.is_empty() {
+            d.push(Diagnostic::error(
+                codes::SHOP_OFFER_INERT,
+                "quests",
+                format!("/content/shops/{i}/offers"),
+                format!(
+                    "shop `{}` declares no offers. Vanilla's dialog codec rejects an empty action \
+                     list outright, so this is not merely an empty shop — it is a dialog that \
+                     fails to load. Give it at least one offer, or delete the shop.",
+                    sh.id
+                ),
+            ));
+        }
+        for (j, off) in sh.offers.iter().enumerate() {
+            if off.effects.is_empty() {
+                d.push(Diagnostic::error(
+                    codes::SHOP_OFFER_INERT,
+                    "quests",
+                    format!("/content/shops/{i}/offers/{j}/effects"),
+                    format!(
+                        "offer `{}` in shop `{}` declares no effects: the button is drawn, is \
+                         pressable, and does nothing. A control the player can operate must have \
+                         an answer — a refusal counts, so a single `narrate` gated on \
+                         `requires_state` (`at-most <price − 1>`) is enough.",
+                        off.label, sh.id
+                    ),
+                ));
+            }
         }
     }
 }
@@ -1079,6 +1377,8 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// * the status-effect pair `give-effect` / `clear-effect` and the region
 ///   `teleport` — three more verbs reported by `v10_effect`, so they ride the
 ///   same one walk rather than adding a fence of their own.
+/// * spec-0032's trade and recovery surface — the stage-5 `shops` and `stakes`
+///   declarations, the `drop-stake` verb, and a datum's player-visible `name`.
 ///
 /// The same asymmetry every version ledger uses: *declaring* any of it below
 /// 0.10.0 is `DW0141`. There is no requirement half — nothing obliges a campaign
@@ -1118,6 +1418,49 @@ fn reserved_v10(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "a `lethal_volumes` declaration (a box that kills whatever enters it) requires \
              dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove the field"
                 .to_string(),
+        ));
+    }
+    if !quests_ok && !c.quests.content.shops.is_empty() {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            "/content/shops".to_string(),
+            "the stage-5 `shops` declaration (an interaction point that opens a list of gated \
+             offers) requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or \
+             remove the section"
+                .to_string(),
+        ));
+    }
+    if !quests_ok && !c.quests.content.stakes.is_empty() {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            "/content/stakes".to_string(),
+            "the stage-5 `stakes` declaration (what a death forfeits and how it comes back) \
+             requires dsl_version 0.10.0 — raise this stage's `dsl_version` to 0.10.0, or remove \
+             the section"
+                .to_string(),
+        ));
+    }
+    if !quests_ok
+        && let Some((i, s)) = c
+            .quests
+            .content
+            .state
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.name.is_some())
+    {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "quests",
+            format!("/content/state/{i}/name"),
+            format!(
+                "a runtime datum's player-visible `name` (which makes `{}` a currency the player \
+                 reads on the action bar) requires dsl_version 0.10.0 — raise this stage's \
+                 `dsl_version` to 0.10.0, or remove the field",
+                s.id.as_str()
+            ),
         ));
     }
     if !quests_ok && !c.quests.content.state.is_empty() {

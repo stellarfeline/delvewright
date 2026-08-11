@@ -553,4 +553,63 @@ pub mod codes {
     /// read/write onto a site a player drives (a dialogue option, a cast
     /// placement, an effect on a beat a player completes).
     pub const STATE_SCOPE_UNREACHABLE: &str = "DW0503";
+    /// (v0.10, spec-0032) A `stakes[]` declaration is unusable as a personal
+    /// wager: its `state` is a datum the campaign never declares, or one declared
+    /// `party`-scoped.
+    ///
+    /// **The scope half is the multiplayer decision most likely to be made by
+    /// accident** (spec-0032, stated for correction rather than left to emerge).
+    /// A stake is one player's loss and one player's chance to get it back; a
+    /// party-shared purse would turn a teammate's death into a penalty on
+    /// everyone, and nothing in the JSON would say so. Validation-tier (exit 1).
+    /// Prescription: declare the datum `player`-scoped, or point the stake at a
+    /// datum that is.
+    pub const STAKE_STATE_SCOPE: &str = "DW0520";
+    /// (v0.10, spec-0032) A `drop-stake` effect names a stake the campaign never
+    /// declares in the stage-5 `stakes` list. Validation-tier (exit 1).
+    /// Prescription: declare it, or fix the id.
+    pub const STAKE_UNDECLARED: &str = "DW0521";
+    /// (v0.10, spec-0032) A declared stake that **no `drop-stake` effect anywhere
+    /// in the campaign ever leaves**. The retention policy, the forfeit rule and
+    /// the whole placement table are computed for a mechanism no beat can fire —
+    /// a declaration wearing a feature's clothes.
+    ///
+    /// The same vacuity rule `DW0502` states for a datum with no reader
+    /// (CLAUDE.md: *a green gate that binds to nothing is vacuous, not a pass*).
+    /// Validation-tier (exit 1). Prescription: drop it from a beat — `on_death`
+    /// is the usual one — or delete the declaration.
+    pub const STAKE_NEVER_DROPPED: &str = "DW0522";
+    /// (v0.10, spec-0032) A `shops[].offers[]` entry that cannot deliver
+    /// anything: it declares no `effects`, so its button is drawn, is pressable,
+    /// and does nothing.
+    ///
+    /// The shop analogue of the invisible-affordance rule: a control the player
+    /// can operate must have an observable answer. A refusal counts — an offer
+    /// whose only effect is a gated `narrate` saying "you cannot afford that" is
+    /// exactly the authored shape spec-0032 asks for. Validation-tier (exit 1).
+    /// Prescription: give the offer effects, or delete it.
+    pub const SHOP_OFFER_INERT: &str = "DW0523";
+    /// (v0.10, spec-0032) A `forfeit` of kind `proportion` whose `percent` is
+    /// above 100 — a death that takes more than the whole purse. Validation-tier
+    /// (exit 1). Prescription: 0–100, or use `all`.
+    pub const STAKE_FORFEIT_RANGE: &str = "DW0524";
+    /// (v0.10, spec-0032) **A comparison read after the bundle has already changed
+    /// what it compares.** An effect's `requires_state` names a datum that an
+    /// EARLIER effect in the same bundle writes, so the gate is evaluated against
+    /// the post-write value, not the value the beat started with.
+    ///
+    /// Found in the emitted output of spec-0032's own first shop. The authored
+    /// shape a shop wants is "the purchase behind `at-least 1`, the apology behind
+    /// `at-most 0`" — and written in that order, buying your LAST ember prints both:
+    /// the debit runs, the balance falls to 0, and the apology's gate — evaluated
+    /// after it — now holds. Vanilla evaluates each `execute` when it reaches it,
+    /// which is the whole reason a per-effect gate is useful, so this is not a bug
+    /// to fix in emission: it is an ordering hazard that only reading the generated
+    /// function reveals. The fix is always the same and always local — **put the
+    /// reading effect before the writing one** — which is why this is a warning
+    /// naming the earlier write rather than a refusal.
+    ///
+    /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
+    /// write, or gate it on something the bundle does not itself change.
+    pub const STATE_READ_AFTER_WRITE: &str = "DW0527";
 }

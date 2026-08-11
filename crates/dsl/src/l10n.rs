@@ -41,6 +41,11 @@
 //! | `fx.…​.rest_prompt` / `.rest_label` / `.save_label` | a `bonfire`'s authored rest-dialog strings (v0.8, only if set) |
 //! | `fx.…​.sealed_hint` | a `close-gate`'s authored answer to a right-click on the seal (v0.8, only if set) |
 //! | `lethal.<volume>.message` | a stage-5 lethal volume's death wording (v0.10) |
+//! | `state.<datum>.name` | a runtime datum's player-visible name — a currency (v0.10) |
+//! | `shop.<shop>.title` | a stage-5 shop dialog's title (v0.10) |
+//! | `shop.<shop>.offer.<i>.label` | a shop button's caption (v0.10) |
+//! | `shop.<shop>.offer.<i>.tooltip` | a shop button's hover tooltip (v0.10) |
+//! | `stake.<stake>.collected` | what collecting a recovery stake says (v0.10) |
 //!
 //! ## Nested effects (DSL v0.6)
 //!
@@ -447,6 +452,35 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     for v in &mut c.quests.content.lethal_volumes {
         let vl = local(v.id.as_str()).to_string();
         f(&format!("lethal.{vl}.message"), &mut v.message);
+    }
+    // Stage 5 — a runtime datum's player-visible name (v0.10, spec-0032). A named
+    // datum is a currency: the engine states `<name>: <value>` on the holder's
+    // action bar on every write, so the name is read as often as any narrate.
+    // Widening this reaches no older campaign — only a 0.10.0 quests stage may
+    // carry the field at all (`DW0141`).
+    for st in &mut c.quests.content.state {
+        let sl = local(st.id.as_str()).to_string();
+        if let Some(name) = st.name.as_mut() {
+            f(&format!("state.{sl}.name"), name);
+        }
+    }
+    // Stage 5 — shops (v0.10, spec-0032): the dialog's title, and each button's
+    // caption and tooltip. Keyed exactly as a dialogue node's label/tooltip are,
+    // because they are the same two components of the same vanilla button codec.
+    for sh in &mut c.quests.content.shops {
+        let hl = local(sh.id.as_str()).to_string();
+        f(&format!("shop.{hl}.title"), &mut sh.title);
+        for (i, off) in sh.offers.iter_mut().enumerate() {
+            f(&format!("shop.{hl}.offer.{i}.label"), &mut off.label);
+            if let Some(t) = off.tooltip.as_mut() {
+                f(&format!("shop.{hl}.offer.{i}.tooltip"), t);
+            }
+        }
+    }
+    // Stage 5 — recovery stakes (v0.10, spec-0032): the line a collection says.
+    for st in &mut c.quests.content.stakes {
+        let sl = local(st.id.as_str()).to_string();
+        f(&format!("stake.{sl}.collected"), &mut st.collected_message);
     }
     // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
     // dialog, a seal's answer — over **every** root emission can lower an effect
