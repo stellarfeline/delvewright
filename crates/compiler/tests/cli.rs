@@ -872,17 +872,25 @@ fn copy_dir(src: &Path, dst: &Path) {
 
 /// Copy the v04-showcase campaign into a temp dir, replacing one substring in
 /// `quests.json` (a targeted patch), and return the campaign dir.
-fn showcase_with_quests_patch(name: &str, from: &str, to: &str) -> std::path::PathBuf {
+/// A copy of the v0.4 showcase with `quests.json` patched STRUCTURALLY (see
+/// `common::patch_doc`: a textual splice that stops matching is a silent no-op,
+/// and the test then asserts against an unpatched campaign).
+fn showcase_with_quests_patch(
+    name: &str,
+    f: impl FnOnce(&mut serde_json::Value),
+) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::compiler_fixtures_dir().join("v04-showcase"), &camp);
-    let qp = camp.join("quests.json");
-    let q = std::fs::read_to_string(&qp).unwrap();
-    assert!(
-        q.contains(from),
-        "patch anchor `{from}` not found in quests.json"
-    );
-    std::fs::write(&qp, q.replace(from, to)).unwrap();
+    common::patch_file(&camp.join("quests.json"), f);
     camp
+}
+
+/// The showcase's one `cutscene` effect: `quests[1].on_objective_complete
+/// ["obj/slay"][3]`. Panics if it moves, which is the point.
+fn showcase_cutscene(d: &mut serde_json::Value) -> &mut serde_json::Value {
+    let e = &mut common::objective_effects(d, 1, "obj/slay")[3];
+    assert_eq!(e["type"], "cutscene", "the showcase cutscene has moved");
+    e
 }
 
 /// The v0.4 showcase — exercising the collision-safe walked `move-npc` path and a
@@ -1023,16 +1031,12 @@ fn move_unroutable_exits_3_with_dw0307() {
     let pf = common::prefabs_dir();
     let camp = tmp("mv-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
-    let qp = camp.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.4.0\"")
-        .replace(
-            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" }",
-            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" },\n            \
-             { \"type\": \"move-npc\", \"npc\": \"npc/keeper\", \"to_anchor\": \"anchor/objective\" }",
-        );
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&camp.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.4.0");
+        common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
+            "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective"
+        }));
+    });
     let out = tmp("mv-cross-void-out");
     let b = delvec(&[
         "build",
@@ -1062,21 +1066,15 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
     let pf = common::prefabs_dir();
     let camp = tmp("ma-cross-void");
     copy_dir(&common::keep_crawl_dir(), &camp);
-    let qp = camp.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(
-            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" }",
-            "{ \"type\": \"open-gate\", \"anchor\": \"anchor/gate\" },\n            \
-             { \"type\": \"move-actor\", \"actor\": \"actor/beast\", \"to_anchor\": \"anchor/objective\" }",
-        )
-        .replace(
-            "    ]\n  }\n}",
-            "    ],\n    \"actors\": [\n      { \"id\": \"actor/beast\", \"entity\": \
-             \"minecraft:zombie\", \"anchor\": \"anchor/keeper-stand\" }\n    ]\n  }\n}",
-        );
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&camp.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").push(serde_json::json!({
+            "type": "move-actor", "actor": "actor/beast", "to_anchor": "anchor/objective"
+        }));
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
+        ]);
+    });
     let out = tmp("ma-cross-void-out");
     let b = delvec(&[
         "build",
@@ -1103,11 +1101,10 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
 #[test]
 fn cutscene_clip_exits_3_with_dw0308() {
     let pf = common::prefabs_dir();
-    let camp = showcase_with_quests_patch(
-        "cs-clip",
-        "{ \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }",
-        "{ \"anchor\": \"anchor/objective\", \"offset\": [0, 3, 2] }",
-    );
+    // Lift the FIRST camera waypoint one block, into the shrine ceiling.
+    let camp = showcase_with_quests_patch("cs-clip", |d| {
+        showcase_cutscene(d)["path"][0]["offset"] = serde_json::json!([0, 3, 2]);
+    });
     let out = tmp("cs-clip-out");
     let b = delvec(&[
         "build",
@@ -1130,22 +1127,14 @@ fn cutscene_clip_exits_3_with_dw0308() {
 #[test]
 fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     let pf = common::prefabs_dir();
-    let camp = tmp("cs-spin");
-    copy_dir(&common::compiler_fixtures_dir().join("v04-showcase"), &camp);
-    let qp = camp.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        // `look_at` is v0.6 surface.
-        .replace("\"dsl_version\": \"0.4.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(
-            "\"seconds\": 2, \"path\": [ { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }, \
-             { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 0] } ]",
-            "\"seconds\": 1, \"path\": [ { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 2] }, \
-             { \"anchor\": \"anchor/objective\", \"offset\": [0, 2, 0] } ], \
-             \"look_at\": { \"anchor\": \"anchor/objective\", \"offset\": [1, 2, 1] }",
-        );
-    assert!(q.contains("look_at"), "cutscene patch applied");
-    std::fs::write(&qp, q).unwrap();
+    // Halve the duration and add a `look_at` (v0.6 surface) the pan cannot
+    // reach inside the budget.
+    let camp = showcase_with_quests_patch("cs-spin", |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        let cs = showcase_cutscene(d);
+        cs["seconds"] = serde_json::json!(1);
+        cs["look_at"] = serde_json::json!({ "anchor": "anchor/objective", "offset": [1, 2, 1] });
+    });
     let out = tmp("cs-spin-out");
     let b = delvec(&[
         "build",
@@ -1383,31 +1372,34 @@ fn v06_absent_fields_keep_void_output_unchanged() {
 /// (relocate-then-kill). Asserted against the concatenated function bodies.
 #[test]
 fn v06_actor_datapack_emits_the_mechanics() {
-    let search = r#"            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }"#;
-    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "spawn-actor", "actor": "actor/giant" },
-            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
-              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
-            { "type": "unleash-actor", "actor": "actor/giant" },
-            { "type": "sequence", "steps": [
-              { "at_ticks": 0, "effects": [ { "type": "spawn-actor", "actor": "actor/giant" } ] },
-              { "at_ticks": 40, "effects": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "kill" } ] }
-            ] }"#;
-    let actors = "    ],\n    \"actors\": [\n      { \"id\": \"actor/giant\", \"entity\": \"minecraft:zombie\", \"name\": \"The Sleeper\", \"anchor\": \"anchor/keeper-stand\", \"facing\": \"east\" }\n    ]\n  }\n}";
-
     let pf = common::prefabs_dir();
     let camp = tmp("v06-actors");
     copy_dir(&common::hello_world_dir(), &camp);
-    let qp = camp.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(search, replace)
-        .replace("    ]\n  }\n}", actors);
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&camp.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").extend([
+            serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
+            serde_json::json!({
+                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "on_arrive": [
+                    { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
+                ]
+            }),
+            serde_json::json!({ "type": "unleash-actor", "actor": "actor/giant" }),
+            serde_json::json!({ "type": "sequence", "steps": [
+                { "at_ticks": 0,
+                  "effects": [ { "type": "spawn-actor", "actor": "actor/giant" } ] },
+                { "at_ticks": 40,
+                  "effects": [
+                      { "type": "despawn-actor", "actor": "actor/giant", "style": "kill" }
+                  ] }
+            ] }),
+        ]);
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+              "anchor": "anchor/keeper-stand", "facing": "east" }
+        ]);
+    });
     let out = tmp("v06-actors-out");
     let b = delvec(&[
         "build",

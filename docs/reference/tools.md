@@ -54,6 +54,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `validate <dir>` | stage schema + referential validation | — |
 | `analyze <dir>` | quest-graph reachability (implies `validate`) | — |
 | `build <dir> -o <out>` | full deterministic build (implies `analyze`) | `-o/--out` (required) |
+| `fmt <path>…` | canonical form for authored JSON — object keys sorted, **arrays never** | `--check` (report only; exit 1 if anything is off) |
 | `schema --stage <n\|all>` | export a stage's JSON Schema | `--stage` (required) |
 | `l10n-inventory <dir>` | l10n key inventory as JSON (translation input) | `--lang` |
 | `snapshot <dir>` | one draft frame + scene manifest (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]`, `--at <anchor>`, `--orbit <deg>`, `--dist <n>`, `--shot <id>`, `--labels`, `--width 960`, `--height 540`, `-o snapshot.png`, `--timing` |
@@ -69,6 +70,21 @@ language inside the delve's resource pack and lets the client pick (i18n v2,
 spec-0029). `--lang <code>` is the single-language bake for local dev — it swaps
 the strings before emission and ships no lang files.
 Exit codes and the `--json` diagnostic shape: [`compiler.md` §1](compiler.md).
+
+**`delvec fmt` is a mandatory step, not a tidiness option** (owner directive
+2026-08-07, task #52). Run it over the campaign directory **after the last edit
+of a stage document or an l10n sidecar and before committing** — a three-key
+insertion into a non-canonical sidecar once produced a 103-insertion /
+100-deletion diff, and that is what it exists to stop. It sorts object keys and
+**never** touches array order (`quests[]`, `objectives[]`, `effects[]` are
+ordered; sorting one changes the game), and it proves that on every file it
+writes. Full canonical form, discovery rules and the `DW077x` codes:
+[`compiler.md` §9](compiler.md).
+
+```
+delvec fmt campaigns/campaigns/<id>          # rewrite in place
+delvec fmt --check campaigns/campaigns/<id>  # what CI asks
+```
 
 ## 2. `delve-schem` — schematic import (`crates/schem`, package `delvewright-schem`) · agent
 

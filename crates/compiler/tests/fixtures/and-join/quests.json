@@ -1,40 +1,102 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "and-join",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/greet",
-        "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/warden" }
+          {
+            "id": "obj/talk",
+            "npc": "npc/warden",
+            "type": "talk-to"
+          }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/talk": [
-            { "type": "open-gate", "anchor": "anchor/gate" },
-            { "type": "give-item", "item": "minecraft:torch", "count": 1, "name": "Ward Taper" }
+            {
+              "anchor": "anchor/gate",
+              "type": "open-gate"
+            },
+            {
+              "count": 1,
+              "item": "minecraft:torch",
+              "name": "Ward Taper",
+              "type": "give-item"
+            }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/wards",
-        "trigger": { "type": "quest-complete", "quest": "quest/greet" },
         "objectives": [
-          { "type": "interact", "id": "obj/ward-north", "title": "Draw the North Ward", "hint": "A lever in the room off the hall.", "anchor": "anchor/door", "prop": { "block": "minecraft:lever" } },
-          { "type": "interact", "id": "obj/ward-south", "title": "Draw the South Ward", "hint": "Its twin, a room away.", "anchor": "anchor/chest", "prop": { "block": "minecraft:lever" } },
-          { "type": "reach-anchor", "id": "obj/shrine", "title": "Enter the Shrine", "hint": "Both wards drawn — the shrine opens.", "anchor": "anchor/objective", "radius": 2, "after": ["obj/ward-north", "obj/ward-south"] }
+          {
+            "anchor": "anchor/door",
+            "hint": "A lever in the room off the hall.",
+            "id": "obj/ward-north",
+            "prop": {
+              "block": "minecraft:lever"
+            },
+            "title": "Draw the North Ward",
+            "type": "interact"
+          },
+          {
+            "anchor": "anchor/chest",
+            "hint": "Its twin, a room away.",
+            "id": "obj/ward-south",
+            "prop": {
+              "block": "minecraft:lever"
+            },
+            "title": "Draw the South Ward",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/ward-north",
+              "obj/ward-south"
+            ],
+            "anchor": "anchor/objective",
+            "hint": "Both wards drawn — the shrine opens.",
+            "id": "obj/shrine",
+            "radius": 2,
+            "title": "Enter the Shrine",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "style": "chat",
+            "text": "The wards fall together.",
+            "type": "narrate"
+          },
+          {
+            "type": "campaign-complete"
+          }
         ],
         "on_objective_complete": {
-          "obj/ward-north": [ { "type": "set-flag", "flag": "flag/north-drawn" } ],
-          "obj/ward-south": [ { "type": "set-flag", "flag": "flag/south-drawn" } ]
+          "obj/ward-north": [
+            {
+              "flag": "flag/north-drawn",
+              "type": "set-flag"
+            }
+          ],
+          "obj/ward-south": [
+            {
+              "flag": "flag/south-drawn",
+              "type": "set-flag"
+            }
+          ]
         },
-        "on_complete": [
-          { "type": "narrate", "text": "The wards fall together.", "style": "chat" },
-          { "type": "campaign-complete" }
-        ]
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "quests"
 }
