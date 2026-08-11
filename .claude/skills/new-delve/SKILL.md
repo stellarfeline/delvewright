@@ -598,8 +598,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      - Omitting a live NPC is `DW0460`: an unaccounted NPC is how two crew
        members ended up standing forgotten in the alcoves while the player
        escaped the cave.
-3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; see
-   `crates/dsl/README.md` + `crates/compiler/README.md` tables). Loop until clean.
+3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; the
+   complete catalogue is `docs/reference/compiler.md` §5). Loop until clean.
    Three failed repairs on the same code → stop and think about the design instead
    of patching syntax.
 4. Interactive mode: present a 3–6 line summary of the stage; wait.
