@@ -31,13 +31,14 @@ use delvewright_dsl::{AreaLighting, AreaMitigation, Campaign, Fixture, WorldTime
 
 use crate::nav::World;
 use crate::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::DwCode;
 
 /// `DW0210`: a reachable walkable cell measured below light 3 in an area with no
 /// `lighting` declaration and no night-vision class-kit mitigation (spec-0010).
-pub const DW_DARK_UNMITIGATED: &str = "DW0210";
+pub const DW_DARK_UNMITIGATED: DwCode = DwCode::every_version("DW0210");
 /// `DW0211`: a declared fixture cannot raise every reachable walkable cell to
 /// `min_light` — no valid placement site remains (spec-0010).
-pub const DW_RELIGHT_UNSATISFIABLE: &str = "DW0211";
+pub const DW_RELIGHT_UNSATISFIABLE: DwCode = DwCode::every_version("DW0211");
 
 /// The measured-darkness threshold: a reachable walkable cell below this, with no
 /// declaration and no night-vision, is `DW0210` (spec-0010 mitigation hierarchy).
@@ -62,7 +63,7 @@ pub struct Placement {
 #[derive(Clone, Debug)]
 pub struct LightDiag {
     /// The stable code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation naming the area / cell.
     pub message: String,
 }

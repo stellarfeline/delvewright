@@ -37,6 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
 use crate::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::DwCode;
 
 /// The bare block id of a (possibly blockstate-carrying) block name: strips a
 /// trailing `[state]` / `{nbt}` suffix, keeping the namespace
@@ -1014,7 +1015,7 @@ fn spread(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<
 /// wave seat happens to cross it — so DW0311/DW0312 alone would let it ship green.
 /// This is the authoritative, direct gate: no DSL verb can intend a despawn, so it
 /// is always a prefab/generator defect (task #42, owner addendum).
-pub const DW_GRAVITY_DESPAWN: &str = "DW0313";
+pub const DW_GRAVITY_DESPAWN: DwCode = DwCode::every_version("DW0313");
 
 /// A placed piece's prefab id paired with its world AABB `(min, max)`, for
 /// attributing a despawned cell back to the piece that placed it.

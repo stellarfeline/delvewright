@@ -193,15 +193,16 @@ use delvewright_dsl::Diagnostic;
 
 use crate::nav::{ActorMovePlan, MovePlan, World};
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0452`: a walked leg's route contains a move the body cannot make — today,
 /// passing through a closed fence gate with no capability to open one.
-pub const DW_TRAVERSAL_IMPOSSIBLE: &str = "DW0452";
+pub const DW_TRAVERSAL_IMPOSSIBLE: DwCode = DwCode::every_version("DW0452");
 
 /// `DW0453`: a walked leg's route goes **over** a barrier line by stepping onto a
 /// full-cube course of it. Advisory: the step is physically legal, and whether
 /// the course is a kerb or an enclosure is a content judgement.
-pub const DW_BARRIER_SURMOUNTED: &str = "DW0453";
+pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453");
 
 /// How many route steps after a rise still count as "and came down the other
 /// side". Four: the island's crossing takes one step up, at most two along the
@@ -431,7 +432,7 @@ impl TraversalGate {
 #[derive(Debug)]
 pub struct TraversalError {
     /// The stable diagnostic code ([`DW_TRAVERSAL_IMPOSSIBLE`]).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation naming the body, the leg, the cell and the
     /// capability the route assumed — plus every further violation, so one build
     /// reports them all.

@@ -52,25 +52,26 @@ use delvewright_dsl::{
 };
 
 use crate::continuity::{self, NpcWhere};
+use delvewright_dsl::DwCode;
 
 /// A live NPC is unaccounted for in a quest's `cast` ledger (proof 1).
-pub const DW_CAST_UNACCOUNTED: &str = "DW0460";
+pub const DW_CAST_UNACCOUNTED: DwCode = DwCode::every_version("DW0460");
 /// A declared `at` contradicts the position the effect history produces (proof 2).
-pub const DW_CAST_PLACEMENT: &str = "DW0461";
+pub const DW_CAST_PLACEMENT: DwCode = DwCode::every_version("DW0461");
 /// A branch-divergent NPC carries a single flat declaration (proof 4).
-pub const DW_CAST_BRANCH: &str = "DW0462";
+pub const DW_CAST_BRANCH: DwCode = DwCode::every_version("DW0462");
 /// A cast placement omits the forcing-function fields, or declares them for a
 /// body that is not in the world.
-pub const DW_CAST_INCOMPLETE: &str = "DW0463";
+pub const DW_CAST_INCOMPLETE: DwCode = DwCode::every_version("DW0463");
 /// A cast entry names something that does not exist (unknown NPC, a dialogue root
 /// that is not a node of that NPC's tree, an empty bark pool).
-pub const DW_CAST_DANGLING: &str = "DW0464";
+pub const DW_CAST_DANGLING: DwCode = DwCode::every_version("DW0464");
 /// A pre-0.7 campaign declares no cast ledger — the deprecation window (warning).
-pub const DW_CAST_PRE_07: &str = "DW0465";
+pub const DW_CAST_PRE_07: DwCode = DwCode::every_version("DW0465");
 /// `"unchanged"` at an NPC's first appearance: nothing to carry forward.
-pub const DW_CAST_UNCHANGED_FIRST: &str = "DW0466";
+pub const DW_CAST_UNCHANGED_FIRST: DwCode = DwCode::every_version("DW0466");
 /// An NPC's dialogue never changes across the whole story (warning).
-pub const DW_CAST_STALE: &str = "DW0467";
+pub const DW_CAST_STALE: DwCode = DwCode::every_version("DW0467");
 
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]

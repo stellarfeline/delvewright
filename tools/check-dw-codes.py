@@ -78,8 +78,26 @@ import re
 import sys
 
 CODE_RE = re.compile(r"DW[0-9]{4}")
+# A diagnostic-code constant, in either shape the workspace uses:
+#
+#   pub const L10N_MISSING: DwCode = DwCode::every_version("DW0180");
+#   pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
+#   pub const DW_STRIP: &str = "DW0700";
+#
+# The `DwCode` form is the campaign-facing one: it carries the version at which
+# the rule starts binding a campaign (`dsl::diagnostic::Binds`), which is what
+# makes an unfenced obligation impossible to add. The bare `&str` form remains in
+# `delve-schem` / `delve-admit` / `delve-render`, whose diagnostics are about
+# prefabs, schematics and renders — artifacts that carry no `dsl_version`, so
+# there is nothing for a fence to grandfather against.
+#
+# Matching BOTH is load-bearing, not tidiness: this regex is how a symbol name is
+# resolved to its code, so a form it does not know silently drops every code
+# declared that way out of coverage accounting (the `DwCode` rollout produced
+# exactly that — 20 codes reported uncovered that were covered all along).
 CONST_RE = re.compile(
-    r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*&(?:\'static\s+)?str\s*=\s*"(DW[0-9]{4})"'
+    r'const\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:&(?:\'static\s+)?str|DwCode)\s*=\s*'
+    r'(?:DwCode::(?:every_version|since)\(\s*)?"(DW[0-9]{4})"'
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOC_PATH = REPO_ROOT / "docs" / "reference" / "compiler.md"
