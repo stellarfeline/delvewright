@@ -28,11 +28,13 @@ use delvewright_grammar::block::BlockState;
 use delvewright_grammar::compose::{AnchorRenames, entry, include_renaming};
 use delvewright_grammar::geom::Axis;
 use delvewright_grammar::ir::{Alternative, Node, Paint, Program, Size, Split};
+use delvewright_grammar::library::bell::bell_tower::{CLIMB, RISE, SILL};
 use delvewright_grammar::library::bell::cliff_road::{MIN_DROP, MIN_GULF};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
 use delvewright_grammar::library::{
-    barrow_shore, broken_grate, causeway, chapel_ward, cistern_deep, cliff_road, drowned_ward,
-    elite_ground, far_side_bar, gate_ward, hall_keep, stair_flight, watch_bay,
+    barrow_shore, bell_tower, boulder_stair, broken_grate, causeway, chapel_ward, cistern_deep,
+    cliff_road, drowned_ward, elite_ground, far_side_bar, gate_ward, hall_keep, stair_flight,
+    watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, Expansion, VoxelModel, expand};
 
@@ -106,6 +108,23 @@ const DEEP_STRIP: i32 = 21;
 /// The same, for Z4.
 const CHAPEL_STRIP: i32 = 7;
 
+/// **Z7.** Bell Tower: twenty cells each of boss ring, boss door and loft,
+/// twenty-one of lift landing, and the remaining twenty-four of ascent. The
+/// mainline is nineteen wide because the Bellkeeper's ring asks for it, and the
+/// branch strip twenty-two because it has to be deeper than the landing's run is
+/// long — so the box is forty-one across. Fourteen tall: nine courses for the
+/// flight to climb and the upper storey's own six on top of the eight it stands
+/// on.
+const TOWER_REGION: Box3 = Box3::at_origin([41, 14, 105]);
+/// Nothing in the tower draws from the seed; it is stated, not chosen.
+const TOWER_SEED: u64 = 1;
+/// How far the branch strip runs off Z7's mainline — the `strip_depth` default,
+/// restated for the same reason [`DEEP_STRIP`] is.
+const TOWER_STRIP: i32 = 22;
+/// How much of Z7's length the Bellkeeper's ring takes — the `ring_run` default,
+/// restated because the flank gate reads cells off it.
+const TOWER_RING_RUN: i32 = 20;
+
 /// The odd barrel's block (`store_room`'s `barrel_unbanded` default).
 const TELL_BLOCK: &str = "minecraft:spruce_log";
 
@@ -150,6 +169,7 @@ fn zones() -> Vec<ZoneFixture> {
             falls: true,
             ..zone(cistern_deep(), DEEP_REGION, DEEP_SEED)
         },
+        zone(bell_tower(), TOWER_REGION, TOWER_SEED),
     ]
 }
 
@@ -260,7 +280,7 @@ fn every_zone_restyles_without_moving_a_block() {
 /// vocabulary has.
 ///
 /// Binding: the standable cells of each zone — 438 (Z0), 40 (Z1), 239 (Z2),
-/// 1100 (Z3), 81 (Z4), 368 (Z5), 2078 (Z6).
+/// 1100 (Z3), 81 (Z4), 368 (Z5), 2078 (Z6), 1838 (Z7).
 #[test]
 fn every_zone_is_walkable_end_to_end() {
     for ZoneFixture {
@@ -304,7 +324,7 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 7, 5, 6, 10].into_iter().zip(zones()) {
+    for (want, ZoneFixture { program, .. }) in [1, 3, 2, 7, 5, 6, 10, 10].into_iter().zip(zones()) {
         assert_eq!(
             program.palette.len(),
             want,
@@ -410,6 +430,61 @@ fn the_zone_fixtures_are_pinned() {
     assert_eq!(span_cells(&deep).len(), 51);
     assert_eq!(standable_cells(&deep.model).len(), 2078);
     assert_eq!(branch_near_room(&deep, DEEP_STRIP).len(), 180);
+
+    // Z7 carries an anchor from each of its six pieces, and it is the first zone
+    // where two of them are indexed families — the flight's nine treads and the
+    // loft's five perches. The count is pinned rather than the names alone: a
+    // flight that laid a tread fewer would still name every stem in this list.
+    let tower = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let names: Vec<&str> = tower
+        .anchors
+        .keys()
+        .map(String::as_str)
+        .filter(|n| !n.starts_with("anchor/stair-step-") && !n.starts_with("anchor/perch-"))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "anchor/branch-door",
+            "anchor/elite",
+            "anchor/hall-door",
+            "anchor/lift-call-1",
+            "anchor/lift-pit",
+            "anchor/lift-station-1",
+            "anchor/stair-foot",
+            "anchor/stair-head",
+            "anchor/threshold-narrate",
+        ]
+    );
+    assert_eq!(tower.anchors.len(), 23, "the tower's whole anchor set");
+    assert_eq!(
+        indexed(&tower.anchors, "stair-step").len() as i64,
+        CLIMB,
+        "the flight laid a different number of treads than the zone's plinth is cut for"
+    );
+    assert_eq!(indexed(&tower.anchors, "perch").len(), 5);
+    // One station and one call, deliberately: the tower is the *head* of the
+    // shaft and the ride's far floor stands in another zone's box. A second
+    // station here would mean a landing opening into the plinth.
+    assert_eq!(indexed(&tower.anchors, "lift-station").len(), 1);
+    assert_eq!(indexed(&tower.anchors, "lift-call").len(), 1);
+    assert_eq!(standable_cells(&tower.model).len(), 1838);
+    assert_eq!(tower_shaft_landings(&tower).len(), 1);
+}
+
+/// Z7's shaft landings: the strip's standable cells above the shaft floor — the
+/// doorway sills a body steps through to board, and nothing else, because the
+/// rest of the strip is the zone's own inert margin.
+///
+/// The upper bound is the strip's depth for the same reason
+/// [`branch_near_room`]'s is: the strip is exactly the box the zone cut off its
+/// own side and the mainline starts where it ends.
+fn tower_shaft_landings(out: &Expansion) -> BTreeSet<[i32; 3]> {
+    let pit = out.anchors["anchor/lift-pit"].pos;
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[0] < TOWER_STRIP && c[1] > pit[1])
+        .collect()
 }
 
 /// The branch's near room: the strip's standable cells on the mainline side of
@@ -1734,6 +1809,394 @@ fn a_branch_no_deeper_than_its_junction_is_refused() {
 }
 
 // ---------------------------------------------------------------------------
+// Z7 — the Bell Tower
+// ---------------------------------------------------------------------------
+
+/// **Gate 1, and the one this zone exists for: the tower is a route, and the
+/// route CLIMBS.**
+///
+/// Every other zone is a chain across one floor, so "the pieces join" and "the
+/// pieces are at the same height" are the same sentence. Here they are not: the
+/// four upper pieces stand on a plinth this program writes, and if the plinth
+/// and the flight's rise disagree by one course the zone is two rooms with a
+/// step between them — which walks perfectly under `connected`'s ±1 edge and
+/// would pass a route gate in silence.
+///
+/// So three claims, not one. The route walks (both ways — this zone has no
+/// one-way hardware on its mainline, so it owes the stronger walk); the exit
+/// face stands [`RISE`] blocks above the entry face, measured off the *model*
+/// rather than off any anchor; and the seam is level, `anchor/stair-head` at the
+/// exact height of the upper storey's own floor.
+///
+/// **The control** is what keeps the rise from being vacuous: `boulder_stair` in
+/// the same box is flat by construction — its own module explains at length why
+/// it does not climb — so a green here cannot be a flat chain wearing a stair's
+/// anchors.
+///
+/// Binding: 1838 standable cells, 17 at the entry face, 19 at the exit face,
+/// [`CLIMB`] treads, and one flat control read by the same code.
+#[test]
+fn the_bell_tower_is_a_route_and_the_route_climbs() {
+    let out = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert_eq!(cells.len(), 1838, "the fixture's standable cells");
+    assert_eq!((entry.len(), exit.len()), (17, 19), "the tower's end faces");
+
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the tower's pieces do not join into a route"
+    );
+    assert!(
+        connected(&cells, &exit, &entry),
+        "the tower cannot be walked back down"
+    );
+
+    // The rise, off the model: every cell of each face is at one height, and the
+    // two heights differ by exactly what the flight climbs.
+    let face_y = |face: &BTreeSet<[i32; 3]>| {
+        let ys: BTreeSet<i32> = face.iter().map(|c| c[1]).collect();
+        assert_eq!(ys.len(), 1, "a zone face at more than one height: {ys:?}");
+        *ys.iter().next().unwrap()
+    };
+    let (bottom, top) = (face_y(&entry), face_y(&exit));
+    assert_eq!(
+        top - bottom,
+        RISE,
+        "the tower does not climb: entry at {bottom}, exit at {top}"
+    );
+
+    // ...and the seam is level rather than merely connected.
+    let head = out.anchors["anchor/stair-head"].pos;
+    assert_eq!(
+        head[1], top,
+        "the flight's head landing {head:?} is not the upper storey's own floor — \
+         the plinth and the climb disagree, and the ±1 walk cannot see it"
+    );
+    assert_eq!(
+        out.anchors["anchor/stair-foot"].pos[1], bottom,
+        "the flight's foot landing is not level with the zone's entry"
+    );
+
+    // The control: the flat rule, the same box, the same reading code.
+    let flat = expand_at(&boulder_stair(), TOWER_REGION, TOWER_SEED);
+    let (flat_entry, flat_exit) = ends(&flat.model);
+    assert!(!flat_entry.is_empty() && !flat_exit.is_empty());
+    assert_eq!(
+        face_y(&flat_exit) - face_y(&flat_entry),
+        0,
+        "the flat control climbed, so the rise above is not measuring a climb"
+    );
+}
+
+/// ...and the climb has teeth. `flight/broken_step` raises one tread by an extra
+/// course: the shaft still looks like a stair, everything below the break still
+/// walks, and the head landing becomes unreachable. Nothing else about the zone
+/// changes, so what goes red is the ascent and not the assembly.
+///
+/// The control is the half that matters: the *lower* tower still walks — the
+/// entry face still reaches the foot of the break — so the red above is a broken
+/// stair rather than a zone that stopped expanding.
+#[test]
+fn one_unclimbable_riser_severs_the_tower() {
+    let mut broken = bell_tower();
+    broken.set_param("flight/broken_step", 1).unwrap();
+    let out = expand_at(&broken, TOWER_REGION, TOWER_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    assert_eq!(
+        (entry.len(), exit.len()),
+        (17, 19),
+        "the broken tower still has both faces, so the cut is the riser"
+    );
+    assert!(
+        !connected(&cells, &entry, &exit),
+        "one unclimbable riser and the tower still walks end to end — either the \
+         knob does nothing after composition or there is a second way up"
+    );
+
+    // The control: the tower below the break is untouched.
+    let steps = indexed(&out.anchors, "stair-step");
+    assert_eq!(
+        steps.len() as i64,
+        CLIMB,
+        "the flight still lays its treads"
+    );
+    let lowest: BTreeSet<[i32; 3]> = [*steps.last().expect("a tread")].into_iter().collect();
+    assert!(
+        connected(&cells, &entry, &lowest),
+        "the entry cannot even reach the first tread, so the severance above is not \
+         the break"
+    );
+}
+
+/// **Gate 2 (§4 entry R).** The loft is a `rafter_hall` nineteen wide and six
+/// tall — a box no piece fixture has — and the corbel form has to carry the
+/// sightline there too: every perch legible from the loft's own door.
+///
+/// Teeth: `loft/span_beams` closes the truss across the nave, and the composed
+/// loft goes blind exactly as a bare hall does. Control: the timbers are a
+/// ceiling and not a wall, so the tower still walks.
+///
+/// Binding: 5 perches.
+#[test]
+fn every_loft_perch_is_visible_from_the_lofts_own_door() {
+    let out = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let door = out.anchors["anchor/hall-door"].pos;
+    assert!(standable(&out.model, door), "the loft door cell {door:?}");
+    let perches = indexed(&out.anchors, "perch");
+    assert_eq!(perches.len(), 5, "the composed loft carries its rafters");
+    for perch in &perches {
+        assert!(standable(&out.model, *perch), "the perch cell {perch:?}");
+        if let Err(blocker) = sees(&out.model, door, *perch) {
+            panic!(
+                "the loft door {door:?} cannot see the perch {perch:?}: {blocker:?} is \
+                 in the way — the twist ambush REMAKE §3 calls *exposed* is not"
+            );
+        }
+    }
+
+    let mut blinded = bell_tower();
+    blinded.set_param("loft/span_beams", 1).unwrap();
+    let shut = expand_at(&blinded, TOWER_REGION, TOWER_SEED);
+    let shut_door = shut.anchors["anchor/hall-door"].pos;
+    let blind: Vec<[i32; 3]> = indexed(&shut.anchors, "perch")
+        .into_iter()
+        .filter(|p| sees(&shut.model, shut_door, *p).is_err())
+        .collect();
+    assert_eq!(
+        blind.len(),
+        4,
+        "the truss was closed across the nave and the door still saw every perch — \
+         the gate proves nothing"
+    );
+    let cells = standable_cells(&shut.model);
+    let (entry, exit) = ends(&shut.model);
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the closed truss severed the tower, so the blindness above measures the \
+         wrong thing"
+    );
+}
+
+/// **Gate 3 (§4 entry M).** The boss-door motif is the *dual of the fog gate*:
+/// its job is that nobody arrives at the Bellkeeper without having crossed the
+/// marker that says they are about to. That is a claim about the route, not
+/// about the curtain, so it is asserted the way the keep's doorway is — cut the
+/// threshold's own slice out of the graph and the ring must go unreachable.
+///
+/// Two controls, because a cut that severs everything proves nothing: the loft
+/// side of the cut still walks to the entry face, and with the slice back the
+/// ring is reachable again.
+///
+/// Binding: 532 cells on the ring side of the threshold, 1289 on the tower side,
+/// 17 cells cut.
+#[test]
+fn no_route_reaches_the_bellkeeper_without_crossing_the_threshold() {
+    let out = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, _) = ends(&out.model);
+    let narrate = out.anchors["anchor/threshold-narrate"].pos;
+    let elite: BTreeSet<[i32; 3]> = [out.anchors["anchor/elite"].pos].into_iter().collect();
+
+    assert!(
+        connected(&cells, &entry, &elite),
+        "the tower cannot reach its own boss ring"
+    );
+
+    // The doorband is one cell of the zone's length; cutting that slice is
+    // cutting the motif and nothing else.
+    let doorband: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] == narrate[2])
+        .collect();
+    assert_eq!(
+        doorband.len(),
+        17,
+        "the threshold's own slice — the motif's full interior width: {doorband:?}"
+    );
+    let cut: BTreeSet<[i32; 3]> = cells.difference(&doorband).copied().collect();
+    assert_eq!(cut.len(), cells.len() - 17);
+    assert!(
+        !connected(&cut, &entry, &elite),
+        "with the boss threshold cut out the ring is still reachable — there is a \
+         way to the Bellkeeper that never crosses the marker"
+    );
+
+    // The controls: the cut severed the ring and not the tower, and the ring is
+    // genuinely on the far side of it.
+    let ring_side: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] < narrate[2])
+        .collect();
+    let tower_side: BTreeSet<[i32; 3]> = cells
+        .iter()
+        .copied()
+        .filter(|c| c[2] > narrate[2])
+        .collect();
+    assert_eq!((ring_side.len(), tower_side.len()), (532, 1289));
+    let loft_door: BTreeSet<[i32; 3]> = [out.anchors["anchor/hall-door"].pos].into_iter().collect();
+    assert!(
+        connected(&cut, &entry, &loft_door),
+        "the cut also severed the loft from the entry, so the red above is not \
+         about the threshold"
+    );
+}
+
+/// **Gate 4 (§4 entry E).** The Bellkeeper's ring is open ground with a lane
+/// past it on each side — REMAKE §6's "kept anti-Capra", built as geometry
+/// rather than as a rule somebody has to remember. Bound inside the ring's own
+/// run, exactly as Z3 binds it, because the tower's own length is a stair and a
+/// loft and does not carry flank bands.
+///
+/// Binding: 2 routes at the default over the ring's twenty-cell run; 3 teeth
+/// configurations.
+#[test]
+fn the_bellkeepers_ring_keeps_a_lane_on_each_side() {
+    for (knob, want) in [(0, 2), (1, 1), (2, 1), (3, 0)] {
+        let mut program = bell_tower();
+        program.set_param("ring/seal_flank", knob).unwrap();
+        let out = expand_at(&program, TOWER_REGION, TOWER_SEED);
+        let elite = out.anchors["anchor/elite"].pos;
+        assert_eq!(
+            arena_flank_routes(&out, elite, TOWER_RING_RUN),
+            want,
+            "ring/seal_flank = {knob}"
+        );
+    }
+}
+
+/// **Gate 5 (§4 entry L).** The counterweight shaft, and the two things a lift's
+/// geometry owes that no campaign JSON can assert about itself.
+///
+/// *It is reached through exactly one doorway.* The tower walks end to end with
+/// the shaft standing (the control that separates "the shaft is a branch" from
+/// "the zone is impassable"); the landing is reachable; and `tee/sealed` plugs
+/// the junction's own doorway and nothing else, after which the landing is
+/// unreachable while the tower still walks.
+///
+/// *It only drops.* The pit is reachable from the entry face under walk-and-fall
+/// — the player's own model, which is how a body gets into an empty shaft — and
+/// the entry face is **not** reachable from the pit under the plain ±1 step. The
+/// same predicate pair `drop_shaft` and `lift_shaft` are gated on, re-bound to
+/// the composed zone.
+///
+/// *Its landing meets the junction's.* The tee's doorway and the shaft's face
+/// doorway are placed by two pieces turned 90° to each other, so they are
+/// asserted to be one column rather than merely connected. That is the gate a
+/// misplaced lane reds: moving `lift_shaft`'s own lane off centre (`rel(1)` →
+/// `abs(1)` on its first split) makes the tower unable to reach its own landing,
+/// with every other gate in the suite still green.
+///
+/// Binding: 1 landing sill in the strip, 1 pit, 1838 standable cells; the sealed
+/// variant is 1837.
+#[test]
+fn the_counterweight_shaft_is_entered_once_and_only_drops() {
+    let out = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let cells = standable_cells(&out.model);
+    let (entry, exit) = ends(&out.model);
+    let landings = tower_shaft_landings(&out);
+    let pit: BTreeSet<[i32; 3]> = [out.anchors["anchor/lift-pit"].pos].into_iter().collect();
+    assert_eq!(landings.len(), 1, "the shaft's landings: {landings:?}");
+
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the shaft sealed the tower — a branch that severs the zone it hangs off is \
+         not a branch"
+    );
+    assert!(
+        connected(&cells, &entry, &landings),
+        "the tower cannot reach its own lift landing"
+    );
+
+    // ...and the two doorways are one column, which is the claim the walk above
+    // would only tell us about indirectly. The tee's doorway and the shaft's
+    // face doorway are placed by two pieces turned 90° to each other, so this is
+    // the seam a reader would most expect to be off by one.
+    let door = out.anchors["anchor/branch-door"].pos;
+    let sill = *landings.iter().next().expect("a landing");
+    assert_eq!(
+        (sill[1], sill[2], door[0] - sill[0]),
+        (door[1], door[2], 1),
+        "the junction's doorway {door:?} and the shaft's landing {sill:?} are not \
+         the same column — the two pieces' centres disagree"
+    );
+    assert!(
+        reachable_with_fall(&out.model, &cells, &entry, &pit),
+        "a body cannot get into the shaft at all, so its one-wayness is vacuous"
+    );
+    assert!(
+        !connected(&cells, &pit, &entry),
+        "the shaft's pit walks back into the tower — the hub-opener is a staircase"
+    );
+    // ...and the negative is not merely the pit being sealed off from itself:
+    // the shaft's own landing is what it fails to reach.
+    assert!(
+        !connected(&cells, &pit, &landings),
+        "the pit walks back up to the landing it fell from"
+    );
+
+    // The teeth, and the control beside them.
+    let mut sealed = bell_tower();
+    sealed.set_param("tee/sealed", 1).unwrap();
+    let shut = expand_at(&sealed, TOWER_REGION, TOWER_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    let (shut_entry, shut_exit) = ends(&shut.model);
+    assert_eq!(
+        shut_cells.len(),
+        cells.len() - 1,
+        "the junction's doorway cell, and only it, is gone"
+    );
+    assert!(
+        !connected(&shut_cells, &shut_entry, &tower_shaft_landings(&shut)),
+        "the junction's doorway was filled and the shaft is still reachable — the \
+         way in was never the doorway"
+    );
+    assert!(
+        connected(&shut_cells, &shut_entry, &shut_exit),
+        "sealing the junction sealed the tower, so the red above measures an \
+         impassable zone rather than an unreachable shaft"
+    );
+}
+
+/// **Gate 6.** The tower's one piece of seam arithmetic is *checked*, not hoped.
+///
+/// The plinth is cut to a declared number and the flight's rise is derived from
+/// the box; the plan guards that they agree, and that the shaft's lowest station
+/// is that same number. Dial any of the three and the expansion is a refusal
+/// naming the rule — never a tower with a step at its own landing or a lift
+/// landing that opens into solid mass.
+///
+/// Binding: 4 drifts, each shown refusing, plus the control that the untouched
+/// program expands.
+#[test]
+fn the_towers_plinth_arithmetic_is_guarded_not_hoped() {
+    expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    assert_eq!(SILL, CLIMB, "the shaft's sill is the flight's own climb");
+
+    for (knob, value) in [
+        // the station moves off the upper storey's floor
+        ("shaft/sill", SILL + 1),
+        // the flight climbs faster, so the plinth is now too thin
+        ("flight/tread", 1),
+        // ...and slower, so it is too thick
+        ("flight/landing_run", 4),
+        // a longer landing run for the ring shortens the flight's own
+        ("ring_run", 22),
+    ] {
+        let mut drifted = bell_tower();
+        drifted.set_param(knob, value).unwrap();
+        let err = expand(&drifted, TOWER_REGION, &ExpandOptions::seeded(TOWER_SEED)).unwrap_err();
+        assert!(
+            err.to_string().contains("no alternative of rule"),
+            "expected {knob} = {value} to be refused, got: {err}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // What composition itself has to get right
 // ---------------------------------------------------------------------------
 
@@ -1755,10 +2218,11 @@ fn a_branch_no_deeper_than_its_junction_is_refused() {
 /// Everything else faces `north`, down travel. A piece that turned by accident
 /// still reds this gate, because its zone's set does not name it.
 ///
-/// Binding: 36 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 4 (Z2), 5
-/// (Z4), 9 (Z5), 9 (Z6). Of those, exactly 14 face across, and that count is
-/// pinned too: 4 cliff recesses, the two ambush alcoves, the storeroom tell, the
-/// broken grate, and the 6 branch anchors of Z4 and Z6.
+/// Binding: 65 anchors — 1 (Z0), 8 (Z1: 4 niches, 4 watch cells), 4 (Z2), 5
+/// (Z4), 9 (Z5), 9 (Z6), 6 (Z3), 23 (Z7: 9 treads, 5 perches and the rest). Of
+/// those, exactly 21 face across, and that count is pinned too: 4 cliff
+/// recesses, the two ambush alcoves, the storeroom tell, the broken grate, the 6
+/// branch anchors of Z4 and Z6, Z3's 3, and Z7's 4.
 #[test]
 fn the_pieces_stand_in_travel_order() {
     let ward = expand_at(&gate_ward(), WARD_REGION, WARD_SEED);
@@ -1830,6 +2294,28 @@ fn the_pieces_stand_in_travel_order() {
         );
     }
 
+    // Z7 is the tall one, and the only zone whose travel order is also a
+    // *climb*: the ring and the boss door stand a storey above the flight the
+    // player comes up, and the anchors still run in one order down the zone's
+    // own axis. The lift's three anchors are off the mainline and are checked
+    // below with the other branches'.
+    let tower = expand_at(&bell_tower(), TOWER_REGION, TOWER_SEED);
+    let order = [
+        "anchor/elite",
+        "anchor/threshold-narrate",
+        "anchor/branch-door",
+        "anchor/hall-door",
+        "anchor/stair-head",
+        "anchor/stair-foot",
+    ];
+    for pair in order.windows(2) {
+        assert!(
+            z(&tower, pair[0]) < z(&tower, pair[1]),
+            "the bell tower's pieces are out of travel order at {pair:?}: {:#?}",
+            tower.anchors
+        );
+    }
+
     // The branch's own anchors are off the mainline, so travel order does not
     // apply to them — what does is that they lie *beside* the junction that opens
     // onto them and not beside some other piece.
@@ -1846,6 +2332,20 @@ fn the_pieces_stand_in_travel_order() {
             );
         }
     }
+    // Z7's branch is the shaft, and its three anchors owe the same: the station
+    // and the pit are one column, and the call control is beside the doorway
+    // that reaches them.
+    for name in [
+        "anchor/lift-station-1",
+        "anchor/lift-call-1",
+        "anchor/lift-pit",
+    ] {
+        assert!(
+            (z(&tower, name) - z(&tower, "anchor/branch-door")).abs() <= 2,
+            "{name} is not beside the doorway that opens onto it: {:#?}",
+            tower.anchors
+        );
+    }
 
     // Every anchor faces the way its rule — or its zone — meant it to. See this
     // test's own note for the two ways an anchor earns a `west`.
@@ -1853,6 +2353,15 @@ fn the_pieces_stand_in_travel_order() {
     let road = expand_at(&cliff_road(), CLIFF_REGION, CLIFF_SEED);
     let branch: &[&str] = &["anchor/branch-door", "anchor/gate", "anchor/unlock"];
     let sally: &[&str] = &["anchor/branch-door", "anchor/sally-gate", "anchor/unlock"];
+    // Z7's turned set: the tee's doorway, plus every anchor of the shaft the
+    // zone laid across the mainline — the same reason Z4's and Z6's bars earn a
+    // `west`, one piece further along.
+    let lift: &[&str] = &[
+        "anchor/branch-door",
+        "anchor/lift-station-1",
+        "anchor/lift-call-1",
+        "anchor/lift-pit",
+    ];
     let mut checked = 0;
     let mut across_seen = 0;
     for (out, turned) in [
@@ -1863,6 +2372,7 @@ fn the_pieces_stand_in_travel_order() {
         (&keep, &[][..]),
         (&deep, sally),
         (&drowned, branch),
+        (&tower, lift),
     ] {
         for (name, anchor) in &out.anchors {
             let across = name == "anchor/alcove"
@@ -1880,8 +2390,8 @@ fn the_pieces_stand_in_travel_order() {
             across_seen += usize::from(across);
         }
     }
-    assert_eq!(checked, 42, "the gate checked {checked} anchors");
-    assert_eq!(across_seen, 17, "the gate allowed {across_seen} across");
+    assert_eq!(checked, 65, "the gate checked {checked} anchors");
+    assert_eq!(across_seen, 21, "the gate allowed {across_seen} across");
 }
 
 /// The frame constraint, enforced as a refusal: a piece run shorter than the
@@ -1932,6 +2442,40 @@ fn a_piece_run_shorter_than_the_zone_is_refused_not_turned() {
         "west",
         "a box wider than it is long did not turn the watch bay, so the guard is \
          guarding against nothing"
+    );
+
+    // The same guard on the tallest zone, and here it is isolated on purpose:
+    // Z7's plan also guards the climb arithmetic, so shortening a run outright
+    // would be refused for two reasons at once and this test would not know
+    // which. Moving a cell from the boss door's run to the ring's leaves the
+    // upper storey — and therefore the flight's run and the plinth — untouched,
+    // so the *only* clause that can fail is the frame one.
+    let mut squat_tower = bell_tower();
+    squat_tower.set_param("door_run", 19).unwrap();
+    squat_tower.set_param("ring_run", 21).unwrap();
+    let err = expand(
+        &squat_tower,
+        TOWER_REGION,
+        &ExpandOptions::seeded(TOWER_SEED),
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+    let flat_box = Box3::at_origin([TOWER_REGION.size[0], 6, 19]);
+    let turned_motif = expand_at(
+        &delvewright_grammar::library::threshold_motif(),
+        flat_box,
+        TOWER_SEED,
+    );
+    assert_eq!(
+        turned_motif.anchors["anchor/threshold-narrate"]
+            .facing
+            .as_str(),
+        "west",
+        "a box wider than it is long did not turn the boss threshold, so the guard \
+         is guarding against nothing"
     );
 }
 

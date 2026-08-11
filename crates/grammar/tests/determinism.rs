@@ -8,7 +8,8 @@ use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::temple::roof;
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
+    far_side_bar, lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple,
+    watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
@@ -43,6 +44,10 @@ const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The vertical family's stationary member: five across, sixteen tall (a sill
+/// and two whole storeys), seven deep — so the `lift-station-<i>` and
+/// `lift-call-<i>` numbering a campaign binds is part of what is pinned here.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
 
 fn cases() -> Vec<(Program, Box3)> {
     vec![
@@ -64,6 +69,7 @@ fn cases() -> Vec<(Program, Box3)> {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (lift_shaft(), LIFT_REGION),
     ]
 }
 
