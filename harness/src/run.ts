@@ -509,7 +509,12 @@ async function main(): Promise<number> {
     // whole souls shape rests on.
     const lethalTrials = executor.deathLoopTrials();
     const deathBinding = deathPlan ? deathLoopBinding(deathPlan, lethalTrials) : undefined;
-    const deathLoopFailures = deathLoop
+    // The stage runs only AFTER the path is proven, so a run that died on the path
+    // never reached it. Reporting that as a death-loop failure would blame this
+    // stage for a fault upstream of it — the mirror of the "skipped read as
+    // passed" error, and just as misleading to whoever reads the report.
+    const deathLoopRan = deathLoop && failure === undefined;
+    const deathLoopFailures = deathLoopRan
       ? [
           ...(deathBinding ? deathLoopBindingFailures(deathBinding) : []),
           ...lethalTrials.flatMap((t) => lethalTrialFailures(t)),
@@ -518,13 +523,18 @@ async function main(): Promise<number> {
     if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
     report.stage({
       stage: "death-loop",
-      ran: deathLoop,
-      passed: deathLoop && deathLoopFailures.length === 0,
-      findings: deathLoop
+      ran: deathLoopRan,
+      passed: deathLoopRan && deathLoopFailures.length === 0,
+      findings: deathLoopRan
         ? executor.deathLoopSkipReason() === undefined
           ? []
           : [`the stage stopped before entering any volume — ${executor.deathLoopSkipReason()}`]
-        : [
+        : deathLoop
+          ? [
+              "the critical path failed, so the death loop was never reached — nothing " +
+                "about dying is proven or disproven by this run",
+            ]
+          : [
             deathPlan === undefined
               ? "no death plan in this build — the campaign declares no lethal volume, no " +
                 "`on_death` and no recovery stake, so there is no death loop to prove"
