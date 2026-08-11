@@ -92,10 +92,16 @@
 //! given a long enough run and the zone writes the **plinth** the four upper
 //! pieces stand on. That is the second thing the round found out: the seam
 //! between a climbing piece and a flat one is not a new node kind, it is the
-//! same "mass no piece handed a sub-box can know about" `cliff_road`'s crag is —
-//! *derived*, never declared, because the rise is a fact about the box the
-//! flight was handed and a zone that parameterised it could put its own floor at
-//! a different height from the landing that reaches it.
+//! same "mass no piece handed a sub-box can know about" `cliff_road`'s crag is.
+//!
+//! And the third, which cost a refusal to learn: that mass **cannot be derived
+//! where it is cut**. A split's size is evaluated in the scope it is written in,
+//! and `dim(Z)` inside the upper storey's own box is the upper run rather than
+//! the zone's length, so the expression for the flight's rise evaluates to
+//! nonsense there (the first draft cut a plinth of −4 courses). A zone in that
+//! position declares the number and **guards the identity** at the one scope
+//! where the whole box is visible — which is stronger than a derivation, not
+//! weaker, because the guard is what a campaign's own dial runs into.
 //!
 //! **The counterweight lift (**L**) — STRUCK, not blocked.** The lift shipped as
 //! a first-class DSL construct (spec-0031): runtime state, region fill/clear and
