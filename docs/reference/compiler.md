@@ -1641,9 +1641,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   pair; the original defect has no compile-time form at all, so this is the only
   number that binds to it). Unlike the ledgers above this one is emitted for
   **every** campaign, because the class binds to any build that summons an
-  affordance: `unbound` is true when either of the first two counts is zero — an
-  empty class makes every exclusion decorative, and zero selectors means the
-  clause the defect lives in looked at nothing.
+  affordance. `unbound` is true when either of the first two counts is zero, and
+  it is always paired with an `unbound_reason` naming WHICH arm found nothing:
+  most campaigns bind the class and not the clause (`nobodys-cave-island`
+  declares no region verb at all — 47 fixtures, 5 borne, 0 box selectors), and a
+  bare `true` over 47 examined objects is how a reader learns to skip the field.
 - `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
   ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
   the traversal proof actually examined — `legs`, `route_cells`, and
@@ -3669,8 +3671,10 @@ nothing at all would pass.
 Binding: `validation/fixture-gate.json` states how many entities declared each
 class, how many box-narrowed selectors were examined, and how many runtime
 templates were generated. Zero on either of the first two counts is reported as
-`unbound` and is a finding: an empty class makes every exclusion decorative, and
-zero selectors means the clause the defect lives in looked at nothing.
+`unbound` **with an `unbound_reason` naming which arm** — an empty class makes
+every exclusion decorative, while zero selectors means the class is bound and the
+clause the defect lives in is simply not exercised by this campaign. The two are
+not the same finding and the ledger never makes a reader guess which one it is.
 
 | Code | Meaning |
 |------|---------|

@@ -157,6 +157,15 @@ pub fn hardware_tag(affordance_tag: &str) -> String {
 /// the motivating defect looked at nothing. A build reporting either is not a
 /// pass; it is a campaign that does not exercise the rule, and the ledger says so
 /// rather than leaving a reader to assume.
+///
+/// **The two are reported separately, and that is deliberate.** The rule has two
+/// arms and most campaigns bind one and not the other:
+/// `nobodys-cave-island` declares no `teleport` and no `lethal_volumes[]`, so its
+/// ledger reads 47 fixtures, 5 borne, and **zero** box selectors. A bare
+/// `unbound: true` on a build that genuinely examined 47 objects is how a reader
+/// learns to skip the field — and a gate everyone skips is one of this project's
+/// named vacuity modes with extra steps. So [`Self::unbound_reason`] says which
+/// arm found nothing and why, in the words the round summary needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FixtureGate {
     /// Engine-summoned entities that declared [`FIXTURE_TAG`].
@@ -174,6 +183,36 @@ pub struct FixtureGate {
 }
 
 impl FixtureGate {
+    /// Which arm of the rule examined nothing, in the words a round summary
+    /// needs — or `None` when both bound.
+    ///
+    /// A campaign with no region verb at all is the ordinary case, not a defect,
+    /// and saying so is the difference between a ledger a reader acts on and one
+    /// they learn to skip.
+    pub fn unbound_reason(&self) -> Option<&'static str> {
+        match (self.fixtures, self.box_selectors) {
+            (0, 0) => Some(
+                "the campaign summons no engine fixture AND declares no region verb: neither \
+                 arm of the rule had anything to examine",
+            ),
+            (0, _) => Some(
+                "the campaign summons no engine fixture, so every selector exclusion in this \
+                 build is inert — there is nothing for it to keep out",
+            ),
+            (_, 0) => Some(
+                "the campaign declares no region verb (`teleport`, `lethal_volumes[]`), so no \
+                 box-narrowed selector was examined. The class itself is bound; the clause the \
+                 stake-marker defect lives in is not exercised here",
+            ),
+            _ => None,
+        }
+    }
+
+    /// Whether this proof matched nothing on at least one arm.
+    pub fn unbound(&self) -> bool {
+        self.unbound_reason().is_some()
+    }
+
     /// The ledger as the `validation/fixture-gate.json` artifact.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
@@ -181,7 +220,8 @@ impl FixtureGate {
             "borne_declared": self.borne,
             "box_selectors_examined": self.box_selectors,
             "packtest_templates": self.packtests,
-            "unbound": self.fixtures == 0 || self.box_selectors == 0,
+            "unbound": self.unbound(),
+            "unbound_reason": self.unbound_reason(),
         })
     }
 }
@@ -701,7 +741,37 @@ mod tests {
         assert_eq!(gate.fixtures, 2);
         assert_eq!(gate.borne, 1);
         assert_eq!(gate.box_selectors, 1);
+        assert_eq!(gate.unbound_reason(), None);
         assert!(!gate.to_json()["unbound"].as_bool().unwrap());
+    }
+
+    /// A campaign that declares no region verb binds the class and not the
+    /// clause, and the ledger must say WHICH — `nobodys-cave-island` is exactly
+    /// this shape (47 fixtures, 0 box selectors), and a bare `unbound: true` over
+    /// 47 examined objects is how a field stops being read.
+    #[test]
+    fn the_ledger_names_which_arm_found_nothing() {
+        let out = out_with(&[(
+            "setup_finish",
+            "summon minecraft:interaction 1 2 3 {Tags:[\"dw_fixture\",\"dw_bonfire_0\"]}",
+        )]);
+        let gate = check_fixtures(&out).unwrap();
+        assert_eq!(gate.fixtures, 1);
+        assert_eq!(gate.box_selectors, 0);
+        let why = gate.unbound_reason().expect("one arm bound nothing");
+        assert!(why.contains("no region verb"), "{why}");
+        assert!(
+            why.contains("class itself is bound"),
+            "it must not read as though the class failed: {why}"
+        );
+        // …and the opposite shape says the opposite thing.
+        let out = out_with(&[(
+            "teleport_ab",
+            "tp @e[x=4,dx=2,y=64,dy=2,z=7,dz=2,tag=!dw_fixture] 5.5 65.0 4.5",
+        )]);
+        let gate = check_fixtures(&out).unwrap();
+        let why = gate.unbound_reason().expect("one arm bound nothing");
+        assert!(why.contains("inert"), "{why}");
     }
 
     /// A tag-narrowed selector is `DW0421`'s business, not this rule's — the
