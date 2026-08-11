@@ -33,13 +33,13 @@ fn version_line() {
         s.contains(&format!("delvec {}", env!("CARGO_PKG_VERSION"))),
         "{s}"
     );
-    // spec-0031 raised the implemented DSL to 0.10.0, in three additive parts:
-    // runtime state — the stage-5 `state[]` declaration, the
-    // `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
-    // numeric comparison carried by every gate consumer — the campaign-wide
-    // `on_death` bundle, effect root R7, and the stage-5 `lethal_volumes`
-    // declaration.
-    assert!(s.contains("dsl 0.10.0"), "{s}");
+    // v0.11 raised the implemented DSL for the press-answer lift, in two
+    // additive parts that are one capability: a `narrate` `actionbar` style (the
+    // reply strip every compiler-written line already used) and a trigger's
+    // `audience: presser` (dispatch as the player who right-clicked). Together
+    // they make "a pressable thing answers the presser" an ordinary trigger, and
+    // retire `close-gate`'s private copy of it.
+    assert!(s.contains("dsl 0.11.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 

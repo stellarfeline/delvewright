@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -38,7 +38,7 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
-    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
+    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
 ];
 
 /// True if `version` is a `dsl_version` this crate accepts.
@@ -65,6 +65,7 @@ fn ordinal(version: &str) -> u32 {
         "0.8.0" => 8,
         "0.9.0" => 9,
         "0.10.0" => 10,
+        "0.11.0" => 11,
         _ => 0,
     }
 }
@@ -173,6 +174,32 @@ pub fn is_v09(version: &str) -> bool {
 /// string, so the ledger is a sequence of minors and a patch would sort nowhere.
 pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
+}
+
+/// True if `version` enables the DSL v0.11 surface: **the press-answer lift**.
+///
+/// Two additions, and they are one lift — each alone leaves the general
+/// mechanism unable to say what `close-gate`'s private copy said:
+///
+/// * `narrate` gains the **`actionbar`** style — the reply strip every string the
+///   compiler writes itself already used, and the one channel the general effect
+///   could not reach;
+/// * an environment trigger gains **`audience: presser`** — dispatch by the
+///   `player_interacted_with_entity` advancement, so the bundle runs as the
+///   player who right-clicked instead of addressing the whole party.
+///
+/// With both, "a pressable thing answers the player who pressed it" is an
+/// ordinary trigger with an ordinary effect, and `close-gate.sealed_hint` stops
+/// being a mechanism and becomes what it always was — a wording. Additive: a
+/// campaign that declares neither is byte-identical, and any use of either below
+/// 0.11.0 is `DW0141`.
+///
+/// There is **no requirement half**. Nothing obliges a campaign to author a press
+/// answer; the compiler supplies one for every sealed body the campaign leaves
+/// silent, at every version, which is why a 0.6 campaign's sealed gate answers
+/// exactly as it did before.
+pub fn is_v11(version: &str) -> bool {
+    ordinal(version) >= 11
 }
 
 /// Which stage a document belongs to.

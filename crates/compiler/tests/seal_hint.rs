@@ -230,22 +230,34 @@ fn a_sealed_gate_answers_a_right_click() {
         "the seal must arm hitboxes that protrude past the sealed block: {arm}"
     );
 
-    let adv = advancement(&out, "seal_door");
+    // DSL v0.11: the answer is no longer `close-gate`'s own machinery. It is the
+    // synthesized press-answer trigger — an ordinary `use` trigger with
+    // `audience: presser`, riding the seal's hitboxes — so what the advancement
+    // watches is the TRIGGER's tag, which `seal_arm_door` puts on those same
+    // entities. Same three parts, none of them keyed to the verb any more.
+    assert!(
+        arm.contains("\"dw_trig_dw_press_seal_door\""),
+        "the press answer must ride the seal's hitboxes, not summon its own: {arm}"
+    );
+
+    let adv = advancement(&out, "press_dw_press_seal_door");
     assert!(
         adv.contains("minecraft:player_interacted_with_entity")
-            && adv.contains("dw_seal_door")
-            && adv.contains("seal_hint_door"),
+            && adv.contains("dw_trig_dw_press_seal_door")
+            && adv.contains("press_dw_press_seal_door"),
         "a right-click on the seal must dispatch the answer as the clicking player: {adv}"
     );
 
-    let hint = function(&out, "seal_hint_door");
+    let dispatch = function(&out, "press_dw_press_seal_door");
+    assert!(
+        dispatch.contains("advancement revoke @s only"),
+        "the stone answers EVERY press, not only the first: {dispatch}"
+    );
+
+    let hint = function(&out, "trig_dw_press_seal_door");
     assert!(
         hint.contains("title @s actionbar") && hint.contains("The way is sealed."),
         "the answer must reach the presser's actionbar: {hint}"
-    );
-    assert!(
-        hint.contains("advancement revoke @s only"),
-        "the stone answers EVERY press, not only the first: {hint}"
     );
 }
 
@@ -293,7 +305,7 @@ fn an_authored_hint_replaces_the_canonical_english() {
     ));
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
-    let hint = function(&out, "seal_hint_door");
+    let hint = function(&out, "trig_dw_press_seal_door");
     assert!(
         hint.contains("The bars will not lift for you."),
         "the authored wording must be what the seal says: {hint}"

@@ -35,7 +35,7 @@ pub use effects::{
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, parse_campaign,
+    is_v10, is_v11, parse_campaign,
 };
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
@@ -73,8 +73,8 @@ pub use stages::{
     QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shop,
     ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl,
     StateScope, StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
+    TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon,
+    WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,

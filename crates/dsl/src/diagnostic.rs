@@ -612,4 +612,25 @@ pub mod codes {
     /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: &str = "DW0527";
+
+    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
+    /// A trigger declares `audience: presser` on something other than an
+    /// `on: use`.
+    ///
+    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
+    /// that runs a function as the player who clicked, and it fires on
+    /// right-clicks alone. A left-click is recorded in the interaction entity's
+    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
+    /// click at all. Approximating it (polling the record and assuming the nearest
+    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
+    /// capability is refused rather than faked.
+    pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: &str = "DW0427";
+
+    /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
+    /// compiler synthesizes triggers of its own — today the press answer every
+    /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
+    /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
+    /// function, so one of them would silently disappear. Reserving the prefix
+    /// makes the collision impossible by construction instead of improbable.
+    pub const TRIGGER_ID_RESERVED: &str = "DW0428";
 }

@@ -59,7 +59,7 @@ Severity: **B** = blocks content today · **L** = latent.
 | 2 | Because of #1, the general mechanism was taught to **ride** the private ones rather than being widened: a trigger on a gate summons nothing and borrows the seal's hitboxes; a `strike` trigger on an NPC borrows the NPC's. | `trigger_rides_seal` `emit.rs:4846`; `seal_rider_tags` `emit.rs:4821`; `npc_hitbox_trigger_tags` `emit.rs:5646`; `DW0422` `eclipse.rs:93` | **B** |
 | 3 | `TriggerOn::StrikeNpc` exists **only** because a point-bound trigger could not reach a large NPC's body (`DW0359`, island round 7). It is shape #1 paid for once already, as a new enum variant instead of a widened binding. | `stages.rs:1766-1783` | L |
 
-| 3b | **`NarrateStyle` has no `actionbar` channel** (`chat`/`title`/`subtitle`/`art` only). This is the *mechanical* reason `sealed_hint` and `boundary.message` could not have routed through `narrate` even had someone tried — the general effect cannot reach the channel both wanted. A second narrow binding, independent of #1, on the other half of the same lift. | `NarrateStyle` `stages.rs`; `emit_narrate` `emit.rs:5523-5541` | **B** |
+| 3b | **CLOSED (DSL v0.11).** ~~`NarrateStyle` has no `actionbar` channel~~ — it has one, and `emit_narrate` lowers it to `title <who> actionbar <component>`. The other half of the same lift is the trigger `audience: presser` (dispatch by the interaction advancement), without which the general effect could reach the channel but not the addressee. Original finding: **`NarrateStyle` has no `actionbar` channel** (`chat`/`title`/`subtitle`/`art` only). This is the *mechanical* reason `sealed_hint` and `boundary.message` could not have routed through `narrate` even had someone tried — the general effect cannot reach the channel both wanted. A second narrow binding, independent of #1, on the other half of the same lift. | `NarrateStyle` `stages.rs`; `emit_narrate` `emit.rs:5523-5541` | **B** |
 | 3c | `QuestEffect` has **27 verbs and no apply-status-effect verb at all**, so `AreaMitigation::NightVision` emits a private clocked `effect give` because there was nothing to call. A genuine capability **gap**, not a duplication — recorded here so the lift is not mis-scoped as a de-duplication. | `stages.rs:4523-4552`; `emit.rs:8218-8241` | L |
 
 **The lift for #1–#3 is one thing**: let a trigger's `at` bind to an anchor's
@@ -77,7 +77,7 @@ can say anything back** — the seal.
 
 | # | Feature | Private emission | Duplicates | Sev |
 |---|---|---|---|---|
-| 4 | **`close-gate.sealed_hint`** — the live instance. Own body fleet, own actionbar reply, own baked default. | `emit.rs:4887`, `emit.rs:4909`, `plan.rs:147` | `EnvTrigger{on:use}` + `narrate` | **B** |
+| 4 | **CLOSED (DSL v0.11).** ~~`close-gate.sealed_hint` — the live instance. Own body fleet, own actionbar reply, own baked default.~~ The verb keeps only the body; `seal_hint_fns` and the `seal_<safe>` advancement are deleted. A press answer is an `EnvTrigger{on: use, audience: presser}` + `narrate{style: actionbar}`, synthesized by `plan::collect_press_answers` for any sealed body the campaign leaves silent — one rule over the pressable class, seals and shortcut doors alike. `sealed_hint` survives as **sugar**: the wording of that answer, keeping its `fx.….sealed_hint` l10n key (the synthesis is in the plan, below `localize`, so no sidecar key moved). | `plan::collect_press_answers`, `emit::press_dispatch_fn` | `EnvTrigger{on:use}` + `narrate` | closed |
 | 5 | `traps[].disarm{via, sets_flag}` — own interaction + own flag-set. | `emit.rs:7560` | `EnvTrigger{on:use, effects:[set-flag]}` | **B** |
 | 6 | `timed_gates[].disarm{via, sets_flag}` — a **second copy** of #5's private machinery. | `emit.rs:4478` | same | **B** |
 | 7 | `shortcuts[].unlock` — interaction half private; `on_unlock` already uses the general effect vocabulary. | `emit.rs:4749` | `EnvTrigger{on:use}` | L |
@@ -193,7 +193,28 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
    whole meaning is the general construct; add a root when the bundle hangs off
    an object with runtime machinery of its own* (which is also why
    `traps[].payload` is R4 and not a desugared trigger).
-1. **Widen `EnvTrigger.at` from a point to an anchor's shape** (#1–#3, #3b).
+1. **DONE.** The binding half (#1–#3) landed in task #50 / PR #324
+   (`compiler::pressable::body_at` — a trigger's `at` now resolves to the
+   clickable *shape* of the object at that anchor, and rides a compiler-owned
+   body where one exists). The **channel and addressee** half (#3b) and the
+   `sealed_hint` lift (#4) landed together at `dsl_version 0.11.0`: a `narrate`
+   `actionbar` style, a trigger `audience: presser`, and one synthesis site for
+   the answer every sealed body gives (`plan::collect_press_answers`). Two
+   corrections worth keeping from doing it:
+   * the audit expected the widened binding to make `sealed_hint` "an ordinary
+     trigger with a `narrate` effect", and that was right — but *only* with #3b,
+     and #3b needed a second part nobody had listed: a click trigger's bundle is
+     dispatched from the tick with **no executor**, so even with the channel it
+     addressed `@a` and could not answer the one player who pressed. The
+     addressee was as much a narrow binding as the channel;
+   * the desugar happens in the **plan**, not in `parse_campaign` where the
+     `ambush` sugar expands. An ambush's strings are the author's and belong in
+     the campaign inventory under the desugared trigger's keys; a press answer's
+     are not — an authored `sealed_hint` already has a key that must not move,
+     and the compiler's default is chrome that must never enter a campaign's
+     inventory at all. *Desugar below the layer that owns the l10n key contract.*
+
+   Original entry: **Widen `EnvTrigger.at` from a point to an anchor's shape** (#1–#3, #3b).
    #3b (a `narrate` `actionbar` style) is part of the same lift — without it the
    general effect still cannot reach the channel `sealed_hint` uses. Unblocks
    the `sealed_hint` lift and every future volume object at once, and is the only

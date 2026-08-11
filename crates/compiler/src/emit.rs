@@ -942,7 +942,7 @@ pub fn build_with_warnings(
     }
 
     // advancements
-    for (name, value) in emit_advancements(plan) {
+    for (name, value) in emit_advancements(plan, &chrome) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/advancement/{name}.json"),
@@ -2494,7 +2494,7 @@ fn emit_functions(
     }
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
-    setup.extend(env_trigger_setup(plan));
+    setup.extend(env_trigger_setup(plan, chrome));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
@@ -2855,7 +2855,7 @@ fn emit_functions(
     }
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
-    tick.extend(env_trigger_tick(plan));
+    tick.extend(env_trigger_tick(plan, chrome));
     // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
     // no disarmable traps → byte-identical.
     tick.extend(trap_tick(plan));
@@ -2907,7 +2907,7 @@ fn emit_functions(
     fns.extend(emit_shortcut_functions(plan));
     // --- task #50: the clickable body of each sealed shortcut door ---
     // Empty for a campaign with no shortcut → byte-identical output.
-    fns.extend(ws_arm_fns(plan));
+    fns.extend(ws_arm_fns(plan, chrome));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -3803,7 +3803,7 @@ fn emit_functions(
     fns.extend(sequence_fns(plan));
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
-    fns.extend(env_trigger_fns(plan));
+    fns.extend(env_trigger_fns(plan, chrome));
     fns.extend(trap_fns(plan, trap_gates));
     // spec-0022: the proven per-cell volley geometry and the settled collapse
     // debris. Empty for a campaign using neither verb (byte-identical).
@@ -3812,8 +3812,7 @@ fn emit_functions(
     fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
     // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
-    fns.extend(seal_fns(plan));
-    fns.extend(seal_hint_fns(plan, chrome));
+    fns.extend(seal_fns(plan, chrome));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
@@ -5964,12 +5963,9 @@ fn seal_arm_fn(safe: &str) -> String {
 /// that made the island's boulder unshippable, so the trigger's tag rides these
 /// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
 /// also its meaning: such a trigger is live exactly while the gate is sealed.
-fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
+fn seal_rider_tags(plan: &Plan, chrome: &delvewright_dsl::Chrome, anchor: &str) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
-    plan.campaign
-        .quests
-        .content
-        .triggers
+    plan.emitted_triggers(chrome)
         .iter()
         .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
         .filter(|t| t.at_anchor() == Some(anchor))
@@ -5987,11 +5983,11 @@ fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
 /// every axis; see that constant for why the margin is not cosmetic.
 ///
 /// Empty for a campaign that never seals a gate → byte-identical output.
-fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
+fn seal_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for s in &plan.seal_hints {
         let mut tags = vec![format!("dw_seal_{}", s.safe)];
-        tags.extend(seal_rider_tags(plan, &s.anchor));
+        tags.extend(seal_rider_tags(plan, chrome, &s.anchor));
         let tag_list = tags
             .iter()
             .map(|t| format!("\"{t}\""))
@@ -6023,34 +6019,19 @@ fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The `seal_hint_<safe>` reward functions (task #142): the answer itself.
-///
-/// Dispatched by a `player_interacted_with_entity` advancement, which is the one
-/// vanilla primitive that runs a function **as the player who right-clicked** —
-/// the same criterion every `interact` objective, NPC dialogue and bonfire rest
-/// already runs on. The interaction entity's own `interaction` NBT record names
-/// no player a command could target, and reading it would also *consume* the
-/// press that a co-located `use` trigger is entitled to see (round-8: adjudicate
-/// conditionally, consume unconditionally). An advancement observes without
-/// consuming, so the seal's answer can never eat another consumer's click.
-///
-/// The advancement is revoked immediately, so the stone answers every press, not
-/// only the first.
-fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
-    let ns = &plan.namespace;
-    plan.seal_hints
-        .iter()
-        .map(|s| {
-            (
-                format!("seal_hint_{}", s.safe),
-                lines(&[
-                    format!("advancement revoke @s only {ns}:seal_{}", s.safe),
-                    format!("title @s actionbar {}", tr(&chrome.rebind(&s.text))),
-                ]),
-            )
-        })
-        .collect()
-}
+// The `seal_hint_<safe>` reward functions and their `seal_<safe>` advancements
+// are GONE (DSL v0.11). They were `close-gate`'s private copy of "a pressable
+// thing answers the player who pressed it": its own advancement shape, its own
+// actionbar command, its own baked English — none of which has anything to do
+// with closing a gate, and none of which the second object that needed them (a
+// sealed shortcut door) could reach.
+//
+// A seal's answer is now an ordinary `EnvTrigger{on: use, audience: presser}`
+// carrying an ordinary `narrate{style: actionbar}`, synthesized by
+// `plan::collect_press_answers` and emitted by `env_trigger_fns` /
+// `press_dispatch_fn` / `emit_advancements` like any author's own click. The
+// wording is unchanged, the revoke-every-press behaviour is unchanged, and the
+// shortcut door gets all of it for free — which is the whole finding.
 
 /// Generated `v08_seal_answers` PackTest (task #142): on a live pinned server,
 /// a gate that is sealed carries the hitboxes its answer rides, arming is
@@ -6134,10 +6115,11 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
 
 /// Every shortcut door with its derived sealed side.
 ///
-/// **Every** shortcut answers — the wording defaults to the compiler's canonical
-/// English — so the only shortcut missing here is one whose side did not resolve,
-/// and such a campaign never reaches emission: [`check_shortcut_sides`] fails the
-/// build first.
+/// **Every** shortcut gets a body — a door with no answer is still a door a
+/// player walks up to and pushes — so the only shortcut missing here is one whose
+/// side did not resolve, and such a campaign never reaches emission:
+/// [`check_shortcut_sides`] fails the build first. That is why `DW0425` binds to
+/// every shortcut rather than to the ones that authored something.
 fn answering_shortcuts<'a>(
     plan: &'a Plan,
 ) -> Vec<(&'a plan::ShortcutPlan, &'a crate::wrongside::SealedSide)> {
@@ -6162,8 +6144,8 @@ fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
         return Err(BuildFailure::Diagnostic {
             code: crate::wrongside::DW_SHORTCUT_SIDE_UNDECIDABLE,
             message: format!(
-                "shortcut `{}` declares an `on_wrong_side` answer, but the compiler cannot tell \
-                 which side of its gate `{}` is the sealed one. The sealed side is derived from \
+                "shortcut `{}` needs a clickable body on the sealed side of its gate `{}`, but \
+                 the compiler cannot tell which side that is. The sealed side is derived from \
                  the gate slab's thin axis and the side of it the `unlock` anchor `{}` stands on; \
                  here the gate spans {lo:?}..{hi:?} and the unlock resolves to {:?}, which either \
                  gives the region no unique thinnest axis (a cube is not a doorway) or leaves the \
@@ -6203,7 +6185,7 @@ fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
 /// compiler supplies the body; the campaign supplies the answer.
 ///
 /// Empty for a campaign with no shortcut → byte-identical output.
-fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
+fn ws_arm_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (sc, side) in answering_shortcuts(plan) {
         // A click trigger the author anchored on this gate rides these hitboxes
@@ -6211,7 +6193,7 @@ fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
         // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
         // at a gate anchor stops being a ray-pick tie.
         let mut tags = vec![format!("dw_ws_{}", sc.safe)];
-        tags.extend(seal_rider_tags(plan, &sc.gate_anchor));
+        tags.extend(seal_rider_tags(plan, chrome, &sc.gate_anchor));
         let tag_list = tags
             .iter()
             .map(|t| format!("\"{t}\""))
@@ -7610,6 +7592,12 @@ fn emit_narrate(
             let art = tr_with(text, &[("font", json!("delve:art"))]);
             body.push(format!("title {who} title {art}"));
         }
+        // DSL v0.11: the reply strip above the hotbar. This is the command every
+        // compiler-written reply has always used — a sealed gate's answer, a
+        // checkpoint return, the lobby count — reached at last by the general
+        // verb, so a campaign can write its own replies instead of the engine
+        // owning them one verb at a time.
+        NarrateStyle::Actionbar => body.push(format!("title {who} actionbar {comp}")),
     }
     if let Some(s) = sound {
         body.push(format!("playsound {s} player {who}"));
@@ -9217,10 +9205,10 @@ fn cutscene_fns(
 /// Polyphemus could not be talked to at all). One cell, one hitbox. The
 /// trigger's lifecycle therefore follows the NPC's presence — which is also
 /// its meaning: the thing being struck is the NPC.
-fn env_trigger_setup(plan: &Plan) -> Vec<String> {
+fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
@@ -9280,7 +9268,7 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
 /// unbound-vacuity class this whole task came out of.
 fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
     use delvewright_dsl::TriggerOn;
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers_unlocalized() {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
@@ -9334,14 +9322,24 @@ fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
 ///
 /// Byte impact: a campaign whose click triggers are its last-declared triggers is
 /// unchanged; any other ordering moves the clear clauses to the end of the block.
-fn env_trigger_tick(plan: &Plan) -> Vec<String> {
+fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let ns = &plan.namespace;
     let mut out = Vec::new();
     // Phase 2, accumulated while phase 1 is emitted: `(tag, record)` for every
     // click trigger, in declaration order (deterministic).
     let mut clears: Vec<String> = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
+        // A `presser` trigger is not polled at all (DSL v0.11): its dispatch is a
+        // `player_interacted_with_entity` advancement, which is the only vanilla
+        // primitive that knows WHO pressed. It therefore also emits no `data
+        // remove` — an advancement observes the click without consuming it, which
+        // is what lets a press answer share one hitbox with a polled trigger and
+        // neither eat the other's record (round-8: adjudicate conditionally,
+        // consume unconditionally).
+        if t.addresses_presser() {
+            continue;
+        }
         let id = plan::safe_local(t.id.as_str());
         let once_guard = if t.once {
             format!("unless score #trig_{id} dw.sys matches 1 ")
@@ -9431,10 +9429,20 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
 /// scoreboard write on a rare event buys a PackTest that can assert *which* of two
 /// triggers on one hitbox actually ran (`v06_shared_hitbox`). Byte impact: one added
 /// line per non-`once` trigger function.
-fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
+///
+/// **An `audience: presser` trigger reverses both of those** (DSL v0.11). Its
+/// bundle is emitted under [`Audience::Solo`] — `@s` is the player who pressed —
+/// and it is reached from a second, tiny function [`press_dispatch_fn`] that the
+/// interaction advancement rewards, rather than from the tick. Everything else is
+/// identical, which is the point: a press answer is not a mechanism, it is this
+/// mechanism with a different addressee.
+fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
         let id = plan::safe_local(t.id.as_str());
+        if t.addresses_presser() {
+            out.push(press_dispatch_fn(plan, t, &id));
+        }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
         // Striker capture (owner directive, round 8). The click record is still on
@@ -9451,14 +9459,10 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
         // The trigger's own flag gate is already proven by `env_trigger_tick`
-        // before it dispatches here; each effect still carries its own gate.
+        // (or by `press_<id>`) before it dispatches here; each effect still
+        // carries its own gate.
         for e in &t.effects {
-            emit_gated_effect(
-                plan,
-                e,
-                root_audience(delvewright_dsl::EffectRootKind::Trigger),
-                &mut body,
-            );
+            emit_gated_effect(plan, e, trigger_audience(t), &mut body);
         }
         if capture {
             body.push(format!(
@@ -9468,6 +9472,74 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
         out.push((format!("trig_{id}"), lines(&body)));
     }
     out
+}
+
+/// The audience one trigger's bundle is emitted under.
+///
+/// [`root_audience`] answers for the root *class*, and remains the authority the
+/// DSL's `EffectRootKind::runs_with_acting_player` is bound to. A trigger is the
+/// one root whose audience is a per-declaration fact (DSL v0.11), and this is
+/// where that is resolved — bound to the DSL by
+/// `EffectRootOwner::runs_with_acting_player`, which `DW0503` reads, so the
+/// validator and the emitter cannot disagree about whether `@s` exists.
+fn trigger_audience(t: &delvewright_dsl::EnvTrigger) -> Audience {
+    if t.addresses_presser() {
+        Audience::Solo
+    } else {
+        root_audience(delvewright_dsl::EffectRootKind::Trigger)
+    }
+}
+
+/// The advancement reward function of an `audience: presser` trigger (DSL v0.11):
+/// `press_<id>`, which revokes its own grant and then runs the trigger's bundle
+/// **as the player who right-clicked**.
+///
+/// This is `seal_hint_<safe>` generalized off the verb it was built onto. The
+/// revoke is what makes the object answer *every* press rather than only the
+/// first — a wall is not consumed by being asked — and `once`, the flag gate and
+/// the state gate are re-stated here because for a presser trigger this function
+/// takes the place of the tick clause that would otherwise have carried them.
+/// They are the trigger's own, spelled exactly as `env_trigger_tick` spells them,
+/// so the two dispatch routes gate identically.
+fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
+    let ns = &plan.namespace;
+    let once_guard = if t.once {
+        format!("unless score #trig_{id} dw.sys matches 1 ")
+    } else {
+        String::new()
+    };
+    let forbid_guard: String = t
+        .forbids_flags
+        .iter()
+        .map(|f| {
+            format!(
+                "unless score {} {} matches 1 ",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
+        .collect();
+    let flag_guard = format!(
+        "{}{}",
+        party_flag_gate(&t.requires_flags),
+        state_cond(plan, &t.requires_state, false)
+    );
+    // An ungated press answer — which is every one the compiler synthesizes —
+    // calls its bundle outright. `execute run function …` is legal and would
+    // work, but a conditionless `execute` in shipped output reads as a guard
+    // somebody deleted.
+    let dispatch = if once_guard.is_empty() && forbid_guard.is_empty() && flag_guard.is_empty() {
+        format!("function {ns}:trig_{id}")
+    } else {
+        format!("execute {once_guard}{forbid_guard}{flag_guard}run function {ns}:trig_{id}")
+    };
+    (
+        format!("press_{id}"),
+        lines(&[
+            format!("advancement revoke @s only {ns}:press_{id}"),
+            dispatch,
+        ]),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -11566,7 +11638,7 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
     out
 }
 
-fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
+fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
@@ -11645,12 +11717,23 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
-    // Task #142: one advancement per sealed gate, so a right-click on the stone
-    // runs the answer AS the player who pressed it. `seal_hint_<safe>` revokes it,
-    // so the seal answers every press — a wall is not consumed by being asked.
-    for s in &plan.seal_hints {
+    // DSL v0.11: one advancement per `audience: presser` trigger, so a right-click
+    // on the thing runs its bundle AS the player who pressed it. `press_<id>`
+    // revokes its own grant, so the object answers every press — a wall is not
+    // consumed by being asked.
+    //
+    // This is `seal_<safe>` lifted off `close-gate`. It keys on the trigger's own
+    // `dw_trig_<id>` tag, which `seal_fns` / `ws_arm_fns` / `env_trigger_setup`
+    // already put on whatever body that trigger rides or summons — so the
+    // advancement needs to know nothing about seals, doors, or any future
+    // pressable object class.
+    for t in &plan.emitted_triggers(chrome) {
+        if !t.addresses_presser() {
+            continue;
+        }
+        let id = plan::safe_local(t.id.as_str());
         advs.push((
-            format!("seal_{}", s.safe),
+            format!("press_{id}"),
             json!({
                 "criteria": {
                     "interact": {
@@ -11658,12 +11741,12 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                         "conditions": {
                             "entity": {
                                 "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_seal_{}\"]}}", s.safe)
+                                "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
                             }
                         }
                     }
                 },
-                "rewards": { "function": format!("{ns}:seal_hint_{}", s.safe) }
+                "rewards": { "function": format!("{ns}:press_{id}") }
             }),
         ));
     }

@@ -101,13 +101,20 @@ INTERACTION_SITES = {
         "rather than widened to bind to a body. Shape 3."
     ),
     "seal_fns": (
-        "OPEN FINDING — the live instance. `close-gate.sealed_hint` arms one body "
-        "per shell cell of the sealed region, which is the ONLY site here that "
-        "binds to an object's VOLUME rather than a point. That capability belongs "
-        "in `EnvTrigger`, whose `at` binds a single cell; because it is not there, "
-        "a trigger aimed at a gate has to ride the seal's hitboxes "
-        "(`trigger_rides_seal`, `DW0422`) instead of the seal being an ordinary "
-        "trigger. Shapes 2 and 3 together. Lift in progress — see the audit."
+        "CLOSED (DSL v0.11) — this was the audit's live instance, and it is worth "
+        "keeping the shape written down. `close-gate.sealed_hint` owned the whole "
+        "reply: this body fleet, its own `seal_<anchor>` advancement, its own "
+        "`seal_hint_<anchor>` actionbar function and its own baked English, none of "
+        "which anything else could reach — so the second object that needed a reply "
+        "(a sealed shortcut door) had no surface and answered silence. The verb now "
+        "owns only the BODY; the reply is an ordinary "
+        "`EnvTrigger{on: use, audience: presser}` with a `narrate{style: actionbar}`, "
+        "synthesized by `plan::collect_press_answers` for any sealed body the "
+        "campaign leaves silent and emitted by `env_trigger_fns` like every other "
+        "click. Both private functions are gone. What kept the fix from being a "
+        "second bespoke field was widening the general verb instead: v0.11 gave "
+        "`narrate` the actionbar channel and a trigger a presser audience, which "
+        "were the only two things it could not say."
     ),
     "ws_arm_fns": (
         "The shortcut gate's approach-side bodies, and the SHAPE-3 LIFT this PR "
@@ -121,7 +128,11 @@ INTERACTION_SITES = {
         "`npc_summon_commands`'s body. The compiler supplies the SHAPE; the campaign "
         "supplies the ANSWER, in the general effect vocabulary, so the reply is "
         "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
-        "no shortcut — byte-identical output. Shape 3, closed rather than catalogued."
+        "no shortcut — byte-identical output. Shape 3, closed rather than catalogued. "
+        "v0.11 closed the other half: the compiler now synthesizes a press answer "
+        "for a door the campaign leaves silent, through the same general verb, so "
+        "the door is an ordinary consumer of the mechanism rather than the one "
+        "pressable object in the engine with nothing to say."
     ),
     "shortcut_setup": (
         "OPEN FINDING. `shortcuts[].unlock` summons its own body at the far-side "

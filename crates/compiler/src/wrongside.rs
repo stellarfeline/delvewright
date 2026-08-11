@@ -1,5 +1,15 @@
-//! Which side of a sealed shortcut door a player is standing on (task #50, DSL
-//! v0.9 `shortcuts[].on_wrong_side`).
+//! Which side of a sealed shortcut door a player is standing on (task #50).
+//!
+//! **No `shortcuts[]` field names this.** Earlier drafts of this module's docs
+//! promised one — `on_wrong_side` in one paragraph, `sealed_hint` in another, and
+//! neither ever existed in the schema — which is the second bespoke field
+//! CLAUDE.md names as the defect rather than the fix, twice, under two names. A
+//! shortcut door's wrong-side answer is an ordinary
+//! `EnvTrigger{on: use, audience: presser}` carrying a `narrate{style: actionbar}`,
+//! anchored on the `gate`, exactly like every other pressable object's; the
+//! compiler supplies one for a door the campaign leaves silent
+//! ([`crate::plan::PressAnswer`]). What lives here is only the geometry: WHERE
+//! that trigger's body stands, and therefore from which side it can be pressed.
 //!
 //! ## The gap this closes
 //!
@@ -28,22 +38,25 @@
 //!
 //! ## Two layers, the same two the island's boulder answers with
 //!
-//! The boulder answers a **right-click** with the compiler's baked
-//! `SEAL_HINT_DEFAULT` (it is a `close-gate` target that authors no
-//! `sealed_hint`), and a **left-click** with `trigger/boulder-wont-move` — the
-//! author's own thirty words plus `minecraft:block.deepslate.hit`. A shortcut
-//! door needs both, and had neither, because it had no interaction body for
-//! either click to reach.
+//! The boulder answers a **right-click** with the compiler's press answer (it is
+//! a `close-gate` target the campaign never answers itself, so the wording is the
+//! `delvewright.ui.gate.sealed` chrome), and a **left-click** with
+//! `trigger/boulder-wont-move` — the author's own thirty words plus
+//! `minecraft:block.deepslate.hit`. A shortcut door needs both, and had neither,
+//! because it had no interaction body for either click to reach.
 //!
 //! This module supplies the body, and with it both layers:
 //!
-//! * the right-click half is [`SEALED_HINT_DEFAULT`] (or the authored
-//!   `shortcuts[].sealed_hint`), on the presser's actionbar, re-armed every press
-//!   — `close-gate`'s `sealed_hint` machinery, for the one gate that could never
-//!   have one;
+//! * the right-click half is a press answer — the campaign's own `use` trigger at
+//!   the `gate` if it wrote one, otherwise the compiler's
+//!   `delvewright.ui.gate.sealed` chrome — on the presser's actionbar, re-armed
+//!   every press;
 //! * the left-click half is the author's: an ordinary `strike` trigger anchored
 //!   on the `gate` now **rides these hitboxes** instead of summoning its own dead
 //!   co-located box, so it can carry whatever prose and sound the campaign wants.
+//!
+//! Neither half is machinery this module owns. Both are the general click verb,
+//! reaching a body it could not reach before.
 //!
 //! `minecraft:player_interacted_with_entity` runs its reward function **as the
 //! player who right-clicked** — the same primitive every NPC dialogue, `interact`
@@ -73,8 +86,9 @@
 /// `DW0425`: the compiler cannot decide which side of a shortcut's gate is the
 /// sealed one.
 ///
-/// Every shortcut door answers — the wording defaults — so this binds to every
-/// shortcut in the campaign, not only to the ones that authored a line.
+/// Every shortcut door is given a clickable body, and every body has to stand on
+/// a side, so this binds to **every** shortcut in the campaign — there is no
+/// declaration to opt into and none to forget.
 pub const DW_SHORTCUT_SIDE_UNDECIDABLE: &str = "DW0425";
 
 /// The sealed side of a shortcut gate — expressed as the cells a body must stand
