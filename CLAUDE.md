@@ -195,6 +195,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   act — never internal machinery such as model tiers, subagent dispatch,
   worker roles, or pipeline plumbing. Applies to both repos, including the
   content repo's play/hosting tutorials.
+- **A reader-facing document is written in the present tense of the current
+  version** (owner, 2026-08-11). It says what the thing IS and how to use it,
+  as if it had always been that way. No "this used to be X and is now Y", no
+  "originally", "formerly", "as of vN", no parenthetical citing the internal
+  decision a behaviour came from. An outside reader does not care how the
+  software arrived at its present shape, and **a page that keeps telling them
+  reads as a half-finished project** — which is the cost, and it is paid on the
+  page a stranger lands on first.
+  Two ways this leaks in, and the second is the one to watch. The obvious one
+  is an internal reference number (`spec-0001`, a task id, a PR link) on a
+  crates.io front page: a stranger cannot resolve it and gains nothing.
+  The subtle one is the *repair*: stripping the reference while narrating what
+  it used to assert just trades an unresolvable citation for a changelog. Keep
+  the BEHAVIOUR as a plain present-tense fact, or delete it — a shorter true
+  page beats a page that explains itself. Relocating a historically-worded
+  sentence into `docs/reference/` is not a fix either; that file is a
+  current-behaviour record too. **ADRs are the one place history legitimately
+  lives**, because superseding is their mechanism.
 - **Version-adoption discipline** (owner, 2026-08-04): whenever a `dsl_version`
   introduces new obligations, adoption rounds for every ACTIVE campaign are
   scheduled within the same milestone — never left to accumulate (the island
