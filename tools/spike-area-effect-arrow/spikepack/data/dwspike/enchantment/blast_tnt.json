@@ -1,0 +1,59 @@
+{
+  "description": {
+    "translate": "dwspike.blast_tnt"
+  },
+  "supported_items": [
+    "minecraft:bow",
+    "minecraft:crossbow",
+    "minecraft:arrow",
+    "minecraft:spectral_arrow",
+    "minecraft:tipped_arrow",
+    "minecraft:trident",
+    "minecraft:iron_spear",
+    "minecraft:copper_spear"
+  ],
+  "weight": 1,
+  "max_level": 1,
+  "min_cost": {
+    "base": 1,
+    "per_level_above_first": 1
+  },
+  "max_cost": {
+    "base": 50,
+    "per_level_above_first": 1
+  },
+  "anvil_cost": 1,
+  "slots": [
+    "any"
+  ],
+  "effects": {
+    "minecraft:hit_block": [
+      {
+        "effect": {
+          "type": "minecraft:all_of",
+          "effects": [
+            {
+              "type": "minecraft:explode",
+              "attribute_to_user": true,
+              "block_interaction": "tnt",
+              "create_fire": false,
+              "damage_type": "minecraft:explosion",
+              "radius": 4.0,
+              "small_particle": {
+                "type": "minecraft:explosion"
+              },
+              "large_particle": {
+                "type": "minecraft:explosion_emitter"
+              },
+              "sound": "minecraft:entity.generic.explode"
+            },
+            {
+              "type": "minecraft:run_function",
+              "function": "dwspike:hit_tnt"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1545 @@
+{
+ "meta": {
+  "version_response": "Server version info:id = 1.21.11name = 1.21.11data = 4671series = mainprotocol = 774 (0x306)build_time = Tue Dec 09 12:20:42 UTC 2025pack_resource = 75.0pack_data = 94.1stable = yes",
+  "datapack_list": "There are 2 data pack(s) enabled: [vanilla (built-in)], [file/dw-spike (world)]",
+  "mineflayer": "4.37.1",
+  "container": "dw-spike-arrow",
+  "phase1_ran_at_gametime": "The time is 275",
+  "phase2_ran_at_gametime": "The time is 4213"
+ },
+ "a_binding": [
+  {
+   "case": "weapon=enchanted bow, ammo=plain arrow",
+   "weapon": "{id:\"minecraft:bow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+   "ammo": "{id:\"minecraft:arrow\",count:1}",
+   "fired": true,
+   "counters": {
+    "mark_hits": 1,
+    "mark_has_exec": 1,
+    "mark_exec_arrow": 1,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": [
+    110.5,
+    -60.00000999999975,
+    0.5
+   ],
+   "executor_position": [
+    110.5,
+    -60,
+    0.5
+   ],
+   "arrow_rest_position": [
+    110.5,
+    -59.94999999925494,
+    0.5
+   ],
+   "executor_tag_landed_on_any_entity": true,
+   "executor_is_the_arrow_entity": true
+  },
+  {
+   "case": "weapon=plain bow, ammo=ENCHANTED arrow",
+   "weapon": "{id:\"minecraft:bow\",count:1}",
+   "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+   "fired": false,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": null,
+   "executor_position": null,
+   "arrow_rest_position": [
+    110.5,
+    -59.94999999925494,
+    0.5
+   ],
+   "executor_tag_landed_on_any_entity": false,
+   "executor_is_the_arrow_entity": false
+  },
+  {
+   "case": "no weapon field, ammo=ENCHANTED arrow",
+   "weapon": null,
+   "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+   "fired": false,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": null,
+   "executor_position": null,
+   "arrow_rest_position": [
+    110.5,
+    -59.94999999925494,
+    0.5
+   ],
+   "executor_tag_landed_on_any_entity": false,
+   "executor_is_the_arrow_entity": false
+  },
+  {
+   "case": "no weapon field, ammo=plain arrow",
+   "weapon": null,
+   "ammo": "{id:\"minecraft:arrow\",count:1}",
+   "fired": false,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": null,
+   "executor_position": null,
+   "arrow_rest_position": [
+    110.5,
+    -59.94999999925494,
+    0.5
+   ],
+   "executor_tag_landed_on_any_entity": false,
+   "executor_is_the_arrow_entity": false
+  },
+  {
+   "case": "weapon=enchanted bow, ammo=ENCHANTED arrow",
+   "weapon": "{id:\"minecraft:bow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+   "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+   "fired": true,
+   "counters": {
+    "mark_hits": 1,
+    "mark_has_exec": 1,
+    "mark_exec_arrow": 1,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": [
+    110.5,
+    -60.00000999999975,
+    0.5
+   ],
+   "executor_position": [
+    110.5,
+    -60,
+    0.5
+   ],
+   "arrow_rest_position": [
+    110.5,
+    -59.94999999925494,
+    0.5
+   ],
+   "executor_tag_landed_on_any_entity": true,
+   "executor_is_the_arrow_entity": true
+  }
+ ],
+ "b_block_damage": [
+  {
+   "enchantment": "dwspike:blast_none",
+   "box": {
+    "x0": 107,
+    "y0": -63,
+    "z0": -3,
+    "x1": 113,
+    "y1": -57,
+    "z1": 3
+   },
+   "box_cells": 343,
+   "shaft_cells": 4,
+   "effect_position": [
+    110.5,
+    -60.00000999999975,
+    0.5
+   ],
+   "air_cells_before_shot": 4,
+   "air_cells_after_shot": 4,
+   "glass_blocks_destroyed": 0,
+   "effect_fired": true,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   }
+  },
+  {
+   "enchantment": "dwspike:blast_off_1",
+   "box": {
+    "x0": 107,
+    "y0": -63,
+    "z0": -3,
+    "x1": 113,
+    "y1": -57,
+    "z1": 3
+   },
+   "box_cells": 343,
+   "shaft_cells": 4,
+   "effect_position": [
+    110.5,
+    -60.00000999999975,
+    0.5
+   ],
+   "air_cells_before_shot": 4,
+   "air_cells_after_shot": 4,
+   "glass_blocks_destroyed": 0,
+   "effect_fired": true,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   }
+  },
+  {
+   "enchantment": "dwspike:blast_dmg",
+   "box": {
+    "x0": 107,
+    "y0": -63,
+    "z0": -3,
+    "x1": 113,
+    "y1": -57,
+    "z1": 3
+   },
+   "box_cells": 343,
+   "shaft_cells": 4,
+   "effect_position": null,
+   "air_cells_before_shot": 4,
+   "air_cells_after_shot": 4,
+   "glass_blocks_destroyed": 0,
+   "effect_fired": true,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 1
+   }
+  },
+  {
+   "enchantment": "dwspike:blast_tnt",
+   "box": {
+    "x0": 107,
+    "y0": -63,
+    "z0": -3,
+    "x1": 113,
+    "y1": -57,
+    "z1": 3
+   },
+   "box_cells": 343,
+   "shaft_cells": 4,
+   "effect_position": [
+    110.5,
+    -60.00000999999975,
+    0.5
+   ],
+   "air_cells_before_shot": 4,
+   "air_cells_after_shot": 261,
+   "glass_blocks_destroyed": 257,
+   "effect_fired": true,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 2,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   }
+  }
+ ],
+ "c_entity_damage": [
+  {
+   "case": "CONTROL vanilla primed TNT on the floor (radius 4)",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 353.08054,
+     "damage": 46.92
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 362.2582,
+     "damage": 37.74
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 370.5674,
+     "damage": 29.43
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 378.0033,
+     "damage": 22
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 390.25165,
+     "damage": 9.75
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "CONTROL vanilla primed TNT one block up",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 357.11404,
+     "damage": 42.89
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 364.37305,
+     "damage": 35.63
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 371.88135,
+     "damage": 28.12
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 378.89096,
+     "damage": 21.11
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 390.69977,
+     "damage": 9.3
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "explode block_interaction=none, default offset",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "explode none, radius 8, default offset",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    }
+   ]
+  },
+  {
+   "case": "explode none, attribute_to_user=false",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 399,
+     "damage": 1
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "explode none, offset [0,1,0]",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 356.97418,
+     "damage": 43.03
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 364.29117,
+     "damage": 35.71
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 371.8289,
+     "damage": 28.17
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 378.8551,
+     "damage": 21.14
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 390.6815,
+     "damage": 9.32
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "explode block_interaction=tnt, default offset",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 3,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 398,
+     "damage": 2
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 398,
+     "damage": 2
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 398,
+     "damage": 2
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 398,
+     "damage": 2
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 398,
+     "damage": 2
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "run_function -> /damage in a radius",
+   "target_feet_y": -60,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 1
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 388,
+     "damage": 12
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 394,
+     "damage": 6
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 394,
+     "damage": 6
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "CONTROL vanilla TNT, targets floating at centre height",
+   "target_feet_y": -59,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 353.06467,
+     "damage": 46.94
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 362.25098,
+     "damage": 37.75
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 370.56308,
+     "damage": 29.44
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 378.0004,
+     "damage": 22
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 390.25018,
+     "damage": 9.75
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  },
+  {
+   "case": "explode none offset [0,1,0], targets at centre height",
+   "target_feet_y": -59,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "health_before": 400,
+     "health_after": 353.0625,
+     "damage": 46.94
+    },
+    {
+     "distance_blocks": 2,
+     "health_before": 400,
+     "health_after": 362.25,
+     "damage": 37.75
+    },
+    {
+     "distance_blocks": 3,
+     "health_before": 400,
+     "health_after": 370.5625,
+     "damage": 29.44
+    },
+    {
+     "distance_blocks": 4,
+     "health_before": 400,
+     "health_after": 378,
+     "damage": 22
+    },
+    {
+     "distance_blocks": 6,
+     "health_before": 400,
+     "health_after": 390.25,
+     "damage": 9.75
+    },
+    {
+     "distance_blocks": 8,
+     "health_before": 400,
+     "health_after": 400,
+     "damage": 0
+    }
+   ]
+  }
+ ],
+ "c2_orientation": [
+  {
+   "enchantment": "dwspike:blast_none",
+   "surface": "vertical stone wall 6 blocks thick, arrow fired horizontally, targets beside the flight line",
+   "fired": true,
+   "arrow_rest_position": [
+    409.94999999925494,
+    -57.66668788663457,
+    0.5
+   ],
+   "effect_position": [
+    410,
+    -57.71668788737963,
+    0.5
+   ],
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "damage": 45.47
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 37.04
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 29.01
+    }
+   ]
+  },
+  {
+   "enchantment": "dwspike:blast_off_1",
+   "surface": "vertical stone wall 6 blocks thick, arrow fired horizontally, targets beside the flight line",
+   "fired": true,
+   "arrow_rest_position": [
+    409.94999999925494,
+    -57.66668788663457,
+    0.5
+   ],
+   "effect_position": [
+    410,
+    -57.71668788737963,
+    0.5
+   ],
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "damage": 40.4
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 34.08
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 27.11
+    }
+   ]
+  },
+  {
+   "enchantment": "dwspike:blast_dmg",
+   "surface": "vertical stone wall 6 blocks thick, arrow fired horizontally, targets beside the flight line",
+   "fired": true,
+   "arrow_rest_position": [
+    409.94999999925494,
+    -57.66668788663457,
+    0.5
+   ],
+   "effect_position": null,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 1
+   },
+   "rows": [
+    {
+     "distance_blocks": 1,
+     "damage": 12
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 6
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 6
+    }
+   ]
+  }
+ ],
+ "d_decorations": [
+  {
+   "enchantment": "dwspike:blast_none",
+   "rows": [
+    {
+     "entity": "deco_as",
+     "present_before": true,
+     "present_after": false,
+     "destroyed": true
+    },
+    {
+     "entity": "deco_if",
+     "present_before": true,
+     "present_after": false,
+     "destroyed": true
+    },
+    {
+     "entity": "deco_item",
+     "present_before": true,
+     "present_after": true,
+     "destroyed": false
+    },
+    {
+     "entity": "deco_id",
+     "present_before": true,
+     "present_after": true,
+     "destroyed": false
+    },
+    {
+     "entity": "deco_td",
+     "present_before": true,
+     "present_after": true,
+     "destroyed": false
+    }
+   ]
+  }
+ ],
+ "e_cloud": {
+  "counters": {
+   "mark_hits": 0,
+   "mark_has_exec": 0,
+   "mark_exec_arrow": 0,
+   "mark_exec_player": 0,
+   "none_hits": 0,
+   "tnt_hits": 0,
+   "cloud_hits": 1,
+   "ammo_hits": 0,
+   "ammo_matched": 0,
+   "dmg_hits": 0
+  },
+  "cloud_summoned": true,
+  "cloud_position": [
+   300.5,
+   -60.00000999999975,
+   0.5
+  ],
+  "cloud_potion_contents": "{custom_effects: [{duration: 1, show_icon: 1b, id: \"minecraft:instant_damage\"}, {duration: 200, show_icon: 1b, id: \"minecraft:glowing\"}]}",
+  "cloud_alive_after_4s": true,
+  "players": [
+   {
+    "player": "dw_spike_a",
+    "role": "bystander (did not shoot)",
+    "hp_before": 20,
+    "hp_after": 11,
+    "damage": 9,
+    "glowing_after": true
+   },
+   {
+    "player": "dw_spike_b",
+    "role": "second bystander",
+    "hp_before": 20,
+    "hp_after": 11,
+    "damage": 9,
+    "glowing_after": true
+   }
+  ]
+ },
+ "f_axes": [
+  {
+   "axis": "arrow lands in water (3-deep column)",
+   "counters": {
+    "mark_hits": 1,
+    "mark_has_exec": 1,
+    "mark_exec_arrow": 1,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": [
+    400.5,
+    -63.00000999999975,
+    0.5
+   ],
+   "arrow_position": [
+    400.5,
+    -62.94999999925494,
+    0.5
+   ]
+  },
+  {
+   "axis": "arrow lands on a bottom slab (non-full block)",
+   "counters": {
+    "mark_hits": 1,
+    "mark_has_exec": 1,
+    "mark_exec_arrow": 1,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "function_position": [
+    404.5,
+    -59.5,
+    0.5
+   ],
+   "arrow_position": [
+    404.5,
+    -59.44999999925494,
+    0.5
+   ]
+  },
+  {
+   "axis": "arrow hits an ENTITY (hit_block only, summoned arrow)",
+   "enchantment": "dwspike:blast_none",
+   "target_health_before": 400,
+   "target_health_after": 396,
+   "target_damage": 4,
+   "bystanders": [
+    {
+     "distance_blocks": 1,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 0
+    }
+   ],
+   "effect_position": null,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "explosion_fired": false
+  },
+  {
+   "axis": "arrow hits an ENTITY (hit_block + post_attack, summoned arrow)",
+   "enchantment": "dwspike:blast_both",
+   "target_health_before": 400,
+   "target_health_after": 396,
+   "target_damage": 4,
+   "bystanders": [
+    {
+     "distance_blocks": 1,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 0
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 0
+    }
+   ],
+   "effect_position": null,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "explosion_fired": false
+  },
+  {
+   "axis": "arrow hits an ENTITY (hit_block + post_attack, arrow OWNED by a player)",
+   "enchantment": "dwspike:blast_both",
+   "target_health_before": 400,
+   "target_health_after": 396,
+   "target_damage": 4,
+   "bystanders": [
+    {
+     "distance_blocks": 1,
+     "damage": 46.94
+    },
+    {
+     "distance_blocks": 2,
+     "damage": 37.75
+    },
+    {
+     "distance_blocks": 3,
+     "damage": 29.44
+    }
+   ],
+   "effect_position": [
+    408.5,
+    -60,
+    0.5
+   ],
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 1,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "explosion_fired": true
+  },
+  {
+   "axis": "arrow shot by a MOB (skeleton holding the enchanted bow)",
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "fired": false,
+   "skeleton_arrow_weapon_field": "{components: {\"minecraft:enchantments\": {\"dwspike:blast_none\": 1}}, count: 1, id: \"minecraft:bow\"}",
+   "skeleton_arrow_weapon_field_first_seen": "{components: {\"minecraft:enchantments\": {\"dwspike:blast_none\": 1}}, count: 1, id: \"minecraft:bow\"}",
+   "skeleton_equipment_after_summon": "{mainhand: {components: {\"minecraft:enchantments\": {\"dwspike:blast_none\": 1}}, count: 1, id: \"minecraft:bow\"}}",
+   "mob_owned_arrow_landing_on_a_block_fires": true,
+   "unowned_arrow_landing_on_a_block_fires": true,
+   "skeleton_still_present": true,
+   "target_bot_at_full_health": true
+  },
+  {
+   "axis": "arrow shot by a DISPENSER — ordinary arrows",
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "fired": false,
+   "an_arrow_entity_existed": true
+  },
+  {
+   "axis": "arrow shot by a DISPENSER — ENCHANTED arrows (the enchantment on the ammunition itself)",
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "fired": false,
+   "an_arrow_entity_existed": true
+  }
+ ],
+ "g_player_shot": [
+  {
+   "trial": "enchanted bow + ordinary arrow",
+   "bow_given": "minecraft:bow[minecraft:enchantments={\"dwspike:mark\":1}]",
+   "arrow_given": "minecraft:arrow",
+   "shot": {
+    "drew": true,
+    "arrows": 16,
+    "an_arrow_entity_appeared": true
+   },
+   "fired": true,
+   "ammo_matched": 0,
+   "counters": {
+    "mark_hits": 1,
+    "mark_has_exec": 1,
+    "mark_exec_arrow": 1,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "arrow_entity_weapon_field": "{components: {\"minecraft:enchantments\": {\"dwspike:mark\": 1}}, count: 1, id: \"minecraft:bow\"}",
+   "arrow_entity_item_field": "{count: 1, id: \"minecraft:arrow\"}"
+  },
+  {
+   "trial": "ORDINARY bow + enchanted arrow",
+   "bow_given": "minecraft:bow",
+   "arrow_given": "minecraft:arrow[minecraft:enchantments={\"dwspike:mark\":1}]",
+   "shot": {
+    "drew": true,
+    "arrows": 16,
+    "an_arrow_entity_appeared": true
+   },
+   "fired": false,
+   "ammo_matched": 0,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 0,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "arrow_entity_weapon_field": "{count: 1, id: \"minecraft:bow\"}",
+   "arrow_entity_item_field": "{components: {\"minecraft:enchantments\": {\"dwspike:mark\": 1}}, count: 1, id: \"minecraft:arrow\"}"
+  },
+  {
+   "trial": "generic bow (dwspike:ammo) + arrow tagged with custom_data",
+   "bow_given": "minecraft:bow[minecraft:enchantments={\"dwspike:ammo\":1}]",
+   "arrow_given": "minecraft:arrow[minecraft:custom_data={dw_bomb:1b}]",
+   "shot": {
+    "drew": true,
+    "arrows": 16,
+    "an_arrow_entity_appeared": true
+   },
+   "fired": true,
+   "ammo_matched": 1,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 1,
+    "ammo_matched": 1,
+    "dmg_hits": 0
+   },
+   "arrow_entity_weapon_field": "{components: {\"minecraft:enchantments\": {\"dwspike:ammo\": 1}}, count: 1, id: \"minecraft:bow\"}",
+   "arrow_entity_item_field": "{components: {\"minecraft:custom_data\": {dw_bomb: 1b}}, count: 1, id: \"minecraft:arrow\"}"
+  },
+  {
+   "trial": "generic bow (dwspike:ammo) + UNTAGGED arrow",
+   "bow_given": "minecraft:bow[minecraft:enchantments={\"dwspike:ammo\":1}]",
+   "arrow_given": "minecraft:arrow",
+   "shot": {
+    "drew": true,
+    "arrows": 16,
+    "an_arrow_entity_appeared": true
+   },
+   "fired": true,
+   "ammo_matched": 0,
+   "counters": {
+    "mark_hits": 0,
+    "mark_has_exec": 0,
+    "mark_exec_arrow": 0,
+    "mark_exec_player": 0,
+    "none_hits": 0,
+    "tnt_hits": 0,
+    "cloud_hits": 0,
+    "ammo_hits": 1,
+    "ammo_matched": 0,
+    "dmg_hits": 0
+   },
+   "arrow_entity_weapon_field": "{components: {\"minecraft:enchantments\": {\"dwspike:ammo\": 1}}, count: 1, id: \"minecraft:bow\"}",
+   "arrow_entity_item_field": "{count: 1, id: \"minecraft:arrow\"}"
+  }
+ ],
+ "h_chest_planted": {
+  "position": [
+   560,
+   -60,
+   0
+  ],
+  "contents_after_planting": "560, -60, 0 has the following block data: [{components: {\"minecraft:item_name\": '\"Scavenged Launcher\"', \"minecraft:enchantments\": {\"dwspike:ammo\": 1}}, count: 1, Slot: 0b, id: \"minecraft:bow\"}, {components: {\"minecraft:item_name\": '\"Blasting Bolt\"', \"minecraft:custom_data\": {dw_bomb: 1b}}, count: 4, Slot: 1b, id: \"minecraft:arrow\"}]"
+ },
+ "i_after_restart": {
+  "chest_contents_after_restart": "560, -60, 0 has the following block data: [{components: {\"minecraft:item_name\": '\"Scavenged Launcher\"', \"minecraft:enchantments\": {\"dwspike:ammo\": 1}}, count: 1, Slot: 0b, id: \"minecraft:bow\"}, {components: {\"minecraft:item_name\": '\"Blasting Bolt\"', \"minecraft:custom_data\": {dw_bomb: 1b}}, count: 4, Slot: 1b, id: \"minecraft:arrow\"}]",
+  "bow_in_hand_after_taking_it_from_the_chest": null,
+  "shot": {
+   "drew": true,
+   "arrows": 8,
+   "an_arrow_entity_appeared": true
+  },
+  "counters": {
+   "mark_hits": 0,
+   "mark_has_exec": 0,
+   "mark_exec_arrow": 0,
+   "mark_exec_player": 0,
+   "none_hits": 0,
+   "tnt_hits": 0,
+   "cloud_hits": 0,
+   "ammo_hits": 1,
+   "ammo_matched": 1,
+   "dmg_hits": 0
+  },
+  "fired": true,
+  "ammo_matched": 1,
+  "binding_recheck": [
+   {
+    "case": "weapon=enchanted bow, ammo=plain arrow",
+    "weapon": "{id:\"minecraft:bow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+    "ammo": "{id:\"minecraft:arrow\",count:1}",
+    "fired": true,
+    "counters": {
+     "mark_hits": 1,
+     "mark_has_exec": 1,
+     "mark_exec_arrow": 1,
+     "mark_exec_player": 0,
+     "none_hits": 0,
+     "tnt_hits": 0,
+     "cloud_hits": 0,
+     "ammo_hits": 0,
+     "ammo_matched": 0,
+     "dmg_hits": 0
+    },
+    "function_position": [
+     110.5,
+     -60.00000999999975,
+     0.5
+    ],
+    "executor_position": [
+     110.5,
+     -60,
+     0.5
+    ],
+    "arrow_rest_position": [
+     110.5,
+     -59.94999999925494,
+     0.5
+    ],
+    "executor_tag_landed_on_any_entity": true,
+    "executor_is_the_arrow_entity": true
+   },
+   {
+    "case": "weapon=plain bow, ammo=ENCHANTED arrow",
+    "weapon": "{id:\"minecraft:bow\",count:1}",
+    "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+    "fired": false,
+    "counters": {
+     "mark_hits": 0,
+     "mark_has_exec": 0,
+     "mark_exec_arrow": 0,
+     "mark_exec_player": 0,
+     "none_hits": 0,
+     "tnt_hits": 0,
+     "cloud_hits": 0,
+     "ammo_hits": 0,
+     "ammo_matched": 0,
+     "dmg_hits": 0
+    },
+    "function_position": null,
+    "executor_position": null,
+    "arrow_rest_position": [
+     110.5,
+     -59.94999999925494,
+     0.5
+    ],
+    "executor_tag_landed_on_any_entity": false,
+    "executor_is_the_arrow_entity": false
+   },
+   {
+    "case": "no weapon field, ammo=ENCHANTED arrow",
+    "weapon": null,
+    "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+    "fired": false,
+    "counters": {
+     "mark_hits": 0,
+     "mark_has_exec": 0,
+     "mark_exec_arrow": 0,
+     "mark_exec_player": 0,
+     "none_hits": 0,
+     "tnt_hits": 0,
+     "cloud_hits": 0,
+     "ammo_hits": 0,
+     "ammo_matched": 0,
+     "dmg_hits": 0
+    },
+    "function_position": null,
+    "executor_position": null,
+    "arrow_rest_position": [
+     110.5,
+     -59.94999999925494,
+     0.5
+    ],
+    "executor_tag_landed_on_any_entity": false,
+    "executor_is_the_arrow_entity": false
+   },
+   {
+    "case": "no weapon field, ammo=plain arrow",
+    "weapon": null,
+    "ammo": "{id:\"minecraft:arrow\",count:1}",
+    "fired": false,
+    "counters": {
+     "mark_hits": 0,
+     "mark_has_exec": 0,
+     "mark_exec_arrow": 0,
+     "mark_exec_player": 0,
+     "none_hits": 0,
+     "tnt_hits": 0,
+     "cloud_hits": 0,
+     "ammo_hits": 0,
+     "ammo_matched": 0,
+     "dmg_hits": 0
+    },
+    "function_position": null,
+    "executor_position": null,
+    "arrow_rest_position": [
+     110.5,
+     -59.94999999925494,
+     0.5
+    ],
+    "executor_tag_landed_on_any_entity": false,
+    "executor_is_the_arrow_entity": false
+   },
+   {
+    "case": "weapon=enchanted bow, ammo=ENCHANTED arrow",
+    "weapon": "{id:\"minecraft:bow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+    "ammo": "{id:\"minecraft:arrow\",count:1,components:{\"minecraft:enchantments\":{\"dwspike:mark\":1}}}",
+    "fired": true,
+    "counters": {
+     "mark_hits": 1,
+     "mark_has_exec": 1,
+     "mark_exec_arrow": 1,
+     "mark_exec_player": 0,
+     "none_hits": 0,
+     "tnt_hits": 0,
+     "cloud_hits": 0,
+     "ammo_hits": 0,
+     "ammo_matched": 0,
+     "dmg_hits": 0
+    },
+    "function_position": [
+     110.5,
+     -60.00000999999975,
+     0.5
+    ],
+    "executor_position": [
+     110.5,
+     -60,
+     0.5
+    ],
+    "arrow_rest_position": [
+     110.5,
+     -59.94999999925494,
+     0.5
+    ],
+    "executor_tag_landed_on_any_entity": true,
+    "executor_is_the_arrow_entity": true
+   }
+  ]
+ }
+}
