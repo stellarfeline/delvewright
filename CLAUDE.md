@@ -305,6 +305,26 @@ validation/          # docker compose: headless server + bot, same image as CI &
   **hunk-granular for every file**, and the review asks for a full re-audit,
   never a targeted deletion (one targeted pass named two leaked hunks; there were
   three). Code leaks fail CI; doc leaks merge green.
+- **A worktree is created by the dispatch and destroyed by the MERGE** (owner,
+  2026-08-11). Reclaim it — `git worktree remove` plus the local branch — as the
+  last step of merging its work, in the same breath as the evidence entry, and
+  reclaim a stopped worker's the moment its work is pushed. Not as a chore to
+  notice later: an unbounded set nobody owns is only ever noticed when it takes
+  the machine down. It did. 36 worktrees, each carrying a full `cargo target/`
+  at 8–15 GB, filled the disk to the point where `Bash` could not open its own
+  output file — `df` itself was unrunnable. **The trigger is not the cause**: the
+  first diagnosis blamed the three workers running at that moment, which were
+  ~25 GB of 200; the cause was every worker since the beginning, none reclaimed.
+  Reaching for the most recent change is how an accumulation gets misdiagnosed.
+  All 36 trees were clean and pushed, so 21 of them had been pure garbage for
+  days. Sweep with `git worktree list`, removing anything whose PR is merged plus
+  every detached verification tree (spent once its measurement is reported), and
+  `git branch --merged origin/main | grep worktree-agent-` for the harness's own
+  throwaway branches. When space is already tight the cheap first move is
+  `rm -rf <wt>/target` on every tree but the live one — pure rebuildable output,
+  zero risk. Before deleting a tree check BOTH `git status --porcelain` and
+  `git log @{u}..HEAD`: dirty is obvious, an unpushed commit is the one that
+  cannot be recovered.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 
