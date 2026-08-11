@@ -1,29 +1,29 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "economy",
-  "stage": "classes",
   "content": {
     "classes": [
       {
-        "id": "class/wanderer",
-        "name": "Wanderer",
         "blurb": "Sturdy boots, no questions.",
+        "id": "class/wanderer",
         "kit": [
           {
-            "item": "minecraft:iron_sword",
             "count": 1,
+            "item": "minecraft:iron_sword",
             "name": "Keeper's Gift"
           },
           {
-            "item": "minecraft:leather_boots",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:leather_boots"
           },
           {
-            "item": "minecraft:bread",
-            "count": 3
+            "count": 3,
+            "item": "minecraft:bread"
           }
-        ]
+        ],
+        "name": "Wanderer"
       }
     ]
-  }
+  },
+  "dsl_version": "0.2.0",
+  "stage": "classes"
 }

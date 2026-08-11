@@ -1,28 +1,28 @@
 {
   "description": "npc persona is missing the required `motivation` field",
-  "expect": "DW0100",
-  "schema_reject": true,
   "documents": {
     "npcs": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "npcs",
       "content": {
         "npcs": [
           {
+            "anchor": "anchor/keeper-stand",
+            "area": "area/keep",
+            "base_entity": "minecraft:villager",
             "id": "npc/keeper",
             "name": "The Keeper",
-            "role": "quest-giver",
-            "area": "area/keep",
-            "anchor": "anchor/keeper-stand",
-            "base_entity": "minecraft:villager",
             "persona": {
               "archetype": "stoic gatekeeper",
               "speech_style": "Terse, formal, archaic."
-            }
+            },
+            "role": "quest-giver"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "npcs"
     }
-  }
+  },
+  "expect": "DW0100",
+  "schema_reject": true
 }

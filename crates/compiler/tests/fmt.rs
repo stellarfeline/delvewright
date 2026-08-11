@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use delvewright_compiler::fmt;
+use delvewright_dsl::fmt;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
@@ -215,14 +215,32 @@ fn formatting_a_campaign_changes_only_the_manifest_input_hashes() {
     copy_dir(&common::keep_trial_dir(), &src_a);
     copy_dir(&common::keep_trial_dir(), &src_b);
 
+    // The in-repo fixtures are canonical (CI keeps them so), so de-canonicalize
+    // `src_a` first — otherwise `fmt` would have nothing to do and this test
+    // would prove nothing. Compact one-line JSON is semantically identical and
+    // maximally far from the canonical form: different key order, different
+    // whitespace, no trailing newline.
+    let mut scrambled = 0;
+    for name in common::STAGE_FILES {
+        let path = src_a.join(name);
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+        scrambled += 1;
+    }
+    assert_eq!(
+        scrambled, 6,
+        "binding count: stage documents de-canonicalized"
+    );
+
     let r = delvec(&["fmt", src_b.to_str().unwrap()]);
     assert_eq!(code(&r), 0, "fmt: {}", String::from_utf8_lossy(&r.stderr));
-    // The fixture must actually have been rewritten, or this test proves nothing.
-    let changed = std::fs::read_to_string(src_a.join("quests.json")).unwrap()
-        != std::fs::read_to_string(src_b.join("quests.json")).unwrap();
-    assert!(
-        changed,
-        "the fixture was already canonical; nothing was proven"
+    // The two source trees must really differ byte-wise, or this test would be
+    // comparing a build with itself.
+    assert_ne!(
+        std::fs::read_to_string(src_a.join("quests.json")).unwrap(),
+        std::fs::read_to_string(src_b.join("quests.json")).unwrap(),
+        "the two source trees are identical; nothing would be proven"
     );
 
     let out_a = tmp("fmt-build-src");

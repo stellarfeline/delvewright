@@ -1,123 +1,123 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "talkto-cast-branch",
-  "stage": "dialogue",
   "content": {
     "dialogues": [
       {
-        "npc": "npc/keeper",
-        "root": "dlg/greeting",
         "nodes": [
           {
             "id": "dlg/greeting",
-            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?",
             "options": [
               {
                 "label": "Who are you?",
                 "next": "dlg/lore"
               },
               {
-                "label": "We hold.",
                 "effects": [
                   {
-                    "type": "set-flag",
-                    "flag": "flag/wait"
+                    "flag": "flag/wait",
+                    "type": "set-flag"
                   },
                   {
-                    "type": "complete-objective",
-                    "objective": "obj/decide"
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
                   }
                 ],
                 "happening": {
-                  "verb": "believes",
+                  "subject": "npc/keeper",
                   "text": "The party promises the Keeper they will stand the watch — the hold branch opens.",
-                  "subject": "npc/keeper"
-                }
+                  "verb": "believes"
+                },
+                "label": "We hold."
               },
               {
-                "label": "I run.",
                 "effects": [
                   {
-                    "type": "set-flag",
-                    "flag": "flag/flee"
+                    "flag": "flag/flee",
+                    "type": "set-flag"
                   },
                   {
-                    "type": "complete-objective",
-                    "objective": "obj/decide"
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
                   }
                 ],
                 "happening": {
-                  "verb": "believes",
+                  "subject": "npc/keeper",
                   "text": "The party refuses the watch — the bolt branch opens.",
-                  "subject": "npc/keeper"
-                }
+                  "verb": "believes"
+                },
+                "label": "I run."
               },
               {
                 "label": "The watch is stood.",
+                "next": "dlg/hold",
                 "requires_flags": [
                   "flag/wait"
-                ],
-                "next": "dlg/hold"
+                ]
               },
               {
                 "label": "One last word.",
+                "next": "dlg/bolt",
                 "requires_flags": [
                   "flag/flee"
-                ],
-                "next": "dlg/bolt"
+                ]
               }
-            ]
+            ],
+            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?"
           },
           {
             "id": "dlg/lore",
-            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
             "options": [
               {
                 "label": "Back.",
                 "next": "dlg/greeting"
               }
-            ]
+            ],
+            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road."
           },
           {
             "id": "dlg/hold",
-            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours, and so is the road.",
             "options": [
               {
-                "label": "Then we go.",
                 "effects": [
                   {
-                    "type": "complete-objective",
-                    "objective": "obj/parley"
+                    "objective": "obj/parley",
+                    "type": "complete-objective"
                   }
                 ],
                 "happening": {
-                  "verb": "gains",
-                  "text": "The watch is relieved and the party leaves by the front door, earned."
-                }
+                  "text": "The watch is relieved and the party leaves by the front door, earned.",
+                  "verb": "gains"
+                },
+                "label": "Then we go."
               }
-            ]
+            ],
+            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours, and so is the road."
           },
           {
             "id": "dlg/bolt",
-            "text": "You ran, and I opened the way anyway. Take it. Do not look back.",
             "options": [
               {
-                "label": "Goodbye, Keeper.",
                 "effects": [
                   {
-                    "type": "complete-objective",
-                    "objective": "obj/parley"
+                    "objective": "obj/parley",
+                    "type": "complete-objective"
                   }
                 ],
                 "happening": {
-                  "verb": "loses",
-                  "text": "The party takes the road with the watch unstood behind them."
-                }
+                  "text": "The party takes the road with the watch unstood behind them.",
+                  "verb": "loses"
+                },
+                "label": "Goodbye, Keeper."
               }
-            ]
+            ],
+            "text": "You ran, and I opened the way anyway. Take it. Do not look back."
           }
-        ]
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "dialogue"
 }

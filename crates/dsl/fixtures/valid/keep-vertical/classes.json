@@ -1,44 +1,44 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "keep-vertical",
-  "stage": "classes",
   "content": {
     "classes": [
       {
+        "blurb": "Iron sword and mail — made for the front rank.",
         "id": "class/warden",
-        "name": "Warden",
-        "blurb": "Iron sword and mail \u2014 made for the front rank.",
         "kit": [
           {
-            "item": "minecraft:iron_sword",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:iron_sword"
           },
           {
-            "item": "minecraft:iron_helmet",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:iron_helmet"
           },
           {
-            "item": "minecraft:iron_chestplate",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:iron_chestplate"
           },
           {
-            "item": "minecraft:iron_leggings",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:iron_leggings"
           },
           {
-            "item": "minecraft:iron_boots",
-            "count": 1
+            "count": 1,
+            "item": "minecraft:iron_boots"
           },
           {
-            "item": "minecraft:cooked_beef",
-            "count": 8
+            "count": 8,
+            "item": "minecraft:cooked_beef"
           },
           {
-            "item": "minecraft:torch",
-            "count": 8
+            "count": 8,
+            "item": "minecraft:torch"
           }
-        ]
+        ],
+        "name": "Warden"
       }
     ]
-  }
+  },
+  "dsl_version": "0.3.0",
+  "stage": "classes"
 }

@@ -1,117 +1,117 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "hello-world",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/decide",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/decide",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/decide": [
             {
-              "type": "set-flag",
               "flag": "flag/wait",
               "requires_flags": [
                 "flag/wait"
-              ]
+              ],
+              "type": "set-flag"
             },
             {
-              "type": "set-flag",
               "flag": "flag/flee",
               "requires_flags": [
                 "flag/flee"
-              ]
+              ],
+              "type": "set-flag"
             }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/bolt",
-        "trigger": {
-          "type": "quest-complete",
-          "quest": "quest/decide"
-        },
         "objectives": [
           {
-            "type": "interact",
-            "id": "obj/bolt",
             "anchor": "anchor/keeper-stand",
+            "id": "obj/bolt",
             "requires_flags": [
               "flag/flee"
-            ]
+            ],
+            "type": "interact"
           }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/bolt": [
             {
-              "type": "narrate",
-              "text": "You run. The Keeper does not call after you."
+              "text": "You run. The Keeper does not call after you.",
+              "type": "narrate"
             },
             {
               "type": "campaign-complete"
             }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
       },
       {
         "id": "quest/hold",
-        "trigger": {
-          "type": "quest-complete",
-          "quest": "quest/decide"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/watch",
             "npc": "npc/keeper",
             "requires_flags": [
               "flag/wait"
-            ]
+            ],
+            "type": "talk-to"
           },
           {
-            "type": "reach-anchor",
-            "id": "obj/walk-out",
-            "anchor": "anchor/exit",
-            "radius": 2,
             "after": [
               "obj/watch"
             ],
+            "anchor": "anchor/exit",
+            "id": "obj/walk-out",
+            "radius": 2,
             "requires_flags": [
               "flag/wait"
-            ]
+            ],
+            "type": "reach-anchor"
           }
         ],
+        "on_complete": [],
         "on_objective_complete": {
-          "obj/watch": [
-            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }
-          ],
           "obj/walk-out": [
             {
-              "type": "narrate",
-              "text": "The hinge gives. The road is yours."
+              "text": "The hinge gives. The road is yours.",
+              "type": "narrate"
             },
             {
               "type": "campaign-complete"
             }
+          ],
+          "obj/watch": [
+            {
+              "anchor": "anchor/door",
+              "type": "open-gate"
+            }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "quests"
 }

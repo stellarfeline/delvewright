@@ -1,23 +1,23 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "souls-td-lanes",
-  "stage": "world",
   "content": {
-    "title": "The Warband in the Halls",
-    "theme": "A ruined keep the illagers march through, and the drowned that answer them.",
-    "premise": "Hold the keep: the warband walks the long hall, and the spirits arrive at the edge of sight.",
-    "seed": 20260731,
-    "target_minutes": 8,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Stone Keep",
-        "prefab_pool": "pool/stone-keep",
         "pieces": {
-          "min": 7,
-          "max": 9
-        }
+          "max": 9,
+          "min": 7
+        },
+        "prefab_pool": "pool/stone-keep"
       }
-    ]
-  }
+    ],
+    "premise": "Hold the keep: the warband walks the long hall, and the spirits arrive at the edge of sight.",
+    "seed": 20260731,
+    "target_minutes": 8,
+    "theme": "A ruined keep the illagers march through, and the drowned that answer them.",
+    "title": "The Warband in the Halls"
+  },
+  "dsl_version": "0.3.0",
+  "stage": "world"
 }

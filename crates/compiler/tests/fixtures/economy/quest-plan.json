@@ -1,21 +1,21 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "economy",
-  "stage": "quest-plan",
   "content": {
+    "finale": "quest/open-the-door",
     "quests": [
       {
-        "id": "quest/open-the-door",
-        "goal": "Get the Keeper to open the door and leave the keep.",
+        "act": 1,
         "area": "area/keep",
+        "depends_on": [],
+        "goal": "Get the Keeper to open the door and leave the keep.",
+        "id": "quest/open-the-door",
+        "mandatory": true,
         "npcs": [
           "npc/keeper"
-        ],
-        "depends_on": [],
-        "mandatory": true,
-        "act": 1
+        ]
       }
-    ],
-    "finale": "quest/open-the-door"
-  }
+    ]
+  },
+  "dsl_version": "0.2.0",
+  "stage": "quest-plan"
 }
