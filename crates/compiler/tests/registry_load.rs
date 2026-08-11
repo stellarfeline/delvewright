@@ -122,7 +122,7 @@ fn cli_validate_reports_dw0346_at_exit_1() {
         "a broken prefab metadata file is a validation failure (exit 1): {stdout}"
     );
     assert!(
-        stdout.contains(DW_PREFAB_META_INVALID) && stdout.contains("hello-room.json"),
+        stdout.contains(DW_PREFAB_META_INVALID.id()) && stdout.contains("hello-room.json"),
         "DW0346 naming the file must be printed: {stdout}"
     );
     let _ = std::fs::remove_dir_all(&tmp);

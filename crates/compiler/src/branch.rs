@@ -46,30 +46,48 @@
 //! | `DW0485` | **Hard event contradiction** — `dies` then acts, `departs` then acts, `seals` then traversed, `loses` then spent, on one branch, with both chronicle lines shown. |
 //!
 //! Everything here is validation metadata: nothing this module computes reaches
-//! the shipped datapack, and the whole module is fenced at `dsl_version 0.8.0`,
-//! so a 0.6/0.7 campaign's bytes cannot move.
+//! the shipped datapack.
+//!
+//! ## Version scope
+//!
+//! All six proofs are **obligations at `dsl_version` 0.8.0** — each requires the
+//! campaign to HAVE something a pre-0.8 campaign was never asked for. That is
+//! declared once, on the codes themselves (`DwCode::since(…, 8)`), and enforced
+//! by the obligation fence (`delvewright_dsl::fence`); this module holds no
+//! `is_v08` guard of its own. A 0.6/0.7 campaign therefore sees none of these
+//! findings and its bytes cannot move, exactly as before — but now because a
+//! rule states its own scope, rather than because an early return remembered to.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{
     Campaign, CastEntry, CastPlacement, Diagnostic, EffectSite, Happening, HappeningVerb,
-    QuestEffect, for_each_campaign_effect, is_v08,
+    QuestEffect, for_each_campaign_effect,
 };
 
 use crate::flow::{Flow, JournalStep, PathStep};
+use delvewright_dsl::DwCode;
+
+// spec-0025's six proofs are **obligations**, not wellformedness rules: each one
+// requires the campaign to HAVE something (a declared branch point, a
+// `happening`, a per-branch cast placement) that a pre-0.8 campaign was never
+// asked for. So each declares `Binds::Since(8)` and the obligation fence
+// (`delvewright_dsl::fence`) carries them — the module no longer holds a
+// hand-written `is_v08` guard of its own, because a rule with two fences is a
+// rule whose two fences can disagree.
 
 /// A flag forks casts / staging / structure but belongs to no declared branch point.
-pub const DW_FORK_UNDECLARED: &str = "DW0480";
+pub const DW_FORK_UNDECLARED: DwCode = DwCode::since("DW0480", 8);
 /// A story node carries no `happening` declaration (DSL v0.8+).
-pub const DW_HAPPENING_MISSING: &str = "DW0481";
+pub const DW_HAPPENING_MISSING: DwCode = DwCode::since("DW0481", 8);
 /// A declared branch reaches no ending — or not the one it declares.
-pub const DW_BRANCH_TERMINAL: &str = "DW0482";
+pub const DW_BRANCH_TERMINAL: DwCode = DwCode::since("DW0482", 8);
 /// A quest's cast selector does not resolve to exactly one placement on a branch.
-pub const DW_BRANCH_CAST: &str = "DW0483";
+pub const DW_BRANCH_CAST: DwCode = DwCode::since("DW0483", 8);
 /// Branch-exclusive content is reachable under a sibling branch's assignment.
-pub const DW_BRANCH_LEAKAGE: &str = "DW0484";
+pub const DW_BRANCH_LEAKAGE: DwCode = DwCode::since("DW0484", 8);
 /// Two chronicle lines on one branch contradict each other.
-pub const DW_BRANCH_CONTRADICTION: &str = "DW0485";
+pub const DW_BRANCH_CONTRADICTION: DwCode = DwCode::since("DW0485", 8);
 
 // ---------------------------------------------------------------------------
 // enumeration
@@ -557,12 +575,15 @@ fn is_story_node(eff: &QuestEffect) -> bool {
 // the proofs
 // ---------------------------------------------------------------------------
 
-/// Run every spec-0025 static proof. No-op below `dsl_version 0.8.0`.
+/// Run every spec-0025 static proof.
+///
+/// **There is no version guard here on purpose.** Every code this module raises
+/// declares `Binds::Since(8)`, so the obligation fence drops each finding against
+/// any stage that declares less than 0.8.0 — the module's proofs and its version
+/// scope are one statement in one place, checked by the type system, instead of
+/// an `is_v08` early return that a seventh proof could be added below.
 pub fn check_branches(c: &Campaign) -> Vec<Diagnostic> {
     let mut d = Vec::new();
-    if !is_v08(c.quests.dsl_version.as_str()) && !is_v08(c.quest_plan.dsl_version.as_str()) {
-        return d;
-    }
     check_happenings(c, &mut d);
     let flow = Flow::new(c);
     check_undeclared_forks(c, &flow, &mut d);
@@ -626,7 +647,7 @@ fn check_branch_skips(
 /// `DW0481` — the forcing function. Every story node states what it does to the
 /// story, or the campaign does not compile.
 fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if is_v08(c.quests.dsl_version.as_str()) {
+    {
         for (i, q) in c.quests.content.quests.iter().enumerate() {
             if q.happening.is_none() {
                 d.push(missing(
@@ -655,7 +676,7 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
             d.push(missing("quests", path, format!("the `{verb}` beat")));
         }
     }
-    if is_v08(c.dialogue.dsl_version.as_str()) {
+    {
         for (i, t) in c.dialogue.content.dialogues.iter().enumerate() {
             for (j, n) in t.nodes.iter().enumerate() {
                 for (k, o) in n.options.iter().enumerate() {
@@ -705,9 +726,6 @@ fn missing(stage: &str, path: String, what: String) -> Diagnostic {
 /// world and not in another. A flag every playthrough sets is ordinary
 /// sequencing and is never reported.
 fn check_undeclared_forks(c: &Campaign, flow: &Flow<'_>, d: &mut Vec<Diagnostic>) {
-    if !is_v08(c.quest_plan.dsl_version.as_str()) {
-        return;
-    }
     let declared: BTreeSet<String> = c
         .quest_plan
         .content

@@ -60,13 +60,14 @@ use delvewright_dsl::{Diagnostic, EditFrame, MorphOp, PaletteRecipe, RegionShape
 use crate::assembled::{self, Assembled};
 use crate::plan::{Plan, ResolvedAnchor};
 use crate::solver::stream_seed;
+use delvewright_dsl::DwCode;
 
 /// A stage-7 edit's frame or region fails to resolve against the solved layout:
 /// a piece index out of range, a piece whose prefab differs from the frame's
 /// declared one (layout drift), an anchor the area does not resolve, or a verb
 /// whose target region resolves to zero cells (a silent no-op is always a
 /// defect). Build-tier (exit 3).
-pub const DW_EDIT_UNRESOLVED: &str = "DW0323";
+pub const DW_EDIT_UNRESOLVED: DwCode = DwCode::every_version("DW0323");
 
 /// A stage-7 batch writes a block into a cell a trap's hardware occupies (its
 /// trigger/hazard cell, its dispenser socket, or its disarm affordance cell).
@@ -74,14 +75,14 @@ pub const DW_EDIT_UNRESOLVED: &str = "DW0323";
 /// wins and the trap is loaded into a block that is no longer there — vanilla's
 /// `item replace block … container.0` on a non-container fails with no output,
 /// shipping a dead trap past every green proof. Build-tier (exit 3).
-pub const DW_EDIT_TRAP_HARDWARE: &str = "DW0352";
+pub const DW_EDIT_TRAP_HARDWARE: DwCode = DwCode::every_version("DW0352");
 
 /// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
 /// gameplay seal fills that region with the gate anchor's block and `open-gate`
 /// clears it to air, so one close/open cycle destroys the edit visually. Every
 /// proof stays sound (the occupancy model already treats the region as
 /// gate-controlled), so this warns rather than rejects.
-pub const DW_EDIT_GATE_REGION: &str = "DW0353";
+pub const DW_EDIT_GATE_REGION: DwCode = DwCode::every_version("DW0353");
 
 /// A support-dependent block (torch, lantern, flora, …) the edit script placed
 /// has no valid support in the post-batch world — its support block was carved
@@ -90,14 +91,14 @@ pub const DW_EDIT_GATE_REGION: &str = "DW0353";
 /// chunk ticks, silently undoing the edit. **Advisory** for decoration;
 /// **error** when the popped block is a fixture the script's own `relight` verb
 /// placed (a declared minimum-light guarantee, not decoration).
-pub const DW_EDIT_SUPPORT: &str = "DW0354";
+pub const DW_EDIT_SUPPORT: DwCode = DwCode::every_version("DW0354");
 
 /// A failed edit replay: a stable diagnostic code plus a message that names the
 /// offending batch.
 #[derive(Debug)]
 pub struct EditError {
     /// Stable `DW####` code (may be a reused invariant code, e.g. `DW0311`).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable message (remediation-contract style), naming the batch.
     pub message: String,
 }

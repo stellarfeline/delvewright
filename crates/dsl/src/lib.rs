@@ -16,6 +16,7 @@ pub mod chrome;
 pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
+pub mod fence;
 pub mod gate;
 pub mod ids;
 pub mod l10n;
@@ -27,7 +28,7 @@ pub mod validate;
 
 pub use canonical::to_canonical_string;
 pub use chrome::{Chrome, ChromeString, validate_chrome_namespace};
-pub use diagnostic::{Diagnostic, Severity, codes};
+pub use diagnostic::{Binds, Diagnostic, DwCode, Severity, codes};
 pub use effects::{
     EffectRootKind, EffectRootOwner, EffectRootSite, RootBinding, for_each_effect_root,
     for_each_effect_root_mut,
@@ -35,8 +36,9 @@ pub use effects::{
 pub use envelope::{
     Campaign, Envelope, RawCampaign, SUPPORTED_DSL_VERSION, SUPPORTED_DSL_VERSIONS, Stage,
     check_campaign, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
-    is_v10, parse_campaign,
+    is_v10, minor_ordinal, parse_campaign,
 };
+pub use fence::Fenced;
 pub use gate::{Gate, GateBinding, GateConsumer, GateSite, for_each_gate};
 pub use ids::{
     ActorId, AmbushId, AnchorId, AreaId, BranchId, BranchPointId, CampaignId, ClassId, DialogueId,
