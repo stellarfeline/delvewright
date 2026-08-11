@@ -379,9 +379,15 @@ fn box_narrowed_entity_selectors(line: &str) -> Vec<String> {
 
 /// The index of the `]` closing the selector that opens at `open`, tracking
 /// nesting so an `nbt={Tags:["x"]}` argument cannot end the scan early.
+///
+/// `open` is a BYTE index and the scan is over `line[open..]`, not over a
+/// character count from the start: a `tellraw` component elsewhere on the line
+/// may hold a translated string, and slicing a byte offset produced by counting
+/// characters would land mid-codepoint and panic.
 fn matching_bracket(line: &str, open: usize) -> Option<usize> {
     let mut depth = 0usize;
-    for (i, c) in line.char_indices().skip(open) {
+    for (off, c) in line.get(open..)?.char_indices() {
+        let i = open + off;
         match c {
             '[' | '{' => depth += 1,
             '}' => depth = depth.checked_sub(1)?,
@@ -765,6 +771,40 @@ mod tests {
         );
         assert_eq!(sels.len(), 1);
         assert!(selector_has_term(&sels[0], FIXTURE_EXCLUDE), "{sels:?}");
+    }
+
+    /// **The scan indexes BYTES, and mixing the two units drops the selector
+    /// silently rather than loudly.**
+    ///
+    /// Walking `char_indices().skip(<byte offset>)` starts too far right by
+    /// exactly the excess bytes of the text to the left. Where that excess
+    /// overshoots the selector's own length the closing bracket is never found,
+    /// the scan gives up, and the rule reports green having examined nothing —
+    /// the vacuity this project names most often, arriving as a units bug rather
+    /// than as a missing check.
+    ///
+    /// **Stated honestly: no line the engine emits today puts wide text left of a
+    /// box selector**, so this is the scanner being correct in its own terms
+    /// rather than a live defect fixed. The test pins the threshold instead of
+    /// claiming more than that — measured on the old arithmetic, a selector
+    /// survives 20 CJK characters to its left and is lost at 30, which is one
+    /// ordinary line of authored Chinese.
+    #[test]
+    fn a_selector_is_examined_however_wide_the_text_left_of_it() {
+        for n in [2usize, 20, 30, 60] {
+            let line = format!(
+                "execute if data storage dw:x {{fallback:\"{}\"}} run \
+                 tp @e[x=1,dx=2,y=2,dy=2,z=3,dz=2,tag=!dw_fixture] 1 2 3",
+                "沉".repeat(n)
+            );
+            let sels = box_narrowed_entity_selectors(&line);
+            assert_eq!(
+                sels.len(),
+                1,
+                "{n} wide chars left of the selector: {sels:?}"
+            );
+            assert!(selector_has_term(&sels[0], FIXTURE_EXCLUDE), "{sels:?}");
+        }
     }
 
     /// A longer tag sharing our prefix is a different affordance, not a hit —
