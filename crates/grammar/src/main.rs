@@ -1,0 +1,433 @@
+//! `delve-grammar` — drive the box-split grammar back end from the command line
+//! (spec-0027 §3).
+//!
+//! # Why this binary exists
+//!
+//! spec-0027 was approved on 2026-08-04 and `crates/grammar` was built: the
+//! expander, the rule library, the `.nbt` export. What was never built is a way
+//! to *run* it. Its only callers were `cargo test`, so the division of labour
+//! the spec is entirely about — **the model authors rules, the deterministic
+//! expander does geometry, machine gates judge the result** — had no entry point
+//! at all, and the only way to produce a prefab from a grammar program was to
+//! write a Rust test. A back end a creator cannot invoke is a library, not a
+//! back end.
+//!
+//! Three commands, which are the three steps of the loop:
+//!
+//! ```text
+//! delve-grammar list                                  # what can be built
+//! delve-grammar show --program store-room > scene.json # start from the corpus
+//! delve-grammar check --file scene.json                # does the program hold together
+//! delve-grammar expand --file scene.json --region 11x6x13 -o out/   # build + judge + freeze
+//! ```
+//!
+//! `--file` takes the typed JSON IR, which is the authoring form spec-0027 §3
+//! names: an LLM writes that file, and nothing between it and the `.nbt` is
+//! hand-assembled.
+//!
+//! Exit codes (mirroring `delve-schem` and `delve-render`): `0` ok · `2`
+//! input/usage · `3` output · `4` a machine gate went red.
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+
+use delvewright_grammar::block::BlockState;
+use delvewright_grammar::gates;
+use delvewright_grammar::ir::{Paint, Program};
+use delvewright_grammar::{Box3, ExpandOptions, expand, export, library};
+
+const EXIT_INPUT: u8 = 2;
+const EXIT_OUTPUT: u8 = 3;
+const EXIT_GATE: u8 = 4;
+
+#[derive(Parser)]
+#[command(
+    name = "delve-grammar",
+    about = "Box-split grammar prefab back end: list programs, check one, expand it into a prefab",
+    version,
+    disable_version_flag = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// List every program in the rule library, with its knobs.
+    List,
+    /// Validate a program's structure without expanding it.
+    ///
+    /// Fast, and the right first call when a program was just written: every
+    /// `Program::validate` refusal (unknown rule, unknown role, a split whose
+    /// children do not match its pieces, an unmatchable guard) is found here,
+    /// with no region and no seed involved.
+    Check {
+        #[command(flatten)]
+        source: Source,
+    },
+    /// Print a program as the typed JSON IR — the authoring form.
+    ///
+    /// The library is a **few-shot corpus we legally own** (spec-0027 §2), and
+    /// this is how an author reaches it: start from the nearest rule, edit the
+    /// JSON, `check` it. Without this the corpus is Rust source, which is not
+    /// the form anything downstream consumes.
+    Show {
+        #[command(flatten)]
+        source: Source,
+    },
+    /// Expand a program over a region and freeze it as a prefab.
+    Expand {
+        #[command(flatten)]
+        source: Source,
+        /// Region to expand into, `XxYxZ` (e.g. `11x6x13`).
+        #[arg(long)]
+        region: String,
+        /// Expansion seed.
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// Override an integer parameter: `--param head=5`. Repeatable.
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        params: Vec<String>,
+        /// Rebind a palette role: `--role stone=minecraft:deepslate_bricks`.
+        /// Repeatable.
+        #[arg(long = "role", value_name = "ROLE=BLOCKSTATE")]
+        roles: Vec<String>,
+        /// Prefab id (lowercase, digits, hyphens). Defaults to the program id.
+        #[arg(long)]
+        id: Option<String>,
+        /// Also gate on the piece being walkable from its approach end to its
+        /// exit end.
+        #[arg(long)]
+        traversable: bool,
+        /// With `--traversable`, allow a fall edge — for a piece entered by
+        /// stepping off a ledge.
+        #[arg(long)]
+        allow_falls: bool,
+        /// Output directory. Created if absent.
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+}
+
+/// Where the program comes from. Exactly one of the two.
+#[derive(clap::Args)]
+#[group(required = true, multiple = false)]
+struct Source {
+    /// A library program id (see `list`).
+    #[arg(long)]
+    program: Option<String>,
+    /// A grammar program as typed JSON IR — the authoring form.
+    #[arg(long)]
+    file: Option<PathBuf>,
+}
+
+fn bad_input(msg: impl std::fmt::Display) -> ExitCode {
+    eprintln!("error: {msg}");
+    ExitCode::from(EXIT_INPUT)
+}
+
+impl Source {
+    /// Load the program, naming what failed.
+    fn load(&self) -> Result<(String, Program), String> {
+        match (&self.program, &self.file) {
+            (Some(id), None) => match library::by_id(id) {
+                Some(p) => Ok((id.clone(), p)),
+                None => Err(format!(
+                    "no library program {id:?} — `delve-grammar list` names them all"
+                )),
+            },
+            (None, Some(path)) => {
+                let bytes =
+                    std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+                let program: Program = serde_json::from_slice(&bytes)
+                    .map_err(|e| format!("parse {}: {e}", path.display()))?;
+                let id = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("program")
+                    .to_string();
+                Ok((id, program))
+            }
+            _ => Err("give exactly one of --program or --file".to_string()),
+        }
+    }
+}
+
+fn parse_region(s: &str) -> Result<[u32; 3], String> {
+    let parts: Vec<&str> = s.split(['x', 'X']).collect();
+    if parts.len() != 3 {
+        return Err(format!("region {s:?} is not XxYxZ (e.g. 11x6x13)"));
+    }
+    let mut out = [0u32; 3];
+    for (i, p) in parts.iter().enumerate() {
+        out[i] = p
+            .trim()
+            .parse()
+            .map_err(|_| format!("region {s:?}: {p:?} is not a positive integer"))?;
+    }
+    if out.contains(&0) {
+        return Err(format!("region {s:?} has a zero axis"));
+    }
+    Ok(out)
+}
+
+fn split_once_eq<'a>(s: &'a str, what: &str) -> Result<(&'a str, &'a str), String> {
+    s.split_once('=')
+        .ok_or_else(|| format!("{what} {s:?} is not NAME=VALUE"))
+}
+
+fn run_list() -> ExitCode {
+    println!(
+        "{} program(s) in the rule library:",
+        library::PROGRAMS.len()
+    );
+    for (id, build) in library::PROGRAMS {
+        let program = build();
+        let params: Vec<String> = program
+            .params
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let roles: Vec<&String> = program.palette.keys().collect();
+        println!("  {id}");
+        println!(
+            "      params {}",
+            if params.is_empty() {
+                "(none)".to_string()
+            } else {
+                params.join(" ")
+            }
+        );
+        println!(
+            "      roles  {}",
+            if roles.is_empty() {
+                "(none)".to_string()
+            } else {
+                roles
+                    .iter()
+                    .map(|r| r.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+        );
+    }
+    println!(
+        "\nA program's minimum region is documented per rule in docs/reference/grammar.md; a \
+         region too small is a refusal, never a smaller building."
+    );
+    ExitCode::SUCCESS
+}
+
+fn run_show(source: &Source) -> ExitCode {
+    let (_, program) = match source.load() {
+        Ok(p) => p,
+        Err(e) => return bad_input(e),
+    };
+    match serde_json::to_string_pretty(&program) {
+        Ok(json) => {
+            println!("{json}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("internal: serialise program: {e}");
+            ExitCode::from(EXIT_OUTPUT)
+        }
+    }
+}
+
+fn run_check(source: &Source) -> ExitCode {
+    let (id, program) = match source.load() {
+        Ok(p) => p,
+        Err(e) => return bad_input(e),
+    };
+    match program.validate() {
+        Ok(()) => {
+            println!(
+                "{id}: ok — {} rule(s), {} param(s), {} role(s). Structure only: expand it to \
+                 learn whether it fits a region.",
+                program.rules.len(),
+                program.params.len(),
+                program.palette.len()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(e) => bad_input(format!("{id}: {e}")),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_expand(
+    source: &Source,
+    region: &str,
+    seed: u64,
+    params: &[String],
+    roles: &[String],
+    id_override: Option<&str>,
+    options: gates::Options,
+    out: &Path,
+) -> ExitCode {
+    let (default_id, mut program) = match source.load() {
+        Ok(p) => p,
+        Err(e) => return bad_input(e),
+    };
+    let size = match parse_region(region) {
+        Ok(s) => s,
+        Err(e) => return bad_input(e),
+    };
+
+    for spec in params {
+        let (name, value) = match split_once_eq(spec, "--param") {
+            Ok(p) => p,
+            Err(e) => return bad_input(e),
+        };
+        let value: i64 = match value.trim().parse() {
+            Ok(v) => v,
+            Err(_) => return bad_input(format!("--param {spec:?}: {value:?} is not an integer")),
+        };
+        if let Err(e) = program.set_param(name.trim(), value) {
+            return bad_input(format!("--param {spec:?}: {e}"));
+        }
+    }
+    for spec in roles {
+        let (name, value) = match split_once_eq(spec, "--role") {
+            Ok(p) => p,
+            Err(e) => return bad_input(e),
+        };
+        let block: BlockState = match value.trim().parse() {
+            Ok(b) => b,
+            Err(e) => return bad_input(format!("--role {spec:?}: {e}")),
+        };
+        if let Err(e) = program.set_role(name.trim(), Paint::Block(block)) {
+            return bad_input(format!("--role {spec:?}: {e}"));
+        }
+    }
+
+    let id = id_override.unwrap_or(&default_id).to_string();
+    let opts = ExpandOptions::seeded(seed);
+    let box3 = Box3::at_origin(size);
+
+    // Judge before freezing: the report is about the expansion, and a red gate
+    // must not leave a `.nbt` on disk for someone to pick up later.
+    let expansion = match expand(&program, box3, &opts) {
+        Ok(e) => e,
+        Err(e) => return bad_input(format!("{id}: {e}")),
+    };
+    let report = gates::judge(&expansion, options);
+
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("error: create {}: {e}", out.display());
+        return ExitCode::from(EXIT_OUTPUT);
+    }
+    let report_path = out.join(format!("{id}.report.json"));
+    if let Err(e) = std::fs::write(&report_path, report.to_json()) {
+        eprintln!("error: write {}: {e}", report_path.display());
+        return ExitCode::from(EXIT_OUTPUT);
+    }
+    report_to_stderr(&id, &report);
+
+    if !report.is_pass() {
+        eprintln!(
+            "error: {id}: a machine gate went red; no prefab was written. The report is at {}.",
+            report_path.display()
+        );
+        return ExitCode::from(EXIT_GATE);
+    }
+
+    let exported = match export::export_prefab(&program, box3, &opts, &id) {
+        Ok(e) => e,
+        Err(e) => return bad_input(format!("{id}: {e}")),
+    };
+    if let Err(e) = exported.write_to_dir(out) {
+        eprintln!("error: write into {}: {e}", out.display());
+        return ExitCode::from(EXIT_OUTPUT);
+    }
+
+    println!(
+        "{}/{} + {} + {} — {}x{}x{}, seed {seed}, {} filled cell(s), {} anchor(s)",
+        out.display(),
+        exported.structure_file,
+        exported.metadata_file,
+        report_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("report"),
+        size[0],
+        size[1],
+        size[2],
+        report.measurements.filled_cells,
+        report.anchors.len()
+    );
+    ExitCode::SUCCESS
+}
+
+/// Say what was judged, and say plainly what bound to nothing.
+fn report_to_stderr(id: &str, report: &gates::Report) {
+    eprintln!("{id}: {}", report.verdict);
+    for gate in &report.gates {
+        eprintln!(
+            "  {:<14} {}  bound {:<6} {}",
+            gate.id,
+            if gate.pass { "pass" } else { "FAIL" },
+            gate.bound,
+            gate.detail
+        );
+    }
+    let m = &report.measurements;
+    eprintln!(
+        "  measurements   filled {} / {} cells · {} distinct states · {} standable · footprint \
+         {} cols, perimeter {} (complexity {:.2})",
+        m.filled_cells,
+        m.region_cells,
+        m.distinct_states,
+        m.standable_cells,
+        m.footprint_area,
+        m.footprint_perimeter,
+        m.silhouette_complexity
+    );
+    for (block, share) in &m.top_blocks {
+        eprintln!("      {:>5.1}%  {block}", share * 100.0);
+    }
+    for finding in &report.findings {
+        eprintln!("  finding: {finding}");
+    }
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::List => run_list(),
+        Command::Show { source } => run_show(&source),
+        Command::Check { source } => run_check(&source),
+        Command::Expand {
+            source,
+            region,
+            seed,
+            params,
+            roles,
+            id,
+            traversable,
+            allow_falls,
+            out,
+        } => {
+            if allow_falls && !traversable {
+                return bad_input("--allow-falls only means something with --traversable");
+            }
+            run_expand(
+                &source,
+                &region,
+                seed,
+                &params,
+                &roles,
+                id.as_deref(),
+                gates::Options {
+                    traversable,
+                    allow_falls,
+                },
+                &out,
+            )
+        }
+    }
+}

@@ -246,7 +246,7 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:copper_grate",
     "minecraft:iron_block",
     "minecraft:iron_bars",
-    "minecraft:chain",
+    "minecraft:iron_chain",
     "minecraft:gold_block",
     "minecraft:bookshelf",
     "minecraft:chiseled_bookshelf",

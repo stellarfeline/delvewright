@@ -52,7 +52,7 @@ const HARD_FORBID_BE: &[&str] = &[
 ];
 
 use crate::allowlist::Allowlist;
-use crate::diag::{DW_ALLOWLIST, DW_FORBIDDEN, Diagnostic};
+use crate::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
 use crate::structure::Structure;
 
 /// One machine-readable audit finding (mirrors a [`Diagnostic`] in JSON form).
@@ -80,6 +80,8 @@ pub struct AuditReport {
     pub forbidden: usize,
     /// Count of not-allowlisted palette blocks.
     pub not_allowlisted: usize,
+    /// Count of palette block states the pinned Minecraft version does not have.
+    pub unknown_blocks: usize,
     pub findings: Vec<Finding>,
 }
 
@@ -111,12 +113,16 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     let mut diags: Vec<Diagnostic> = Vec::new();
     let mut forbidden = 0usize;
     let mut not_allowlisted = 0usize;
+    let mut unknown_blocks = 0usize;
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
 
     // --- Palette allowlist: report each offending palette entry once, at the
     // first cell that uses it (deterministic: blocks are in file order). ---
     let mut allow_reported = vec![false; s.palette.len()];
     // --- Hard-forbid: block-level (command/structure/spawner blocks). ---
     let mut forbid_block_reported = vec![false; s.palette.len()];
+    // --- Spelling: a palette entry the pinned game does not have. ---
+    let mut unknown_reported = vec![false; s.palette.len()];
 
     for b in &s.blocks {
         let entry = &s.palette[b.state as usize];
@@ -159,7 +165,23 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
             );
         }
 
-        // 3. palette allowlist.
+        // 3. the block has to EXIST. An allowlist answers "should this block be
+        //    here"; it cannot answer "is this a block at all", and the two
+        //    questions fail in opposite directions — an allowlist is a curated
+        //    list of names, so a name the game dropped stays in it forever and
+        //    permits itself. `minecraft:chain`, renamed `iron_chain` in 1.21.11,
+        //    was in this crate's own default allowlist and is in a shipped
+        //    prefab; a structure template loads it as AIR, so the piece admits
+        //    clean, ships, and is quietly missing whatever the block was for.
+        if !unknown_reported[b.state as usize]
+            && let Err(e) = registry.validate(&entry.name, &entry.properties)
+        {
+            unknown_reported[b.state as usize] = true;
+            unknown_blocks += 1;
+            diags.push(Diagnostic::error(DW_UNKNOWN_BLOCK, format!("{e}")).at(b.pos));
+        }
+
+        // 4. palette allowlist.
         if !allow.permits_entry(entry) && !allow_reported[b.state as usize] {
             allow_reported[b.state as usize] = true;
             not_allowlisted += 1;
@@ -191,6 +213,7 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         palette: s.block_names().into_iter().collect(),
         forbidden,
         not_allowlisted,
+        unknown_blocks,
         findings: diags.iter().map(to_finding).collect(),
     };
     (report, diags)

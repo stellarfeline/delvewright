@@ -233,6 +233,11 @@ pub enum ExportError {
         /// One line per offending cell, as the strip reported it.
         reasons: Vec<String>,
     },
+    /// The model contains block states Minecraft 1.21.11 does not have.
+    UnknownBlocks {
+        /// One line per offending block state, with the cells it covers.
+        reasons: Vec<String>,
+    },
 }
 
 impl fmt::Display for ExportError {
@@ -259,6 +264,12 @@ impl fmt::Display for ExportError {
                 f,
                 "the expanded model contains blocks a structure template may not carry, and \
                  exporting would silently replace them with air: {}",
+                reasons.join("; ")
+            ),
+            ExportError::UnknownBlocks { reasons } => write!(
+                f,
+                "the expanded model paints block states Minecraft {} does not have: {}",
+                delvewright_schem::blocks::MC_VERSION,
                 reasons.join("; ")
             ),
         }
@@ -409,9 +420,32 @@ fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
         .collect();
 
     let mut blocks = vec![0i32; (size[0] * size[1] * size[2]) as usize];
+    let mut cells_per_state = vec![0usize; palette.len()];
     for (i, pos) in region.positions().enumerate() {
         let state = model.get(pos).expect("positions() stays inside the region");
-        blocks[i] = index_of[&state.to_string()];
+        let index = index_of[&state.to_string()];
+        blocks[i] = index;
+        cells_per_state[index as usize] += 1;
+    }
+
+    // Spelling, checked by the emitter (CLAUDE.md, task #70: the operator
+    // running the tool does not run `cargo test`). A structure template loads an
+    // unknown block as AIR, so this is the one class of defect that costs the
+    // whole piece and reports nothing at all.
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let unknown: Vec<String> = palette
+        .iter()
+        .zip(&cells_per_state)
+        .filter(|&(_, &cells)| cells > 0)
+        .filter_map(|(state, &cells)| {
+            registry
+                .validate(&state.name, &state.properties)
+                .err()
+                .map(|e| format!("{e} ({cells} cell(s))"))
+        })
+        .collect();
+    if !unknown.is_empty() {
+        return Err(ExportError::UnknownBlocks { reasons: unknown });
     }
 
     let schem = ParsedSchematic {
@@ -515,6 +549,54 @@ mod tests {
             }
         );
         assert!(export_prefab(&program, Box3::at_origin([48, 48, 48]), &opts, "p").is_ok());
+    }
+
+    /// The `minecraft:chain` finding, at the grammar's own emitter: 1.21.11
+    /// renamed the block, and a structure template loads an unknown id as air —
+    /// so a program that asks for one would export clean and ship a hole.
+    #[test]
+    fn a_block_1_21_11_does_not_have_is_refused_with_the_rename_named() {
+        let program = one_block_program("ropes", "minecraft:chain");
+        let err = export_prefab(
+            &program,
+            Box3::at_origin([2, 2, 2]),
+            &ExpandOptions::seeded(0),
+            "ropes",
+        )
+        .unwrap_err();
+        let ExportError::UnknownBlocks { reasons } = &err else {
+            panic!("expected an unknown-block refusal, got {err}");
+        };
+        assert_eq!(reasons.len(), 1, "one line per state: {reasons:?}");
+        assert!(reasons[0].contains("8 cell(s)"), "{reasons:?}");
+        assert!(err.to_string().contains("minecraft:iron_chain"), "{err}");
+
+        // ...and the rename itself exports.
+        assert!(
+            export_prefab(
+                &one_block_program("ropes", "minecraft:iron_chain"),
+                Box3::at_origin([2, 2, 2]),
+                &ExpandOptions::seeded(0),
+                "ropes",
+            )
+            .is_ok()
+        );
+    }
+
+    /// A property value that does not exist is the same class of defect and is
+    /// caught by the same call — vanilla would drop the whole state, not just
+    /// the property.
+    #[test]
+    fn an_impossible_property_value_is_refused_too() {
+        let program = one_block_program("steps", "minecraft:oak_stairs[facing=up]");
+        let err = export_prefab(
+            &program,
+            Box3::at_origin([2, 2, 2]),
+            &ExpandOptions::seeded(0),
+            "steps",
+        )
+        .unwrap_err();
+        assert!(matches!(err, ExportError::UnknownBlocks { .. }), "{err}");
     }
 
     #[test]

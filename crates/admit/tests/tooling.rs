@@ -147,6 +147,76 @@ fn light_probe_writes_estimate_method_into_metadata() {
     meta.set_lighting_from_probe(&probe);
     assert_eq!(meta.lighting.profile, "lit");
     // honest: the method string marks this as a static estimate, not a live probe.
-    assert!(meta.lighting.method.contains("static"));
-    assert!(meta.lighting.method.to_lowercase().contains("not a live"));
+    assert!(meta.lighting.method.as_deref().unwrap().contains("static"));
+    assert!(
+        meta.lighting
+            .method
+            .as_deref()
+            .unwrap()
+            .to_lowercase()
+            .contains("not a live")
+    );
+}
+
+/// **`delve-admit` must be able to read what the generators write.**
+///
+/// The grammar back end (spec-0027 §2) exports `{"profile": "unmeasured"}` and
+/// no measurement, because a piece that has not been probed carries no probe
+/// result — which is exactly what `delvewright_dsl::registry::Lighting` demands
+/// and what the compiler's `PrefabRegistry` accepts. This crate's own metadata
+/// copy required all four lighting fields, so every admission subcommand
+/// (`socket`, `anchor`, `lighting`, `catalog`) refused a grammar-exported prefab
+/// at `DW0732` before it did anything: the admission half of the pipeline was
+/// closed to the generated half, and nothing said so.
+#[test]
+fn an_unmeasured_lighting_block_parses_the_way_the_generators_write_it() {
+    let json = r#"{
+      "prefab_id": "prefab/arcade-undercroft",
+      "structure": {
+        "file": "arcade-undercroft.nbt",
+        "id": "arcade-undercroft",
+        "size": [9, 6, 21],
+        "data_version": 4671,
+        "generator": "crates/grammar"
+      },
+      "anchors": { "anchor/undercroft-floor": { "pos": [4, 1, 10], "facing": "north" } },
+      "lighting": { "profile": "unmeasured" },
+      "license": {
+        "source": "original",
+        "spdx": "GPL-3.0-or-later",
+        "note": "n",
+        "provenance": "p"
+      }
+    }"#;
+    let meta = PrefabMeta::from_json(json).expect("a grammar prefab's metadata must parse");
+    assert_eq!(meta.lighting.profile, "unmeasured");
+    assert_eq!(meta.lighting.measured_min_light, None);
+    assert_eq!(meta.lighting.measured, None);
+    assert!(meta.connectors.is_empty(), "the export emits no connectors");
+}
+
+/// ...and a probe still writes a measurement, because the DSL refuses a
+/// `lit`/`dim`/`dark` profile that does not carry one. The optional fields are a
+/// widening of what can be READ, never of what a measured claim must say.
+#[test]
+fn a_probed_profile_still_carries_its_measurement() {
+    let mut meta = PrefabMeta::skeleton(
+        "probed",
+        [5, 5, 5],
+        4671,
+        License {
+            source: "original".into(),
+            spdx: "GPL-3.0-or-later".into(),
+            note: "n".into(),
+            provenance: "p".into(),
+        },
+    );
+    assert_eq!(
+        meta.lighting.profile, "unmeasured",
+        "a skeleton has not been probed and must say so in a profile the DSL has"
+    );
+    let probe = light::probe(&fixtures::dark_room(), light::DEFAULT_DARK_THRESHOLD);
+    meta.set_lighting_from_probe(&probe);
+    assert!(meta.lighting.measured_min_light.is_some());
+    assert!(meta.lighting.measured.is_some());
 }

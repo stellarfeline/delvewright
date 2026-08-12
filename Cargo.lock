@@ -282,6 +282,7 @@ dependencies = [
 name = "delvewright-grammar"
 version = "0.0.0"
 dependencies = [
+ "clap",
  "delvewright-schem",
  "serde",
  "serde_json",

@@ -7,6 +7,7 @@
 //! (ADR-0006): stable palette ordering, fixed block iteration, `BTreeMap`-backed
 //! NBT, and gzip mtime pinned to 0.
 
+pub mod blocks;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;

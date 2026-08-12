@@ -64,12 +64,34 @@ pub struct Connector {
     pub joint: String,
 }
 
+/// The `lighting` block.
+///
+/// **Every field but `profile` is optional, and that is a correctness fix, not a
+/// relaxation.** A prefab that has never been probed declares
+/// `{"profile": "unmeasured"}` and carries no measurement, because a claim and
+/// its absence cannot both be true — that is what `delvewright_dsl`'s own
+/// `Lighting` requires, and what the grammar back end (spec-0027 §2) emits. This
+/// copy demanded all four fields, so `delve-admit` **refused to read a prefab
+/// the compiler accepts**: `socket`, `anchor`, `lighting` and `catalog` all fail
+/// at `DW0732` on a grammar-exported piece, which is the entire admission half
+/// of the pipeline closed to the entire generated half. Measured 2026-08-11 by
+/// running the chain on a grammar export.
+///
+/// The two shapes should not both exist: the DSL's type is the authority and
+/// this one should become a re-export. That is a larger change than the defect
+/// warrants — `delve-admit`'s static probe reports a `"unknown"` profile the DSL
+/// has no variant for — and is a named follow-up, not a silence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lighting {
     pub profile: String,
-    pub measured_min_light: i32,
-    pub measured: String,
-    pub method: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured_min_light: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measured: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,10 +138,11 @@ impl PrefabMeta {
             anchors: BTreeMap::new(),
             connectors: Vec::new(),
             lighting: Lighting {
-                profile: "unknown".to_string(),
-                measured_min_light: 0,
-                measured: "".to_string(),
-                method: "not yet probed".to_string(),
+                profile: "unmeasured".to_string(),
+                measured_min_light: None,
+                measured: None,
+                rationale: None,
+                method: Some("not yet probed".to_string()),
             },
             license,
         }
@@ -145,14 +168,23 @@ impl PrefabMeta {
     pub fn set_lighting_from_probe(&mut self, p: &LightProbe) {
         self.lighting = Lighting {
             profile: p.profile.to_string(),
-            measured_min_light: p.measured_min_light.unwrap_or(0),
-            measured: "".to_string(),
-            method: format!(
+            measured_min_light: p.measured_min_light,
+            // Present, and deliberately unchanged from before this struct's
+            // fields became optional: `delvewright_dsl::registry::Lighting`
+            // refuses a `lit`/`dim`/`dark` profile that does not carry BOTH
+            // `measured_min_light` and `measured`, so dropping this would make
+            // `delve-admit lighting --write` produce metadata the compiler then
+            // rejects. (That the date is empty is a pre-existing oddity of the
+            // static estimate — `method` says it is not a live probe — and is
+            // not this change's to invent a value for.)
+            measured: Some(String::new()),
+            rationale: None,
+            method: Some(format!(
                 "static block-light BFS estimate (delve-admit): min over {} walkable floor cells; \
                  doorways treated as sealed edge (sky-light=0). NOT a live-server probe; \
                  dark_threshold={}. Re-probe live for borderline pieces.",
                 p.floor_cells, p.dark_threshold
-            ),
+            )),
         };
     }
 }

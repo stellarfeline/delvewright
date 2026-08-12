@@ -3930,6 +3930,7 @@ the rule's domain is the more useful thing for the number to say.
 | `DW0730` | `delve-admit` | Audit: a palette block is not in the allowlist. |
 | `DW0731` | `delve-admit` | Audit: a hard-forbidden code-injection vector (command/structure block, NBT spawner, embedded `Command`). |
 | `DW0732` | `delve-admit` | Input error (unreadable `.nbt`/metadata/JSON). |
+| `DW0733` | `delve-admit` | Audit: a palette block state does not exist in Minecraft 1.21.11 — the template would load it as air. |
 | `DW0740` | `delve-admit` | Catalog card schema/field validation failure. |
 | `DW0741` | `delve-admit` | Catalog card license not in the ADR-0013 allowlist. |
 | `DW0750` | `delve-admit` | Admission tooling (socket/anchor/lighting) failure. |

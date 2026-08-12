@@ -97,3 +97,42 @@ fn report_json_is_machine_readable() {
     assert!(!v["findings"].as_array().unwrap().is_empty());
     assert!(json.ends_with("}\n"));
 }
+
+/// `DW0733`: a block the pinned game does not have.
+///
+/// The allowlist cannot catch this and the test says why: `minecraft:chain` is
+/// in the built-in allowlist to this day, because an allowlist is a list of
+/// names somebody once approved and nothing re-checks a name against the game.
+#[test]
+fn a_block_the_pinned_version_does_not_have_fails_the_audit() {
+    let s = fixtures::renamed_block_piece();
+    let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
+    assert!(!rep.is_pass());
+    assert_eq!(rep.unknown_blocks, 1);
+    assert_eq!(
+        rep.forbidden, 0,
+        "a renamed block is not an injection vector"
+    );
+    let f = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0733")
+        .expect("DW0733 must fire");
+    assert!(f.message.contains("minecraft:iron_chain"), "{}", f.message);
+    assert_eq!(f.severity, "error");
+}
+
+/// ...and the rename itself audits clean, so the gate is not simply refusing
+/// everything in that shape.
+#[test]
+fn the_rename_passes_the_audit() {
+    let mut s = fixtures::clean_room();
+    s.set_cell(
+        [2, 1, 2],
+        delvewright_admit::structure::PaletteEntry::simple("minecraft:iron_chain"),
+        None,
+    );
+    let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
+    assert_eq!(rep.unknown_blocks, 0);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+}

@@ -101,6 +101,39 @@ delve-schem convert <input.schem> -o <out.nbt>
     [--json]
 ```
 
+## 2a. `delve-grammar` — the box-split grammar back end (`crates/grammar`) · agent
+
+**The entry point for making a prefab** (spec-0027 §3; the whole procedure is
+[`prefab-procedure.md`](prefab-procedure.md)). Before it existed the crate's only
+caller was `cargo test`, so a grammar prefab could not be produced without
+writing Rust.
+
+```
+delve-grammar list                       # every library program, with its params and roles
+delve-grammar show   --program <id>      # that program as the typed JSON IR (the corpus)
+delve-grammar check  (--program <id> | --file <p.json>)
+delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
+    [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
+    [--id <prefab-id>] [--traversable [--allow-falls]]
+```
+
+`--file` is the authoring form: a grammar program written as JSON, which is what
+spec-0027 means by "the LLM authors rules". `check` validates structure with no
+region and no seed — run it after every edit. `expand` writes `<id>.nbt`,
+`<id>.json` (prefab metadata, with the program hash + seed that regenerate the
+bytes) and `<id>.report.json` (the gate verdicts).
+
+Gates, each reporting its **binding count**: `blocks-exist` (every painted block
+state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
+from the approach end to the exit end; `--allow-falls` for a piece entered off a
+ledge). A red gate writes **no** `.nbt`. Measurements — fill ratio, standable
+cells, footprint area/perimeter, silhouette complexity, per-block shares — are
+reported with no threshold and are deliberately not called gates: spec-0027 §4's
+craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
+them.
+
+Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
+
 ## 3. `delve-admit` — prefab admission (`crates/admit`, package `delvewright-admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette
@@ -343,6 +376,8 @@ Never shipped inside a delve.
 
 | Tool | Class | Invocation |
 |---|---|---|
+| `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Stdlib only — no packages to install |
+| `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
 | `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |

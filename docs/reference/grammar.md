@@ -4,10 +4,36 @@ What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
 changes the crate's surface updates it in the same PR.
 
-It is a **library**, not a tool: no binary, no `delvec` path, nothing in
-[`tools.md`](tools.md). It ships in no delve — generation-time only (ADR-0003).
-The engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+It is a library **and** a tool: `delve-grammar` ([`tools.md`](tools.md) §2a) is
+its entry point, and the procedure that drives it is
+[`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
+`delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
+engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
 only, to test the export seam of §7 from both sides.
+
+Two library modules exist for the tool and are public for it:
+
+- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
+  / `reachable_with_fall` / `ends`. These were written inside `tests/`, where a
+  rule's own gate is the right place for the gate and the wrong place for the
+  *predicate* it is written in: a program authored outside this repo has no
+  `tests/support` to reach for, so its author had no way to ask whether the piece
+  could be walked at all. `tests/support/mod.rs` now delegates here;
+  `tests/staging.rs` still carries its own copy, for the reason its own header
+  gives, and folding it in is a named follow-up.
+- [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
+  module is built around: a **gate** has a verdict and a binding count, a
+  **measurement** is a number with no threshold, and the two are never mixed.
+  Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
+  `non-empty`, and opt-in `traversable`. Measurements: fill, distinct states,
+  standable cells, footprint area/perimeter, silhouette complexity, per-block
+  shares. A zero binding count, and a program declaring no anchors, are reported
+  as findings rather than folded into a pass.
+
+`library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
+library reaches `delve-grammar list` without the tool being edited. The `bell::`
+zone programs are deliberately not in it: a zone is one campaign's composition,
+not general vocabulary.
 
 ## 1. Model
 
@@ -167,6 +193,26 @@ of spec-0027 §4 are a later phase and will own a DW range then.
 Consequence for authors: a region too small for a program's absolute sizes is an
 error, not a building with pieces outside its box. Each library program documents
 its minimum region.
+
+## 4b. Blocks have to exist
+
+Every block state the export writes is checked against the pinned 1.21.11
+block-state registry (`crates/compiler/data/blocks-1.21.11.json`, 1166 blocks,
+via `delvewright_schem::blocks`) — the id, every property name, and every
+property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
+the cell count and a suggested rename.
+
+The check is **at the emitter, not in a test**, for the reason CLAUDE.md records
+for commands: the operator running the tool does not run `cargo test`. Its cost
+if absent is total and silent — a structure template loads an unknown block as
+AIR, so the piece is well-formed, the generator exits 0, the determinism gate
+passes, and the feature is simply not there. `minecraft:chain` was renamed
+`minecraft:iron_chain` in 1.21.11; when this gate was first run over the library
+it found `threshold_motif` painting the old id, i.e. the boss-door bell-rope
+curtain — the entire point of that rule — had been 14 cells of air.
+
+`tests/library.rs` asserts it over every program in the library with its binding
+count, and `gates::judge` reports the same verdict without exporting.
 
 ## 5. Rule library — ported buildings
 

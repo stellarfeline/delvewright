@@ -728,13 +728,45 @@ Symptom → tool:
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.
-- **The layout needs a prefab the library doesn't have**: import it with
-  `delve-schem convert`, then run the **whole** `delve-admit` admission chain
-  (`audit` → `resolve-jigsaw` → `socket` → `anchor` → `lighting --write` →
-  `catalog validate`; that order — `resolve-jigsaw` before `socket`). Never place
-  an un-audited piece: `audit` is the ADR-0013 licence/code-injection gate, and
-  an unadmitted piece has no anchors or lighting profile for the DSL to name.
-  Flags in `docs/reference/tools.md` §3.
+- **The layout needs a prefab the library doesn't have**: follow
+  `docs/reference/prefab-procedure.md` — it is the procedure, and these are its
+  mandatory steps, in order. Do not improvise around them.
+  1. **Write the scene description first** (one or two sentences: what a body
+     does in the space, the material feeling, what the campaign will attach).
+     Written after the render, it is a description of the render.
+  2. **Choose the palette by measurement, never from memory.**
+     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
+     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
+     Record the measured hex beside each role.
+  3. **Author a grammar program**, starting from the corpus:
+     `delve-grammar list`, then `delve-grammar show --program <nearest> > p.json`,
+     edit, and `delve-grammar check --file p.json` after every edit. You write
+     JSON — never Rust, and never blocks by hand.
+  4. **Expand and let the machine judge**:
+     `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
+     -o out/`. Pass `--traversable` for any passage, stair or route. A red gate
+     writes no `.nbt` (exit 4). **Read the `findings` in the report** — a gate
+     that bound to zero objects, or a program that declared no anchors, is a
+     finding, not a pass.
+  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/` — including the
+     per-anchor eye-height shots — and compare against step 1. The gates prove
+     it is buildable and walkable; they say nothing about whether it is the
+     scene you asked for.
+  6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
+     `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
+     A grammar prefab has **no connectors and no lighting** until this step, so
+     it cannot enter a `prefab_pool` and will be dark, until you do it.
+
+  What the grammar cannot express — **escalate, do not work around**: block
+  entities of any kind (chest loot, sign text, spawners — bind those in the
+  campaign against an anchor the piece declares), curves and diagonals, terrain,
+  and anything over 48 blocks on an axis.
+
+  A piece that comes from **outside** (a community schematic) instead enters via
+  `delve-schem convert` and then the same admission chain with
+  `resolve-jigsaw` before `socket`. Never place an un-audited piece: `audit` is
+  the ADR-0013 licence/code-injection gate and the `DW0733` check that the blocks
+  in it exist at all. Flags in `docs/reference/tools.md` §2a and §3.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain
   (`tools/skin`, spec-0009) composes an original 64×64 skin from a cast-sheet
   entry and renders previews — `python -m delve_skin all <cast.json>
