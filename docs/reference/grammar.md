@@ -62,6 +62,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 
 | Element | Form | Notes |
 |---|---|---|
+| `version` | document version | **required**; see §2d |
 | `name` | string | provenance label |
 | `start` | rule name | expanded into the whole region |
 | `params` | name → i64 | size/kind controls; read by `{"expr":"param"}` |
@@ -510,6 +511,77 @@ crest's own top course is a litter layer (6); and every pier carries a sconce
 cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
 the recursion does not already centre for itself — and neither is idiom 8, since
 the bays are meant to be empty, which is what `void` says.
+
+## 2d. The document version, and what an optional field owes
+
+A program carries its **own** version — the document's, not the crate's. It is
+required, and one this engine does not know is a refusal
+(`ProgramError::UnsupportedVersion`) rather than a best-effort parse: an engine
+that quietly ignored the parts of a newer document it did not understand would
+emit a world that is wrong in silence.
+
+Versions are additive supersets, and `delve-grammar` accepts every one it lists.
+
+| Version | Surface |
+|---|---|
+| `1.0.0` | rules, splits, permuting reorientations, marks |
+| `1.1.0` | a frame carries a **direction**: `mirror` on a `reorient` request and on an `orientation` guard |
+
+Writing a construct above the version a document declares is
+`ProgramError::FencedConstruct`, naming the construct, the version that
+introduced it and the version declared. That is what lets an older document keep
+compiling to the same bytes forever, and it is why raising `version` is a
+deliberate act rather than a side effect.
+
+**Why an optional field needs this and a new rule body does not.** `Node`,
+`Cond`, `Expr`, `Size` and `MarkAt` are tagged, so an engine that predates a new
+variant meets an `"op"` it does not know and fails loud. A `#[serde(default)]`
+struct field has no such property: it rides through every walk untouched in both
+directions, so an engine that predates the field deserialises the document with
+the field's default, expands, passes every gate, and writes different geometry.
+Two mechanisms answer it, and both are enforced by
+`tools/check-grammar-ir-compat.py` in CI:
+
+1. Every IR object type is a **closed schema** (`deny_unknown_fields`), so an
+   engine meeting a document from a newer engine refuses it by name. The one
+   exception is `mark`, whose `at` is a flattened sum and which serde cannot
+   close; the ledger below is what holds it.
+2. Every optional field is in that ledger with the version it arrived at, checked
+   in both directions, and anything above `1.0.0` must be refused by name in
+   `ir.rs` — a version constant that nothing enforces does not count as a fence.
+
+| Field | Since | Fenced by |
+|---|---|---|
+| `geom::Mirror.x` | `1.1.0` | `via ir::Reorient.mirror` |
+| `geom::Mirror.y` | `1.1.0` | `via ir::Reorient.mirror` |
+| `geom::Mirror.z` | `1.1.0` | `via ir::Reorient.mirror` |
+| `ir::Alternative.weight` | `1.0.0` | — |
+| `ir::Alternative.when` | `1.0.0` | — |
+| `ir::Cond.mirror` | `1.1.0` | `MIRROR_SINCE` |
+| `ir::Mark.facing` | `1.0.0` | — |
+| `ir::Mark.index` | `1.0.0` | — |
+| `ir::Program.palette` | `1.0.0` | — |
+| `ir::Program.params` | `1.0.0` | — |
+| `ir::Reorient.mirror` | `1.1.0` | `MIRROR_SINCE` |
+| `ir::Reorient.x` | `1.0.0` | — |
+| `ir::Reorient.y` | `1.0.0` | — |
+| `ir::Reorient.z` | `1.0.0` | — |
+| `ir::Split.orient` | `1.0.0` | — |
+| `ir::Split.repeat` | `1.0.0` | — |
+| `ir::Split.rounding` | `1.0.0` | — |
+
+A row above the floor names the constant `version.rs` declares it at, and CI
+requires a refusal in `ir.rs` whose **guard reads that field** — a constant is
+not a fence, and a refusal that looks at some other field of the same version is
+not this field's fence. `via` is for a field reachable only through another
+ledgered one: the three booleans of a `mirror` object exist only inside a
+`mirror`, so the fence on that field is theirs.
+
+What the fence cannot do, stated rather than left to be discovered: it cannot
+reach an engine older than the fence itself, because that engine's refusal would
+have to be code it already carries. `1.1.0` is the first version any of this
+exists in, so the window it does not cover is the one before `1.0.0` was ever
+declared, and no `Program` has been checked in outside this repository.
 
 ## 3. Determinism (ADR-0006)
 

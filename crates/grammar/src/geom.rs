@@ -53,6 +53,7 @@ impl Axis {
 /// Sizes are unsigned; a zero-sized box is legal (it simply contains no cells)
 /// because grammar splits legitimately produce degenerate leftovers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Box3 {
     /// Smallest corner, world space.
     pub origin: [i32; 3],
@@ -118,6 +119,7 @@ impl Box3 {
 /// which corner `corner_min` is, which way an anchor looks — is asked in the
 /// frame's terms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Mirror {
     /// The local `X` runs against the world axis it names.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -209,7 +211,14 @@ impl Mirror {
 /// names; `orientation.reversed(Axis::X)` says whether local `X` counts *down*
 /// that world axis. The identity frame maps every local axis onto its namesake,
 /// running forward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Deliberately **not** serialisable. It is the frame a scope is *in* at
+/// expansion time, not a thing a document says: what a document writes is
+/// [`ir::Reorient`](crate::ir::Reorient), a frame *request*. It carried a
+/// `Serialize`/`Deserialize` derive that no format ever reached, which put a
+/// second `mirror` field on the document surface's ledger with no document
+/// behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Orientation {
     /// World axis of the local `X`.
     pub x: Axis,
@@ -218,7 +227,6 @@ pub struct Orientation {
     /// World axis of the local `Z`.
     pub z: Axis,
     /// Which local axes run backwards along the world axis they name.
-    #[serde(default, skip_serializing_if = "Mirror::is_none")]
     pub mirror: Mirror,
 }
 

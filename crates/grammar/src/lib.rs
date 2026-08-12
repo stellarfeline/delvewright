@@ -102,6 +102,7 @@ pub mod nav;
 pub mod orient;
 pub mod rng;
 pub mod split;
+pub mod version;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};

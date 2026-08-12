@@ -137,8 +137,11 @@ you write:
 delve-grammar check --file my-piece.json          # structure only; fast
 ```
 
-`check` finds unknown rules, unknown roles, split/child mismatches and
-unmatchable guards without a region or a seed. Run it after every edit.
+`check` finds unknown rules, unknown roles, split/child mismatches, unmatchable
+guards, an unknown document `version`, and a construct newer than the version the
+program declares — all without a region or a seed. Run it after every edit. A
+program started from `show` already declares the current version, so the version
+refusals only fire on one hand-edited by someone who lowered it.
 
 ## 4. Expand, and let the machine judge
 

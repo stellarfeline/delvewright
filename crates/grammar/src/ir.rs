@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
 use crate::geom::{Axis, Mirror, Orientation};
+use crate::version::{LATEST_PROGRAM_VERSION, MIRROR_SINCE, has_mirror, is_supported_version};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -79,7 +80,7 @@ pub enum ArithOp {
 /// An integer expression over constants, program parameters and scope
 /// dimensions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "expr", rename_all = "snake_case")]
+#[serde(tag = "expr", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expr {
     /// A literal.
     Int {
@@ -155,7 +156,7 @@ pub enum CmpOp {
 
 /// A rule guard, evaluated against the scope the rule is about to expand into.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "cond", rename_all = "snake_case")]
+#[serde(tag = "cond", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Cond {
     /// Always applicable.
     #[default]
@@ -239,7 +240,7 @@ impl Cond {
 
 /// One piece of a split.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "size", rename_all = "snake_case")]
+#[serde(tag = "size", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Size {
     /// A fixed number of blocks.
     Absolute {
@@ -333,6 +334,7 @@ pub enum AxisSpec {
 /// other with no surface, and the second site would then grow a bespoke field of
 /// its own (CLAUDE.md: "a second bespoke field is the defect, not the fix").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Reorient {
     /// What the child should call its local `X`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -395,6 +397,7 @@ impl Reorient {
 
 /// A subdivision of the current scope along one local axis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Split {
     /// The local axis to cut along.
     pub axis: Axis,
@@ -429,6 +432,7 @@ fn is_false(v: &bool) -> bool {
 
 /// One block of a weighted material.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WeightedBlock {
     /// Relative weight; must be positive.
     pub weight: u32,
@@ -529,7 +533,7 @@ impl fmt::Display for Facing {
 /// cell), which is a choice, not an accident: it has to be one of the two, and
 /// it has to be the same one every time (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "at", rename_all = "snake_case")]
+#[serde(tag = "at", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MarkAt {
     /// The centre of the scope's **world** floor: lowest world `Y`, centred on
     /// world `X` and `Z`. Gravity is a world fact, so this one position ignores
@@ -589,6 +593,15 @@ pub enum MarkIndex {
 /// can express "this cell is where the boss stands", and reading one back out of
 /// the block pattern afterwards is a guess. So the rule that shapes the space
 /// says so while it has the box in hand (spec-0027 phase 2b).
+///
+/// **The one document type in this module that is not a closed schema**, and it
+/// cannot be one: `at` is `#[serde(flatten)]`, which serde cannot combine with
+/// `deny_unknown_fields` — every flattened key reads as unknown, so the attribute
+/// compiles and then refuses every well-formed mark. An unknown field on a mark
+/// is therefore dropped rather than refused, and a future optional field here
+/// would be silently droppable by an engine that predates it. What holds the line
+/// instead is the version ledger of `grammar.md` §2d, which `tools/check-grammar-ir-compat.py`
+/// enforces in both directions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mark {
     /// The anchor name stem, kebab-case. The exported key is `anchor/<stem>`
@@ -669,7 +682,7 @@ pub(crate) fn is_kebab(s: &str) -> bool {
 
 /// One step of a rule body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Node {
     /// Write a material into every cell of the scope.
     Fill {
@@ -727,6 +740,7 @@ impl Node {
 
 /// One alternative of a rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Alternative {
     /// Selection weight among the applicable alternatives. Must be positive.
     #[serde(default = "one")]
@@ -774,7 +788,17 @@ impl Alternative {
 /// `BTreeMap` throughout: iteration order is the authoring-independent, stable
 /// order determinism requires (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Program {
+    /// **The document's own version**, not the crate's.
+    ///
+    /// Required, and an unrecognised one is refused rather than parsed
+    /// best-effort: an engine that quietly ignored the parts of a newer document
+    /// it did not understand would emit a world that is wrong in silence. A
+    /// construct introduced later than this version is refused at
+    /// [`Program::validate`], which is what lets an older document keep
+    /// compiling to the same bytes forever. See [`crate::version`].
+    pub version: String,
     /// Human-readable program name; part of the provenance record.
     pub name: String,
     /// The rule expanded into the whole region.
@@ -792,6 +816,22 @@ pub struct Program {
 /// A program that cannot be expanded, found before any work is done.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgramError {
+    /// The document declares a version this engine does not know.
+    UnsupportedVersion {
+        /// The version as written.
+        version: String,
+    },
+    /// The document writes a construct newer than the version it declares.
+    FencedConstruct {
+        /// What was written.
+        construct: &'static str,
+        /// The version that introduced it.
+        since: &'static str,
+        /// The version the document declares.
+        declared: String,
+        /// Where it was written.
+        written_by: String,
+    },
     /// The start rule, or a rule a `call` names, does not exist.
     UnknownRule {
         /// The missing rule.
@@ -870,6 +910,25 @@ pub enum ProgramError {
 impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProgramError::UnsupportedVersion { version } => write!(
+                f,
+                "this program declares version {version:?}, which this engine does not know; it \
+                 accepts {:?}. An unknown version is refused rather than parsed for the parts \
+                 this engine recognises",
+                crate::version::SUPPORTED_PROGRAM_VERSIONS
+            ),
+            ProgramError::FencedConstruct {
+                construct,
+                since,
+                declared,
+                written_by,
+            } => write!(
+                f,
+                "{written_by} writes {construct}, which version {since} introduced, but this \
+                 program declares version {declared}. Raise the program's `version` to write it; \
+                 an engine that predates {since} must refuse this document rather than build it \
+                 without the construct"
+            ),
             ProgramError::UnknownRule {
                 symbol,
                 referenced_by,
@@ -939,15 +998,24 @@ impl fmt::Display for ProgramError {
 impl std::error::Error for ProgramError {}
 
 impl Program {
-    /// An empty program with the given name and start rule.
+    /// An empty program with the given name and start rule, at the latest
+    /// document version.
     pub fn new(name: &str, start: &str) -> Program {
         Program {
+            version: LATEST_PROGRAM_VERSION.to_string(),
             name: name.to_string(),
             start: start.to_string(),
             params: BTreeMap::new(),
             palette: BTreeMap::new(),
             rules: BTreeMap::new(),
         }
+    }
+
+    /// Declare the document version (builder form) — what a program written
+    /// against an older surface says, and the only way to write one here.
+    pub fn at_version(mut self, version: &str) -> Program {
+        self.version = version.to_string();
+        self
     }
 
     /// Declare a parameter (builder form).
@@ -1008,6 +1076,11 @@ impl Program {
     /// Check every reference the program makes, and every structural rule that
     /// can be decided without expanding. [`crate::expand`] runs this first.
     pub fn validate(&self) -> Result<(), ProgramError> {
+        if !is_supported_version(&self.version) {
+            return Err(ProgramError::UnsupportedVersion {
+                version: self.version.clone(),
+            });
+        }
         if !self.rules.contains_key(&self.start) {
             return Err(ProgramError::UnknownRule {
                 symbol: self.start.clone(),
@@ -1139,10 +1212,21 @@ impl Program {
         in_split: bool,
     ) -> Result<(), ProgramError> {
         // Destructured with no `..` so a new field of a frame request has to be
-        // considered here rather than skipped. `mirror` needs nothing: every one
-        // of the eight reflections is a frame a scope can really be in, so a
-        // reflection request is always satisfiable and never dead code.
-        let Reorient { x, y, z, mirror: _ } = orient;
+        // considered here rather than skipped. `mirror` needs no *semantic*
+        // check — every one of the eight reflections is a frame a scope can
+        // really be in, so a reflection request is always satisfiable and never
+        // dead code — but it does need the version fence: it is a
+        // `#[serde(default)]` field, so an engine that predates it drops it
+        // silently and builds the unreflected shape.
+        let Reorient { x, y, z, mirror } = orient;
+        if !mirror.is_none() && !has_mirror(&self.version) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a reflected frame (`reorient.mirror`)",
+                since: MIRROR_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("rule {symbol:?}"),
+            });
+        }
         for spec in [*x, *y, *z].into_iter().flatten() {
             if spec == AxisSpec::SplitAxis && !in_split {
                 return Err(ProgramError::SplitAxisOutsideSplit {
@@ -1163,8 +1247,20 @@ impl Program {
             // alternative. Refuse it where it was written (PR #266 review).
             // A reflection is legal on any mapping — every one of the eight
             // reflections of a permutation is a frame a scope can really be in —
-            // so only the permutation half is checkable here.
-            Cond::Orientation { x, y, z, mirror: _ } => {
+            // so only the permutation half is *semantically* checkable here. The
+            // other half is the version fence, for the reason `check_orient`
+            // gives: a guard that names a reflection means something different
+            // on an engine that drops the field, and it is exactly the guard an
+            // author writes to keep a stair from being placed backwards.
+            Cond::Orientation { x, y, z, mirror } => {
+                if !mirror.is_none() && !has_mirror(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a reflected frame guard (`orientation.mirror`)",
+                        since: MIRROR_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
                 let axes = [*x, *y, *z];
                 if Orientation::from_axes(axes).is_permutation() {
                     Ok(())
