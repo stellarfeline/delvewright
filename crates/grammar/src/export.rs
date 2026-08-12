@@ -21,6 +21,26 @@
 //! post-hoc inference is exactly the downstream folklore the layering rule
 //! forbids).
 //!
+//! # Zones larger than one structure template
+//!
+//! Vanilla caps a structure template at 48 blocks per axis. That cap is a
+//! **packaging** fact about a file format, and a creator's design must never
+//! bend to satisfy it (owner ruling, 2026-08-12): a zone bigger than 48 on some
+//! axis is exported as a *tile set* — several `.nbt` files plus one manifest —
+//! and [`export_zone`] decides which of the two shapes it writes from the region
+//! alone. Nothing an author writes mentions 48.
+//!
+//! The cut positions are not this module's invention. `delve-schem` has tiled
+//! oversize `.schem` imports since spec-0007, so
+//! [`delvewright_schem::split::plan_split`] is *the* tiling of this project, and
+//! grammar export calls it. Two paths that tile the same volume the same way
+//! need one reassembler, not two.
+//!
+//! A tile is packaging and nothing else. The gates judge the whole expansion
+//! ([`crate::gates`]), the palette legality check below runs over the whole
+//! model, and the anchors in the manifest are zone-relative — so no verdict and
+//! no coordinate in the output depends on where a cut fell.
+//!
 //! # What this module deliberately does not emit
 //!
 //! * **Connectors.** Jigsaw socketing of grammar prefabs needs the tileset
@@ -36,6 +56,10 @@ use sha2::{Digest, Sha256};
 
 use delvewright_schem::convert::{self, DATA_VERSION};
 use delvewright_schem::schematic::{BlockState as SchemBlockState, ParsedSchematic};
+/// The tiling contract, defined once in the crate that owns tiling and re-exported
+/// here so a manifest writer and a manifest reader can never drift apart.
+pub use delvewright_schem::split::{TilePart, TileSet};
+use delvewright_schem::split::{part_filename, plan_split};
 
 use crate::expand::{ExpandError, ExpandOptions, Expansion, expand};
 use crate::geom::Box3;
@@ -55,9 +79,12 @@ pub const GENERATOR: &str = "crates/grammar";
 /// is the true statement, and admission to a campaign still runs the probe.
 pub const LIGHTING_PROFILE: &str = "unmeasured";
 
-/// Vanilla caps a structure template at 48 blocks per axis. A grammar prefab is
-/// one template with one metadata file, so an oversize region is refused rather
-/// than tiled — reassembling tiles is a jigsaw design, not an export detail.
+/// Vanilla caps a structure template at 48 blocks per axis.
+///
+/// This is the largest volume **one file** can hold, not the largest zone a
+/// creator may design. [`export_zone`] absorbs the cap by tiling; the only
+/// caller for which it is still a refusal is [`export_prefab`], the
+/// single-template writer that tiling is built out of.
 pub const MAX_STRUCTURE_AXIS: u32 = 48;
 
 // ---------------------------------------------------------------------------
@@ -123,6 +150,36 @@ pub struct StructureMetadata {
     pub data_version: i32,
     /// Provenance breadcrumb: what wrote the `.nbt`.
     pub generator: String,
+}
+
+/// The manifest of a zone too big for one structure template.
+///
+/// Field for field this is [`PrefabMetadata`] with `structure` replaced by
+/// `structure_set`: same `prefab_id`, same zone-relative `anchors`, same
+/// `lighting`, same `license` — including the provenance row, which names the
+/// program hash and seed that regenerate every tile at once. What changed is
+/// how many files the blocks arrived in, and that is the only thing that
+/// changed.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TileSetMetadata {
+    /// The DSL prefab id, `prefab/<id>`.
+    pub prefab_id: String,
+    /// The tiles and how they reassemble.
+    ///
+    /// The key is deliberately a *different name*, not `structure` with an
+    /// extra field: every existing consumer requires `structure`, so a tool
+    /// that has not learned about tile sets fails to parse this file instead of
+    /// reading it as a prefab with no blocks in it. Silence was the option not
+    /// taken.
+    pub structure_set: TileSet,
+    /// Named anchors in **zone** coordinates, exactly the ones the program's
+    /// `mark` declarations produced. A cut never moves one, and no anchor is
+    /// attributed to a tile: a mark is a fact about the building.
+    pub anchors: BTreeMap<String, AnchorMetadata>,
+    /// The lighting declaration.
+    pub lighting: LightingMetadata,
+    /// Licence and provenance.
+    pub license: LicenseMetadata,
 }
 
 /// One entry of the `anchors` map: the point-anchor shape the hand-built
@@ -206,6 +263,116 @@ impl PrefabExport {
     }
 }
 
+/// One tile's file: the name it lands under and the bytes that go in it.
+#[derive(Debug, Clone)]
+pub struct TileFile {
+    /// The `.nbt` filename.
+    pub file: String,
+    /// The gzip-framed structure template.
+    pub nbt: Vec<u8>,
+}
+
+/// A zone exported as several structure templates plus one manifest.
+#[derive(Debug, Clone)]
+pub struct TileSetExport {
+    /// The DSL prefab id, `prefab/<id>`.
+    pub prefab_id: String,
+    /// The manifest filename, `<id>.json` — the same name a single-template
+    /// prefab's metadata has, because it is the same thing to open.
+    pub metadata_file: String,
+    /// The manifest, as the pretty JSON text that goes on disk.
+    pub metadata_json: String,
+    /// The typed manifest, for callers that would otherwise re-parse it.
+    pub metadata: TileSetMetadata,
+    /// The tiles, in `x`→`y`→`z` grid order and index-aligned with
+    /// `metadata.structure_set.parts`.
+    pub tiles: Vec<TileFile>,
+    /// The expansion the tiles are a snapshot of — the **whole** zone, which is
+    /// what every gate and every measurement is about.
+    pub expansion: Expansion,
+}
+
+impl TileSetExport {
+    /// Write the manifest and every tile into `dir`, which must exist.
+    pub fn write_to_dir(&self, dir: &Path) -> std::io::Result<()> {
+        for tile in &self.tiles {
+            std::fs::write(dir.join(&tile.file), &tile.nbt)?;
+        }
+        std::fs::write(dir.join(&self.metadata_file), &self.metadata_json)
+    }
+}
+
+/// A frozen zone: one structure template, or a tile set plus its manifest.
+///
+/// Which of the two is a fact about the region, decided by [`export_zone`] and
+/// by nothing an author writes. Callers that do not care — and most should not —
+/// use the accessors, which read the same for both.
+#[derive(Debug, Clone)]
+pub enum ZoneExport {
+    /// The zone fit one structure template.
+    Single(PrefabExport),
+    /// The zone needed tiling.
+    Tiled(TileSetExport),
+}
+
+impl ZoneExport {
+    /// Write every file into `dir`, which must exist.
+    pub fn write_to_dir(&self, dir: &Path) -> std::io::Result<()> {
+        match self {
+            ZoneExport::Single(e) => e.write_to_dir(dir),
+            ZoneExport::Tiled(e) => e.write_to_dir(dir),
+        }
+    }
+
+    /// The DSL prefab id, `prefab/<id>`.
+    pub fn prefab_id(&self) -> &str {
+        match self {
+            ZoneExport::Single(e) => &e.prefab_id,
+            ZoneExport::Tiled(e) => &e.prefab_id,
+        }
+    }
+
+    /// The one file a consumer opens to learn what this zone is.
+    pub fn metadata_file(&self) -> &str {
+        match self {
+            ZoneExport::Single(e) => &e.metadata_file,
+            ZoneExport::Tiled(e) => &e.metadata_file,
+        }
+    }
+
+    /// Its text, as written.
+    pub fn metadata_json(&self) -> &str {
+        match self {
+            ZoneExport::Single(e) => &e.metadata_json,
+            ZoneExport::Tiled(e) => &e.metadata_json,
+        }
+    }
+
+    /// Every structure file, in grid order.
+    pub fn structure_files(&self) -> Vec<&str> {
+        match self {
+            ZoneExport::Single(e) => vec![e.structure_file.as_str()],
+            ZoneExport::Tiled(e) => e.tiles.iter().map(|t| t.file.as_str()).collect(),
+        }
+    }
+
+    /// The tile grid; `[1, 1, 1]` when the zone fit one template.
+    pub fn grid(&self) -> [i32; 3] {
+        match self {
+            ZoneExport::Single(_) => [1, 1, 1],
+            ZoneExport::Tiled(e) => e.metadata.structure_set.grid,
+        }
+    }
+
+    /// The whole expansion — the semantic unit, whatever the packaging.
+    pub fn expansion(&self) -> &Expansion {
+        match self {
+            ZoneExport::Single(e) => &e.expansion,
+            ZoneExport::Tiled(e) => &e.expansion,
+        }
+    }
+}
+
 /// Why an expansion could not be frozen into a prefab.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportError {
@@ -256,8 +423,10 @@ impl fmt::Display for ExportError {
             ),
             ExportError::TooLarge { size, cap } => write!(
                 f,
-                "the region is {}x{}x{} but a vanilla structure template caps every axis at \
-                 {cap}; a piece this big has to be authored as several jigsaw-socketed prefabs",
+                "the region is {}x{}x{} but one structure template caps every axis at {cap} — \
+                 export it with `export_zone`, which tiles. Reaching this from anywhere but the \
+                 single-template writer is a bug in the toolchain, never something for an author \
+                 to work around",
                 size[0], size[1], size[2]
             ),
             ExportError::ForbiddenBlocks { reasons } => write!(
@@ -294,7 +463,13 @@ fn is_valid_id(id: &str) -> bool {
         && !id.ends_with('-')
 }
 
-/// Expand `program` over `region` and freeze the result as prefab `id`.
+/// Expand `program` over `region` and freeze the result as **one** structure
+/// template plus its metadata.
+///
+/// This is the single-template writer, and it refuses a region past
+/// [`MAX_STRUCTURE_AXIS`]. Callers outside this module want [`export_zone`],
+/// which is the same thing for a region that fits and a tile set for one that
+/// does not — an author's region is never the wrong size.
 ///
 /// The returned bytes are a pure function of `(program, region.size, options)`:
 /// re-running this call reproduces both files byte for byte (ADR-0006), and the
@@ -321,7 +496,9 @@ pub fn export_prefab(
     }
 
     let expansion = expand(program, region, options)?;
-    let nbt = structure_nbt(&expansion.model)?;
+    let palette = zone_palette(&expansion.model);
+    refuse_unknown_states(&expansion.model, &palette)?;
+    let nbt = part_nbt(&expansion.model, &palette, region)?;
 
     let size = [
         region.size[0] as i32,
@@ -329,19 +506,6 @@ pub fn export_prefab(
         region.size[2] as i32,
     ];
     let hash = program_hash(program);
-    let anchors: BTreeMap<String, AnchorMetadata> = expansion
-        .anchors
-        .iter()
-        .map(|(name, anchor)| {
-            (
-                name.clone(),
-                AnchorMetadata {
-                    pos: anchor.pos,
-                    facing: anchor.facing.to_string(),
-                },
-            )
-        })
-        .collect();
     let metadata = PrefabMetadata {
         prefab_id: format!("prefab/{id}"),
         structure: StructureMetadata {
@@ -351,30 +515,11 @@ pub fn export_prefab(
             data_version: DATA_VERSION,
             generator: GENERATOR.to_string(),
         },
-        anchors,
+        anchors: anchor_metadata(&expansion),
         lighting: LightingMetadata {
             profile: LIGHTING_PROFILE.to_string(),
         },
-        license: LicenseMetadata {
-            source: "original".to_string(),
-            spdx: "GPL-3.0-or-later".to_string(),
-            note: "Original Delvewright project asset, derived from a grammar program in this \
-                   repository. No third-party material is ingested at expansion time; the \
-                   generator itself is a port credited in docs/ACKNOWLEDGEMENTS.md."
-                .to_string(),
-            provenance: format!(
-                "Generated deterministically by {GENERATOR} (spec-0027) from grammar program \
-                 {:?} ({hash}) at seed {} over a {}x{}x{} region; ADR-0006: those four inputs \
-                 regenerate this NBT byte for byte.",
-                program.name, options.seed, size[0], size[1], size[2]
-            ),
-            generated_by: GeneratedBy {
-                generator: "grammar".to_string(),
-                program: program.name.clone(),
-                program_hash: hash.clone(),
-                seed: options.seed,
-            },
-        },
+        license: license_metadata(program, &hash, options.seed, size, None),
     };
     let metadata_json =
         serde_json::to_string_pretty(&metadata).expect("prefab metadata serialises") + "\n";
@@ -390,22 +535,189 @@ pub fn export_prefab(
     })
 }
 
-/// Render a model as a gzip-framed vanilla structure template.
+/// Expand `program` over `region` and freeze it, tiling if it does not fit.
 ///
-/// Goes through the `.schem` pipeline's emitter rather than a second one of our
-/// own: one structure writer means one set of determinism guarantees and one
-/// place where the 1.21.11 shape is defined.
-fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
-    let region = model.region();
+/// **This is the export.** [`export_prefab`] is the writer for one structure
+/// template; this is the one that knows a template is not the unit a creator
+/// designs in. A region within [`MAX_STRUCTURE_AXIS`] on every axis produces
+/// exactly what `export_prefab` produces, byte for byte, under the same two
+/// filenames — tiling adds nothing to the shape of the ordinary case. A region
+/// past it produces a tile set and a manifest, and still never a refusal.
+///
+/// Where the cuts fall is [`plan_split`]'s answer, a pure function of the region
+/// and the cap: no RNG, no clock, no dependence on the program, the seed, or the
+/// blocks (ADR-0006).
+pub fn export_zone(
+    program: &Program,
+    region: Box3,
+    options: &ExpandOptions,
+    id: &str,
+) -> Result<ZoneExport, ExportError> {
+    if !is_valid_id(id) {
+        return Err(ExportError::BadId { id: id.to_string() });
+    }
+    if region.is_empty() {
+        return Err(ExportError::EmptyRegion { size: region.size });
+    }
+
     let size = [
         region.size[0] as i32,
         region.size[1] as i32,
         region.size[2] as i32,
     ];
+    let part_max = MAX_STRUCTURE_AXIS as i32;
+    let plan = plan_split(size, part_max);
+    if plan.is_single() {
+        return export_prefab(program, region, options, id).map(ZoneExport::Single);
+    }
 
+    // One expansion for the whole zone. The tiles are cut out of it afterwards,
+    // so the blocks a tile holds cannot depend on the tiling.
+    let expansion = expand(program, region, options)?;
+    let palette = zone_palette(&expansion.model);
+    refuse_unknown_states(&expansion.model, &palette)?;
+
+    let mut tiles = Vec::with_capacity(plan.parts.len());
+    let mut parts = Vec::with_capacity(plan.parts.len());
+    for part in &plan.parts {
+        let part_box = Box3::new(
+            [
+                region.origin[0] + part.offset[0],
+                region.origin[1] + part.offset[1],
+                region.origin[2] + part.offset[2],
+            ],
+            [
+                part.size[0] as u32,
+                part.size[1] as u32,
+                part.size[2] as u32,
+            ],
+        );
+        let nbt = part_nbt(&expansion.model, &palette, part_box)?;
+        let file = part_filename(id, part.grid_index);
+        parts.push(TilePart {
+            id: file
+                .strip_suffix(".nbt")
+                .expect("part_filename ends in .nbt")
+                .to_string(),
+            file: file.clone(),
+            grid_index: part.grid_index,
+            offset: part.offset,
+            size: part.size,
+        });
+        tiles.push(TileFile { file, nbt });
+    }
+
+    let hash = program_hash(program);
+    let metadata = TileSetMetadata {
+        prefab_id: format!("prefab/{id}"),
+        structure_set: TileSet {
+            base: id.to_string(),
+            size,
+            part_max,
+            grid: plan.grid,
+            data_version: DATA_VERSION,
+            generator: GENERATOR.to_string(),
+            parts,
+        },
+        anchors: anchor_metadata(&expansion),
+        lighting: LightingMetadata {
+            profile: LIGHTING_PROFILE.to_string(),
+        },
+        license: license_metadata(
+            program,
+            &hash,
+            options.seed,
+            size,
+            Some((plan.grid, tiles.len())),
+        ),
+    };
+    let metadata_json =
+        serde_json::to_string_pretty(&metadata).expect("tile-set manifest serialises") + "\n";
+
+    Ok(ZoneExport::Tiled(TileSetExport {
+        prefab_id: metadata.prefab_id.clone(),
+        metadata_file: format!("{id}.json"),
+        metadata_json,
+        metadata,
+        tiles,
+        expansion,
+    }))
+}
+
+/// The anchors an expansion declared, in the metadata shape. Zone-relative in
+/// both export shapes, because a mark is a fact about the building and a tile
+/// boundary is not part of the building.
+fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
+    expansion
+        .anchors
+        .iter()
+        .map(|(name, anchor)| {
+            (
+                name.clone(),
+                AnchorMetadata {
+                    pos: anchor.pos,
+                    facing: anchor.facing.to_string(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// The `license` block, shared by both export shapes so the provenance sentence
+/// cannot drift between them. `tiling` is `Some((grid, count))` for a tile set.
+fn license_metadata(
+    program: &Program,
+    hash: &str,
+    seed: u64,
+    size: [i32; 3],
+    tiling: Option<([i32; 3], usize)>,
+) -> LicenseMetadata {
+    let packaging = match tiling {
+        None => String::new(),
+        Some((grid, count)) => format!(
+            " The zone exceeds the {MAX_STRUCTURE_AXIS}-per-axis structure-template cap, so it is \
+             packaged as {count} tile(s) in a {}x{}x{} grid; the tiling is a pure function of the \
+             region and changes nothing about the expansion.",
+            grid[0], grid[1], grid[2]
+        ),
+    };
+    LicenseMetadata {
+        source: "original".to_string(),
+        spdx: "GPL-3.0-or-later".to_string(),
+        note: "Original Delvewright project asset, derived from a grammar program in this \
+               repository. No third-party material is ingested at expansion time; the \
+               generator itself is a port credited in docs/ACKNOWLEDGEMENTS.md."
+            .to_string(),
+        provenance: format!(
+            "Generated deterministically by {GENERATOR} (spec-0027) from grammar program \
+             {:?} ({hash}) at seed {seed} over a {}x{}x{} region; ADR-0006: those four inputs \
+             regenerate this NBT byte for byte.{packaging}",
+            program.name, size[0], size[1], size[2]
+        ),
+        generated_by: GeneratedBy {
+            generator: "grammar".to_string(),
+            program: program.name.clone(),
+            program_hash: hash.to_string(),
+            seed,
+        },
+    }
+}
+
+/// The palette every tile of a zone shares.
+///
+/// One palette for the whole model, not one per tile: the ordering is then the
+/// same in every file of a set, so a reviewer diffing two tiles sees blocks
+/// move and never indices renumber. Unused entries in a tile's palette are
+/// legal and cost a few bytes.
+struct ZonePalette {
+    states: Vec<SchemBlockState>,
+    index_of: BTreeMap<String, i32>,
+}
+
+fn zone_palette(model: &VoxelModel) -> ZonePalette {
     // Palette index 0 is air in both representations, and both lay cells out
     // x-major, so the model's own cell order is already the schematic's.
-    let palette: Vec<SchemBlockState> = model
+    let states: Vec<SchemBlockState> = model
         .palette()
         .iter()
         .map(|b| SchemBlockState {
@@ -413,27 +725,34 @@ fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
             properties: b.properties.clone(),
         })
         .collect();
-    let index_of: BTreeMap<String, i32> = palette
+    let index_of: BTreeMap<String, i32> = states
         .iter()
         .enumerate()
         .map(|(i, b)| (b.to_state_string(), i as i32))
         .collect();
+    ZonePalette { states, index_of }
+}
 
-    let mut blocks = vec![0i32; (size[0] * size[1] * size[2]) as usize];
-    let mut cells_per_state = vec![0usize; palette.len()];
-    for (i, pos) in region.positions().enumerate() {
+/// Refuse block states Minecraft 1.21.11 does not have.
+///
+/// Spelling, checked by the emitter (CLAUDE.md, task #70: the operator running
+/// the tool does not run `cargo test`). A structure template loads an unknown
+/// block as AIR, so this is the one class of defect that costs the whole piece
+/// and reports nothing at all.
+///
+/// It runs over the **whole model**, once, before any tiling: the cell counts it
+/// reports are the zone's, so a set's refusal reads identically to a single
+/// prefab's and never depends on which tile a bad block landed in.
+fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<(), ExportError> {
+    let mut cells_per_state = vec![0usize; palette.states.len()];
+    for pos in model.region().positions() {
         let state = model.get(pos).expect("positions() stays inside the region");
-        let index = index_of[&state.to_string()];
-        blocks[i] = index;
-        cells_per_state[index as usize] += 1;
+        cells_per_state[palette.index_of[&state.to_string()] as usize] += 1;
     }
 
-    // Spelling, checked by the emitter (CLAUDE.md, task #70: the operator
-    // running the tool does not run `cargo test`). A structure template loads an
-    // unknown block as AIR, so this is the one class of defect that costs the
-    // whole piece and reports nothing at all.
     let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
     let unknown: Vec<String> = palette
+        .states
         .iter()
         .zip(&cells_per_state)
         .filter(|&(_, &cells)| cells > 0)
@@ -444,8 +763,33 @@ fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
                 .map(|e| format!("{e} ({cells} cell(s))"))
         })
         .collect();
-    if !unknown.is_empty() {
-        return Err(ExportError::UnknownBlocks { reasons: unknown });
+    if unknown.is_empty() {
+        Ok(())
+    } else {
+        Err(ExportError::UnknownBlocks { reasons: unknown })
+    }
+}
+
+/// Render one box of a model as a gzip-framed vanilla structure template.
+///
+/// `part` is in model coordinates and must lie inside `model.region()`; for an
+/// untiled export it *is* the whole region, which is why the ordinary case
+/// cannot drift from what it emitted before tiling existed.
+///
+/// Goes through the `.schem` pipeline's emitter rather than a second one of our
+/// own: one structure writer means one set of determinism guarantees and one
+/// place where the 1.21.11 shape is defined.
+fn part_nbt(model: &VoxelModel, palette: &ZonePalette, part: Box3) -> Result<Vec<u8>, ExportError> {
+    let size = [
+        part.size[0] as i32,
+        part.size[1] as i32,
+        part.size[2] as i32,
+    ];
+
+    let mut blocks = vec![0i32; (size[0] * size[1] * size[2]) as usize];
+    for (i, pos) in part.positions().enumerate() {
+        let state = model.get(pos).expect("a part stays inside the model");
+        blocks[i] = palette.index_of[&state.to_string()];
     }
 
     let schem = ParsedSchematic {
@@ -454,7 +798,7 @@ fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
         source_data_version: Some(DATA_VERSION),
         size,
         offset: [0, 0, 0],
-        palette,
+        palette: palette.states.clone(),
         blocks,
         block_entities: Vec::new(),
     };
@@ -465,11 +809,25 @@ fn structure_nbt(model: &VoxelModel) -> Result<Vec<u8>, ExportError> {
         // The emitter's safety strip would replace these with air. A grammar
         // that asked for a command block meant to ask for one, so silently
         // shipping a hole is the worst of the three options; refuse instead.
+        //
+        // Positions are rebased to ZONE coordinates. A cell named at "3,2,1 of
+        // tile x0y0z1" is a cell an author cannot find in their own design.
+        let base = [
+            part.origin[0] - model.region().origin[0],
+            part.origin[1] - model.region().origin[1],
+            part.origin[2] - model.region().origin[2],
+        ];
         return Err(ExportError::ForbiddenBlocks {
             reasons: diagnostics
                 .iter()
                 .map(|d| match d.pos {
-                    Some(p) => format!("{} at {},{},{}", d.message, p[0], p[1], p[2]),
+                    Some(p) => format!(
+                        "{} at {},{},{}",
+                        d.message,
+                        p[0] + base[0],
+                        p[1] + base[1],
+                        p[2] + base[2]
+                    ),
                     None => d.message.clone(),
                 })
                 .collect(),

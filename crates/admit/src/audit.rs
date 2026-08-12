@@ -25,10 +25,11 @@
 //! The audit is pure and deterministic. It emits a machine-readable
 //! [`AuditReport`] (stdout JSON) plus per-finding [`Diagnostic`]s (stderr).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_schem::convert::{forbidden_nbt, strip_ns};
 use delvewright_schem::nbt::Nbt;
+use delvewright_schem::split::TilePart;
 use serde::Serialize;
 
 /// Block **names** (namespace-stripped) that hard-fail the admission audit: the
@@ -83,6 +84,33 @@ pub struct AuditReport {
     /// Count of palette block states the pinned Minecraft version does not have.
     pub unknown_blocks: usize,
     pub findings: Vec<Finding>,
+    /// For a zone that ships as a tile set: what was audited, tile by tile.
+    ///
+    /// Absent — and omitted from the JSON entirely — for a single structure
+    /// template, so an ordinary report is exactly the report it always was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiles: Option<Vec<TileAudit>>,
+}
+
+/// One tile's contribution to a zone-level audit.
+///
+/// The bytes are audited per tile because per tile is where the bytes are; the
+/// verdict is the zone's because a zone is what a player walks into. Listing
+/// the tiles is what keeps that honest: a reader can see how many files the
+/// verdict covers, and a zone audited from two tiles when its manifest declares
+/// three is visible rather than implied.
+#[derive(Debug, Clone, Serialize)]
+pub struct TileAudit {
+    /// The tile's `.nbt` filename.
+    pub file: String,
+    /// Its origin in zone coordinates.
+    pub offset: [i32; 3],
+    /// Its extent.
+    pub size: [i32; 3],
+    /// How many blocks it carries.
+    pub block_count: usize,
+    /// Its own verdict.
+    pub verdict: &'static str,
 }
 
 impl AuditReport {
@@ -215,8 +243,78 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         not_allowlisted,
         unknown_blocks,
         findings: diags.iter().map(to_finding).collect(),
+        tiles: None,
     };
     (report, diags)
+}
+
+/// Audit a zone that ships as a tile set: every tile's bytes, one zone verdict.
+///
+/// `tiles` are the manifest's parts paired with the structures they name, in
+/// manifest order. Every finding's position is rebased into **zone**
+/// coordinates before it is reported — a forbidden block at `3,2,1` of tile
+/// `x0y0z1` is a cell no author can find in a design they wrote in zone
+/// coordinates, and a diagnostic nobody can act on is a diagnostic that does
+/// not exist.
+///
+/// The verdict is the zone's: it passes only if every tile passes. A tile is a
+/// packaging unit and never a unit of judgement, so there is deliberately no
+/// way to admit a zone whose second tile failed.
+pub fn audit_tile_set(
+    asset: &str,
+    zone_size: [i32; 3],
+    tiles: &[(TilePart, Structure)],
+    allow: &Allowlist,
+) -> (AuditReport, Vec<Diagnostic>) {
+    let mut all_diags: Vec<Diagnostic> = Vec::new();
+    let mut audits: Vec<TileAudit> = Vec::with_capacity(tiles.len());
+    let mut palette: BTreeSet<String> = BTreeSet::new();
+    let (mut block_count, mut forbidden, mut not_allowlisted, mut unknown_blocks) = (0, 0, 0, 0);
+
+    for (part, structure) in tiles {
+        let (rep, diags) = audit(&part.file, structure, allow);
+        block_count += rep.block_count;
+        forbidden += rep.forbidden;
+        not_allowlisted += rep.not_allowlisted;
+        unknown_blocks += rep.unknown_blocks;
+        palette.extend(rep.palette.iter().cloned());
+        audits.push(TileAudit {
+            file: part.file.clone(),
+            offset: part.offset,
+            size: part.size,
+            block_count: rep.block_count,
+            verdict: rep.verdict,
+        });
+        all_diags.extend(diags.into_iter().map(|mut d| {
+            if let Some(p) = d.pos {
+                d.pos = Some([
+                    p[0] + part.offset[0],
+                    p[1] + part.offset[1],
+                    p[2] + part.offset[2],
+                ]);
+            }
+            d
+        }));
+    }
+
+    let verdict = if all_diags.iter().any(|d| d.is_error()) {
+        "fail"
+    } else {
+        "pass"
+    };
+    let report = AuditReport {
+        verdict,
+        asset: asset.to_string(),
+        size: zone_size,
+        block_count,
+        palette: palette.into_iter().collect(),
+        forbidden,
+        not_allowlisted,
+        unknown_blocks,
+        findings: all_diags.iter().map(to_finding).collect(),
+        tiles: Some(audits),
+    };
+    (report, all_diags)
 }
 
 /// A block entity's own forbidden reason: a forbidden `id`, or an embedded

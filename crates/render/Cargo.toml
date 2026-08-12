@@ -46,6 +46,15 @@ serde_json = "1"
 fastnbt = "2"
 flate2 = "1"
 
+# The tile-set manifest contract (`delvewright_schem::split`). A zone past the
+# 48-per-axis structure-template cap ships as several `.nbt` files plus one
+# manifest, and an author must still review ONE scene — so the renderer
+# reassembles from that manifest. It reads the same struct the exporter writes
+# rather than a private copy of the shape, which is the whole reason the
+# definition lives in the crate that owns tiling. Adds no new external
+# dependency: schem's are a subset of the ones above.
+delvewright-schem = { path = "../schem" }
+
 # Save/compare rendered frames (fidelity color-key scan, double-render stability).
 # MIT/Apache-2.0.
 image = "0.24"

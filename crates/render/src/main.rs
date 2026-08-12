@@ -27,6 +27,7 @@ use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
 use delvewright_render::sheet::{self, ScoreSet, SheetOptions};
 use delvewright_render::shots;
+use delvewright_render::tileset;
 
 #[derive(Parser)]
 #[command(
@@ -51,17 +52,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Render the deterministic multi-angle set for one prefab `.nbt`.
+    /// Render the deterministic multi-angle set for one prefab.
     Piece {
-        /// Prefab structure `.nbt` (its `.json` metadata is read when present).
-        nbt: PathBuf,
+        /// Prefab structure `.nbt` (its `.json` metadata is read when present),
+        /// or the `.json` manifest of a zone that ships as a tile set — which
+        /// renders the whole assembled zone as one scene.
+        input: PathBuf,
         /// Output directory for the PNGs.
         #[arg(short, long)]
         out: PathBuf,
     },
-    /// Render the piece set for every `.nbt` in a prefab library directory.
+    /// Render the piece set for every prefab in a library directory.
     Batch {
-        /// Directory of prefab `.nbt` files.
+        /// Directory of prefab `.nbt` files and tile-set manifests.
         dir: PathBuf,
         /// Output directory (one subdirectory per prefab).
         #[arg(short, long)]
@@ -148,7 +151,7 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match &cli.command {
-        Command::Piece { nbt, out } => run_piece(nbt, out, &cli),
+        Command::Piece { input, out } => run_piece(input, out, &cli),
         Command::Batch { dir, out } => run_batch(dir, out, &cli),
         Command::FidelityGate { out } => run_fidelity_gate(out.as_deref(), &cli),
         Command::Scene {
@@ -210,7 +213,7 @@ fn resolve_textures(cli: &Cli) -> Result<String, Diagnostic> {
     ))
 }
 
-fn run_piece(nbt_path: &Path, out: &Path, cli: &Cli) -> ExitCode {
+fn run_piece(input: &Path, out: &Path, cli: &Cli) -> ExitCode {
     let textures = match resolve_textures(cli) {
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
@@ -219,11 +222,11 @@ fn run_piece(nbt_path: &Path, out: &Path, cli: &Cli) -> ExitCode {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };
-    match render_piece(nbt_path, out, &pack, cli.size, cli.json) {
+    match render_piece(input, out, &pack, cli.size, cli.json) {
         Ok(n) => {
             eprintln!(
                 "rendered {n} shot(s) for {} -> {}",
-                nbt_path.display(),
+                input.display(),
                 out.display()
             );
             ExitCode::SUCCESS
@@ -233,16 +236,31 @@ fn run_piece(nbt_path: &Path, out: &Path, cli: &Cli) -> ExitCode {
 }
 
 /// Render every planned shot for one prefab into `out`. Returns the shot count.
+///
+/// `input` is either a structure `.nbt` or a tile-set manifest. Which one it is
+/// changes how the blocks are loaded and nothing else: a zone that needed tiling
+/// is reassembled first, so the shot plan, the cutaways and the filenames are
+/// the ones the zone would have had if a structure template had no size limit.
 fn render_piece(
-    nbt_path: &Path,
+    input: &Path,
     out: &Path,
     pack: &nucleation::meshing::ResourcePackSource,
     size: u32,
     json: bool,
 ) -> Result<usize, (Diagnostic, u8)> {
-    let st = nbt::parse_structure(nbt_path)
+    let (piece, meta_path) = tileset::load_piece(input)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
-    let meta = PrefabMeta::beside_nbt(nbt_path)
+    if let tileset::PieceInput::Zone { tiles, grid, .. } = &piece {
+        eprintln!(
+            "{}: assembled {tiles} tile(s) in a {}x{}x{} grid into one scene",
+            input.display(),
+            grid[0],
+            grid[1],
+            grid[2]
+        );
+    }
+    let st = piece.structure();
+    let meta = PrefabMeta::at_path(&meta_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
     let plan = shots::plan_piece(st.size, meta.as_ref());
     std::fs::create_dir_all(out).map_err(|e| {
@@ -251,7 +269,7 @@ fn render_piece(
             exit::OUTPUT,
         )
     })?;
-    let stem = nbt_path
+    let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("prefab");
@@ -264,7 +282,7 @@ fn render_piece(
             target: shot.target,
             dim: size,
         };
-        let frame = render::render_structure(&st, pack, shot.cutaway, &params)
+        let frame = render::render_structure(st, pack, shot.cutaway, &params)
             .map_err(|e| (Diagnostic::error(DW_RENDER, e), exit::RENDER))?;
         // Advisory only: note a placeholder in a per-piece render (the gate is
         // the enforcing command).
@@ -303,19 +321,48 @@ fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
             );
         }
     };
-    let mut nbts: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
+    let paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+
+    // A batch is the second door into "review a fragment and think you reviewed
+    // the zone", and it is the one nobody would point at deliberately: walking
+    // `*.nbt` in a directory holding a tile set renders each tile as if it were
+    // a prefab. So the manifests are collected first, and every `.nbt` they
+    // claim is rendered as part of its zone rather than on its own.
+    let mut manifests: Vec<PathBuf> = Vec::new();
+    let mut claimed: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+    for path in &paths {
+        if path.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        match delvewright_schem::split::read_tile_set(path) {
+            Ok(Some(set)) => {
+                for part in &set.parts {
+                    claimed.insert(path.with_file_name(&part.file));
+                }
+                manifests.push(path.clone());
+            }
+            // An ordinary prefab's metadata: its `.nbt` renders on its own.
+            Ok(None) => {}
+            Err(e) => return fail(Diagnostic::error(DW_INPUT, e), cli.json, exit::INPUT),
+        }
+    }
+
+    let mut pieces: Vec<PathBuf> = paths
+        .into_iter()
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("nbt"))
+        .filter(|p| !claimed.contains(p))
         .collect();
-    nbts.sort();
+    pieces.extend(manifests);
+    pieces.sort();
+
     let mut total = 0usize;
-    for nbt_path in &nbts {
-        let stem = nbt_path
+    for path in &pieces {
+        let stem = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("prefab");
         let sub = out.join(stem);
-        match render_piece(nbt_path, &sub, &pack, cli.size, cli.json) {
+        match render_piece(path, &sub, &pack, cli.size, cli.json) {
             Ok(n) => {
                 total += n;
                 eprintln!("  {stem}: {n} shot(s)");
@@ -325,7 +372,7 @@ fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
     }
     eprintln!(
         "batch: {} prefab(s), {total} shot(s) -> {}",
-        nbts.len(),
+        pieces.len(),
         out.display()
     );
     ExitCode::SUCCESS

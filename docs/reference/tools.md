@@ -117,16 +117,23 @@ delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--id <prefab-id>] [--traversable [--allow-falls]]
 ```
 
+**There is no maximum region.** A vanilla structure template holds 48 blocks per
+axis; an expansion past that is written as a set of `≤48` tiles plus one
+manifest, cut deterministically from the region alone. The cap is an internal
+packaging detail and reaches no author and no flag (DEC-0069). `piece` and
+`audit` below take that manifest and treat the zone as one thing; both refuse a
+lone tile of a set and name the manifest instead.
+
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". `check` validates structure with no
-region and no seed — run it after every edit. `expand` writes `<id>.nbt`,
-`<id>.json` (prefab metadata, with the program hash + seed that regenerate the
+region and no seed — run it after every edit. `expand` writes `<id>.nbt` (or the
+tile set above), `<id>.json` (prefab metadata, with the program hash + seed that regenerate the
 bytes) and `<id>.report.json` (the gate verdicts).
 
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
 state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
 from the approach end to the exit end; `--allow-falls` for a piece entered off a
-ledge). A red gate writes **no** `.nbt`. Measurements — fill ratio, standable
+ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion, tiled or not — a tile is a packaging unit and never a semantic one, so binding counts stay zone-level. Measurements — fill ratio, standable
 cells, footprint area/perimeter, silhouette complexity, per-block shares — are
 reported with no threshold and are deliberately not called gates: spec-0027 §4's
 craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
@@ -143,7 +150,7 @@ anchors, lighting, catalog cards. See [`../../crates/admit/README.md`](../../cra
 Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**):
 
 ```
-delve-admit audit <nbt> [--allowlist <json>] [-o report.json]   # CI gate
+delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]
@@ -191,7 +198,7 @@ the crate that needs it; `tools/check-workspace-git-deps.py` is what keeps it
 confined.
 
 ```
-delve-render piece <nbt> -o <dir>            # deterministic multi-angle set for one prefab
+delve-render piece <nbt|manifest.json> -o <dir>   # deterministic multi-angle set for one prefab
 delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json

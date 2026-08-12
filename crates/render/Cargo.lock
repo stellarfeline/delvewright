@@ -435,11 +435,23 @@ name = "delvewright-render"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "delvewright-schem",
  "fastnbt",
  "flate2",
  "image 0.24.9",
  "nucleation",
  "pollster",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "delvewright-schem"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "fastnbt",
+ "flate2",
  "serde",
  "serde_json",
 ]

@@ -2,10 +2,100 @@
 //! a disallowed-palette piece, and an NBT-bearing spawner.
 
 use delvewright_admit::allowlist::Allowlist;
-use delvewright_admit::audit::audit;
+use delvewright_admit::audit::{audit, audit_tile_set};
 use delvewright_admit::fixtures;
 use delvewright_admit::meta::{License, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
+use delvewright_admit::structure::Structure;
+use delvewright_schem::split::TilePart;
+
+/// Pair a structure with the manifest entry that would describe it.
+fn tile(index: i32, offset: [i32; 3], s: Structure) -> (TilePart, Structure) {
+    (
+        TilePart {
+            file: format!("zone.x0y0z{index}.nbt"),
+            id: format!("zone.x0y0z{index}"),
+            grid_index: [0, 0, index],
+            offset,
+            size: s.size,
+        },
+        s,
+    )
+}
+
+/// A zone that ships as a tile set is audited tile by tile and judged once.
+/// The report is about the zone: its size, its whole block count, the union of
+/// its palettes — plus the tile list, so a reader can see how many files the
+/// one verdict actually covers.
+#[test]
+fn a_clean_tile_set_passes_as_one_zone() {
+    let a = fixtures::clean_room();
+    let b = fixtures::clean_room();
+    let (blocks_a, blocks_b) = (a.blocks.len(), b.blocks.len());
+    let depth = a.size[2];
+    let tiles = vec![tile(0, [0, 0, 0], a), tile(1, [0, 0, depth], b)];
+    let (rep, diags) = audit_tile_set(
+        "zone.json",
+        [tiles[0].1.size[0], tiles[0].1.size[1], depth * 2],
+        &tiles,
+        &Allowlist::default_building(),
+    );
+
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    assert!(diags.is_empty());
+    assert_eq!(rep.size[2], depth * 2, "the report sizes the ZONE");
+    assert_eq!(rep.block_count, blocks_a + blocks_b);
+    assert!(rep.palette.iter().any(|b| b == "minecraft:stone_bricks"));
+
+    let listed = rep.tiles.expect("a zone report names its tiles");
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[1].offset, [0, 0, depth]);
+    assert!(listed.iter().all(|t| t.verdict == "pass"));
+}
+
+/// A forbidden block in the SECOND tile fails the whole zone, and its position
+/// is reported in zone coordinates.
+///
+/// The tile-local coordinate is the trap: it is a real cell of a real file, so
+/// it reads as a usable answer, and it points an author at a cell of their
+/// design that is innocent. A packaging boundary must not appear in a
+/// diagnostic.
+#[test]
+fn a_forbidden_block_in_a_later_tile_fails_the_zone_at_zone_coordinates() {
+    let clean = fixtures::clean_room();
+    let depth = clean.size[2];
+    let tiles = vec![
+        tile(0, [0, 0, 0], clean),
+        tile(1, [0, 0, depth], fixtures::command_block_piece()),
+    ];
+    let (rep, _) = audit_tile_set(
+        "zone.json",
+        [16, 16, depth * 2],
+        &tiles,
+        &Allowlist::default_building(),
+    );
+
+    assert!(!rep.is_pass(), "a tile is not a unit of judgement");
+    assert!(rep.forbidden >= 1);
+    let hit = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0731" && f.pos.is_some())
+        .expect("the forbidden cell is located");
+    assert_eq!(
+        hit.pos,
+        Some([1, 1, 1 + depth]),
+        "the offending cell is at [1,1,1] of tile 1, which is [1,1,{}] of the zone",
+        1 + depth
+    );
+
+    let listed = rep.tiles.unwrap();
+    assert_eq!(listed[0].verdict, "pass");
+    assert_eq!(
+        listed[1].verdict, "fail",
+        "the per-tile verdicts stay visible; it is the ZONE verdict that is binding"
+    );
+}
 
 #[test]
 fn carved_jigsaw_socket_passes_the_audit() {

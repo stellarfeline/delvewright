@@ -58,14 +58,12 @@ the material feeling, and any element the campaign will need to attach to.
 It is written first so that §5 has something to judge against. A description
 invented after the render is a description of the render.
 
-**Fix the region in the same breath, and check it against the 48-block
-template cap then** — not after the program is authored. A scene whose route
-needs more than 48 blocks on any axis cannot ship as one prefab (§6), and
-discovering that at export costs the whole authoring loop: five of the eight
-drowned-bell zone programs were designed at zone scale (60–145 blocks of
-travel) and hit the cap only when first exported. Record the chosen region and
-seed beside the program — in the campaign's `GENERATION.md`, since the program
-JSON does not yet carry its own region (queued engine surface).
+**Fix the region in the same breath** — not after the program is authored. It
+is chosen from what the scene needs and from nothing else: there is no size a
+design has to stay under, and a zone of any extent exports (§6). Record the
+chosen region and seed beside the program — in the campaign's `GENERATION.md`,
+since the program JSON does not yet carry its own region (queued engine
+surface).
 
 ## 2. Choose the palette by MEASUREMENT
 
@@ -187,8 +185,12 @@ Each of these was established by running it, except the two marked otherwise:
   a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
   afterwards (§7).
 - **No light.** The export declares `unmeasured` and it means it. §7 probes.
-- **48 blocks per axis** — the vanilla structure cap. Bigger is several socketed
-  pieces, which is a jigsaw design decision, not a parameter.
+- **No axis limit.** A vanilla structure template holds 48 blocks per axis, and
+  that cap is an internal packaging detail the toolchain absorbs: an expansion
+  past it is written as a set of `≤48` tiles plus one manifest, cut
+  deterministically from the region. It reaches neither the design nor the rest
+  of the loop — `delve-render piece` and `delve-admit audit` take the manifest
+  and treat the zone as one thing. *Established by running it.*
 - **Axis-aligned boxes only** — no curve, no diagonal, no mirror (an orientation
   is a permutation without reflection). A round tower or an organic cave wall is
   not this back end's shape. *Read from `crates/grammar/src/orient.rs`, not

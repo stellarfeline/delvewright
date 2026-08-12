@@ -1418,25 +1418,33 @@ deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing m
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
 
-Zone programs are **not** in the export suite. The reason given was the vanilla
-48-per-axis structure cap, and tiling a zone into prefabs is a jigsaw design
-rather than an export detail (§6) — but `chapel_ward`'s fixture is 12 × 9 × 20,
-so that reason no longer covers every zone, and the honest statement is now the
-narrower one: **no zone has been put in the export suite, and the first one that
-fits is a decision nobody has taken.** Taking it would mean a zone's anchors
-round-tripping through `PrefabRegistry` and carrying a spec-0027 §2 provenance
-row like a rule's, which is a capability question and not a size one. Meanwhile
+Zone programs are **not** in the export suite. Size is no longer why — every
+zone exports, tiling if it must (§6) — so the statement is the narrow one:
+**no zone has been put in the export suite, and doing so is a decision nobody
+has taken.** Taking it would mean a zone's anchors round-tripping through
+`PrefabRegistry` and carrying a spec-0027 §2 provenance row like a rule's,
+which is a capability question and not a size one. Meanwhile
 their structural validity, JSON round trip, determinism and palette-swap
 promises are asserted in `tests/zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
-`export::export_prefab(program, region, options, id)` produces the two files a
-prefab library holds: `<id>.nbt` (a vanilla structure template) and `<id>.json`
-beside it. It takes the *program*, not a finished model, and expands it itself —
-which is what makes the provenance row unforgeable, since the hash and seed in
-the metadata cannot describe a different expansion than the one that produced
-the bytes.
+`export::export_zone(program, region, options, id)` is the export. It takes the
+*program*, not a finished model, and expands it itself — which is what makes the
+provenance row unforgeable, since the hash and seed in the metadata cannot
+describe a different expansion than the one that produced the bytes.
+
+It writes one of two shapes, decided from the region and from nothing an author
+says:
+
+- a region within 48 on every axis → `<id>.nbt` (a vanilla structure template)
+  and `<id>.json` beside it, the two files a prefab library holds;
+- a region past it → a set of `≤48` tiles, `<id>.x<i>y<j>z<k>.nbt`, plus one
+  manifest at `<id>.json`.
+
+`export::export_prefab` is the single-template writer the first shape is made
+of, and it still refuses an oversize region. Nothing outside the module calls
+it: a region an author chose is never the wrong size.
 
 The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
 `.schem` asset pipeline already uses: one structure writer, one set of
@@ -1483,11 +1491,64 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
   refuses both at parse).
 
+### The tiled shape
+
+A zone past the cap carries `structure_set` where a single prefab carries
+`structure`. Everything else is the same file: same `prefab_id`, same
+zone-relative `anchors`, same `lighting`, same `license` — the provenance row
+regenerates the whole set at once, because one expansion produced all of it.
+
+```json
+{
+  "prefab_id": "prefab/z2-gate-ward",
+  "structure_set": {
+    "base": "z2-gate-ward", "size": [20, 10, 84], "part_max": 48,
+    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+    "parts": [
+      { "file": "z2-gate-ward.x0y0z0.nbt", "id": "z2-gate-ward.x0y0z0",
+        "grid_index": [0, 0, 0], "offset": [0, 0, 0],  "size": [20, 10, 48] },
+      { "file": "z2-gate-ward.x0y0z1.nbt", "id": "z2-gate-ward.x0y0z1",
+        "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
+    ]
+  },
+  "anchors": { … }, "lighting": { … }, "license": { … }
+}
+```
+
+- The key is a **different name**, never `structure` with an extra field. Every
+  existing consumer requires `structure`, so a tool that has not learned about
+  tile sets fails to parse this file rather than reading it as a prefab with no
+  blocks in it.
+- `offset` is **zone-relative**: add it to a tile-local cell to get the zone
+  cell. That is the only transform reassembly needs.
+- The cuts come from `delvewright_schem::split::plan_split`, the same function
+  that tiles an oversize `.schem` import — one tiling, so one reassembly rule
+  reads both. They are a pure function of the region and the cap: no RNG, no
+  clock, no dependence on the program, the seed or the blocks, so the tiles and
+  the manifest are byte-identical across runs (`tests/export.rs`).
+- **A tile is packaging and never a unit of judgement.** The gates judge the
+  whole expansion, the block-legality check runs over the whole model, and both
+  the anchors and every diagnostic position are in zone coordinates. Binding
+  counts stay zone-level.
+- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+  writer and `Deserialize` for the readers — one struct, so the halves cannot
+  drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
+  exactly, so a truncated one is a refusal and not a building with a hole.
+
+The rest of the loop takes the manifest and treats the zone as one thing:
+`delve-render piece <id>.json` reassembles and renders one scene, and
+`delve-admit audit <id>.json` audits every tile's bytes for one zone verdict
+(with a per-tile listing). Both **refuse** a lone tile of a set and name the
+manifest to use instead — a render of a fragment is a review that passes and
+means nothing, and a verdict over one tile reads as a verdict over the zone.
+
+Not built: compiler-side placement of a tile group in world assembly, and
+jigsaw connector emission. Both are queued.
+
 Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
-region, a region past the vanilla 48-per-axis structure cap (tiling a prefab
-into parts is a jigsaw design, not an export detail), and a model containing a
-block the structure safety strip would replace with air — a grammar that asked
-for a command block meant to, so shipping a silent hole is refused instead.
+region, and a model containing a block the structure safety strip would replace
+with air — a grammar that asked for a command block meant to, so shipping a
+silent hole is refused instead. **Size is not among them.**
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.

@@ -8,6 +8,8 @@
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
 //! - [`meta`] — prefab metadata (sockets/anchors) for interior shots.
+//! - [`tileset`] — a zone too big for one structure template, reassembled from
+//!   its manifest so an author reviews one scene and never a fragment.
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (free-camera path — the renderer for the first-person player-POV shots).
 //! - [`panorama`] — the whole-map 45° oblique release panorama.
@@ -32,3 +34,4 @@ pub mod render;
 pub mod scene;
 pub mod sheet;
 pub mod shots;
+pub mod tileset;

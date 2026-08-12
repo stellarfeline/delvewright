@@ -336,7 +336,10 @@ fn run_expand(
         return ExitCode::from(EXIT_GATE);
     }
 
-    let exported = match export::export_prefab(&program, box3, &opts, &id) {
+    // `export_zone`, never `export_prefab`: how many files the zone lands in is
+    // the toolchain's arithmetic, and a region an author chose is never the
+    // wrong size (owner ruling, 2026-08-12).
+    let exported = match export::export_zone(&program, box3, &opts, &id) {
         Ok(e) => e,
         Err(e) => return bad_input(format!("{id}: {e}")),
     };
@@ -345,11 +348,35 @@ fn run_expand(
         return ExitCode::from(EXIT_OUTPUT);
     }
 
+    let structures = exported.structure_files();
+    let grid = exported.grid();
+    let written = if structures.len() == 1 {
+        format!("{}/{}", out.display(), structures[0])
+    } else {
+        // Said plainly, because the operator should be able to see that the
+        // packaging happened — and that it is packaging, not a smaller zone.
+        eprintln!(
+            "  packaging      {} tile(s) in a {}x{}x{} grid — the zone is past the {}-per-axis \
+             structure-template cap, so it ships as a tile set and one manifest. Every gate above \
+             judged the whole zone.",
+            structures.len(),
+            grid[0],
+            grid[1],
+            grid[2],
+            export::MAX_STRUCTURE_AXIS
+        );
+        format!(
+            "{}/ {} tile(s) in a {}x{}x{} grid",
+            out.display(),
+            structures.len(),
+            grid[0],
+            grid[1],
+            grid[2]
+        )
+    };
     println!(
-        "{}/{} + {} + {} — {}x{}x{}, seed {seed}, {} filled cell(s), {} anchor(s)",
-        out.display(),
-        exported.structure_file,
-        exported.metadata_file,
+        "{written} + {} + {} — {}x{}x{}, seed {seed}, {} filled cell(s), {} anchor(s)",
+        exported.metadata_file(),
         report_path
             .file_name()
             .and_then(|s| s.to_str())
