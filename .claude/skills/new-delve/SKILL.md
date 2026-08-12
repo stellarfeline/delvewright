@@ -751,16 +751,22 @@ Symptom → tool:
   5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/` — including the
      per-anchor eye-height shots — and compare against step 1. The gates prove
      it is buildable and walkable; they say nothing about whether it is the
-     scene you asked for.
+     scene you asked for. If the expand wrote a tile set instead of one `.nbt`,
+     pass the manifest — `delve-render piece out/<id>.json` — which renders the
+     assembled zone as one scene. Never review a single tile; the command
+     refuses one anyway.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
+     For a tile set, `audit` takes the manifest and returns one zone verdict.
      A grammar prefab has **no connectors and no lighting** until this step, so
      it cannot enter a `prefab_pool` and will be dark, until you do it.
 
   What the grammar cannot express — **escalate, do not work around**: block
   entities of any kind (chest loot, sign text, spawners — bind those in the
-  campaign against an anchor the piece declares), curves and diagonals, terrain,
-  and anything over 48 blocks on an axis.
+  campaign against an anchor the piece declares), curves and diagonals, and
+  terrain. **Size is not on this list**: a region of any extent expands, and one
+  past the 48-per-axis structure-template cap is written as a tile set plus a
+  manifest at `<id>.json`. Never shrink a scene to fit a file format.
 
   A piece that comes from **outside** (a community schematic) instead enters via
   `delve-schem convert` and then the same admission chain with
