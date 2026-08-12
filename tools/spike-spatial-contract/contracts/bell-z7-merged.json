@@ -1,5 +1,5 @@
 {
- "zone": "bell Z7 \u2014 the Bell Tower (41x14x125, seed 1) \u2014 hand-written honest contract [defaults] \u2014 ATTACK D: the flight and its head landing merged into one union space, so no edge crosses the seam",
+ "zone": "bell Z7 \u2014 the Bell Tower (41x14x125, seed 1) \u2014 hand-written honest contract [defaults] \u2014 AC10 teeth: the flight, its run and its head landing merged into one space",
  "entry": "stair-foot",
  "spaces": [
   {
@@ -9,7 +9,7 @@
     [
      22,
      0,
-     106,
+     120,
      40,
      13,
      124
@@ -21,6 +21,14 @@
      40,
      13,
      105
+    ],
+    [
+     22,
+     0,
+     106,
+     40,
+     13,
+     119
     ]
    ]
   },
@@ -112,7 +120,7 @@
  "no_body": [
   {
    "name": "loft-rafters",
-   "kind": "sealed",
+   "kind": "posted",
    "reason": "rafter_hall's perches: beams over the loft floor, standable by construction and deliberately not a landing",
    "boxes": [
     [

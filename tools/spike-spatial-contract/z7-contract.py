@@ -30,6 +30,7 @@ DEFAULTS = {
     "ring_run": 20, "door_run": 20, "tee_run": 21, "loft_run": 20, "hearth_run": 20,
     "strip_depth": 22, "climb": 9,
     "head_landing": 5,   # cells of the flight's slice standing at the storey's level
+    "landing_run": 3,    # stair_flight's own landing_run, which sizes the foot landing
     "shaft_lane": 3,     # the hole the lift shaft cuts, across the tee's own centre
 }
 
@@ -56,8 +57,12 @@ def contract(p):
     def box(a, b, c, d, e, f):
         return [a, b, c, d, e, f]
 
+    # The one-floor rule (§1a): the flight's treads span eight y-levels, so they
+    # cannot belong to either landing. They belong to the stair edge's transit
+    # volume, which is what `via` is required on `stair` for.
+    foot_z0 = zmax - p["landing_run"] - 1
     spaces = [
-        ("stair-foot", "enclosed", [box(x0, 0, head_z1 + 1, xmax, ymax, zmax)]),
+        ("stair-foot", "enclosed", [box(x0, 0, foot_z0, xmax, ymax, zmax)]),
         ("stair-head", "enclosed", [box(x0, 0, flight_z0, xmax, ymax, head_z1)]),
         ("hearth", "enclosed", [box(x0, floor, hearth_z0, xmax, ymax, flight_z0 - 1)]),
         ("loft", "enclosed", [box(x0, floor, loft_z0, xmax, ymax, hearth_z0 - 1)]),
@@ -71,7 +76,7 @@ def contract(p):
     # meant to stay out of reach. The amended §1a lets that nest inside the loft
     # instead of forcing it out of the room it belongs to.
     no_body = [
-        ("loft-rafters", "sealed",
+        ("loft-rafters", "posted",
          "rafter_hall's perches: beams over the loft floor, standable by "
          "construction and deliberately not a landing",
          [box(x0 + 1, floor + 4, loft_z0, x0 + 2, ymax, hearth_z0 - 1),
@@ -80,7 +85,7 @@ def contract(p):
     RISE = p["climb"] - 1
     edges = [
         ("exterior", "stair-foot", "walk", None),
-        ("stair-foot", "stair-head", "stair", RISE),
+        ("stair-foot", "stair-head", "stair", RISE),   # via added below
         ("stair-head", "hearth", "walk", 0),
         ("hearth", "loft", "walk", 0),
         ("loft", "landing", "walk", 0),
@@ -89,6 +94,7 @@ def contract(p):
         ("landing", "lift-shaft", "drop", -(p["climb"] - 1)),
         ("ring", "exterior", "walk", None),
     ]
+    stair_via = [box(x0, 0, head_z1 + 1, xmax, ymax, foot_z0 - 1)]
     label = " ".join(f"{k}={p[k]}" for k in sorted(p) if p[k] != DEFAULTS[k]) or "defaults"
     return {
         "zone": f"bell Z7 — the Bell Tower ({p['region_x']}x{p['region_y']}x{p['region_z']}, "
@@ -97,7 +103,9 @@ def contract(p):
         "spaces": [{"name": n, "envelope": e, "boxes": b} for n, e, b in spaces],
         "no_body": [{"name": n, "kind": k, "reason": r, "boxes": b}
                     for n, k, r, b in no_body],
-        "edges": [dict({"a": a, "b": b, "class": c}, **({} if r is None else {"rise": r}))
+        "edges": [dict({"a": a, "b": b, "class": c},
+                       **({} if r is None else {"rise": r}),
+                       **({"via": stair_via} if c == "stair" else {}))
                   for a, b, c, r in edges],
     }
 
