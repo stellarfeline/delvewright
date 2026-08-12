@@ -181,8 +181,15 @@ read-the-rule round-trip per guard refusal.
 ## 5. See it before believing it
 
 ```sh
-delve-render piece out/<id>.nbt -o shots/ --size 640
+delve-render piece out/<id>.nbt   -o shots/ --size 640   # one structure template
+delve-render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
+
+Which of the two the expand wrote is a fact about the region (§6); pass whichever
+file is there. The manifest reassembles the tiles first, so every camera below —
+the orbit shots and the eye shots alike — frames the whole zone and a body can
+look straight across a cut. A single tile is refused: reviewing one would show a
+building sliced at a packaging plane.
 
 Two kinds of camera, and only one of them answers this step's question.
 

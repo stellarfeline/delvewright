@@ -261,6 +261,15 @@ floor, and how many open cells lie ahead before the view is stopped (and by
 what). A camera that stepped back is invisible in its own frame, so it is written
 down rather than implied.
 
+**On a tiled zone the eye shots are the zone's.** Pass the manifest and the
+tiles are reassembled before anything is planned, so a body stands at the
+anchor's zone cell and looks across a cut as if it were not there: measured on a
+2-tile 20×10×84 ward, an anchor 6 blocks past the cut reads 54 open cells ahead
+and the image shows the corridor running the whole length of the zone. Nothing
+about packaging reaches the camera, the placement, the clearance or the
+filenames. `crates/render/tests/tileset.rs` holds that claim — from one tile the
+same anchor is out of bounds and yields no eye shot at all.
+
 ### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
 
 Lays candidate renders out as one page the owner picks massing from. **Building
