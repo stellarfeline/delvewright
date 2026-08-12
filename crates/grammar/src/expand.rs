@@ -558,12 +558,16 @@ impl<'a> Expander<'a> {
         let cell = self.mark_cell(symbol, mark, state)?;
         let facing = match mark.facing {
             Some(f) => f,
-            // A permutation cannot mirror, so a derived facing is always the
-            // negative direction of the world axis the scope calls local Z.
-            None => match state.orient.get(Axis::Z) {
-                Axis::Z => Facing::North,
-                Axis::X => Facing::West,
-                Axis::Y => {
+            // A derived facing is the direction of *decreasing local Z* — the
+            // way the rule library's frame says travel runs. Which world
+            // direction that is depends on both halves of the frame: the world
+            // axis local Z names, and whether local Z runs down it.
+            None => match (state.orient.axis(Axis::Z), state.orient.reversed(Axis::Z)) {
+                (Axis::Z, false) => Facing::North,
+                (Axis::Z, true) => Facing::South,
+                (Axis::X, false) => Facing::West,
+                (Axis::X, true) => Facing::East,
+                (Axis::Y, _) => {
                     return Err(ExpandError::MarkFacingNotCardinal {
                         symbol: symbol.to_string(),
                         anchor: mark.anchor.clone(),
@@ -605,41 +609,56 @@ impl<'a> Expander<'a> {
         state: &ScopeState,
     ) -> Result<[i32; 3], ExpandError> {
         let size = state.region.size;
+        // Extent along the world axis a local axis names.
+        let extent = |local: Axis| size[state.orient.axis(local).index()] as i64;
         // Centre of an extent, rounding down; 0 for a degenerate axis, which the
         // bounds check below then reports.
-        let mid = |axis: Axis| (size[axis.index()].saturating_sub(1) / 2) as i64;
+        let mid = |n: i64| (n - 1).max(0) / 2;
 
-        // Offsets from the scope's minimum corner, per WORLD axis.
+        // Offsets from the scope's minimum **world** corner, per world axis.
+        //
+        // Every `at` but `floor_center` names a cell in LOCAL terms, so it is
+        // computed in local coordinates and put through the frame once, at the
+        // end: a reflected axis counts from the far end of the box, which is
+        // exactly what makes the mirror image of a rule land on the mirror image
+        // of its anchor.
         let mut delta = [0i64; 3];
+        let mut local = [Option::<i64>::None; 3];
         match &mark.at {
-            MarkAt::CornerMin => {}
+            MarkAt::CornerMin => local = [Some(0), Some(0), Some(0)],
             MarkAt::FloorCenter => {
-                delta[Axis::X.index()] = mid(Axis::X);
+                // Gravity is a world fact, so this one position ignores the
+                // frame entirely — both halves of it.
+                delta[Axis::X.index()] = mid(size[Axis::X.index()] as i64);
                 delta[Axis::Y.index()] = 0;
-                delta[Axis::Z.index()] = mid(Axis::Z);
+                delta[Axis::Z.index()] = mid(size[Axis::Z.index()] as i64);
             }
             MarkAt::FaceCenter { axis, side } => {
-                let pinned = state.orient.get(*axis);
-                for world in Axis::ALL {
-                    delta[world.index()] = if world == pinned {
+                for l in Axis::ALL {
+                    local[l.index()] = Some(if l == *axis {
                         match side {
                             Side::Min => 0,
-                            Side::Max => (size[world.index()].saturating_sub(1)) as i64,
+                            Side::Max => (extent(l) - 1).max(0),
                         }
                     } else {
-                        mid(world)
-                    };
+                        mid(extent(l))
+                    });
                 }
             }
             MarkAt::Offset { x, y, z } => {
                 let scope = self.scope(state);
-                for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
+                for (l, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
                     let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
                     })?;
-                    delta[state.orient.get(local).index()] = value;
+                    local[l.index()] = Some(value);
                 }
+            }
+        }
+        for l in Axis::ALL {
+            if let Some(coord) = local[l.index()] {
+                delta[state.orient.axis(l).index()] = state.orient.offset(l, coord, size);
             }
         }
 
@@ -668,7 +687,7 @@ impl<'a> Expander<'a> {
         state: &ScopeState,
         depth: u32,
     ) -> Result<(), ExpandError> {
-        let world_axis = state.orient.get(split.axis);
+        let world_axis = state.orient.axis(split.axis);
         let extent = state.region.extent(world_axis);
 
         let scope = self.scope(state);
@@ -716,14 +735,30 @@ impl<'a> Expander<'a> {
             error,
         })?;
 
+        // The pattern is laid out along the LOCAL axis, from its low end. In an
+        // unreflected frame that is the world low end; in a reflected one the
+        // first piece is the world-highest, so the same rule puts its end wall
+        // on the outside of both arms of a transept. The pieces are also
+        // *visited* in pattern order either way, so expansion order stays
+        // reading order — which is what `mark`'s auto-numbering counts in.
         let axis = world_axis.index();
-        let mut cursor = state.region.origin[axis];
+        let reversed = state.orient.reversed(split.axis);
+        let mut cursor = if reversed {
+            state.region.origin[axis] + state.region.size[axis] as i32
+        } else {
+            state.region.origin[axis]
+        };
         for (i, piece) in pieces.iter().enumerate() {
             let mut origin = state.region.origin;
             let mut size = state.region.size;
-            origin[axis] = cursor;
+            if reversed {
+                cursor -= *piece as i32;
+                origin[axis] = cursor;
+            } else {
+                origin[axis] = cursor;
+                cursor += *piece as i32;
+            }
             size[axis] = *piece;
-            cursor += *piece as i32;
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,

@@ -483,7 +483,9 @@ fn cond(prefix: &str, cond: &Cond) -> Cond {
         Cond::NoneOf { of } => Cond::NoneOf {
             of: of.iter().map(|c| self::cond(prefix, c)).collect(),
         },
-        orientation @ Cond::Orientation { .. } => orientation.clone(),
+        // A frame guard names axes and directions, never a program name, so
+        // there is nothing in it for a prefix to qualify.
+        frame @ Cond::Orientation { .. } => frame.clone(),
     }
 }
 

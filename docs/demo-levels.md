@@ -39,6 +39,7 @@ Rules of the queue:
 | Cutscene rehearsal/calibration (0019, landing) | tooling, not a level — its demo is a GENERATION.md walkthrough of calibrating one shot | pending (blocked on 0019) |
 | i18n zh-cn sidecar | covered by both shipped campaigns | covered |
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |
+| Grammar frame reflection + `symmetric` gate (grammar.md §2, §4c) | **The Mirrored Hall** — a small symmetric hall whose every paired feature (twin transept arms, twin stairs, a rose window) is one rule and its reflection; the level's README shows the program, and the build gates on `--symmetric x` so a forgotten reflection is a red rather than a hole in a flank | pending |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
 
 ## M5 theme suite (owner-approved 2026-08-03, all five)

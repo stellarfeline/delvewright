@@ -282,10 +282,10 @@ Each of these was established by running it, except the two marked otherwise:
     wall are one recursion whose per-step extent is arithmetic on the remaining
     dimension — `grammar.md` §2c idiom 3 — and with the paint inverted the same
     program is the opening rather than the mass;
-  - **any shape with a mirror plane.** An orientation is a permutation without
-    reflection, so `reorient` cannot mirror a piece — but a rule *body* can be
-    written mirrored, and a size list reversed is exactly that. Two such rules
-    give a chamfered octagon that re-centres itself at any width (idiom 7).
+  - **any shape with a mirror plane.** A frame carries a direction as well as a
+    mapping, so `reorient`'s `mirror` hands a body its own reflection: one rule
+    and a reflection of it give a chamfered octagon that re-centres itself at any
+    width (idiom 7), and `--symmetric <axis>` gates the claim.
 
   *Read from `crates/grammar/src/orient.rs`, and the two exceptions are
   demonstrated by `idiom-shape` and `idiom-mirror`.*

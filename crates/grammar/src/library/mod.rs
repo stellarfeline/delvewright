@@ -33,16 +33,17 @@
 //! > toward local `Z`-min.**
 //!
 //! That is not a coin flip. A [`Mark`]'s facing, when it is not spelled out as a
-//! world direction, is *always* the negative direction of the world axis the
-//! scope calls local `Z` — so a rule can only hand an anchor a facing that
-//! points down-axis. Choosing travel to run that way is what makes every anchor
-//! these rules declare look at the thing it is about. The cost is that anchors
-//! number *against* travel (a split visits its pieces low to high); see
-//! [`cliff_path`].
+//! world direction, is *always* the direction of decreasing local `Z` — so a
+//! rule can only hand an anchor a facing that points down-axis. Choosing travel
+//! to run that way is what makes every anchor these rules declare look at the
+//! thing it is about. The cost is that anchors number *against* travel (a split
+//! visits its pieces from the low end of the axis); see [`cliff_path`]. A
+//! reflection reverses both together, so the trade-off is the same in a mirrored
+//! frame.
 //!
 //! **The idiom index.** [`idioms`] is a third kind again: one minimal program
 //! per *technique* of the IR — repetition, priority, shape, erosion, graded
-//! erosion, surface detail, symmetry without reflection, `skip`, light — plus
+//! erosion, surface detail, symmetry, `skip`, light — plus
 //! one composition demonstration. They build nothing anyone wants, and they are
 //! in the library because `delve-grammar list` / `show` is the only way an
 //! author reaches the corpus, and the corpus is where technique is learned.
@@ -206,6 +207,12 @@ fn reoriented(orient: Reorient, body: Node) -> Node {
         orient,
         body: Box::new(body),
     }
+}
+
+/// Expand `body` reflected across one local axis — the same rule, standing at
+/// the other site of a mirror pair.
+fn mirrored(axis: Axis, body: Node) -> Node {
+    reoriented(Reorient::KEEP.flip(axis), body)
 }
 
 /// Expand another rule.

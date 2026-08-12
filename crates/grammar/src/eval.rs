@@ -16,7 +16,7 @@ use crate::ir::{ArithOp, CmpOp, Cond, DimRef, Expr};
 pub struct Scope<'a> {
     /// The scope's world-space box.
     pub region: &'a Box3,
-    /// Which world axis each local axis names.
+    /// The frame the rule reads the box through.
     pub orient: Orientation,
     /// The program's parameters.
     pub params: &'a BTreeMap<String, i64>,
@@ -51,12 +51,17 @@ impl std::error::Error for EvalError {}
 
 impl<'a> Scope<'a> {
     /// Measure one dimension, in blocks.
+    ///
+    /// An extent is a count, so it is read off the axis a local name maps to and
+    /// is blind to which way that axis runs: a reflected scope is exactly as
+    /// wide as its mirror image, and every size expression written for one half
+    /// of a symmetric shape holds in the other.
     pub fn dim(&self, dim: DimRef) -> i64 {
         let world = |axis: Axis| self.region.extent(axis) as i64;
         match dim {
-            DimRef::X => world(self.orient.x),
-            DimRef::Y => world(self.orient.y),
-            DimRef::Z => world(self.orient.z),
+            DimRef::X => world(self.orient.axis(Axis::X)),
+            DimRef::Y => world(self.orient.axis(Axis::Y)),
+            DimRef::Z => world(self.orient.axis(Axis::Z)),
             DimRef::WorldX => world(Axis::X),
             DimRef::WorldY => world(Axis::Y),
             DimRef::WorldZ => world(Axis::Z),
@@ -145,8 +150,15 @@ impl<'a> Scope<'a> {
                 }
                 true
             }
-            Cond::Orientation { x, y, z } => {
-                self.orient.x == *x && self.orient.y == *y && self.orient.z == *z
+            // The whole frame, both halves of it. A guard that does not mention
+            // `mirror` asks for an unreflected scope and gets one: the block
+            // states a frame guard exists to pick are not reflected by anything,
+            // so matching a scope's mirror image would place them backwards.
+            Cond::Orientation { x, y, z, mirror } => {
+                self.orient.x == *x
+                    && self.orient.y == *y
+                    && self.orient.z == *z
+                    && self.orient.mirror == *mirror
             }
         })
     }
@@ -155,6 +167,7 @@ impl<'a> Scope<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom::Mirror;
 
     fn params() -> BTreeMap<String, i64> {
         BTreeMap::from([("column_height".to_string(), 8)])
@@ -176,11 +189,7 @@ mod tests {
     fn local_dimensions_read_through_the_orientation() {
         let region = Box3::at_origin([3, 7, 11]);
         let p = params();
-        let rotated = Orientation {
-            x: Axis::Z,
-            y: Axis::Y,
-            z: Axis::X,
-        };
+        let rotated = Orientation::from_axes([Axis::Z, Axis::Y, Axis::X]);
         let s = scope(&region, &p, rotated);
         assert_eq!(s.dim(DimRef::X), 11);
         assert_eq!(s.dim(DimRef::Z), 3);
@@ -261,12 +270,38 @@ mod tests {
             "`otherwise` is decided by rule selection"
         );
         assert!(
-            s.test(&Cond::Orientation {
-                x: Axis::X,
-                y: Axis::Y,
-                z: Axis::Z
-            })
-            .unwrap()
+            s.test(&Cond::orientation(Axis::X, Axis::Y, Axis::Z))
+                .unwrap()
+        );
+    }
+
+    /// A frame guard matches the frame ENTIRE: same mapping, opposite
+    /// handedness is a different frame, and the guard that picks a stair for one
+    /// must not pick it for the other.
+    #[test]
+    fn a_frame_guard_separates_a_scope_from_its_mirror_image() {
+        let region = Box3::at_origin([4, 9, 10]);
+        let p = params();
+        let plain = Cond::orientation(Axis::X, Axis::Y, Axis::Z);
+        let flipped = Cond::frame(Axis::X, Axis::Y, Axis::Z, Mirror::of(Axis::X));
+
+        let s = scope(&region, &p, Orientation::IDENTITY);
+        assert!(s.test(&plain).unwrap());
+        assert!(!s.test(&flipped).unwrap());
+
+        let mirrored = Orientation::IDENTITY.mirrored(Mirror::of(Axis::X));
+        let s = scope(&region, &p, mirrored);
+        assert!(
+            !s.test(&plain).unwrap(),
+            "an unqualified frame guard asks for an unreflected scope"
+        );
+        assert!(s.test(&flipped).unwrap());
+
+        // An extent is blind to handedness, so every size expression written for
+        // one half of a symmetric shape holds in the other.
+        assert_eq!(
+            scope(&region, &p, Orientation::IDENTITY).dim(DimRef::X),
+            scope(&region, &p, mirrored).dim(DimRef::X)
         );
     }
 }

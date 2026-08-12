@@ -114,7 +114,7 @@ delve-grammar show   --program <id>      # that program as the typed JSON IR (th
 delve-grammar check  (--program <id> | --file <p.json>)
 delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
-    [--id <prefab-id>] [--traversable [--allow-falls]]
+    [--id <prefab-id>] [--traversable [--allow-falls]] [--symmetric x|y|z]
 delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
 ```
 
@@ -146,9 +146,11 @@ expansion runs — nothing is written and no verdict is printed, because a `pass
 above a failure is the line a reader stops at.
 
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
-state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
-from the approach end to the exit end; `--allow-falls` for a piece entered off a
-ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
+state exists in 1.21.11), `non-empty`, and two opt-in ones — `traversable` (a
+body walks from the approach end to the exit end; `--allow-falls` for a piece
+entered off a ledge) and `symmetric` (the piece is its own mirror image across
+the mid-plane of the named world axis, compared by presence rather than by block
+state). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
 tiled or not — a tile is a packaging unit and never a semantic one, so binding
 counts stay zone-level. The verdict is printed only once the prefab has been
 written, so every `pass` on the terminal is a `pass` about files that exist.

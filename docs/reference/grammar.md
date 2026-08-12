@@ -25,7 +25,8 @@ Two library modules exist for the tool and are public for it:
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
-  `non-empty`, and opt-in `traversable`. Measurements: fill, distinct states,
+  `non-empty`, and the opt-in `traversable` and `symmetric` (§4c).
+  Measurements: fill, distinct states,
   standable cells, footprint area/perimeter, silhouette complexity, per-block
   shares. A zero binding count, and a program declaring no anchors, are reported
   as findings rather than folded into a pass.
@@ -43,9 +44,12 @@ A **grammar program** is data: named rules over integer voxel boxes. Expanding
 one against a box and a `u64` seed derives a **voxel model** — a dense grid of
 full block states.
 
-Every scope in a derivation is a box plus an **orientation**: a permutation
-mapping the rule's local `X`/`Y`/`Z` onto world axes. That is what lets one rule
-be reused turned 90°, and what `reorient` manipulates.
+Every scope in a derivation is a box plus a **frame**. A frame says two things
+about each of the rule's local axes: which world axis it names, and which way
+along that axis local coordinates increase. The first half is a permutation and
+is what lets one rule be reused turned 90°; the second is a reflection and is
+what lets one rule be reused as its own mirror image. `reorient` manipulates
+both.
 
 ```text
 Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelModel
@@ -79,10 +83,38 @@ completed to a permutation: keep an axis where possible, otherwise complete the
 cycle the request started (asking for "my Z is the old X" swaps X and Z),
 otherwise take the lowest free axis.
 
+The same request carries **`mirror`** — the child's local axes that run
+*backwards* along the axis they name:
+
+```json
+{ "op": "reorient", "orient": { "mirror": { "x": true } },
+  "body": { "op": "call", "symbol": "transept_arm" } }
+```
+
+A reflected local axis reverses everything measured along it. A `split` lays its
+pattern from the axis's low end, which is now the world *high* end, so the same
+rule puts its first piece at the opposite face; `corner_min` is the local minimum
+corner, so it moves to the other end; `face_center`'s `min`/`max` and `offset`'s
+counts follow suit; and a derived `mark` facing turns around. Extents do not
+move — a reflected scope is exactly as wide as its mirror image, so every size
+expression written for one half of a symmetric shape holds in the other.
+
+`mirror` is **relative to the source axis**, not to the world: it reverses
+whichever direction the parent already ran in. Reflecting a reflected frame gives
+the original back, so a rule may be reflected at any depth without knowing
+whether it already is — which is what lets one rule stand at both sites of a
+mirror pair. It sits on the frame request rather than on `split`, because the
+frame request is what both `reorient` and a split's `orient` already are, and a
+reflection keyed to either alone would leave the other with no surface.
+
 **Guards** (`when`): `always` (default), `otherwise`, `cmp` over integer
 expressions of literals / params / scope dimensions with `+ - * / % max min`,
-`all` / `any` / `none_of`, and `orientation` (matches an exact axis mapping — how
-a directional stair or door picks its facing).
+`all` / `any` / `none_of`, and `orientation` (matches an exact frame — how a
+directional stair or door picks its facing). The frame it matches is the axis
+mapping **and** the reflection, both exactly; a guard that omits `mirror` asks
+for an unreflected scope. That strictness is the point: nothing reflects a
+`facing=` property, so a stair chosen for one frame is wrong in that frame's
+mirror image, and a guard that matched both would place it silently.
 
 **Selection**: every non-`otherwise` alternative whose guard holds is a
 candidate; if none hold, the `otherwise` alternatives are; among candidates the
@@ -140,14 +172,17 @@ a gate walked, and a sweep over seeds is a sweep over texture alone.
    anything needing a cell of it: an absolute split inside it overflows, and a
    `mark` on it is `MarkOutsideScope`.
 4. **A role bound to a world-cardinal block state does not turn when `largest`
-   turns the scope.** A `fill` writes the state it was given verbatim; nothing
-   rotates a `facing=` property to follow the orientation. So a rule whose frame
-   opens with `z(largest)` — every §5b rule does — lays its stairs, doors and
-   voussoirs the same way round whatever box it is handed, and every gate stays
-   green while the piece faces the wrong way. The construct that answers it is
-   the `orientation` guard: one alternative per axis mapping, each naming the
-   state that mapping wants, which is how `church` picks its four roof stair
-   facings.
+   turns the scope, and does not reflect under `mirror` either.** A `fill` writes
+   the state it was given verbatim; nothing rotates or reflects a `facing=`
+   property to follow the frame. So a rule whose frame opens with `z(largest)` —
+   every §5b rule does — lays its stairs, doors and voussoirs the same way round
+   whatever box it is handed, and every gate stays green while the piece faces
+   the wrong way. The construct that answers it is the `orientation` guard: one
+   alternative per frame, each naming the state that frame wants, which is how
+   `church` picks its four roof stair facings. Because the guard matches the
+   reflection too, the two sides of a mirror pair are separable — an alternative
+   guarded on the unreflected frame does not fire in the reflected scope, which
+   falls to `otherwise`.
 
 All four are asserted in `tests/idioms.rs`.
 
@@ -172,17 +207,21 @@ the declaration is all that is wanted.
 |---|---|
 | `anchor` | kebab-case stem. The exported key is `anchor/<stem>`, i.e. the DSL's `anchor/<kebab>` id — a mark cannot name an anchor the DSL could not reference. |
 | `at` | which cell (flattened into the mark object, see below) |
-| `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived**: a grammar orientation is a permutation without reflection, so the derived facing is the negative direction of the world axis the scope calls local `Z` — `north` when that is world `Z`, `west` when it is world `X`. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
+| `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived** as the direction of *decreasing local `Z`* — the way §5b's frame says travel runs. Which world direction that is depends on both halves of the frame: `north`/`south` when local `Z` names world `Z`, `west`/`east` when it names world `X`, the second of each pair when local `Z` is reflected. All four cardinals are reachable. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
 | `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
 
 `at` is one of:
 
 | `at` | Cell |
 |---|---|
-| `corner_min` | the scope's minimum corner |
-| `floor_center` | lowest **world** `Y`, centred on world `X`/`Z`. Gravity is a world fact, so this one position ignores the scope's local axis names |
-| `face_center` (+ `axis`, `side`) | the given **local** axis pinned to `min`/`max`, the other two centred |
-| `offset` (+ `x`, `y`, `z` expressions) | **local** cells from the minimum corner |
+| `corner_min` | the scope's **local** minimum corner — the world minimum corner on unreflected axes, the far end on reflected ones |
+| `floor_center` | lowest **world** `Y`, centred on world `X`/`Z`. Gravity is a world fact, so this one position ignores the frame entirely — both halves of it |
+| `face_center` (+ `axis`, `side`) | the given **local** axis pinned to its local `min`/`max`, the other two centred |
+| `offset` (+ `x`, `y`, `z` expressions) | **local** cells from the local minimum corner |
+
+Every `at` but `floor_center` is computed in local coordinates and put through
+the frame once, so a mark under a reflection lands on the mirror image of the
+cell it names.
 
 Centres round down on an even extent (the lower-middle cell) — it has to be one
 of the two, and the same one every time (ADR-0006).
@@ -225,7 +264,7 @@ delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
 | 4 | Erosion | `idiom-erosion` | 9 × 5 × 3, 1 | `minecraft:air` weighted into a role |
 | 5 | Graded erosion | `idiom-erosion-graded` | 9 × 13 × 3, 1 | a gradient is a banded split, one mix per band |
 | 6 | Surface detail | `idiom-surface-detail` | 9 × 12 × 9, 1 | the rule that built the surface splits off the layer against it |
-| 7 | Symmetry without reflection | `idiom-mirror` | 15 × 11 × 2, 1 | a rule body written mirrored, since `reorient` permutes and never mirrors |
+| 7 | Symmetry | `idiom-mirror` | 15 × 11 × 2, 1 | `reorient`'s `mirror` gives a rule its own reflection, so a mirror plane is one rule and not two copies |
 | 8 | Skip | `idiom-skip` | 7 × 5 × 5, 1 | what `skip` does, and why show-through is not expressible yet |
 | 9 | Light | `idiom-light` | 5 × 6 × 13, 1 | a lamp is a role; a one-cell split is a sconce |
 | — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the nine at once — a ruined arcade |
@@ -388,26 +427,40 @@ the air above. Scatter members are deliberately not full cubes
 litter layer is exactly where the rest belong. The same move on a different axis
 is a wall's inner face; with a light-emitting member it is idiom 9.
 
-### 7. Symmetry without reflection
+### 7. Symmetry
 
-A grammar orientation is a permutation and never a reflection, so no `reorient`
-can hand a rule its own mirror image. That is true, and it is **not** the same
-as "the back end cannot make a symmetric shape": an orientation cannot mirror a
-piece, but a rule *body* can be written mirrored, and a size list reversed is
-exactly that.
+A frame carries a direction as well as a mapping, so `reorient`'s `mirror` hands
+a body its own reflection. **A shape with a mirror plane is therefore one rule
+and a reflection of it**, never two copies that nothing keeps in step.
 
-`lower_half` and `upper_half` are the same rule twice. One peels its courses off
-the low end (`[abs 1, rel 1]`, children `[inset, slot]`) and the other off the
-high end (`[rel 1, abs 1]`, children `[slot, inset]`); both chamfer by one cell
-per side per course. Above and below a full-width waist they give a chamfered
-octagon — a rose window — at glazing widths 3, 5, 7, 9, 9, 9, 7, 5, 3, symmetric
-about both centre lines of the wall. It re-centres itself as the wall widens,
-because the aperture and every course inside it sit in the middle share of a
-`[margin, aperture, margin]` split.
+`half` peels one course off the low end of its local `Y` (`[rel 1, abs 1]`,
+children `[inset, slot]`) and chamfers by one cell per side, recursing on the
+remainder. The window is a full-width waist with `half` below it and the same
+`half` above it under `mirror: {y}`:
 
-**This is enough for any shape with a mirror plane.** What it does not reach is
-a smooth curve: the steps are integers and integer arithmetic has no square
-root, so a circle is a polygon here whatever you do.
+```json
+{ "op": "split", "axis": "y", "sizes": ["<margin>", 1, "<margin>"],
+  "children": [
+    { "op": "call", "symbol": "half" },
+    { "op": "call", "symbol": "slot" },
+    { "op": "reorient", "orient": { "mirror": { "y": true } },
+      "body": { "op": "call", "symbol": "half" } }
+  ] }
+```
+
+Together they give a chamfered octagon — a rose window — at glazing widths 3, 5,
+7, 9, 9, 9, 7, 5, 3, symmetric about both centre lines of the wall. It re-centres
+itself as the wall widens, because the aperture and every course inside it sit in
+the middle share of a `[margin, aperture, margin]` split. `tests/idioms.rs`
+compares the reflection against the two hand-written copies it replaces, byte for
+byte, and the entry's own row asserts the `symmetric` gate over the result.
+
+**This is enough for any shape with a mirror plane.** Two things it does not
+reach. A smooth curve: the steps are integers and integer arithmetic has no
+square root, so a circle is a polygon here whatever you do. And a block state: a
+`fill` writes what it was given verbatim and nothing reflects a `facing=`
+property, so a directional role needs the `orientation` guard, which matches the
+frame entire and so tells the two sides of a mirror pair apart.
 
 ### 8. Skip
 
@@ -529,6 +582,35 @@ curtain — the entire point of that rule — had been 14 cells of air.
 
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
+
+## 4c. Opt-in gates — the claims a piece makes
+
+Two gates run only when the author says the piece makes their claim, because
+each is a claim about a *kind* of piece rather than about every piece.
+
+- **`traversable`** — a body can walk from the region's world `Z`-max face to its
+  `Z`-min face. `allow_falls` adds a one-way fall edge, for a piece entered by
+  stepping off a ledge. A room with one door has no far end and would fail this
+  correctly and uselessly, which is why it is opt-in.
+- **`symmetric`** — the piece is its own mirror image across the mid-plane of a
+  named world axis. It compares **presence, not block state**: a stair placed
+  correctly on both sides of a mirror plane is a different state on each side,
+  since nothing reflects a `facing=` property, and comparing states would red
+  every symmetric building that contains one. Solid-versus-not is the property a
+  mirror plane really asserts. An odd extent leaves the centre plane paired with
+  itself and it is not counted; a one-cell axis therefore binds to nothing, which
+  is reported as a finding rather than folded into a pass.
+
+`symmetric` is what reads a defect no other gate can. A shape with a mirror plane
+is built by expanding one rule at both sites; if one site is instead a hand-kept
+copy, or is missing its reflection, the building has a hole in one flank and
+`blocks-exist`, `non-empty` and `traversable` are all still green over it. The
+gate compares the halves and names the first cell pair that disagrees.
+
+```sh
+delve-grammar expand --program idiom-mirror --region 15x11x2 --seed 1 \
+  --symmetric y -o out/
+```
 
 ## 5. Rule library — ported buildings
 
@@ -1090,16 +1172,13 @@ either runs out. This is `store_room`'s own state-machine trick ("a rule has no
 memory, so the invariant is in the derivation's shape") aimed at `Y`. **No IR
 change was made or needed.**
 
-**A switchback is a rule body, not an orientation** — a second correction, and
-the one with more left in it. The recorded reason a switchback cannot be built
-is that a grammar orientation is a permutation without reflection. True, and
-beside the point for a stair: an orientation cannot mirror a piece, but a rule
-body can be *written* mirrored. This rule peels its treads off local `Z`-max
-(`[rel, abs]`, recursion first); the same rule written `[abs, rel]` climbs the
-other way. Two such lanes side by side in `X`, joined at the top of the first,
-is a dogleg — which is what a tall tower over a small footprint needs, since a
-straight flight climbs at most about `Z / tread`. Not built; recorded because a
-*false* blocker costs more than a missing feature.
+**A switchback is one rule and its reflection.** This rule peels its treads off
+local `Z`-max (`[rel, abs]`, recursion first); the same rule under
+`mirror: {z}` climbs the other way. Two such lanes side by side in `X`, joined
+at the top of the first, is a dogleg — which is what a tall tower over a small
+footprint needs, since a straight flight climbs at most about `Z / tread`. Not
+built; recorded because the construction is available and the shape is a
+recurring one.
 
 Gates (`tests/staging.rs`), each with its binding count:
 
@@ -1562,15 +1641,13 @@ scoped to the lane's own floor course, or it will be green for the wrong
 reason.
 
 **Z1 is one run, not a switchback**, and that is a finding: a switchback
-alternates which side the drop is on, and a grammar orientation is a permutation
-*without reflection*, so no `reorient` can mirror a cliff run. It needs a
-mirroring orientation or a `cliff_turn` landing rule; inventing the landing
-inline is the geometry a zone program does not write. **A third option was
-overlooked and is now open rather than answered**: what an orientation cannot do
-a *rule body* can, and `stair_flight` (§5b) records the construction — a rule
-that peels its pieces off the other end of its own split is the mirror image of
-itself. Whether that reaches `cliff_path`, whose recesses and lane are placed by
-`reorient` rather than by split order, has not been checked.
+alternates which side the drop is on, which is a reflection of the run. The
+construction is `reorient`'s `mirror` (§2) — the same `cliff_path` under
+`mirror: {x}` — and what remains unchecked is whether `cliff_path` in particular
+survives it, since its recesses and lane are placed by `reorient` rather than by
+split order. A `cliff_turn` landing rule would still be needed for the corner
+itself; inventing that landing inline is the geometry a zone program does not
+write.
 
 ### The three seam limits — all three closed
 
@@ -1589,8 +1666,8 @@ Each is asserted rather than asserted-about: every one has a test in
    a landing" move that keeps `rafter_hall`'s perches off the nave. So the piece
    was a *terminus*: its `Z`-min face carried no standable cell at berm height,
    its cantilever slice no floor at all, and no walk (fall edges included)
-   crossed it. No orientation helped, because a grammar orientation is a
-   permutation without reflection.
+      crossed it, and no frame helped: turning or reflecting a terminus gives a
+   terminus.
 
    `berm_gate` (§5b) is the exit lane, and **terminus is still the default** —
    a guard post that can simply be walked under is a weaker piece and nobody
@@ -1955,12 +2032,14 @@ four zones' bytes still rather than two. That is a cost that only grows, and it
 grows every time a zone round composes one of these three — which is worth
 knowing before the fourth site arrives, not after.
 
-**A facing a rule cannot ask for.** A derived facing is the negative direction of
-the world axis the scope calls local `Z`, and an explicit `facing` is a *world*
-cardinal, so a rule that is reused under rotation cannot say "look the way my
-local `+X` points". Since a split also always visits its pieces low-to-high
-along that same axis, "anchors numbered in travel order **and** facing along
-travel" is not expressible — §5b pays for the facings with the numbering. The
+**A facing a rule cannot ask for.** A derived facing is the direction of
+decreasing local `Z`, and an explicit `facing` is a *world* cardinal, so a rule
+that is reused under rotation cannot say "look the way my local `+X` points".
+Since a split also always visits its pieces from the low end of the axis it cuts,
+"anchors numbered in travel order **and** facing along travel" is not
+expressible — §5b pays for the facings with the numbering. A reflection does not
+buy it back: `mirror` reverses the visiting order and the derived facing
+together, so the two stay locked to each other. The
 smallest primitive that would remove the trade-off is a **local-direction facing
 spec** on `Mark::facing` (`local_x_min` / `local_x_max` / `local_z_min` /
 `local_z_max`, resolved through the scope's orientation at expansion, exactly as
@@ -1997,10 +2076,11 @@ delve-grammar coverage --json coverage.json
 ```
 
 It counts, over every program `delve-grammar list` names, how many times each
-`Node` kind, each `Cond` kind and each palette paint kind is written, and prints
-each with its **binding count** and the programs that demonstrate it — the same
-shape the expansion gates use, and for the same reason: a number beside the word
-`pass` that examined nothing is worse than no number.
+`Node` kind, each `Cond` kind, each thing a frame request asks for
+(`frame:rename`, `frame:mirror`) and each palette paint kind is written, and
+prints each with its **binding count** and the programs that demonstrate it — the
+same shape the expansion gates use, and for the same reason: a number beside the
+word `pass` that examined nothing is worse than no number.
 
 **What it measures, and the thing it must never be read as.** It measures
 demonstration, not expressiveness. A pass means no part of the IR is left
@@ -2020,7 +2100,9 @@ only shrink.
 
 **Why the construct list cannot go stale.** The kinds are generated from one
 list that produces both the enum and its `ALL` slice, and each kind is assigned
-by an exhaustive `match` over `Node`, `Cond` and `Paint`. A new IR variant
+by an exhaustive `match` over `Node`, `Cond` and `Paint` — or, where the IR type
+is a struct rather than a sum, by an exhaustive destructure of it, which is how
+`Reorient` is classified. A new IR variant, or a new field on a frame request,
 therefore **fails to compile** until someone classifies it, and it then begins
 life at zero bindings — a surface nothing demonstrates is a finding on the day it
 lands. The check is bound to two events rather than to a line in this document:

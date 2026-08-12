@@ -22,7 +22,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
-use crate::geom::{Axis, Orientation};
+use crate::geom::{Axis, Mirror, Orientation};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -187,9 +187,17 @@ pub enum Cond {
         /// Sub-conditions.
         of: Vec<Cond>,
     },
-    /// The scope's orientation is exactly this local-to-world mapping —
-    /// upstream's `orientation() == (0, 1, 2)` checks, which pick the correctly
-    /// facing stair/door variant.
+    /// The scope's frame is exactly this one — upstream's
+    /// `orientation() == (0, 1, 2)` checks, which pick the correctly facing
+    /// stair/door variant.
+    ///
+    /// The frame is the axis mapping **and** the reflection, and both are
+    /// matched exactly: `mirror` defaults to no reflection, so a guard that does
+    /// not mention it holds only in an unreflected scope. That is the strict
+    /// reading on purpose. A `fill` writes the block state it was given
+    /// verbatim, so a stair chosen for one frame is wrong in that frame's mirror
+    /// image; a guard that matched both would place it silently, and this
+    /// language has no silent wrong answers to spare.
     Orientation {
         /// World axis of the local `X`.
         x: Axis,
@@ -197,6 +205,9 @@ pub enum Cond {
         y: Axis,
         /// World axis of the local `Z`.
         z: Axis,
+        /// Which local axes run backwards.
+        #[serde(default, skip_serializing_if = "Mirror::is_none")]
+        mirror: Mirror,
     },
 }
 
@@ -204,6 +215,21 @@ impl Cond {
     /// `lhs <op> rhs`.
     pub fn cmp(lhs: Expr, op: CmpOp, rhs: Expr) -> Cond {
         Cond::Cmp { lhs, op, rhs }
+    }
+
+    /// The scope's frame is exactly this mapping, unreflected.
+    pub fn orientation(x: Axis, y: Axis, z: Axis) -> Cond {
+        Cond::Orientation {
+            x,
+            y,
+            z,
+            mirror: Mirror::NONE,
+        }
+    }
+
+    /// The scope's frame is exactly this mapping, reflected as given.
+    pub fn frame(x: Axis, y: Axis, z: Axis, mirror: Mirror) -> Cond {
+        Cond::Orientation { x, y, z, mirror }
     }
 }
 
@@ -289,8 +315,23 @@ pub enum AxisSpec {
     SplitAxis,
 }
 
-/// A (possibly partial) reorientation request: unset axes are filled in by
-/// [`crate::orient::reorient`].
+/// A (possibly partial) request for the child's frame: which parent axis each
+/// local axis names, and which of them run backwards.
+///
+/// Unset axes are filled in by [`crate::orient::reorient`].
+///
+/// **`mirror` is relative to the source axis**, not to the world: it reverses
+/// whichever direction the parent's chosen axis already ran in. So a rule need
+/// not know its own handedness to reflect a child, and reflecting a reflected
+/// frame gives the original back — which is what lets one rule be used at both
+/// sites of a mirror pair, at any depth, without a copy.
+///
+/// The reflection lives here, on the frame request, rather than on `split` or on
+/// a node of its own, because this struct **is** the language's statement about
+/// a child's frame and it appears in two places — [`Node::Reorient`] and
+/// [`Split::orient`]. A mirror keyed to either one of those would leave the
+/// other with no surface, and the second site would then grow a bespoke field of
+/// its own (CLAUDE.md: "a second bespoke field is the defect, not the fix").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Reorient {
     /// What the child should call its local `X`.
@@ -302,14 +343,18 @@ pub struct Reorient {
     /// What the child should call its local `Z`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<AxisSpec>,
+    /// Which of the child's local axes run backwards along the axis they name.
+    #[serde(default, skip_serializing_if = "Mirror::is_none")]
+    pub mirror: Mirror,
 }
 
 impl Reorient {
-    /// No reorientation: children keep the parent's axes.
+    /// No request at all: children keep the parent's frame entire.
     pub const KEEP: Reorient = Reorient {
         x: None,
         y: None,
         z: None,
+        mirror: Mirror::NONE,
     };
 
     /// True when nothing is requested.
@@ -332,6 +377,18 @@ impl Reorient {
     /// Set the child's local `Z`.
     pub fn z(mut self, spec: AxisSpec) -> Reorient {
         self.z = Some(spec);
+        self
+    }
+
+    /// Reverse one of the child's local axes.
+    pub fn flip(mut self, axis: Axis) -> Reorient {
+        self.mirror = self.mirror.and(axis);
+        self
+    }
+
+    /// Set the whole reflection at once.
+    pub fn mirror(mut self, mirror: Mirror) -> Reorient {
+        self.mirror = mirror;
         self
     }
 }
@@ -479,8 +536,8 @@ pub enum MarkAt {
     /// the scope's local axis names — an NPC stands on the floor however the
     /// rule chose to call its axes.
     FloorCenter,
-    /// The scope's minimum corner. A permutation cannot mirror, so the local
-    /// minimum corner and the world one are the same cell.
+    /// The scope's **local** minimum corner: the world minimum corner on
+    /// unreflected axes, and the far end of every axis the frame reflects.
     CornerMin,
     /// The centre of one face: the given **local** axis pinned to `side`, the
     /// other two centred.
@@ -544,11 +601,12 @@ pub struct Mark {
     /// object under a key of the same name.
     #[serde(flatten)]
     pub at: MarkAt,
-    /// The facing to declare. Omitted, it is derived from the scope's
-    /// orientation: the negative direction of the world axis the scope calls
-    /// local `Z` (`north` when that is world `Z`, `west` when it is world `X`).
-    /// A scope whose local `Z` is vertical has no cardinal facing to derive, and
-    /// says so rather than guessing.
+    /// The facing to declare. Omitted, it is derived from the scope's frame as
+    /// the direction of *decreasing local `Z`*: `north`/`south` when local `Z`
+    /// names world `Z`, `west`/`east` when it names world `X`, the second of
+    /// each pair when the frame reflects local `Z`. A scope whose local `Z` is
+    /// vertical has no cardinal facing to derive, and says so rather than
+    /// guessing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
     /// Name completion.
@@ -1080,7 +1138,12 @@ impl Program {
         orient: &Reorient,
         in_split: bool,
     ) -> Result<(), ProgramError> {
-        for spec in [orient.x, orient.y, orient.z].into_iter().flatten() {
+        // Destructured with no `..` so a new field of a frame request has to be
+        // considered here rather than skipped. `mirror` needs nothing: every one
+        // of the eight reflections is a frame a scope can really be in, so a
+        // reflection request is always satisfiable and never dead code.
+        let Reorient { x, y, z, mirror: _ } = orient;
+        for spec in [*x, *y, *z].into_iter().flatten() {
             if spec == AxisSpec::SplitAxis && !in_split {
                 return Err(ProgramError::SplitAxisOutsideSplit {
                     symbol: symbol.to_string(),
@@ -1098,7 +1161,10 @@ impl Program {
             // is expressible. It matches nothing, ever — which at expansion time
             // surfaces as a baffling `NoApplicableRule` about a *different*
             // alternative. Refuse it where it was written (PR #266 review).
-            Cond::Orientation { x, y, z } => {
+            // A reflection is legal on any mapping — every one of the eight
+            // reflections of a permutation is a frame a scope can really be in —
+            // so only the permutation half is checkable here.
+            Cond::Orientation { x, y, z, mirror: _ } => {
                 let axes = [*x, *y, *z];
                 if Orientation::from_axes(axes).is_permutation() {
                     Ok(())
