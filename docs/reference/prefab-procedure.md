@@ -14,11 +14,40 @@ Behaviour references: [`grammar.md`](grammar.md) (what the back end does),
 **The box-split grammar back end** (`crates/grammar`, spec-0027) — owner
 decision, 2026-08-04. It is the default and this procedure is written for it.
 
-> The table mapping *scene type → back end* for the cases the grammar does not
-> cover is **not yet written**: it is being derived from a survey of every
-> generation technique this project has researched, and writing it from a
-> partial inventory is the failure this procedure exists to end. Until it lands,
-> a scene the grammar cannot express (see §6) is escalated, not improvised.
+When the scene is not a grammar scene, the route is decided by this table —
+derived from the full technique survey (every approach this project researched,
+probed, or rejected, with its tested evidence), not from recollection. A scene
+that matches no row is **escalated, not improvised**.
+
+| The scene is… | Route | Why this route — and what is proven about it |
+|---|---|---|
+| a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers (owner, 2026-08-04). T2 is an input-modality property — the program is authored *against the referent* from the library corpus; the 2026-08-04 probe proved named referents recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
+| a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The five Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
+| a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
+| organic or curved — a cave interior, a natural rock face, anything the grammar's axis-aligned boxes cannot state (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no curve, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". |
+| terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
+| an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction (owner ruling) and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
+
+And the composition rules — how the routes combine into an area:
+
+- **The one assembly chain**: piece (any route above) → `delve-admit` admission
+  → pool declaration → **compiler-as-jigsaw layout** (the compiler is the
+  jigsaw; sockets are a connectivity vocabulary, not runtime mechanics) →
+  edit scripts for L2/L3 fixes → relight → validation renders. There is no
+  second chain.
+- **Grammar pieces enter areas by direct placement only, today**: the export
+  emits no jigsaw connectors, so a grammar prefab cannot join a
+  `prefab_pool` until a socket is carved (§7) — and connector *emission* is an
+  open design, flagged, not improvised.
+- **Intent flows one way**: a reference image (`tools/refimg.py`) conditions
+  the human and the program; a similarity score (`tools/refscore.py`) RANKS
+  candidate expansions on the contact sheet and can never gate or veto —
+  structurally enforced (`DW0725`/`DW0726`). Generate N seed-varied
+  candidates, machine-order, **human picks one**. No image is ever
+  voxelized into geometry (red line).
+- **Fixes go through edit scripts, not regeneration**, once a piece is placed:
+  the edit script is versioned, deterministic, and re-proves walkability and
+  lighting after replay; hand-editing world files is not an authoring surface.
 
 ## 1. Fix the scene description first
 
