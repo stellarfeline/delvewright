@@ -143,6 +143,22 @@ validation/          # docker compose: headless server + bot, same image as CI &
   match SIGPIPEs its producer; it read as flakiness for months, cost two owner
   playtest stagings, and the same idiom sat under both 25565 safety guards
   (task #173, PR #300).
+  **The dangerous shell idiom is the one that returns a plausible wrong number
+  instead of an error**, and an agent's own measurements are where it bites,
+  because nothing downstream re-checks them. Four in one session, each of which
+  first read as a real finding: `for x in $var` — **zsh does not word-split an
+  unquoted parameter**, so a 33-item list ran the loop ONCE and the comparison
+  reported 66 while comparing 1 (use `… | while read -r x`); hashing `shasum`
+  output hashes the FILE PATHS too, so comparing two differently-named output
+  dirs called all 62 expansions different when 0 were; `cargo test --test X`
+  rebuilds the binary under `CARGO_BIN_EXE`, so a reverted perturbation stayed
+  live in the binary then used to build campaigns, and a real binding read as
+  zero; and assigning to a variable named `path` destroys `PATH`, since zsh ties
+  them. The repo's own shell is `#!/usr/bin/env bash`, where word-splitting is
+  correct — this is a hazard of ad-hoc shell an agent writes, so a repo check
+  would red two correct scripts and teach its own readers to ignore it. Hence
+  the doctrine line rather than a gate: when a measurement is the deliverable,
+  the number must be cross-checked by a second method before it is reported.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
@@ -257,6 +273,26 @@ validation/          # docker compose: headless server + bot, same image as CI &
   shaped so it cannot become habit; a convenient override is the same defect one
   layer out. (Staging gate, task #341: the enumeration found a third path —
   the release workflow — that neither reviewer had named.)
+- **An opt-out must be secured by a property the defect cannot supply** — the
+  sixth vacuity mode, and the only one that survives every check the previous
+  five ask for. Such a gate is bound, invoked, reports an honest binding count
+  and is falsifiable in principle; it is nonetheless **logically incapable** of
+  separating pass from fail, because the escape hatch's own proof obligation is
+  entailed by the failure it exists to catch. Worked example: a prefab contract
+  let an author mark unreachable floor as "sealed — no body goes here", proved
+  by *showing those cells are unreachable*. That is the identical property that
+  made them a finding, so sealing was guaranteed to succeed on exactly the cells
+  that had failed, and a 90-line script that read the checker's own red list and
+  sealed everything in it turned a broken building green. The repair is not a
+  stronger threshold — it is a **different** demand: a sealed region must itself
+  be closed, which is what stranding cannot supply.
+  Two review questions, and the second is the one that catches this: *what does
+  this opt-out demand* — and *could the defect itself produce it?* Applies to
+  every escape hatch, acknowledgement and override, and a second hatch on the
+  same gate is the defect rather than the fix. Where an opt-out is a choice
+  among several kinds, the effective obligation is their **disjunction** and is
+  only as strong as the weakest, so the kind must be determined by the object
+  rather than picked by the author.
 - **A command whose response nobody reads cannot fail** (task #70). A site that
   issues a command to a server and discards the reply is asserting an effect it
   has not established, and it stays green forever: `delve-admit`'s gallery
