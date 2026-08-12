@@ -9,10 +9,13 @@
 //! | `DW0731` | audit: a hard-forbidden code-injection vector (command/structure block, NBT-bearing spawner, or embedded `Command`). |
 //! | `DW0732` | input error (unreadable/unparseable `.nbt` or metadata/JSON). |
 //! | `DW0733` | audit: a palette block state does not exist in the pinned Minecraft version. |
+//! | `DW0734` | a whole-piece command was handed ONE TILE of a tiled zone. |
 //! | `DW0740` | catalog card: schema/field validation failure. |
 //! | `DW0741` | catalog card: license not in the ADR-0013 allowlist (NC/ND/unknown reject). |
 //! | `DW0750` | admission tooling (socket/anchor/lighting) failure. |
 //! | `DW0751` | lighting probe: a `dark` interior was measured. |
+//! | `DW0752` | lighting probe: the probe bound to ZERO player-reachable roofed cells. |
+//! | `DW0753` | `--write` cannot establish provenance: there is no prefab metadata to edit. |
 //! | `DW0760` | gallery emission / curation failure. |
 //!
 //! Diagnostics go to **stderr** so stdout stays reserved for machine-readable
@@ -24,10 +27,13 @@ pub const DW_ALLOWLIST: &str = "DW0730";
 pub const DW_FORBIDDEN: &str = "DW0731";
 pub const DW_INPUT: &str = "DW0732";
 pub const DW_UNKNOWN_BLOCK: &str = "DW0733";
+pub const DW_FRAGMENT: &str = "DW0734";
 pub const DW_CATALOG: &str = "DW0740";
 pub const DW_LICENSE: &str = "DW0741";
 pub const DW_TOOLING: &str = "DW0750";
 pub const DW_DARK: &str = "DW0751";
+pub const DW_UNBOUND: &str = "DW0752";
+pub const DW_NO_PROVENANCE: &str = "DW0753";
 pub const DW_GALLERY: &str = "DW0760";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

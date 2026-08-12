@@ -206,7 +206,7 @@ delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
 delve-admit anchor <nbt> --name anchor/<id>
                          [--pos x,y,z] [--facing <kw>]
                          [--region x1,y1,z1:x2,y2,z2] [--block <id>]
-delve-admit lighting <nbt> [--write] [--dark-threshold 3]       # probe -> declared profile
+delve-admit lighting <nbt|manifest.json> [--write] [--dark-threshold 3]
 delve-admit catalog validate <card.json ...>
 ```
 
@@ -214,6 +214,25 @@ delve-admit catalog validate <card.json ...>
 metadata and rewrite the file with everything else — anchors, sockets, licence,
 and the `license.generated_by` row that says what regenerates the `.nbt` —
 byte-for-byte as they found it. They can be run in any order and repeatedly.
+
+`lighting` measures the **minimum block light over the roofed floor a body can
+walk to from outside**, and its report states the binding it took that minimum
+over: `standable_cells` in the whole region box, of which `reachable_cells` on
+foot from `entry_cells` at grade, of which `measured_cells` are roofed. A
+free-standing building sits in a box with ground around it, so a minimum taken
+over the box is the unlit outdoors every time — a verdict no lighting design can
+change. A binding of **zero** is `DW0752` and fails the command: a sealed piece
+has no player space to grade, and a pitch-dark crypt is exactly the piece that
+would otherwise pass by having nothing to measure. `--write` refuses (`DW0753`)
+when there is no metadata to write into, rather than manufacturing a skeleton
+that claims `spdx: UNKNOWN` about an asset whose licence it has not established.
+
+`audit` and `lighting` both take a **tile-set manifest** and treat the zone as
+one thing: the tiles are reassembled, and light crosses a packaging plane like
+any other cell. Handing any command **one tile** is `DW0734`, and the refusal
+holds after the tile has been copied away from its manifest — a tile is
+recognised by the name `<base>.x<i>y<j>z<k>.nbt` it carries, not by what happens
+to sit in the directory beside it.
 
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:

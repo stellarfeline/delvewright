@@ -338,9 +338,24 @@ by construction for `DW0733` — the export already refused — but a *hand-buil
 or ingested piece does not, so `audit` is where that class is caught for
 everything else.
 
+A zone past the 48-per-axis cap hands its **manifest** to `audit` and `lighting`
+instead of an `.nbt`; both reassemble the tiles and answer about the whole
+building. Handing either one tile is `DW0734`, and so is handing it a tile that
+has been copied away from its manifest.
+
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
+
+The minimum is taken over the **roofed floor a body can walk to from a
+ground-level entrance**, and the report states how many cells that was, out of
+how many are standable in the region box. Those two filters are what make the
+number readable: a free-standing building stands in a box with ground around it,
+and a minimum over the whole box is the unlit outdoors whatever the design does.
+A binding of zero is `DW0752` and fails the step — carve the sockets before
+probing a piece whose only way in is one. `--write` without metadata beside the
+piece is `DW0753`: the measurement still prints, but nothing is written, because
+a manufactured `spdx: UNKNOWN` skeleton is worse than an error.
 
 Each of these steps owns one block of the metadata — `socket` the connectors,
 `anchor` the anchors, `lighting` the lighting — and leaves the rest of the

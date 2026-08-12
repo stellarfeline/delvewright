@@ -181,18 +181,35 @@ fn one_tile_of_a_set_is_refused_and_the_manifest_is_named() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// A `.nbt` that no manifest claims still loads exactly as before — the guard
-/// keys off membership in a real manifest, never off a filename that happens to
-/// have a dot in it.
+/// A tile separated from its manifest is **still** refused, and an ordinary
+/// prefab is untouched by the guard.
+///
+/// This pins the general form. The guard used to ask "is there a manifest
+/// beside this file naming it", so `mv zone.json elsewhere.json` — or, in the
+/// field, `cp tile.nbt somewhere/` — turned a fragment into something every
+/// whole-piece tool accepted, and rendered a building sliced at a packaging
+/// plane with no way to tell. A guard a copy defeats is not a property of the
+/// artifact. The tile's own NAME is: `split::part_filename` wrote it, and the
+/// bytes carry it wherever they go.
 #[test]
-fn an_unclaimed_nbt_still_loads_as_a_single_piece() {
+fn a_tile_separated_from_its_manifest_is_still_refused() {
     let (dir, _, _) = stage("unclaimed");
     std::fs::rename(dir.join("zone.json"), dir.join("elsewhere.json")).unwrap();
 
-    let (piece, meta) = load_piece(&dir.join("zone.x0y0z1.nbt")).unwrap();
+    let err = load_piece(&dir.join("zone.x0y0z1.nbt")).unwrap_err();
+    assert!(err.0.contains("separated from its set"), "{}", err.0);
+    assert!(
+        err.0.contains("zone.json"),
+        "the refusal names the manifest to put it back with: {}",
+        err.0
+    );
+
+    // ...and an ordinary prefab, dot in the name or not, loads as it always did.
+    std::fs::copy(dir.join("zone.x0y0z1.nbt"), dir.join("keep.gate-room.nbt")).unwrap();
+    let (piece, meta) = load_piece(&dir.join("keep.gate-room.nbt")).unwrap();
     assert!(matches!(piece, PieceInput::Single(_)));
     assert_eq!(piece.structure().size, [6, 4, 12]);
-    assert_eq!(meta, dir.join("zone.x0y0z1.json"));
+    assert_eq!(meta, dir.join("keep.gate-room.json"));
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

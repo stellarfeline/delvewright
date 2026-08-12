@@ -54,7 +54,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use delvewright_schem::convert::{self, DATA_VERSION};
@@ -134,42 +133,13 @@ pub use delvewright_schem::prefab::{
 
 /// The manifest of a zone too big for one structure template.
 ///
-/// Field for field this is [`PrefabMetadata`] with `structure` replaced by
-/// `structure_set`: same `prefab_id`, same zone-relative `anchors`, same
-/// `connectors`, same `lighting`, same `license` — including the provenance row,
-/// which names the program hash and seed that regenerate every tile at once.
-/// What changed is how many files the blocks arrived in, and that is the only
-/// thing that changed.
-///
-/// It stays a type of its own rather than a variant of `PrefabMeta` for the
-/// reason its `structure_set` doc gives: `PrefabMeta` *requires* `structure`, so
-/// a tool that has not learned about tile sets fails to parse this document
-/// instead of reading it as a prefab with no blocks.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TileSetMetadata {
-    /// The DSL prefab id, `prefab/<id>`.
-    pub prefab_id: String,
-    /// The tiles and how they reassemble.
-    ///
-    /// The key is deliberately a *different name*, not `structure` with an
-    /// extra field: every existing consumer requires `structure`, so a tool
-    /// that has not learned about tile sets fails to parse this file instead of
-    /// reading it as a prefab with no blocks in it. Silence was the option not
-    /// taken.
-    pub structure_set: TileSet,
-    /// Named anchors in **zone** coordinates, exactly the ones the program's
-    /// `mark` declarations produced. A cut never moves one, and no anchor is
-    /// attributed to a tile: a mark is a fact about the building.
-    pub anchors: BTreeMap<String, AnchorMetadata>,
-    /// Jigsaw sockets — an empty list, for the same reason a single-template
-    /// export writes one: "this zone declares no sockets" and "this manifest
-    /// predates sockets" are different claims, and only the first is true.
-    pub connectors: Vec<Connector>,
-    /// The lighting declaration.
-    pub lighting: LightingMetadata,
-    /// Licence and provenance.
-    pub license: LicenseMetadata,
-}
+/// Defined beside [`PrefabMetadata`] in the crate that owns the document's
+/// shape, for the reason that module's header gives: a document written by one
+/// tool and edited by another must have exactly one definition, or the editor
+/// deletes whatever it does not model. It is the *reading* half that was
+/// missing — a write-only manifest is a document no admission step can correct,
+/// and the steps handed one answered about a single tile instead.
+pub use delvewright_schem::prefab::TileSetMeta as TileSetMetadata;
 
 // ---------------------------------------------------------------------------
 // Export

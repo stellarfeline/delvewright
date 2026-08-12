@@ -19,6 +19,7 @@ pub mod blocks;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;
+pub mod nav;
 pub mod nbt;
 pub mod prefab;
 pub mod schematic;
