@@ -4,9 +4,10 @@
 //! A **grammar program** ([`ir::Program`]) is a set of named rules over integer
 //! voxel boxes. Expanding one against a box and a seed subdivides that box —
 //! `split` cuts an axis into absolute and relative pieces, `reorient` renames
-//! the axes, guards select between alternatives by the scope's own dimensions,
-//! and leaves fill with block states — until every leaf is a terminal. The
-//! result is a [`model::VoxelModel`].
+//! the axes, `bind` rebinds the parameters and palette roles a subtree reads,
+//! guards select between alternatives by the scope's own dimensions, and leaves
+//! fill with block states — until every leaf is a terminal. The result is a
+//! [`model::VoxelModel`].
 //!
 //! The point of the shape (spec-0027 §1): frontier models are semantically
 //! right and geometrically weak, so the model authors *rules*, this crate does
@@ -48,6 +49,18 @@
 //! a provenance row (program hash + seed) that regenerates those exact bytes.
 //! Jigsaw connectors are deliberately not emitted yet, and the lighting profile
 //! is `unmeasured` rather than a fabricated measurement — see that module.
+//!
+//! # Arguments
+//!
+//! A `call` names a rule and expands it in the current scope; what that rule
+//! *reads* — a parameter, a palette role — comes from the frame it is expanded
+//! under. [`ir::Node::Bind`] is what puts a frame there, so one rule builds a
+//! different thing at each call site instead of being copied per content. A
+//! frame is inherited by every child scope, a `call`'s included, which is what
+//! lets an argument survive a recursion whose rules never mention it; it lasts
+//! exactly as long as the body it wraps; and it may only name something
+//! [`ir::Program::params`] or [`ir::Program::palette`] already declares, which
+//! makes those two the outermost frame — a declaration and a default at once.
 //!
 //! # Anchors
 //!

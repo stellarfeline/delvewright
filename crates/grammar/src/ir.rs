@@ -637,6 +637,40 @@ pub enum Node {
         /// What to expand under it.
         body: Box<Node>,
     },
+    /// Rebind names — parameters, palette roles, or both — over `body`.
+    ///
+    /// A scope is a box, a set of axis names, and a set of **value** names.
+    /// [`Node::Split`] narrows the box, [`Node::Reorient`] renames the axes, and
+    /// this renames the values. It is a wrapper rather than a field on
+    /// [`Node::Call`] for the same reason `reorient` is: the capability belongs
+    /// to the scope, not to the verb that first wanted it, so it reaches a split
+    /// child, a `fill` or a `mark` and not only a call.
+    ///
+    /// [`Program::params`] and [`Program::palette`] are the outermost frame — a
+    /// declaration *and* a default. A `bind` pushes a frame over it for the
+    /// extent of `body`, and a name it does not mention keeps whatever the
+    /// enclosing frame gave it. **The frame is inherited through calls**, which
+    /// is what lets an argument survive a recursion that knows nothing about it.
+    ///
+    /// Both maps are evaluated in the **enclosing** scope, before the frame is
+    /// pushed, and all of them at once: `{"a": param b, "b": param a}` swaps the
+    /// two rather than chaining them.
+    ///
+    /// A `bind` may only name a parameter or role the program itself declares
+    /// ([`ProgramError::UnknownBinding`]), so a misspelt name is refused where it
+    /// was written instead of quietly expanding the default.
+    Bind {
+        /// Parameter overrides, each an integer expression over the enclosing
+        /// scope. Read back by `{"expr": "param"}` inside `body`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        params: BTreeMap<String, Expr>,
+        /// Palette overrides, each resolved against the enclosing frame. Read
+        /// back by a `fill` naming the role inside `body`.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        palette: BTreeMap<String, Material>,
+        /// What to expand under them.
+        body: Box<Node>,
+    },
     /// Declare an anchor in this scope, then expand `body`.
     ///
     /// A wrapper rather than a statement because a rule body is one node: this
@@ -663,6 +697,30 @@ impl Node {
     pub fn fill(role: &str) -> Node {
         Node::Fill {
             material: Material::role(role),
+        }
+    }
+
+    /// Rebind palette roles over this node.
+    pub fn with_roles<'r>(self, palette: impl IntoIterator<Item = (&'r str, Material)>) -> Node {
+        Node::Bind {
+            params: BTreeMap::new(),
+            palette: palette
+                .into_iter()
+                .map(|(role, m)| (role.to_string(), m))
+                .collect(),
+            body: Box::new(self),
+        }
+    }
+
+    /// Rebind parameters over this node.
+    pub fn with_params<'p>(self, params: impl IntoIterator<Item = (&'p str, Expr)>) -> Node {
+        Node::Bind {
+            params: params
+                .into_iter()
+                .map(|(name, e)| (name.to_string(), e))
+                .collect(),
+            palette: BTreeMap::new(),
+            body: Box::new(self),
         }
     }
 }
@@ -799,6 +857,20 @@ pub enum ProgramError {
         /// The stem as written.
         anchor: String,
     },
+    /// A `bind` binds nothing, so it is a wrapper with no effect.
+    EmptyBind {
+        /// The rule.
+        symbol: String,
+    },
+    /// A `bind` names a parameter or role the program does not declare.
+    UnknownBinding {
+        /// The rule.
+        symbol: String,
+        /// `"parameter"` or `"palette role"`.
+        kind: &'static str,
+        /// The name as written.
+        name: String,
+    },
     /// A [`Cond::Orientation`] guard names an axis mapping that is not a
     /// permutation, so no scope can ever satisfy it.
     OrientationCondNotAPermutation {
@@ -867,6 +939,18 @@ impl fmt::Display for ProgramError {
                 "rule {symbol:?} marks the anchor {anchor:?}, which is not kebab-case; an \
                  exported anchor is named `anchor/<kebab>` because that is the id the DSL \
                  resolves, so a stem the DSL could never name is refused here"
+            ),
+            ProgramError::EmptyBind { symbol } => write!(
+                f,
+                "rule {symbol:?} has a `bind` that binds neither a parameter nor a palette role, \
+                 so it renames nothing and its body would expand exactly as it does without it"
+            ),
+            ProgramError::UnknownBinding { symbol, kind, name } => write!(
+                f,
+                "rule {symbol:?} binds the {kind} {name:?}, which this program does not declare — \
+                 a `bind` overrides a name for the extent of its body, so it can only name \
+                 something the program already declares; otherwise a misspelt binding would \
+                 silently expand the default"
             ),
             ProgramError::OrientationCondNotAPermutation { symbol, axes } => write!(
                 f,
@@ -987,27 +1071,7 @@ impl Program {
     fn check_node(&self, symbol: &str, node: &Node, in_split: bool) -> Result<(), ProgramError> {
         match node {
             Node::Void | Node::Skip => Ok(()),
-            Node::Fill { material } => {
-                let paint = match material {
-                    Material::Role { role } => {
-                        self.palette
-                            .get(role)
-                            .ok_or_else(|| ProgramError::UnknownRole {
-                                role: role.clone(),
-                                referenced_by: symbol.to_string(),
-                            })?
-                    }
-                    Material::Inline(paint) => paint,
-                };
-                if let Paint::Mix(mix) = paint
-                    && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
-                {
-                    return Err(ProgramError::ZeroWeight {
-                        symbol: symbol.to_string(),
-                    });
-                }
-                Ok(())
-            }
+            Node::Fill { material } => self.check_material(symbol, material),
             Node::Call { symbol: target } => {
                 if self.rules.contains_key(target) {
                     Ok(())
@@ -1020,6 +1084,41 @@ impl Program {
             }
             Node::Reorient { orient, body } => {
                 self.check_orient(symbol, orient, in_split)?;
+                self.check_node(symbol, body, in_split)
+            }
+            Node::Bind {
+                params,
+                palette,
+                body,
+            } => {
+                if params.is_empty() && palette.is_empty() {
+                    return Err(ProgramError::EmptyBind {
+                        symbol: symbol.to_string(),
+                    });
+                }
+                // A binding may only override a name the program declares. The
+                // reason is `set_param`'s: a typo that quietly leaves the
+                // default in place is the failure that stays green.
+                for (name, value) in params {
+                    if !self.params.contains_key(name) {
+                        return Err(ProgramError::UnknownBinding {
+                            symbol: symbol.to_string(),
+                            kind: "parameter",
+                            name: name.clone(),
+                        });
+                    }
+                    self.check_expr(symbol, value)?;
+                }
+                for (role, material) in palette {
+                    if !self.palette.contains_key(role) {
+                        return Err(ProgramError::UnknownBinding {
+                            symbol: symbol.to_string(),
+                            kind: "palette role",
+                            name: role.clone(),
+                        });
+                    }
+                    self.check_material(symbol, material)?;
+                }
                 self.check_node(symbol, body, in_split)
             }
             Node::Mark { mark, body } => {
@@ -1072,6 +1171,32 @@ impl Program {
                 Ok(())
             }
         }
+    }
+
+    /// A material names a bound role, or is an inline paint with usable weights.
+    ///
+    /// Shared by `fill` and by a `bind`'s palette frame, so the two cannot drift
+    /// into checking different things about the same value.
+    fn check_material(&self, symbol: &str, material: &Material) -> Result<(), ProgramError> {
+        let paint = match material {
+            Material::Role { role } => {
+                self.palette
+                    .get(role)
+                    .ok_or_else(|| ProgramError::UnknownRole {
+                        role: role.clone(),
+                        referenced_by: symbol.to_string(),
+                    })?
+            }
+            Material::Inline(paint) => paint,
+        };
+        if let Paint::Mix(mix) = paint
+            && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
+        {
+            return Err(ProgramError::ZeroWeight {
+                symbol: symbol.to_string(),
+            });
+        }
+        Ok(())
     }
 
     fn check_orient(

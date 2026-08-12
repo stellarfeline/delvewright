@@ -753,11 +753,16 @@ Symptom → tool:
      — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
      Record the measured hex beside each role.
   3. **Author a grammar program.** Read the **idiom index** first
-     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     (`docs/reference/grammar.md` §2c): ten techniques with a runnable program
      each — repetition, `otherwise`, taper/arch/gable (one recursion),
      air-in-a-mix erosion, graded erosion, surface detail, symmetry without
-     reflection, `skip`, light. It is the part of the language no type signature
-     shows, and a scene that looks impossible is usually one of the nine.
+     reflection, `skip`, light, and arguments (`bind` — one rule called with
+     different content). It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the ten.
+     **Never copy a rule to change its paint, its size or its axis**: a caller
+     passes a paint or a size with `bind`, an axis with `reorient`, and anything
+     derivable from the box with an expression over `dim` — a copied rule family
+     is one nothing keeps in step and no gate reads.
      `delve-grammar show --program idiom-shape` prints one. Then start from the
      corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
      p.json`, edit, and `delve-grammar check --file p.json` after every edit.

@@ -92,11 +92,18 @@ Rules:
 
 ## 3. Author the program as JSON
 
-**Read the idiom index first** (`grammar.md` §2c). It is nine techniques with a
+**Read the idiom index first** (`grammar.md` §2c). It is ten techniques with a
 runnable program each, and it is the part of the language that no type signature
 shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
-aperture and a sconce are actually written. A scene that looks impossible is
-usually one of the nine.
+aperture, a sconce and one rule called with different content are actually
+written. A scene that looks impossible is usually one of the ten.
+
+**A second instance of a shape is never a second copy of its rules.** Three
+things a caller can hand a callee, cheapest first: nothing, because an
+`absolute` size takes an expression over the scope's own extents; a turned frame
+via `reorient`; and a paint, a size or a role via `bind` (idiom 10). Copying a
+rule to change one of those is how a program grows a family that nothing keeps in
+step.
 
 ```sh
 delve-grammar list                                # what exists — incl. `idiom-*`

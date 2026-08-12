@@ -347,6 +347,7 @@ pub const PROGRAMS: &[LibraryProgram] = &[
     // The idiom index (`idioms`): one minimal program per technique, plus one
     // composition demonstration. They are here because `delve-grammar list` and
     // `show` are the only way an author reaches the corpus at all.
+    ("idiom-arguments", idioms::arguments),
     ("idiom-composition-arcade", idioms::composition_arcade),
     ("idiom-erosion", idioms::erosion),
     ("idiom-erosion-graded", idioms::graded_erosion),

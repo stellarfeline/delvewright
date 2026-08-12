@@ -1,6 +1,6 @@
 //! **The idiom index is held to what it teaches.**
 //!
-//! `docs/reference/grammar.md` §2c documents nine techniques of the IR, each
+//! `docs/reference/grammar.md` §2c documents ten techniques of the IR, each
 //! with a minimal program at a stated region and seed. A documented example that
 //! stopped being true is worse than no example: an author starts from the corpus
 //! (`prefab-procedure.md` §3), so the corpus is what they learn from.
@@ -109,6 +109,13 @@ const CASES: &[Case] = &[
         traversable: true,
     },
     Case {
+        id: "idiom-arguments",
+        program: idioms::arguments,
+        region: [15, 7, 15],
+        seed: 1,
+        traversable: false,
+    },
+    Case {
         id: "idiom-composition-arcade",
         program: idioms::composition_arcade,
         region: [3, 14, 20],
@@ -204,7 +211,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
             judged += 1;
         }
     }
-    assert_eq!(judged, 22, "10 examples, 2 always-on gates, 2 walk gates");
+    assert_eq!(judged, 24, "11 examples, 2 always-on gates, 2 walk gates");
 }
 
 /// The documented ids are the ids the tool lists, and **every idiom the library
@@ -222,7 +229,7 @@ fn the_registry_and_the_documented_table_agree_in_both_directions() {
         .filter(|id| id.starts_with("idiom-"))
         .collect();
     assert_eq!(documented, registered);
-    assert_eq!(documented.len(), 10);
+    assert_eq!(documented.len(), 11);
     for case in CASES {
         let listed = library::by_id(case.id).unwrap_or_else(|| panic!("{} not listed", case.id));
         assert_eq!(listed, (case.program)(), "{}", case.id);
@@ -793,6 +800,49 @@ fn light_the_sconce_period_is_a_control_over_a_real_rhythm() {
 }
 
 // ---------------------------------------------------------------------------
+// 10. Arguments
+// ---------------------------------------------------------------------------
+
+/// **One rule, four contents.** The row's claim, at the documented region.
+///
+/// Three rules build four heads that differ in paint and in axis, and the four
+/// are congruent: the glazing occupies exactly the cells the air does in the
+/// head beside it. What `tests/arguments.rs` adds is the other half — that the
+/// nine-rule program this replaces is byte-identical, and that one of its copies
+/// can drift with every gate green.
+#[test]
+fn arguments_states_one_recursion_and_calls_it_four_ways() {
+    let case = &CASES[9];
+    let program = idioms::arguments();
+    assert_eq!(
+        program.rules.len(),
+        3,
+        "a plan rule and one two-rule recursion"
+    );
+    let out = expand_case(case);
+    let count = |name: &str| {
+        cells(case.region)
+            .filter(|&c| block_at(&out, c) == name)
+            .count()
+    };
+    let glass = count("minecraft:light_blue_stained_glass");
+    let air = count("minecraft:air");
+    assert!(glass > 0, "the bound paint reached the blocks");
+    assert_eq!(
+        glass, air,
+        "the two glazed heads occupy the cells the two open heads leave empty"
+    );
+
+    // The frame is read three rules below the call that pushed it: `head` fills
+    // `opening`, `shoulders` calls `head`, and neither names the glazing.
+    assert_eq!(
+        block_at(&out, [3, 6, 11]),
+        "minecraft:light_blue_stained_glass"
+    );
+    assert!(is_air(&out, [3, 6, 3]), "its sibling is under no frame");
+}
+
+// ---------------------------------------------------------------------------
 // The composition demonstration
 // ---------------------------------------------------------------------------
 
@@ -800,7 +850,7 @@ fn light_the_sconce_period_is_a_control_over_a_real_rhythm() {
 /// claim below is one of the nine, read off one model.
 #[test]
 fn the_composition_demonstration_carries_the_idioms_it_names() {
-    let case = &CASES[9];
+    let case = &CASES[10];
     let size = case.region;
     let out = expand_case(case);
 
