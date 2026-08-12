@@ -123,6 +123,21 @@ section "open PRs — engine"
 section "open PRs — content"
 [ -n "$CONTENT" ] && (cd "$CONTENT" && open_prs "$CONTENT") || echo '  (no content checkout)'
 
+section "ideas not yet graduated (docs/ideas.md — an idea leaves only by graduating or an owner 'declined')"
+if [ -f "$ROOT/docs/ideas.md" ]; then
+  awk -F'|' '/^\| IDEA-/ {
+    status=$5; gsub(/^ +| +$/, "", status)
+    if (status == "captured" || status == "elaborating") {
+      id=$2; date=$3; idea=$4
+      gsub(/^ +| +$/, "", id); gsub(/^ +| +$/, "", date); gsub(/^ +| +$/, "", idea)
+      printf "  %s  %s  [%s]  %s\n", id, date, status, idea
+      n++
+    }
+  } END { if (!n) print "  none pending" }' "$ROOT/docs/ideas.md"
+else
+  echo '  (no docs/ideas.md — could not compute)'
+fi
+
 section "decision ledger (tools/check-decisions.py)"
 python3 "$ROOT/tools/check-decisions.py" 2>&1 | sed 's/^/  /' ||
   echo '  (checker itself red — findings above are real, fix before anything else)'
