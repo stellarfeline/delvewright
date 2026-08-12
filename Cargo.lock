@@ -260,6 +260,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "delvec",
+ "delvewright-grammar",
  "delvewright-orchestrator",
  "delvewright-schem",
  "fastnbt",

@@ -58,13 +58,19 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
         "grammar-temple",
     )
     .unwrap();
-    assert_eq!(one.metadata.license.generated_by.seed, 7);
-    assert_eq!(one.metadata.license.generated_by.generator, "grammar");
-    assert_eq!(one.metadata.license.generated_by.program, "temple");
-    assert_eq!(
-        one.metadata.license.generated_by.program_hash,
-        program_hash(&program)
-    );
+    // The export always states the row: `generated_by` is optional in the
+    // document (an ingested piece has nothing that regenerates it) and never
+    // optional here (an expansion always does).
+    let row = one
+        .metadata
+        .license
+        .generated_by
+        .as_ref()
+        .expect("a grammar export always carries its regeneration inputs");
+    assert_eq!(row.seed, 7);
+    assert_eq!(row.generator, "grammar");
+    assert_eq!(row.program, "temple");
+    assert_eq!(row.program_hash, program_hash(&program));
 
     // A different seed is a different row. (The temple is deterministic in
     // shape, so the NBT may or may not move; the row must.)
@@ -91,8 +97,13 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
     )
     .unwrap();
     assert_ne!(
-        restyled.metadata.license.generated_by.program_hash,
-        one.metadata.license.generated_by.program_hash
+        restyled.metadata.license.generated_by.unwrap().program_hash,
+        one.metadata
+            .license
+            .generated_by
+            .clone()
+            .unwrap()
+            .program_hash
     );
     assert_ne!(restyled.nbt, one.nbt);
 }
@@ -145,9 +156,13 @@ fn the_metadata_declares_no_anchors_no_sockets_and_no_measurement() {
          from the block pattern after the fact"
     );
     let json: serde_json::Value = serde_json::from_str(&export.metadata_json).unwrap();
-    assert!(
-        json.get("connectors").is_none(),
-        "jigsaw socketing is its own design; a guessed socket is worse than none"
+    assert_eq!(
+        json["connectors"],
+        serde_json::json!([]),
+        "jigsaw socketing is its own design and a guessed socket is worse than none — but the \
+         export SAYS so with an empty list: `no sockets` and `written before sockets existed` \
+         are different claims, and a reader that cannot tell them apart is the whole reason \
+         this document has one shape"
     );
     assert_eq!(json["lighting"]["profile"], LIGHTING_PROFILE);
     assert!(

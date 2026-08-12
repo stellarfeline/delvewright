@@ -24,14 +24,16 @@
 //! # What this module deliberately does not emit
 //!
 //! * **Connectors.** Jigsaw socketing of grammar prefabs needs the tileset
-//!   conventions to be settled first; a guessed socket is worse than none.
+//!   conventions to be settled first; a guessed socket is worse than none. The
+//!   key is emitted as an empty list rather than omitted: "this piece has no
+//!   sockets" and "this metadata predates sockets" are not the same claim, and
+//!   `delve-admit socket` appends to it afterwards.
 //! * **A lighting measurement.** See [`LIGHTING_PROFILE`].
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use delvewright_schem::convert::{self, DATA_VERSION};
@@ -90,86 +92,17 @@ pub fn program_hash(program: &Program) -> String {
 // Metadata
 // ---------------------------------------------------------------------------
 
-/// A grammar prefab's sibling metadata file.
-///
-/// Field order is the emission order and matches the hand-built prefabs
-/// (`prefab_id`, `structure`, `anchors`, `lighting`, `license`) so a reviewer
-/// diffing a grammar piece against a hand one sees only the values change.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PrefabMetadata {
-    /// The DSL prefab id, `prefab/<id>`.
-    pub prefab_id: String,
-    /// The structure-template reference.
-    pub structure: StructureMetadata,
-    /// Named anchors, exactly the ones the program's `mark` declarations
-    /// produced. Empty for a program that marks nothing.
-    pub anchors: BTreeMap<String, AnchorMetadata>,
-    /// The lighting declaration.
-    pub lighting: LightingMetadata,
-    /// Licence and provenance.
-    pub license: LicenseMetadata,
-}
-
-/// The `structure` block: which file, how big, for which MC version.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct StructureMetadata {
-    /// The `.nbt` filename, relative to this metadata file.
-    pub file: String,
-    /// The datapack structure id (a path segment).
-    pub id: String,
-    /// Structure extent `[x, y, z]`.
-    pub size: [i32; 3],
-    /// The MC data version the structure targets (ADR-0009).
-    pub data_version: i32,
-    /// Provenance breadcrumb: what wrote the `.nbt`.
-    pub generator: String,
-}
-
-/// One entry of the `anchors` map: the point-anchor shape the hand-built
-/// prefabs use, field for field (`pos` then `facing`), so the engine's
-/// `PrefabRegistry` reads a grammar prefab's anchors with the same code path.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct AnchorMetadata {
-    /// Local cell `[x, y, z]`, relative to the structure origin.
-    pub pos: [i32; 3],
-    /// Cardinal facing keyword.
-    pub facing: String,
-}
-
-/// The `lighting` block. Carries a profile and, deliberately, no measurement.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LightingMetadata {
-    /// Always [`LIGHTING_PROFILE`].
-    pub profile: String,
-}
-
-/// The `license` block, plus the machine-readable provenance row of spec-0027 §2.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LicenseMetadata {
-    /// Where the asset came from (`original`).
-    pub source: String,
-    /// SPDX id.
-    pub spdx: String,
-    /// Human note (ADR-0013).
-    pub note: String,
-    /// Human-readable provenance sentence.
-    pub provenance: String,
-    /// The machine-readable provenance row: what regenerates these exact bytes.
-    pub generated_by: GeneratedBy,
-}
-
-/// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct GeneratedBy {
-    /// The back end (`grammar`).
-    pub generator: String,
-    /// The grammar program's name.
-    pub program: String,
-    /// `sha256:` over the program's canonical JSON ([`program_hash`]).
-    pub program_hash: String,
-    /// The expansion seed.
-    pub seed: u64,
-}
+// The metadata document's shape is `delvewright_schem::prefab` — the crate that
+// also writes the `.nbt` half of the pair. This module produces the document; it
+// does not define it. A private definition here would mean the admission tools
+// that read the file back parse it through a *different* type, and a type that
+// models fewer fields deletes the rest the first time it writes: that is exactly
+// how `license.generated_by` — the ADR-0006 row this whole module exists to emit
+// — got dropped by the next documented step in the procedure.
+pub use delvewright_schem::prefab::{
+    Anchor as AnchorMetadata, GeneratedBy, License as LicenseMetadata,
+    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, StructureMeta as StructureMetadata,
+};
 
 // ---------------------------------------------------------------------------
 // Export
@@ -285,7 +218,13 @@ impl From<ExpandError> for ExportError {
 }
 
 /// True for an id usable both as a datapack path segment and as a filename.
-fn is_valid_id(id: &str) -> bool {
+///
+/// Public because the id is chosen — from `--id`, a library program id or an
+/// input filename — long before [`export_prefab`] is reached, and a caller that
+/// cannot ask the question early has no choice but to do the whole expansion
+/// first and refuse afterwards, on top of a gate report that already said
+/// `pass`.
+pub fn is_valid_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .chars()
@@ -335,10 +274,7 @@ pub fn export_prefab(
         .map(|(name, anchor)| {
             (
                 name.clone(),
-                AnchorMetadata {
-                    pos: anchor.pos,
-                    facing: anchor.facing.to_string(),
-                },
+                AnchorMetadata::point(anchor.pos, anchor.facing.to_string()),
             )
         })
         .collect();
@@ -352,8 +288,14 @@ pub fn export_prefab(
             generator: GENERATOR.to_string(),
         },
         anchors,
+        // The export emits no jigsaw connectors (see the module header), and
+        // says so with an empty list rather than by omitting the key: a piece
+        // with no sockets and a piece whose metadata predates sockets are not
+        // the same claim.
+        connectors: Vec::new(),
         lighting: LightingMetadata {
             profile: LIGHTING_PROFILE.to_string(),
+            ..LightingMetadata::unmeasured()
         },
         license: LicenseMetadata {
             source: "original".to_string(),
@@ -368,16 +310,15 @@ pub fn export_prefab(
                  regenerate this NBT byte for byte.",
                 program.name, options.seed, size[0], size[1], size[2]
             ),
-            generated_by: GeneratedBy {
+            generated_by: Some(GeneratedBy {
                 generator: "grammar".to_string(),
                 program: program.name.clone(),
                 program_hash: hash.clone(),
                 seed: options.seed,
-            },
+            }),
         },
     };
-    let metadata_json =
-        serde_json::to_string_pretty(&metadata).expect("prefab metadata serialises") + "\n";
+    let metadata_json = metadata.to_json();
 
     Ok(PrefabExport {
         prefab_id: metadata.prefab_id.clone(),
