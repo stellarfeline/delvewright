@@ -85,6 +85,7 @@ conversation months later.
 | DEC-0066 | 2026-07-31 | DW-diagnostic coverage | `claude/dw-diagnostic-coverage@2026-07-31` | landed | `tools/check-dw-codes.py` |
 | DEC-0067 | 2026-08-11 | A reader-facing document is written in the present tense of the current version | `claude/a-reader-facing-document-is-written-in-the-p@2026-08-11` | unenforced | — |
 | DEC-0068 | 2026-08-11 | An approved design becomes a campaign file, and every later stage reads it from the campaign, never from a chat artifact | `skill/new-delve-design-persistence` | landed | `.claude/skills/new-delve/SKILL.md::design/concept` |
+| DEC-0069 | 2026-08-12 | A platform limit is absorbed by deterministic tooling — chunked export ships >48 expansions as tiles, invisibly to the author | `owner/2026-08-12-chunked-export` | landed | `crates/grammar/src/export.rs::pub fn export_zone` |
 | DEC-0070 | 2026-08-12 | When an approved concept and the back end disagree, grow the back end — never cut the concept down to what the tooling happens to say | `spec/0033` | open | — |
 | DEC-0071 | 2026-08-12 | Buildings are judged at playable scale — silhouette reads as the thing, interior fits the theme, fine detail deliberately dropped | `claude/buildings-are-judged-at-playable-scale@2026-08-12` | unenforced | — |
 | DEC-0072 | 2026-08-12 | A clean auto-merge is not evidence of semantic compatibility — re-demonstrate every branch's claims on the merged tree | `claude/a-clean-auto-merge-is-not-evidence-of-semanti@2026-08-12` | unenforced | — |

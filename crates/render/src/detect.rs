@@ -73,6 +73,51 @@ pub fn scan_default(rgba: &[u8], w: u32, h: u32) -> Option<MissingTexture> {
     scan(rgba, w, h, DEFAULT_THRESHOLD)
 }
 
+/// At most this many distinct RGB values and a frame has no scene in it.
+///
+/// Deliberately measured as *colour variety* rather than against the renderer's
+/// clear colour: the question is "does this image show anything", and a frame of
+/// nothing but the background answers it whatever the background happens to be.
+/// A Minecraft block texture is noisy — a single face of deepslate or tuff brick
+/// carries dozens of distinct values before shading — so real geometry clears
+/// this floor by orders of magnitude, while an empty frame sits at 1.
+pub const FEATURELESS_MAX_COLORS: usize = 4;
+
+/// A frame with (almost) nothing in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Featureless {
+    /// Distinct RGB values found (counting stops once the floor is cleared).
+    pub distinct: usize,
+}
+
+/// `Some` when the frame shows no scene at all.
+///
+/// The case this exists for: an eye-level camera standing in open air, aimed the
+/// way an anchor faces, whose view leaves the piece without meeting anything.
+/// The render succeeds, the file is written, and it is a rectangle of flat
+/// background — a picture that looks like a broken renderer and reads, to a
+/// reviewer skimming a directory, like one more shot taken. Naming it is what
+/// keeps a blank frame from counting as a shot of a room.
+pub fn is_featureless(rgba: &[u8], w: u32, h: u32) -> Option<Featureless> {
+    let total = (w as usize) * (h as usize);
+    if total == 0 || rgba.len() < total * 4 {
+        return None;
+    }
+    let mut seen: Vec<[u8; 3]> = Vec::with_capacity(FEATURELESS_MAX_COLORS + 1);
+    for i in 0..total {
+        let p = [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]];
+        if !seen.contains(&p) {
+            seen.push(p);
+            if seen.len() > FEATURELESS_MAX_COLORS {
+                return None;
+            }
+        }
+    }
+    Some(Featureless {
+        distinct: seen.len(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +176,21 @@ mod tests {
             f[off + 2] = 255;
         }
         assert!(scan_default(&f, w, h).is_none());
+    }
+
+    #[test]
+    fn a_frame_of_nothing_is_featureless_and_a_textured_one_is_not() {
+        let empty = frame(64, 64, [90, 90, 95, 255]);
+        assert_eq!(
+            is_featureless(&empty, 64, 64),
+            Some(Featureless { distinct: 1 })
+        );
+        // Any real texture carries far more variety than the floor.
+        let mut noisy = frame(64, 64, [130, 130, 130, 255]);
+        for i in 0..(64 * 64) {
+            noisy[i * 4] = (i % 251) as u8;
+        }
+        assert!(is_featureless(&noisy, 64, 64).is_none());
     }
 
     /// The committed crop is a REAL Nucleation render of `minecraft:heavy_core`

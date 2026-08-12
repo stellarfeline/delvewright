@@ -203,6 +203,7 @@ fn is_transparent(name: &str) -> bool {
             | "tinted_glass"
             | "iron_bars"
             | "chain"
+            | "iron_chain"
             | "ladder"
             | "scaffolding"
             | "vine"

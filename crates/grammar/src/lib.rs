@@ -84,10 +84,12 @@ pub mod compose;
 pub mod eval;
 pub mod expand;
 pub mod export;
+pub mod gates;
 pub mod geom;
 pub mod ir;
 pub mod library;
 pub mod model;
+pub mod nav;
 pub mod orient;
 pub mod rng;
 pub mod split;
@@ -98,6 +100,7 @@ pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, e
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
 };
+pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
 pub use ir::{Facing, Mark, MarkAt, MarkIndex, Program, ProgramError, Side};
 pub use model::VoxelModel;

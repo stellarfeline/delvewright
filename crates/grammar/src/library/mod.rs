@@ -104,6 +104,7 @@ pub use threshold_motif::threshold_motif;
 pub use watch_bay::watch_bay;
 
 use crate::geom::Axis;
+use crate::ir::Program;
 use crate::ir::{
     Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Side,
     Size, Split,
@@ -303,4 +304,51 @@ fn alt_weight(weight: u32, body: Node) -> Alternative {
 /// The fallback alternative.
 fn alt_else(body: Node) -> Alternative {
     Alternative::new(body).when(Cond::Otherwise)
+}
+
+/// One library entry: its stable id and the function that builds it.
+pub type LibraryProgram = (&'static str, fn() -> Program);
+
+/// **Every program in this library, by id.**
+///
+/// A registry rather than a `match`, for the reason a tool exists at all: a
+/// creator has to be able to *discover* what the back end can build without
+/// reading Rust. `delve-grammar list` enumerates this, so a rule added to the
+/// library reaches the tool without the tool being edited.
+///
+/// The `bell::` zone programs are deliberately absent: a zone is one campaign's
+/// composition of these, not a piece of the general vocabulary, and listing a
+/// campaign's own material as if it were library surface is the "authored
+/// content wearing a primitive's clothes" shape CLAUDE.md names.
+pub const PROGRAMS: &[LibraryProgram] = &[
+    ("ambush-door", ambush_door),
+    ("bait-stand", bait_stand),
+    ("boulder-stair", boulder_stair),
+    ("broken-grate", broken_grate),
+    ("castle", castle),
+    ("causeway", causeway),
+    ("church", church),
+    ("cliff-path", cliff_path),
+    ("disarm-stand", disarm_stand),
+    ("drop-shaft", drop_shaft),
+    ("dumbwaiter", dumbwaiter),
+    ("elite-ground", elite_ground),
+    ("far-side-bar", far_side_bar),
+    ("hearth-ward", hearth_ward),
+    ("lift-shaft", lift_shaft),
+    ("rafter-hall", rafter_hall),
+    ("stair-flight", stair_flight),
+    ("store-room", store_room),
+    ("tee-passage", tee_passage),
+    ("temple", temple),
+    ("threshold-motif", threshold_motif),
+    ("watch-bay", watch_bay),
+];
+
+/// Look one library program up by its `PROGRAMS` id.
+pub fn by_id(id: &str) -> Option<Program> {
+    PROGRAMS
+        .iter()
+        .find(|(name, _)| *name == id)
+        .map(|(_, build)| build())
 }
