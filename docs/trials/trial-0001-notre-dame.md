@@ -274,11 +274,24 @@ west rose and both transept roses. Neither can pass a paint, a size or a role.
   symmetric exactly. Nobody may cite the hole as a property of the delivered
   zone.
 
-  **What the delivered bytes do carry is the same family.** Scanning for air
-  cells walled on three or more sides and open to the sky finds **8**, at z 7 and
-  13, x ∈ {0, 10, 20, 30} — symmetric, inside the tower shells, green under every
-  gate. So the class (a boundary cell no traversal claim ever visits) is present
-  in the shipped artifact on its own evidence; only the dramatic instance is not.
+  **What the delivered bytes carry instead is larger, and it is the same family.**
+  At the transept band, z 53–59, **both flanks stand open for seven blocks**: the
+  floor runs x 2–28 at y 0 and there is nothing above it until the roof caps at
+  y 12 — no end wall, no side wall, 11 courses of open air on each side. Seven
+  blocks away at z 52 the nave flank is solid wall from y 0 to y 14. The two arms
+  are broken identically, which is why the zone still reads as X-mirror
+  symmetric.
+
+  Every gate passes. Nothing walks there — a body at the arm's edge steps off
+  into no cell at all and the fall terminates — so no traversal claim visits it,
+  which is precisely the class: **a boundary the emitted bytes leave open and no
+  reachability property can see.**
+
+  Two probes missed it before a third found it, and the reason is worth keeping.
+  A mirror check missed it because the defect is symmetric. A search for air
+  cells "walled on three or more sides and open to the sky" missed it because the
+  space is not a pocket — it is wide open, with zero walls. Both probes were
+  looking for an enclosure; the defect is the absence of one.
 - **The renderer has no camera an author can aim, and for this subject that is
   decisive.** The shot set is fixed: four exteriors at yaw 45/135/225/315, `top`
   at pitch 90, eye shots at pitch 0. **There is no square-on elevation of any
