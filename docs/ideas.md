@@ -1,0 +1,1 @@
+| IDEA-0002 | 2026-08-12 | Stormveil-class castle: heavy shortcut-loop topology, dense rooms, partial ruination — M4 target, behind the owner's 2026-08-05 three-clean-playtests density gate; Tidesend Citadel (bell-r2) is the on-ramp | captured | graduates to an M4 spec when the density gate's streak is built |
