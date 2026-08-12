@@ -194,6 +194,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
                 traversable: case.traversable,
                 allow_falls: false,
                 symmetric: case.symmetric,
+                reachable_floor: false,
             },
         );
         assert!(

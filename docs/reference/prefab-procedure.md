@@ -174,11 +174,19 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `blocks-exist` | every block state the model paints exists in 1.21.11, properties and values included |
 | `non-empty` | the expansion built something |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
+| `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
+| `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
 `--traversable` is opt-in because it is a claim about a *kind* of piece: a room
 with one door has no far end and would fail it correctly and uselessly. **Pass
 it whenever the piece is a passage, a stair or a route** — that is most of them,
 and a route nobody proved walkable is the defect the gate exists for.
+
+It is a claim about the **route only**. Both ends it joins are at ground level,
+so a green `traversable` says nothing about the storeys above: a cathedral has
+passed it with 45% of its floor reachable and nothing at all reachable above the
+nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant
+to walk around** — it is the gate that catches the upper level with no stair.
 
 Every gate reports a **binding count**. A gate that examined zero objects is
 printed as a finding, not folded into the pass; so is a program that declared no
@@ -186,9 +194,26 @@ anchors. Read the findings.
 
 **Measurements** (numbers, no verdict — deliberately not dressed as gates): fill
 ratio, distinct states, standable cells, footprint area and perimeter,
-silhouette complexity (1.00 is a plain box), and the five commonest blocks with
-their shares. Use the shares to see monoculture; the craft gates that would
-*fail* on it are not built (see §6).
+silhouette complexity (1.00 is a plain box), the five commonest blocks with
+their shares, and **reachability**. Use the shares to see monoculture; the craft
+gates that would *fail* on it are not built (see §6).
+
+The reachability line runs on every expansion, flag or no flag, and reads:
+
+```text
+reachability   2267 of 4982 standable cell(s) reachable on foot from 182 grade
+               entry cell(s) (45.5%) · 2128 sheltered · unreachable 237
+               sheltered + 2478 open to the sky, in 57 pocket(s)
+    pocket  84 cell(s), 84 sheltered — x 12..18 y 23..23 z 81..92
+```
+
+**Unreachable floor under a roof is a room with no way in, and it is raised as a
+finding with the boxes to go and look at.** Unreachable floor open to the sky is
+counted and left alone: a roof is standable and nobody walks it, and no engine
+can tell a roof from a terrace. `entry_cells` of zero means nothing on a side
+face at grade is standable — the measurement found no way in, which is a binding
+of zero and not a building full of stranded rooms. Read the numbers before the
+shots: 42% is a picture that renders perfectly.
 
 If the region is wrong the tool refuses. A refusal is the correct outcome — a
 region too small never yields a smaller building. Two refusal shapes today:

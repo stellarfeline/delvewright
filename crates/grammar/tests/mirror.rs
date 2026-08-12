@@ -126,6 +126,7 @@ fn judged(out: &Expansion, symmetric: Option<Axis>) -> gates::Report {
             traversable: true,
             allow_falls: false,
             symmetric,
+            reachable_floor: false,
         },
     )
 }
@@ -235,6 +236,7 @@ fn the_symmetry_gate_over_a_one_cell_axis_binds_to_nothing_and_says_so() {
             traversable: false,
             allow_falls: false,
             symmetric: Some(Axis::X),
+            reachable_floor: false,
         },
     );
     let g = gate(&report, "symmetric");
@@ -285,6 +287,7 @@ fn the_symmetry_gate_compares_presence_because_a_facing_does_not_reflect() {
             traversable: false,
             allow_falls: false,
             symmetric: Some(Axis::X),
+            reachable_floor: false,
         },
     );
     assert!(

@@ -183,7 +183,15 @@ validation/          # docker compose: headless server + bot, same image as CI &
     replaces her.
   - **New campaigns** merge to content-repo main only after the owner has
     played them; machine-ladder green alone is not a merge gate (it remains
-    the prerequisite).
+    the prerequisite). **An in-progress campaign lives on its own development
+    branch, and EVERYTHING of it lands there** — design of record, prefabs,
+    stage JSON, l10n sidecars, generation logs. However many sub-pieces the
+    work is split across, each merges into that branch; the branch reaches
+    main once, after acceptance. **Sort a file by which artifact it belongs
+    to, never by what kind of file it is**: if abandoning the campaign would
+    delete it, it is the campaign, and a design document is no exception. A
+    general-purpose engine primitive is not campaign content and is untouched
+    by this.
   Until its gate is passed a PR stays open. Unit/CI tests alone prove the
   change broke nothing, not that it fixed the target.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
