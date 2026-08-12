@@ -143,22 +143,35 @@ validation/          # docker compose: headless server + bot, same image as CI &
   match SIGPIPEs its producer; it read as flakiness for months, cost two owner
   playtest stagings, and the same idiom sat under both 25565 safety guards
   (task #173, PR #300).
+  **Non-trivial ad-hoc shell is written for bash, not for the interactive
+  shell** (owner, 2026-08-12). The tool layer runs the user's login shell, which
+  is zsh, and two of this doctrine's recorded traps exist only there: zsh does
+  not word-split an unquoted parameter, so `for x in $var` over a 33-item list
+  runs ONCE; and assigning to a variable named `path` destroys `PATH`, because
+  zsh ties them. Both vanish under `bash -c`. So anything with a loop, an array
+  or a variable holding a list goes through bash — and the repo's own scripts
+  already do, being `#!/usr/bin/env bash`, which is why no repo check can catch
+  this and why a check would red two correct scripts.
+  **That rule removes two of the six recorded instances and no more**, which is
+  the reason the next paragraph is not replaced by it.
   **The dangerous shell idiom is the one that returns a plausible wrong number
   instead of an error**, and an agent's own measurements are where it bites,
-  because nothing downstream re-checks them. Four in one session, each of which
-  first read as a real finding: `for x in $var` — **zsh does not word-split an
-  unquoted parameter**, so a 33-item list ran the loop ONCE and the comparison
-  reported 66 while comparing 1 (use `… | while read -r x`); hashing `shasum`
-  output hashes the FILE PATHS too, so comparing two differently-named output
-  dirs called all 62 expansions different when 0 were; `cargo test --test X`
-  rebuilds the binary under `CARGO_BIN_EXE`, so a reverted perturbation stayed
-  live in the binary then used to build campaigns, and a real binding read as
-  zero; and assigning to a variable named `path` destroys `PATH`, since zsh ties
-  them. The repo's own shell is `#!/usr/bin/env bash`, where word-splitting is
-  correct — this is a hazard of ad-hoc shell an agent writes, so a repo check
-  would red two correct scripts and teach its own readers to ignore it. Hence
-  the doctrine line rather than a gate: when a measurement is the deliverable,
-  the number must be cross-checked by a second method before it is reported.
+  because nothing downstream re-checks them. Six in one session, each of which
+  first read as a real finding — and only two were about the shell at all.
+  Hashing `shasum` output hashes the FILE PATHS too, so comparing two
+  differently-named output dirs called all 62 expansions different when 0 were.
+  `cargo test --test X` rebuilds the binary under `CARGO_BIN_EXE`, so a reverted
+  perturbation stayed live in the binary then used to build campaigns, and a
+  real binding read as zero. A `cd` in the first clause of a compound command
+  persists through the rest of it, so `gh` and `git worktree` ran against the
+  wrong repository and reported ten live PRs as nonexistent. And `git
+  merge-tree`'s three-argument form reports no conflicts where the modern
+  `--write-tree` form reports five files — **a zero from a measurement that
+  disagrees with an independent observer is the measurement failing, not the
+  fact being absent.**
+  Hence the obligation, stated where it can bind: **when a measurement is the
+  deliverable, cross-check the number by a second method before reporting it.**
+  Three of the six were caught only after being reported.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
