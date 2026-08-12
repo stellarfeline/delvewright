@@ -40,6 +40,13 @@
 //! number *against* travel (a split visits its pieces low to high); see
 //! [`cliff_path`].
 //!
+//! **The idiom index.** [`idioms`] is a third kind again: one minimal program
+//! per *technique* of the IR — repetition, priority, shape, erosion, graded
+//! erosion, surface detail, symmetry without reflection, `skip`, light — plus
+//! one composition demonstration. They build nothing anyone wants, and they are
+//! in the library because `delve-grammar list` / `show` is the only way an
+//! author reaches the corpus, and the corpus is where technique is learned.
+//!
 //! **The zone programs.** [`bell`] is the layer above: the drowned-bell
 //! remake's zones, each one program that composes the vocabulary above with
 //! [`crate::compose::include`] and writes no encounter geometry of its own. A
@@ -67,7 +74,9 @@ pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
 pub mod hearth_ward;
+pub mod idioms;
 pub mod lift_shaft;
+pub mod negated_guard;
 pub mod rafter_hall;
 pub mod stair_flight;
 pub mod store_room;
@@ -335,7 +344,24 @@ pub const PROGRAMS: &[LibraryProgram] = &[
     ("elite-ground", elite_ground),
     ("far-side-bar", far_side_bar),
     ("hearth-ward", hearth_ward),
+    // The idiom index (`idioms`): one minimal program per technique, plus one
+    // composition demonstration. They are here because `delve-grammar list` and
+    // `show` are the only way an author reaches the corpus at all.
+    ("idiom-composition-arcade", idioms::composition_arcade),
+    ("idiom-erosion", idioms::erosion),
+    ("idiom-erosion-graded", idioms::graded_erosion),
+    ("idiom-light", idioms::light),
+    ("idiom-mirror", idioms::mirror),
+    ("idiom-priority", idioms::priority),
+    ("idiom-repetition", idioms::repetition),
+    ("idiom-shape", idioms::shape),
+    ("idiom-skip", idioms::skip),
+    ("idiom-surface-detail", idioms::surface_detail),
     ("lift-shaft", lift_shaft),
+    // A corpus example rather than an idiom-index entry (spec-0033 §4.8):
+    // every IR construct owes `delve-grammar list` one example, and `none_of`
+    // is a language feature rather than a technique.
+    ("negated-guard", negated_guard::negated_guard),
     ("rafter-hall", rafter_hall),
     ("stair-flight", stair_flight),
     ("store-room", store_room),

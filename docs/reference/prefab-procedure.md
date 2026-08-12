@@ -24,7 +24,7 @@ that matches no row is **escalated, not improvised**.
 | a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers (owner, 2026-08-04). T2 is an input-modality property — the program is authored *against the referent* from the library corpus; the 2026-08-04 probe proved named referents recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
 | a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The five Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
-| organic or curved — a cave interior, a natural rock face, anything the grammar's axis-aligned boxes cannot state (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no curve, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". |
+| genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). Both were mistaken for this row. |
 | terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
 | an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction (owner ruling) and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
 
@@ -92,25 +92,46 @@ Rules:
 
 ## 3. Author the program as JSON
 
-Start from the corpus, never from the schema:
+**Read the idiom index first** (`grammar.md` §2c). It is nine techniques with a
+runnable program each, and it is the part of the language that no type signature
+shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
+aperture and a sconce are actually written. A scene that looks impossible is
+usually one of the nine.
 
 ```sh
-delve-grammar list                                # what exists
+delve-grammar list                                # what exists — incl. `idiom-*`
+delve-grammar show --program idiom-shape          # the technique, runnable
 delve-grammar show --program store-room > my-piece.json
 ```
 
-The library is a few-shot corpus this project legally owns (spec-0027 §2).
-Editing the nearest rule is what made the worked example pass its first check;
-writing the IR from its documentation is the slower path.
+Then start from the corpus, never from the schema. The library is a few-shot
+corpus this project legally owns (spec-0027 §2). Editing the nearest rule is
+what made the worked example pass its first check; writing the IR from its
+documentation is the slower path.
 
-Then edit. The IR surface is `grammar.md` §2. Two things worth knowing before
+Then edit. The IR surface is `grammar.md` §2. Four things worth knowing before
 you write:
 
 - **Two guards that can both hold are a probability, not a priority.** A
-  decision needs mutually exclusive guards.
-- **`rounding` matters wherever a piece is load-bearing.** The default truncates
-  and never writes the remainder, and an unwritten cell is air — a floor with a
-  hole at the far end. Use `"rounding": "start"` on anything a body stands on.
+  decision needs mutually exclusive guards — and the arm for "none of the above"
+  is **`otherwise`**, which is the only precedence the language has. It is also
+  what terminates a recursion: without one, a taper ends in `NoApplicableRule`
+  the first time its guard fails.
+- **`rounding` is owed by every surface, not only by floors.** The default
+  truncates and never writes the remainder, and an unwritten cell is air — a
+  floor with a hole at the far end, a wall with a slot of daylight along its top
+  course, a ceiling open at one corner. No gate reads any of them. Use
+  `"rounding": "start"` (or `end` / `middle`) on anything a body stands on,
+  walks past or looks at. On a split with exactly one relative piece of weight 1
+  it is inert, because the axis already divides exactly.
+- **A palette role can be a weighted list, and `minecraft:air` is a legal
+  member.** That is the whole of decay and rubble, and a role bound to a single
+  block is why a piece renders as one flat material. The JSON is in `grammar.md`
+  §2; a mix never moves a block, only what is written in it.
+- **A block state with a `facing=` does not turn when the piece does.** A rule
+  whose frame opens with `z(largest)` is handed two different orientations by
+  two different boxes and paints the same state in both. Pick the state with an
+  `orientation` guard, or the piece faces the wrong way with every gate green.
 
 ```sh
 delve-grammar check --file my-piece.json          # structure only; fast
@@ -248,10 +269,26 @@ Each of these was established by running it, except the two marked otherwise:
   deterministically from the region. It reaches neither the design nor the rest
   of the loop — `delve-render piece` and `delve-admit audit` take the manifest
   and treat the zone as one thing. *Established by running it.*
-- **Axis-aligned boxes only** — no curve, no diagonal, no mirror (an orientation
-  is a permutation without reflection). A round tower or an organic cave wall is
-  not this back end's shape. *Read from `crates/grammar/src/orient.rs`, not
-  probed.*
+- **Axis-aligned boxes only**, and the true statement is narrower than it
+  sounds. What is genuinely out of reach: a **smooth** curve (the steps are
+  integers and integer arithmetic has no square root, so a circle is a polygon
+  whatever you do), a diagonal, a profile step that varies independently of the
+  box's own dimensions (there is no positional index), and a vault bending on
+  two axes at once. A round tower and an organic cave wall are on that list.
+
+  What is **not** on it, and is regularly mistaken for it:
+
+  - a stepped arch, a gable, a ramp, a spire, a tapered vault and a battered
+    wall are one recursion whose per-step extent is arithmetic on the remaining
+    dimension — `grammar.md` §2c idiom 3 — and with the paint inverted the same
+    program is the opening rather than the mass;
+  - **any shape with a mirror plane.** An orientation is a permutation without
+    reflection, so `reorient` cannot mirror a piece — but a rule *body* can be
+    written mirrored, and a size list reversed is exactly that. Two such rules
+    give a chamfered octagon that re-centres itself at any width (idiom 7).
+
+  *Read from `crates/grammar/src/orient.rs`, and the two exceptions are
+  demonstrated by `idiom-shape` and `idiom-mirror`.*
 - **No terrain** — no noise, no heightfield; height variation comes from splits
   and recursion. *Same source.*
 - **No craft gate.** spec-0027 §4's palette-role budget, gradient and depth rules

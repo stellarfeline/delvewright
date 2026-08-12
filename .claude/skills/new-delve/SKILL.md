@@ -738,10 +738,24 @@ Symptom → tool:
      `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
      — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
      Record the measured hex beside each role.
-  3. **Author a grammar program**, starting from the corpus:
-     `delve-grammar list`, then `delve-grammar show --program <nearest> > p.json`,
-     edit, and `delve-grammar check --file p.json` after every edit. You write
-     JSON — never Rust, and never blocks by hand.
+  3. **Author a grammar program.** Read the **idiom index** first
+     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     each — repetition, `otherwise`, taper/arch/gable (one recursion),
+     air-in-a-mix erosion, graded erosion, surface detail, symmetry without
+     reflection, `skip`, light. It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the nine.
+     `delve-grammar show --program idiom-shape` prints one. Then start from the
+     corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
+     p.json`, edit, and `delve-grammar check --file p.json` after every edit.
+     You write JSON — never Rust, and never blocks by hand. Four traps the
+     procedure names: two guards that can both hold are a **probability, not a
+     priority** (the "none of the above" arm is `otherwise`, and it is also what
+     stops a recursion); **`rounding` is owed by every surface, not only
+     floors** — the default truncates and an unwritten cell is air, which no
+     gate reads; a palette role may be a **weighted list with `minecraft:air` in
+     it**, which is the whole of decay and the cure for a piece that renders as
+     one flat material; and a `facing=` block state **does not turn** when
+     `largest` turns the piece.
   4. **Expand and let the machine judge**:
      `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
      -o out/`. Pass `--traversable` for any passage, stair or route. A red gate
@@ -772,10 +786,16 @@ Symptom → tool:
 
   What the grammar cannot express — **escalate, do not work around**: block
   entities of any kind (chest loot, sign text, spawners — bind those in the
-  campaign against an anchor the piece declares), curves and diagonals, and
-  terrain. **Size is not on this list**: a region of any extent expands, and one
-  past the 48-per-axis structure-template cap is written as a tile set plus a
-  manifest at `<id>.json`. Never shrink a scene to fit a file format.
+  campaign against an anchor the piece declares), **smooth** curves, diagonals,
+  a profile step that varies independently of the box, a vault bending on two
+  axes at once, and terrain. **Neither a stepped arch nor a symmetric shape is
+  on this list** — the first is idiom 3 (one recursion whose step is arithmetic
+  on the remaining dimension, and the same program inverted is the opening), the
+  second is idiom 7 (a rule body written mirrored, since `reorient` permutes and
+  never mirrors). Check §2c before escalating. **Size is not on this list**
+  either: a region of any extent expands, and one past the 48-per-axis
+  structure-template cap is written as a tile set plus a manifest at
+  `<id>.json`. Never shrink a scene to fit a file format.
 
   A piece that comes from **outside** (a community schematic) instead enters via
   `delve-schem convert` and then the same admission chain with

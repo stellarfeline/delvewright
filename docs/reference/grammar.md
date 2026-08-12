@@ -33,7 +33,9 @@ Two library modules exist for the tool and are public for it:
 `library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
 library reaches `delve-grammar list` without the tool being edited. The `bell::`
 zone programs are deliberately not in it: a zone is one campaign's composition,
-not general vocabulary.
+not general vocabulary. The `idiom-*` programs **are** in it, and are neither
+vocabulary nor content — they are the teaching set of §2c, and they are there
+because `list` / `show` is the only way an author reaches the corpus at all.
 
 ## 1. Model
 
@@ -86,10 +88,68 @@ a directional stair or door picks its facing).
 candidate; if none hold, the `otherwise` alternatives are; among candidates the
 seeded PRNG draws by `weight`. **Two guards that can hold at once are a
 probabilistic choice, not a priority order** — guards meant as a decision must be
-mutually exclusive.
+mutually exclusive. **`otherwise` is the only precedence the language has**: it
+is the arm that runs when no other alternative matched, so a decision is written
+as mutually exclusive positive guards plus one `otherwise` for the rest. It is
+also what terminates a recursion — a self-call whose guard finally fails has
+nowhere else to go, and the expansion ends in `NoApplicableRule`.
 
 The IR serialises to JSON (`serde`), which is the authoring form; block states
 are their vanilla string, e.g. `"minecraft:oak_stairs[facing=east,half=top]"`.
+
+**A paint is a block-state string or a weighted list**, and the list is a
+per-cell draw from the seeded stream:
+
+```json
+"palette": {
+  "wall": "minecraft:stone_bricks",
+  "ruin": [
+    { "weight": 9, "block": "minecraft:stone_bricks" },
+    { "weight": 3, "block": "minecraft:mossy_stone_bricks" },
+    { "weight": 2, "block": "minecraft:cracked_stone_bricks" },
+    { "weight": 2, "block": "minecraft:air" }
+  ]
+}
+```
+
+The same two forms are legal inline on a `fill`
+(`{"op":"fill","material":{…}}`). `minecraft:air` is a member like any other,
+which is what makes a mix a *material that is partly not there*; weights are
+positive integers and a zero is refused. **A mix moves no geometry** — the same
+cells are visited whatever the weights say — so a restyle can never change what
+a gate walked, and a sweep over seeds is a sweep over texture alone.
+
+### Four things the surface above does not say
+
+1. **`rounding` other than `truncate` is legal on a split with exactly one
+   relative piece**, and at weight 1 it is inert: the remainder of dividing by
+   one is always zero, so `[abs, rel(1), abs]` covers the axis exactly under
+   `truncate` already. `RoundingWithoutRelative` refuses only a split with *no*
+   relative piece. Rounding starts to matter at weight ≥ 2 or with several
+   shares.
+2. **`smallest` / `largest` break a tie toward the lowest world axis** — `X`,
+   then `Y`, then `Z` — measured over the axes still unclaimed when the
+   extremal spec is resolved. On a cube, `x: largest` names world `X`. Read as
+   an *expression* (`{"expr":"dim","dim":"smallest"}`) the same two words are a
+   number rather than an axis: the smallest of the three world extents, with no
+   tie to break.
+3. **A relative piece that resolves to zero blocks is a silent empty child**,
+   not an error. A zero *weight* is refused (`BadSize`); a positive weight with
+   nothing left to share is a legal zero-volume scope, and `fill` / `void` /
+   `skip` all write nothing in it without complaint. What does refuse is
+   anything needing a cell of it: an absolute split inside it overflows, and a
+   `mark` on it is `MarkOutsideScope`.
+4. **A role bound to a world-cardinal block state does not turn when `largest`
+   turns the scope.** A `fill` writes the state it was given verbatim; nothing
+   rotates a `facing=` property to follow the orientation. So a rule whose frame
+   opens with `z(largest)` — every §5b rule does — lays its stairs, doors and
+   voussoirs the same way round whatever box it is handed, and every gate stays
+   green while the piece faces the wrong way. The construct that answers it is
+   the `orientation` guard: one alternative per axis mapping, each naming the
+   state that mapping wants, which is how `church` picks its four roof stair
+   facings.
+
+All four are asserted in `tests/idioms.rs`.
 
 ## 2b. `mark` — anchor declarations
 
@@ -139,6 +199,262 @@ a mark aimed outside its own scope, an underivable facing, and two marks
 producing the same name are expansion errors — the collision names both rules.
 Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
+
+## 2c. The idiom index — how the constructs make shapes
+
+§2 is the list of constructs. What an author is missing is not that list: it is
+the handful of ways those constructs compose into a shape, none of which is
+visible from a type signature. `prefab-procedure.md` §3 says to start from the
+corpus rather than from the schema, which means **the corpus is the
+expressiveness** — a technique no program in the library demonstrates does not
+exist in practice, whatever the IR supports.
+
+Nine techniques, one minimal program each, all reachable from the tool:
+
+```sh
+delve-grammar list                                     # the `idiom-*` block
+delve-grammar show   --program idiom-shape > p.json    # the whole program
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
+```
+
+| # | Technique | Program | Region, seed | What it shows |
+|---|---|---|---|---|
+| 1 | Repetition | `idiom-repetition` | 3 × 5 × 17, 1 | `repeat` tiles a pattern; a self-call carries the remainder, which is the only index there is |
+| 2 | Priority | `idiom-priority` | 13 × 6 × 2, 1 | `otherwise` is the only precedence; overlapping guards are a draw |
+| 3 | Shape | `idiom-shape` | 15 × 9 × 3, 1 | a taper is a recursion whose step is arithmetic on the remaining dimension — and with the paint inverted it is the opening |
+| 4 | Erosion | `idiom-erosion` | 9 × 5 × 3, 1 | `minecraft:air` weighted into a role |
+| 5 | Graded erosion | `idiom-erosion-graded` | 9 × 13 × 3, 1 | a gradient is a banded split, one mix per band |
+| 6 | Surface detail | `idiom-surface-detail` | 9 × 12 × 9, 1 | the rule that built the surface splits off the layer against it |
+| 7 | Symmetry without reflection | `idiom-mirror` | 15 × 11 × 2, 1 | a rule body written mirrored, since `reorient` permutes and never mirrors |
+| 8 | Skip | `idiom-skip` | 7 × 5 × 5, 1 | what `skip` does, and why show-through is not expressible yet |
+| 9 | Light | `idiom-light` | 5 × 6 × 13, 1 | a lamp is a role; a one-cell split is a sconce |
+| — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the nine at once — a ruined arcade |
+
+Each program exists to teach one technique and nothing else, and each is
+expanded at exactly the region and seed above by
+`crates/grammar/tests/idioms.rs`, which asserts the claim in its own row. An
+entry that stopped being true is a red, not a stale page. They declare no
+anchors — the composition declares one — so `expand` prints the no-anchors
+finding over them, which is correct: a teaching program is not a prefab a
+campaign binds to.
+
+The JSON fragments below are **abridged for reading** — a literal where the
+program computes an expression, a `"<…>"` placeholder where an expression is
+long. `delve-grammar show --program <id>` prints the program that runs, and that
+is the one to copy.
+
+**The index is not the corpus.** The index is a curated set of *techniques* and
+grows only when an authoring trial fails for want of one (spec-0033 §4.6, §4.8).
+The corpus is every program `delve-grammar list` names, and every IR construct
+owes it at least one example — which is why `negated-guard` is in the library
+and not in the table above: `none_of` is negation of guards, a language feature
+rather than a way of building anything. The demonstration-coverage report is
+what holds the corpus to that.
+
+### 1. Repetition
+
+The `-X` lane tiles its piers with `"repeat": true`; the `+X` lane peels one
+pier and one bay off the low end and calls itself on the remainder. At the
+documented region the two lanes are the same rhythm, cell for cell.
+
+```json
+"recursed_row": [
+  { "when": { "cond": "cmp", "lhs": {"expr":"dim","dim":"z"}, "op": "ge",
+              "rhs": {"expr":"int","value":5} },
+    "body": { "op": "split", "axis": "z",
+              "sizes": [ {"size":"absolute","blocks":{"expr":"param","name":"pier"}},
+                         {"size":"absolute","blocks":{"expr":"param","name":"bay"}},
+                         {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children": [ {"op":"fill","material":{"role":"mass"}},
+                            {"op":"void"},
+                            {"op":"call","symbol":"recursed_row"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+]
+```
+
+The line between the two forms is the whole entry. A `repeat` split hands every
+tile the same pattern, so **no tile can know how far along it is**; a self-call
+is handed the box that is left, and that box is the only index the IR exposes.
+That is why `stair_flight`'s treads, `store_room`'s tell and every taper in §2c
+are recursions and none of them is a `repeat`. Turn the remainder into
+arithmetic and the same recursion becomes a shape (idiom 3).
+
+The `otherwise` arm is the base case: the remainder too short for another
+pier-and-bay becomes the last pier. Strip it and the expansion is
+`NoApplicableRule` at the first scope the guard rejects.
+
+### 2. Priority
+
+Three bays of three widths, one rule deciding what each becomes — arch, slot,
+solid pier — with the third arm an `otherwise`.
+
+Selection collects **every** non-`otherwise` alternative whose guard holds and
+then draws among them by weight, so writing `X >= 6` and `X >= 3` as the first
+two arms is not "prefer the arch": at a 7-wide bay both hold and the seed picks.
+The second guard is therefore the complement, spelled out:
+
+```json
+{ "cond": "all", "of": [
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"ge",
+      "rhs":{"expr":"param","name":"slot_min"} },
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"lt",
+      "rhs":{"expr":"param","name":"arch_min"} } ] }
+```
+
+The red is measured rather than argued: with the `lt` half dropped, twelve seeds
+build more than one arcade out of the same box.
+
+### 3. Shape
+
+One three-rule recursion — peel a course, inset the remaining box by `step` on
+each side, recurse — and it is simultaneously the arch, the gable, the ramp, the
+vault, the spire and the batter. Which one you get is a matter of which axis is
+split and how big the box is. `church`'s `roofYsplit` / `roofZsplit` /
+`rooffill` already contain half of it.
+
+```json
+"profile": [
+  { "when": { "cond":"all", "of":[ "<X >= 2*step + 1>", "<Y >= 2>" ] },
+    "body": { "op":"split", "axis":"y", "rounding":"start",
+              "sizes":[ {"size":"absolute","blocks":{"expr":"int","value":1}},
+                        {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children":[ {"op":"fill","material":{"role":"mass"}},
+                           {"op":"call","symbol":"step_in"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+],
+"step_in": [ { "body": { "op":"split", "axis":"x", "rounding":"start",
+                "sizes":[ "<step>", {"size":"relative","weight":{"expr":"int","value":1}}, "<step>" ],
+                "children":[ {"op":"fill","material":{"role":"cut"}},
+                             {"op":"call","symbol":"profile"},
+                             {"op":"fill","material":{"role":"cut"}} ] } } ]
+```
+
+**The step is not fixed at one cell.** An `absolute` size takes an *expression*,
+so the inset can be read off the scope it is applied in. Here it is
+`max(1, X / run)`, which steps in two cells a side while the courses are wide
+and one when they are narrow — a convex batter, not a 45° wedge. Course widths
+at the documented region are 15, 11, 9, 7, 5, 3, then a one-wide ridge. What is
+*not* expressible is a step that depends on **where** the scope sits: there is
+no positional index.
+
+**With the paint inverted it is every opening in the building.** The two roles
+are the taper (`mass`) and its complement (`cut`), and the default binding makes
+the taper stone standing in air — a gable. Bind them the other way round:
+
+```sh
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 \
+    --role mass=minecraft:air --role cut=minecraft:stone_bricks \
+    --id idiom-shape-arch -o out/
+```
+
+and the identical derivation is a solid wall with a stepped pointed opening in
+it. **A pitched roof and a pointed arch are the same program with the paint
+inverted**; the two expansions are exact complements over all 405 cells, which
+the test measures rather than asserts. A straight jamb under the springing is
+one more `Y` split below the taper — see the composition.
+
+### 4. Erosion
+
+A palette role that carries some air is a material that is partly not there, and
+that is the whole of decay, rubble, spall and pitting here. One role, one rule,
+no geometry. The authoring form is in §2. A role bound to a single block is a
+surface of one material, which is the whole explanation for a zone that renders
+as monoculture — so this is the cheapest change in the language, and the first
+thing to reach for when a piece looks flat.
+
+### 5. Graded erosion
+
+Uniform noise reads as texture; decay has a direction. The language has no
+gradient — a mix's weights cannot vary with position — so **the gradient is the
+split**: band the surface and give each band its own mix, air share climbing.
+More bands is a smoother gradient and nothing else.
+
+The bands are a rounded split, and at the documented region that is
+load-bearing: thirteen courses over three shares do not divide, so under the
+default `truncate` the pieces are 4, 4, 4 and the thirteenth course is **never
+written** — twenty-seven cells of daylight along the top of the wall, with
+`blocks-exist` and `non-empty` both perfectly green. `rounding` is owed by every
+surface, not only by floors.
+
+### 6. Surface detail
+
+Detail is not a pass over a finished model; there is no such pass. It is one
+more piece in the split that made the surface, taken while the rule still has
+the box in hand: `[rel 3, abs 1, abs 1, rel 2]` down `Y` is mass, the crust
+course that is the top of the mass, the litter course standing on the crust, and
+the air above. Scatter members are deliberately not full cubes
+(`moss_carpet`, `short_grass`, `brown_mushroom`) —
+`tools/block-appearance.py --full-cube-only` is for the structural roles, and a
+litter layer is exactly where the rest belong. The same move on a different axis
+is a wall's inner face; with a light-emitting member it is idiom 9.
+
+### 7. Symmetry without reflection
+
+A grammar orientation is a permutation and never a reflection, so no `reorient`
+can hand a rule its own mirror image. That is true, and it is **not** the same
+as "the back end cannot make a symmetric shape": an orientation cannot mirror a
+piece, but a rule *body* can be written mirrored, and a size list reversed is
+exactly that.
+
+`lower_half` and `upper_half` are the same rule twice. One peels its courses off
+the low end (`[abs 1, rel 1]`, children `[inset, slot]`) and the other off the
+high end (`[rel 1, abs 1]`, children `[slot, inset]`); both chamfer by one cell
+per side per course. Above and below a full-width waist they give a chamfered
+octagon — a rose window — at glazing widths 3, 5, 7, 9, 9, 9, 7, 5, 3, symmetric
+about both centre lines of the wall. It re-centres itself as the wall widens,
+because the aperture and every course inside it sit in the middle share of a
+`[margin, aperture, margin]` split.
+
+**This is enough for any shape with a mirror plane.** What it does not reach is
+a smooth curve: the steps are integers and integer arithmetic has no square
+root, so a circle is a polygon here whatever you do.
+
+### 8. Skip
+
+`skip` writes nothing; `void` writes air into every cell. **They are
+indistinguishable in the finished model**, and that is a property of the IR
+rather than of this example: nothing writes a cell twice — a split's children
+partition their box, a rule body is a single node, there is no sequencing
+operator — so every cell is written by exactly one node or by none, and a model
+starts as air. There is no earlier fill for `skip` to leave standing. The test
+swaps the two and the bytes do not move.
+
+What `skip` carries today is **intent** — *this box is not mine to write* —
+which is what a `mark` whose body writes nothing wants to say, and it costs
+nothing where `void` costs one write per cell. Show-through waits on an overlay
+primitive, the same missing construct that stops a zone carving a doorway into a
+piece's own wall (§5c).
+
+### 9. Light
+
+There is no light construct: a role bound to `minecraft:sea_lantern` is a role,
+and a split that gives it one cell every `sconce_period` along a wall course is
+a run of sconces. That is the whole technique, and it is the only reason a
+program's lighting is the program's own business. The period is the split's own
+pattern, so it is a real control — widen it and the same gallery has fewer
+sconces.
+
+It matters because a piece that places no light **is** dark, the grammar cannot
+warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
+it: expansion places blocks, not photons. `delve-admit lighting --write`
+(procedure §7) is where the number comes from.
+
+### A composition demonstration
+
+`idiom-composition-arcade` is a ruined arcade, and it is here to be **read**
+rather than reused: a campaign that wants an arcade writes its own program from
+the techniques, against its own fiction. Adding `gothic_arcade` to the
+vocabulary would be the catalogue mistake — the next creator wants a headframe,
+a gantry, a ziggurat, finds no entry and concludes the back end cannot.
+
+Eight of the nine are in it: the colonnade is a recursion (1) whose `otherwise`
+arm places the last pier (2); each bay's head is the taper with the paint
+inverted (3), so what narrows is the hole; every masonry role carries some air
+(4) and the footing, wall and crest are three mixes up the elevation (5); the
+crest's own top course is a litter layer (6); and every pier carries a sconce
+cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
+the recursion does not already centre for itself — and neither is idiom 8, since
+the bays are meant to be empty, which is what `void` says.
 
 ## 3. Determinism (ADR-0006)
 
