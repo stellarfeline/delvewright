@@ -152,6 +152,97 @@ pub fn reachable_with_fall(
     false
 }
 
+/// The connected components of a standable set, under [`connected`]'s walk.
+///
+/// The walk relation is symmetric — a step up one is a step down one seen from
+/// the other end — so "can walk between" partitions the set, and a component is
+/// a *floor a body is confined to* once it is standing on any cell of it. That
+/// is the object [`reachability`](crate::gates::Reachability) is written in
+/// terms of: a pocket of floor with no route to the rest is one component.
+///
+/// Order-independent by construction and deterministic in its output (ADR-0006):
+/// the input is a `BTreeSet`, components are grown from its cells in that order,
+/// and the result is sorted largest first, ties broken by the component's own
+/// minimum cell.
+pub fn components(cells: &BTreeSet<[i32; 3]>) -> Vec<BTreeSet<[i32; 3]>> {
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut out: Vec<BTreeSet<[i32; 3]>> = Vec::new();
+    for &start in cells {
+        if !seen.insert(start) {
+            continue;
+        }
+        let mut component: BTreeSet<[i32; 3]> = BTreeSet::from([start]);
+        let mut queue: VecDeque<[i32; 3]> = VecDeque::from([start]);
+        while let Some([x, y, z]) = queue.pop_front() {
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                for dy in [0, 1, -1] {
+                    let next = [x + dx, y + dy, z + dz];
+                    if cells.contains(&next) && seen.insert(next) {
+                        component.insert(next);
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+        out.push(component);
+    }
+    out.sort_by(|a, b| {
+        b.len()
+            .cmp(&a.len())
+            .then_with(|| a.iter().next().cmp(&b.iter().next()))
+    });
+    out
+}
+
+/// Where a body walks in: the standable cells on the region's four **vertical**
+/// boundary faces, at grade.
+///
+/// A prefab is dropped into a world and met from outside at ground level, so the
+/// cells that can be occupied without first being inside the piece are the ones
+/// on its sides — and of those, only the ones at grade. Grade is derived, never
+/// assumed: it is the lowest `Y` at which any side-face cell is standable, so a
+/// piece raised on a plinth or sunk into a cutting finds its own. One course
+/// above grade is included because that is the walk's own step height — a
+/// threshold one block above the outside ground is stepped onto, not climbed.
+///
+/// **A belfry louvre is a standable cell on a side face and is deliberately not
+/// an entrance.** Seeding the walk from every side-face cell at any height would
+/// start the body wherever the building happens to be open, which is how a
+/// reachability measure reports a stranded gallery as reached.
+///
+/// An empty result is a real answer — a sealed piece, or one meant to be entered
+/// from above — and its caller reports it as a binding of zero rather than as a
+/// reachability of zero.
+pub fn ground_entry(model: &VoxelModel) -> BTreeSet<[i32; 3]> {
+    let region = model.region();
+    let min = region.origin;
+    let max = region.maximum();
+    let faces: BTreeSet<[i32; 3]> = standable_cells(model)
+        .into_iter()
+        .filter(|c| c[0] == min[0] || c[0] == max[0] - 1 || c[2] == min[2] || c[2] == max[2] - 1)
+        .collect();
+    let Some(grade) = faces.iter().map(|c| c[1]).min() else {
+        return BTreeSet::new();
+    };
+    faces.into_iter().filter(|c| c[1] <= grade + 1).collect()
+}
+
+/// Is anything solid over this cell, inside the region?
+///
+/// The one thing the engine *can* say about whether a piece of floor was meant
+/// to be walked. A cell under a roof is floor: somebody was supposed to stand
+/// there. A cell with open sky over it is a roof, a parapet, a terrace or a
+/// cliff top, and the engine cannot tell which — so it is measured and never
+/// gated.
+///
+/// The scan starts two courses up because the cell and the one above it are the
+/// body's own clearance and are passable by definition.
+pub fn sheltered(model: &VoxelModel, pos: [i32; 3]) -> bool {
+    let [x, y, z] = pos;
+    let top = model.region().maximum()[1];
+    (y + 2..top).any(|above| solid(model, [x, above, z]))
+}
+
 /// The standable cells at each end of the model's local travel axis: the entry
 /// (world `Z`-max, where the player comes in) and the exit (`Z`-min).
 ///
