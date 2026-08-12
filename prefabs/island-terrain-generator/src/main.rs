@@ -537,7 +537,7 @@ fn transparent(cell: &Cell) -> bool {
                 | "minecraft:lantern"
                 | "minecraft:soul_lantern"
                 | "minecraft:torch"
-                | "minecraft:chain"
+                | "minecraft:iron_chain"
                 | "minecraft:oak_fence"
                 | "minecraft:oak_fence_gate"
                 | "minecraft:glow_lichen"
@@ -1849,7 +1849,10 @@ fn write_piece(out: &Path, spec: &Spec) {
     assert_no_unsupported_gravity(spec.id, &grid);
 
     let structure = serialize(&grid);
-    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&structure));
+    let cells = invariant_cells(&structure);
+    invariants::assert_distress_never_stacks(spec.id, &cells);
+    // Spelling, at the emitter: an unknown block id loads as AIR.
+    invariants::assert_blocks_are_real(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

@@ -60,8 +60,11 @@ fn fidelity_gate_fixture_has_no_placeholder() {
     let params = RenderParams {
         yaw_deg: 25.0,
         pitch_deg: 35.0,
-        zoom: 1.0,
-        target: None,
+        fov_deg: shots::ORBIT_FOV_DEG,
+        framing: shots::Framing::Orbit {
+            zoom: 1.0,
+            target: None,
+        },
         dim: 512,
     };
     let frame = render::render_structure(&st, &pack, false, &params).expect("render");
@@ -92,14 +95,164 @@ fn detector_catches_heavy_core_when_included() {
     let params = RenderParams {
         yaw_deg: 30.0,
         pitch_deg: 25.0,
-        zoom: 1.0,
-        target: None,
+        fov_deg: shots::ORBIT_FOV_DEG,
+        framing: shots::Framing::Orbit {
+            zoom: 1.0,
+            target: None,
+        },
         dim: 256,
     };
     let frame = render::render_structure(&st, &pack, false, &params).expect("render");
     assert!(
         detect::scan_default(&frame.rgba, frame.width, frame.height).is_some(),
         "heavy_core's unresolved model must trip the missing-texture detector"
+    );
+}
+
+/// The pixel-level half of the `facing` binding (the plan-level half is
+/// `shots::tests::opposite_facings_on_one_cell_aim_opposite_ways`): one body,
+/// one eye point, two opposite facings — two **different pictures**. A renderer
+/// that dropped the facing on the way to the camera would produce one picture
+/// twice and fail here, which the planner test alone cannot see.
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn opposite_facings_render_different_pictures() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    // A corridor with a distinctive block at one end only, so the two views
+    // cannot coincide by symmetry.
+    let mut blocks = Vec::new();
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..11 {
+                let shell = x == 0 || x == 4 || z == 0 || z == 10 || y == 0 || y == 4;
+                let idx = if z == 1 && shell {
+                    2 // one end wall in a different material
+                } else if shell {
+                    1
+                } else {
+                    0
+                };
+                blocks.push(([x, y, z], idx));
+            }
+        }
+    }
+    let st = nbt::Structure {
+        size: [5, 5, 11],
+        palette: vec![
+            "minecraft:air".into(),
+            "minecraft:deepslate".into(),
+            "minecraft:gold_block".into(),
+        ],
+        blocks,
+    };
+    let eye = [2.5, 1.0 + delvewright_render::occupancy::EYE_HEIGHT, 5.5];
+    let frame = |yaw: f32| {
+        render::render_structure(
+            &st,
+            &pack,
+            false,
+            &RenderParams {
+                yaw_deg: yaw,
+                pitch_deg: 0.0,
+                fov_deg: shots::PLAYER_FOV_DEG,
+                framing: shots::Framing::Eye { pos: eye },
+                dim: 256,
+            },
+        )
+        .expect("render")
+    };
+    let north = frame(delvewright_render::occupancy::Facing::North.view_yaw_deg());
+    let south = frame(delvewright_render::occupancy::Facing::South.view_yaw_deg());
+    let differing = north
+        .rgba
+        .iter()
+        .zip(&south.rgba)
+        .filter(|(a, b)| (**a as i32 - **b as i32).abs() > 8)
+        .count();
+    let total = north.rgba.len();
+    assert!(
+        differing * 100 / total > 10,
+        "north and south from one cell differ in only {differing}/{total} channels — the \
+         anchor's facing is not reaching the camera"
+    );
+}
+
+/// An interior view a reviewer compares to a concept painting must not be
+/// MIRRORED — a flipped room reads as a correct picture of a different room, and
+/// nothing in a shot manifest can catch it. Pinned against a corridor whose east
+/// wall is gold: a body looking north must see the gold on its right.
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn an_eye_view_is_not_mirrored() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    let mut blocks = Vec::new();
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..11 {
+                let shell = x == 0 || x == 4 || z == 0 || z == 10 || y == 0 || y == 4;
+                // The +X (east) wall only.
+                let idx = if x == 4 {
+                    2
+                } else if shell {
+                    1
+                } else {
+                    0
+                };
+                blocks.push(([x, y, z], idx));
+            }
+        }
+    }
+    let st = nbt::Structure {
+        size: [5, 5, 11],
+        palette: vec![
+            "minecraft:air".into(),
+            "minecraft:deepslate".into(),
+            "minecraft:gold_block".into(),
+        ],
+        blocks,
+    };
+    let f = render::render_structure(
+        &st,
+        &pack,
+        false,
+        &RenderParams {
+            yaw_deg: delvewright_render::occupancy::Facing::North.view_yaw_deg(),
+            pitch_deg: 0.0,
+            fov_deg: shots::PLAYER_FOV_DEG,
+            framing: shots::Framing::Eye {
+                pos: [2.5, 1.0 + delvewright_render::occupancy::EYE_HEIGHT, 5.5],
+            },
+            dim: 256,
+        },
+    )
+    .expect("render");
+    // Gold is the only strongly warm material in the frame: R clearly over B.
+    let (mut left, mut right) = (0u32, 0u32);
+    for y in 0..256u32 {
+        for x in 0..256u32 {
+            let i = ((y * 256 + x) * 4) as usize;
+            let (r, b) = (f.rgba[i] as i32, f.rgba[i + 2] as i32);
+            if r - b > 40 {
+                if x < 128 {
+                    left += 1;
+                } else {
+                    right += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        right > 0 && right > left * 4,
+        "east wall looking north must fall on the RIGHT of frame — got {left} left / {right} \
+         right; the interior view is mirrored"
     );
 }
 
@@ -117,13 +270,14 @@ fn piece_double_render_is_stable() {
         return;
     }
     let st = nbt::parse_structure(&p).expect("parse");
-    let plan = shots::plan_piece(st.size, None); // exterior + top-down (no meta needed)
-    for shot in &plan {
+    let meta = delvewright_render::meta::PrefabMeta::beside_nbt(&p).expect("meta");
+    let plan = shots::plan_piece(&st, meta.as_ref());
+    for shot in &plan.shots {
         let params = RenderParams {
             yaw_deg: shot.yaw_deg,
             pitch_deg: shot.pitch_deg,
-            zoom: shot.zoom,
-            target: shot.target,
+            fov_deg: shot.fov_deg,
+            framing: shot.framing,
             dim: 256,
         };
         let a = render::render_structure(&st, &pack, shot.cutaway, &params).expect("render a");

@@ -4,7 +4,7 @@
 use delvewright_admit::fixtures;
 use delvewright_admit::jigsaw;
 use delvewright_admit::light;
-use delvewright_admit::meta::{License, PrefabMeta};
+use delvewright_admit::meta::{self, License, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::{Structure, roundtrip};
 
@@ -14,6 +14,7 @@ fn license() -> License {
         spdx: "CC0-1.0".into(),
         note: "test".into(),
         provenance: "test".into(),
+        generated_by: None,
     }
 }
 
@@ -32,7 +33,7 @@ fn structure_write_is_deterministic() {
 #[test]
 fn socket_carving_places_jigsaw_and_carves_opening() {
     let mut s = fixtures::clean_room(); // 7x5x7, wall at z=0
-    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, license());
+    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
     // North wall socket at bottom-centre of the opening: x=3, y=1, z=0.
     let decl = SocketDecl::new([3, 1, 0], "north");
     socket::carve(&mut s, &mut meta, &decl).unwrap();
@@ -57,7 +58,7 @@ fn socket_carving_places_jigsaw_and_carves_opening() {
     // idempotent metadata; carving is deterministic.
     let bytes1 = s.write();
     let mut s2 = fixtures::clean_room();
-    let mut meta2 = PrefabMeta::skeleton("clean", s2.size, s2.data_version, license());
+    let mut meta2 = PrefabMeta::skeleton("clean", s2.size, s2.data_version, "test", license());
     socket::carve(&mut s2, &mut meta2, &decl).unwrap();
     assert_eq!(bytes1, s2.write(), "carving is deterministic");
 
@@ -117,7 +118,7 @@ fn resolve_jigsaw_replaces_with_final_state_and_prunes() {
 #[test]
 fn socket_out_of_bounds_errors() {
     let mut s = fixtures::clean_room();
-    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, license());
+    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
     let decl = SocketDecl::new([99, 1, 0], "north");
     assert!(socket::carve(&mut s, &mut meta, &decl).is_err());
 }
@@ -143,10 +144,82 @@ fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
 fn light_probe_writes_estimate_method_into_metadata() {
     let s = fixtures::clean_room();
     let probe = light::probe(&s, light::DEFAULT_DARK_THRESHOLD);
-    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, license());
-    meta.set_lighting_from_probe(&probe);
+    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
+    meta::set_lighting_from_probe(&mut meta, &probe);
     assert_eq!(meta.lighting.profile, "lit");
     // honest: the method string marks this as a static estimate, not a live probe.
-    assert!(meta.lighting.method.contains("static"));
-    assert!(meta.lighting.method.to_lowercase().contains("not a live"));
+    assert!(meta.lighting.method.as_deref().unwrap().contains("static"));
+    assert!(
+        meta.lighting
+            .method
+            .as_deref()
+            .unwrap()
+            .to_lowercase()
+            .contains("not a live")
+    );
+}
+
+/// **`delve-admit` must be able to read what the generators write.**
+///
+/// The grammar back end (spec-0027 §2) exports `{"profile": "unmeasured"}` and
+/// no measurement, because a piece that has not been probed carries no probe
+/// result — which is exactly what `delvewright_dsl::registry::Lighting` demands
+/// and what the compiler's `PrefabRegistry` accepts. This crate's own metadata
+/// copy required all four lighting fields, so every admission subcommand
+/// (`socket`, `anchor`, `lighting`, `catalog`) refused a grammar-exported prefab
+/// at `DW0732` before it did anything: the admission half of the pipeline was
+/// closed to the generated half, and nothing said so.
+#[test]
+fn an_unmeasured_lighting_block_parses_the_way_the_generators_write_it() {
+    let json = r#"{
+      "prefab_id": "prefab/arcade-undercroft",
+      "structure": {
+        "file": "arcade-undercroft.nbt",
+        "id": "arcade-undercroft",
+        "size": [9, 6, 21],
+        "data_version": 4671,
+        "generator": "crates/grammar"
+      },
+      "anchors": { "anchor/undercroft-floor": { "pos": [4, 1, 10], "facing": "north" } },
+      "lighting": { "profile": "unmeasured" },
+      "license": {
+        "source": "original",
+        "spdx": "GPL-3.0-or-later",
+        "note": "n",
+        "provenance": "p"
+      }
+    }"#;
+    let meta = PrefabMeta::from_json(json).expect("a grammar prefab's metadata must parse");
+    assert_eq!(meta.lighting.profile, "unmeasured");
+    assert_eq!(meta.lighting.measured_min_light, None);
+    assert_eq!(meta.lighting.measured, None);
+    assert!(meta.connectors.is_empty(), "the export emits no connectors");
+}
+
+/// ...and a probe still writes a measurement, because the DSL refuses a
+/// `lit`/`dim`/`dark` profile that does not carry one. The optional fields are a
+/// widening of what can be READ, never of what a measured claim must say.
+#[test]
+fn a_probed_profile_still_carries_its_measurement() {
+    let mut meta = PrefabMeta::skeleton(
+        "probed",
+        [5, 5, 5],
+        4671,
+        "test",
+        License {
+            source: "original".into(),
+            spdx: "GPL-3.0-or-later".into(),
+            note: "n".into(),
+            provenance: "p".into(),
+            generated_by: None,
+        },
+    );
+    assert_eq!(
+        meta.lighting.profile, "unmeasured",
+        "a skeleton has not been probed and must say so in a profile the DSL has"
+    );
+    let probe = light::probe(&fixtures::dark_room(), light::DEFAULT_DARK_THRESHOLD);
+    meta::set_lighting_from_probe(&mut meta, &probe);
+    assert!(meta.lighting.measured_min_light.is_some());
+    assert!(meta.lighting.measured.is_some());
 }

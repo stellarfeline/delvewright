@@ -26,6 +26,16 @@ kits and quest items are first-class.
 scoreboard events + effects/attributes/teleports. Cooldown-based class skills are
 routine adventure-map fare.
 
+**Projectile impact responses** — data-driven enchantment effects give a real,
+event-driven hook the moment a projectile lands (`minecraft:hit_block`), from
+which any effect is reachable, including a non-block-breaking explosion and a
+lingering area effect. Two constraints measured on the pinned build and worth
+knowing before designing with it: the behaviour binds to the **launcher** item,
+never to the ammunition (though the ammunition's `custom_data` survives to the
+impact and can be branched on), and vanilla's own `explode` damage collapses to
+a flat 1.0 when the impact point falls inside the block that was hit. Details
+and the full axis table: [`area-effect-arrow-spike.md`](area-effect-arrow-spike.md).
+
 **NPCs & bosses** — entities with AI disabled/NoAI + interaction entity hitboxes;
 dialog-based conversations; bossbar + phased boss fights scripted as functions
 (spawn waves, arena changes, attack patterns via effects/projectiles/teleports).

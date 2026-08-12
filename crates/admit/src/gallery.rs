@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 
+use delvewright_compiler::commands::{CommandError, CommandTree};
 use delvewright_orchestrator::{Layout, harvest};
 use serde::Serialize;
 
@@ -93,7 +94,56 @@ fn plan<'a>(cands: &'a [Candidate], cols: usize) -> Vec<Placed<'a>> {
 }
 
 /// Emit the whole gallery output tree (`path -> bytes`), deterministically.
-pub fn emit(gallery_id: &str, cands: &[Candidate], cols: usize) -> BTreeMap<String, Vec<u8>> {
+///
+/// Every `.mcfunction` in the tree is checked against the pinned 1.21.11
+/// Brigadier command tree before it is returned — the same gate `delvec` applies
+/// to its own emission, reached through the same vendored artifact rather than a
+/// second copy of the rule. See [`validate_functions`] for why this is emission
+/// and not a test.
+pub fn emit(
+    gallery_id: &str,
+    cands: &[Candidate],
+    cols: usize,
+) -> Result<BTreeMap<String, Vec<u8>>, Vec<CommandError>> {
+    let out = emit_unchecked(gallery_id, cands, cols);
+    let errors = validate_functions(&out);
+    if errors.is_empty() {
+        Ok(out)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Check every `.mcfunction` in an emitted gallery tree against the pinned
+/// 1.21.11 command tree.
+///
+/// **Why this is emission and not a test** (task #70): the gallery's `load` and
+/// `finish` functions each carried a line 1.21.11 refuses to parse — four legacy
+/// camelCase gamerules and a `text_opacity:255b` that overflows a signed byte.
+/// A function with one unparseable line does not fail that line; the server
+/// **drops the whole function** ("Failed to load function admit:load"), so no
+/// objective was created, no chunk was forceloaded, no piece was placed and no
+/// label was summoned. The gallery world booted, answered `list`, and was empty.
+/// Nothing read the server's answer, so nothing could fail — and a check that
+/// only runs in `cargo test` is a check the operator running `delve-admit
+/// gallery` on a fresh piece does not run.
+pub fn validate_functions(out: &BTreeMap<String, Vec<u8>>) -> Vec<CommandError> {
+    let tree = CommandTree::v1_21_11();
+    let mut errors = Vec::new();
+    for (path, bytes) in out {
+        if path.ends_with(".mcfunction")
+            && let Ok(body) = std::str::from_utf8(bytes)
+        {
+            errors.extend(tree.validate_function(body));
+        }
+    }
+    errors
+}
+
+/// The raw output tree, before command validation. Private on purpose: there is
+/// no caller outside this module that should be able to obtain an unvalidated
+/// gallery, which is the whole point of [`emit`] returning a `Result`.
+fn emit_unchecked(gallery_id: &str, cands: &[Candidate], cols: usize) -> BTreeMap<String, Vec<u8>> {
     let placed = plan(cands, cols);
     let mut out: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
@@ -165,13 +215,23 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
     let spawn = [-3, BASE_Y, -3];
 
     // load: objectives, gamerules, forceload, warmup counter.
+    //
+    // 1.21.11 gamerule identifiers, measured on the pinned server (task #70,
+    // re-measured 2026-08-11 against `1.21.11 / data 4671`): the whole registry
+    // is snake_case and several rules were reworded, so every legacy camelCase
+    // spelling answers "Incorrect argument for command" — `doDaylightCycle` ->
+    // `advance_time`, `doWeatherCycle` -> `advance_weather`, `doMobSpawning` ->
+    // `spawn_mobs`, `doImmediateRespawn` -> `immediate_respawn`. The compiler's
+    // sealing baseline has always used the new names; this file did not, and
+    // because a rejected line kills the ENTIRE function at load, the gallery's
+    // objectives and forceloads never ran either.
     let mut load: Vec<String> = vec![
         "scoreboard objectives add dw.note trigger".to_string(),
         "scoreboard objectives add admit.sys dummy".to_string(),
-        "gamerule doDaylightCycle false".to_string(),
-        "gamerule doWeatherCycle false".to_string(),
-        "gamerule doMobSpawning false".to_string(),
-        "gamerule doImmediateRespawn true".to_string(),
+        "gamerule advance_time false".to_string(),
+        "gamerule advance_weather false".to_string(),
+        "gamerule spawn_mobs false".to_string(),
+        "gamerule immediate_respawn true".to_string(),
         "scoreboard players set #t admit.sys 0".to_string(),
     ];
     // forceload each cell + the spawn platform (chunk regions).
@@ -238,8 +298,13 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
         let ly = oy + p.cand.size[1] + 1;
         let lz = oz + p.cand.size[2] / 2;
         let text = json_text(&format!("{}  [{}]", p.cand.label, p.cand.asset_id));
+        // `text_opacity` is an NBT **byte**, so its range is -128..=127 and
+        // "fully opaque" is the vanilla default `-1b`, not `255b`. `255b`
+        // overflows the parser ("Failed to parse number: Value out of range"),
+        // which took `admit:finish` — the spawn platform, the worldspawn and
+        // every label with it — out of the pack at load time (task #70).
         finish.push(format!(
-            "summon minecraft:text_display {lx} {ly} {lz} {{Tags:[\"admit_label\"],billboard:\"center\",text:'{text}',text_opacity:255b,see_through:1b}}"
+            "summon minecraft:text_display {lx} {ly} {lz} {{Tags:[\"admit_label\"],billboard:\"center\",text:'{text}',text_opacity:-1b,see_through:1b}}"
         ));
     }
     fns.push(("finish".to_string(), lines(&finish)));

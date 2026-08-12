@@ -40,6 +40,13 @@
 //! number *against* travel (a split visits its pieces low to high); see
 //! [`cliff_path`].
 //!
+//! **The idiom index.** [`idioms`] is a third kind again: one minimal program
+//! per *technique* of the IR — repetition, priority, shape, erosion, graded
+//! erosion, surface detail, symmetry without reflection, `skip`, light — plus
+//! one composition demonstration. They build nothing anyone wants, and they are
+//! in the library because `delve-grammar list` / `show` is the only way an
+//! author reaches the corpus, and the corpus is where technique is learned.
+//!
 //! **The zone programs.** [`bell`] is the layer above: the drowned-bell
 //! remake's zones, each one program that composes the vocabulary above with
 //! [`crate::compose::include`] and writes no encounter geometry of its own. A
@@ -67,7 +74,9 @@ pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
 pub mod hearth_ward;
+pub mod idioms;
 pub mod lift_shaft;
+pub mod negated_guard;
 pub mod rafter_hall;
 pub mod stair_flight;
 pub mod store_room;
@@ -104,6 +113,7 @@ pub use threshold_motif::threshold_motif;
 pub use watch_bay::watch_bay;
 
 use crate::geom::Axis;
+use crate::ir::Program;
 use crate::ir::{
     Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Side,
     Size, Split,
@@ -303,4 +313,68 @@ fn alt_weight(weight: u32, body: Node) -> Alternative {
 /// The fallback alternative.
 fn alt_else(body: Node) -> Alternative {
     Alternative::new(body).when(Cond::Otherwise)
+}
+
+/// One library entry: its stable id and the function that builds it.
+pub type LibraryProgram = (&'static str, fn() -> Program);
+
+/// **Every program in this library, by id.**
+///
+/// A registry rather than a `match`, for the reason a tool exists at all: a
+/// creator has to be able to *discover* what the back end can build without
+/// reading Rust. `delve-grammar list` enumerates this, so a rule added to the
+/// library reaches the tool without the tool being edited.
+///
+/// The `bell::` zone programs are deliberately absent: a zone is one campaign's
+/// composition of these, not a piece of the general vocabulary, and listing a
+/// campaign's own material as if it were library surface is the "authored
+/// content wearing a primitive's clothes" shape CLAUDE.md names.
+pub const PROGRAMS: &[LibraryProgram] = &[
+    ("ambush-door", ambush_door),
+    ("bait-stand", bait_stand),
+    ("boulder-stair", boulder_stair),
+    ("broken-grate", broken_grate),
+    ("castle", castle),
+    ("causeway", causeway),
+    ("church", church),
+    ("cliff-path", cliff_path),
+    ("disarm-stand", disarm_stand),
+    ("drop-shaft", drop_shaft),
+    ("dumbwaiter", dumbwaiter),
+    ("elite-ground", elite_ground),
+    ("far-side-bar", far_side_bar),
+    ("hearth-ward", hearth_ward),
+    // The idiom index (`idioms`): one minimal program per technique, plus one
+    // composition demonstration. They are here because `delve-grammar list` and
+    // `show` are the only way an author reaches the corpus at all.
+    ("idiom-composition-arcade", idioms::composition_arcade),
+    ("idiom-erosion", idioms::erosion),
+    ("idiom-erosion-graded", idioms::graded_erosion),
+    ("idiom-light", idioms::light),
+    ("idiom-mirror", idioms::mirror),
+    ("idiom-priority", idioms::priority),
+    ("idiom-repetition", idioms::repetition),
+    ("idiom-shape", idioms::shape),
+    ("idiom-skip", idioms::skip),
+    ("idiom-surface-detail", idioms::surface_detail),
+    ("lift-shaft", lift_shaft),
+    // A corpus example rather than an idiom-index entry (spec-0033 §4.8):
+    // every IR construct owes `delve-grammar list` one example, and `none_of`
+    // is a language feature rather than a technique.
+    ("negated-guard", negated_guard::negated_guard),
+    ("rafter-hall", rafter_hall),
+    ("stair-flight", stair_flight),
+    ("store-room", store_room),
+    ("tee-passage", tee_passage),
+    ("temple", temple),
+    ("threshold-motif", threshold_motif),
+    ("watch-bay", watch_bay),
+];
+
+/// Look one library program up by its `PROGRAMS` id.
+pub fn by_id(id: &str) -> Option<Program> {
+    PROGRAMS
+        .iter()
+        .find(|(name, _)| *name == id)
+        .map(|(_, build)| build())
 }

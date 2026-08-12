@@ -69,6 +69,14 @@
 //! it all exists for — one grammar program per campaign zone, composed from the
 //! staging vocabulary.
 //!
+//! # Demonstration coverage
+//!
+//! [`coverage`] counts, over the rule library, how many times each IR construct
+//! is written, and reports a zero as a finding: an author is sent to the corpus
+//! rather than to the schema, so a construct no example writes does not exist in
+//! practice. It measures **demonstration, not expressiveness** — see that
+//! module, which says so in its own output.
+//!
 //! # Not built yet
 //!
 //! The craft-rule diagnostics of spec-0027 §4, jigsaw connector emission, and
@@ -81,13 +89,16 @@
 
 pub mod block;
 pub mod compose;
+pub mod coverage;
 pub mod eval;
 pub mod expand;
 pub mod export;
+pub mod gates;
 pub mod geom;
 pub mod ir;
 pub mod library;
 pub mod model;
+pub mod nav;
 pub mod orient;
 pub mod rng;
 pub mod split;
@@ -98,6 +109,7 @@ pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, e
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
 };
+pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
 pub use ir::{Facing, Mark, MarkAt, MarkIndex, Program, ProgramError, Side};
 pub use model::VoxelModel;
