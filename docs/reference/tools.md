@@ -123,10 +123,21 @@ region and no seed — run it after every edit. `expand` writes `<id>.nbt`,
 `<id>.json` (prefab metadata, with the program hash + seed that regenerate the
 bytes) and `<id>.report.json` (the gate verdicts).
 
+`<id>` is the prefab's identity — all three filenames and the datapack structure
+path — so it is lowercase letters, digits and hyphens only. `--id` sets it;
+otherwise it defaults to the library program id, or to the **input file's stem**
+with `--file`. The program's `name` field is not the id: it identifies the
+program in the metadata's provenance row. An unusable id, and a region past the
+48-per-axis cap, are refused before the expansion runs — nothing is written and
+no verdict is printed, because a `pass` above a failure is the line a reader
+stops at.
+
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
 state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
 from the approach end to the exit end; `--allow-falls` for a piece entered off a
-ledge). A red gate writes **no** `.nbt`. Measurements — fill ratio, standable
+ledge). A red gate writes **no** `.nbt`. The verdict is printed only once the
+prefab has been written, so every `pass` on the terminal is a `pass` about a
+file that exists. Measurements — fill ratio, standable
 cells, footprint area/perimeter, silhouette complexity, per-block shares — are
 reported with no threshold and are deliberately not called gates: spec-0027 §4's
 craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
@@ -154,6 +165,11 @@ delve-admit anchor <nbt> --name anchor/<id>
 delve-admit lighting <nbt> [--write] [--dark-threshold 3]       # probe -> declared profile
 delve-admit catalog validate <card.json ...>
 ```
+
+`socket`, `anchor` and `lighting --write` each own one block of the prefab's
+metadata and rewrite the file with everything else — anchors, sockets, licence,
+and the `license.generated_by` row that says what regenerates the `.nbt` —
+byte-for-byte as they found it. They can be run in any order and repeatedly.
 
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:
