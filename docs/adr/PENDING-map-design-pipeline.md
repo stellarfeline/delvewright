@@ -1,8 +1,8 @@
 # ADR-PENDING: The spatial contract — declared spaces and edges, checked against the emitted bytes
 
 - **Status**: Proposed
-- **Date**: 2026-08-12 (amended twice same day against the prototype's two
-  evidence rounds)
+- **Date**: 2026-08-12 (amended three times same day against the prototype's
+  evidence rounds; step 1 — the declaration surface — dispatched after round 3)
 - **Source**: owner ruling 2026-08-12 ("the map-design pipeline needs restructuring,
   or our gameplay and our scenery cannot be unified"); trial-0001 (Notre-Dame),
   both runs; the planner's tree/graph analysis, amended below; the
@@ -124,6 +124,31 @@ it (spaces 28→17 and the nave's 936 phantom breaches → 0, but total boxes
 43→58 and revision rounds 4→6). Unions are the fix for a case that had no
 fix — a non-box room — not a cost reduction, and the ADR claims only that.
 
+**Round 3** (sign-off round): §0 held — no third total mechanical defeat, and
+the one-floor rule measured cheap (3 of 25 spaces, every repair one the spec
+already names; on Z7 it *improved* the contract, the treads becoming the
+stair edge's transit volume). Three findings, all folded in:
+
+- **The author must never pick which demand applies** (§0's corollary). A
+  15-line loop that tried every `no_body` kind and kept whichever passed
+  bypassed `posted`'s anchor demand with one word. Kinds are now computed by
+  the checker, strongest applicable; the declaration carries only a region
+  and a reason.
+- **Transit-volume standables are reachability targets**, or unreached cells
+  can be re-hung on a stair edge as 1×1×1 vias.
+- **The three-kind taxonomy was the real cost driver** — this ADR's own
+  "falsifying kinds" revisit trigger fired, on ordinary stonework: 296
+  cathedral cells (wall-heads, inter-buttress recesses, gable courses,
+  apse-yard, cornices) fit no kind, and declaring them spaces manufactured
+  four false closure breaches per true one (signal 533-of-533 → 338-of-1718;
+  a gate read like an over-nagging linter loses its reader). Answered by a
+  **fourth demand, not a loosening**: `facade` — every standable cell
+  touched by the flood of exterior air — which strictly subsumes and retires
+  `open`, is unavailable to any region nested inside a space (an enclosed
+  interior can never reach it: its own closure proof guarantees no exterior
+  air path), and which an interior stranding cannot supply. The stranded
+  gallery still classifies as nothing and reds.
+
 ## Decision
 
 ### 1. The artifact: a **spatial contract**, owned by the prefab object class
@@ -134,8 +159,9 @@ typed **edges** between them (`walk` / `stair` / `drop` / `barred` /
 `vision`, each traversal edge carrying its declared **`rise`**), an
 **entry** with an exterior traversal edge, per-space **envelope**
 declarations that demand sky when they claim openness, and **`no_body`**
-regions (`sealed` / `open` / `posted`, each with its own proof and a
-required reason). The contract is *declared intent*; a checker proves the
+regions, each carrying a required reason and a **checker-computed** kind —
+`sealed` (walled), `posted` (anchored), or `facade` (exterior air) — never
+an author-picked one. The contract is *declared intent*; a checker proves the
 delivered blocks agree with it. Nothing is ever inferred from the block
 pattern — that direction is the folklore the no-hacks rule forbids.
 
@@ -172,13 +198,16 @@ delivered blocks is correctly silent about artifacts that do not exist. The
 spec pins both halves, so a later change that lets the drift build cannot
 pass unnoticed. (Conceded by the prototype in re-validation.)
 
-**Residual risk, named rather than smoothed**: `posted` is the softest
-opt-out — its security is that anchors are the campaign's exported
-namespace, so decoy anchors are visible in every downstream surface and
-enumerated in the verdict block, but visibility is review pressure, not a
-proof. And the closure residual stands: a sub-body visual breach into an
-abutting `open` region is render-review territory. Either recurring as an
-owner finding gets a machine form then (finding-to-diagnostic rule).
+**Residual risk, named rather than smoothed** — three now, all of the same
+character (the remaining discriminator is intent, surfaced by enumeration
+rather than proved): `posted` decoy anchors are visible in every downstream
+surface but visibility is review pressure, not a proof; an **exterior**
+stranded terrace — a sky-open tower deck players were meant to reach — can
+be waved off as `facade`, because to every mechanical fact available it *is*
+a wall-head, and only the declared reason and the render review can
+disagree; and a sub-body visual breach into an abutting `facade` region is
+render-review territory. Any of the three recurring as an owner finding gets
+a machine form then (finding-to-diagnostic rule).
 
 ### 3. What the contract feeds
 
@@ -218,8 +247,13 @@ owner finding gets a machine form then (finding-to-diagnostic rule).
   bell zone programs get contracts in an adoption round scheduled within the
   same milestone; their `tests/zones.rs` topology-and-level assertions
   translate to contract data and the Rust suite's role narrows to
-  sightline/tell/density claims plus checker-teeth fixtures. Island tileset
-  pieces are upgrade-on-next-touch.
+  sightline/tell/density claims plus checker-teeth fixtures. The round also
+  carries the one library change the contract forced: **`rafter_hall`
+  anchors every perch** (its alternation left five standable cells no
+  campaign could address — unfinished surface by the contract's own
+  worldview, and interior, so rightly not `facade`), with the perch
+  renumbering and the Z5/Z7 gate counts it moves named in the round summary.
+  Island tileset pieces are upgrade-on-next-touch.
 - Authoring order changes: procedure §1's scene description gains its
   machine-checkable half — the contract is written before the rules. Docs and
   the skill update in the same PR (tooling-sync rule).
@@ -234,8 +268,11 @@ owner finding gets a machine form then (finding-to-diagnostic rule).
   cell or an undeclared opening — the obligations are unsound; reopen.
 - A third mechanical-defeat script survives §0 — the principle itself is
   insufficient, not merely an instance; reopen rather than patch.
-- Honest contracts prove writable only by falsifying kinds or by `posted`
-  anchor spam — the cost model or the `posted` proof is wrong; reopen.
+- Honest contracts prove writable only by falsifying declarations or by
+  `posted`/`facade` blankets — the cost model or a kind's proof is wrong;
+  reopen. (Fired once, round 3, on the three-kind taxonomy; answered by the
+  fourth demand rather than a loosening. A second firing questions the
+  taxonomy approach itself, not the missing kind.)
 - The one-floor rule forces a genuinely terraced single room into an
   edge-chain that authors demonstrably fight — the merge rule needs the
   within-space rise alternative that was rejected here; reopen with that

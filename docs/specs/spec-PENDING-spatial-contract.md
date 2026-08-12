@@ -1,9 +1,10 @@
 # spec-PENDING: The spatial contract — spaces, edges, levels, closure, and coverage
 
 - **Status**: Proposed (ADR-PENDING-map-design-pipeline; owner ruling
-  2026-08-12; trial-0001 both runs are the motivating red; amended twice
-  against the `tools/spike-spatial-contract` prototype — build `d3ce851` and
-  its adversary scripts are the fixture seed)
+  2026-08-12; trial-0001 both runs are the motivating red; amended three
+  times against the `tools/spike-spatial-contract` prototype — build
+  `d3ce851`, its adversary scripts, and the round-3 cost measurement are the
+  fixture seed; step 1, the declaration surface, is dispatched)
 - **ADRs**: PENDING (decision), 0004 (extended), 0006 (determinism), 0018 §7
   (the `Program` version fence this rides)
 - **Non-goals**: parameterised / cross-program `call` (task #107, own spec);
@@ -25,10 +26,17 @@ cannot discriminate.
 
 So this spec has one governing rule, applied to every opt-out below and
 binding on any future one: **an opt-out must be secured by a property the
-defect cannot supply.** `sealed` demands its own closure; `open` demands sky;
-`posted` demands an anchor; `via` demands the declared endpoints' own
-boundary; a merge demands one floor. Anything that exempts a cell from an
-obligation must prove a different positive fact about that cell.
+defect cannot supply.** `sealed` demands its own closure; `posted` demands an
+anchor; `facade` demands exterior air; an open envelope demands sky; `via`
+demands the declared endpoints' own boundary; a merge demands one floor.
+Anything that exempts a cell from an obligation must prove a different
+positive fact about that cell.
+
+Round 3 added the rule's corollary: **the author never picks which demand
+applies.** A declared exemption names only its region and its reason; the
+checker determines the kind (strongest applicable). Letting the author pick
+was a one-word bypass — a 15-line loop tried every kind and kept whichever
+passed, which voids the weaker kinds' role as discriminators.
 
 ## 1. Surface
 
@@ -59,12 +67,13 @@ obligation must prove a different positive fact about that cell.
   per-space relief declaration, or named boxes with internal rises — were
   rejected: the first re-opens the hatch behind one reviewable line, the
   second adds surface that duplicates what edges already say.)
-- `{ "op": "no-body", "region": <kebab>, "kind":
-  "sealed" | "open" | "posted", "reason": <non-empty string>, "body": … }` —
-  standable-but-out-of-play cells, each kind carrying its own §2.6 proof.
-  A `no_body` region may nest inside a space (the one licensed overlap);
-  a region spanning hosts splits by host. Two different *spaces* may abut
-  but never overlap.
+- `{ "op": "no-body", "region": <kebab>, "reason": <non-empty string>,
+  "body": … }` — standable-but-out-of-play cells. **There is no `kind`
+  field**: the checker determines the kind (§2.6, strongest applicable) and
+  the verdict reports it per region; the author supplies only the region and
+  a reason a reviewer will read. A `no_body` region may nest inside a space
+  (the one licensed overlap); a region spanning hosts splits by host. Two
+  different *spaces* may abut but never overlap.
 - `Edge`: `{ a: <space | "exterior">, b: <space | "exterior">, class:
   "walk" | "stair" | "drop" | "barred" | "vision", rise?: <i64>,
   via?: <box | [box]>, bar?: { region: <scope-declared>, block: <role> } }`.
@@ -146,30 +155,49 @@ Both invocations are bound to the events they guard.
    only. The physical-walk reading was rejected and the choice is
    load-bearing: under it §2.5 is independent of the declared edges
    (deleting Z7's stair edge stays green) and edges decay into decoration;
-   graph-confined is what makes an edge a checked claim. Unreached > 0 →
-   red, counted per space. A space unreachable only while bars stand is
-   re-walked with named bar sets opened and the required set printed per
-   space; unreachable under every opening → red.
-6. **the `no_body` obligation** — three kinds, each demanding what the
-   defect cannot supply (§0); a region satisfying several may declare any
-   one, because each demand is defect-independent:
-   - `sealed`: **the union of all `sealed` regions is itself closed** —
-     every boundary cell non-passable. "Walled off", not "we failed to
-     reach it": stranding is entailed by the §2.5 defect, closure is not.
-     A genuinely walled recess passes as decoration; a stranded gallery's
-     boundary opens onto the nave air and reds.
-   - `open`: every standable cell of the region has no artifact solid above
-     it (sky-open; the standable-cell reading — the volume reading is
-     unsatisfiable under any sloped roof, measured at 3 690 cells on the
-     cathedral).
-   - `posted` (new): out-of-walk standables placed bodies use. Demands an
-     anchor: the region contains ≥ 1 declared anchor and every standable
-     cell lies within Chebyshev 2 of one. Anchors are the campaign's
-     namespace, exported and consumed downstream — a blanket of decoy
-     anchors is visible in every later surface, which is the cost that
-     secures the kind (and the honestly-stated softest of the three; see
-     the ADR's residual-risk note).
-   Binding: regions, cells per kind.
+   graph-confined is what makes an edge a checked claim. **A transit
+   volume's standable cells are reachability targets too** — otherwise
+   deleting an unreached space and re-hanging its cells on a stair edge as
+   1×1×1 `via` boxes turns reachability green (found by attack, round 3).
+   Unreached > 0 → red, counted per space and per transit volume. A space
+   unreachable only while bars stand is re-walked with named bar sets opened
+   and the required set printed per space; unreachable under every opening →
+   red.
+6. **the `no_body` obligation** — three kinds, **computed by the checker**
+   (strongest applicable, in this order; the author never picks — §0's
+   corollary), each demanding what the defect cannot supply. A region
+   satisfying none is red:
+   - `sealed`: **the union of all `sealed`-classified regions is itself
+     closed** — every boundary cell non-passable. "Walled off", not "we
+     failed to reach it": stranding is entailed by the §2.5 defect, closure
+     is not. A genuinely walled recess passes as decoration; a stranded
+     gallery's boundary opens onto the nave air and cannot classify here.
+   - `posted`: out-of-walk standables placed bodies use. Demands an anchor:
+     the region contains ≥ 1 declared anchor and **every standable cell
+     lies within Chebyshev 2 of one** — per-cell deliberately, because the
+     per-region-with-one-anchor form re-opens the blanket hatch (one decoy
+     anchor on a thousand stranded cells) and was rejected on §0 grounds.
+     Anchors are the campaign's exported namespace, so decoys are visible
+     in every downstream surface — the cost that secures the kind, and the
+     honestly-stated soft spot (ADR residual-risk note).
+   - `facade` (round 3, replacing `open`, which it strictly subsumes —
+     sky-open cells are a fortiori exterior-connected): exterior dressing a
+     body never occupies in play. Demands **exterior air**: every standable
+     cell of the region is touched by the flood-fill of air from outside
+     the artifact's bounding box. This is the fourth demand the round-3
+     cost measurement forced: 296 cathedral cells — wall-heads, buttress
+     recesses, gable courses, apse-yard cells, cornices — are overhung
+     ordinary stonework that no wall, sky, or anchor demand fits, and
+     declaring them spaces manufactured four false closure breaches for
+     every true one (signal 533-of-533 → 338-of-1718). Exterior-air
+     connection is a positive fact an *interior* stranding cannot supply —
+     an enclosed space's inside can never classify here, because its own
+     closure proof guarantees no exterior air path. **A region nested
+     inside any space can never be `facade`** (the interior of play space
+     is play space's business: `sealed` or `posted` only) — this is what
+     keeps a stranded shelf in an open-top shaft red rather than
+     facade-green.
+   Binding: regions, cells per computed kind.
 7. **anchors**: every declared anchor resolves to a contract element — the
    closed extent of a covered space, a declared edge's via or bar region, or
    a `no_body` region (`posted` is the expected kind; others print a
@@ -183,9 +211,9 @@ Both invocations are bound to the events they guard.
    still binds every region (AC8). `1 space, 0 edges` remains a printed
    finding. The verdict block enumerates, always: every `open`/`open_top`
    envelope, every `vision` via with its area, every `posted` region with
-   its anchors, and every opened-bar set §2.5 used — the per-instance,
-   named form that a blind script cannot satisfy and a reviewer actually
-   reads.
+   its anchors, every `facade` region with its cell share, and every
+   opened-bar set §2.5 used — the per-instance, named form that a blind
+   script cannot satisfy and a reviewer actually reads.
 
 ## 3. Determinism and transparency
 
@@ -197,20 +225,27 @@ Both invocations are bound to the events they guard.
 
 ## 4. Order of work
 
-1. **Prototype — done, twice** (`tools/spike-spatial-contract/`, re-validated
-   at `d3ce851`). Round 1 established: cost bounded; the level relation is
+1. **Prototype — done, three rounds** (`tools/spike-spatial-contract/`,
+   re-validated at `d3ce851`). Round 1: cost bounded; the level relation is
    load-bearing (three of Z7's four drifts red only through `rise`; the
    fourth refuses upstream, deliberately outside the checker — AC5);
-   per-space reachability and exterior-as-node unsound. Round 2 established:
-   the opt-outs were mechanically defeatable, which is where §0 comes from;
-   its two adversary scripts become permanent red fixtures (AC8).
+   per-space reachability and exterior-as-node unsound. Round 2: the
+   opt-outs were mechanically defeatable, which is where §0 comes from; its
+   two adversary scripts become permanent red fixtures (AC8). Round 3: §0
+   held (no third total defeat; the one-floor rule measured cheap — 3 of 25
+   spaces, every repair one the spec names), and produced the author-picked
+   kind bypass (→ computed kinds), the transit-target hole (→ §2.5), and
+   the taxonomy cost measurement (→ `facade`, AC14). Step 1 — the
+   declaration surface, no obligations — is dispatched.
 2. IR surface + checker in-engine, fenced; export + `delve-admit` halves.
 3. Docs and skill in the same PR (`grammar.md`, `prefab-procedure.md`
    §1/§3/§4, `tools.md`; `/new-delve` gains contract-before-rules).
 4. Bell adoption round (same milestone): contracts for the eight zone
    programs, translated from `tests/zones.rs`'s topology **and level**
    assertions; the Rust suite keeps sightline/tell/density claims and gains
-   checker-teeth fixtures.
+   checker-teeth fixtures. **Includes the AC9 library change** —
+   `rafter_hall` anchors every perch — with the perch renumbering and the
+   Z5/Z7 zone-gate counts it moves, named in the round summary.
 5. Trial 2 (owner's Stormveil-class brief) against the reader-facing docs
    only, as trial-0001 was run.
 
@@ -252,9 +287,19 @@ Both invocations are bound to the events they guard.
    (nothing enclosed, zero closure binding) reds on §2.9.
 9. First-party anchor resolution with no per-rule exception, asserted over
    the library: `far_side_bar`'s `gate` (bar region), `boulder_stair`'s
-   `volley-slot` (boundary cell), `rafter_hall`'s perches (**`posted`**
-   `no_body`, green — and the same shelves stripped of their anchors red
-   under all three kinds, which is the stranded-belfry discrimination).
+   `volley-slot` (boundary cell), and `rafter_hall`'s perches classified
+   **`posted`**, green — which requires the library change this AC now
+   names: **`rafter_hall` declares an anchor on every perch** (all 10, via
+   `index: auto`), not on alternating sides. The alternation left five
+   standable corbel cells 14 blocks from any anchor — cells no campaign
+   could ever address, which under this contract's own worldview is
+   unfinished surface, not decoration (they are interior, so `facade` is
+   rightly unavailable). The change moves exported metadata and perch
+   numbering, so it lands in the bell adoption round beside the zone-gate
+   counts it touches (Z5's "4 perches", Z7's "5"), and is named in that
+   round's summary. The discrimination direction: the same shelves stripped
+   of every anchor classify as nothing — nested, so no `facade`; unwalled,
+   so no `sealed`; unanchored, so no `posted` — and red.
 10. Union and one-floor rules, both directions: the run-1 nave as one
     union-of-boxes space is green where the forced two-box split produced a
     phantom forever-red space (kept as the union rule's red fixture); Z7's
@@ -274,3 +319,15 @@ Both invocations are bound to the events they guard.
     falsification; the agent's account does not name the contract as the
     reason a concept was cut. Any of the three failing is this spec's
     design failing, and the record says which.
+14. **Signal restoration and the `facade` adversary, both directions**: the
+    cathedral's five decoration families (296 cells: tower wall-heads,
+    inter-buttress recesses, gable courses, apse-yard cells, cornices)
+    declared as `no_body` classify `facade` and manufacture **zero**
+    closure or reachability reds — the fixture asserts the closure red set
+    equals the independently verified genuine set, restoring the
+    round-2 signal that the three-kind taxonomy had diluted to 20 %. The
+    adversary direction: interior unreached cells (the run-1 gallery)
+    declared as free-standing `no_body` regions classify as nothing —
+    no exterior air reaches them — and red; and a kind-shopping loop over
+    declarations cannot exist, because there is no kind field to shop
+    (§2.6 computes it).
