@@ -1,4 +1,4 @@
-# spec-PENDING: Block palette selection — a screened shelf with a visual leaf
+# spec-0035: Block palette selection — a screened shelf with a visual leaf
 
 - **Status**: Proposed
 - **Date**: 2026-08-12
