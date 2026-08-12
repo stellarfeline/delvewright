@@ -362,3 +362,35 @@ fn unknown_knobs_are_refused_rather_than_ignored() {
     );
     assert_eq!(program, temple(), "a refused override changes nothing");
 }
+
+/// **Every block every library program paints is a real 1.21.11 block.**
+///
+/// The gate the export enforces (`ExportError::UnknownBlocks`), asserted over
+/// the whole library rather than over one program, because the defect it
+/// catches is silent: a structure template loads an unknown id as AIR, so a
+/// mistyped or renamed block costs the piece and reports nothing. Eight cells
+/// of `minecraft:chain` — renamed `iron_chain` in 1.21.11 — shipped inside
+/// `tk-bell-tower.nbt` for exactly that reason.
+///
+/// The binding count is asserted, not just the emptiness of the failure list: a
+/// green that examined zero block states would be vacuous (CLAUDE.md).
+#[test]
+fn every_library_program_paints_only_blocks_that_exist() {
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let mut examined = 0usize;
+    let mut bad: Vec<String> = Vec::new();
+    for (program, region) in programs() {
+        let out = expand(&program, region, &ExpandOptions::seeded(4)).unwrap();
+        for state in out.model.palette() {
+            examined += 1;
+            if let Err(e) = registry.validate(&state.name, &state.properties) {
+                bad.push(format!("{}: {e}", program.name));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{bad:#?}");
+    assert!(
+        examined >= 60,
+        "the gate examined only {examined} block states — it is bound to almost nothing"
+    );
+}

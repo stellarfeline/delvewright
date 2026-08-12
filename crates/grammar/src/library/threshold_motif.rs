@@ -74,7 +74,7 @@ pub fn threshold_motif() -> Program {
         .param("strand_period", 1)
         .param("single_strand", 0)
         .role("stone", BlockState::simple("stone_bricks"))
-        .role("curtain", BlockState::simple("chain"))
+        .role("curtain", BlockState::simple("iron_chain"))
         // --- frame -------------------------------------------------------
         .rule(
             "threshold_motif",

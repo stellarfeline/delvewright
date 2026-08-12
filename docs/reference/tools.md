@@ -101,6 +101,58 @@ delve-schem convert <input.schem> -o <out.nbt>
     [--json]
 ```
 
+## 2a. `delve-grammar` — the box-split grammar back end (`crates/grammar`) · agent
+
+**The entry point for making a prefab** (spec-0027 §3; the whole procedure is
+[`prefab-procedure.md`](prefab-procedure.md)). Before it existed the crate's only
+caller was `cargo test`, so a grammar prefab could not be produced without
+writing Rust.
+
+```
+delve-grammar list                       # every library program, with its params and roles
+delve-grammar show   --program <id>      # that program as the typed JSON IR (the corpus)
+delve-grammar check  (--program <id> | --file <p.json>)
+delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
+    [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
+    [--id <prefab-id>] [--traversable [--allow-falls]]
+```
+
+**There is no maximum region.** A vanilla structure template holds 48 blocks per
+axis; an expansion past that is written as a set of `≤48` tiles plus one
+manifest, cut deterministically from the region alone. The cap is an internal
+packaging detail and reaches no author and no flag (DEC-0069). `piece` and
+`audit` below take that manifest and treat the zone as one thing; both refuse a
+lone tile of a set and name the manifest instead.
+
+`--file` is the authoring form: a grammar program written as JSON, which is what
+spec-0027 means by "the LLM authors rules". `check` validates structure with no
+region and no seed — run it after every edit. `expand` writes `<id>.nbt` (or the
+tile set above), `<id>.json` (prefab metadata, with the program hash + seed that regenerate the
+bytes) and `<id>.report.json` (the gate verdicts).
+
+`<id>` is the prefab's identity — all three filenames and the datapack structure
+path — so it is lowercase letters, digits and hyphens only. `--id` sets it;
+otherwise it defaults to the library program id, or to the **input file's stem**
+with `--file`. The program's `name` field is not the id: it identifies the
+program in the metadata's provenance row. An unusable id is refused before the
+expansion runs — nothing is written and no verdict is printed, because a `pass`
+above a failure is the line a reader stops at.
+
+Gates, each reporting its **binding count**: `blocks-exist` (every painted block
+state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
+from the approach end to the exit end; `--allow-falls` for a piece entered off a
+ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
+tiled or not — a tile is a packaging unit and never a semantic one, so binding
+counts stay zone-level. The verdict is printed only once the prefab has been
+written, so every `pass` on the terminal is a `pass` about files that exist.
+Measurements — fill ratio, standable
+cells, footprint area/perimeter, silhouette complexity, per-block shares — are
+reported with no threshold and are deliberately not called gates: spec-0027 §4's
+craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
+them.
+
+Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
+
 ## 3. `delve-admit` — prefab admission (`crates/admit`, package `delvewright-admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette
@@ -110,7 +162,7 @@ anchors, lighting, catalog cards. See [`../../crates/admit/README.md`](../../cra
 Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**):
 
 ```
-delve-admit audit <nbt> [--allowlist <json>] [-o report.json]   # CI gate
+delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]
@@ -121,6 +173,11 @@ delve-admit anchor <nbt> --name anchor/<id>
 delve-admit lighting <nbt> [--write] [--dark-threshold 3]       # probe -> declared profile
 delve-admit catalog validate <card.json ...>
 ```
+
+`socket`, `anchor` and `lighting --write` each own one block of the prefab's
+metadata and rewrite the file with everything else — anchors, sockets, licence,
+and the `license.generated_by` row that says what regenerates the `.nbt` —
+byte-for-byte as they found it. They can be run in any order and repeatedly.
 
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:
@@ -158,7 +215,7 @@ the crate that needs it; `tools/check-workspace-git-deps.py` is what keeps it
 confined.
 
 ```
-delve-render piece <nbt> -o <dir>            # deterministic multi-angle set for one prefab
+delve-render piece <nbt|manifest.json> -o <dir>   # deterministic multi-angle set for one prefab
 delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
@@ -172,6 +229,46 @@ delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot e
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
+
+### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
+
+Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+
+**Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
+themselves to the model from outside: massing, silhouette, floor plan, where a
+socket or an anchor sits. `top`, `door-*` and `anchor-*` strip the top Y layer so
+an outside camera can see into a roofed piece.
+
+**Eye** (`eye-<anchor>`) stand *inside* the piece — a body's eye at 1.62 above a
+standing cell, at each declared anchor, looking along that anchor's own `facing`,
+at Minecraft's first-person field of view. This is the only camera that shows
+what a body in the piece sees, and it is what §5 of
+[`prefab-procedure.md`](prefab-procedure.md) judges the scene against.
+
+The eye cell is resolved, not assumed: the anchor's own cell when a body fits
+there, else up to 3 blocks back along the facing (so the anchor's object stays in
+frame), else the nearest open body cell that still has the anchor in front of it.
+Anything but the anchor's own cell raises `DW0727` and is recorded in the
+manifest with its offset. An anchor with no body cell in reach gets **no** eye
+shot; that is `DW0727` too, and the run's summary line always states the binding
+count (eye shots / eligible anchors / declared anchors). An eye shot that renders
+as nothing but background is reported as an empty frame under the same code — the
+anchor is aimed at nothing in the piece.
+
+The manifest carries, per eye shot, the anchor and its declared cell, the
+standing cell and offset, the camera point, the facing, whether the cell has a
+floor, and how many open cells lie ahead before the view is stopped (and by
+what). A camera that stepped back is invisible in its own frame, so it is written
+down rather than implied.
+
+**On a tiled zone the eye shots are the zone's.** Pass the manifest and the
+tiles are reassembled before anything is planned, so a body stands at the
+anchor's zone cell and looks across a cut as if it were not there: measured on a
+2-tile 20×10×84 ward, an anchor 6 blocks past the cut reads 54 open cells ahead
+and the image shows the corridor running the whole length of the zone. Nothing
+about packaging reaches the camera, the placement, the clearance or the
+filenames. `crates/render/tests/tileset.rs` holds that claim — from one tile the
+same anchor is out of bounds and yields no eye shot at all.
 
 ### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
 
@@ -343,6 +440,8 @@ Never shipped inside a delve.
 
 | Tool | Class | Invocation |
 |---|---|---|
+| `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Stdlib only — no packages to install |
+| `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
 | `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |

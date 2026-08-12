@@ -4,10 +4,36 @@ What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
 changes the crate's surface updates it in the same PR.
 
-It is a **library**, not a tool: no binary, no `delvec` path, nothing in
-[`tools.md`](tools.md). It ships in no delve — generation-time only (ADR-0003).
-The engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+It is a library **and** a tool: `delve-grammar` ([`tools.md`](tools.md) §2a) is
+its entry point, and the procedure that drives it is
+[`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
+`delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
+engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
 only, to test the export seam of §7 from both sides.
+
+Two library modules exist for the tool and are public for it:
+
+- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
+  / `reachable_with_fall` / `ends`. These were written inside `tests/`, where a
+  rule's own gate is the right place for the gate and the wrong place for the
+  *predicate* it is written in: a program authored outside this repo has no
+  `tests/support` to reach for, so its author had no way to ask whether the piece
+  could be walked at all. `tests/support/mod.rs` now delegates here;
+  `tests/staging.rs` still carries its own copy, for the reason its own header
+  gives, and folding it in is a named follow-up.
+- [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
+  module is built around: a **gate** has a verdict and a binding count, a
+  **measurement** is a number with no threshold, and the two are never mixed.
+  Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
+  `non-empty`, and opt-in `traversable`. Measurements: fill, distinct states,
+  standable cells, footprint area/perimeter, silhouette complexity, per-block
+  shares. A zero binding count, and a program declaring no anchors, are reported
+  as findings rather than folded into a pass.
+
+`library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
+library reaches `delve-grammar list` without the tool being edited. The `bell::`
+zone programs are deliberately not in it: a zone is one campaign's composition,
+not general vocabulary.
 
 ## 1. Model
 
@@ -167,6 +193,26 @@ of spec-0027 §4 are a later phase and will own a DW range then.
 Consequence for authors: a region too small for a program's absolute sizes is an
 error, not a building with pieces outside its box. Each library program documents
 its minimum region.
+
+## 4b. Blocks have to exist
+
+Every block state the export writes is checked against the pinned 1.21.11
+block-state registry (`crates/compiler/data/blocks-1.21.11.json`, 1166 blocks,
+via `delvewright_schem::blocks`) — the id, every property name, and every
+property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
+the cell count and a suggested rename.
+
+The check is **at the emitter, not in a test**, for the reason CLAUDE.md records
+for commands: the operator running the tool does not run `cargo test`. Its cost
+if absent is total and silent — a structure template loads an unknown block as
+AIR, so the piece is well-formed, the generator exits 0, the determinism gate
+passes, and the feature is simply not there. `minecraft:chain` was renamed
+`minecraft:iron_chain` in 1.21.11; when this gate was first run over the library
+it found `threshold_motif` painting the old id, i.e. the boss-door bell-rope
+curtain — the entire point of that rule — had been 14 cells of air.
+
+`tests/library.rs` asserts it over every program in the library with its binding
+count, and `gates::judge` reports the same verdict without exporting.
 
 ## 5. Rule library — ported buildings
 
@@ -1372,25 +1418,33 @@ deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing m
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
 
-Zone programs are **not** in the export suite. The reason given was the vanilla
-48-per-axis structure cap, and tiling a zone into prefabs is a jigsaw design
-rather than an export detail (§6) — but `chapel_ward`'s fixture is 12 × 9 × 20,
-so that reason no longer covers every zone, and the honest statement is now the
-narrower one: **no zone has been put in the export suite, and the first one that
-fits is a decision nobody has taken.** Taking it would mean a zone's anchors
-round-tripping through `PrefabRegistry` and carrying a spec-0027 §2 provenance
-row like a rule's, which is a capability question and not a size one. Meanwhile
+Zone programs are **not** in the export suite. Size is no longer why — every
+zone exports, tiling if it must (§6) — so the statement is the narrow one:
+**no zone has been put in the export suite, and doing so is a decision nobody
+has taken.** Taking it would mean a zone's anchors round-tripping through
+`PrefabRegistry` and carrying a spec-0027 §2 provenance row like a rule's,
+which is a capability question and not a size one. Meanwhile
 their structural validity, JSON round trip, determinism and palette-swap
 promises are asserted in `tests/zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
-`export::export_prefab(program, region, options, id)` produces the two files a
-prefab library holds: `<id>.nbt` (a vanilla structure template) and `<id>.json`
-beside it. It takes the *program*, not a finished model, and expands it itself —
-which is what makes the provenance row unforgeable, since the hash and seed in
-the metadata cannot describe a different expansion than the one that produced
-the bytes.
+`export::export_zone(program, region, options, id)` is the export. It takes the
+*program*, not a finished model, and expands it itself — which is what makes the
+provenance row unforgeable, since the hash and seed in the metadata cannot
+describe a different expansion than the one that produced the bytes.
+
+It writes one of two shapes, decided from the region and from nothing an author
+says:
+
+- a region within 48 on every axis → `<id>.nbt` (a vanilla structure template)
+  and `<id>.json` beside it, the two files a prefab library holds;
+- a region past it → a set of `≤48` tiles, `<id>.x<i>y<j>z<k>.nbt`, plus one
+  manifest at `<id>.json`.
+
+`export::export_prefab` is the single-template writer the first shape is made
+of, and it still refuses an oversize region. Nothing outside the module calls
+it: a region an author chose is never the wrong size.
 
 The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
 `.schem` asset pipeline already uses: one structure writer, one set of
@@ -1398,7 +1452,11 @@ determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0
 A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
-The metadata is the hand-built shape, minus what expansion cannot know:
+The metadata is the hand-built shape, minus what expansion cannot know. Its
+shape is defined once, in `delvewright_schem::prefab` — the crate that also
+writes the `.nbt` half — and every tool that produces or edits a prefab reads and
+writes it through that one type, so an admission step cannot drop the parts it
+does not itself model:
 
 ```json
 {
@@ -1407,6 +1465,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
   "anchors": {},
+  "connectors": [],
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -1426,8 +1485,11 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   indexes normally. The castle, which marks, exports
   `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
   over its 41×14×25 region.
-- **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
-  tileset conventions; a guessed socket is worse than none.
+- **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
+  tileset conventions; a guessed socket is worse than none. The key is present
+  and empty rather than absent, because "this piece has no sockets" and "this
+  metadata was written before sockets existed" are different claims, and
+  `delve-admit socket` appends to it.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
   the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
   the true thing and admission to a campaign still runs the probe. `unmeasured`
@@ -1437,11 +1499,72 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
   refuses both at parse).
 
+### The tiled shape
+
+A zone past the cap carries `structure_set` where a single prefab carries
+`structure`. Everything else is the same file: same `prefab_id`, same
+zone-relative `anchors`, same empty `connectors`, same `lighting`, same
+`license` — the provenance row regenerates the whole set at once, because one
+expansion produced all of it.
+
+```json
+{
+  "prefab_id": "prefab/z2-gate-ward",
+  "structure_set": {
+    "base": "z2-gate-ward", "size": [20, 10, 84], "part_max": 48,
+    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+    "parts": [
+      { "file": "z2-gate-ward.x0y0z0.nbt", "id": "z2-gate-ward.x0y0z0",
+        "grid_index": [0, 0, 0], "offset": [0, 0, 0],  "size": [20, 10, 48] },
+      { "file": "z2-gate-ward.x0y0z1.nbt", "id": "z2-gate-ward.x0y0z1",
+        "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
+    ]
+  },
+  "anchors": { … }, "connectors": [], "lighting": { … }, "license": { … }
+}
+```
+
+- The key is a **different name**, never `structure` with an extra field. Every
+  existing consumer requires `structure`, so a tool that has not learned about
+  tile sets fails to parse this file rather than reading it as a prefab with no
+  blocks in it.
+- `offset` is **zone-relative**: add it to a tile-local cell to get the zone
+  cell. That is the only transform reassembly needs.
+- The cuts come from `delvewright_schem::split::plan_split`, the same function
+  that tiles an oversize `.schem` import — one tiling, so one reassembly rule
+  reads both. They are a pure function of the region and the cap: no RNG, no
+  clock, no dependence on the program, the seed or the blocks, so the tiles and
+  the manifest are byte-identical across runs (`tests/export.rs`).
+- **A tile is packaging and never a unit of judgement.** The gates judge the
+  whole expansion, the block-legality check runs over the whole model, and both
+  the anchors and every diagnostic position are in zone coordinates. Binding
+  counts stay zone-level.
+- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+  writer and `Deserialize` for the readers — one struct, so the halves cannot
+  drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
+  exactly, so a truncated one is a refusal and not a building with a hole.
+
+The rest of the loop takes the manifest and treats the zone as one thing:
+`delve-render piece <id>.json` reassembles and renders one scene, and
+`delve-admit audit <id>.json` audits every tile's bytes for one zone verdict
+(with a per-tile listing). Both **refuse** a lone tile of a set and name the
+manifest to use instead — a render of a fragment is a review that passes and
+means nothing, and a verdict over one tile reads as a verdict over the zone.
+
+Not built: compiler-side placement of a tile group in world assembly, and
+jigsaw connector emission. Both are queued.
+
 Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
-region, a region past the vanilla 48-per-axis structure cap (tiling a prefab
-into parts is a jigsaw design, not an export detail), and a model containing a
-block the structure safety strip would replace with air — a grammar that asked
-for a command block meant to, so shipping a silent hole is refused instead.
+region, and a model containing a block the structure safety strip would replace
+with air — a grammar that asked for a command block meant to, so shipping a
+silent hole is refused instead. **Size is not among them.**
+
+The first two are properties of the inputs alone, and are refused before the
+expansion runs: `export::is_valid_id` is public so the CLI can ask before it
+expands anything, rather than after it has printed a verdict. The third is
+knowable only from the expanded model, so it is refused after the gates have
+passed — and the verdict is printed only once the prefab is on disk, so no
+`pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.

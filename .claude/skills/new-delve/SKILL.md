@@ -742,13 +742,60 @@ Symptom → tool:
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.
-- **The layout needs a prefab the library doesn't have**: import it with
-  `delve-schem convert`, then run the **whole** `delve-admit` admission chain
-  (`audit` → `resolve-jigsaw` → `socket` → `anchor` → `lighting --write` →
-  `catalog validate`; that order — `resolve-jigsaw` before `socket`). Never place
-  an un-audited piece: `audit` is the ADR-0013 licence/code-injection gate, and
-  an unadmitted piece has no anchors or lighting profile for the DSL to name.
-  Flags in `docs/reference/tools.md` §3.
+- **The layout needs a prefab the library doesn't have**: follow
+  `docs/reference/prefab-procedure.md` — it is the procedure, and these are its
+  mandatory steps, in order. Do not improvise around them.
+  1. **Write the scene description first** (one or two sentences: what a body
+     does in the space, the material feeling, what the campaign will attach).
+     Written after the render, it is a description of the render.
+  2. **Choose the palette by measurement, never from memory.**
+     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
+     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
+     Record the measured hex beside each role.
+  3. **Author a grammar program**, starting from the corpus:
+     `delve-grammar list`, then `delve-grammar show --program <nearest> > p.json`,
+     edit, and `delve-grammar check --file p.json` after every edit. You write
+     JSON — never Rust, and never blocks by hand.
+  4. **Expand and let the machine judge**:
+     `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
+     -o out/`. Pass `--traversable` for any passage, stair or route. A red gate
+     writes no `.nbt` (exit 4). **Read the `findings` in the report** — a gate
+     that bound to zero objects, or a program that declared no anchors, is a
+     finding, not a pass.
+  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
+     against step 1. The gates prove it is buildable and walkable; they say
+     nothing about whether it is the scene you asked for. If the expand wrote a
+     tile set instead of one `.nbt`, pass the manifest — `delve-render piece
+     out/<id>.json` — which renders the assembled zone as one scene, eye shots
+     included. Never review a single tile; the command refuses one anyway.
+     **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras
+     inside the piece — a body's eye at 1.62, at each declared anchor, looking
+     the way that anchor faces. The orbit shots (`ext-*`, `top`, `door-*`,
+     `anchor-*`) are fitted from outside, and on a roofed piece they are all the
+     same picture of the same rock. Read `<id>-shots.json` beside the images for
+     which cell each body is standing in: a camera whose anchor cell held a gate
+     or a barrel steps back along the facing and says so (`DW0727`), and an
+     anchor with no body cell gets no eye shot at all — the run states that count.
+     A flat grey frame is outside the piece, and an eye shot that is *only* that
+     is reported as an empty frame: the anchor is aimed at nothing.
+  6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
+     `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
+     For a tile set, `audit` takes the manifest and returns one zone verdict.
+     A grammar prefab has **no connectors and no lighting** until this step, so
+     it cannot enter a `prefab_pool` and will be dark, until you do it.
+
+  What the grammar cannot express — **escalate, do not work around**: block
+  entities of any kind (chest loot, sign text, spawners — bind those in the
+  campaign against an anchor the piece declares), curves and diagonals, and
+  terrain. **Size is not on this list**: a region of any extent expands, and one
+  past the 48-per-axis structure-template cap is written as a tile set plus a
+  manifest at `<id>.json`. Never shrink a scene to fit a file format.
+
+  A piece that comes from **outside** (a community schematic) instead enters via
+  `delve-schem convert` and then the same admission chain with
+  `resolve-jigsaw` before `socket`. Never place an un-audited piece: `audit` is
+  the ADR-0013 licence/code-injection gate and the `DW0733` check that the blocks
+  in it exist at all. Flags in `docs/reference/tools.md` §2a and §3.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain
   (`tools/skin`, spec-0009) composes an original 64×64 skin from a cast-sheet
   entry and renders previews — `python -m delve_skin all <cast.json>
@@ -1005,11 +1052,12 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
      hand-edit output.
 
    **Judge the player's eye first, and the set second** (owner concern, recorded
-   during the nobodys-cave QA rounds). The per-prefab renders are orbit cameras:
-   they answer *"is the set well made"*, which is not the question a playtest
-   asks. The question is *"what does a player walking in experience"*, and only a
-   first-person frame on the actual route answers it. The compiler already emits
-   those shots — a `pov` camera at eye height on every corner-thinned
+   during the nobodys-cave QA rounds). A per-prefab eye shot is a body inside one
+   piece; it cannot see the route, the seams between pieces, or the world's real
+   light. The question a playtest asks is *"what does a player walking in
+   experience"*, and only a first-person frame on the actual assembled route
+   answers it. The compiler emits those shots — a `pov` camera at eye height on
+   every corner-thinned
    critical-path waypoint, looking along the walk and, at each leg's end, toward
    the objective it arrives at, each with its own machine `expect` line. Every POV
    eye sits on a proven-standable waypoint, so the camera is provably in open air.
