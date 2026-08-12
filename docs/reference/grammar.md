@@ -14,7 +14,8 @@ only, to test the export seam of §7 from both sides.
 Two library modules exist for the tool and are public for it:
 
 - [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
-  / `reachable_with_fall` / `ends`. These were written inside `tests/`, where a
+  / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
+  These were written inside `tests/`, where a
   rule's own gate is the right place for the gate and the wrong place for the
   *predicate* it is written in: a program authored outside this repo has no
   `tests/support` to reach for, so its author had no way to ask whether the piece
@@ -25,9 +26,10 @@ Two library modules exist for the tool and are public for it:
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
-  `non-empty`, and opt-in `traversable`. Measurements: fill, distinct states,
-  standable cells, footprint area/perimeter, silhouette complexity, per-block
-  shares. A zero binding count, and a program declaring no anchors, are reported
+  `non-empty`, and opt-in `traversable` and `reachable-floor`. Measurements:
+  fill, distinct states, standable cells, footprint area/perimeter, silhouette
+  complexity, per-block shares, and **reachability** (§4c) — how much of the
+  floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no anchors, are reported
   as findings rather than folded into a pass.
 
 `library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
@@ -641,6 +643,53 @@ curtain — the entire point of that rule — had been 14 cells of air.
 
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
+
+## 4c. Reachability — how much of the floor a body can get to
+
+`traversable` proves one thing: a walk joins the approach face to the exit face.
+Both faces are at ground level, so a piece passes it with every storey above the
+floor stranded. The Notre-Dame zone of `docs/trials/trial-0001-notre-dame.md`
+passes it at 31 × 64 × 93 with **2267 of 4982** standable cells reachable and
+**zero** reachable above the ground band: five levels of aisle, gallery, belfry
+and tower deck that no body can walk to.
+
+So every expansion also carries a **reachability measurement**, printed by
+`delve-grammar expand` and written into `<id>.report.json` whether or not any
+optional gate was asked for. It walks `nav::components` over the standable cells
+from `nav::ground_entry` and reports:
+
+| Number | Meaning |
+|---|---|
+| `standable` | cells examined — the measurement's binding count. Zero is a finding |
+| `entry_cells` | standable cells on a **side face at grade**, where a body walks in. Zero is a finding, never a reachability of zero |
+| `reachable` / `reachable_share` | what the walk covers |
+| `sheltered` | standable cells with something solid overhead |
+| `unreachable_sheltered` | floor under a roof with no route to it — **a room with no way in** |
+| `unreachable_open` | unreachable floor open to the sky |
+| `pockets`, `largest_pockets` | how many disconnected pockets, and the bounding box of five of them |
+
+**The entrance is derived, not assumed.** Grade is the lowest `Y` at which any
+side-face cell is standable, and the entry set is the side-face cells within one
+course of it — one course because that is the walk's own step height. A belfry
+louvre is a standable cell on a side face and is deliberately *not* an entrance:
+seeding a walk from every opening in a building is how a reachability measure
+reports a stranded gallery as reached.
+
+**A roof is standable and nobody walks it, and the engine cannot tell a roof from
+a terrace.** The one distinction it *can* draw is whether anything solid stands
+over a cell, so that is the distinction the report draws and the only one it acts
+on. `unreachable_sheltered > 0` is raised as a finding by name, with the pockets
+to go and look at, ranked most-sheltered-first. `unreachable_open` is a number
+and never a finding: almost every building has an unreachable roof, and raising
+it every time is the nag that costs the other finding its reader.
+
+`--reachable-floor` turns the sheltered half into a verdict, for a piece that
+claims a body can get everywhere indoors. It is opt-in for the same reason
+`traversable` is and more so: 12 of the 33 library programs have **no** roofed
+floor at all — `castle`, `church` and `stair-flight` among them — and the gate
+binds to zero on each, which is a finding and not a pass. A piece is entitled to
+strand floor: `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft`
+is one-way by design.
 
 ## 5. Rule library — ported buildings
 

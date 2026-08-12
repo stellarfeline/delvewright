@@ -772,10 +772,17 @@ Symptom → tool:
      `largest` turns the piece.
   4. **Expand and let the machine judge**:
      `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
-     -o out/`. Pass `--traversable` for any passage, stair or route. A red gate
-     writes no `.nbt` (exit 4). **Read the `findings` in the report** — a gate
-     that bound to zero objects, or a program that declared no anchors, is a
-     finding, not a pass.
+     --reachable-floor -o out/`. Pass `--traversable` for any passage, stair or
+     route; pass `--reachable-floor` for any piece with an inside a body is meant
+     to walk around. A red gate writes no `.nbt` (exit 4). **Read the `findings`
+     in the report** — a gate that bound to zero objects, or a program that
+     declared no anchors, is a finding, not a pass.
+     **Read the `reachability` line too**, which prints whether you asked or not:
+     `traversable` joins two ground-level faces and says nothing about the
+     storeys above, so a building can pass every gate with half its floor
+     stranded. Unreachable floor **under a roof** is a room with no way in, and
+     the report gives you the box to go and look at. Unreachable floor open to
+     the sky is a roof, and is nobody's defect.
   5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
      against step 1. The gates prove it is buildable and walkable; they say
      nothing about whether it is the scene you asked for. If the expand wrote a
