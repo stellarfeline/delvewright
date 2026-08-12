@@ -15,7 +15,17 @@
 //! upstream, nothing ported, licence `original`. They are the W1 (path and
 //! hazard geometry) and W2 (interior ambush) families of the drowned-bell
 //! remake's grammar vocabulary: not buildings but *encounters*, box grammars
-//! whose reason to exist is a machine gate about how the space plays. They share
+//! whose reason to exist is a machine gate about how the space plays.
+//!
+//! [`hearth_ward`], [`bait_stand`] and [`disarm_stand`] are that family's last
+//! three members, and each is a **mechanism rather than a beat**: somewhere off
+//! the road with one declared focus and one way in; a lure with its watcher in
+//! the same frame; and a hazard's control, put where the hazard cannot reach.
+//! Each module note names what a creator building an entirely different game
+//! would bind to it, because that — and not the fiction the bell remake happens
+//! to want — is what earns a rule a place in this library.
+//!
+//! They share
 //! one local frame, and it is worth stating once because every derived anchor
 //! facing depends on it:
 //!
@@ -30,6 +40,13 @@
 //! number *against* travel (a split visits its pieces low to high); see
 //! [`cliff_path`].
 //!
+//! **The idiom index.** [`idioms`] is a third kind again: one minimal program
+//! per *technique* of the IR — repetition, priority, shape, erosion, graded
+//! erosion, surface detail, symmetry without reflection, `skip`, light — plus
+//! one composition demonstration. They build nothing anyone wants, and they are
+//! in the library because `delve-grammar list` / `show` is the only way an
+//! author reaches the corpus, and the corpus is where technique is learned.
+//!
 //! **The zone programs.** [`bell`] is the layer above: the drowned-bell
 //! remake's zones, each one program that composes the vocabulary above with
 //! [`crate::compose::include`] and writes no encounter geometry of its own. A
@@ -43,6 +60,7 @@
 //! building.
 
 pub mod ambush_door;
+pub mod bait_stand;
 pub mod bell;
 pub mod boulder_stair;
 pub mod broken_grate;
@@ -50,10 +68,15 @@ pub mod castle;
 pub mod causeway;
 pub mod church;
 pub mod cliff_path;
+pub mod disarm_stand;
 pub mod drop_shaft;
 pub mod dumbwaiter;
 pub mod elite_ground;
 pub mod far_side_bar;
+pub mod hearth_ward;
+pub mod idioms;
+pub mod lift_shaft;
+pub mod negated_guard;
 pub mod rafter_hall;
 pub mod stair_flight;
 pub mod store_room;
@@ -63,8 +86,10 @@ pub mod threshold_motif;
 pub mod watch_bay;
 
 pub use ambush_door::ambush_door;
+pub use bait_stand::bait_stand;
 pub use bell::{
-    barrow_shore, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward, hall_keep,
+    barrow_shore, bell_tower, chapel_ward, cistern_deep, cliff_road, drowned_ward, gate_ward,
+    hall_keep,
 };
 pub use boulder_stair::boulder_stair;
 pub use broken_grate::broken_grate;
@@ -72,10 +97,13 @@ pub use castle::castle;
 pub use causeway::causeway;
 pub use church::church;
 pub use cliff_path::cliff_path;
+pub use disarm_stand::disarm_stand;
 pub use drop_shaft::drop_shaft;
 pub use dumbwaiter::dumbwaiter;
 pub use elite_ground::elite_ground;
 pub use far_side_bar::far_side_bar;
+pub use hearth_ward::hearth_ward;
+pub use lift_shaft::lift_shaft;
 pub use rafter_hall::rafter_hall;
 pub use stair_flight::stair_flight;
 pub use store_room::store_room;
@@ -85,6 +113,7 @@ pub use threshold_motif::threshold_motif;
 pub use watch_bay::watch_bay;
 
 use crate::geom::Axis;
+use crate::ir::Program;
 use crate::ir::{
     Alternative, ArithOp, CmpOp, Cond, DimRef, Expr, Mark, MarkAt, Node, Reorient, Rounding, Side,
     Size, Split,
@@ -284,4 +313,68 @@ fn alt_weight(weight: u32, body: Node) -> Alternative {
 /// The fallback alternative.
 fn alt_else(body: Node) -> Alternative {
     Alternative::new(body).when(Cond::Otherwise)
+}
+
+/// One library entry: its stable id and the function that builds it.
+pub type LibraryProgram = (&'static str, fn() -> Program);
+
+/// **Every program in this library, by id.**
+///
+/// A registry rather than a `match`, for the reason a tool exists at all: a
+/// creator has to be able to *discover* what the back end can build without
+/// reading Rust. `delve-grammar list` enumerates this, so a rule added to the
+/// library reaches the tool without the tool being edited.
+///
+/// The `bell::` zone programs are deliberately absent: a zone is one campaign's
+/// composition of these, not a piece of the general vocabulary, and listing a
+/// campaign's own material as if it were library surface is the "authored
+/// content wearing a primitive's clothes" shape CLAUDE.md names.
+pub const PROGRAMS: &[LibraryProgram] = &[
+    ("ambush-door", ambush_door),
+    ("bait-stand", bait_stand),
+    ("boulder-stair", boulder_stair),
+    ("broken-grate", broken_grate),
+    ("castle", castle),
+    ("causeway", causeway),
+    ("church", church),
+    ("cliff-path", cliff_path),
+    ("disarm-stand", disarm_stand),
+    ("drop-shaft", drop_shaft),
+    ("dumbwaiter", dumbwaiter),
+    ("elite-ground", elite_ground),
+    ("far-side-bar", far_side_bar),
+    ("hearth-ward", hearth_ward),
+    // The idiom index (`idioms`): one minimal program per technique, plus one
+    // composition demonstration. They are here because `delve-grammar list` and
+    // `show` are the only way an author reaches the corpus at all.
+    ("idiom-composition-arcade", idioms::composition_arcade),
+    ("idiom-erosion", idioms::erosion),
+    ("idiom-erosion-graded", idioms::graded_erosion),
+    ("idiom-light", idioms::light),
+    ("idiom-mirror", idioms::mirror),
+    ("idiom-priority", idioms::priority),
+    ("idiom-repetition", idioms::repetition),
+    ("idiom-shape", idioms::shape),
+    ("idiom-skip", idioms::skip),
+    ("idiom-surface-detail", idioms::surface_detail),
+    ("lift-shaft", lift_shaft),
+    // A corpus example rather than an idiom-index entry (spec-0033 §4.8):
+    // every IR construct owes `delve-grammar list` one example, and `none_of`
+    // is a language feature rather than a technique.
+    ("negated-guard", negated_guard::negated_guard),
+    ("rafter-hall", rafter_hall),
+    ("stair-flight", stair_flight),
+    ("store-room", store_room),
+    ("tee-passage", tee_passage),
+    ("temple", temple),
+    ("threshold-motif", threshold_motif),
+    ("watch-bay", watch_bay),
+];
+
+/// Look one library program up by its `PROGRAMS` id.
+pub fn by_id(id: &str) -> Option<Program> {
+    PROGRAMS
+        .iter()
+        .find(|(name, _)| *name == id)
+        .map(|(_, build)| build())
 }

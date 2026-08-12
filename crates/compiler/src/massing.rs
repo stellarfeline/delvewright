@@ -39,6 +39,7 @@ use crate::solver::{
     AreaLayout, Facing, PlacedPiece, Rotation, Splitmix64, aabb_overlap, opening_region,
     seal_layout, socket_world, stream_seed,
 };
+use delvewright_dsl::DwCode;
 
 /// An L2 massing verb cannot apply to the solved layout (spec-0017 PR 3): the
 /// target area is single-prefab (no jigsaw layout to mass), a piece
@@ -46,13 +47,13 @@ use crate::solver::{
 /// cannot re-mate every mated socket without overlap, an insert's socket is
 /// mated or its piece cannot attach, a removal targets the entry piece or a
 /// non-leaf, or a rewire names an out-of-range connector. Build-tier (exit 3).
-pub const DW_MASSING: &str = "DW0324";
+pub const DW_MASSING: DwCode = DwCode::every_version("DW0324");
 
 /// A failed massing application: [`DW_MASSING`] (or a reused code) + a
 /// batch-attributed message.
 pub struct MassingError {
     /// Stable code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Message naming the batch and the offending verb.
     pub message: String,
 }

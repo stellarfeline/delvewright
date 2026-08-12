@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use delvewright_dsl::DwCode;
 use delvewright_dsl::{
     AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId,
 };
@@ -15,7 +16,7 @@ use serde::Deserialize;
 /// `DW0300` "prefab not found"; the parse failure itself is the information.
 /// Reported at **validation tier (exit 1)**; loading continues for the other
 /// files (report-all, not fail-fast).
-pub const DW_PREFAB_META_INVALID: &str = "DW0346";
+pub const DW_PREFAB_META_INVALID: DwCode = DwCode::every_version("DW0346");
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.
@@ -525,6 +526,32 @@ impl PrefabRegistry {
                     }
                     Err(e) => fail(format!("does not parse as a pools file: {e}")),
                 }
+                continue;
+            }
+            // A tile-set manifest is a shape this delvec understands and cannot
+            // yet PLACE, which is a different fact from a schema it has never
+            // heard of — and "upgrade delvec, or fix the field" is advice that
+            // would not have worked. Placing a tile group in world assembly is
+            // queued (chunked export phase 2); until it lands, say so.
+            if serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("structure_set").cloned())
+                .is_some()
+            {
+                load_diagnostics.push(Diagnostic::error(
+                    DW_PREFAB_META_INVALID,
+                    "prefabs",
+                    file.clone(),
+                    format!(
+                        "prefab metadata `{file}` describes a TILE SET (`structure_set`): a zone \
+                         too big for one 48-per-axis structure template, exported as several \
+                         `.nbt` tiles plus this manifest. Placing a tile group during world \
+                         assembly is queued engine work (chunked export phase 2) and this delvec \
+                         cannot do it, so the zone is skipped rather than half-placed. Authoring \
+                         and review already handle it: `delve-render piece` and `delve-admit \
+                         audit` both take this manifest."
+                    ),
+                ));
                 continue;
             }
             match serde_json::from_str::<PrefabMeta>(&raw) {

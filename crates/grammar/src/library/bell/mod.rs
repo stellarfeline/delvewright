@@ -7,10 +7,11 @@
 //! vocabulary of [`super`], brought in by [`crate::compose::include`]. The only
 //! blocks a zone program writes itself are the **mass** a zone is carved out of
 //! and the **absence** beside it — the crag under the cliff road, the gulf the
-//! road is cut into, and the inert rock filling the strip a branch is parked in
-//! — because those are facts about the zone's box that no piece of vocabulary
-//! can know. Three of the six zones here write nothing at all; the other three
-//! write only that.
+//! road is cut into, the inert rock filling the strip a branch is parked in, and
+//! the plinth a zone stands on when it *leaves* one level down ([`gate_ward`],
+//! [`hall_keep`]) or climbs one ([`bell_tower`]) — because those are facts about
+//! the zone's box that no piece of vocabulary can know. One of the eight zones
+//! here writes nothing at all; the other seven write only that.
 //!
 //! # The frame constrains composition, and it is worth saying out loud
 //!
@@ -32,27 +33,56 @@
 //!
 //! # Which zones exist, and what the rest are waiting for
 //!
-//! REMAKE §3 names eight zones. Seven are programmed here; the last one needs
-//! something that does not exist yet, and a zone program that faked it would be
-//! worse than one that does not exist. The gap names what it waits on.
+//! REMAKE §3 names eight zones, and **all eight are programmed here, with
+//! nothing left in any Missing column.** Z7 was the last, and both of the
+//! blockers its row recorded turned out to be stale rather than open — which is
+//! the reason its section below is kept in full. Its own last gap, BF5, closed
+//! one round later than the zone itself: [`crate::library::hearth_ward`] landed
+//! for Z4's hearth and Z7 composes it rather than re-describing the hole.
 //!
 //! A **partial** zone is one whose spine is composed and whose remaining §4
-//! entries are named below. That a letter is missing from a row no longer means
-//! its rule is missing — since the W3/W4 families landed, every letter in this
-//! table except **B** and **D** exists as a rule, and what those rows wait on is
-//! a zone-program round composing them. `counterweight_lift` used to be a third
-//! entry on that list and has been **struck**: see Z7 below.
+//! entries are named below. **There are none left.** The three §4 entries that
+//! had no rule at all — the bait gallery (**B**), the boulder jam (**D**) and the
+//! hearth — are built as [`crate::library::bait_stand`],
+//! [`crate::library::disarm_stand`] and [`crate::library::hearth_ward`], and the
+//! letters that were only waiting for a zone round are composed below.
+//! `counterweight_lift` was on that list too and has been **struck**: see Z7.
 //!
 //! | Zone | State | Composed from | Missing |
 //! |---|---|---|---|
 //! | Z0 Barrow Shore | [`barrow_shore`] | `elite_ground` | — (**E** is the whole of Z0's vocabulary) |
 //! | Z1 Cliff Road | [`cliff_road`] | `cliff_path` + the zone's gulf | switchback landing (no catalogue entry — see below) |
-//! | Z2 Gatehouse | [`gate_ward`] (partial) | `watch_bay` + `ambush_door` | **W**+**S** (`boulder_stair`), **F** (`far_side_bar`), **L** (`drop_shaft`), **M** (`threshold_motif`) — all built rules, awaiting a zone round — and the boulder jam (**D**), which has no rule |
+//! | Z2 Gatehouse | [`gate_ward`] | `watch_bay` + `ambush_door` + `disarm_stand` + `boulder_stair` + `tee_passage` + `far_side_bar` + `threshold_motif` + `drop_shaft` + the zone's plinth and branch strip | — |
 //! | Z3 Drowned Lower Ward | [`drowned_ward`] | `causeway` + `tee_passage` + `elite_ground` + `far_side_bar` + the zone's branch strip | — |
-//! | Z4 Chapel Ward (hub) | [`chapel_ward`] (partial) | `dumbwaiter` + `tee_passage` + `far_side_bar` + the zone's branch strip | the hearth: a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one. The smallest honest form is a `hearth_ward` rule, which is §5b's business and not a zone's |
-//! | Z5 Great Hall + Keep | [`hall_keep`] (partial) | `rafter_hall` + `ambush_door` + `store_room` | **L** (`dumbwaiter`) and **M** (`threshold_motif`) — both built rules, awaiting a zone round — and the bait-item gallery (**B**), which has no rule |
+//! | Z4 Chapel Ward (hub) | [`chapel_ward`] | `dumbwaiter` + `hearth_ward` + `tee_passage` + `far_side_bar` + the zone's branch strip | — |
+//! | Z5 Great Hall + Keep | [`hall_keep`] | `rafter_hall` + `ambush_door` + `store_room` + `bait_stand` + `threshold_motif` + `dumbwaiter` + the zone's plinth | — |
 //! | Z6 Cistern Deep | [`cistern_deep`] | `drop_shaft` + `watch_bay` + `broken_grate` + `elite_ground` + `tee_passage` + `far_side_bar` + the zone's branch strip | — |
-//! | Z7 Bell Tower | **not programmed** | — | a zone round, and one rule. Both recorded blockers are closed or struck — [`crate::library::stair_flight`] ascends, and the counterweight lift is no longer grammar's problem. See below. Its loft is `rafter_hall` and its boss ring is `elite_ground` |
+//! | Z7 Bell Tower | [`bell_tower`] | `stair_flight` + `hearth_ward` + `rafter_hall` + `tee_passage` + `threshold_motif` + `elite_ground` + `lift_shaft` + the zone's plinth and branch strip | — |
+//!
+//! ## The plinth: how a zone *leaves* one level down
+//!
+//! Every vertical piece builds its entry ledge `drop` blocks up and its landing
+//! at the floor, so a zone that puts one anywhere but its own `Z`-max end has to
+//! raise everything above the drop to meet that ledge. Z6 sidestepped it by being
+//! *entered* by falling. Z2 and Z5 cannot: both are walked into and left down a
+//! shaft, and that is what the design asks for.
+//!
+//! The construction is the branch strip's sibling and licensed by the same
+//! clause: split the shaft's own slice off the `Z` end, and give the remainder a
+//! `Y` split whose lower piece is inert `margin` rock. The upper ward's floor
+//! then lands at exactly the shaft's entry-floor height and the seam is ordinary.
+//! Two details make it honest rather than a coincidence:
+//!
+//! * the plinth's thickness is **read from the piece** (`par("shaft/drop")`,
+//!   `par("duct/drop")`) rather than restated as a zone constant, so a campaign
+//!   that dials the fall moves the floor with it — and the one-way gate's teeth,
+//!   which shorten the drop, still describe a zone that builds. The tolerance is
+//!   measured and written down at [`gate_ward`]: one block of mismatch is a step
+//!   and every gate stays green, two is a one-way seam and five go red;
+//! * the zone guards that a plinth leaves an upper ward at all
+//!   ([`gate_ward::MIN_UPPER`]). A piece handed too little refuses for itself,
+//!   loudly; a *remainder of zero* would be written silently, which is the one
+//!   failure mode a guard is owed for.
 //!
 //! ## Z7's two blockers: one closed, one struck
 //!
@@ -81,12 +111,27 @@
 //! up. Nothing new was needed at the seam: a flight's foot landing sits on the
 //! same floor course every flat piece uses.
 //!
-//! One caveat for whoever writes Z7. A straight flight climbs at most about
-//! `Z / tread`, so a tall tower over a small footprint wants a **switchback** —
-//! and a switchback is a *rule body*, not an orientation. "A permutation cannot
-//! reflect" is true and is the right answer to a different question: a rule that
-//! peels its treads off the other end of its own split climbs the other way,
-//! and two such lanes side by side in `X` are a dogleg. Not built.
+//! One caveat that was left for whoever wrote Z7, and how [`bell_tower`]
+//! answered it. A straight flight climbs at most about `Z / tread`, so a tall
+//! tower over a small footprint wants a **switchback** — and a switchback is a
+//! *rule body*, not an orientation. "A permutation cannot reflect" is true and
+//! is the right answer to a different question: a rule that peels its treads off
+//! the other end of its own split climbs the other way, and two such lanes side
+//! by side in `X` are a dogleg. Still not built, and Z7 did not need it: a
+//! box-garden tower is a box like every other zone's, so the flight is simply
+//! given a long enough run and the zone writes the **plinth** the four upper
+//! pieces stand on. That is the second thing the round found out: the seam
+//! between a climbing piece and a flat one is not a new node kind, it is the
+//! same "mass no piece handed a sub-box can know about" `cliff_road`'s crag is.
+//!
+//! And the third, which cost a refusal to learn: that mass **cannot be derived
+//! where it is cut**. A split's size is evaluated in the scope it is written in,
+//! and `dim(Z)` inside the upper storey's own box is the upper run rather than
+//! the zone's length, so the expression for the flight's rise evaluates to
+//! nonsense there (the first draft cut a plinth of −4 courses). A zone in that
+//! position declares the number and **guards the identity** at the one scope
+//! where the whole box is visible — which is stronger than a derivation, not
+//! weaker, because the guard is what a campaign's own dial runs into.
 //!
 //! **The counterweight lift (**L**) — STRUCK, not blocked.** The lift shipped as
 //! a first-class DSL construct (spec-0031): runtime state, region fill/clear and
@@ -95,7 +140,11 @@
 //! *rule* would build a thing that no longer exists as geometry. What a lift
 //! wants from the grammar is a **walled shaft with a station per floor** — a
 //! `lift_shaft` §5b rule, ordinary static work, and the anchors it needs are
-//! exactly the point anchors `mark` already declares. See
+//! exactly the point anchors `mark` already declares. That rule is now
+//! [`crate::library::lift_shaft`], written for this zone and against the shipped
+//! lift's own contract rather than against a guess: spec-0031 records "a lift's
+//! geometry is authored in NBT rather than in campaign JSON — and no prefab in
+//! the library ships a shaft", and this is that prefab. See
 //! `docs/reference/grammar.md` §5b.
 //!
 //! ## The seam's limits: all three closed
@@ -162,6 +211,7 @@
 //! one-wide ledge, the niches, and the drop beside them.
 
 pub mod barrow_shore;
+pub mod bell_tower;
 pub mod chapel_ward;
 pub mod cistern_deep;
 pub mod cliff_road;
@@ -170,6 +220,7 @@ pub mod gate_ward;
 pub mod hall_keep;
 
 pub use barrow_shore::barrow_shore;
+pub use bell_tower::bell_tower;
 pub use chapel_ward::chapel_ward;
 pub use cistern_deep::cistern_deep;
 pub use cliff_road::cliff_road;

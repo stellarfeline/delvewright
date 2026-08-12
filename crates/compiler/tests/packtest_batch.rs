@@ -94,24 +94,23 @@ fn build_actor_hello_world() -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let search = r#"            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }"#;
-    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "spawn-actor", "actor": "actor/giant" },
-            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
-              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" } ] },
-            { "type": "unleash-actor", "actor": "actor/giant" }"#;
-    let actors = "    ],\n    \"actors\": [\n      { \"id\": \"actor/giant\", \"entity\": \"minecraft:zombie\", \"name\": \"The Sleeper\", \"anchor\": \"anchor/keeper-stand\", \"facing\": \"east\" }\n    ]\n  }\n}";
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(search, replace)
-        .replace("    ]\n  }\n}", actors);
-    assert!(q.contains("spawn-actor"), "quests.json patch applied");
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&dst.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").extend([
+            serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
+            serde_json::json!({
+                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "on_arrive": [
+                    { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" }
+                ]
+            }),
+            serde_json::json!({ "type": "unleash-actor", "actor": "actor/giant" }),
+        ]);
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+              "anchor": "anchor/keeper-stand", "facing": "east" }
+        ]);
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out
@@ -130,53 +129,41 @@ fn build_handoff_hello_world() -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let np = dst.join("npcs.json");
-    let n = std::fs::read_to_string(&np)
-        .unwrap()
-        .replacen("\"0.2.0\"", "\"0.6.0\"", 1)
-        .replace(
-            "\"base_entity\": \"minecraft:villager\",",
-            "\"base_entity\": \"minecraft:villager\",\n        \"deferred\": true,",
-        );
-    assert!(n.contains("deferred"), "npcs.json patch applied");
-    std::fs::write(&np, n).unwrap();
-    let search = r#"            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }"#;
-    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "spawn-actor", "actor": "actor/giant" },
-            { "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
-              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" },
-                             { "type": "spawn-npc", "npc": "npc/keeper" } ] }"#;
-    let triggers = r#"    ],
-    "triggers": [
-      { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "strike" },
-        "once": true,
-        "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] }
-    ],
-    "actors": [
-      { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper", "anchor": "anchor/keeper-stand", "facing": "east" }
-    ]
-  }
-}"#;
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(search, replace)
+    common::patch_file(&dst.join("npcs.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["content"]["npcs"][0]["deferred"] = serde_json::json!(true);
+    });
+    common::patch_file(&dst.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").extend([
+            serde_json::json!({ "type": "spawn-actor", "actor": "actor/giant" }),
+            serde_json::json!({
+                "type": "move-actor", "actor": "actor/giant", "to_anchor": "anchor/exit",
+                "on_arrive": [
+                    { "type": "despawn-actor", "actor": "actor/giant", "style": "vanish" },
+                    { "type": "spawn-npc", "npc": "npc/keeper" }
+                ]
+            }),
+        ]);
         // Seal the door only at quest end — after the critical path has walked
         // through it (a close-gate across the forced path is DW0311).
-        .replace(
-            "\"on_complete\": [\n          {\n            \"type\": \"campaign-complete\"\n          }\n        ]",
-            "\"on_complete\": [\n          { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" },\n          { \"type\": \"campaign-complete\" }\n        ]",
-        )
-        .replace("    ]\n  }\n}", triggers);
-    assert!(
-        q.contains("spawn-npc") && q.contains("close-gate"),
-        "quests.json patch applied"
-    );
-    std::fs::write(&qp, q).unwrap();
+        let on_complete = d["content"]["quests"][0]["on_complete"]
+            .as_array_mut()
+            .expect("the quest ends the campaign");
+        on_complete.insert(
+            0,
+            serde_json::json!({ "type": "close-gate", "anchor": "anchor/door" }),
+        );
+        d["content"]["triggers"] = serde_json::json!([
+            { "id": "trigger/wake", "at": "anchor/keeper-stand", "on": { "on": "strike" },
+              "once": true,
+              "effects": [ { "type": "narrate", "style": "chat", "text": "He stirs." } ] }
+        ]);
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/giant", "entity": "minecraft:zombie", "name": "The Sleeper",
+              "anchor": "anchor/keeper-stand", "facing": "east" }
+        ]);
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out

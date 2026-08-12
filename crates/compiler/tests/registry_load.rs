@@ -122,8 +122,58 @@ fn cli_validate_reports_dw0346_at_exit_1() {
         "a broken prefab metadata file is a validation failure (exit 1): {stdout}"
     );
     assert!(
-        stdout.contains(DW_PREFAB_META_INVALID) && stdout.contains("hello-room.json"),
+        stdout.contains(DW_PREFAB_META_INVALID.id()) && stdout.contains("hello-room.json"),
         "DW0346 naming the file must be printed: {stdout}"
     );
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A tile-set manifest is refused with the QUEUED WORK named, not with the
+/// generic newer-schema advice.
+///
+/// The distinction is the point. `structure_set` is a shape this delvec fully
+/// understands and cannot yet place — compiler-side placement of a tile group
+/// is chunked export phase 2 — so telling the operator to "upgrade delvec, or
+/// fix the field" would send them after a fix that does not exist. And the zone
+/// must be skipped loudly rather than half-placed: `deny_unknown_fields` alone
+/// would already have failed the parse, which is why this could have been left
+/// as-is and quietly given the wrong prescription forever.
+#[test]
+fn a_tile_set_manifest_is_refused_naming_the_queued_work() {
+    let tmp = prefab_copy("tile-set");
+    let hello = tmp.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hello).unwrap()).unwrap();
+    let obj = meta.as_object_mut().unwrap();
+    obj.remove("structure");
+    obj.insert(
+        "structure_set".to_string(),
+        serde_json::json!({
+            "base": "hello-room", "size": [20, 10, 84], "part_max": 48,
+            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+            "parts": [
+                { "file": "hello-room.x0y0z0.nbt", "id": "hello-room.x0y0z0",
+                  "grid_index": [0, 0, 0], "offset": [0, 0, 0], "size": [20, 10, 48] },
+                { "file": "hello-room.x0y0z1.nbt", "id": "hello-room.x0y0z1",
+                  "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
+            ]
+        }),
+    );
+    std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
+    let d = prefabs.load_diagnostics();
+    assert_eq!(d.len(), 1, "exactly one failing file: {d:#?}");
+    assert_eq!(d[0].code, DW_PREFAB_META_INVALID);
+    assert!(d[0].message.contains("TILE SET"), "{:?}", d[0].message);
+    assert!(
+        d[0].message.contains("phase 2"),
+        "the refusal must name the queued work, not a fix that does not exist: {:?}",
+        d[0].message
+    );
+    assert!(
+        !d[0].message.contains("upgrade delvec"),
+        "the newer-schema prescription is wrong here and must not be given: {:?}",
+        d[0].message
+    );
 }

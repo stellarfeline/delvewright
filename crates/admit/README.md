@@ -77,9 +77,14 @@ resolving after carving would dissolve them).
   on the shipped tileset: exact or within ±2 on all 14 pieces (e.g. keep-gate-room
   reads 9, matching the live probe exactly).
 
-Metadata (`<piece>.json`) is the **full generator shape** (`prefab_id`, `structure`,
-`anchors`, `connectors`, `lighting`, `license`), so an admitted external piece is
-indistinguishable consumer-side.
+Metadata (`<piece>.json`) is not a shape this crate defines. It is
+`delvewright_schem::prefab::PrefabMeta` (`prefab_id`, `structure`, `anchors`,
+`connectors`, `lighting`, `license`), the same type the generators write, so an
+admitted external piece is indistinguishable consumer-side from a generated one
+— and so a subcommand that edits one block of the document cannot delete the
+blocks it does not model. Each writing subcommand owns exactly one key
+(`socket` → `connectors`, `anchor` → `anchors`, `lighting --write` →
+`lighting`) and `tests/metadata_preservation.rs` holds every one of them to it.
 
 ## 3. `catalog` — catalog cards
 

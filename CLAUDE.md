@@ -100,8 +100,8 @@ validation/          # docker compose: headless server + bot, same image as CI &
   it acts on, not to the verb that first needed it.** `close-gate` owns
   `sealed_hint`, which encodes *answering a player who presses this thing* — a
   property of anything right-clickable, and nothing to do with closing a gate.
-  Built onto the verb, it left the second object that needed it with no surface,
-  and the proposed fix was a second bespoke field on `shortcuts[]`. **A second
+  Built onto the verb, it leaves the second object that needs it with no surface,
+  so the fix looks like a second bespoke field on `shortcuts[]`. **A second
   bespoke field is the defect, not the fix.** Generality is decided at the FIRST
   site: retrofitting at the second costs a `dsl_version` bump, per-stage fences,
   and an adoption round on every active campaign.
@@ -123,11 +123,10 @@ validation/          # docker compose: headless server + bot, same image as CI &
      not the clickable **shape** of the object at that anchor — so authoring the
      island boulder's own pattern on a shortcut door compiles clean and ships a
      box pressable only from the side the door opens from. This reads as a
-     missing feature, and the "fix" adds a fourth mechanism. Ask **"what does the
-     existing general mechanism fail to reach, and why"** before ever asking
-     "what surface is missing": the planner proposed a new stage-5 hint section
-     here — strictly weaker than the triggers it duplicated — in the very PR that
-     names this defect.
+     missing feature, and the "fix" adds a fourth mechanism — typically a new
+     authoring section strictly weaker than the mechanism it duplicates. Ask
+     **"what does the existing general mechanism fail to reach, and why"** before
+     ever asking "what surface is missing".
 
   Same shape one layer down as a hand-rolled walk enumerating 3 of 5 effect roots
   (#301/#302/#321): a defect of expressibility, not of care.
@@ -147,11 +146,11 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
-  **Every CI job is a required status check** (owner, 2026-08-05). It used to be
-  three of ten, so `tier 2` — datapack load plus the whole generated PackTest
-  suite — never blocked a merge, and neither did the storybook engine-version
-  marker or the prefab determinism gate. Because branch protection matches a
-  context by its NAME STRING, a renamed job blocks every PR forever, including
+  **Every CI job is a required status check** (owner, 2026-08-05): an advisory
+  job is a job that does not gate — at three of ten required, `tier 2` (datapack
+  load plus the whole generated PackTest suite) did not block a merge. Because
+  branch protection matches a context by its NAME STRING, a renamed job blocks
+  every PR forever, including
   the one that would fix it: `.github/required-status-checks.txt` and
   `tools/check-required-contexts.py` hold the names in lockstep, in both
   directions, so a rename or a new advisory job is an ordinary red instead.
@@ -204,6 +203,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   act — never internal machinery such as model tiers, subagent dispatch,
   worker roles, or pipeline plumbing. Applies to both repos, including the
   content repo's play/hosting tutorials.
+- **A reader-facing document is written in the present tense of the current
+  version** (owner, 2026-08-11). It says what the thing IS and how to use it,
+  as if it had always been that way. No "this used to be X and is now Y", no
+  "originally", "formerly", "as of vN", no parenthetical citing the internal
+  decision a behaviour came from. An outside reader does not care how the
+  software arrived at its present shape, and **a page that keeps telling them
+  reads as a half-finished project** — which is the cost, and it is paid on the
+  page a stranger lands on first.
+  Two ways this leaks in, and the second is the one to watch. The obvious one
+  is an internal reference number (`spec-0001`, a task id, a PR link) on a
+  crates.io front page: a stranger cannot resolve it and gains nothing.
+  The subtle one is the *repair*: stripping the reference while narrating what
+  it used to assert just trades an unresolvable citation for a changelog. Keep
+  the BEHAVIOUR as a plain present-tense fact, or delete it — a shorter true
+  page beats a page that explains itself. Relocating a historically-worded
+  sentence into `docs/reference/` is not a fix either; that file is a
+  current-behaviour record too. **ADRs are the one place history legitimately
+  lives**, because superseding is their mechanism.
 - **Version-adoption discipline** (owner, 2026-08-04): whenever a `dsl_version`
   introduces new obligations, adoption rounds for every ACTIVE campaign are
   scheduled within the same milestone — never left to accumulate (the island
@@ -221,6 +238,39 @@ validation/          # docker compose: headless server + bot, same image as CI &
   validation artifact states its binding count; a zero binding is a finding and
   is named in the round summary. Full derivation and the other playtest-round
   obligations: `docs/reference/playtest-methodology.md`.
+- **A gate nothing INVOKES is not a gate — it is UNRUN**, the fourth vacuity
+  mode, and this project has shipped it five times. A check can be correct in
+  every way that is reviewable — right verdicts, honest red list, fails in the
+  direction that actually drifts — and still protect nothing, because the
+  obligation to run it lives in a doc line. `bin/lab-audit.py` is the worked
+  example: its own commit message promised staleness would be "measured not
+  remembered", and it shipped a script that had to be remembered; the record
+  went stale twice more and needed four backfills. **A doc line is not an
+  invocation.** So a new gate is not done when it is correct — it is done when
+  the event it guards cannot happen without it, and the review question is
+  always *what calls this, and what happens if someone does the guarded thing
+  without calling it?* Bind it to the event (a script step, a compose
+  `depends_on`, a required token), never to a checklist. Where the event has
+  several entry points, enumerate them — an existence check that only looks
+  where someone pointed is how the shape survives review. Where a gate must be
+  skippable, the override is explicit, prints what is being overridden, and is
+  shaped so it cannot become habit; a convenient override is the same defect one
+  layer out. (Staging gate, task #341: the enumeration found a third path —
+  the release workflow — that neither reviewer had named.)
+- **A command whose response nobody reads cannot fail** (task #70). A site that
+  issues a command to a server and discards the reply is asserting an effect it
+  has not established, and it stays green forever: `delve-admit`'s gallery
+  emitted four legacy camelCase gamerules and a `text_opacity:255b`, 1.21.11
+  refused to load `admit:load` and `admit:finish` **in their entirety** — one bad
+  line costs the whole function — and the tool shipped a world with no
+  objectives, nothing forceloaded and nothing placed, for as long as it existed.
+  So: a live command goes through the shared rejection rule
+  (`tools/lib/rcon.{sh,mjs}`); an EMITTED command is checked against the pinned
+  command tree by the emitter, not by a test, because the operator running the
+  tool does not run `cargo test`. Both are bound in CI by
+  `tools/check-live-commands.py`. The generalisable half is not the identifier
+  list — it is that **the rule lived, correct, inside ONE spike's `ok()`**, so
+  the next two callers had nothing to reuse and wrote the unchecked version.
 - **A finding is not closed until its general form is a diagnostic** (island
   r7→r10 instance fix; the general rule became `DW0489` eleven rounds later and
   immediately found a second live instance the owner had by then hit herself).
@@ -236,21 +286,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   playtest, or the round summary tells the owner per item that it is still open
   and not to test it. Audit the findings ledger from round 1 — never from the
   last round — before staging any build.
-- **Execute an owner ruling at the scope it was given.** Generalizing it is a
-  design decision: propose it in one line and wait. (Round 16 turned a
-  one-beat ruling into a campaign-wide ceiling and had to be corrected.)
-  Unrequested change is a rejection cause on its own, independent of merit — a
-  worker's entire island round was rejected wholesale for carrying extras.
+- **Execute an owner ruling at the scope it was given.** Widening a one-beat
+  ruling into a campaign-wide rule is a design decision: propose it in one line
+  and wait. Unrequested change is a rejection cause on its own, independent of
+  merit — a worker's entire island round was rejected wholesale for carrying
+  extras.
 - **A settled ruling is never re-asked. Search the record first** (owner rebuke,
-  2026-08-08). Two questions put to the owner that day had already been answered
-  and written down: the actor/NPC `traversal` override was ruled in an earlier
-  session, and "are traps redstone or commands" is the title of
-  `spec-0022-traps-v2-command-driven.md` — her own directive of 2026-08-03,
-  sitting in the repo. Re-asking spends the scarcest resource in the project on
-  something a grep would have answered, and it reads as ignoring the answer.
-  Before any question: the specs and ADRs, `docs/reference/`, the private
-  handoff notes, then prior session transcripts. Ask only what none of them
-  contain.
+  2026-08-08). Re-asking spends the scarcest resource in the project on something
+  a grep would have answered: one such question — "are traps redstone or
+  commands" — was the TITLE of `spec-0022-traps-v2-command-driven.md`, her own
+  directive of 2026-08-03 sitting in the repo. Before any question: the specs and
+  ADRs, `docs/reference/`, the private handoff notes, then prior session
+  transcripts. Ask only what none of them contain.
 - **A release is built from a frozen approved tree, never from a moving branch**
   (owner ruling, 2026-08-08). A release names the exact tree the owner accepted;
   only files that cannot reach the shipped artifact (release plumbing) may be
@@ -262,15 +309,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
 - **Tiered testing**: unit + static analysis on every push; PackTest integration on PR;
   full bot playthrough on release candidates only.
 - **PR-based flow even solo.** GitHub Actions. **Both repos are PUBLIC** —
-  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns`. This line
-  said "private for now" long after that stopped being true, and a planning
-  session reasoned from it for hours on 2026-08-06: it ruled out GitHub Releases
-  as a way to distribute `delvec` binaries, when that was exactly the right
-  answer (ADR-0017). A false premise in the file every session reads first is
-  worth more than a stale comment — it is a wrong conclusion, repeated.
+  `stellarfeline/delvewright` and `stellarfeline/delvewright-campaigns` — so
+  public distribution channels (GitHub Releases, crates.io, GHCR) are open to us
+  by default (ADR-0017).
 - **Docs are the only persistent memory.** End every session by writing lessons back:
   new constraints → this file; new decisions → an ADR; process learnings → the relevant
-  spec. If you fought the codebase and won, record how.
+  spec. If you fought the codebase and won, record how. A stale premise in THIS
+  file is not a stale comment — it is a wrong conclusion, repeated every session
+  (a "private for now" line outlived the fact and cost a planning session hours).
 - **Compiler behavior has one live reference.** `docs/reference/compiler.md` is the
   authoritative current-behavior record for `delvec` (DSL surface, emission,
   invariants, the full DW diagnostics catalog); specs stay historical decision
@@ -284,18 +330,68 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **Every new mechanic owes a demo level** (owner, 2026-08-03): the PR that lands
+  a mechanic adds its row to `docs/demo-levels.md` — the first-party showcase
+  queue of small levels that verify one mechanic and document it by example. Not
+  necessarily built when the mechanic lands, but always queued; building the next
+  one is the planning agent's standing idle work.
+- **Buildings are judged at playable scale** (owner, 2026-08-12): a structure
+  reads as what it depicts, and its interior belongs to the same theme. Fine
+  detail is deliberately dropped. Minecraft build art conventionally scales a
+  detailed referent up — several blocks per real metre — so that tracery,
+  mullions and mouldings survive; that is a different craft with a different
+  goal. A delve is walked at player scale, so a cathedral is a
+  cathedral-sized cathedral, and the **silhouette carries the recognition the
+  detail cannot**. The review question is therefore always "does this read as
+  the thing, and does the inside belong to it", never "is the detail right" —
+  and a piece is not rejected for lacking detail it was never going to have.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
   they never `--amend`, rebase or force-push a branch that has been pushed unless
-  asked by name. Three workers dispatched without the worktree line put two of
-  them in the main checkout editing one file at once, on a third party's branch;
-  nothing was lost, but one `git add -A` would have swept three authors into one
-  commit. Recovering from such a collision is **hunk-granular for every file** —
-  the file that leaked was the one a worker had been told it owned — and the
-  review asks for a full re-audit, never a targeted deletion: the planner named
-  two leaked hunks and there were three. Code leaks fail CI; doc leaks merge
-  green.
+  asked by name. Two workers editing one file in the main checkout is one
+  `git add -A` away from sweeping three authors into one commit, and being told
+  you own a file does not stop it leaking. Recovering from such a collision is
+  **hunk-granular for every file**, and the review asks for a full re-audit,
+  never a targeted deletion (one targeted pass named two leaked hunks; there were
+  three). Code leaks fail CI; doc leaks merge green.
+- **A clean auto-merge is not evidence of semantic compatibility** (integration
+  of #395+#400+#402+#403, 2026-08-12). When two branches change the same
+  subsystem's *intent*, the dangerous hunk is the one git resolves **without a
+  conflict marker**. One branch made an oversize region tile automatically; the
+  other had added an early refusal of oversize regions. Git merged the refusal
+  in silently. It compiled, passed `clippy`, and passed every test that existed
+  on either branch — and it undid the entire point of the other PR. What caught
+  it was reading for intent, not any tool. So: **enumerate what each branch
+  claims to DO, and re-demonstrate every claim on the merged tree**; a textual
+  conflict count measures nothing. Two corollaries from the same round. Docs
+  merge as text and are never re-read: three sentences across three reference
+  files still asserted the refused behaviour afterwards, and
+  `check-doc-dupes`, `check-dw-codes` and `check-reference-versions` all stayed
+  green. And an integration is the first place a **cross-feature interaction**
+  exists at all — the eye camera over a tiled zone belonged to neither branch,
+  so neither could test it; naming such pairs up front is part of the merge,
+  and the test that covers one goes in with the merge.
+- **A worktree is created by the dispatch and destroyed by the MERGE** (owner,
+  2026-08-11). Reclaim it — `git worktree remove` plus the local branch — as the
+  last step of merging its work, in the same breath as the evidence entry, and
+  reclaim a stopped worker's the moment its work is pushed. Not as a chore to
+  notice later: an unbounded set nobody owns is only ever noticed when it takes
+  the machine down. It did. 36 worktrees, each carrying a full `cargo target/`
+  at 8–15 GB, filled the disk to the point where `Bash` could not open its own
+  output file — `df` itself was unrunnable. **The trigger is not the cause**: the
+  first diagnosis blamed the three workers running at that moment, which were
+  ~25 GB of 200; the cause was every worker since the beginning, none reclaimed.
+  Reaching for the most recent change is how an accumulation gets misdiagnosed.
+  All 36 trees were clean and pushed, so 21 of them had been pure garbage for
+  days. Sweep with `git worktree list`, removing anything whose PR is merged plus
+  every detached verification tree (spent once its measurement is reported), and
+  `git branch --merged origin/main | grep worktree-agent-` for the harness's own
+  throwaway branches. When space is already tight the cheap first move is
+  `rm -rf <wt>/target` on every tree but the live one — pure rebuildable output,
+  zero risk. Before deleting a tree check BOTH `git status --porcelain` and
+  `git log @{u}..HEAD`: dirty is obvious, an unpushed commit is the one that
+  cannot be recovered.
 - Repeated workflows become skills/slash commands (`/new-campaign`, `/validate`,
   `/release`) — see ROADMAP; design them when the workflow has been done manually twice.
 

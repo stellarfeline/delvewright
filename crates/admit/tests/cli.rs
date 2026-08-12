@@ -96,7 +96,7 @@ fn socket_and_lighting_write_metadata() {
     assert_eq!(meta.connectors.len(), 1);
     assert!(meta.anchors.contains_key("anchor/npc-stand"));
     assert_eq!(meta.lighting.profile, "lit");
-    assert!(meta.lighting.method.contains("static"));
+    assert!(meta.lighting.method.as_deref().unwrap().contains("static"));
 
     std::fs::remove_dir_all(&dir).ok();
 }

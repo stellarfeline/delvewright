@@ -1,25 +1,25 @@
 {
   "description": "a stage-7 edit verb uses a region no earlier select in its batch defined (spec-0017: region references are strictly backward within a batch)",
-  "expect": "DW0162",
   "documents": {
     "world-edits": {
-      "dsl_version": "0.6.0",
       "campaign_id": "hello-world",
-      "stage": "world-edits",
       "content": {
         "batches": [
           {
-            "id": "batch/test-carve",
             "area": "area/keep",
             "edits": [
               {
-                "verb": "carve",
-                "region": "region/never-selected"
+                "region": "region/never-selected",
+                "verb": "carve"
               }
-            ]
+            ],
+            "id": "batch/test-carve"
           }
         ]
-      }
+      },
+      "dsl_version": "0.6.0",
+      "stage": "world-edits"
     }
-  }
+  },
+  "expect": "DW0162"
 }

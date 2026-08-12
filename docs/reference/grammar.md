@@ -4,10 +4,38 @@ What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
 changes the crate's surface updates it in the same PR.
 
-It is a **library**, not a tool: no binary, no `delvec` path, nothing in
-[`tools.md`](tools.md). It ships in no delve — generation-time only (ADR-0003).
-The engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+It is a library **and** a tool: `delve-grammar` ([`tools.md`](tools.md) §2a) is
+its entry point, and the procedure that drives it is
+[`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
+`delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
+engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
 only, to test the export seam of §7 from both sides.
+
+Two library modules exist for the tool and are public for it:
+
+- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
+  / `reachable_with_fall` / `ends`. These were written inside `tests/`, where a
+  rule's own gate is the right place for the gate and the wrong place for the
+  *predicate* it is written in: a program authored outside this repo has no
+  `tests/support` to reach for, so its author had no way to ask whether the piece
+  could be walked at all. `tests/support/mod.rs` now delegates here;
+  `tests/staging.rs` still carries its own copy, for the reason its own header
+  gives, and folding it in is a named follow-up.
+- [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
+  module is built around: a **gate** has a verdict and a binding count, a
+  **measurement** is a number with no threshold, and the two are never mixed.
+  Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
+  `non-empty`, and opt-in `traversable`. Measurements: fill, distinct states,
+  standable cells, footprint area/perimeter, silhouette complexity, per-block
+  shares. A zero binding count, and a program declaring no anchors, are reported
+  as findings rather than folded into a pass.
+
+`library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
+library reaches `delve-grammar list` without the tool being edited. The `bell::`
+zone programs are deliberately not in it: a zone is one campaign's composition,
+not general vocabulary. The `idiom-*` programs **are** in it, and are neither
+vocabulary nor content — they are the teaching set of §2c, and they are there
+because `list` / `show` is the only way an author reaches the corpus at all.
 
 ## 1. Model
 
@@ -60,10 +88,68 @@ a directional stair or door picks its facing).
 candidate; if none hold, the `otherwise` alternatives are; among candidates the
 seeded PRNG draws by `weight`. **Two guards that can hold at once are a
 probabilistic choice, not a priority order** — guards meant as a decision must be
-mutually exclusive.
+mutually exclusive. **`otherwise` is the only precedence the language has**: it
+is the arm that runs when no other alternative matched, so a decision is written
+as mutually exclusive positive guards plus one `otherwise` for the rest. It is
+also what terminates a recursion — a self-call whose guard finally fails has
+nowhere else to go, and the expansion ends in `NoApplicableRule`.
 
 The IR serialises to JSON (`serde`), which is the authoring form; block states
 are their vanilla string, e.g. `"minecraft:oak_stairs[facing=east,half=top]"`.
+
+**A paint is a block-state string or a weighted list**, and the list is a
+per-cell draw from the seeded stream:
+
+```json
+"palette": {
+  "wall": "minecraft:stone_bricks",
+  "ruin": [
+    { "weight": 9, "block": "minecraft:stone_bricks" },
+    { "weight": 3, "block": "minecraft:mossy_stone_bricks" },
+    { "weight": 2, "block": "minecraft:cracked_stone_bricks" },
+    { "weight": 2, "block": "minecraft:air" }
+  ]
+}
+```
+
+The same two forms are legal inline on a `fill`
+(`{"op":"fill","material":{…}}`). `minecraft:air` is a member like any other,
+which is what makes a mix a *material that is partly not there*; weights are
+positive integers and a zero is refused. **A mix moves no geometry** — the same
+cells are visited whatever the weights say — so a restyle can never change what
+a gate walked, and a sweep over seeds is a sweep over texture alone.
+
+### Four things the surface above does not say
+
+1. **`rounding` other than `truncate` is legal on a split with exactly one
+   relative piece**, and at weight 1 it is inert: the remainder of dividing by
+   one is always zero, so `[abs, rel(1), abs]` covers the axis exactly under
+   `truncate` already. `RoundingWithoutRelative` refuses only a split with *no*
+   relative piece. Rounding starts to matter at weight ≥ 2 or with several
+   shares.
+2. **`smallest` / `largest` break a tie toward the lowest world axis** — `X`,
+   then `Y`, then `Z` — measured over the axes still unclaimed when the
+   extremal spec is resolved. On a cube, `x: largest` names world `X`. Read as
+   an *expression* (`{"expr":"dim","dim":"smallest"}`) the same two words are a
+   number rather than an axis: the smallest of the three world extents, with no
+   tie to break.
+3. **A relative piece that resolves to zero blocks is a silent empty child**,
+   not an error. A zero *weight* is refused (`BadSize`); a positive weight with
+   nothing left to share is a legal zero-volume scope, and `fill` / `void` /
+   `skip` all write nothing in it without complaint. What does refuse is
+   anything needing a cell of it: an absolute split inside it overflows, and a
+   `mark` on it is `MarkOutsideScope`.
+4. **A role bound to a world-cardinal block state does not turn when `largest`
+   turns the scope.** A `fill` writes the state it was given verbatim; nothing
+   rotates a `facing=` property to follow the orientation. So a rule whose frame
+   opens with `z(largest)` — every §5b rule does — lays its stairs, doors and
+   voussoirs the same way round whatever box it is handed, and every gate stays
+   green while the piece faces the wrong way. The construct that answers it is
+   the `orientation` guard: one alternative per axis mapping, each naming the
+   state that mapping wants, which is how `church` picks its four roof stair
+   facings.
+
+All four are asserted in `tests/idioms.rs`.
 
 ## 2b. `mark` — anchor declarations
 
@@ -113,6 +199,262 @@ a mark aimed outside its own scope, an underivable facing, and two marks
 producing the same name are expansion errors — the collision names both rules.
 Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
+
+## 2c. The idiom index — how the constructs make shapes
+
+§2 is the list of constructs. What an author is missing is not that list: it is
+the handful of ways those constructs compose into a shape, none of which is
+visible from a type signature. `prefab-procedure.md` §3 says to start from the
+corpus rather than from the schema, which means **the corpus is the
+expressiveness** — a technique no program in the library demonstrates does not
+exist in practice, whatever the IR supports.
+
+Nine techniques, one minimal program each, all reachable from the tool:
+
+```sh
+delve-grammar list                                     # the `idiom-*` block
+delve-grammar show   --program idiom-shape > p.json    # the whole program
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
+```
+
+| # | Technique | Program | Region, seed | What it shows |
+|---|---|---|---|---|
+| 1 | Repetition | `idiom-repetition` | 3 × 5 × 17, 1 | `repeat` tiles a pattern; a self-call carries the remainder, which is the only index there is |
+| 2 | Priority | `idiom-priority` | 13 × 6 × 2, 1 | `otherwise` is the only precedence; overlapping guards are a draw |
+| 3 | Shape | `idiom-shape` | 15 × 9 × 3, 1 | a taper is a recursion whose step is arithmetic on the remaining dimension — and with the paint inverted it is the opening |
+| 4 | Erosion | `idiom-erosion` | 9 × 5 × 3, 1 | `minecraft:air` weighted into a role |
+| 5 | Graded erosion | `idiom-erosion-graded` | 9 × 13 × 3, 1 | a gradient is a banded split, one mix per band |
+| 6 | Surface detail | `idiom-surface-detail` | 9 × 12 × 9, 1 | the rule that built the surface splits off the layer against it |
+| 7 | Symmetry without reflection | `idiom-mirror` | 15 × 11 × 2, 1 | a rule body written mirrored, since `reorient` permutes and never mirrors |
+| 8 | Skip | `idiom-skip` | 7 × 5 × 5, 1 | what `skip` does, and why show-through is not expressible yet |
+| 9 | Light | `idiom-light` | 5 × 6 × 13, 1 | a lamp is a role; a one-cell split is a sconce |
+| — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the nine at once — a ruined arcade |
+
+Each program exists to teach one technique and nothing else, and each is
+expanded at exactly the region and seed above by
+`crates/grammar/tests/idioms.rs`, which asserts the claim in its own row. An
+entry that stopped being true is a red, not a stale page. They declare no
+anchors — the composition declares one — so `expand` prints the no-anchors
+finding over them, which is correct: a teaching program is not a prefab a
+campaign binds to.
+
+The JSON fragments below are **abridged for reading** — a literal where the
+program computes an expression, a `"<…>"` placeholder where an expression is
+long. `delve-grammar show --program <id>` prints the program that runs, and that
+is the one to copy.
+
+**The index is not the corpus.** The index is a curated set of *techniques* and
+grows only when an authoring trial fails for want of one (spec-0033 §4.6, §4.8).
+The corpus is every program `delve-grammar list` names, and every IR construct
+owes it at least one example — which is why `negated-guard` is in the library
+and not in the table above: `none_of` is negation of guards, a language feature
+rather than a way of building anything. The demonstration-coverage report is
+what holds the corpus to that.
+
+### 1. Repetition
+
+The `-X` lane tiles its piers with `"repeat": true`; the `+X` lane peels one
+pier and one bay off the low end and calls itself on the remainder. At the
+documented region the two lanes are the same rhythm, cell for cell.
+
+```json
+"recursed_row": [
+  { "when": { "cond": "cmp", "lhs": {"expr":"dim","dim":"z"}, "op": "ge",
+              "rhs": {"expr":"int","value":5} },
+    "body": { "op": "split", "axis": "z",
+              "sizes": [ {"size":"absolute","blocks":{"expr":"param","name":"pier"}},
+                         {"size":"absolute","blocks":{"expr":"param","name":"bay"}},
+                         {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children": [ {"op":"fill","material":{"role":"mass"}},
+                            {"op":"void"},
+                            {"op":"call","symbol":"recursed_row"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+]
+```
+
+The line between the two forms is the whole entry. A `repeat` split hands every
+tile the same pattern, so **no tile can know how far along it is**; a self-call
+is handed the box that is left, and that box is the only index the IR exposes.
+That is why `stair_flight`'s treads, `store_room`'s tell and every taper in §2c
+are recursions and none of them is a `repeat`. Turn the remainder into
+arithmetic and the same recursion becomes a shape (idiom 3).
+
+The `otherwise` arm is the base case: the remainder too short for another
+pier-and-bay becomes the last pier. Strip it and the expansion is
+`NoApplicableRule` at the first scope the guard rejects.
+
+### 2. Priority
+
+Three bays of three widths, one rule deciding what each becomes — arch, slot,
+solid pier — with the third arm an `otherwise`.
+
+Selection collects **every** non-`otherwise` alternative whose guard holds and
+then draws among them by weight, so writing `X >= 6` and `X >= 3` as the first
+two arms is not "prefer the arch": at a 7-wide bay both hold and the seed picks.
+The second guard is therefore the complement, spelled out:
+
+```json
+{ "cond": "all", "of": [
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"ge",
+      "rhs":{"expr":"param","name":"slot_min"} },
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"lt",
+      "rhs":{"expr":"param","name":"arch_min"} } ] }
+```
+
+The red is measured rather than argued: with the `lt` half dropped, twelve seeds
+build more than one arcade out of the same box.
+
+### 3. Shape
+
+One three-rule recursion — peel a course, inset the remaining box by `step` on
+each side, recurse — and it is simultaneously the arch, the gable, the ramp, the
+vault, the spire and the batter. Which one you get is a matter of which axis is
+split and how big the box is. `church`'s `roofYsplit` / `roofZsplit` /
+`rooffill` already contain half of it.
+
+```json
+"profile": [
+  { "when": { "cond":"all", "of":[ "<X >= 2*step + 1>", "<Y >= 2>" ] },
+    "body": { "op":"split", "axis":"y", "rounding":"start",
+              "sizes":[ {"size":"absolute","blocks":{"expr":"int","value":1}},
+                        {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children":[ {"op":"fill","material":{"role":"mass"}},
+                           {"op":"call","symbol":"step_in"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+],
+"step_in": [ { "body": { "op":"split", "axis":"x", "rounding":"start",
+                "sizes":[ "<step>", {"size":"relative","weight":{"expr":"int","value":1}}, "<step>" ],
+                "children":[ {"op":"fill","material":{"role":"cut"}},
+                             {"op":"call","symbol":"profile"},
+                             {"op":"fill","material":{"role":"cut"}} ] } } ]
+```
+
+**The step is not fixed at one cell.** An `absolute` size takes an *expression*,
+so the inset can be read off the scope it is applied in. Here it is
+`max(1, X / run)`, which steps in two cells a side while the courses are wide
+and one when they are narrow — a convex batter, not a 45° wedge. Course widths
+at the documented region are 15, 11, 9, 7, 5, 3, then a one-wide ridge. What is
+*not* expressible is a step that depends on **where** the scope sits: there is
+no positional index.
+
+**With the paint inverted it is every opening in the building.** The two roles
+are the taper (`mass`) and its complement (`cut`), and the default binding makes
+the taper stone standing in air — a gable. Bind them the other way round:
+
+```sh
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 \
+    --role mass=minecraft:air --role cut=minecraft:stone_bricks \
+    --id idiom-shape-arch -o out/
+```
+
+and the identical derivation is a solid wall with a stepped pointed opening in
+it. **A pitched roof and a pointed arch are the same program with the paint
+inverted**; the two expansions are exact complements over all 405 cells, which
+the test measures rather than asserts. A straight jamb under the springing is
+one more `Y` split below the taper — see the composition.
+
+### 4. Erosion
+
+A palette role that carries some air is a material that is partly not there, and
+that is the whole of decay, rubble, spall and pitting here. One role, one rule,
+no geometry. The authoring form is in §2. A role bound to a single block is a
+surface of one material, which is the whole explanation for a zone that renders
+as monoculture — so this is the cheapest change in the language, and the first
+thing to reach for when a piece looks flat.
+
+### 5. Graded erosion
+
+Uniform noise reads as texture; decay has a direction. The language has no
+gradient — a mix's weights cannot vary with position — so **the gradient is the
+split**: band the surface and give each band its own mix, air share climbing.
+More bands is a smoother gradient and nothing else.
+
+The bands are a rounded split, and at the documented region that is
+load-bearing: thirteen courses over three shares do not divide, so under the
+default `truncate` the pieces are 4, 4, 4 and the thirteenth course is **never
+written** — twenty-seven cells of daylight along the top of the wall, with
+`blocks-exist` and `non-empty` both perfectly green. `rounding` is owed by every
+surface, not only by floors.
+
+### 6. Surface detail
+
+Detail is not a pass over a finished model; there is no such pass. It is one
+more piece in the split that made the surface, taken while the rule still has
+the box in hand: `[rel 3, abs 1, abs 1, rel 2]` down `Y` is mass, the crust
+course that is the top of the mass, the litter course standing on the crust, and
+the air above. Scatter members are deliberately not full cubes
+(`moss_carpet`, `short_grass`, `brown_mushroom`) —
+`tools/block-appearance.py --full-cube-only` is for the structural roles, and a
+litter layer is exactly where the rest belong. The same move on a different axis
+is a wall's inner face; with a light-emitting member it is idiom 9.
+
+### 7. Symmetry without reflection
+
+A grammar orientation is a permutation and never a reflection, so no `reorient`
+can hand a rule its own mirror image. That is true, and it is **not** the same
+as "the back end cannot make a symmetric shape": an orientation cannot mirror a
+piece, but a rule *body* can be written mirrored, and a size list reversed is
+exactly that.
+
+`lower_half` and `upper_half` are the same rule twice. One peels its courses off
+the low end (`[abs 1, rel 1]`, children `[inset, slot]`) and the other off the
+high end (`[rel 1, abs 1]`, children `[slot, inset]`); both chamfer by one cell
+per side per course. Above and below a full-width waist they give a chamfered
+octagon — a rose window — at glazing widths 3, 5, 7, 9, 9, 9, 7, 5, 3, symmetric
+about both centre lines of the wall. It re-centres itself as the wall widens,
+because the aperture and every course inside it sit in the middle share of a
+`[margin, aperture, margin]` split.
+
+**This is enough for any shape with a mirror plane.** What it does not reach is
+a smooth curve: the steps are integers and integer arithmetic has no square
+root, so a circle is a polygon here whatever you do.
+
+### 8. Skip
+
+`skip` writes nothing; `void` writes air into every cell. **They are
+indistinguishable in the finished model**, and that is a property of the IR
+rather than of this example: nothing writes a cell twice — a split's children
+partition their box, a rule body is a single node, there is no sequencing
+operator — so every cell is written by exactly one node or by none, and a model
+starts as air. There is no earlier fill for `skip` to leave standing. The test
+swaps the two and the bytes do not move.
+
+What `skip` carries today is **intent** — *this box is not mine to write* —
+which is what a `mark` whose body writes nothing wants to say, and it costs
+nothing where `void` costs one write per cell. Show-through waits on an overlay
+primitive, the same missing construct that stops a zone carving a doorway into a
+piece's own wall (§5c).
+
+### 9. Light
+
+There is no light construct: a role bound to `minecraft:sea_lantern` is a role,
+and a split that gives it one cell every `sconce_period` along a wall course is
+a run of sconces. That is the whole technique, and it is the only reason a
+program's lighting is the program's own business. The period is the split's own
+pattern, so it is a real control — widen it and the same gallery has fewer
+sconces.
+
+It matters because a piece that places no light **is** dark, the grammar cannot
+warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
+it: expansion places blocks, not photons. `delve-admit lighting --write`
+(procedure §7) is where the number comes from.
+
+### A composition demonstration
+
+`idiom-composition-arcade` is a ruined arcade, and it is here to be **read**
+rather than reused: a campaign that wants an arcade writes its own program from
+the techniques, against its own fiction. Adding `gothic_arcade` to the
+vocabulary would be the catalogue mistake — the next creator wants a headframe,
+a gantry, a ziggurat, finds no entry and concludes the back end cannot.
+
+Eight of the nine are in it: the colonnade is a recursion (1) whose `otherwise`
+arm places the last pier (2); each bay's head is the taper with the paint
+inverted (3), so what narrows is the hole; every masonry role carries some air
+(4) and the footing, wall and crest are three mixes up the elevation (5); the
+crest's own top course is a litter layer (6); and every pier carries a sconce
+cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
+the recursion does not already centre for itself — and neither is idiom 8, since
+the bays are meant to be empty, which is what `void` says.
 
 ## 3. Determinism (ADR-0006)
 
@@ -167,6 +509,26 @@ of spec-0027 §4 are a later phase and will own a DW range then.
 Consequence for authors: a region too small for a program's absolute sizes is an
 error, not a building with pieces outside its box. Each library program documents
 its minimum region.
+
+## 4b. Blocks have to exist
+
+Every block state the export writes is checked against the pinned 1.21.11
+block-state registry (`crates/compiler/data/blocks-1.21.11.json`, 1166 blocks,
+via `delvewright_schem::blocks`) — the id, every property name, and every
+property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
+the cell count and a suggested rename.
+
+The check is **at the emitter, not in a test**, for the reason CLAUDE.md records
+for commands: the operator running the tool does not run `cargo test`. Its cost
+if absent is total and silent — a structure template loads an unknown block as
+AIR, so the piece is well-formed, the generator exits 0, the determinism gate
+passes, and the feature is simply not there. `minecraft:chain` was renamed
+`minecraft:iron_chain` in 1.21.11; when this gate was first run over the library
+it found `threshold_motif` painting the old id, i.e. the boss-door bell-rope
+curtain — the entire point of that rule — had been 14 cells of air.
+
+`tests/library.rs` asserts it over every program in the library with its binding
+count, and `gates::judge` reports the same verdict without exporting.
 
 ## 5. Rule library — ported buildings
 
@@ -768,8 +1130,77 @@ break still walks, and the head landing is stranded. That is how a stair fails
 in practice, and a gate that only proved the shaft was not broken in two would
 be green on it.
 
+### `lift_shaft` — the counterweight shaft
+
+A walled shaft with a landing doorway and a car station per storey, an open
+drop under the lowest one, and a floor at the bottom of it. **It builds no
+moving part**, because there is none to build: the lift is a `sequence` of
+runtime state, region fill/clear and teleport-by-region authored in campaign
+JSON (spec-0031), so the car is *filled* at the floor it is called to and the
+one it left is *cleared*. This rule is the hole those effects address.
+
+| | |
+|---|---|
+| Controls | `lane` (3 — the clear cross-section, floor `MIN_LANE`), `storey` (5 — cells between stations), `sill` (6 — open shaft under the lowest station), `door_height` (2), `sealed` (0 — a test knob); role `rock` |
+| Smallest region | `lane + 2` × (`sill` + `storey`) × `lane + 2` — 5 × 11 × 5 at the defaults — and at least as deep as it is wide, since this rule's *length* is its depth, the axis the landing face is on |
+| Storeys | `(Y − sill) / storey`, and a box whose storeys do not divide it is a **refusal**: a tiling leaves its remainder unwritten and an unwritten cell is air, i.e. a hole in the shaft's own face |
+| Anchors | `anchor/lift-station-<i>` — the car's deck cell, which is also the arrival cell. `anchor/lift-call-<i>` — the solid jamb beside storey `i`'s doorway, at the landing's own level. `anchor/lift-pit` — the standable cell at the bottom of the drop. Stations are numbered **bottom up**, the order a `split` visits its pieces |
+
+**The contract came from the shipped lift, not from a guess.**
+`crates/compiler/tests/fixtures/lift` reads every cell it needs off *one anchor
+per floor*, four ways: `fill-region {anchor, extent [1,0,1]}` builds the deck,
+`clear-region` on the same box takes the old one away, `teleport {to: anchor}`
+puts the riders on it, and `give-effect {in: {anchor, extent [1,1,1]}}` gathers
+them. A runtime region is a box **centred** on its anchor with unsigned
+half-extents, so the car is 3×3 — which is why `lane` has a floor of 3 and the
+station sits at the lane's centre. A narrower lane would have the campaign's own
+`fill-region` writing the deck through the shaft wall, and nothing downstream
+could see it.
+
+spec-0031's acceptance record names two blockers, and this rule answers the
+half that is geometry: *"no prefab in the library ships a shaft"* — this is one
+— and *"a runtime region cannot name a cell at an offset from an anchor, so a
+lift's geometry is authored as an anchor per cell"* — `mark` declares point
+anchors, and the two cells the spec calls unaddressable (the deck, and the
+shaft-bottom volume) are declared here. The remaining half of that finding is
+still open and is not a grammar problem: stage 5 cannot see stage 7's region
+language, and a car cannot be commanded from inside itself.
+
+**A shaft is a hole, and the hole is the hazard.** The lane is air from the
+shaft floor to the top of the last storey, so a landing whose car is elsewhere
+opens onto nothing. That makes this an L-family piece and it owes the family's
+pair of claims, asserted with the same `standable` predicate and the same two
+walks `drop_shaft` and `stair_flight` are gated on.
+
+**A repeat, not a recursion** — the opposite call from `stair_flight`, and for
+the reason `boulder_stair` gives: a `split_repeat` is a *tiling*, every tile
+handed the same pattern. A stair's treads each have to know how high the last
+one was; a shaft's storeys are identical, so no storey needs an index and
+`marked_each` supplies one anyway.
+
+Gates (`tests/staging.rs`), each with its binding count:
+
+1. **Every station can hold the car the campaign fills** — 2 stations × 9
+   footprint cells = 18, plus 2 call cells. The 3×3 is air; the station is *not*
+   standable (a station with a floor under it is an alcove, and the car has
+   nothing to arrive as); the call control is solid, on the landing's level, and
+   outside the footprint, or the first ride would bury the lever that started
+   it.
+2. **One opening a storey, and nothing else** — 4 openings over the shell's four
+   side planes, in one column. Teeth: `sealed` fills every doorway and the count
+   goes to 0 while the two landings stop being standable (11 → 9).
+3. **It drops a body and will not carry one back** — 11 standable cells, 2
+   landings, 1 pit. The pit is reachable from a landing under walk-and-fall and
+   the landings are not reachable from the pit under the plain step. Control:
+   the same rule at `sill = 2`, where the drop is one block and the identical
+   check finds the way back — the short-drop pairing `drop_shaft` uses for
+   `rescue_ladder`.
+4. **The stations climb by one storey each**, numbered bottom up, with the drop
+   under the lowest equal to `sill − 1`. Refusals: a `storey` that does not
+   divide the rise, and a `lane` under `MIN_LANE`.
+
 `drop_shaft`, `dumbwaiter`, `far_side_bar`, `tee_passage`, `causeway`,
-`elite_ground` and `stair_flight` carry the same generic-suite and
+`elite_ground`, `stair_flight` and `lift_shaft` carry the same generic-suite and
 registry-round-trip promises as the eight above (`tests/library.rs`,
 `tests/determinism.rs`, `crates/compiler/tests/grammar_prefab.rs`).
 
@@ -804,28 +1235,134 @@ What the lift wants from the grammar instead is a **walled shaft with a station
 at each floor** — geometry, and static. spec-0031's own acceptance record names
 the two things that block it, and neither is an IR-motion problem:
 
-- *"No prefab in the library ships a shaft."* `stair_flight` is now one; a
-  lift's is the same shell without the run, plus the deck / arrival / lethal-
-  bottom cells the ride names. That is a `lift_shaft` §5b rule, and it is
-  ordinary work.
+- *"No prefab in the library ships a shaft."* It does now: `lift_shaft` (above)
+  is the same shell without the run, plus the deck / arrival / lethal-bottom
+  cells the ride names.
 - *A runtime region cannot name a cell at an offset from an anchor*, so a lift's
   geometry has to be authored as an anchor per cell. `mark` declares point
-  anchors, which is exactly that shape — so the grammar can supply them.
+  anchors, which is exactly that shape — and `lift_shaft` supplies them.
 
-**Do not build a `counterweight_lift` rule.** The zone table's claim that Z7
-waits on one is stale and is corrected in §5c.
+**Do not build a `counterweight_lift` rule.** `lift_shaft` is the whole of what
+the grammar owes a lift, and Z7 is built on it (§5c).
+
+### `hearth_ward` — the rest point's nook
+
+A chain segment with a two-wide pocket walled on three sides beside the lane,
+and one declared focus cell inside it. The mechanism a rest point needs
+(`bonfire{anchor}`, spec-0016 §1) stated without the fiction: **somewhere off
+the road, approachable from one direction only, with one cell declared as its
+focus**. A checkpoint binds there; so would a shrine, a vendor, a save crystal.
+
+| | |
+|---|---|
+| Controls | `head` (3), `nook_len` (3), `nook_height` (2 — must be under `head`), `mouth_sealed` (0) and `back_door` (0 — test knobs); roles `rock`, `hearth_floor` |
+| Smallest region | `MIN_WIDTH` (6) × (`head` + 2) × (`nook_len` + 3), and at least as long as it is wide |
+| Anchors | `anchor/hearth` — the floor cell at the centre of the nook's inner half, facing out through the mouth (the back wall is at `Z`-max so the derived facing does that) |
+
+**Not a `watch_bay` with a different anchor on it, and the reason is the
+claim.** The shape is deliberately the bay's. What is not shareable is what it
+proves: `watch_bay` exists to prove a sightline to a hazard span *it builds
+itself*, and a rest ward has no span — composing a bay here would drag in a
+hazard the zone does not want and bind that rule's only gate to zero cells,
+which is a green that measures nothing. That three rules now build a
+pocket-off-a-lane is filed as an open question in §7.
+
+Gates:
+
+1. **The lane walks end to end** (78 cells, 6 at each end), so a rest ward in a
+   zone's piece run does not sever it. Red: the refusal a box under `MIN_WIDTH`
+   gets, against the same box one cell wider, which builds.
+2. **The focus is reachable, and reaching it is a detour** — the lane reaches
+   `anchor/hearth`, and deleting all 6 nook cells leaves the lane connected end
+   to end. A rest you walk *through* is a corridor with a campfire in it. Teeth:
+   `mouth_sealed` (76 cells) — the hearth stands, unreachable, and the lane walks
+   unchanged.
+3. **Exactly one way in** — the nook's standable neighbours are counted and
+   there are exactly `NOOK_WIDTH` (2) of them, both in front of the mouth. Teeth:
+   `back_door` opens the outer wall behind it and the count goes to 5.
+
+### `bait_stand` — the lure and its watcher
+
+A chain segment carrying a pedestal on the room floor and a standable perch on a
+corbel **directly above it**, with the corbel carried in from the side wall so it
+cannot hide what it holds. §4 entry **B**, and specifically the dossier's
+*variant 1 only*: variant 3 (the displaced trigger) is banned as resented, and
+this geometry cannot express it — the rule's whole gate is that the two are in
+one frame.
+
+| | |
+|---|---|
+| Controls | `head` (5 — must clear the perch by a cell), `perch_rise` (4, at least `MIN_RISE`), `bracket` (1), `canopy` (0 — a test knob); roles `stone`, `timber`, `pedestal` |
+| Smallest region | (`bracket` + 4, ≥ `MIN_WIDTH` 5) × (`head` + 2) × 4, and at least as long as it is wide |
+| Anchors | `anchor/bait` — the pedestal's own top **block**, the call `store_room`'s `tell` already makes for its barrel. `anchor/bait-perch` — the standable cell over it |
+
+**Why the corbel comes in from the side wall.** `rafter_hall` worked this out
+for a whole truss: an eye on the floor is below the beam plane and a perch above
+it, so a ray from the approach crosses that plane between the two and a beam
+lying in the crossing hides the body it carries. Here the beam occupies only the
+perch's own `Z` slice, so a ray down the lane crosses the plane at a `Z` the beam
+does not occupy. Fairness is bought by the form, not by a box size.
+
+Both anchors take the derived down-travel facing — the same price `rafter_hall`
+pays for its perches, and for the same missing primitive (§7).
+
+Gates:
+
+1. **The watcher stands over the lure** — same column, perch above, perch
+   standable, pedestal solid, and open air over the pedestal for the lure to sit
+   in. Bound over 3 box shapes, because a motif that lines up at one width is a
+   coincidence.
+2. **Wherever the lure is visible, so is the watcher** — all 42 approach cells
+   see `anchor/bait`, and all 42 see `anchor/bait-perch`. Teeth: `canopy` hangs a
+   valance in front of the perch — the lure's 42 does not move and the watcher's
+   drops to 0, so the red is an *ambush* defect and not a walled-off room.
+3. **The room walks end to end** (99 cells, 7 at each end).
+
+### `disarm_stand` — the hazard's control
+
+The **actuation** dual of `watch_bay`'s observation: a hazard run with a walled
+stand at its head, and the mechanism set into the stand's *outer* wall — so every
+position it can be worked from lies outside the run it governs. §4 entry **D**
+("the boulder release can be jammed from the stair head").
+
+| | |
+|---|---|
+| Controls | `head` (4), `stand_height` (2 — must be under `head`), `release_in_lane` (0) and `stand_sealed` (0 — test knobs); roles `rock`, `mechanism` |
+| Smallest region | `MIN_WIDTH` (6) × (`head` + 2) × (`STAND_ZONE` + 2 = 5), and at least as long as it is wide |
+| Anchors | `anchor/release` — the mechanism's own block, in the outer wall a cell over the floor. `anchor/run-head` — the floor cell where what is released starts |
+
+A control cell is a **point**; what a campaign hangs on it — an `EnvTrigger` with
+`on: use`, a `timed-gate` disarm — is the campaign's business. This rule declares
+no trap: trap and trigger anchors are not yet expressible by a rule (§7), and the
+same call `boulder_stair`'s `volley-slot` already makes.
+
+Gates:
+
+1. **The lane walks end to end** (107 cells). Red: the refusal an undersized box
+   gets.
+2. **The release cannot be worked from the run** — all 103 standable cells that
+   are not the stand's own pocket are checked for adjacency to `anchor/release`,
+   and none is. The binding is the run's size, so the claim cannot go vacuous on
+   a shorter box. Teeth: `release_in_lane` sets the mechanism into the divider
+   instead and the count rises to 1.
+3. **...and it can be worked at all** — the one operating position is standable
+   and reachable from the run. Teeth: `stand_sealed` fills the stand's mouth: the
+   position stands, unreachable, and the lane walks unchanged.
 
 ## 5c. Zone programs — the vocabulary composed
 
 `library::bell::{barrow_shore, cliff_road, gate_ward, drowned_ward,
-chapel_ward, hall_keep, cistern_deep}` are the drowned-bell remake's **zone
-programs** (REMAKE §3;
+chapel_ward, hall_keep, cistern_deep, bell_tower}` are the drowned-bell remake's
+**zone programs** (REMAKE §3;
 build-sequence step 3). A zone is one grammar program, and these contain no
 encounter geometry of their own: they split the zone's box and `call` §5b's
 rules. The only blocks a zone writes itself are `cliff_road`'s crag and the air
-beside it, and the inert `margin` rock filling the side strip `drowned_ward`,
-`chapel_ward` and `cistern_deep` park a branch in — the mass a zone is carved out of, which no
-piece handed a sub-box can know about. The other three write nothing at all.
+beside it, the inert `margin` rock filling the side strip `drowned_ward`,
+`chapel_ward`, `cistern_deep`, `gate_ward` and `bell_tower` park a branch in, and
+the **plinth** — the mass `gate_ward` and `hall_keep` stand on when a zone leaves
+one level down, and the mass `bell_tower`'s upper storey stands on when one
+climbs (below). All of it is the mass a zone is carved out of, which no piece
+handed a sub-box can know about. Only `barrow_shore` writes nothing at all.
 
 ### `compose::include` — how one program calls another's rules
 
@@ -883,26 +1420,27 @@ cells of length where `ambush_door` alone is happy with 5. The primitive that
 would remove the constraint is a caller-pinned travel axis, the same shape as
 the `local_*` facing spec of §7, one layer out. Not built.
 
-### The seven zones, and the one that is a named gap
+### The eight zones
 
-Rows for Z2, Z4, Z5 and Z7 name §4 entries whose *rules* exist (the W3/W4
-families above) — what those zones wait on is a zone program composing them, or
-the seam limit named beside them, not the vocabulary. Only **B** (bait-item
-gallery) and **D** (boulder jam) have no rule at all; `counterweight_lift` is no
-longer on that list and never will be — the lift is a DSL construct now, and
-what a shaft owes the grammar is geometry (§5b). Rows are rewritten in the round
-that builds them; nothing here claims a zone was built.
+**Every §4 entry now has a rule, every zone is programmed, and every row
+composes the entries it names.** The three entries that had no rule — **B**
+(bait gallery), **D** (boulder jam) and the hearth — are `bait_stand`,
+`disarm_stand` and `hearth_ward` (§5b); `counterweight_lift` is struck and never
+will be one, because the lift is a DSL construct now and what a shaft owes the
+grammar is geometry, which `lift_shaft` (§5b) supplies. Z7 was the last
+unprogrammed zone and is `bell_tower`. Rows are rewritten in the round that
+builds them; nothing here claims a zone was built.
 
 | Zone | Program | Composed from | Missing |
 |---|---|---|---|
 | Z0 Barrow Shore | `barrow_shore` | `elite_ground` | — (**E** is the whole of Z0) |
 | Z1 Cliff Road | `cliff_road` | `cliff_path` + the zone's gulf | switchback landing — see below |
-| Z2 Gatehouse | `gate_ward` (partial) | `watch_bay`, `ambush_door` | **W**+**S**, **F**, **L**, **M** — built rules awaiting a zone round — and **D**, which has no rule |
+| Z2 Gatehouse | `gate_ward` | `watch_bay`, `ambush_door`, `disarm_stand`, `boulder_stair`, `tee_passage`, `far_side_bar`, `threshold_motif`, `drop_shaft` + the zone's plinth and branch strip | — |
 | Z3 Drowned Lower Ward | `drowned_ward` | `causeway`, `tee_passage`, `elite_ground`, `far_side_bar` + the zone's branch strip | — |
-| Z4 Chapel Ward (hub) | `chapel_ward` (partial) | `dumbwaiter`, `tee_passage`, `far_side_bar` + the zone's branch strip | the hearth — a rest point is `bonfire{anchor}` (spec-0016 §1) and no rule declares an anchor for one; the smallest honest form is a `hearth_ward` §5b rule |
-| Z5 Great Hall + Keep | `hall_keep` (partial) | `rafter_hall`, `ambush_door`, `store_room` | **L**, **M** — built rules awaiting a zone round — and **B**, which has no rule |
+| Z4 Chapel Ward (hub) | `chapel_ward` | `dumbwaiter`, `hearth_ward`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
+| Z5 Great Hall + Keep | `hall_keep` | `rafter_hall`, `ambush_door`, `store_room`, `bait_stand`, `threshold_motif`, `dumbwaiter` + the zone's plinth | — |
 | Z6 Cistern Deep | `cistern_deep` | `drop_shaft`, `watch_bay`, `broken_grate`, `elite_ground`, `tee_passage`, `far_side_bar` + the zone's branch strip | — |
-| Z7 Bell Tower | — | | a zone round, and one rule. **The ascent blocker is closed**: `stair_flight` (§5b) climbs, gated both ways. `counterweight_lift` is **struck** — the lift is authored in campaign JSON (spec-0031) and needs a `lift_shaft` rule, not a moving-platform one. Its loft is `rafter_hall`, its boss ring `elite_ground` |
+| Z7 Bell Tower | `bell_tower` | `stair_flight`, `hearth_ward`, `rafter_hall`, `tee_passage`, `threshold_motif`, `elite_ground`, `lift_shaft` + the zone's plinth and branch strip | — |
 
 **Z7's ascent blocker is closed, and the answer was smaller than the question.**
 Every vertical piece the vocabulary had was one-way *down* by construction and
@@ -926,12 +1464,74 @@ landing as the control. **Nothing new was needed at the seam**: a flight's foot
 landing sits on the same floor course every flat piece uses, so the two mate the
 way any two chain pieces do.
 
-What Z7 still waits on is a zone program, plus a `lift_shaft` rule if the
-tower's lift stays in the design. One shape is worth naming for that round: a
-straight flight climbs at most about `Z / tread`, so a tall tower over a small
-footprint wants a **switchback**, and a switchback is a rule body rather than an
-orientation (§5b) — the "permutation without reflection" answer is the right
-answer to a different question.
+**Z7 is built, and the switchback it was expected to need was not needed.** The
+round that wrote `bell_tower` had one open shape recorded for it: a straight
+flight climbs at most about `Z / tread`, so a tall tower over a small footprint
+wants a switchback — a rule body rather than an orientation (§5b). A box-garden
+tower is not that tower. It is a box like every other zone's, so the flight gets
+a long enough run and the zone writes the **plinth** its four upper pieces stand
+on, which is the same licensed mass `cliff_road`'s crag is. The switchback stays
+unbuilt and stays recorded.
+
+**The seam between a climbing piece and a flat one, and the one thing that can
+go silently wrong there.** Every §5b rule lays its own floor at the bottom of
+the box it is handed and stands a body one course up; a flight *arrives on* its
+head landing, whose floor is the last course the run laid. So the upper storey's
+box has to start one course **below** the level a body stands on, and the plinth
+is `climb − 1`. Get that by one and the zone is two rooms with a step between
+them — which walks perfectly under `connected`'s ±1 edge and passes a route
+gate in silence. Hence Z7's gate 1 asserts three things, not one: the walk, the
+`RISE` between the two end faces measured off the model, and `anchor/stair-head`
+at the exact height of the upper floor.
+
+**A derivation cannot always be spent where it is needed.** A flight's rise is
+`(flight_run − 2·landing_run) / tread` — a fact about the box, and the zone
+writes that expression out. But a split's size is evaluated *in the scope it is
+written in*, and `dim(Z)` inside the upper storey's own box is the upper run and
+not the zone's length: the first draft cut a plinth of −4 courses and the
+interpreter refused it. So the zone **declares** `climb` and guards the identity
+`climb == treads()` at the one scope where the whole length is visible, along
+with `shaft/sill == climb` and `Y ≥ climb + flight/head + 1` (which keeps `Z`,
+not `Y`, the thing that bounds the climb). Four drifts are each shown refusing.
+
+**A guard that was written, measured, and deleted.** The lift landing is a
+`tee_passage` whose side doorway opens on the shaft's own landing doorway, and
+the two are turned 90° to each other. That looked like it wanted a parity guard
+on `tee_run`: on an even run a `split_exact` gives the odd block to the earliest
+share, so surely the two centres land a cell apart. They do not — both are
+placed by the same `Rounding::Start` rule counting from the same end of the same
+run, and at `tee_run` 20 and 21 both doorways landed on the same cell with the
+landing reachable either way. The guard was **deleted**, because a guard whose
+red never happens is a green bound to nothing. What stands in its place is the
+measurement: Z7's gate 5 walks from the entry face to the shaft's landing sill,
+and the drift it does catch is real — moving `lift_shaft`'s lane off centre
+(`rel(1)` → `abs(1)` on its first split) reds it with *"the tower cannot reach
+its own lift landing"* while every other gate stays green.
+
+**The plinth, as a zone leaves one level down.** Every vertical piece builds its
+entry ledge `drop` blocks up and its landing at the floor, so a zone that puts
+one anywhere but its own `Z`-max end has to raise everything above the drop to
+meet that ledge. Z6 sidestepped this by being *entered* by falling; Z2 and Z5 are
+walked into and left down a shaft, so they cannot. The construction is the branch
+strip's sibling, licensed by the same clause: split the shaft's slice off the `Z`
+end, and give the remainder a `Y` split whose lower piece is inert `margin` rock.
+Two details keep it honest:
+
+- the plinth's thickness is **read from the piece** (`par("shaft/drop")`,
+  `par("duct/drop")`), never restated as a zone constant, so dialling the fall
+  moves the floor with it — which is the only reason the one-way gate's teeth (a
+  short drop plus a rescue ladder) still describe a zone that builds;
+- the zone guards that a plinth leaves an upper ward at all (`MIN_UPPER` = 5). A
+  piece handed too little refuses for itself, loudly; a *remainder of zero* would
+  be written silently, which is the failure mode a guard is owed for.
+
+**The tolerance is measured, not assumed.** Build the plinth one block thin and
+every gate stays green — correctly, because a one-block mismatch is a step and a
+step walks both ways. At **two** it is a drop the plain walk cannot climb and
+five gates go red at once (Z2's route-down, the span cut, the sally port, and the
+zone-wide walkability). The tempting stronger claim — "the plinth must equal the
+drop or the seam is a wall" — is false in one direction, and stating it would
+have made a green look stronger than it is.
 
 **The branch, as a zone builds it.** Z4 and Z6 both hang a `far_side_bar` off a
 `tee_passage` (seam limit 3, below), and both do it the same way, which is now
@@ -1043,11 +1643,12 @@ Each is asserted rather than asserted-about: every one has a test in
 |---|---|---|---|
 | `barrow_shore` | 19 × 6 × 24 | `arena/*` only; role `arena/stone` | `elite` |
 | `cliff_road` | 12 × 12 × 36 | `sea` (3), `fall` (8), `ledge_shelf` (0 — a test knob), plus `path/*`; role `crag` | the cliff path's `niche-<i>` / `niche-watch-<i>` |
-| `gate_ward` | 11 × 7 × 28 | `door_run` (12), plus `gate/*` and `door/*` | `watch`, `gate`, `threshold`, `alcove` |
+| `gate_ward` | 20 × 10 × 84 | `shaft_run` (12), `motif_run` (10), `tee_run` (10), `stair_run` (16), `stand_run` (10), `door_run` (10) — the gated passage takes the rest — `strip_depth` (11), plus `gate/*`, `door/*`, `stand/*`, `stair/*`, `tee/*`, `sally/*`, `motif/*`, `shaft/*`; role `margin`. The upper ward stands on a plinth `shaft/drop` thick | `watch`, `gate`, `threshold`, `alcove`, `release`, `run-head`, `stair-run`, `volley-slot`, `pocket-<i>`, `branch-door`, `sally-gate`, `unlock`, `threshold-narrate`, `spill`, `landing` |
 | `drowned_ward` | 40 × 10 × 60 | `ward_run` (20), `junction_run` (20) — the crossing takes the rest — `strip_depth` (21), plus `ward/*`, `ring/*`, `junction/*`, `shortcut/*`; role `margin`. The zone pins `ward/berm_gate = 1` and `ward/rise = 2`: the post has to be passable at all, and the berm has to meet its neighbours' floor within the one-block step `connected` allows, or the seam is one-way | `causeway-head`, `keeper-elite`, `branch-door`, `gate`, `unlock`, `elite` |
-| `chapel_ward` | 12 × 9 × 20 | `strip_depth` (7), `junction_run` (6) — the chute takes the rest — plus `chute/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `branch-door`, `gate`, `unlock` |
-| `hall_keep` | 11 × 9 × 40 | `door_run` (12), `store_run` (12), plus `hall/*`, `door/*`, `stores/*` | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell` |
+| `chapel_ward` | 16 × 9 × 26 | `strip_depth` (9), `junction_run` (8), `hearth_run` (8) — the chute takes the rest — plus `chute/*`, `hearth/*`, `junction/*`, `shortcut/*`; role `margin` | `hatch`, `landing`, `hearth`, `branch-door`, `gate`, `unlock` |
+| `hall_keep` | 11 × 11 × 76 | `duct_run` (12), `motif_run` (12), `gallery_run` (12), `store_run` (12), `door_run` (12) — the hall takes the rest — plus `hall/*`, `door/*`, `stores/*`, `gallery/*`, `motif/*`, `duct/*`; role `margin`. The keep stands on a plinth `duct/drop` thick | `hall-door`, `perch-<i>`, `threshold`, `alcove`, `store-line`, `tell`, `bait`, `bait-perch`, `threshold-narrate`, `hatch`, `landing` |
 | `cistern_deep` | 40 × 10 × 100 | `arena_run` (20), `sally_run` (20), `vent_run` (20), `gallery_run` (20) — the shaft takes the rest — `strip_depth` (21), plus `arena/*`, `tee/*`, `sally/*`, `vent/*`, `gallery/*`, `shaft/*`; role `margin` | `spill`, `landing`, `watch`, `gate`, `grate-secret`, `branch-door`, `sally-gate`, `unlock`, `elite` |
+| `bell_tower` | 41 × 14 × 125 | `ring_run` (20), `door_run` (20), `tee_run` (21), `loft_run` (20), `hearth_run` (20 — BF5's rope room) — the flight takes the rest — `strip_depth` (22), `climb` (9 — guarded against the flight's own rise, never dialled alone), plus `ring/*`, `door/*`, `tee/*`, `loft/*`, `hearth/*`, `flight/*`, `shaft/*`; roles `plinth`, `margin`. The zone pins `shaft/sill = climb`: the shaft's lowest station has to be the upper storey's own floor, or the landing doorway opens into the plinth | `stair-foot`, `stair-head`, `stair-step-<i>` (9), `hearth`, `hall-door`, `perch-<i>` (5), `branch-door`, `threshold-narrate`, `elite`, `lift-station-1`, `lift-call-1`, `lift-pit` |
 
 **Z3 does not claim a zone-length bypass, and says why.** Z0 and Z6 re-bind
 `elite_ground`'s "a lane each side of the fight" across their whole zone. In Z3
@@ -1071,31 +1672,43 @@ the piece-level claims stay in §5b.
 
 | Gate | Binding | Red demonstrated by |
 |---|---|---|
-| Every zone is a route end to end | 438 / 40 / 239 / 1100 / 81 / 368 / 2078 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
+| Every zone is a route end to end | 438 / 40 / 655 / 1100 / 165 / 677 / 2078 / 2172 standable cells | — (the fixture pins the counts; a sealed seam is a red here) |
 | Z0 a lane each side of the fight | 2 routes, bands of 111 cells | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, shore still walkable |
 | Z0 a square box is refused | 1 refusal | — (the refusal is the gate; one cell longer builds) |
 | Z1 the ledge is the only route | 36 ledge cells of 40 | deleting the lane severs the zone |
 | Z1 the gulf is beside every ledge cell | 36 cells × 3 seeds = 108 columns | `ledge_shelf = 1` → all 36 shallow, road still walkable |
 | Z1 every niche opens onto that ledge | 4 niches, 4 watch cells | — (measured against the model, not the params) |
-| Z2 the hazard cannot be walked round | 27 span cells | deleting the span severs the zone |
-| Z2 the bay sees the whole span *composed* | 27 span cells | `gate/obstruct = 1` → 6 blind, passage still walkable |
-| Z2 the alcove is blind from the whole zone | 184 approach cells (54 in the piece's own fixture) | `door/expose = 1` → 147 see it |
-| Z5 the doorway is the only route | 205 approach / 162 inside cells | plugging the door column severs the keep |
-| Z5 every perch visible from the hall door | 4 perches | `hall/span_beams = 1` → 2 blind, keep still walkable |
-| Z5 the alcove is blind from the whole hall | 205 cells, 4 of them rafters | `door/expose = 1` → 152 see it |
-| Z5 exactly one tell | 8 seeds, 5 distinct positions | — (the recursion is the invariant; a broken include reds it) |
+| Z2 the hazard cannot be walked round | 21 span cells, 634 cells re-walked without them **under the fall model** | deleting the span severs the zone |
+| Z2 the bay sees the whole span *composed* | 21 span cells | `gate/obstruct = 1` → 6 blind, passage still walkable |
+| Z2 the alcove is blind from the whole zone | 135 approach cells (54 in the piece's own fixture) | `door/expose = 1` → 121 see it |
+| Z2 a route down, and none back up | 4 entry / 7 exit cells, 655 standable | `shaft/rescue_ladder = 1` (+ `shaft/drop = 2`) → the ward climbs back; two controls |
+| Z2 the release is out of reach of the composed run | 603 run cells examined, 0 in reach; 1 operating position, reachable | `stand/release_in_lane = 1` → 1 in-run position |
+| Z2 the sally port is sealed, and reached through one doorway | 655 standable, 40 the branch's near room, 1 doorway column cut | `sally/unbarred = 1` (663) opens it; `tee/sealed = 1` (654) makes the branch unreachable, ward still a route down |
+| Z5 the doorway is the only route | 205 approach / 471 inside cells, cut re-walked under the fall model too | plugging the door column severs the keep |
+| Z5 every perch visible from the hall door | 4 perches | `hall/span_beams = 1` → 3 blind, keep still walkable |
+| Z5 the alcove is blind from the whole hall | 205 cells, 4 of them rafters | `door/expose = 1` → 155 see it |
+| Z5 exactly one tell | 8 seeds, 6 distinct positions | — (the recursion is the invariant; a broken include reds it) |
+| Z5 a route down, and none back up | 9 entry / 9 exit cells, 677 standable | `duct/rescue_ladder = 1` (+ `duct/drop = 2`) → the keep climbs back; two controls |
+| Z5 the lure's watcher is legible from the composed gallery | 144 gallery cells, all 144 seeing both | `gallery/canopy = 1` → the lure's 144 holds, the watcher's drops to 0 |
 | Z3 a route **both ways**, and only through the gatehouse | 1100 standable, 1 entry cell (the berm is one wide), 19 exit | `ward/berm_gate = 0` restores the plinth → severed under walk *and* walk-and-fall, while the 18-cell crossing still walks |
 | Z3 the keeper commands the crossing *composed* | 18 crossing cells, 18 sightlines | `ward/obstruct = 1` → blind cells, ward still walkable |
 | Z3 a lane each side of the fight, bound over the **arena's own run** | 2 routes at the default | `ring/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0 |
 | Z3 the shortcut is sealed, and reached through one doorway | 1100 standable, 180 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` opens it; `junction/sealed = 1` makes the branch unreachable, ward still walks |
-| Z4 a route down, and none back up | 3 ledge / 3 exit cells, 81 standable | `chute/rescue_ladder = 1` (+ `chute/drop = 2`) → the hub climbs back; two controls |
-| Z4 the shortcut is sealed, and reached through one doorway | 81 standable, 12 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` (85 standable) opens it; `junction/sealed = 1` (80) makes the branch unreachable, hub still walks |
+| Z4 a route down, and none back up | 5 ledge / 5 exit cells, 165 standable | `chute/rescue_ladder = 1` (+ `chute/drop = 2`) → the hub climbs back; two controls |
+| Z4 the shortcut is sealed, and reached through one doorway | 165 standable, 24 the branch's near room, 1 doorway column cut | `shortcut/unbarred = 1` (171 standable) opens it; `junction/sealed = 1` (164) makes the branch unreachable, hub still walks |
+| Z4 the hearth is reachable, and off the route | 165 standable, 6 of them the nook, re-walked without them | `hearth/mouth_sealed = 1` (163) → the hearth stands unreachable, hub still crosses |
 | Z4 a branch no deeper than its junction is refused | 2 refusals | — (the refusal is the gate; the same box builds at the defaults) |
 | Z6 a route down, and none back up | 17 ledge / 19 floor cells, 2078 standable | `shaft/rescue_ladder = 1` (+ `shaft/drop = 2`) → the deep climbs back; two controls |
 | Z6 the span cannot be walked round *or fallen past* | 51 span cells, re-walked under the fall model | deleting the span severs the zone |
 | Z6 a lane each side of the fight | 2 routes, bands of 767 / 411 cells (the west band is the larger only because the branch's own rooms fall inside it; they span the sally run alone and carry no route) | `arena/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0, cistern still a route down |
 | Z6 the sally port is sealed, and reached through one doorway | 2078 standable, 180 the branch's near room, 1 doorway column cut | `sally/unbarred = 1` (2096) opens it; `tee/sealed = 1` (2077) makes the branch unreachable, cistern still a route down |
-| No piece was turned | 42 anchors, travel order + facing; exactly 17 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused; the same boxes turn `ambush_door` / `watch_bay` alone (`west`) |
+| Z7 a route, **and the route climbs** | 2172 standable, 17 entry / 19 exit cells, 8 blocks of rise measured off the model, `stair-head` level with the upper floor | `flight/broken_step = 1` strands the head landing and severs the zone while every piece still stands and the entry still reaches the first tread; the flat control is `boulder_stair` in the same box, which reads 0 |
+| Z7 every loft perch visible from the loft door | 5 perches | `loft/span_beams = 1` → 4 blind, tower still walkable |
+| Z7 no route to the Bellkeeper skips the threshold (**M**) | 17 doorband cells cut, 532 ring-side / 1623 tower-side | cutting the doorband severs the ring; the loft stays reachable, so the cut is the motif and not the zone |
+| Z7 a lane each side of the fight, bound over the **ring's own run** | 2 routes at the default | `ring/seal_flank` = 1 / 2 / 3 → 1 / 1 / 0 |
+| Z7 the counterweight shaft is entered once and only drops (**L**) | 2172 standable, 1 landing sill in the strip, 1 pit | `tee/sealed = 1` (2171) makes the shaft unreachable while the tower still walks; the pit is reached under walk-and-fall and reaches neither the entry nor its own landing under the plain step |
+| Z7 the plinth arithmetic is guarded, not hoped | 4 drifts, each refused | `shaft/sill + 1`, `flight/tread = 1`, `flight/landing_run = 4`, `ring_run = 22` |
+| No piece was turned | 83 anchors, travel order + facing; exactly 26 of them across, pinned | `door_run = 7` and `gallery_run = 7` are refused, and so is Z7's `door_run = 19` with `ring_run = 21` (which moves a cell between two runs, so the climb guard cannot be what fired); the same boxes turn `ambush_door` / `watch_bay` / `threshold_motif` alone (`west`) |
 | Seam limit 1 closed: a rename lets two pieces declare one stem | 2 pairs, 4 anchors read back by name and declaring rule | dropping the rewrite in `compose::node` → the same `AnchorCollision` |
 | Seam limit 1: no rename, still a collision | 2 pairs | — (the collision *is* the gate, named by rule both times) |
 | Seam limit 2 closed: `causeway` is a terminus until `berm_gate` opens | 2 `Z`-slices, a 22-cell berm | — (with the gate shut no walk crosses it while the berm still crosses the ward; with it open the faces connect) |
@@ -1104,38 +1717,50 @@ the piece-level claims stay in §5b.
 | ...and the branch's teeth | 42 standable, 9 near-room | `tee/sealed = 1` → the branch is unreachable, mainline still walks |
 | A composed route the player walks **up** | 133 standable, 3 in the entry face, 7 blocks of rise | the level walk to the flight's own foot landing is the control; a flat chain reads 0 |
 
-**Z4's and Z6's movement model.** Five zones are crossed with the ±1 step
-`connected` uses; Z4 and Z6 are entered by stepping off a ledge, so they are
-crossed under
-`reachable_with_fall` — `connected`'s walk plus a one-way fall — and they are the
-only zones that also owe the negative, that the extra freedom still does not
-carry a player back up (asserted under the plain step, since proving a negative
-under the generous model would be circular). The fall model is also used as the
-*adversary*: a fall edge only ever adds routes, so Z6's "the span is on the
-route" cut is re-walked under it. `tests/support/mod.rs` carries it, with one
+**Which zones fall.** Four of the eight are crossed with the ±1 step
+`connected` uses, and **Z7 is one of them on purpose**: its mainline climbs, and a
+zone that climbs owes the stronger walk rather than the more permissive one. The
+other four have a drop on the route — Z4 and Z6 are *entered* by stepping off a
+ledge, Z2 and Z5 are *left* down one — so they are crossed under
+`reachable_with_fall` (`connected`'s walk plus a one-way fall), and each of the
+four also owes the negative: the extra freedom still does not carry a player back
+up (asserted under the plain step, since proving a negative under the generous
+model would be circular). The fall model is also the *adversary*: a fall edge only
+ever adds routes, so Z2's and Z6's "the span is on the route" cuts and Z5's
+doorway cut are re-walked under it — and Z7 uses it in the third way, as the only
+model under which its own lift shaft is enterable at all.
+`tests/support/mod.rs` carries it, with one
 deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing must
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
 
-Zone programs are **not** in the export suite. The reason given was the vanilla
-48-per-axis structure cap, and tiling a zone into prefabs is a jigsaw design
-rather than an export detail (§6) — but `chapel_ward`'s fixture is 12 × 9 × 20,
-so that reason no longer covers every zone, and the honest statement is now the
-narrower one: **no zone has been put in the export suite, and the first one that
-fits is a decision nobody has taken.** Taking it would mean a zone's anchors
-round-tripping through `PrefabRegistry` and carrying a spec-0027 §2 provenance
-row like a rule's, which is a capability question and not a size one. Meanwhile
+Zone programs are **not** in the export suite. Size is no longer why — every
+zone exports, tiling if it must (§6) — so the statement is the narrow one:
+**no zone has been put in the export suite, and doing so is a decision nobody
+has taken.** Taking it would mean a zone's anchors round-tripping through
+`PrefabRegistry` and carrying a spec-0027 §2 provenance row like a rule's,
+which is a capability question and not a size one. Meanwhile
 their structural validity, JSON round trip, determinism and palette-swap
 promises are asserted in `tests/zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
-`export::export_prefab(program, region, options, id)` produces the two files a
-prefab library holds: `<id>.nbt` (a vanilla structure template) and `<id>.json`
-beside it. It takes the *program*, not a finished model, and expands it itself —
-which is what makes the provenance row unforgeable, since the hash and seed in
-the metadata cannot describe a different expansion than the one that produced
-the bytes.
+`export::export_zone(program, region, options, id)` is the export. It takes the
+*program*, not a finished model, and expands it itself — which is what makes the
+provenance row unforgeable, since the hash and seed in the metadata cannot
+describe a different expansion than the one that produced the bytes.
+
+It writes one of two shapes, decided from the region and from nothing an author
+says:
+
+- a region within 48 on every axis → `<id>.nbt` (a vanilla structure template)
+  and `<id>.json` beside it, the two files a prefab library holds;
+- a region past it → a set of `≤48` tiles, `<id>.x<i>y<j>z<k>.nbt`, plus one
+  manifest at `<id>.json`.
+
+`export::export_prefab` is the single-template writer the first shape is made
+of, and it still refuses an oversize region. Nothing outside the module calls
+it: a region an author chose is never the wrong size.
 
 The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
 `.schem` asset pipeline already uses: one structure writer, one set of
@@ -1143,7 +1768,11 @@ determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0
 A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
-The metadata is the hand-built shape, minus what expansion cannot know:
+The metadata is the hand-built shape, minus what expansion cannot know. Its
+shape is defined once, in `delvewright_schem::prefab` — the crate that also
+writes the `.nbt` half — and every tool that produces or edits a prefab reads and
+writes it through that one type, so an admission step cannot drop the parts it
+does not itself model:
 
 ```json
 {
@@ -1152,6 +1781,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
   "anchors": {},
+  "connectors": [],
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -1171,8 +1801,11 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   indexes normally. The castle, which marks, exports
   `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
   over its 41×14×25 region.
-- **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
-  tileset conventions; a guessed socket is worse than none.
+- **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
+  tileset conventions; a guessed socket is worse than none. The key is present
+  and empty rather than absent, because "this piece has no sockets" and "this
+  metadata was written before sockets existed" are different claims, and
+  `delve-admit socket` appends to it.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
   the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
   the true thing and admission to a campaign still runs the probe. `unmeasured`
@@ -1182,19 +1815,88 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
   refuses both at parse).
 
+### The tiled shape
+
+A zone past the cap carries `structure_set` where a single prefab carries
+`structure`. Everything else is the same file: same `prefab_id`, same
+zone-relative `anchors`, same empty `connectors`, same `lighting`, same
+`license` — the provenance row regenerates the whole set at once, because one
+expansion produced all of it.
+
+```json
+{
+  "prefab_id": "prefab/z2-gate-ward",
+  "structure_set": {
+    "base": "z2-gate-ward", "size": [20, 10, 84], "part_max": 48,
+    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+    "parts": [
+      { "file": "z2-gate-ward.x0y0z0.nbt", "id": "z2-gate-ward.x0y0z0",
+        "grid_index": [0, 0, 0], "offset": [0, 0, 0],  "size": [20, 10, 48] },
+      { "file": "z2-gate-ward.x0y0z1.nbt", "id": "z2-gate-ward.x0y0z1",
+        "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
+    ]
+  },
+  "anchors": { … }, "connectors": [], "lighting": { … }, "license": { … }
+}
+```
+
+- The key is a **different name**, never `structure` with an extra field. Every
+  existing consumer requires `structure`, so a tool that has not learned about
+  tile sets fails to parse this file rather than reading it as a prefab with no
+  blocks in it.
+- `offset` is **zone-relative**: add it to a tile-local cell to get the zone
+  cell. That is the only transform reassembly needs.
+- The cuts come from `delvewright_schem::split::plan_split`, the same function
+  that tiles an oversize `.schem` import — one tiling, so one reassembly rule
+  reads both. They are a pure function of the region and the cap: no RNG, no
+  clock, no dependence on the program, the seed or the blocks, so the tiles and
+  the manifest are byte-identical across runs (`tests/export.rs`).
+- **A tile is packaging and never a unit of judgement.** The gates judge the
+  whole expansion, the block-legality check runs over the whole model, and both
+  the anchors and every diagnostic position are in zone coordinates. Binding
+  counts stay zone-level.
+- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+  writer and `Deserialize` for the readers — one struct, so the halves cannot
+  drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
+  exactly, so a truncated one is a refusal and not a building with a hole.
+
+The rest of the loop takes the manifest and treats the zone as one thing:
+`delve-render piece <id>.json` reassembles and renders one scene, and
+`delve-admit audit <id>.json` audits every tile's bytes for one zone verdict
+(with a per-tile listing). Both **refuse** a lone tile of a set and name the
+manifest to use instead — a render of a fragment is a review that passes and
+means nothing, and a verdict over one tile reads as a verdict over the zone.
+
+Not built: compiler-side placement of a tile group in world assembly, and
+jigsaw connector emission. Both are queued.
+
 Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
-region, a region past the vanilla 48-per-axis structure cap (tiling a prefab
-into parts is a jigsaw design, not an export detail), and a model containing a
-block the structure safety strip would replace with air — a grammar that asked
-for a command block meant to, so shipping a silent hole is refused instead.
+region, and a model containing a block the structure safety strip would replace
+with air — a grammar that asked for a command block meant to, so shipping a
+silent hole is refused instead. **Size is not among them.**
+
+The first two are properties of the inputs alone, and are refused before the
+expansion runs: `export::is_valid_id` is public so the CLI can ask before it
+expands anything, rather than after it has printed a verdict. The third is
+knowable only from the expanded model, so it is refused after the gates have
+passed — and the verdict is printed only once the prefab is on disk, so no
+`pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
 
 ## 7. Not built yet
 
-The §4 craft diagnostics, jigsaw connector emission, the JSON schema stage in
-front of the IR, and the contact-sheet/curation loop. Later phases of spec-0027.
+The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage in
+front of the IR. Later phases of spec-0027.
+
+The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
+candidate renders out as one page, optionally ordered by a similarity score
+against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
+the page and never gates it). What is still missing between the expander and
+that page is the automatic part: nothing yet drives "expand N seed-varied
+candidates → `batch`-render them → sheet", so the sweep is assembled by hand
+today.
 
 `mark` declares point anchors only. Gate-region anchors (`region` + `block`),
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
@@ -1222,6 +1924,36 @@ because the rule declares `anchor/branch-door` at the opening, so a zone reads
 where the face is from the expansion rather than from prose; larger because there
 is now a mating pair to get wrong, where before every rule was sealed and the
 convention had nothing to bind.
+
+**A pocket off a lane has no owner.** Three §5b rules now build the same shape —
+a lane with a pocket walled on three sides beside it: `watch_bay`'s bay,
+`hearth_ward`'s nook and `disarm_stand`'s stand. Each proves a *different* claim
+about it (a sightline to a span, shelter and detour, actuation from outside a
+run), which is why each is its own rule rather than a knob on one; but the
+construction itself is written three times, and a fourth consumer would write it
+a fourth. The general form is a shared pocket construction the three configure —
+not attempted here, for one concrete reason rather than for taste: `watch_bay` is
+shipped and composed into two zones, and re-expressing its bay would move the
+bytes of zones the byte-identity gate pins. It is named here so the *second*
+site is on the record, since generality is decided at the first.
+
+*Checked at Z7, and the count is still three.* `lift_shaft` (§5b) was the
+obvious candidate for a fourth and **is not one**. The shape is a *travel lane
+with a dead-end recess beside it*; a shaft has neither half. Its lane is
+vertical and is a hole rather than a floor — no body walks along it — what sits
+beside that lane is solid mass on three faces, and its one opening is a
+**through-passage**: the landing sill joins the shaft to the room outside it,
+where a pocket is closed on three sides and joins nothing. So the site count is
+unchanged by this round, and the threshold at which unification becomes correct
+has not moved.
+
+*What Z7 did move is the price.* The reason recorded above for not unifying is
+that one of the three (`watch_bay`) is composed into two zones, so re-expressing
+it would move pinned bytes. Z7 composes `hearth_ward` for BF5, which puts a
+**second** of the three into two zones (Z4 and Z7). Unification now has to hold
+four zones' bytes still rather than two. That is a cost that only grows, and it
+grows every time a zone round composes one of these three — which is worth
+knowing before the fourth site arrives, not after.
 
 **A facing a rule cannot ask for.** A derived facing is the negative direction of
 the world axis the scope calls local `Z`, and an explicit `facing` is a *world*
@@ -1252,3 +1984,47 @@ generalise to a rule with two symmetric sides.
 That is now two worked examples with the same shape and one rule that only
 avoided it by luck of layout. Still not built here — the red line for W2 was
 compose-existing-verbs-only — but the case is no longer thin.
+
+## 8. Demonstration coverage — what the corpus proves is reachable
+
+`prefab-procedure.md` §3 sends an author to the corpus, never to the schema. Under
+that instruction the corpus **is** the language: a construct no example writes
+does not exist in practice, whatever §2 says the IR supports.
+
+```sh
+delve-grammar coverage            # the table; exit 4 when anything is at zero
+delve-grammar coverage --json coverage.json
+```
+
+It counts, over every program `delve-grammar list` names, how many times each
+`Node` kind, each `Cond` kind and each palette paint kind is written, and prints
+each with its **binding count** and the programs that demonstrate it — the same
+shape the expansion gates use, and for the same reason: a number beside the word
+`pass` that examined nothing is worse than no number.
+
+**What it measures, and the thing it must never be read as.** It measures
+demonstration, not expressiveness. A pass means no part of the IR is left
+undemonstrated by the corpus an author is sent to. It is **not** evidence that an
+author can build any particular thing, and no document, PR or review may cite it
+as such. The command prints that sentence on every run, pass or fail, and carries
+it in the JSON, because a number travels further than the page that qualifies it.
+
+**How to read a zero.** A zero is not "the language cannot". It is "an author
+following the procedure would never find this", which is the more actionable of
+the two and the only one the corpus can answer. Close it by writing the smallest
+program that teaches the construct and putting it in the library — not by
+removing the construct from the required set. Every construct is required; an
+exemption is an entry in `coverage::EXEMPT` carrying its reason, and the report
+reds if the corpus later demonstrates an exempt construct, so the allowlist can
+only shrink.
+
+**Why the construct list cannot go stale.** The kinds are generated from one
+list that produces both the enum and its `ALL` slice, and each kind is assigned
+by an exhaustive `match` over `Node`, `Cond` and `Paint`. A new IR variant
+therefore **fails to compile** until someone classifies it, and it then begins
+life at zero bindings — a surface nothing demonstrates is a finding on the day it
+lands. The check is bound to two events rather than to a line in this document:
+an IR change cannot compile past it, and a corpus change cannot be pushed past
+the `#[test]` in `crates/grammar/src/coverage.rs` that carries the same
+assertion inside `cargo test --workspace`. CI runs the command as its own step so
+the table reaches the log.

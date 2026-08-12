@@ -57,6 +57,7 @@
 use std::collections::BTreeSet;
 
 use crate::registry::{Connector, PoolMember, PrefabRegistry};
+use delvewright_dsl::DwCode;
 
 // ---------------------------------------------------------------------------
 // Deterministic PRNG (splitmix64) — ADR-0006 named streams
@@ -341,7 +342,7 @@ pub struct AreaLayout {
 #[derive(Debug)]
 pub struct SolveError {
     /// The stable diagnostic code (`DW03xx`).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation.
     pub message: String,
     /// The prefab ids the draw had already seated when the failure was raised,
@@ -356,7 +357,7 @@ pub struct SolveError {
 }
 
 impl SolveError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    fn new(code: DwCode, message: impl Into<String>) -> Self {
         SolveError {
             code,
             message: message.into(),
@@ -372,22 +373,22 @@ impl SolveError {
 }
 
 /// `DW0301`: a pool declares no `entry`-role piece (nothing to seed the layout).
-pub const DW_NO_ENTRY: &str = "DW0301";
+pub const DW_NO_ENTRY: DwCode = DwCode::every_version("DW0301");
 /// `DW0302`: a campaign-referenced anchor is provided by no member of the pool
 /// (unsatisfiable required anchor).
-pub const DW_UNSATISFIABLE_ANCHOR: &str = "DW0302";
+pub const DW_UNSATISFIABLE_ANCHOR: DwCode = DwCode::every_version("DW0302");
 /// `DW0303`: the `pieces {min,max}` range is too small to fit the entry plus the
 /// required anchor-bearing pieces.
-pub const DW_RANGE_TOO_SMALL: &str = "DW0303";
+pub const DW_RANGE_TOO_SMALL: DwCode = DwCode::every_version("DW0303");
 /// `DW0304`: the solver could not place a required piece without an overlap, or a
 /// branching layout has no branch piece (tee/cross) to fork its terminals
 /// (layout infeasible for this pool / seed).
-pub const DW_INFEASIBLE: &str = "DW0304";
+pub const DW_INFEASIBLE: DwCode = DwCode::every_version("DW0304");
 /// `DW0305`: a campaign-referenced anchor is defined by **more than one** placed
 /// piece, so resolving it would be silent + arbitrary (ambiguous anchor). Also the
 /// role-aware failure when the only carrier of a required anchor is the entry
 /// piece and the entry does not already provide it.
-pub const DW_AMBIGUOUS_ANCHOR: &str = "DW0305";
+pub const DW_AMBIGUOUS_ANCHOR: DwCode = DwCode::every_version("DW0305");
 
 /// The maximum number of deterministically-reordered branching attempts before a
 /// layout is declared infeasible (item 2: large-terminal placement robustness).

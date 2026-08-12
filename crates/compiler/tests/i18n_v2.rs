@@ -840,7 +840,11 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     // Two puppets with one name: the first owns the key, the second follows it.
     let quests = dir.join("quests.json");
     let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
-    q["dsl_version"] = serde_json::json!("0.9.0");
+    // 0.10.0, because an actor NAMEPLATE is only a coverage obligation from 0.10
+    // onward (`l10n::ACTOR_NAME_ENTRY`, task #51): the widening that inventoried
+    // it landed over v0.6 surface, so campaigns below 0.10 are grandfathered. The
+    // pair to this line is `an_actor_nameplate_is_not_demanded_below_0_10`.
+    q["dsl_version"] = serde_json::json!("0.10.0");
     q["content"]["actors"] = serde_json::json!([
         { "id": "actor/ram-a", "entity": "minecraft:sheep",
           "name": "Ram of the Cave", "anchor": "anchor/hall" },
@@ -872,6 +876,56 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     assert!(
         s.contains("DW0180") && s.contains("actor.ram-b.name"),
         "and the newly-required key is still reported: {s}"
+    );
+}
+
+/// **The obligation fence, in the direction that actually happens** (task #51).
+///
+/// PR #317 widened `l10n::each_string` onto an actor's own `name` with no version
+/// gate, and `DW0180` compares key SETS with no version gate either — so the
+/// obligation reached every campaign at every declared version on the next engine
+/// build. `nobodys-cave-island` (0.6.0/0.8.0) went red mid-staging with nothing in
+/// its own documents changed, and was unblocked with a three-string patch rather
+/// than an adoption round.
+///
+/// This is that campaign in miniature and the drift is real, not simulated: the
+/// engine holds a widening the campaign predates. Below 0.10 the nameplate is not
+/// demanded; at 0.10 it is. Both halves are asserted, because a fence that can
+/// only fail in the direction that never happens is the fourth vacuity mode.
+#[test]
+fn an_actor_nameplate_is_not_demanded_below_0_10() {
+    let dir = tmp("i18n-actor-name-fence");
+    common::copy_dir_all(&common::keep_trial_dir(), &dir);
+    let quests = dir.join("quests.json");
+    let with_actor = |version: &str| {
+        let mut q: Value =
+            serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
+        q["dsl_version"] = serde_json::json!(version);
+        q["content"]["actors"] = serde_json::json!([
+            { "id": "actor/ram", "entity": "minecraft:sheep",
+              "name": "Ram of the Cave", "anchor": "anchor/hall" },
+        ]);
+        std::fs::write(&quests, serde_json::to_string_pretty(&q).unwrap()).unwrap();
+    };
+
+    // A campaign that predates the widening. Its sidecar has no `actor.ram.name`
+    // row — exactly the island's state — and it is answerable for none.
+    with_actor("0.9.0");
+    let below = validate(&dir);
+    assert!(
+        !below.contains("actor.ram.name"),
+        "a 0.9.0 campaign must not be asked for a key the walk only reached at \
+         0.10 — this is the whole of task #51:\n{below}"
+    );
+
+    // The same campaign, having adopted 0.10.0. Now it owes the translation, and
+    // says so with the same `DW0180` it always used.
+    with_actor("0.10.0");
+    let at = validate(&dir);
+    assert!(
+        at.contains("DW0180") && at.contains("actor.ram.name"),
+        "at 0.10.0 the obligation must bind, or the fence is not a fence but a \
+         deletion:\n{at}"
     );
 }
 

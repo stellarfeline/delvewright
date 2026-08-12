@@ -229,3 +229,39 @@ pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>
         .expect("campaign dir loads")
         .inputs
 }
+
+/// Patch a JSON document **structurally**: parse the text, hand the closure the
+/// parsed value, and return it re-rendered in canonical form.
+///
+/// Tests used to splice fixtures with `str::replace` over exact indented text.
+/// That coupling is invisible when it breaks: `str::replace` matching nothing
+/// returns the input unchanged, so the test goes on to assert against an
+/// **unpatched** campaign and passes for the wrong reason. Reformatting every
+/// fixture into canonical form (task #52) exposed four such silent no-ops at
+/// once — including the `DW0307` unroutable-move test, which had been asserting
+/// against a campaign with no `move-npc` in it. A structural patch cannot miss:
+/// an absent key is a panic, not a quiet pass.
+pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
+    let mut v: serde_json::Value = serde_json::from_str(text).expect("fixture is valid JSON");
+    f(&mut v);
+    delvewright_dsl::to_canonical_string(&v).expect("patched fixture serializes")
+}
+
+/// [`patch_doc`] against a file, in place.
+pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+    std::fs::write(path, patch_doc(&text, f)).unwrap();
+}
+
+/// The effect list a quest runs when one of its objectives completes —
+/// `content.quests[<quest>].on_objective_complete[<objective>]`. Panics if the
+/// path is absent, which is the whole point (see [`patch_doc`]).
+pub fn objective_effects<'a>(
+    doc: &'a mut serde_json::Value,
+    quest: usize,
+    objective: &str,
+) -> &'a mut Vec<serde_json::Value> {
+    doc["content"]["quests"][quest]["on_objective_complete"][objective]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("quests[{quest}].on_objective_complete[{objective}] is an array"))
+}

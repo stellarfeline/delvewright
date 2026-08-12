@@ -94,3 +94,18 @@ pub fn load_invalid() -> Vec<(String, InvalidFixture)> {
         })
         .collect()
 }
+
+/// Patch a JSON document **structurally**: parse the text, hand the closure the
+/// parsed value, and return it re-rendered in canonical form.
+///
+/// See the twin in `crates/compiler/tests/common/mod.rs` for why this exists: a
+/// `str::replace` that matches nothing returns its input unchanged, so a test
+/// built on textual splicing goes on to assert against an **unpatched**
+/// campaign and passes for the wrong reason. Canonical reformatting of the
+/// fixtures (task #52) exposed several such silent no-ops. A structural patch
+/// panics instead.
+pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
+    let mut v: serde_json::Value = serde_json::from_str(text).expect("fixture is valid JSON");
+    f(&mut v);
+    delvewright_dsl::to_canonical_string(&v).expect("patched fixture serializes")
+}

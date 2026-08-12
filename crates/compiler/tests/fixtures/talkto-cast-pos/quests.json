@@ -1,54 +1,55 @@
 {
-  "dsl_version": "0.7.0",
   "campaign_id": "talkto-cast-pos",
-  "stage": "quests",
   "content": {
     "quests": [
       {
-        "id": "quest/ask",
-        "trigger": {
-          "type": "campaign-start"
-        },
-        "objectives": [
-          {
-            "type": "talk-to",
-            "id": "obj/ask",
-            "npc": "npc/keeper"
-          }
-        ],
-        "on_objective_complete": {
-          "obj/ask": [
-            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            },
-            {
-              "type": "move-npc",
-              "npc": "npc/keeper",
-              "to_anchor": "anchor/exit"
-            }
-          ]
-        },
-        "on_complete": [],
         "cast": {
           "npc/keeper": {
             "at": "anchor/keeper-stand",
-            "doing": "barring the inner door with his body",
-            "dialogue": "dlg/greeting"
+            "dialogue": "dlg/greeting",
+            "doing": "barring the inner door with his body"
           }
+        },
+        "id": "quest/ask",
+        "objectives": [
+          {
+            "id": "obj/ask",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/ask": [
+            {
+              "anchor": "anchor/door",
+              "type": "open-gate"
+            },
+            {
+              "npc": "npc/keeper",
+              "to_anchor": "anchor/exit",
+              "type": "move-npc"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
         }
       },
       {
-        "id": "quest/farewell",
-        "trigger": {
-          "type": "quest-complete",
-          "quest": "quest/ask"
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/exit",
+            "dialogue": "dlg/farewell",
+            "doing": "waiting on the far side of the lifted gate, holding the road open"
+          }
         },
+        "id": "quest/farewell",
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/farewell",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           }
         ],
         "on_complete": [
@@ -56,14 +57,13 @@
             "type": "campaign-complete"
           }
         ],
-        "cast": {
-          "npc/keeper": {
-            "at": "anchor/exit",
-            "doing": "waiting on the far side of the lifted gate, holding the road open",
-            "dialogue": "dlg/farewell"
-          }
+        "trigger": {
+          "quest": "quest/ask",
+          "type": "quest-complete"
         }
       }
     ]
-  }
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quests"
 }

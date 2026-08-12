@@ -210,6 +210,16 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   function down with it, silently. The tree already carries the fact, so the
   compiler enforces it rather than leaving it to folklore; the party form of
   `damage-players` is `execute as @a[…] run damage @s …`.
+  **One value-level exception** (task #70): an SNBT integer literal in a
+  `key:value` position whose suffix cannot hold it — NBT bytes and shorts are
+  signed, so `text_opacity:255b` is structurally flawless and unparseable, and
+  1.21.11 answers "Failed to parse number: Value out of range" by dropping the
+  entire function. Quoted spans are skipped, and a bare standalone number is not
+  examined, so it cannot mistake prose for a value. `delve-admit`'s gallery is the
+  second consumer of this validator: it emits `.mcfunction` into a datapack
+  exactly as `delvec` does, so it now runs the same tree over its own output
+  before writing anything (`gallery::validate_functions`, `DW0760`) rather than
+  carrying a private copy of the rule.
 - Determinism (ADR-0006): all map/set iteration is `BTreeMap`/sorted; the only
   randomness is stage-1 `seed` → a named splitmix64 per-area stream.
 
@@ -219,6 +229,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
+delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
@@ -825,6 +836,94 @@ datapack predicate `<ns>:sneak_held` (the cutscene bounce's re-attach gate, §4)
 ---
 
 ## 4. Hard invariants
+
+### A campaign is judged at its DECLARED `dsl_version` (the obligation fence)
+
+**Owner ruling, 2026-08-10.** The compiler processes a campaign according to the
+`dsl_version` its stage documents declare. A campaign that compiled before keeps
+its behaviour unchanged; a new engine requirement reaches it only when that stage
+adopts the version which introduced the requirement.
+
+This is **not** a promise of byte-identical emission forever. A released delve
+reproduces through its pinned engine (`versions.toml` + the OCI image, ADR-0010).
+The promise is about **verdicts and behaviour at a declared version**.
+
+#### Why it needed a mechanism
+
+Per-stage fences already guarded new **surface** — "you may not write this field
+below version X" (`DW0141`). Nothing guarded new **obligations** — "you are now
+required to have X" — so whether a check respected a declared version depended on
+whether its author remembered. Measured cost (task #51): `dsl::l10n::each_string`
+was widened onto an actor's own `name` with no version gate, `DW0180` compares key
+SETS and had no version gate either, and the obligation reached every campaign at
+every declared version on the next build. `nobodys-cave-island` (0.6.0/0.8.0) went
+red mid-staging with nothing in its own documents changed.
+
+#### Half 1 — every code declares when it starts binding
+
+A `Diagnostic` can only be built from a `DwCode`, and a `DwCode` can only be built
+by naming which kind of rule it is (`dsl::diagnostic::Binds`):
+
+| Declaration | Meaning | Choose it when |
+|---|---|---|
+| `DwCode::every_version("DWxxxx")` | Applies at every declared `dsl_version`. | The rule judges what the document **says** — a malformed id, an unknown item, a surface used below the version that introduced it. It cannot go red on a campaign whose documents did not change. |
+| `DwCode::since("DWxxxx", n)` | Applies at minor version `n` and above. | The rule **requires** the campaign to have something. Campaigns below `n` are grandfathered and adopt it in their own version round. |
+
+There is no constructor for "did not say", so *forgot to fence* is not a mistake
+that can be made. Both directions are wrong in different ways — fencing a
+wellformedness rule would stop rejecting bad documents in old campaigns — so
+neither is a default, and there is no `Default` impl.
+
+The `&'static str` code constants that remain in `delve-schem`, `delve-admit` and
+`delve-render` are deliberate: those diagnostics are about prefabs, schematics and
+renders, artifacts that carry no `dsl_version`, so there is nothing to grandfather
+against. `tools/check-dw-codes.py` resolves both forms.
+
+#### Half 2 — the fence is the only exit
+
+`dsl::fence::Fenced` is the type `delvec` prints and derives its exit code from,
+and its only campaign-aware constructor is `Fenced::apply(&campaign, diags)`,
+which withholds every `Since(n)` diagnostic whose **stage** declares less than
+`n`. A diagnostic's stage names a stage document (`quests`, `dialogue`, …); any
+other stage (`l10n`, `prefabs`, `build`, empty) is judged at the **minimum**
+across the campaign's stage documents — a campaign is only as adopted as its
+least-adopted stage, and the minimum is the reading that grandfathers.
+`Fenced::structural(diags)` is the pre-parse path (a stage document that did not
+parse, so there is no version to read); it cannot grandfather, so it refuses to
+carry anything version-scoped.
+
+Every run states the fence's **binding count** on stderr when it is non-zero
+(`obligation fence: N finding(s) grandfathered …, DWxxxx xN`), so a green
+campaign also says what it is not yet answerable for. A silent fence and an
+absent one are indistinguishable (CLAUDE.md: a green gate that binds to nothing
+is vacuous, not a pass).
+
+Currently declared `Since`: `DW0480`–`DW0485` (spec-0025, `since 8`). `branch.rs`
+holds no `is_v08` guard of its own any more — a rule with two fences is a rule
+whose two fences can disagree.
+
+#### The other granularity: a check whose BINDING widens
+
+A per-code fence sees a *new check*. It cannot see an *existing check examining
+more objects* — task #51's actual shape, which added no code at all. Such a check
+versions its own binding at whatever granularity that binding has. The worked
+instance is the l10n inventory:
+
+- `l10n::each_string` passes a `KeyEntry` at **every** emission site — the stage
+  whose `dsl_version` governs the key, and whether the key has been inventoried
+  since its surface existed (`KeyEntry::always`) or was added to the walk later
+  over surface older campaigns already had (`KeyEntry::since`). There is no
+  two-argument `f`, so a new site must answer.
+- `l10n::inventory` is unchanged: every key, tagged and translated as before, so
+  **emission does not move**.
+- `l10n::required_inventory` is the subset a campaign's declared versions have
+  reached. `DW0180` (missing) reads it; `DW0181` (orphan) still reads the full
+  inventory, so a campaign that translated a not-yet-demanded key early is never
+  told it is an orphan.
+
+Currently declared `KeyEntry::since`: `actor.<actor>.name` at 0.10 — v0.6 surface
+that PR #317 inventoried in the 0.10 era (task #51). A campaign below 0.10 is not
+asked for actor nameplates; at 0.10 it is.
 
 ### A scheduled bundle has no `@s` (executor contract)
 
@@ -3058,7 +3157,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
 | `DW0344` | In a `horizon: ocean` world, a placed piece whose prefab metadata declares `waterline_y` does not land that waterline at sea level (`piece.y + waterline_y ≠ 62`) — the piece floats above the sea (its shore an unclimbable cliff, its authored water pocket hanging in the air) or is drowned under it. Build-tier (exit 3), `compiler::plan`, checked after placement. Nothing downstream can catch this: nav, boundary, POV and PackTest all derive from the very placement that is wrong, so a mis-datumed island validates green and ships unplayable. The message names the area, prefab, placed y and the signed offset, and prescribes correcting the declared `waterline_y` (the local y of the piece's top water block; the island convention is 2) or rebuilding the piece against the convention — ocean areas are placed at y=60 and a piece with a different waterline cannot share that datum. Pieces declaring no `waterline_y` author no sea and are not checked. |
 | `DW0345` | The assembled world resolves **no entry anchor** — no placed piece declares any of the entry-anchor names (`spawn`, `entry`; see §4 "First-join placement"). The compiler then has no cell to call the campaign's start: no `setworldspawn`, no class-apply teleport, no first-join placement, no `dw:cp` seed. Build-tier (exit 3), `compiler::emit`. Silent before — the delve compiled clean and fell back to the vanilla spawn search, which a **dedicated** server resolves to the surface (so every rung of the validation ladder stayed green) and the **integrated singleplayer** server resolves to the build floor, i.e. inside solid stone. Prescription: give the pool's entry-role prefab an entry anchor in its metadata `anchors`, or bind the area to a prefab that has one. |
-| `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse (task #62). The canonical trigger is an **older delvec meeting newer metadata**: `deny_unknown_fields` rejects a field this delvec predates. Previously a silent skip — the prefab vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. Now `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Prescription: upgrade delvec, or fix the named field. |
+| `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse (task #62). The canonical trigger is an **older delvec meeting newer metadata**: `deny_unknown_fields` rejects a field this delvec predates. Previously a silent skip — the prefab vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. Now `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Prescription: upgrade delvec, or fix the named field. **One case gets its own message**: metadata carrying `structure_set` is a TILE SET — a zone too big for one 48-per-axis structure template, exported as several `.nbt` tiles plus that manifest. delvec understands the shape and cannot yet PLACE it (compiler-side placement of a tile group is chunked export phase 2), so the zone is skipped loudly and the diagnostic names the queued work instead of prescribing an upgrade that would not help. Authoring and review already handle tile sets: `delve-render piece` and `delve-admit audit` both take the manifest. |
 | `DW0347` | A `cutscene` shot's aim sweeps faster than the angular budget: over 6°/tick (120°/s) peak on the exact eased path — at 20 Hz that reads as a spin, not a shot (the camera dossier's comfortable band is ≤ 2°/tick; thresholds are the dossier's proposal — the spike rig has no rendering client to calibrate against footage). Typical cause: a `look_at` subject too close to a fast dolly, or a sharp travel-aim corner. Build-tier (exit 3), `compiler::nav` (task #64). An **error**, not a warning: the shot is provably nauseating before it ships, and the fix is always available — more camera distance, a longer `seconds`, or splitting the move into two shots (the hard cut between shots is the idiomatic fast reframe). |
 
 | `DW0360` | An anchor-bearing campaign effect — at **every effect root**, at **any** nesting depth — names an anchor that resolves to no position in the assembled world. The single resolved-anchor-or-diagnostic seal over the whole effect surface, driven by `QuestEffect::anchor_refs` (the referential sibling of `nested_effect_lists`) over the roots `plan::for_each_effect_root` enumerates. **The roots are inherited, not re-listed** (task #24): this walk hand-listed three of the five, so a typo'd anchor in a `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle was never asked the question — the build stayed green and `trap_fire_<trap>.mcfunction` shipped with the `open-gate` simply absent, which is the silent-drop class this seal exists to end, live inside the seal itself. **Scope: the verbs that fail open, plus the corner where nothing else looks.** The spec-0022 payload verbs (`volley`, `collapse`) fail *closed* — `plan_payload_verbs` resolves their volumes with `?` and reports `DW0447`, which names the verb and the volume — so **where `DW0447` runs**, they keep their own diagnostic rather than being preempted by this generic one (see "Known spec ↔ code drift" for why that overlap exists at all). `plan_payload_verbs` lives inside the world block, so it runs only when the campaign assembles a world (`emit::assembles_world`, the one predicate the world block itself reads), and a payload verb does **not** imply that: nothing confines `volley`/`collapse` to `traps[].payload`. The deferral is therefore conditional on the proof running; in a campaign with no traps, no waves, no bodies and no walkable critical leg, this seal keeps the payload verbs itself. It exists because every anchor consumer in emission fails **open**: `open-gate`/`close-gate` scan `plan.anchors` for a name match and fall out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players` bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to `[0, BASE_Y, 0]`. One typo'd anchor therefore emitted **nothing** — a door that never opens, a checkpoint bound to nothing — in a delve that compiled clean. `DW0142` catches what the DSL can see (an area's declared anchor set); this re-asks the question of the *assembled* world, so pool areas and cross-area camera anchors are covered too. Build-tier (exit 3), `compiler::emit`, run **first** among the referential proofs: an unresolved waypoint degraded to the origin otherwise surfaces as a bogus `DW0308` camera clip, sending the author to move a shot that was never the problem. |
@@ -3810,7 +3909,10 @@ therefore not optional for a branching campaign.
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
-Catalogued here so the DW namespace is complete and CI-checked.
+Catalogued here so the DW namespace is complete and CI-checked. Two ranges are
+`delvec`'s own and are numbered by DOMAIN rather than by binary: `DW0724` (the
+visual/render range) and `DW077x` (`delvec fmt`, §9) — a code names a rule, and
+the rule's domain is the more useful thing for the number to say.
 
 | Code | Tool | Meaning |
 |------|------|---------|
@@ -3823,14 +3925,23 @@ Catalogued here so the DW namespace is complete and CI-checked.
 | `DW0722` | `delve-render` | Output file could not be written (exit 3). |
 | `DW0723` | `delve-render` | GPU renderer failed / textures absent (exit 5). |
 | `DW0724` | `delvec` (visual tier) | A player-POV camera eye cell is occupied (solid/water) in the FINAL assembled world — the frame would render the inside of a block, not the player's view. The self-check behind the visual tier (`compiler::nav::verify_pov_cameras`), mirroring the DW0314 waypoint self-check: every POV camera stands at the eye-height (1.62) of a DW0314-proven-standable waypoint, so this can only fire if the eye-height/standing-cell derivation changes to place the eye in a ceiling/wall (or a later pass mutates the cell). Numbered in the `DW072x` visual/render range; emitted by the compiler's nav pass (exit 3). Fix the camera derivation — never nudge the waypoint or the geometry. |
+| `DW0725` | `delve-render` | **Contact-sheet ordering is not a total order over the candidates** — indices dropped, duplicated or out of range (exit 10). The score RANKS the sheet and NEVER gates it (owner ruling, spec-0028 §3): cross-domain calibration between a painterly reference image and a voxel render is unproven, so a similarity number may decide where a candidate sits on the page and never whether it is on the page. `sheet::build_sheet` puts whatever its ordering function returns through `sheet::verify_total_order` before drawing a pixel, so every way rank-only can erode — a threshold shortening the order, a "best of" repeating an index, an off-by-one losing the last cell — lands here as one refusal instead of a silently shorter page. Promoting the score to a threshold requires its own owner-approved amendment backed by accumulated batch data; do not add one to satisfy this diagnostic. |
+| `DW0726` | `delve-render` | A contact sheet's score set bound to fewer candidates than the sheet holds. **Zero binding is an error** (exit 2) — nothing was ranked, and a score file that matched no candidate must not read as a successful ranking run (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). A partial binding is a **warning** naming the counts; the unscored candidates stay on the page, last, labelled unscored — a missing measurement is not a bad one. Score rows matching no candidate warn under the same code (usually an id typo or a stale run). |
+| `DW0727` | `delve-render` | **An anchor's eye-level camera is not standing on the anchor's own cell**, or could not be stood up at all (warning; `piece`/`batch` still write every other shot). The per-prefab eye shots are the only cameras inside a piece, and a prefab is mostly solid — the motivating ward was 81% rock with an anchor inside a bank of iron bars — so an eye point taken from an anchor position alone lands inside a block often enough that assuming it would put a picture of the inside of a block in a review set, indistinguishable from a picture of a room. Three tiers, one code, because they are one fact the reviewer needs (*where is the body in this frame*): the camera **stepped back** along the facing to a cell where a body fits, naming the block that displaced it and the offset; **no body cell** was found within 3 blocks with the anchor still in front of it, so that anchor gets no eye shot at all; or the frame rendered **empty** — nothing but flat background, meaning the anchor is aimed at nothing in this piece (measured on the pixels, `detect::is_featureless`, not inferred from geometry). Every case also rides `<stem>-shots.json`, since a displaced camera is invisible in its own frame. Fix the anchor's facing or the piece's geometry; never move the camera to make the picture nicer. Zero eye shots over one or more eye-eligible anchors is reported under the same code — a review set with no interior view cannot judge the scene, which is the whole job of `prefab-procedure.md` §5. |
 | `DW0730` | `delve-admit` | Audit: a palette block is not in the allowlist. |
 | `DW0731` | `delve-admit` | Audit: a hard-forbidden code-injection vector (command/structure block, NBT spawner, embedded `Command`). |
 | `DW0732` | `delve-admit` | Input error (unreadable `.nbt`/metadata/JSON). |
+| `DW0733` | `delve-admit` | Audit: a palette block state does not exist in Minecraft 1.21.11 — the template would load it as air. |
 | `DW0740` | `delve-admit` | Catalog card schema/field validation failure. |
 | `DW0741` | `delve-admit` | Catalog card license not in the ADR-0013 allowlist. |
 | `DW0750` | `delve-admit` | Admission tooling (socket/anchor/lighting) failure. |
 | `DW0751` | `delve-admit` | Lighting probe: a `dark` interior was measured (advisory; no longer gates — spec-0010). |
 | `DW0760` | `delve-admit` | Gallery emission / curation failure. |
+| `DW0770` | `delvec fmt` | Authored JSON is not valid JSON, located at `line:col` (exit 1). Reported instead of formatted — `fmt` never guesses at a repair. |
+| `DW0771` | `delvec fmt` | **A duplicate object key.** JSON's grammar allows one and `serde_json` silently keeps the LAST, so one of the two values is already being discarded without a word; formatting would make that loss permanent and invisible, so `fmt` refuses and writes nothing (exit 1). Delete or rename whichever occurrence is wrong. |
+| `DW0772` | `delvec fmt` | Internal error: the formatter's own output is not equivalent to its input, so nothing was written (exit 1). The self-check runs on **every** file `fmt` writes — it re-parses the rendered text and compares arrays index-wise, objects as maps. Its whole purpose is that an array reordering (which changes the game) fails here instead of shipping. A `DW0772` is a compiler bug; report it. |
+| `DW0773` | `delvec fmt --check` | A file is not in canonical form, with the line of the first difference (exit 1). Fix by running `delvec fmt <path>` — never by hand. |
+| `DW0774` | `delvec fmt` | The given paths matched **zero** JSON files (exit 1). A formatter or a `--check` that binds to nothing is vacuous, not a pass (CLAUDE.md), and a stale path in a CI step is exactly how this gate would rot into a green no-op. |
 
 `delve-render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
@@ -4459,3 +4570,118 @@ The patch is **never applied here**: nothing writes to a stage document from the
 game. The agent applies it, reruns `delvec build`, and the normal proofs
 (`DW0308` air corridors, `DW0347` angular budget) gate the result exactly as
 they gate a hand-written shot.
+
+---
+
+## 9. `delvec fmt` — canonical form for authored JSON
+
+Owner directive 2026-08-07 (task #52), from a live accident: a **three-key**
+insertion into `nobodys-cave-island/l10n/zh-cn.json` produced a
+**103-insertion / 100-deletion** diff, because the file was not canonically
+ordered and the writing tool's `sort_keys` re-laid it out. Canonical order makes
+an insertion a one-line insertion, and makes two authors editing different keys a
+non-conflict.
+
+```
+delvec fmt <path>…            # rewrite in canonical form
+delvec fmt --check <path>…    # report; write nothing; exit 1 if anything is off
+```
+
+A formatter **and** a check, in that order and for a reason: a `--check`-only
+gate makes an author hand-sort a 900-key sidecar, which nobody does twice, so the
+gate ends up waived. `cargo fmt` is the shape that works.
+
+### The hard constraint
+
+**Only object keys may be sorted. Array order is semantic** — `quests[]`,
+`objectives[]`, `effects[]`, `options[]`, `steps[]` are ordered, and reordering
+one changes the game. So this is a correctness property, not a style property,
+and it is *proved* rather than promised: `delvewright_dsl::fmt::format_text`
+re-parses its own output and runs `fmt::equivalent`, which compares **arrays
+index-wise** and objects as key→value maps. A renderer that sorted an array fails its own check
+and writes nothing (`DW0772`). The guard is demonstrated firing — the unit test
+`the_guard_catches_a_renderer_that_sorts_arrays` injects a deliberately
+array-sorting renderer and asserts `DW0772`.
+
+### The canonical form
+
+| rule | why (argued from *minimal diff on insertion* / *no semantic change ever*) |
+|---|---|
+| object keys sorted by Unicode scalar value | an inserted key lands in exactly one place. UTF-8 byte order == code-point order, so Rust's `str` `Ord` and Python's `sorted()` agree and the existing Python authoring tools already emit this order. |
+| 2-space indent, one value per line | the motivating file and every `tools/*.py` writer already use `indent=2` (also `serde_json`'s pretty default), so the one-time normalization is smallest exactly where the files are largest. One value per line makes an inserted array element a whole-line insertion, not a rewrite of a long line. |
+| non-ASCII written raw, never `\uXXXX` | the campaigns are half Chinese; escaping would triple every sidecar and make its diffs unreadable — a direct defeat of the motivation. |
+| control characters escaped in the shortest legal form (`\n`, `\t`, `\b`, `\f`, `\r`, else `\u00xx` lowercase) | required by JSON, and it is the form every other writer here already emits, so it is the fixed point. |
+| **number literals preserved byte-for-byte** | the one rule that is not about diffs. Re-rendering through `f64` loses integers above 2^53 and can move a decimal's last digit — a silent semantic change. `9007199254740993`, `1.50`, `1e3` and `-0.0` all survive unchanged. |
+| exactly one trailing newline | POSIX text, and without it appending anything rewrites the last line. |
+| duplicate object keys refused (`DW0771`) | see the catalog row: the data loss is already happening silently; formatting would make it permanent. |
+| empty containers stay on one line (`[]`, `{}`) | matches `serde_json` and `json.dumps`. |
+
+Not canonicalized, deliberately: number literals (above), and Unicode
+normalization of string contents (NFC vs NFD is the author's text, not the
+formatter's). The formatter knows the **JSON grammar and nothing about the DSL** —
+it must handle an l10n sidecar, a stage document, a prefab metadata card and
+whatever stage 8 turns out to be, with no per-schema list to keep in step.
+
+### Which files, and how they are found
+
+A path argument may be a file (taken as given — you pointed at it) or a
+directory, walked recursively for `*.json` with entries **sorted**, never
+`read_dir` order (ADR-0006). Two things are skipped:
+
+- dot-directories (`.git`, `.github`);
+- any directory holding a `manifest.json` — the marker `delvec build` itself
+  stamps on an output root. Emitted trees are not authored content, several are
+  checked in (`campaigns/*/out/`), and rewriting one would break the
+  byte-identity record it exists to hold.
+
+Symlinked directories are not followed (`campaigns/` is a symlink to the content
+repo in a dev tree; a walk that followed it would silently reach a second
+repository).
+
+**Out of scope, by decision**: `crates/compiler/data/*.json` — harvested game
+registries with their own generator contract (`tools/extract-*.py`,
+`data/PROVENANCE.md`), not content anyone authors by hand.
+
+### What formatting does and does not change in a build
+
+Proved end-to-end by `crates/compiler/tests/fmt.rs::formatting_a_campaign_changes_only_the_manifest_input_hashes`,
+and measured on `nobodys-cave-island` in both languages: **every emitted file is
+byte-identical** (609 EN / 594 ZH outputs). The single exception is stated rather
+than smoothed — `manifest.json`'s `inputs` map is the sha256 of the **source**
+bytes, i.e. provenance of exactly what the author checked in, so it *must* move
+when the sources are rewritten. `manifest.json`'s `outputs` map, and every other
+key, are unchanged. A formatter that left `inputs` alone would have broken the
+provenance record instead of preserving it.
+
+### One canonical form, one implementation
+
+The formatter lives in `crates/dsl` (`delvewright_dsl::fmt`), not in the
+compiler, because a canonical form belongs to the **format** rather than to
+whichever writer needed it first — and `delvewright-dsl` is the crate whose
+published description already is "the format the delvec compiler reads"
+(ADR-0018 §4).
+
+That placement is load-bearing, not tidiness. `delvewright_dsl::to_canonical_string`
+already claimed the name "canonical" and is what **`delvec edit apply` writes
+`world-edits.json` with**. Its form was serde's — struct-declaration field order.
+Had `fmt` shipped a second, key-sorted form, the compiler would have written a
+file its own `fmt --check` immediately rejected, and an author running both in
+one loop could not have satisfied both. So `to_canonical_string` now serializes
+with serde and puts the bytes through `fmt`: one definition, two doors.
+
+The pre-existing fixture gate `crates/dsl/tests/roundtrip.rs` is unchanged by
+this and now proves two things at once — serde loses no field on a round trip,
+**and** the fixture on disk is in `delvec fmt` canonical form.
+
+### CI
+
+A step of the `rust (fmt, clippy, test)` job (a step, not a job: every job name
+in `ci.yml` is a required status context). It runs `--check` over this repo's
+authored JSON corpus and states its binding count on every run.
+
+**Not yet covering the content repo.** `campaigns/` is pinned by
+`versions.toml [content].sha`, so a `--check` over it here could only go green
+after a content-repo normalization merges and the pin moves — an ordering this
+repo cannot perform. The same one-line `--check` belongs in the content repo's
+own CI, which is where its files are gated; until then, the accident this tool
+exists to prevent is prevented for engine fixtures only.

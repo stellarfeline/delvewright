@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.1.0
+version: 1.2.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -625,6 +625,11 @@ have caught gets paid for twice once stages 5–6 are written against it.
   inverts the gate. `tools/refimg.py` draws reference images when a provider is
   configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
   human in the loop for prompt iteration.
+  When candidate prefabs DO exist and the owner is choosing between them, that
+  later step has its own tool: `delve-render contact-sheet <renders> -o <png>`
+  puts them all on one page, optionally ordered by similarity to this gate's
+  reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
+  score only ORDERS the page, it never removes a candidate from it.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
@@ -632,6 +637,20 @@ have caught gets paid for twice once stages 5–6 are written against it.
   "is the set pretty"; only an eye-height frame on the walk answers "what does a
   player walking in experience", and the second question is the one the review
   exists for.
+- **The moment she confirms, the approved images become campaign files.** Copy
+  them to `campaigns/<id>/design/concept/`, one per scene, named for the scene,
+  and write `campaigns/<id>/design/README.md` carrying the approval date, the
+  approved names, and the sentence that every later round is held to: *author
+  from the image, judge against it, present every choice beside it.* Commit them
+  with the campaign. `tools/refimg.py` writes to a gitignored working directory,
+  which is right for a draft and wrong for an approved one — **an approval that
+  lives only in a published page is bound to nothing.**
+- **Every later step that asks the owner to choose reads `design/` FIRST**, and
+  presents the choice beside that scene's image, under the approved name, saying
+  which element of the image the thing on offer corresponds to. A round that
+  cannot say that is not ready to ask. This binds hardest on contact-sheet
+  curation, which is the step most likely to run in a later session that never
+  saw the gate.
 - **Do not begin stage 5 until she has confirmed it.** A confirmation is her
   words in chat, not the absence of an objection.
 - In **e2e mode** the Artifact is still produced and still shown — e2e removes
@@ -723,13 +742,80 @@ Symptom → tool:
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.
-- **The layout needs a prefab the library doesn't have**: import it with
-  `delve-schem convert`, then run the **whole** `delve-admit` admission chain
-  (`audit` → `resolve-jigsaw` → `socket` → `anchor` → `lighting --write` →
-  `catalog validate`; that order — `resolve-jigsaw` before `socket`). Never place
-  an un-audited piece: `audit` is the ADR-0013 licence/code-injection gate, and
-  an unadmitted piece has no anchors or lighting profile for the DSL to name.
-  Flags in `docs/reference/tools.md` §3.
+- **The layout needs a prefab the library doesn't have**: follow
+  `docs/reference/prefab-procedure.md` — it is the procedure, and these are its
+  mandatory steps, in order. Do not improvise around them.
+  1. **Write the scene description first** (one or two sentences: what a body
+     does in the space, the material feeling, what the campaign will attach).
+     Written after the render, it is a description of the render.
+  2. **Choose the palette by measurement, never from memory.**
+     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
+     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
+     Record the measured hex beside each role.
+  3. **Author a grammar program.** Read the **idiom index** first
+     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     each — repetition, `otherwise`, taper/arch/gable (one recursion),
+     air-in-a-mix erosion, graded erosion, surface detail, symmetry without
+     reflection, `skip`, light. It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the nine.
+     `delve-grammar show --program idiom-shape` prints one. Then start from the
+     corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
+     p.json`, edit, and `delve-grammar check --file p.json` after every edit.
+     You write JSON — never Rust, and never blocks by hand. Four traps the
+     procedure names: two guards that can both hold are a **probability, not a
+     priority** (the "none of the above" arm is `otherwise`, and it is also what
+     stops a recursion); **`rounding` is owed by every surface, not only
+     floors** — the default truncates and an unwritten cell is air, which no
+     gate reads; a palette role may be a **weighted list with `minecraft:air` in
+     it**, which is the whole of decay and the cure for a piece that renders as
+     one flat material; and a `facing=` block state **does not turn** when
+     `largest` turns the piece.
+  4. **Expand and let the machine judge**:
+     `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
+     -o out/`. Pass `--traversable` for any passage, stair or route. A red gate
+     writes no `.nbt` (exit 4). **Read the `findings` in the report** — a gate
+     that bound to zero objects, or a program that declared no anchors, is a
+     finding, not a pass.
+  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
+     against step 1. The gates prove it is buildable and walkable; they say
+     nothing about whether it is the scene you asked for. If the expand wrote a
+     tile set instead of one `.nbt`, pass the manifest — `delve-render piece
+     out/<id>.json` — which renders the assembled zone as one scene, eye shots
+     included. Never review a single tile; the command refuses one anyway.
+     **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras
+     inside the piece — a body's eye at 1.62, at each declared anchor, looking
+     the way that anchor faces. The orbit shots (`ext-*`, `top`, `door-*`,
+     `anchor-*`) are fitted from outside, and on a roofed piece they are all the
+     same picture of the same rock. Read `<id>-shots.json` beside the images for
+     which cell each body is standing in: a camera whose anchor cell held a gate
+     or a barrel steps back along the facing and says so (`DW0727`), and an
+     anchor with no body cell gets no eye shot at all — the run states that count.
+     A flat grey frame is outside the piece, and an eye shot that is *only* that
+     is reported as an empty frame: the anchor is aimed at nothing.
+  6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
+     `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
+     For a tile set, `audit` takes the manifest and returns one zone verdict.
+     A grammar prefab has **no connectors and no lighting** until this step, so
+     it cannot enter a `prefab_pool` and will be dark, until you do it.
+
+  What the grammar cannot express — **escalate, do not work around**: block
+  entities of any kind (chest loot, sign text, spawners — bind those in the
+  campaign against an anchor the piece declares), **smooth** curves, diagonals,
+  a profile step that varies independently of the box, a vault bending on two
+  axes at once, and terrain. **Neither a stepped arch nor a symmetric shape is
+  on this list** — the first is idiom 3 (one recursion whose step is arithmetic
+  on the remaining dimension, and the same program inverted is the opening), the
+  second is idiom 7 (a rule body written mirrored, since `reorient` permutes and
+  never mirrors). Check §2c before escalating. **Size is not on this list**
+  either: a region of any extent expands, and one past the 48-per-axis
+  structure-template cap is written as a tile set plus a manifest at
+  `<id>.json`. Never shrink a scene to fit a file format.
+
+  A piece that comes from **outside** (a community schematic) instead enters via
+  `delve-schem convert` and then the same admission chain with
+  `resolve-jigsaw` before `socket`. Never place an un-audited piece: `audit` is
+  the ADR-0013 licence/code-injection gate and the `DW0733` check that the blocks
+  in it exist at all. Flags in `docs/reference/tools.md` §2a and §3.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain
   (`tools/skin`, spec-0009) composes an original 64×64 skin from a cast-sheet
   entry and renders previews — `python -m delve_skin all <cast.json>
@@ -767,6 +853,13 @@ Symptom → tool:
   `delve-admit gallery` (browse world) → owner walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
   line, human-optional.
+- **Several candidate prefabs for one slot, and she has to pick**: mention
+  `delve-render contact-sheet <renders> -o <png>` — all the candidates on one
+  page, each labelled with its rank and id, with `tools/refscore.py` optionally
+  ordering the page by similarity to the design-gate reference image. One line,
+  human-optional. Say plainly that the score only orders the page: every
+  candidate is on it, and the low scorer is present, last — she is the selector,
+  the number is not.
 
 ### Localization stage (only when the prompt asks for other languages)
 
@@ -810,6 +903,27 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
    either way, so the ladder is unchanged.
 
 Then:
+
+**`delvec fmt <campaign-dir>` — MANDATORY, before `analyze` and again after every
+later DSL fix, including every playtest-round repair.** It rewrites every stage
+document and l10n sidecar in canonical form: object keys sorted, two-space
+indent, non-ASCII raw, one trailing newline. It exists because a three-key
+insertion into a non-canonical `zh-cn.json` once produced a 103-insertion /
+100-deletion diff, which is unreviewable and conflicts with every other edit in
+flight. **Array order is semantic and it never touches it** (`quests[]`,
+`objectives[]`, `effects[]` are ordered), and it proves that on every file it
+writes — so running it is never a risk to the campaign.
+
+```
+cargo run -q -p delvec --bin delvec -- fmt campaigns/campaigns/<id>
+```
+
+Exit 1 means something is wrong with the JSON itself, not with its layout:
+`DW0770` unparseable (it prints `line:col`), `DW0771` a duplicate object key —
+which means one of the two values is already being silently discarded, so fix the
+document rather than the formatter. Never hand-sort a file, and never "fix" a
+`DW0773` by editing: re-run `fmt`. Full canonical form:
+`docs/reference/compiler.md` §9.
 
 5. `delvec analyze <campaign-dir>` — reachability/deadlock/dark-mitigation. Fix in
    the DSL (never by weakening the campaign; a dead quest is a design bug).
@@ -946,7 +1060,8 @@ Then:
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
    from the DSL). Render the per-prefab sets with Nucleation and read them against
    each shot's `expect`:
-   - `cargo run -q -p delvewright-render --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
+   - `cargo run -q --manifest-path crates/render/Cargo.toml --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
+     (`--manifest-path`, not `-p`: the render crate is its own cargo workspace)
      (needs the 1.21.11 client jar via `--textures`/`$DELVEWRIGHT_CLIENT_JAR`;
      skip with a note if unavailable locally).
    - `delve-render fidelity-gate` must exit 0 before trusting any render.
@@ -957,11 +1072,12 @@ Then:
      hand-edit output.
 
    **Judge the player's eye first, and the set second** (owner concern, recorded
-   during the nobodys-cave QA rounds). The per-prefab renders are orbit cameras:
-   they answer *"is the set well made"*, which is not the question a playtest
-   asks. The question is *"what does a player walking in experience"*, and only a
-   first-person frame on the actual route answers it. The compiler already emits
-   those shots — a `pov` camera at eye height on every corner-thinned
+   during the nobodys-cave QA rounds). A per-prefab eye shot is a body inside one
+   piece; it cannot see the route, the seams between pieces, or the world's real
+   light. The question a playtest asks is *"what does a player walking in
+   experience"*, and only a first-person frame on the actual assembled route
+   answers it. The compiler emits those shots — a `pov` camera at eye height on
+   every corner-thinned
    critical-path waypoint, looking along the walk and, at each leg's end, toward
    the objective it arrives at, each with its own machine `expect` line. Every POV
    eye sits on a proven-standable waypoint, so the camera is provably in open air.
@@ -1066,17 +1182,39 @@ pipeline. Full derivation from the 22-round island run:
    deliverable, not the code. `DW0489` found a second live instance the moment it
    landed — one the owner had already lost a click to. Where no diagnostic is
    possible, write that down; it becomes a risk item at the next staging review.
-4. **Audit the FULL ledger from round 1 before staging any build** — never from
-   the last round. Nothing she has reported may survive into a build you hand
-   her.
-5. **Pre-flight, in this order, before the invitation**: full ladder green
-   (PackTest → bot critical path + die-retry → every branch run) → ledger audit →
-   localized builds + double-build byte-identical → server boots and self-checks
-   → then invite. Not "the build compiled, come look".
-6. **Update `DESIGN.md` in the same round and run its conformance review.** The
+4. **Append every finding to the engine repo's `docs/playtest-findings.json`**,
+   the same day, with its general form and the check that carries it — this is
+   the cross-campaign ledger, and `GENERATION.md`'s table is the per-campaign
+   view of it. A finding recorded only in the campaign is a finding the NEXT
+   campaign learns nothing from.
+5. **Audit the FULL ledger from round 1 before staging any build** — never from
+   the last round, and never by reading. You do not have to remember to: the
+   staging paths REQUIRE it. `tools/playtest-server.sh up` runs the gate between
+   the build and the container and refuses to serve a red build; the compose
+   owner-play path requires the admission token the gate mints. Run it yourself
+   first so the red list is in the round summary before she is invited:
+
+       python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md
+
+   The gate answers the question rules 3 and 4 are about — for every finding
+   ever reported, on any campaign, does its general form exist and does it BIND,
+   non-zero, on THIS build — and it distinguishes the ways a green has lied
+   here: never built, check gone, matched nothing, the campaign has none of the
+   objects, or the campaign's `dsl_version` never reached the surface the check
+   keys off. **A red is not permission to stop**: it is the list of defect
+   classes she is not protected from, and it goes into the round summary item by
+   item. Never backfill a weak diagnostic to turn a row green. To show her a red
+   build deliberately (a framing check, not a QC round), the override is
+   `--stage-anyway "<reason>" --acknowledge-red <N>` — it prints every class
+   being overridden and the server announces it at boot.
+6. **Pre-flight, in this order, before the invitation**: full ladder green
+   (PackTest → bot critical path + die-retry → every branch run) → staging gate
+   (step 5) → localized builds + double-build byte-identical → server boots and
+   self-checks → then invite. Not "the build compiled, come look".
+7. **Update `DESIGN.md` in the same round and run its conformance review.** The
    island's design record went eight rounds unupdated and the audit that caught
    up found seven changes no one had asked for.
-7. **Close the round in `GENERATION.md` with its machine record**, not just
+8. **Close the round in `GENERATION.md` with its machine record**, not just
    prose: how many validation-loop iterations it took to reach green, and every
    DW code the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`).
    Write it even when the count is zero — a round that hit nothing is the
@@ -1107,6 +1245,10 @@ pipeline. Full derivation from the 22-round island run:
   above), never by writing non-English into the stage docs. Owner prompts in
   Chinese still yield English stage docs; add a `zh-cn` sidecar only when the user
   asks for localized in-game text (中文文本).
+- **Commit only canonically formatted JSON.** The last thing you do before any
+  `git add` of a stage document or sidecar is `delvec fmt <campaign-dir>`; CI
+  runs `delvec fmt --check`. A diff that rewrites a file nobody edited is the
+  defect this closes.
 - Homages: original text only, cultural reference never asset ingestion
   (ADR-0007).
 - If a mechanic the prompt wants has no DSL verb, do NOT fake it with adjacent

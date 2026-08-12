@@ -17,7 +17,9 @@ Each entry carries a **class**, which decides how it enters a skill:
 
 Rust binaries run from repo root as
 `cargo run -q -p <package> --bin <bin> -- <args>` (packages below), or from a
-`cargo build` target directory.
+`cargo build` target directory. The one exception is `delve-render`, whose crate
+is its own workspace: it takes `--manifest-path crates/render/Cargo.toml` instead
+of `-p` (§4).
 
 **How you get `delvec`** (ADR-0017 — three true paths, pick by what you are
 doing). Everything else in this file is pipeline-repo-only and has one path.
@@ -54,6 +56,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `validate <dir>` | stage schema + referential validation | — |
 | `analyze <dir>` | quest-graph reachability (implies `validate`) | — |
 | `build <dir> -o <out>` | full deterministic build (implies `analyze`) | `-o/--out` (required) |
+| `fmt <path>…` | canonical form for authored JSON — object keys sorted, **arrays never** | `--check` (report only; exit 1 if anything is off) |
 | `schema --stage <n\|all>` | export a stage's JSON Schema | `--stage` (required) |
 | `l10n-inventory <dir>` | l10n key inventory as JSON (translation input) | `--lang` |
 | `snapshot <dir>` | one draft frame + scene manifest (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]`, `--at <anchor>`, `--orbit <deg>`, `--dist <n>`, `--shot <id>`, `--labels`, `--width 960`, `--height 540`, `-o snapshot.png`, `--timing` |
@@ -70,6 +73,21 @@ spec-0029). `--lang <code>` is the single-language bake for local dev — it swa
 the strings before emission and ships no lang files.
 Exit codes and the `--json` diagnostic shape: [`compiler.md` §1](compiler.md).
 
+**`delvec fmt` is a mandatory step, not a tidiness option** (owner directive
+2026-08-07, task #52). Run it over the campaign directory **after the last edit
+of a stage document or an l10n sidecar and before committing** — a three-key
+insertion into a non-canonical sidecar once produced a 103-insertion /
+100-deletion diff, and that is what it exists to stop. It sorts object keys and
+**never** touches array order (`quests[]`, `objectives[]`, `effects[]` are
+ordered; sorting one changes the game), and it proves that on every file it
+writes. Full canonical form, discovery rules and the `DW077x` codes:
+[`compiler.md` §9](compiler.md).
+
+```
+delvec fmt campaigns/campaigns/<id>          # rewrite in place
+delvec fmt --check campaigns/campaigns/<id>  # what CI asks
+```
+
 ## 2. `delve-schem` — schematic import (`crates/schem`, package `delvewright-schem`) · agent
 
 Converts a Sponge schematic (`.schem`, v2/v3) into a vanilla structure `.nbt`.
@@ -83,6 +101,74 @@ delve-schem convert <input.schem> -o <out.nbt>
     [--json]
 ```
 
+## 2a. `delve-grammar` — the box-split grammar back end (`crates/grammar`) · agent
+
+**The entry point for making a prefab** (spec-0027 §3; the whole procedure is
+[`prefab-procedure.md`](prefab-procedure.md)). Before it existed the crate's only
+caller was `cargo test`, so a grammar prefab could not be produced without
+writing Rust.
+
+```
+delve-grammar list                       # every library program, with its params and roles
+delve-grammar show   --program <id>      # that program as the typed JSON IR (the corpus)
+delve-grammar check  (--program <id> | --file <p.json>)
+delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
+    [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
+    [--id <prefab-id>] [--traversable [--allow-falls]]
+delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
+```
+
+**There is no maximum region.** A vanilla structure template holds 48 blocks per
+axis; an expansion past that is written as a set of `≤48` tiles plus one
+manifest, cut deterministically from the region alone. The cap is an internal
+packaging detail and reaches no author and no flag (DEC-0069). `piece` and
+`audit` below take that manifest and treat the zone as one thing; both refuse a
+lone tile of a set and name the manifest instead.
+
+`list` names an **`idiom-*` block**: ten teaching programs, one per technique of
+the IR plus one composition, each documented at a region and seed in
+[`grammar.md`](grammar.md) §2c. `show --program idiom-shape` prints one, and it
+is the fastest way to see how a taper, an erosion mix or a symmetric aperture is
+actually written. Read that block before starting a piece.
+
+`--file` is the authoring form: a grammar program written as JSON, which is what
+spec-0027 means by "the LLM authors rules". `check` validates structure with no
+region and no seed — run it after every edit. `expand` writes `<id>.nbt` (or the
+tile set above), `<id>.json` (prefab metadata, with the program hash + seed that regenerate the
+bytes) and `<id>.report.json` (the gate verdicts).
+
+`<id>` is the prefab's identity — all three filenames and the datapack structure
+path — so it is lowercase letters, digits and hyphens only. `--id` sets it;
+otherwise it defaults to the library program id, or to the **input file's stem**
+with `--file`. The program's `name` field is not the id: it identifies the
+program in the metadata's provenance row. An unusable id is refused before the
+expansion runs — nothing is written and no verdict is printed, because a `pass`
+above a failure is the line a reader stops at.
+
+Gates, each reporting its **binding count**: `blocks-exist` (every painted block
+state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
+from the approach end to the exit end; `--allow-falls` for a piece entered off a
+ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
+tiled or not — a tile is a packaging unit and never a semantic one, so binding
+counts stay zone-level. The verdict is printed only once the prefab has been
+written, so every `pass` on the terminal is a `pass` about files that exist.
+Measurements — fill ratio, standable
+cells, footprint area/perimeter, silhouette complexity, per-block shares — are
+reported with no threshold and are deliberately not called gates: spec-0027 §4's
+craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
+them.
+
+`coverage` measures the **corpus**, not a program: `show --program` is where an
+author starts, so an IR construct no library program writes does not exist in
+practice however well the IR supports it. It counts every `Node` kind, every
+`Cond` kind and every palette paint kind, prints each with its binding count,
+names every zero as a finding, and exits `4` when any construct is
+undemonstrated. `--json` writes the same report as a file. It measures
+**demonstration, not expressiveness** — see [`grammar.md`](grammar.md) §8, and
+the sentence the command itself prints on every run.
+
+Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
+
 ## 3. `delve-admit` — prefab admission (`crates/admit`, package `delvewright-admit`) · agent + human
 
 The gate every prefab passes before the library will place it: mechanical palette
@@ -92,7 +178,7 @@ anchors, lighting, catalog cards. See [`../../crates/admit/README.md`](../../cra
 Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**):
 
 ```
-delve-admit audit <nbt> [--allowlist <json>] [-o report.json]   # CI gate
+delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]
@@ -104,6 +190,11 @@ delve-admit lighting <nbt> [--write] [--dark-threshold 3]       # probe -> decla
 delve-admit catalog validate <card.json ...>
 ```
 
+`socket`, `anchor` and `lighting --write` each own one block of the prefab's
+metadata and rewrite the file with everything else — anchors, sockets, licence,
+and the `license.generated_by` row that says what regenerates the `.nbt` —
+byte-for-byte as they found it. They can be run in any order and repeatedly.
+
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:
 
@@ -113,6 +204,14 @@ delve-admit curate <server.log> --layout <gallery-layout.json> [-o report.json]
 delve-admit curate-merge <report.json> --catalog <catalog-dir>
 ```
 
+`gallery` **refuses to write** a tree whose `.mcfunction` the pinned 1.21.11
+server would not parse (`DW0760`, one diagnostic per offending line), checked
+against the same vendored Brigadier tree `delvec` validates its own emission with.
+Before task #70 it did not, and it had never once produced a working world: four
+legacy camelCase gamerules and a `text_opacity:255b` made 1.21.11 drop
+`admit:load` and `admit:finish` whole, so the gallery booted with no objectives,
+nothing forceloaded, no piece placed and no label summoned.
+
 ## 4. `delve-render` — render layer (`crates/render`, package `delvewright-render`) · agent
 
 Textured prefab shot sets, the missing-texture fidelity gate, and Chunky scene
@@ -120,18 +219,133 @@ emission for whole-scene / player-POV review. Needs the 1.21.11 client jar via
 `--textures` or `$DELVEWRIGHT_CLIENT_JAR`. See
 [`../../crates/render/README.md`](../../crates/render/README.md).
 
+**This one crate is its OWN cargo workspace**, so it is the one entry on this page
+that `-p` does not reach: build and run it as
+`cargo run -q --manifest-path crates/render/Cargo.toml --bin delve-render -- <args>`
+(`cargo test --manifest-path crates/render/Cargo.toml` for its tests). It is the
+only crate here with a git dependency — Nucleation, pinned by rev — and cargo
+clones a git dependency while RESOLVING the workspace that declares it, so inside
+the root workspace that clone was a precondition for every cargo command in the
+repo, `cargo run -p delvec` included. Excluding it is what confines the reach to
+the crate that needs it; `tools/check-workspace-git-deps.py` is what keeps it
+confined.
+
 ```
-delve-render piece <nbt> -o <dir>            # deterministic multi-angle set for one prefab
+delve-render piece <nbt|manifest.json> -o <dir>   # deterministic multi-angle set for one prefab
 delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
                                              # the whole-map 45° oblique release panorama
 delve-render index <build-dir> -o <file>     # image <-> expect pairs for a reviewing agent
+delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
+                                             # [--columns N] [--thumb 256] [--title T]
+                                             # many candidates, ONE page, for the owner to curate
 ```
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
+
+### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
+
+Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+
+**Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
+themselves to the model from outside: massing, silhouette, floor plan, where a
+socket or an anchor sits. `top`, `door-*` and `anchor-*` strip the top Y layer so
+an outside camera can see into a roofed piece.
+
+**Eye** (`eye-<anchor>`) stand *inside* the piece — a body's eye at 1.62 above a
+standing cell, at each declared anchor, looking along that anchor's own `facing`,
+at Minecraft's first-person field of view. This is the only camera that shows
+what a body in the piece sees, and it is what §5 of
+[`prefab-procedure.md`](prefab-procedure.md) judges the scene against.
+
+The eye cell is resolved, not assumed: the anchor's own cell when a body fits
+there, else up to 3 blocks back along the facing (so the anchor's object stays in
+frame), else the nearest open body cell that still has the anchor in front of it.
+Anything but the anchor's own cell raises `DW0727` and is recorded in the
+manifest with its offset. An anchor with no body cell in reach gets **no** eye
+shot; that is `DW0727` too, and the run's summary line always states the binding
+count (eye shots / eligible anchors / declared anchors). An eye shot that renders
+as nothing but background is reported as an empty frame under the same code — the
+anchor is aimed at nothing in the piece.
+
+The manifest carries, per eye shot, the anchor and its declared cell, the
+standing cell and offset, the camera point, the facing, whether the cell has a
+floor, and how many open cells lie ahead before the view is stopped (and by
+what). A camera that stepped back is invisible in its own frame, so it is written
+down rather than implied.
+
+**On a tiled zone the eye shots are the zone's.** Pass the manifest and the
+tiles are reassembled before anything is planned, so a body stands at the
+anchor's zone cell and looks across a cut as if it were not there: measured on a
+2-tile 20×10×84 ward, an anchor 6 blocks past the cut reads 54 open cells ahead
+and the image shows the corridor running the whole length of the zone. Nothing
+about packaging reaches the camera, the placement, the clearance or the
+filenames. `crates/render/tests/tileset.rs` holds that claim — from one tile the
+same anchor is out of bounds and yields no eye shot at all.
+
+### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
+
+Lays candidate renders out as one page the owner picks massing from. **Building
+the page is agent work; choosing from it is hers** — the tool exists to put the
+decision in front of her eye, never to make it. It needs **no GPU and no client
+jar** — it composites images the renderer already made — so unlike the rest of
+this section it runs anywhere, including CI.
+
+Input is a directory in either shape: one subdirectory of shots per candidate
+(`delve-render batch` output — the representative angle is `--shot`, default
+`ext-se`, falling back to the first render by name), or a flat directory of
+`.png` renders. `--shot` given **explicitly** and missing for some candidate is
+an error, never a silent substitution of another angle: a page whose cells face
+different directions is not a comparison.
+
+A manifest is **always** written beside the PNG as `<stem>.json` — cell → rank,
+id, image, score, plus the binding counts and the layout used. That is how "she
+picked number 7" resolves back to a prefab id, and it is also the input
+`tools/refscore.py` reads, which keeps `delve-render` the single discoverer of
+what a candidate is and what it is called.
+
+**The score RANKS the page; it NEVER gates it** (owner ruling, spec-0028 §3).
+With `--scores` the page is ordered best-match first, ties and unscored last, by
+id — and every candidate is on it. The low scorer is present, last. An unscored
+candidate is present, last, and labelled unscored, because a missing measurement
+is not a bad one. This is enforced, not documented: the ordering is a seam, and
+whatever it returns must be a permutation of the candidate set or the command
+refuses with `DW0725` before drawing a pixel. The binding count is printed and
+recorded on every run; a score set that bound to **zero** candidates is an error
+(`DW0726`, exit 2), not a page in id order that looks like a successful ranking.
+
+```sh
+delve-render batch prefabs/zone2 -o .sheets/renders          # (GPU + client jar)
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+python3 tools/refscore.py --sheet .sheets/zone2.json \
+    --reference .refimg/zone2.png --backend open-clip -o .sheets/zone2-scores.json
+delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \
+    --scores .sheets/zone2-scores.json                        # the ranked page
+```
+
+The **real** metric backends are not installed by anything in this repo and are
+deliberately absent from CI (PyTorch plus multi-GB weights). Make the venv once,
+by hand, and only if you want them — the loop works without them:
+
+```sh
+python3 -m venv .refscore-venv && .refscore-venv/bin/pip install open_clip_torch
+.refscore-venv/bin/python tools/refscore.py --sheet ... --backend open-clip ...
+# VQAScore instead (text-conditioned, needs --prompt): pip install t2v-metrics
+```
+
+CI runs the same loop with `--backend stub` — deterministic, offline, keyless,
+**not a similarity measure**, and loudly labelled as such on the page and in the
+score file. That is what makes the ranking verifiable without a model; it is not
+a substitute for one, and an uninstalled real backend exits 4 rather than
+quietly becoming the stub.
+
+Sheets are generation-time working material like renders and reference images:
+`.sheets/` is gitignored, nothing here ships, and nothing here can move a delve's
+bytes. Two runs over the same inputs produce the same page byte for byte (CI
+asserts it) so a cell number means one thing.
 
 `panorama` computes its camera from `render-plan.json`'s `layout_aabb`: a 45°
 oblique on a corner bearing (`se` default), solved back until every corner of the
@@ -242,19 +456,25 @@ Never shipped inside a delve.
 
 | Tool | Class | Invocation |
 |---|---|---|
+| `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Stdlib only — no packages to install |
+| `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
+| `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
 | `tools/derive-client-langs.py` | human | `python3 tools/derive-client-langs.py [--version V] [--rust]` — re-derives `dsl::mclang::CLIENT_LANGS` (the language files the **pinned** client loads) from Mojang's version manifest → version metadata → asset index, printing the sha1 of every document it read so the derivation is auditable. Run it when ADR-0009's Minecraft pin moves, diff the printed table into `crates/dsl/src/mclang.rs`, `cargo fmt`. Never run by CI or by a build — the compiler must not reach the network (ADR-0006) |
 | `tools/skin/` (`delve_skin`) | agent | `python -m delve_skin all <cast.json> --skins-dir D --catalog-dir D --preview-dir D [--id ID] [--scale N]`, or the `build` / `preview` / `catalog` stages individually. Needs its own venv (`pip install -r tools/skin/requirements.txt`); see [`../../tools/skin/README.md`](../../tools/skin/README.md) |
 | `tools/build-every-campaign.py` | CI + agent (run it before proposing any engine change that touches emission, layout or validation) | `python3 tools/build-every-campaign.py --delvec <binary> [--content <checkout>]` — builds **every campaign** the pinned content repo carries, in **every language its `world.json` declares**, and reds if one stops building. Closes the gap that let PR #260 reach 10/10 green while stopping the flagship released campaign `nobodys-cave-island` from building at all (26 × `DW0364`): every other gate builds a FIXTURE, and a fixture exercises one verb, where a campaign is the only place the verbs meet a real prefab library, a real layout solve and a real translation sidecar. Campaigns are **discovered** (any dir under `<content>/campaigns/` with a `world.json`), never listed, so the next content re-pin gates a new campaign with nobody remembering. `--delvec` is required and never inferred — the gate's whole subject is *which engine* built the campaign. A campaign that cannot build today goes in `.github/campaign-build-exclusions.toml`, which **inverts** the assertion rather than removing it: still built, must still fail, and must fail with **exactly** the recorded `expect_codes` — an extra code is a new break that was hiding behind the exclusion, and a SUCCESS is an expired exclusion, both red. Currently one entry: `hollow-vigil`, `DW0331` (task #34). States its binding count every run (discovered / built green / known-red, each named); discovering zero campaigns, building zero campaigns, or an exclusion naming a campaign that no longer exists are each a red. Runs in CI as `campaign builds (every campaign in the content repo)`, on every push |
+| `tools/staging-gate.py` | agent (**mandatory** before any build is handed to the owner) | `python3 tools/staging-gate.py --campaign <dir> --build <delvec-out> [--ledger docs/playtest-findings.json] [--report R.md] [--json R.json] [--strict]` — **the coverage gate on the findings ledger**, and the only tool that asks a question the ladder cannot: for every defect the owner has EVER reported, on any campaign, does a general-form check exist and does it BIND — non-zero — on the build about to be staged. It re-runs nothing; it reads `docs/playtest-findings.json` and reports one row per finding (finding → general form → the check carrying it → that check's binding count here → verdict). Six reds, each a way a green has really lied on this project: `NO-GENERAL-FORM` (the instance was fixed, the class never built), `MISSING-CHECK` (the ledger names a check this engine no longer has — not in source, undocumented, or asserted by no test), `UNBOUND` (matched zero objects), `INAPPLICABLE` (zero binding AND zero precondition — this campaign cannot exercise the class at all), `UNFENCED` (the campaign's `dsl_version` never reached the surface the check keys off), `NO-SOURCE` (the campaign has no stage JSON, so nothing can be measured — the bell remake's state today, and never a pass). The one non-red escape is playtest-methodology.md rule 2's: `DECLARED-UNCOVERABLE`, requiring a `disposition` AND a substantive `justification`, counted in the headline because rule 4 makes each one a risk item at that staging review. On a pass it mints an **admission token** (`<build>/staging-admission.json`) binding the sha256 of that tree's `manifest.json`; a refusal DELETES any existing token. `--stage-anyway "<reason>" --acknowledge-red <N>` is the deliberate override — N must equal the current red count exactly, so it cannot be typed from memory. **Invoked by the staging surface, not by a doc line**: `tools/playtest-server.sh` runs it between build and container, `validation/owner-play.yaml` requires its token via the `staging-admission` service, and `release.yml` runs it before the GHCR push. It shipped called by nothing but its own tests — the UNRUN shape — and `tools/tests/test_staging_gate.py` now carries a tripwire against that returning. **Not a CI status check, deliberately** — it is red today by design (18 rows on `nobodys-cave-island`), and wiring an honest red list as a blocking context would force the one thing CLAUDE.md forbids: weakening it to get green. Its own falsification suite (every verdict driven red then green, plus the token round-trip through the real verifier) IS in CI. |
 | `tools/check-dw-codes.py` | CI | `python3 tools/check-dw-codes.py` — asserts the DW catalog in `compiler.md` matches `crates/**/*.rs` both ways, and that every code has a test |
 | `tools/check-reference-versions.py` | CI | `python3 tools/check-reference-versions.py` — binds `compiler.md`'s **version header** to the build by EQUALITY in both directions: `delvec X` == `crates/compiler/Cargo.toml` `[package] version`, `dsl Y` == `crates/dsl/src/envelope.rs` `SUPPORTED_DSL_VERSION`, `mc Z` == `versions.toml` `[minecraft] version`, and the bold supported-`dsl_version` list == `SUPPORTED_DSL_VERSIONS` as an **ordered** sequence (a set comparison would pass on a shuffled list, and the list doubles as the reading order for the "additive superset" claim beside it). Also binds the `DW0102` catalog row's `{…}` set to the same constant, since `DW0102` fires on exactly `!is_supported_version(version)`. Motivating instance: the header read `delvec 0.1.0`, `dsl 0.8.0`, `{0.2.0 … 0.8.0}` while the build was at `delvec 1.1.0` / `dsl 0.9.0` and accepted `0.9.0` — with the body of that same file documenting the v0.9 surface correctly, and every gate green, because no gate related the two. It is the first thing an authoring session reads to pick a stage envelope's `dsl_version`. Equality is the point: **the stale-OLDER direction is the one that actually happens** (docs are written once, the build moves), and a gate that only rejects "newer than the build" is exactly what let a storybook ship a `v1.0` marker through the whole `v1.1` release green (#342). `check-dw-codes.py` is green on the `DW0102` row and always would be — it proves a code EXISTS in both source and doc and is asserted by a test, never that the BEHAVIOR the doc ascribes to it is the behavior the code has; this is the mechanically checkable slice of that gap. A source file that no longer matches the expected shape exits **2** with the regex to fix named — fix the regex, never loosen the check. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-capability-ownership.py` | CI | `python3 tools/check-capability-ownership.py` — a capability must belong to the **object class it acts on**, not to the verb that first needed it. Motivating instance: `close-gate.sealed_hint` emits its own interaction bodies, its own actionbar reply and its own baked English, privately re-implementing `EnvTrigger{on:use} + narrate`, which the DSL already exposes generally. Five ledgers, each an allowlist carrying a REASON per entry: **A** every `summon minecraft:interaction` in the compiler (9 today — exactly one is `EnvTrigger`); **B** every compiler-baked player-facing English string (5); **C** DSL structs declared separately with an identical field set (`TrapDisarm`/`TimedGateDisarm`); **D** a cross-cutting modifier absent from some variants of a tagged enum (`requires_flags` rides 16 of 26 effects); **E** every `Vec<QuestEffect>` bundle must be reachable by some enumeration — this is the one that catches a *sixth* effect root, which `check-effect-roots.py` cannot see because it greps for the five it knows. Most entries are **OPEN FINDINGS** with a named lift, catalogued in `docs/notes/capability-ownership-audit.md`; the gate's job is that none can be added or removed in silence. **Known non-proof, stated in its docstring**: A/B are text scans (a body built through a helper that hides the `summon`, or a default assembled from fragments, is invisible); C/D/E parse `stages.rs` structurally but see only what `pub` fields and variant blocks look like textually. States a binding count per check every run; **a check that examined zero objects or matched zero is a red**. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-effect-roots.py` | CI | `python3 tools/check-effect-roots.py` — no source file may enumerate the campaign's **effect roots** by hand. An effect root is a `Vec<QuestEffect>` emission can lower; there are five, four hang off the quests stage and the fifth off dialogue, and nothing about the DSL's shape makes them findable by inspection — so every walk that needed "every effect" was written by someone enumerating the roots they knew about. Six were found and fixed independently; a sweep found thirteen more; this gate, on the run that introduced it, found three the sweep had missed (`continuity::excluded_npcs`, `emit::first_damage_players`, `emit_v04_packtests`' despawn scan). **None was ever red** — a walk that visits four of five roots looks correct over any campaign that does not use the fifth. `delvewright_dsl::effects` is now the one enumeration and every walk inherits it, which closes the thirteen; this gate is what stops a fourteenth, since the root fields are ordinary public fields and no type can forbid the loop. Flags a window of 40 source lines naming **3+ distinct** roots, outside an allowlist that carries a REASON per entry (the enumeration itself; `validate::reserved_v06_world`, sound by construction; `plan::required_anchors_for_area`, an open finding printed on every run). **Known non-proof, stated in its docstring**: a proximity heuristic over text — roots spread across a hundred lines, or reached through a helper taking the list as an argument, are invisible. States its binding count every run (currently 128 files, 92 markers); **examining zero files or finding zero markers is a red**, because a renamed field would otherwise leave it quietly green forever. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-doc-dupes.py` | CI | `python3 tools/check-doc-dupes.py [path …]` — merge-artifact gate over `docs/**/*.md` + `README.md`: no two body rows in one markdown table share a first-cell key, no heading repeats within a file, no git conflict markers. Kills the class that put `shortcuts[]` in the stage-5 table twice (owner finding 2026-08-03). Same-key rows in *different* tables are fine; a genuine same-table collision means restructure the table, not allowlist it |
+| `tools/check-workspace-git-deps.py` | CI | `python3 tools/check-workspace-git-deps.py` — no cargo workspace in this repo resolves a **git dependency** it has not quarantined. A required status check answers for the uptime of every host it reaches, and a git dependency is the one reach cargo gives a job no way to decline: it is cloned while RESOLVING the workspace that declares it, a workspace resolves all of its members, and neither `-p <crate>` nor `--locked` nor marking the dependency `optional` narrows that — all three measured, and the `optional` result is the surprising one. So `delvewright-render`'s Nucleation pin made 227 MB of clone from two repositories a precondition for `cargo run -p delvec`, in five required jobs that never build the render crate, and one transient TLS failure on that reach (`the SSL certificate is invalid; class=Ssl (16)`) reddened `tier 2` on a **docs-only** PR (#388). Reads every `Cargo.lock` in the repo, which IS the resolved graph of the workspace that owns it, and flags any package whose `source` is `git+…`. `ALLOWED` carries `crates/render/Cargo.lock` with its reason — that crate is its own workspace precisely so the reach belongs to it — and an allowlisted lock carrying **no** git dependency is a finding too, since an exemption that has outlived its reason is how the next one gets waved through. It deliberately does not check that `crates/render` is still excluded: if it re-enters the root workspace the root lock gains the git packages and this reds on the lock, which is the property that actually matters. Registry (crates.io) dependencies are out of scope — content-addressed, cached, and not on the table. States its binding count; examining zero locks is a red. Third site of the class this repo already refuses at the `docs` job's `lychee --offline` and at task #41's single Mojang fetch. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-compose-isolation.py` | CI | `python3 tools/check-compose-isolation.py` — isolation-by-construction gate (task #185): no service in `validation/compose.yaml` may pin a `container_name` or publish `ports`, because those are the only two things `docker compose -p <project>` does NOT isolate. `validation/owner-play.yaml` is the ONLY file allowed a fixed host port, and only `127.0.0.1:25565:25565` (the owner's client address) plus the container names a human needs to find; every other override may publish only ephemeral ports (`127.0.0.1::<port>`). Replaces `check-worker-override.py`, which merely required a matching `!reset` — so the pin survived and every caller had to remember an extra `-f`; the omission cost a run twice (`server` #190, then `bot`) |
 | `tools/check-harness-dsl-version.py` | CI | `python3 tools/check-harness-dsl-version.py` — sync gate: the compiler's `SUPPORTED_DSL_VERSION` (`crates/dsl/src/envelope.rs`) must be a member of the harness's `SUPPORTED_DSL_VERSIONS` allowlist (`harness/src/critical-path.ts`). Nothing else relates the two files; spec-0026 moved the compiler to `0.9.0` while the harness allowlist still ended at `0.8.0`, and the bot tier refused every campaign at the version gate after the server booted and the bot connected (task #157) |
 | `tools/check-storybook-version.py` | CI + agent (**mandatory** at the `/new-delve` storybook step) | `python3 tools/check-storybook-version.py [--campaigns <dir>]` (default `campaigns/campaigns`) — every campaign storybook (content repo `campaigns/<id>/README.md` + one `README.<code>.md` per declared language) opens with `> **Requires delve engine <X> or newer** — last verified with delvec <Y>.`, within the first 10 lines, exactly once, byte-identical across editions. `<X>` must equal the MAX `dsl_version` over the campaign's six stage documents — the drift this gate exists for (owner directive, task #147: the marker is the ONE internal-machinery item allowed in a player-facing README, so it must be TRUE); `<Y>` may not exceed the engine's own `DELVEC_VERSION`. Missing, malformed, buried, duplicated, or mismatched = red; an empty campaigns root is red too (a vacuous pass is worse than a failure). **And the marker must be the only version literal in the file.** Checking the marker harder is not what the v1.1.0 island release needed: its marker was correct and the storybook still told a host to `docker run …/delve-nobodys-cave-island:v1.0.0` — the version it had just replaced. THREE literals sat in that README (the marker; a `**v1.0.0** (exact engine pin: …)` campaign stamp, a lie by construction between releases since `main` is not a released version; the host command's tag) and only the marker was bound to anything, with the localized edition carrying a fourth as a translated gloss that had drifted a whole minor behind the untranslated stamp one line above it. Since a binding per number would have to be invented per campaign, the rule is that a storybook may carry **no** version literal but the marker, and the numbers those lines wanted live where they are GENERATED (the release page, `versions.toml`). Two recognisers, one rule, so the message is actionable: a **pinned OCI tag** — `<registry>/<path>:<tag>` with `tag != latest`, the line a host copy-pastes — reports the file, line and tag and says to write `:latest` (which *is* the storybook's claim) and send an exact-version reader to the release page; a **bare `v?N.N.N`** anywhere else covers the stamp and the gloss (two-component numbers are deliberately not versions — `CC BY-SA 4.0` is a licence; `:vX.Y.Z` as a prose placeholder is not a literal). The marker line and any malformed attempt at one are exempt, so a broken marker stays ONE finding, and the literal clauses run even when the marker is absent (an unstamped storybook can still hand out a dead image tag). States the literal clauses' own binding count — storybook files read — and reading ZERO of them is red: allowlisting the only campaign that ships a storybook would otherwise leave them examining nothing while reporting green. Campaigns blocked by an in-flight content PR sit in the script's `ALLOWLIST` with the blocking PR and its removal condition, are PRINTED on every run, and go red the moment their marker becomes correct. Runs in CI as `campaign storybooks (engine-version marker)` — over the content repo at `versions.toml` `[content].sha`, which is bumped by hand, so a storybook defect is caught at the next pin bump rather than on the content PR that introduces it (the content repo runs no CI on `campaigns/**` today); the content repo's own campaign CI (task #137) can run this same script against a pinned engine checkout, the way `prefab-audit.yml` there already builds `delve-admit` from one |
+| `tools/planner-state.sh` | agent (**session start** — the planner opens on this page, never on recall) | `./tools/planner-state.sh` — one read-only page of coordination state, **computed** from git, gh and the decision ledger: both checkouts' commit + dirtiness; every worktree beyond main with dirty/unpushed counts (each is owned by an open dispatch or it is garbage — owner 2026-08-11); every branch carrying commits on **no** remote — the one category of git state a machine failure actually destroys, and the section that on its own first run surfaced 13 unpushed spec-0016 commits and a complete unpushed demo campaign that a same-day manual sweep had missed; open PRs in both repos; and `check-decisions.py`'s open/unenforced rows with ages. Exists because every expensive coordination failure in the record — an undelivered worker result, a forgotten inventory, 36 unreclaimed worktrees — was planner state living in a context window instead of an artifact; when this page and a planner's narrative disagree, the page wins. **Invoked by the events, not a doc line** (the UNRUN shape), and the events are chosen for the owner's one-long-lived-session workflow (2026-08-11): `.claude/settings.json` runs it unconditionally on `SessionStart` — which fires on startup, resume, **and after every context compaction**, exactly the moments a planner is a reconstruction of its former self — and on `UserPromptSubmit` with `--if-stale 12`, so inside one long session the page refreshes with the next message once its `.git/`-local stamp is older than 12 h and stays silent otherwise. The page also prints every `docs/ideas.md` row still in `captured`/`elaborating` with its age — the binding that makes an owner idea mechanically un-losable (an idea leaves that list only by graduating to a spec/task or by an explicit owner `declined`; capture protocol in `docs/ideas.md` itself). It never fails the session — a section that cannot be computed says so and the page continues, because an absent answer is itself state worth seeing |
 | `tools/check-required-contexts.py` | CI | `python3 tools/check-required-contexts.py` — keeps `.github/required-status-checks.txt` and `ci.yml`'s job `name:` values in lockstep, **both directions**. Owner decision 2026-08-05 made all ten CI jobs required status checks; it had been three, so `tier 2` (datapack load + the whole generated PackTest suite), the storybook engine-version marker and the prefab determinism gate were **advisory** — a red never blocked a merge, only `gh pr merge`'s own refusal on UNSTABLE did, and `--admin` went straight through. That fix creates the deadlock this checker guards: branch protection matches a required context by its NAME STRING, so a renamed job stops reporting forever and blocks every PR *including the one that would fix it*. Renaming a job is therefore three steps — add the new context to protection, merge the rename + manifest update, drop the old context. The reverse direction matters as much: a job with no manifest line is a gate nobody must obey, which is how the seven drifted. `ADVISORY_JOBS` in the checker is the only exemption and is empty on purpose; each entry needs a reason a future reader can weigh. Reads only the repo — CI's token has `contents: read` and cannot see branch protection, and a gate that needs a privileged token is a gate that quietly stops running. States its binding count; parsing zero jobs or zero contexts is a red |
 | `tools/assert-run-approved.sh` | CI (release) | `bash tools/assert-run-approved.sh <environment>` — the run-time half of the above, and the first step of `publish-crates`. Reads this run's own approval history (`/actions/runs/<id>/approvals`) and refuses when no `approved` entry names the environment: a run that was never held records none, which is exactly the state the incident run is still in. Needs only `actions: read` on its own repo, so it never becomes a gate that quietly stops running for want of a privileged token. Does **not** prove the approver differs from whoever pushed the tag — that is `prevent_self_review`, configured in the same out-of-band settings; what this asserts is that a human passed through a review UI at all, which is the step that did not happen. Materialises the API response to a file before parsing, never `curl | jq` (task #173: a pipe hides the producer's exit status) |
 | `tools/check-skill-version.py` | CI | `python3 tools/check-skill-version.py` — ADR-0016's **third version line**, made true. `.claude/skills/new-delve/SKILL.md`'s frontmatter declares the skill's own product version (`version:`), the engine window it drives (`requires: delvec: ">=X.0.0 <A.0.0"`) and the engine it was proven on (`verified_with:`); this gate is what stops those being a `requires:` nobody reads. **The last two are different claims and bind differently.** (1) `requires.delvec` is COMPATIBILITY — what a creator reads as "older engines will not work" — so it is ADR-0016's own **major window**, stable across a whole line, and binds by MEMBERSHIP: the ceiling is the floor's next major and this repo's engine sits inside the window (the direction that catches `delvec 2.0.0` shipping beside a skill that still says `<2.0.0`). (2) `verified_with` is EVIDENCE — the one engine this tree actually exercises the skill on — so it binds by EQUALITY to `crates/compiler/Cargo.toml`'s `[package] version`, the single source `DELVEC_VERSION` derives from, in **both** directions: above names a compiler that does not exist, below is stale evidence from a build no longer in the tree. Restamping it is one line in the engine's own release commit, and it never moves `version:` or the compatibility window. Pinning the window's floor to the engine instead — the first draft of this gate — would make the frontmatter assert after every release that older engines are unsupported, which nothing tested, and would make ADR-0016's own example un-writable at 1.1.0. (3) Every `delvec` subcommand the skill's code spans name, and every long flag named with it, must exist in the clap CLI parsed out of `crates/compiler/src/main.rs` (nested `edit apply`/`preview` actions fold into their parent, so `delvec apply` is correctly not a subcommand) — that is what makes the window a claim about a real command surface rather than a shrug. States its binding count on every run — currently 9 distinct subcommands, i.e. all of them; **extracting zero subcommand references is a red**, as is parsing zero subcommands out of `main.rs`, because a green that binds to nothing is vacuous (CLAUDE.md). **Known non-proof, stated in the script's docstring and in its OK line**: a window floor that has drifted too LOW — the skill adopting a subcommand added in 1.1.0 while the window still opens at 1.0.0 — is invisible here, because check 3 tests against the CURRENT CLI and this repo holds one engine. A green means the window is internally consistent and the engine in the tree is inside it, never that the whole line was tested. Runs as a step of the `docs (local link check)` job — a step, not a job, since every job name is a required status context |
@@ -263,6 +483,8 @@ Never shipped inside a delve.
 | `tools/crates-io-publish.sh` | CI | `bash tools/crates-io-publish.sh (--plan \| --publish)` — the only path to crates.io; no human ever runs `cargo publish` for this project (ADR-0017). **Idempotent by checksum**: for each crate it asks the sparse index what is already there — absent → publish; present with our exact sha256 → skip; present with *different* bytes → hard fail by name, because crates.io will never accept the new bytes. That is what makes the half-succeeded sequence (`delvewright-dsl` lands, `delvec` fails) safely retryable instead of burning a version. The index lookup is **bind-tested** against `serde 1.0.0` before it is trusted, because a broken lookup would report every crate absent and silently disable the skip branch — the unbound-gate class (the first draft of this script had exactly that bug: `python3 - <<'PY'` binds stdin to the heredoc, so a piped index body was discarded). One `cargo publish -p … -p …` invocation, so cargo owns dependency ordering and its own wait-for-index; this script adds the POST-condition instead — a poll on an observable (both crates visible with our checksums), 180 s timeout, 5 s interval, never a sleep chosen by feel. `--plan` touches nothing and needs no credential; `--publish` reads `CARGO_REGISTRY_TOKEN` straight out of the environment, never runs `cargo login`, never writes a credential to disk |
 | `tools/check-shell-pipe-shortcircuit.py` | CI | `python3 tools/check-shell-pipe-shortcircuit.py` — forbids a consumer that stops reading before its producer stops writing on the right of a pipe (`grep -q`, `grep -m N`, `head -N`) in every repo `*.sh`. Under `set -o pipefail` such a consumer exits at the first match, the producer dies of SIGPIPE (141), and pipefail promotes 141 to the pipeline: **the pipeline reports failure precisely because the match succeeded**, at a rate set by how much the producer still had to write. Measured against a live, healthy server whose log contained `Done (` exactly once: 28 false negatives in 30 runs. This is what made `playtest-server.sh` print "server did not come up" for a server that was up (task #173/#16), and the same shape sat under both 25565 guards and `dw_mutex_port_bound` — where a false negative frees the owner's sacred mutex while a human is playing. Prescribed idiom: capture, then test with bash's own `[[ $out == *pat* ]]` / `[[ $out =~ re ]]` / `${out%%$'\n'*}`, spawning no process at all. `docs/experiments/` is excluded (frozen record); `EXEMPT_LINES` carries exactly one justified line-level exemption, and a stale entry there is itself a red |
 | `tools/check-python-shell-newlines.py` | CI | `python3 tools/check-python-shell-newlines.py` — every **inline** python a repo shell script or workflow `run:` block executes and that writes to stdout must declare `sys.stdout.reconfigure(newline="\n")`. Python's text-mode stdout translates `\n` to `\r\n` **on Windows**, and the trailing `\r` survives both command substitution and `IFS= read -r` — so on the first-ever release run (v1.0.0, 2026-08-06) `tools/build-release-binaries.sh` rejected `x86_64-pc-windows-msvc` as "not in versions.toml [engine].targets" on the msvc runner and only there, while the four unix targets went green. Invisible on every runner but one, and the eleven green checks on the PR that added the script (#318) never ran that one. The rule is deliberately "every printing program", not "every captured one": the site that broke was a heredoc inside a shell FUNCTION whose capture happens at three separate call sites, so a checker reasoning about the invocation would have passed the one bug it exists to catch — and pinning `\n` on a stream nobody reads costs one line and changes nothing. Out of scope by rule, not by allowlist: `python3 script.py` (no inline text — a committed `.py` is not a shell boundary), programs with no `print(`/`sys.stdout` (they answer by exit status), and python run inside `docker run`/`docker exec` (a pinned Linux image by construction). States its binding count; zero files or zero programs is a red |
+| `tools/check-live-commands.py` | CI | `python3 tools/check-live-commands.py` — nothing in this repo may speak to a Minecraft server without being able to hear it (task #70). Three rules, the first two driven by pinned artifacts rather than a typed list. **(1)** A shell/Node file that invokes `rcon-cli` must reach it through the shared rejection rule (`tools/lib/rcon.sh` / `tools/lib/rcon.mjs`); six sites did not, and the rule already existed — correct — privately inside one spike, which is exactly why the next two callers wrote the unchecked version. **(2)** A `gamerule <name> <value>` line anywhere in `*.sh`/`*.mjs`/`*.js`/`*.ts`/`*.rs`/`*.mcfunction` must name a rule the pinned 1.21.11 server has, checked against the literal children of `gamerule` in `crates/compiler/data/commands-1.21.11.json`, so it cannot drift from ADR-0009. Motivating instances: the gallery's four legacy camelCase rules (which cost `admit:load` and `admit:finish` in their entirety — the gallery world had no objectives, nothing forceloaded, nothing placed), `spike-jump-arc`'s `fallDamage`, `warden-probe`'s `doMobSpawning`/`randomTickSpeed`. **Known non-proof, stated in its docstring**: rule (2) only sees a `gamerule` with a LITERAL name and a literal value — a dynamic name (`gamerule ${g}`) is a probe it cannot judge — and line comments are stripped, which can hide a violation but never invent one. **(3)** `rcon.sh`'s refusal list and `rcon.mjs`'s must recognise the SAME reply shapes. The rule has to exist twice (shell sources, Node imports), and two copies of one truth is the very shape rules (1) and (2) exist to prevent — so they are compared, not trusted. Found on its first run: the area-effect-arrow spike's private copy knew `No targets matched`, `Malformed ` and a broad `Failed to `, which the shared rule did not, while the shared rule knew the `<--[HERE]` cursor, which the spike's did not. **Every private copy ever found was silent on exactly the refusals its own run never provoked**, so the shared list is the union and a shape leaves it only when the pinned server stops producing it. `docs/experiments/` is excluded (frozen record); a negative fixture may carry an inline `check-live-commands: allow (<reason>)`, and **every honoured exemption is printed with its reason on every run**. States all three binding counts every run; **zero live command sites, zero gamerule lines or zero compared shapes is a red**. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
+| `tools/lib/rcon.sh`, `tools/lib/rcon.mjs` | library (agent + human) | Sourced/imported, never run. The repo's ONE definition of "the server refused that command", measured on the pinned 1.21.11 server: a PARSE failure (every Brigadier error carries a `<--[HERE]` cursor) and a REFUSAL (`That position is not loaded`, `No entity was found`, `No targets matched`, `Failed to `, …). The list is the **union** of every private copy that has been found, and the two halves are held equal by `check-live-commands.py` rule (3). Shell: `dw_rcon <container> <cmd>` asserts and returns non-zero on a refusal, `dw_rcon_probe` is the unjudged form, `DW_RCON_ARGS` carries extra `rcon-cli` flags. Node: `rconChannel(container).run(cmd)` throws, `.probe(cmd)` does not; `REJECTION`/`assertAccepted` are exported for a tool with its own transport (the death spike's pipelined channel). **Which channel a call uses is a statement about that call**: `probe` is for a liveness poll or a measurement whose subject IS the rejection, and nothing else. `tools/check-live-commands.py` is what makes the choice unavoidable |
 | `tools/check-shell-redirect-dirs.py` | CI | `python3 tools/check-shell-redirect-dirs.py` — every `>`/`>>` in a repo `*.sh` that writes **into a directory** must have that directory guaranteed first: a `mkdir -p` covering it, a `mkdir` naming it exactly, a `mktemp -d`, a directory tracked in this repo, or an always-present one (`/tmp`, `/dev`, and `/data` — the itzg image's own data dir, written only from inside that image). Variables are resolved through their literal assignments, so hoisting the path into `LOG=` does not hide it, and `>` inside a quoted string is text, not a redirection. **Why**: the shell opens a redirect *before* running the command it captures, so on the v1.0.0 preflight — a runner with no build cache and therefore no `target/` — the redirect failed, `cargo package` never ran, and the else-branch `sed`ed the log whose absence was the finding, reporting "cargo package failed" about a command that had not been executed. The general form is **an error path must not depend on an artifact the error may have prevented from existing**; this gate removes the root cause, and the other half — a failure branch that names a missing or empty log instead of quoting it — is exercised by `tools/tests/test_check_shell_redirect_dirs.py`, since syntax cannot check a message. States its binding count |
 | `tools/extract-sound-registry.py` | maintenance | `python3 tools/extract-sound-registry.py <registries/data.min.json> <out.json>` — regenerates the compiler's sound registry for a new MC pin (positional args only, no `--help`) |
 | `tools/extract-item-stack-sizes.py` | maintenance | `python3 tools/extract-item-stack-sizes.py <item_components/data.min.json> <out.json>` — regenerates `crates/compiler/data/item-stack-sizes-1.21.11.json`, the item→`max_stack_size` table `DW0436` reads, for a new MC pin (positional args only). Pins and checks the source SHA-256; refuses to default a missing component rather than assuming 64 |
@@ -293,6 +515,7 @@ Shell entry points:
 |---|---|---|
 | `validation/mutex.sh` | agent (only for host 25565) | guards exactly ONE resource: the owner's client port **25565**. `source validation/mutex.sh`, then `dw_mutex_acquire <name> [wait-s]` / `trap dw_mutex_release EXIT` / `dw_mutex_assert_not_owner_session`. Since task #185 a worker ladder does **not** take it — `compose.yaml` pins no container name and publishes no port, so ladders are isolated by their compose project and there is nothing to serialize (waiting on this lock to run a ladder means the ladder is wrong). The two things that DO take it are the sanctioned 25565 bindings: `validation/owner-play.yaml` sessions and `tools/playtest-server.sh` (which acquires as `owner-play-session` on `up` and releases on `down`). `dw_mutex_release` only works in the shell that acquired (agent tool calls never share shells) — cross-shell coordinators release with `dw_mutex_release_named <holder>`, which matches the HOLDER name exactly and refuses to free `owner-play-session` while ANY container still publishes 25565 (port, not container name — the two binders use different names). Acquisition is `mkdir`'s return value, never inferred from the lock directory existing; **`owner-play-session` is sacred** — never wait on it, never steal it. It shrank because the old stack-wide lock made worker ladders queue on each other: an island worker once waited 30+ min behind a holder with zero containers running. See [`../../validation/README.md`](../../validation/README.md) "Sharing the Docker host" |
 | `validation/bot-run.sh` | agent (**the bot ladder entry**) | `EULA=TRUE validation/bot-run.sh --project dw-<id> [--output <tree>] [--run-out <dir>]` — the `validate` profile end to end: fresh-volumes the project, boot server + mineflayer bot, propagate the bot's exit code, tear the project down and prove it clean. `--project` is REQUIRED (task #185): the compose project is the only name the stack has now, so a missing id would land in compose's default project — a shared name by another route, and the collision that made ladders queue. Every `DELVEWRIGHT_*` run variable below is forwarded except `DELVEWRIGHT_ACTOR_FLOOR` and `DELVEWRIGHT_RETRY_ON_DEATH` (§8 — `compose.yaml`'s `bot` service declares neither), so set the rest on this command line. The run report lands in `validation/run-out/<project>/run-report.json` (project-scoped so two ladders from one checkout cannot overwrite each other's) |
+| `validation/staging-admission.sh` | CI + agent (runs inside the compose `staging-admission` service) | `validation/staging-admission.sh <build-tree>` — refuses a build tree that carries no valid staging-gate admission token, or one minted for a DIFFERENT tree (it recomputes the `manifest.json` sha256). Announces an overridden admission loudly at boot. Dependency-free bash+coreutils on purpose: it runs inside the delve image, which must never gain tooling (ADR-0003). Both 25565-publishing services `depends_on` it with `service_completed_successfully`, so compose will not start them when it exits non-zero — verified live: the server container stays `State=created`, never starts, and binds no port. |
 | `validation/packtest-run.sh` | agent (**the PackTest ladder entry**) | `EULA=TRUE validation/packtest-run.sh --project dw-<id> [--output <tree>]` — the `packtest` profile end to end, same contract as `bot-run.sh`: `--project` REQUIRED, own teardown, exit code = failed tests. `--output` selects the build tree (default `./delve-output`), which is how CI proves per-campaign template classes hello-world cannot emit. There is no `PACKTEST_CONTAINER` any more — the runner pins no container name. Since task #41 it also calls `server-bootstrap-cache.sh` (idempotent) and **copies the bootstrap overlay into this project's world volume before booting**, so the suite performs no live Mojang/Fabric fetch — measured: the whole suite runs green under `--network none`. It then asserts that binding on the boot log (the locally-provisioned-launcher line present, no download lines) and reds if the seed missed, because a seed that silently missed would leave the ladder exactly as fragile while reporting success |
 | `validation/owner-play.yaml` | human | `docker compose -f validation/compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` — the ONLY compose file that publishes host 25565 and pins `delvewright-server` / `delvewright-playtest`. Nothing else in `validation/` may (`tools/check-compose-isolation.py`) |
 | `validation/ephemeral-port.yaml` | agent | an EPHEMERAL loopback publish for the flows that drive a bot from the HOST (`playtest-note-flow.sh`, `rehearsal-flow.sh`). Docker picks the number; read it back with `docker compose -p <id> … port <service> 25565`, never assume it |
@@ -450,3 +673,23 @@ by this rig and worth copying into the next one: every rcon response is checked
 politely and change nothing), and every sample batch is fenced by a `#sync`
 scoreboard round-trip so a desynchronised read aborts instead of shifting every
 later value by one.
+
+`tools/spike-area-effect-arrow/run.sh` (`EULA=TRUE
+tools/spike-area-effect-arrow/run.sh [--out <path>]`) answers whether a datapack
+alone can give a projectile a non-block-breaking explosion or a splash-potion
+area effect on impact, and **where that behaviour has to live**. It dumps the
+pinned jar's own registry report (`--reports`) to `registries-1.21.11.json` — so
+"no advancement trigger exists for a landed projectile" is read off the shipped
+build — then measures the `minecraft:hit_block` enchantment effect against block
+census, damage-versus-distance with a vanilla-TNT calibration row, decorations,
+and the multi-player / restart / mob-shot / water / slab / entity-hit axes.
+Findings: [`../notes/area-effect-arrow-spike.md`](../notes/area-effect-arrow-spike.md);
+raw observations beside the rig (`observations.json`). It publishes an
+**ephemeral** loopback port and never takes the 25565 mutex. Three things it
+carries that the next rig should copy: a **positive control on every negative
+claim** (the block census only means something because the `block_interaction:
+"tnt"` row destroys 257 blocks with the same instrument); `fill()`/`killq()`
+separating "nothing to do" from "rejected", since `No blocks were filled` and
+`Could not set the block` are legitimate answers that sit inside the shared
+rejection regex; and a `--phase 1`/restart/`--phase 2` split so "survives a
+reload" is measured rather than assumed.

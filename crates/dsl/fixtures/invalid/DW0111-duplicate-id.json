@@ -1,37 +1,37 @@
 {
   "description": "two classes share an id",
-  "expect": "DW0111",
   "documents": {
     "classes": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "classes",
       "content": {
         "classes": [
           {
-            "id": "class/wanderer",
-            "name": "Wanderer",
             "blurb": "Sturdy boots, no questions.",
+            "id": "class/wanderer",
             "kit": [
               {
-                "item": "minecraft:bread",
-                "count": 3
+                "count": 3,
+                "item": "minecraft:bread"
               }
-            ]
+            ],
+            "name": "Wanderer"
           },
           {
-            "id": "class/wanderer",
-            "name": "Wanderer",
             "blurb": "Sturdy boots, no questions.",
+            "id": "class/wanderer",
             "kit": [
               {
-                "item": "minecraft:bread",
-                "count": 3
+                "count": 3,
+                "item": "minecraft:bread"
               }
-            ]
+            ],
+            "name": "Wanderer"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "classes"
     }
-  }
+  },
+  "expect": "DW0111"
 }

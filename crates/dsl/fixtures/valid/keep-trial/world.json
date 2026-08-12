@@ -1,21 +1,26 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "keep-trial",
-  "stage": "world",
   "content": {
-    "title": "Trial of the Keep",
-    "theme": "A ruined keep on the moor, guarded by the restless dead.",
-    "premise": "The Keeper sends you into the keep: cut down the guard the moor raised, take the old key, unbar the inner door, and reach the shrine beyond.",
-    "seed": 20260731,
-    "target_minutes": 8,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Stone Keep",
-        "prefab_pool": "pool/stone-keep",
-        "pieces": { "min": 7, "max": 9 }
+        "pieces": {
+          "max": 9,
+          "min": 7
+        },
+        "prefab_pool": "pool/stone-keep"
       }
     ],
-    "languages": ["zh-cn"]
-  }
+    "languages": [
+      "zh-cn"
+    ],
+    "premise": "The Keeper sends you into the keep: cut down the guard the moor raised, take the old key, unbar the inner door, and reach the shrine beyond.",
+    "seed": 20260731,
+    "target_minutes": 8,
+    "theme": "A ruined keep on the moor, guarded by the restless dead.",
+    "title": "Trial of the Keep"
+  },
+  "dsl_version": "0.3.0",
+  "stage": "world"
 }

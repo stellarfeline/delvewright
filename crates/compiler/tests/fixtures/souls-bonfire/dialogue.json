@@ -1,38 +1,67 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "souls-bonfire",
-  "stage": "dialogue",
   "content": {
     "dialogues": [
       {
-        "npc": "npc/keeper",
-        "root": "dlg/greet",
         "nodes": [
           {
             "id": "dlg/greet",
-            "text": "You came. Put down the guard the moor raised, take the key it kept, and unbar the inner door. The shrine lies past it.",
             "options": [
-              { "label": "Who are you?", "next": "dlg/lore" },
-              { "label": "I'll clear the keep.", "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] },
-              { "label": "What lies past the door?", "requires_flags": ["flag/summoned"], "next": "dlg/secret", "effects": [ { "type": "set-flag", "flag": "flag/curious" } ] }
-            ]
+              {
+                "label": "Who are you?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/talk",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "I'll clear the keep."
+              },
+              {
+                "effects": [
+                  {
+                    "flag": "flag/curious",
+                    "type": "set-flag"
+                  }
+                ],
+                "label": "What lies past the door?",
+                "next": "dlg/secret",
+                "requires_flags": [
+                  "flag/summoned"
+                ]
+              }
+            ],
+            "text": "You came. Put down the guard the moor raised, take the key it kept, and unbar the inner door. The shrine lies past it."
           },
           {
             "id": "dlg/lore",
-            "text": "The captain who lost this place. I hold the gate still, because I cannot leave it.",
             "options": [
-              { "label": "Back.", "next": "dlg/greet" }
-            ]
+              {
+                "label": "Back.",
+                "next": "dlg/greet"
+              }
+            ],
+            "text": "The captain who lost this place. I hold the gate still, because I cannot leave it."
           },
           {
             "id": "dlg/secret",
-            "text": "A shrine older than the keep. Reach it, and the moor's hold breaks.",
             "options": [
-              { "label": "Back.", "next": "dlg/greet" }
-            ]
+              {
+                "label": "Back.",
+                "next": "dlg/greet"
+              }
+            ],
+            "text": "A shrine older than the keep. Reach it, and the moor's hold breaks."
           }
-        ]
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greet"
       }
     ]
-  }
+  },
+  "dsl_version": "0.4.0",
+  "stage": "dialogue"
 }

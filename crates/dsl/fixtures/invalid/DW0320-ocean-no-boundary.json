@@ -1,22 +1,26 @@
 {
   "description": "ocean horizon declared without a boundary",
-  "expect": "DW0320",
   "documents": {
     "world": {
-      "dsl_version": "0.6.0",
       "campaign_id": "hello-world",
-      "stage": "world",
       "content": {
-        "title": "The Keeper's Door",
-        "theme": "A lonely keep at the edge of the moor.",
+        "areas": [
+          {
+            "id": "area/keep",
+            "name": "The Keep",
+            "prefab": "prefab/hello-room"
+          }
+        ],
+        "horizon": "ocean",
         "premise": "One locked door stands between you and the road home.",
         "seed": 20260729,
         "target_minutes": 5,
-        "horizon": "ocean",
-        "areas": [
-          { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
-        ]
-      }
+        "theme": "A lonely keep at the edge of the moor.",
+        "title": "The Keeper's Door"
+      },
+      "dsl_version": "0.6.0",
+      "stage": "world"
     }
-  }
+  },
+  "expect": "DW0320"
 }
