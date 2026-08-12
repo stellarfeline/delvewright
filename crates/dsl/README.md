@@ -1,260 +1,82 @@
-# `delvewright-dsl`
+# delvewright-dsl
 
-serde types, validation, canonical serialization and JSON Schema export for the
-staged campaign DSL (spec-0001). This crate is the **source of truth** for the
-DSL: JSON Schemas are exported from the Rust types, never hand-maintained.
+The campaign format that the [`delvec`](https://crates.io/crates/delvec)
+compiler reads: Rust types, validation, a canonical writer, and JSON Schema
+export for the staged JSON documents that describe a **Minecraft Java Edition
+1.21.11** adventure map.
+
+A campaign is six documents — `world`, `npcs`, `classes`, `quest-plan`,
+`quests`, `dialogue` — plus an optional `world-edits` script and one
+`l10n/<code>.json` sidecar per translated language. Each is an envelope
+`{ dsl_version, campaign_id, stage, content }` wrapping that stage's payload.
+Later stages reference earlier ones and never the other way round, so a campaign
+can be written and checked one stage at a time.
+
+The JSON Schemas are generated from the Rust types, so the schema a document is
+authored against and the parser that reads it cannot disagree.
+
+## Use
+
+```toml
+[dependencies]
+delvewright-dsl = "0.1"
+```
+
+```rust
+use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, stage_schema};
+
+// Six JSON strings in, diagnostics out.
+let raw = RawCampaign { world, npcs, classes, quest_plan, quests, dialogue, world_edits: None };
+let diagnostics = check_campaign(&raw);   // parse, then validate
+
+// Or in two steps.
+let campaign = parse_campaign(&raw)?;
+let diagnostics = delvewright_dsl::validate_campaign(&campaign);
+
+// The schema for stage 1, as serde_json::Value.
+let schema = stage_schema(delvewright_dsl::Stage::World);
+```
 
 ## What it provides
 
-- **Types** (`stages`, `envelope`, `ids`): serde types for the envelope
-  `{ dsl_version, campaign_id, stage, content }` and the **six** stage payloads
-  (v0.2: stage 2 is a structured `persona`, stage 6 is `dialogue`), every struct
-  `#[serde(deny_unknown_fields)]`. IDs are type-prefixed kebab-case newtypes
-  (`area/…`, `npc/…`, `class/…`, `quest/…`, `dlg/…`, `obj/…`, `anchor/…`,
-  `prefab/…`, `pool/…`) that parse permissively and expose `is_valid_syntax()`.
-- **Validation** (`validate::validate_campaign`): all spec-0001 v0.2 rule groups
-  plus the v0.3 verb/wave/flag group (`DW0170`–`DW0173`, gated on `dsl_version`),
-  returning `Diagnostic { code, severity, stage, path, message }` in the
-  spec-0002 `--json` shape.
-- **Canonical serialization** (`canonical::to_canonical_string`): the single
-  canonical writer — 2-space pretty, struct-declaration field order, sorted map
-  keys (`BTreeMap`), trailing newline. Round-tripping any valid fixture is
-  byte-identical (enforced by `tests/roundtrip.rs`).
-- **JSON Schema export** (`schema::stage_schema`): one full-envelope JSON Schema
-  (draft 2020-12) per stage, via `schemars`.
-- **Registries** (`registry`): `ItemRegistry`, `EntityRegistry` (v0.3 wave mobs)
-  and `AnchorRegistry` traits, with small vendored v0 implementations (see
-  [Registries](#registries)).
+- **Types** — every stage payload as serde structs, all
+  `#[serde(deny_unknown_fields)]`, so a typo is a diagnostic rather than a
+  silently ignored key. Ids are type-prefixed kebab-case newtypes (`area/…`,
+  `npc/…`, `class/…`, `quest/…`, `obj/…`, `dlg/…`, `anchor/…`, `prefab/…`).
+- **Validation** — `validate_campaign` returns
+  `Diagnostic { code, severity, stage, path, message }`, one stable `DW####`
+  code per rule: id syntax and uniqueness, dangling and forward references,
+  dialogue reachability, quest-graph cycles, cross-stage completeness, item and
+  entity ids, translation coverage. `validate_campaign_with` takes registries so
+  ids resolve against a real Minecraft registry and a real prefab library.
+- **Canonical form** — `to_canonical_string` and `fmt`: two-space indent, sorted
+  map keys, declaration field order, one trailing newline. Array order is
+  semantic and is never reordered. Round-tripping a valid document is
+  byte-identical, so an edit is a small diff instead of a whole-file rewrite.
+- **JSON Schema** — `stage_schema` exports one full-envelope draft 2020-12
+  schema per stage.
+- **Registries** — `ItemRegistry`, `EntityRegistry`, `BlockRegistry`,
+  `EffectRegistry` and `AnchorRegistry` traits, with small vendored
+  implementations so the crate validates standalone, and injection points for
+  the full ones.
 
-Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
-nothing depends on hash order, wall-clock, or absolute paths.
+All iteration is over ordered collections: nothing depends on hash order,
+wall-clock time, or absolute paths.
 
-## Entry points
+## Compatibility
 
-```rust
-use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, validate_campaign};
+- **Campaign format**: `dsl_version` `0.2.0` through `0.10.0`. Each version is an
+  additive superset of the one before, and a campaign is judged at the version
+  it declares.
+- **Minecraft**: Java Edition 1.21.11.
+- **Rust**: 1.97.1 or newer.
 
-// From six raw JSON strings (compiler input):
-let diags = check_campaign(&raw); // parse (DW0100 on failure) then validate
+## Documentation
 
-// Or in two steps:
-let campaign = parse_campaign(&raw)?;          // Result<Campaign, Vec<Diagnostic>>
-let diags = validate_campaign(&campaign);      // Vec<Diagnostic>
-```
+- [Format reference](https://github.com/stellarfeline/delvewright/blob/main/docs/reference/compiler.md)
+  — every stage's fields, every verb, and the complete `DW####` catalogue.
+- [Project repository](https://github.com/stellarfeline/delvewright).
 
-`validate_campaign` uses the vendored v0 registries. The compiler injects full
-registries via `validate_campaign_with(&campaign, &items, &anchors)`.
+## Licence
 
-## Diagnostic codes (`DW01xx`)
-
-Codes are a **stable API**; the CI fixture matrix asserts exact codes. Each code
-has ≥1 invalid fixture under `fixtures/invalid/` that violates only that rule.
-
-| Code | Rule group | Meaning |
-|------|-----------|---------|
-| `DW0100` | 1 Envelope | Document does not conform to its stage schema (unknown field / wrong type / malformed value, incl. a **missing required persona field**). Reported at parse time. |
-| `DW0101` | 1 Envelope | `stage` field does not match the document's slot (e.g. `world.json` says `stage: "npcs"`). |
-| `DW0102` | 1 Envelope | Unsupported `dsl_version` (only `0.2.0` in v0.2). |
-| `DW0103` | 1 Envelope | `campaign_id` differs across stages. |
-| `DW0110` | 2 IDs | Malformed id syntax (not kebab-case, or wrong/missing type prefix). |
-| `DW0111` | 2 IDs | Duplicate id within its namespace (incl. **two dialogue trees for one NPC**). |
-| `DW0112` | 2 IDs | Dangling reference (incl. a **persona relationship** to an unknown NPC, or any **forward/undeclared** reference — references must be strictly backward). |
-| `DW0120` | 3 Dialogue (stage 6) | Dialogue node unreachable from `root`. |
-| `DW0121` | 3 Dialogue (stage 6) | Dialogue `root`/option `next` references an unknown node. |
-| `DW0122` | 3 Dialogue (stage 6) | Dialogue effect targets an objective that is unknown, not a `talk-to`, or a `talk-to` **on a different NPC** (foreign effect). |
-| `DW0123` | 3 Dialogue (stage 6) | A stage-5 `talk-to` objective has **no reachable completing option** in its NPC's tree (static half of the compiler's `DW0203`). |
-| `DW0130` | 4 Quest plan | Quest `depends_on` graph contains a cycle. |
-| `DW0131` | 4 Quest plan | `finale` is not a declared quest. |
-| `DW0132` | 4 Quest plan | `finale` is not the convergent sink of the plan (see [note](#dw0132)). |
-| `DW0133` | 4 Quest plan | Non-mandatory quest (`mandatory: false`), reserved until M3. |
-| `DW0140` | 5 Quests | Objective `after` ordering contains a cycle. |
-| `DW0141` | 2–5 Reserved | Reserved enum value used (see [Reserved](#reserved-values)). |
-| `DW0142` | 5 Quests | Anchor not provided by the area's bound prefab. |
-| `DW0143` | 5 Quests | Item id not in the pinned 1.21.11 registry. |
-| `DW0150` | 6 Cross-stage | Planned quest (stage 4) has no expansion in stage 5. |
-| `DW0151` | 6 Cross-stage | Stage-5 quest is not planned in stage 4. |
-| `DW0152` | 6 Cross-stage | Stage-2 NPC has no stage-6 dialogue tree. |
-| `DW0153` | 6 Cross-stage | Stage-6 dialogue tree references an NPC not declared in stage 2. |
-| `DW0160` | 6 Prefab binding | Area binds neither or both of `prefab` / `prefab_pool` (exactly one required). |
-| `DW0161` | 6 Prefab binding | Area `prefab_pool` references a pool absent from `prefabs/` metadata. |
-| `DW0170` | 5 Waves (v0.3) | A `kill` objective or `spawn-wave` effect references a `wave/<id>` not declared in the stage-5 `waves` section (dangling wave ref). |
-| `DW0171` | 5 Waves (v0.3) | A declared wave is referenced by a `kill` objective but is never spawned by any `spawn-wave` effect (a wave must be spawned before its kill objective is reachable). |
-| `DW0172` | 5 Flags (v0.3) | A `requires_flags` entry references a `flag/<id>` that no `set-flag` effect ever produces (dangling flag ref). |
-| `DW0173` | 5 Waves (v0.3) | A wave mob `entity` is not a known vanilla entity id. Item-id checks for `collect.item`, `interact.requires_item` and `give-item.item` reuse `DW0143`; their anchors reuse `DW0142`. |
-| `DW0180` | i18n | An l10n sidecar does not correctly cover a declared language: the `l10n/<code>.json` file is **absent**, its envelope (`campaign_id`/`lang`/`dsl_version`) is inconsistent, or it is **missing** an inventory key (under-coverage). Also fired if `en` is declared (it is implicit and never listed). |
-| `DW0181` | i18n | An l10n sidecar carries an **orphan** key not in the string inventory derived from the stage docs (over-coverage). |
-| `DW0190` | 6 v0.4 skins | A mannequin NPC `skin.texture_id` is malformed (not a bare kebab token) or duplicated across NPCs. A missing `model` is a schema error (`DW0100`); a missing PNG is a build error (`DW0309`). |
-| `DW0191` | 6 v0.4 dialogue | A `talk-to` objective has no **ungated** completing dialogue option — every completing option is `requires_flags`-gated, so it can deadlock the moment it activates. Keep one ungated completing path. |
-| `DW0192` | 6 v0.4 waves | A wave-mob `effects[].effect` is not a known 1.21.11 status-effect id. |
-| `DW0193` | 6 v0.4 props | A `set-block` / `interact.prop` block id is not a known 1.21.11 block id (validated against the item registry + technical/fluid allowlist). |
-| `DW0194` | 6 v0.4 triggers | An environment-trigger id is malformed or duplicated, or an `approach` trigger has `range` 0. |
-| `DW0195` | 6 v0.4 lifecycle | A `talk-to` targets an NPC despawned by a prerequisite quest (gone before the objective activates). |
-
-Coverage codes (`DW0180`/`DW0181`) are **compiler-level** (they need the campaign
-dir's `l10n/` sidecars, so they run in `delvec validate`/`analyze`/`build`, not the
-single-document DSL fixture matrix). They are exercised by
-`crates/compiler/tests/cli.rs` (mutating `keep-trial`'s real sidecar).
-
-`severity` is `error` for every v0 code; `warning` exists in the shape for
-future advisory rules. `path` is a JSON-pointer-ish location within the stage
-document (map-key segments are not `~1`-escaped — it is a locator, not a strict
-pointer). `DW0100`'s path is the document root, since serde parse errors are not
-path-addressable.
-
-### DSL versions (0.2.0 and 0.3.0)
-
-v0.3 is an **additive superset** of v0.2 (`SUPPORTED_DSL_VERSIONS`): a v0.2
-campaign remains valid and compiles byte-identically. The new stage-5 verbs
-(`kill`/`collect`/`interact`), effects (`give-item`/`set-flag`/`spawn-wave`),
-the `waves` section and `requires_flags` are gated on `dsl_version` 0.3.0 — the
-gate is the **quests-stage** version (all the v0.3 surface lives in stage 5).
-The `v03_checks` group (`DW0170`–`DW0173`, plus reuse of `DW0142`/`DW0143`) runs
-only under 0.3.0; under 0.2.0 those verbs/effects are still rejected as reserved
-(`DW0141`). A campaign is expected to use a uniform version across its six
-documents; the mixed-version invalid fixtures are a testing convenience.
-
-### Reserved values
-
-`DW0141` covers enum values that are not yet implemented **for the campaign's
-`dsl_version`**:
-
-- `npcs`: `role: vendor` / `role: boss` (reserved in both 0.2.0 and 0.3.0).
-- `quests` **under 0.2.0 only**: objective `type: kill | collect | interact`;
-  effect `type: give-item | set-flag | spawn-wave`. Under 0.3.0 these are
-  implemented (see [DSL versions](#dsl-versions-020-and-030)).
-
-(`prefab_pool` is no longer reserved in v0.2 — it is a real stage-1 binding,
-validated by `DW0160`/`DW0161`.)
-
-These **parse** (so authors get a clean diagnostic instead of an opaque error)
-and are rejected by validation. The reserved kit-item fields (`lore`,
-`enchantments`, `attributes`) are the exception: they are intentionally *not*
-defined as fields, so a document using them is rejected as an unknown field
-(`DW0100`).
-
-## Fixtures
-
-### Valid — `fixtures/valid/hello-world/`
-
-The complete canonical hello-world campaign, six documents (`world`, `npcs`,
-`classes`, `quest-plan`, `quests`, `dialogue`) — v0.2: `npcs` carries the
-keeper's structured `persona`, `dialogue` carries his tree. It validates with
-zero diagnostics and is byte-identical under the canonical writer.
-
-### Invalid — `fixtures/invalid/`
-
-Self-describing patch files named `<code>-<slug>.json`:
-
-```json
-{
-  "description": "npc references an unknown area",
-  "expect": "DW0112",
-  "documents": { "npcs": { "...": "full replacement envelope for this stage" } }
-}
-```
-
-- `expect`: the single diagnostic code the fixture must produce.
-- `documents`: a map of stage name → the **full** stage envelope that replaces
-  the valid one. Most fixtures replace exactly one stage; a few (e.g.
-  `DW0132`) must replace two to violate their rule *in isolation* without
-  tripping the cross-stage 1:1 rule.
-- `schema_reject` (optional, default `false`): the overridden document must also
-  be rejected by the exported JSON Schema (schema-level violations only, e.g.
-  `DW0100`).
-
-`tests/matrix.rs` walks the matrix: every invalid fixture yields exactly its
-`expect` code, and the valid campaign yields zero. `tests/schema.rs` validates
-every valid fixture against its exported schema and checks that every
-`schema_reject` fixture is rejected.
-
-## i18n (native localization)
-
-Owner-approved 2026-07-31 (spec-0001 i18n addendum). **English is canonical**;
-stage docs stay pure English. A campaign opts into translations by listing
-BCP-47-style codes in `world.content.languages` (e.g. `["zh-cn"]`); `en` is
-implicit and **never** listed. Each declared language ships one **l10n sidecar**
-under the campaign dir at `l10n/<code>.json`, an envelope in the stage-doc style
-plus a flat `content` map of stable key → translated string:
-
-```json
-{ "dsl_version": "0.3.0", "campaign_id": "keep-trial", "kind": "l10n",
-  "lang": "zh-cn", "content": { "world.title": "…", "npc.keeper.name": "…", … } }
-```
-
-The compiler derives the **authoritative key inventory** from the stage docs
-(`l10n::inventory`) and the build-time swap (`l10n::localize`, driven by
-`delvec build --lang <code>`) walk the **same** traversal, so a key is never
-checked without being applied. Player-visible strings only; the key scheme:
-
-| Key | Source |
-|-----|--------|
-| `world.title` | stage-1 title |
-| `area.<area>.name` | area name |
-| `class.<class>.name` / `.blurb` / `.kit.<i>.name` | class name/blurb + kit item display name (if set) |
-| `npc.<npc>.name` | NPC name |
-| `quest.<quest>.goal` | stage-4 quest goal |
-| `obj.<quest>.<obj>.title` / `.hint` | objective title/hint (if set) |
-| `obj.<quest>.<obj>.missing_item_hint` | `interact` empty-hand line (v0.7, if set) |
-| `dlg.<npc>.<node>.text` / `.opt.<i>.label` | dialogue node text + option labels |
-| `wave.<wave>.mob.<i>.name` | wave mob custom name (if set) |
-
-`<…>` is the id's local part (after `<prefix>/`, kebab preserved); ids are unique
-within their namespace, so keys never collide. **Excluded** (authoring context the
-player never sees): world `theme`/`premise`, NPC `persona` fields and
-`relationships`. **Coverage is exact** — a declared language's sidecar must cover
-the inventory with no missing (`DW0180`) and no orphan (`DW0181`) keys; this runs
-on every `validate`/`analyze`/`build`, independent of `--lang`. A `--lang <code>`
-build differs from `en` only in string content (`critical-path.json` and the world
-layout are byte-identical); an `en` build is byte-identical to a pre-i18n one.
-
-## Registries
-
-Item-id and anchor checks go through the `ItemRegistry` / `AnchorRegistry`
-traits. This crate ships small **vendored v0** implementations covering only what
-the M1 fixtures use:
-
-- `VendoredItemRegistry::v1_21_11()` — the item ids in `data/items-1.21.11.json`.
-  **The full 1.21.11 item registry is vendored in the compiler task (spec-0002);**
-  the compiler injects it via `validate_campaign_with`.
-- `VendoredEntityRegistry::v1_21_11()` — the hostile-mob ids in
-  `data/entities-1.21.11.json`, used to validate v0.3 wave mobs (`DW0173`). A
-  full 1.21.11 entity registry is injected by the compiler (currently the same
-  vendored subset, pending the wave-emission task).
-- `VendoredAnchorRegistry::hello_world()` — the anchors the hello-world prefab
-  declares (`data/anchors.json`) plus a fixture pool (`data/pools.json`) so
-  prefab-pool existence checks are non-vacuous. Real prefab anchor metadata lives
-  in `prefabs/` (ADR-0004) and is resolved by the compiler; the trait lets the
-  compiler inject it.
-
-`AnchorRegistry` is the **prefab-metadata surface** DSL validation resolves refs
-against. Beyond `anchors_for`, it exposes `has_pool` (prefab-pool existence,
-`DW0161`) and `lighting_for` (the typed `Lighting` / `LightingProfile` block,
-consumed by the compiler's `dark`-mitigation analysis, `DW0210`). The compiler's
-`PrefabRegistry` implements all three from `prefabs/` metadata.
-
-## Spec notes / resolved ambiguities
-
-<a id="dw0132"></a>
-- **`DW0132` (finale reachability).** In a valid DAG with all references
-  present, a finale is *always* reachable by dependency traversal, so the rule
-  cannot be violated in isolation under a literal reading. v0 implements the
-  concrete, independently-testable reading: **every planned quest must be a
-  transitive dependency of `finale`** — the plan converges on the finale. This
-  is a *structural* stage-4 check and is distinct from the compiler's deeper
-  semantic reachability (`analyze`, exit 2, `DW0201` in spec-0002); the compiler
-  may run both.
-- **Objective/dialogue id uniqueness.** spec-0001 calls dialogue/objective ids
-  "stage-local". v0 enforces: dialogue node ids unique within each NPC's graph;
-  objective ids unique across all of stage 5 (so cross-stage `complete-objective`
-  refs resolve unambiguously).
-- **`quest-complete` trigger.** The reference field is named `quest`
-  (`{ "type": "quest-complete", "quest": "quest/…" }`).
-- **Anchor resolution** is performed here via `AnchorRegistry`, but prefab
-  metadata itself (including the `spawn` requirement) is owned by the compiler
-  and `prefabs/`; the vendored registry only knows the hello-world prefab.
-
-## Dependencies
-
-`serde`, `serde_json`, `schemars`, `thiserror` (all MIT/Apache-2.0). Dev-only:
-`jsonschema` (MIT) with default features **disabled** (its HTTP/TLS resolver
-tree is not needed for offline validation and is excluded).
+GPL-3.0-only.
