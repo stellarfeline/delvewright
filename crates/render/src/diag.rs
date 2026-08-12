@@ -28,6 +28,13 @@ pub const DW_RANK_ORDER: &str = "DW0725";
 /// zero is an error (nothing was ranked), a partial binding a warning. A gate
 /// that binds to nothing is vacuous, not a pass (CLAUDE.md).
 pub const DW_BINDING: &str = "DW0726";
+/// An anchor's eye-level camera does not stand on the anchor's own cell — or
+/// could not be stood up at all. A prefab is mostly solid, so an eye point taken
+/// from an anchor position lands inside a block often enough that assuming it is
+/// how the whole review goes blind; the resolution is reported here and in the
+/// shot manifest instead, so the reviewer always knows where the body in the
+/// frame is standing.
+pub const DW_ANCHOR_EYE: &str = "DW0727";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real
@@ -56,7 +63,7 @@ pub enum Severity {
 }
 
 /// One diagnostic.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Diagnostic {
     pub code: &'static str,
     pub severity: Severity,

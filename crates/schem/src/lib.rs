@@ -6,11 +6,21 @@
 //! structure template(s) + a split manifest. All output is byte-deterministic
 //! (ADR-0006): stable palette ordering, fixed block iteration, `BTreeMap`-backed
 //! NBT, and gzip mtime pinned to 0.
+//!
+//! A prefab is the `.nbt` plus the sibling metadata JSON that describes it, so
+//! this crate owns both halves of that pair: [`convert`] writes the bytes and
+//! [`prefab`] defines the document. Every tool that produces or edits a prefab —
+//! the grammar back end, the hand-written generators, `delve-admit` — reads and
+//! writes the metadata through [`prefab::PrefabMeta`] rather than a local copy of
+//! its shape, because a copy that models fewer fields deletes the rest on
+//! read-modify-write and reports nothing.
 
+pub mod blocks;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;
 pub mod nbt;
+pub mod prefab;
 pub mod schematic;
 pub mod split;
 

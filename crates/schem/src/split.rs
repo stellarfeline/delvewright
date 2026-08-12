@@ -1,11 +1,21 @@
-//! Oversize splitting.
+//! Oversize splitting — the one tiling in this project.
 //!
-//! Vanilla structure templates cap each axis at 48. Larger schematics tile into
-//! a deterministic grid of parts plus a `<base>.split.json` manifest recording
-//! grid dimensions, per-part sizes, and source-local offsets so the prefab
-//! admission pipeline can reassemble losslessly.
+//! Vanilla structure templates cap each axis at 48. That is a limit on a file
+//! format, never on a design (owner ruling, 2026-08-12), so anything bigger is
+//! tiled into a deterministic grid of parts plus a manifest recording grid
+//! dimensions, per-part sizes and zone-local offsets, and every consumer
+//! reassembles losslessly from that manifest.
+//!
+//! Two producers write tilings — `delve-schem convert` for an oversize `.schem`
+//! import, and `delve-grammar expand` for a zone whose expansion outgrows one
+//! template — and they call the same [`plan_split`], so a volume tiles the same
+//! way whichever door it came in by. [`TileSet`] is the manifest contract
+//! itself: one struct, `Serialize` for the producers and `Deserialize` for the
+//! consumers, so the two halves cannot drift apart.
 
-use serde::Serialize;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 /// One grid cell of a split.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +86,127 @@ pub fn manifest_filename(base: &str) -> String {
     format!("{base}.split.json")
 }
 
+// ---------------------------------------------------------------------------
+// The tile-set manifest contract
+// ---------------------------------------------------------------------------
+
+/// A volume packaged as several structure templates.
+///
+/// This is the `structure_set` block of a tiled prefab's metadata file, and it
+/// is the whole contract: given it and the `.nbt` files it names, a consumer can
+/// rebuild the original volume without knowing anything about who tiled it or
+/// why. It is `Serialize` **and** `Deserialize` on purpose — the producer and
+/// the consumer share one definition, so a field cannot be added on one side and
+/// missed on the other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TileSet {
+    /// The filename stem every tile is named from.
+    pub base: String,
+    /// The whole volume's extent `[x, y, z]` — what the author asked for.
+    pub size: [i32; 3],
+    /// The per-axis cap the tiling had to respect.
+    pub part_max: i32,
+    /// How many tiles along each axis.
+    pub grid: [i32; 3],
+    /// The MC data version every tile targets (ADR-0009).
+    pub data_version: i32,
+    /// Provenance breadcrumb: what wrote the tiles.
+    #[serde(default)]
+    pub generator: String,
+    /// The tiles, in `x`→`y`→`z` grid order.
+    pub parts: Vec<TilePart>,
+}
+
+/// One tile of a [`TileSet`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TilePart {
+    /// The `.nbt` filename, relative to the manifest.
+    pub file: String,
+    /// The datapack structure id (a path segment).
+    pub id: String,
+    /// Position in the tile grid.
+    pub grid_index: [i32; 3],
+    /// The tile's origin **in whole-volume coordinates** — add it to a
+    /// tile-local cell to get the volume cell. The only transform reassembly
+    /// needs.
+    pub offset: [i32; 3],
+    /// The tile's extent `[x, y, z]`, every axis `<= part_max`.
+    pub size: [i32; 3],
+}
+
+impl TileSet {
+    /// Refuse a manifest that does not describe an exact tiling of `size`.
+    ///
+    /// A consumer that skips this reassembles a volume with a hole in it and
+    /// reports success — the manifest is data on disk, and a truncated or
+    /// hand-edited one must be a refusal rather than a quietly smaller
+    /// building. Checks that every part lies inside the volume, that no axis
+    /// exceeds `part_max`, and that the parts' volumes sum to the whole.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.parts.is_empty() {
+            return Err("the manifest lists no tiles".to_string());
+        }
+        let mut covered: i64 = 0;
+        for part in &self.parts {
+            for axis in 0..3 {
+                if part.size[axis] <= 0 {
+                    return Err(format!("tile {:?} has a zero or negative axis", part.file));
+                }
+                if part.size[axis] > self.part_max {
+                    return Err(format!(
+                        "tile {:?} is {} on axis {axis}, past the declared cap of {}",
+                        part.file, part.size[axis], self.part_max
+                    ));
+                }
+                if part.offset[axis] < 0 || part.offset[axis] + part.size[axis] > self.size[axis] {
+                    return Err(format!(
+                        "tile {:?} runs outside the {}x{}x{} volume on axis {axis}",
+                        part.file, self.size[0], self.size[1], self.size[2]
+                    ));
+                }
+            }
+            covered += part.size[0] as i64 * part.size[1] as i64 * part.size[2] as i64;
+        }
+        let whole = self.size[0] as i64 * self.size[1] as i64 * self.size[2] as i64;
+        if covered != whole {
+            return Err(format!(
+                "the {} tile(s) cover {covered} cell(s) of a {whole}-cell volume — a tile set that \
+                 does not tile its volume exactly would reassemble with a hole or an overlap",
+                self.parts.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Only the field that says which shape a prefab metadata file is.
+#[derive(Deserialize)]
+struct MetadataShape {
+    #[serde(default)]
+    structure_set: Option<TileSet>,
+}
+
+/// Read a prefab metadata file and say whether it describes a tile set.
+///
+/// `Ok(None)` means an ordinary single-template prefab — the caller carries on
+/// exactly as before. `Ok(Some(_))` is a validated tile set. `Err` is a
+/// malformed file, never a shrug: every consumer that opens prefab metadata
+/// must be able to tell the two shapes apart, and the way a tool "handles" a
+/// tile set it has never heard of is by reading none of its blocks.
+pub fn read_tile_set(path: &Path) -> Result<Option<TileSet>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let shape: MetadataShape =
+        serde_json::from_slice(&bytes).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    match shape.structure_set {
+        None => Ok(None),
+        Some(set) => {
+            set.validate()
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            Ok(Some(set))
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct PartManifest {
     file: String,
@@ -93,6 +224,40 @@ struct SplitManifest {
     part_max: i32,
     grid: [i32; 3],
     parts: Vec<PartManifest>,
+}
+
+/// The tile-set manifest that names `nbt_path` as one of its tiles, if any.
+///
+/// Every tool that takes a single `.nbt` needs this, because every one of them
+/// will otherwise be handed a tile some day and answer about the fragment: the
+/// renderer draws a building sliced at a packaging plane, the auditor returns
+/// `"pass"` over a fifth of a zone. Both are answers, both are wrong, and
+/// neither has any other detector. So the check lives here, once, beside the
+/// tiling it is about.
+///
+/// Membership is read out of the manifest rather than guessed from the
+/// filename: a name that merely looks like `<base>.x0y0z1.nbt` proves nothing,
+/// and a tile whose manifest is missing is an ordinary `.nbt` that should still
+/// be processed.
+pub fn manifest_claiming(nbt_path: &Path) -> Result<Option<std::path::PathBuf>, String> {
+    let Some(name) = nbt_path.file_name().and_then(|s| s.to_str()) else {
+        return Ok(None);
+    };
+    let Some(stem) = name.strip_suffix(".nbt") else {
+        return Ok(None);
+    };
+    // `<base>.<grid-suffix>` — the only shape a tile filename has.
+    let Some((base, _)) = stem.rsplit_once('.') else {
+        return Ok(None);
+    };
+    let manifest = nbt_path.with_file_name(format!("{base}.json"));
+    if !manifest.exists() {
+        return Ok(None);
+    }
+    let Some(set) = read_tile_set(&manifest)? else {
+        return Ok(None);
+    };
+    Ok(set.parts.iter().any(|p| p.file == name).then_some(manifest))
 }
 
 /// Render the split manifest as pretty JSON (deterministic — fixed field order,
@@ -124,4 +289,158 @@ pub fn manifest_json(
             .collect(),
     };
     serde_json::to_string_pretty(&manifest).expect("manifest serializes")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tile_set(size: [i32; 3], parts: Vec<([i32; 3], [i32; 3])>) -> TileSet {
+        TileSet {
+            base: "zone".to_string(),
+            size,
+            part_max: 48,
+            grid: [1, 1, parts.len() as i32],
+            data_version: 4671,
+            generator: "crates/grammar".to_string(),
+            parts: parts
+                .into_iter()
+                .enumerate()
+                .map(|(i, (offset, size))| TilePart {
+                    file: format!("zone.x0y0z{i}.nbt"),
+                    id: format!("zone.x0y0z{i}"),
+                    grid_index: [0, 0, i as i32],
+                    offset,
+                    size,
+                })
+                .collect(),
+        }
+    }
+
+    /// The tiling `plan_split` produces always validates. This is the binding
+    /// between the producer and the check every consumer runs: if the two ever
+    /// disagreed, every tiled export would be refused by every reader.
+    #[test]
+    fn every_plan_split_tiling_validates() {
+        for size in [
+            [1, 1, 1],
+            [48, 48, 48],
+            [49, 1, 1],
+            [20, 10, 84],
+            [90, 14, 130],
+            [200, 100, 200],
+        ] {
+            let plan = plan_split(size, 48);
+            let set = TileSet {
+                base: "zone".to_string(),
+                size,
+                part_max: 48,
+                grid: plan.grid,
+                data_version: 4671,
+                generator: String::new(),
+                parts: plan
+                    .parts
+                    .iter()
+                    .map(|p| TilePart {
+                        file: part_filename("zone", p.grid_index),
+                        id: format!("zone{:?}", p.grid_index),
+                        grid_index: p.grid_index,
+                        offset: p.offset,
+                        size: p.size,
+                    })
+                    .collect(),
+            };
+            assert_eq!(set.validate(), Ok(()), "{size:?}");
+        }
+    }
+
+    /// A manifest whose parts do not cover the volume is refused. A consumer
+    /// that skipped this would reassemble a building with a hole in it and
+    /// report success — the failure that has no other detector.
+    #[test]
+    fn a_tiling_with_a_gap_is_refused() {
+        let short = tile_set([4, 4, 100], vec![([0, 0, 0], [4, 4, 48])]);
+        let err = short.validate().unwrap_err();
+        assert!(err.contains("cover"), "{err}");
+
+        // ...and so is one that covers the right NUMBER of cells twice over.
+        let overlap = tile_set(
+            [4, 4, 48],
+            vec![([0, 0, 0], [4, 4, 24]), ([0, 0, 0], [4, 4, 24])],
+        );
+        assert_eq!(overlap.validate(), Ok(()), "volume alone cannot see this");
+        let outside = tile_set(
+            [4, 4, 48],
+            vec![([0, 0, 0], [4, 4, 24]), ([0, 0, 40], [4, 4, 24])],
+        );
+        assert!(
+            outside.validate().unwrap_err().contains("outside"),
+            "a part running past the volume is caught"
+        );
+    }
+
+    /// A part bigger than the cap it declares cannot be a structure template,
+    /// so it is a refusal before any file is opened.
+    #[test]
+    fn a_part_past_the_declared_cap_is_refused() {
+        let big = tile_set([4, 4, 49], vec![([0, 0, 0], [4, 4, 49])]);
+        assert!(
+            big.validate()
+                .unwrap_err()
+                .contains("past the declared cap"),
+            "{:?}",
+            big.validate()
+        );
+    }
+
+    /// An empty manifest is a manifest that describes nothing, not a zone with
+    /// no blocks.
+    #[test]
+    fn a_manifest_with_no_tiles_is_refused() {
+        let empty = tile_set([4, 4, 4], vec![]);
+        assert!(empty.validate().unwrap_err().contains("no tiles"));
+    }
+
+    /// `read_tile_set` tells the two metadata shapes apart, and says so rather
+    /// than shrugging: a single-template prefab is `None` (the caller carries
+    /// on), a tile set is `Some`, and neither is ever an empty success.
+    #[test]
+    fn the_two_metadata_shapes_are_told_apart() {
+        let dir = std::env::temp_dir().join(format!("dw-split-shape-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let single = dir.join("single.json");
+        std::fs::write(
+            &single,
+            r#"{"prefab_id":"prefab/x","structure":{"file":"x.nbt","id":"x","size":[2,2,2]}}"#,
+        )
+        .unwrap();
+        assert_eq!(read_tile_set(&single).unwrap(), None);
+
+        let set = tile_set(
+            [4, 4, 60],
+            vec![([0, 0, 0], [4, 4, 48]), ([0, 0, 48], [4, 4, 12])],
+        );
+        let tiled = dir.join("tiled.json");
+        std::fs::write(
+            &tiled,
+            serde_json::to_string(&serde_json::json!({ "structure_set": set })).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(read_tile_set(&tiled).unwrap().unwrap(), set);
+
+        // A manifest that does not tile its volume is an error at the READER,
+        // not a surprise three steps later inside a reassembler.
+        let broken = dir.join("broken.json");
+        let bad = tile_set([4, 4, 60], vec![([0, 0, 0], [4, 4, 48])]);
+        std::fs::write(
+            &broken,
+            serde_json::to_string(&serde_json::json!({ "structure_set": bad })).unwrap(),
+        )
+        .unwrap();
+        assert!(read_tile_set(&broken).unwrap_err().contains("cover"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

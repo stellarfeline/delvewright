@@ -386,7 +386,10 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
 
 fn write_piece(out: &Path, spec: &Spec) {
     let s = build(spec);
-    invariants::assert_distress_never_stacks(spec.id, &invariant_cells(&s));
+    let cells = invariant_cells(&s);
+    invariants::assert_distress_never_stacks(spec.id, &cells);
+    // Spelling, at the emitter: an unknown block id loads as AIR.
+    invariants::assert_blocks_are_real(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&s).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

@@ -56,3 +56,11 @@ delvewright-orchestrator = { path = "../orchestrator" }
 # (The package is `delvec` — ADR-0016 — while its library target keeps the
 # `delvewright_compiler` name, so that is what `use` paths spell.)
 delvec = { path = "../compiler" }
+
+[dev-dependencies]
+# The metadata-preservation test drives the admission steps over a REAL grammar
+# export rather than a hand-written fixture. A fixture would be one more private
+# copy of the prefab-metadata shape — the exact defect that test exists to
+# catch — and it would go stale the first time a producer gained a field.
+delvewright-grammar = { path = "../grammar" }
+serde_json = "1"

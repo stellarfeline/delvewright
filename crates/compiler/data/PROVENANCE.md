@@ -39,6 +39,32 @@ not third-party reconstructions.
 
 ## Vendored files (derived, committed here)
 
+- **`blocks-1.21.11.json`** — every 1.21.11 **block** with every property and its
+  legal values, from `blocks/data.min.json` of the same summary (source SHA-256
+  `178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7`, retrieved
+  2026-08-11). 1166 blocks, namespaced and sorted. The source's second element —
+  the default state — is deliberately dropped: a validator needs to know which
+  properties and values are legal, and a second copy of information nothing reads
+  is a second thing that can go stale.
+  **Why it exists**: the repo checked every emitted *command* against a pinned
+  command tree and every item id against a pinned item registry, and checked an
+  emitted **block** against nothing. `minecraft:chain` was renamed
+  `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
+  loads an unknown block as AIR, so the piece ships with the feature silently
+  missing. Consumed by `delvewright_schem::blocks` (the grammar export and
+  `delve-admit audit`'s `DW0733`) and by `prefabs/invariants.rs` (all five
+  tileset generators, source-included).
+  **Note on the nearest existing check**: `DW0193` validates DSL-authored block
+  ids against the *item* registry plus five technical ids
+  (`ItemBackedBlockRegistry`). Measured against this registry, that proxy has
+  **149 false rejects** (real blocks with no item form — wall signs, crops,
+  `bubble_column`) and **492 false accepts** (items that are not blocks —
+  `minecraft:diamond` passes as a block id). Widening `DW0193` onto this file is
+  a `dsl_version`-scale change and is deliberately NOT done here.
+  **Reproduce it**: `python3 tools/extract-block-registry.py
+  <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json`. The script
+  pins and checks the source SHA-256 and the block count.
+
 - **`items-1.21.11.json`** — the `item` registry array from `registries/data.min.json`,
   each id namespaced (`minecraft:<id>`) to match DSL usage, de-duplicated and sorted.
   1505 items. Deterministic transform: `sorted(set("minecraft:"+i for i in item))`,
@@ -175,6 +201,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `item-stack-sizes-1.21.11.json` | `a896955918220c489ab2225db6772cd417a0273d94d8dd691029572566e1b5ee` |
 | `item-combat-1.21.11.json` | `362288eae4c77d9c53d91547b5735c00d739cafc95e1ab2ef57cd1343b9d29ff` |
 | `damage-types-1.21.11.json` | `c3daed77f2557dc7fd784d373e74c1d67b45157bb812c8e4dee761db4696b6fd` |
+| `blocks-1.21.11.json` | `e38653d774e3e837dbb74f8baa05d2687741e56eb7e702c03218c31bd2481087` |
 
 ## Not committed
 
