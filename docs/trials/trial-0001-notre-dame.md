@@ -258,17 +258,27 @@ west rose and both transept roses. Neither can pass a paint, a size or a role.
 
 ### New in run 1
 
-- **Mirroring is a silent-defect generator, and it shipped a hole past every
-  gate.** One `transept_arm` rule served both arms; because a split lays its
-  pieces low-to-high, the end wall landed on the outer face of one arm and the
-  crossing-facing face of the other, leaving **a 7 × 12 × 9 opening to the sky in
-  the south flank**. `blocks-exist`, `non-empty`, `traversable` and `audit` all
-  passed, and four 45° orbit renders did not show it; it was found by reading one
-  eye shot. Idiom 7 presents a mirrored rule body as an enabling technique — it
-  is equally a way to ship a hole, because nothing in the toolchain can tell you
-  the copy you did not write is missing. A `mirror` node, or `mirror: true` on
-  `split` reversing piece order, removes the class; it is additive and needs no
-  new geometry.
+- **Mirroring is a silent-defect generator.** One `transept_arm` rule served both
+  arms; because a split lays its pieces low-to-high, the end wall landed on the
+  outer face of one arm and the crossing-facing face of the other, leaving an
+  opening to the sky in the south flank. `blocks-exist`, `non-empty`,
+  `traversable` and `audit` all passed, and four 45° orbit renders did not show
+  it; it was found by reading one eye shot. Idiom 7 presents a mirrored rule body
+  as an enabling technique — it is equally a way to ship a hole, because nothing
+  in the toolchain can tell you the copy you did not write is missing.
+
+  **Scope of the claim, established on the delivered bytes.** The agent found and
+  repaired this during authoring, so it describes an intermediate state rather
+  than the artifact. The shipped run-1 zone is X-mirror symmetric to within **36
+  cells, all at z 5–6 / y 32–33 — the west towers**, not the transept; run 0 is
+  symmetric exactly. Nobody may cite the hole as a property of the delivered
+  zone.
+
+  **What the delivered bytes do carry is the same family.** Scanning for air
+  cells walled on three or more sides and open to the sky finds **8**, at z 7 and
+  13, x ∈ {0, 10, 20, 30} — symmetric, inside the tower shells, green under every
+  gate. So the class (a boundary cell no traversal claim ever visits) is present
+  in the shipped artifact on its own evidence; only the dramatic instance is not.
 - **The renderer has no camera an author can aim, and for this subject that is
   decisive.** The shot set is fixed: four exteriors at yaw 45/135/225/315, `top`
   at pitch 90, eye shots at pitch 0. **There is no square-on elevation of any
