@@ -1,0 +1,140 @@
+== A1-tiantan-baseline
+{
+ "palette": {
+  "distinct_blocks": 11,
+  "top1_share": 0.774,
+  "top1": "quartz_block",
+  "top3_share": 0.896,
+  "accent_share": 0.0119,
+  "accent_ok": true,
+   [
+    "quartz_block",
+    0.774
+   ],
+   [
+    "blue_concrete",
+    0.065
+   ],
+   [
+    "red_concrete",
+    0.057
+   ],
+   [
+    "smooth_stone",
+    0.051
+   ],
+   [
+    "oak_leaves",
+    0.023
+   ],
+   [
+    "gold_block",
+    0.012
+   ],
+   [
+    "andesite",
+    0.007
+   ],
+   [
+    "white_concrete",
+    0.007
+   ],
+   [
+    "dark_oak_planks",
+    0.003
+   ],
+   [
+    "green_concrete",
+    0.002
+   ],
+   [
+    "spruce_log",
+    0.0
+   ]
+  ]
+ },
+ "geometry": {
+  "blocks": 138680,
+  "exposed_faces": 88188,
+  "faces_per_block": 0.636
+ },
+ "shots": {
+  "front": {
+   "fill_ratio": 1.0,
+   "perimeter_complexity": 0.0,
+   "squint_value_spread": 15.58
+  },
+  "hero": {
+   "fill_ratio": 1.0,
+   "perimeter_complexity": 0.0,
+   "squint_value_spread": 23.06
+  },
+  "ext-ne": {
+   "fill_ratio": 1.0,
+   "perimeter_complexity": 0.0,
+   "squint_value_spread": 28.88
+  }
+ }
+}
+== B1-tiantan-methodology
+{
+ "palette": {
+  "distinct_blocks": 16,
+  "top1_share": 0.393,
+  "top1": "smooth_stone",
+  "top3_share": 0.829,
+  "accent_share": 0.0135,
+  "accent_ok": true,
+   [
+    "smooth_stone",
+    0.393
+   ],
+   [
+    "quartz_block",
+    0.379
+   ],
+   [
+    "red_wool",
+    0.057
+   ],
+   [
+    "blue_wool",
+    0.035
+   ],
+   [
+    "blue_concrete",
+    0.03
+   ],
+   [
+    "oak_leaves",
+    0.022
+   ],
+   [
+    "red_concrete",
+    0.019
+   ],
+   [
+    "gold_block",
+    0.014
+   ],
+   [
+    "andesite",
+    0.013
+   ],
+   [
+    "light_blue_wool",
+    0.011
+   ],
+   [
+    "dark_oak_planks",
+    0.01
+   ],
+   [
+    "white_concrete",
+    0.009
+   ],
+   [
+    "green_concrete",
+    0.005
+   ],
+   [

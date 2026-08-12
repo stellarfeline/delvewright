@@ -1,0 +1,22 @@
+[package]
+name = "dw-shot"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Sandbox-only free-angle shot tool. Uses the engine repo's render crate as a
+# READ-ONLY path dependency (nothing in the repo is modified) so this capability
+# probe can produce a front elevation, which `delve-render piece`'s fixed shot
+# plan (4 corner isometrics + top-down) does not include.
+
+[[bin]]
+name = "dw-shot"
+path = "src/main.rs"
+
+[dependencies]
+# Recovery edit: the recorded run used an absolute path into the dev checkout;
+# redacted to a repo-relative placeholder on recovery (see README "Provenance").
+delvewright-render = { path = "<repo>/crates/render" }
+image = "0.24"
+
+[workspace]

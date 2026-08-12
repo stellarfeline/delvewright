@@ -1,0 +1,156 @@
+// ===================================================================
+// CONDITION A (baseline) — colossal ruined stone bridge battlefield.
+// A wide broken viaduct over a chasm: monumental arches, collapsed
+// spans, scale that dwarfs a player.  seed 121111, grid 256, advanced.
+// ===================================================================
+const STONE = "stone_bricks", CRACK = "cracked_stone_bricks", MOSS = "mossy_stone_bricks";
+const DEEP = "deepslate", COBB = "cobblestone", GRAV = "gravel", GOLD = "gold_block";
+
+const XC = 128;
+const PIERS = [40, 82, 124, 166, 208];
+const DECK_Y = 47, PIER_TOP = 46, SPRING = 30, R = 13;
+const DX0 = 110, DX1 = 146;                    // deck 37 wide (x)
+
+function mix(x, y, z, a, b, c) {              // cheap deterministic variation
+  const h = ((x * 374761393) ^ (y * 668265263) ^ (z * 2246822519)) >>> 0;
+  const v = (h % 100) / 100;
+  return v < 0.62 ? a : v < 0.88 ? b : c;
+}
+
+// ---- chasm terrain --------------------------------------------------
+// Round 1: rectangular rim + flat floor -> read as a stone tray.
+// Round 2: irregular rim, but the canyon walls stood ABOVE the arches and
+// occluded the whole bridge from every side angle.
+// Round 3: two plateaus at deck level with vertical cliff faces, and a
+// gorge floor with low talus -- the arch line is now clear sky-to-floor.
+function jag(x, z, m) { return ((x * 37 + z * 13) % m) - (m >> 1); }
+for (let x = 84; x <= 172; x++)
+  for (let z = 6; z <= 250; z++) {
+    const jz = jag(x, z, 7);
+    let h;
+    if (z + jz < 30 || z - jz > 218) h = 47;
+    else {
+      const ex = Math.max(0, Math.abs(x - XC) - 28) * 0.42;
+      const ez = Math.max(0, 34 - Math.min(z - 30, 218 - z)) * 0.30;
+      h = Math.min(2 + ex + ez + ((x * 11 + z * 5) % 3), 26);
+    }
+    h = Math.round(h);
+    for (let y = Math.max(0, h - 2); y <= h; y++)
+      block(x, y, z, y === h ? mix(x, y, z, DEEP, "andesite", GRAV) : DEEP);
+    if (h === 47) for (let y = 30; y < 45; y++)         // cliff face
+      block(x, y, z, mix(x, y, z, DEEP, "andesite", "stone"));
+  }
+
+// ---- piers -----------------------------------------------------------
+for (const pz of PIERS) {
+  for (let y = 0; y <= PIER_TOP; y++) {
+    const bat = Math.max(0, Math.round((PIER_TOP - y) / 11));   // battered base
+    for (let x = DX0 - bat; x <= DX1 + bat; x++)
+      for (let z = pz - 8 - bat; z <= pz + 8 + bat; z++)
+        block(x, y, z, mix(x, y, z, STONE, CRACK, MOSS));
+  }
+  // cutwater noses upstream and downstream
+  for (let y = 0; y <= 34; y++)
+    for (let k = 0; k <= 5; k++)
+      for (let x = DX0 + k * 3; x <= DX1 - k * 3; x++) {
+        block(x, y, pz - 9 - (5 - k), mix(x, y, pz, STONE, CRACK, MOSS));
+        block(x, y, pz + 9 + (5 - k), mix(x, y, pz, STONE, CRACK, MOSS));
+      }
+}
+
+// ---- spandrels + arches; span 2-3 is GONE ----------------------------
+const GONE = 2;                                   // collapsed span index
+for (let i = 0; i < PIERS.length - 1; i++) {
+  const za = PIERS[i] + 8, zb = PIERS[i + 1] - 8, zc = (PIERS[i] + PIERS[i + 1]) / 2;
+  for (let z = za; z <= zb; z++) {
+    if (i === GONE) {
+      // jagged broken ends only
+      const d = Math.min(z - za, zb - z);
+      if (d > 3 + ((z * 37) % 4)) continue;
+    }
+    for (let y = 0; y <= PIER_TOP; y++) {
+      const dz = z - zc, dy = y - SPRING;
+      const inArch = (y >= SPRING) ? (dz * dz + dy * dy < R * R)
+                                   : (Math.abs(dz) < R);
+      if (inArch) continue;
+      for (let x = DX0; x <= DX1; x++)
+        block(x, y, z, mix(x, y, z, STONE, CRACK, MOSS));
+    }
+    // voussoir ring around the arch
+    if (i !== GONE) for (let a = 0; a <= 40; a++) {
+      const th = (a / 40) * Math.PI;
+      const zz = Math.round(zc + Math.cos(th) * (R + 1));
+      const yy = Math.round(SPRING + Math.sin(th) * (R + 1));
+      for (let x = DX0; x <= DX1; x++) block(x, yy, zz, COBB);
+    }
+  }
+}
+
+// ---- deck, parapets, ruin -------------------------------------------
+for (let z = 24; z <= 226; z++) {
+  const brokenSpan = (z > PIERS[GONE] + 11 && z < PIERS[GONE + 1] - 11);
+  const hole = (z > 60 && z < 70);
+  if (brokenSpan) continue;
+  for (let y = DECK_Y; y <= DECK_Y + 2; y++)
+    for (let x = DX0; x <= DX1; x++) {
+      if (hole && y === DECK_Y + 2 && x > 118 && x < 138) continue;
+      block(x, y, z, y === DECK_Y + 2 ? mix(x, y, z, STONE, COBB, MOSS) : STONE);
+    }
+  // parapets
+  for (let y = DECK_Y + 3; y <= DECK_Y + 8; y++)
+    for (const x of [DX0, DX0 + 1, DX0 + 2, DX1 - 2, DX1 - 1, DX1]) {
+      const ruinedHere = ((z * 17 + x * 5) % 23) < 4 && y > DECK_Y + 5;
+      if (ruinedHere) continue;
+      if (y === DECK_Y + 8 && (z % 4 < 2)) continue;      // crenellations
+      block(x, y, z, mix(x, y, z, STONE, CRACK, MOSS));
+    }
+}
+
+// ---- buttress towers on two piers (silhouette) -----------------------
+for (const pz of [PIERS[1], PIERS[3]]) {
+  for (const sx of [DX0 - 3, DX1 + 3]) {
+    for (let y = 20; y <= 74; y++)
+      for (let dx = -4; dx <= 4; dx++)
+        for (let dz = -6; dz <= 6; dz++) {
+          if (Math.abs(dx) < 3 && Math.abs(dz) < 5 && y > 24) continue;   // hollow
+          if (y > 66 && ((dz + 60) % 4 < 2) && Math.abs(dx) === 4) continue;
+          block(sx + dx, y, pz + dz, mix(sx + dx, y, pz + dz, STONE, CRACK, MOSS));
+        }
+    for (let dx = -5; dx <= 5; dx++)
+      for (let dz = -7; dz <= 7; dz++) block(sx + dx, 64, pz + dz, COBB);
+    box(sx - 1, 75, pz - 1, sx + 1, 76, pz + 1, GOLD);        // brazier
+    box(sx - 1, 77, pz - 1, sx + 1, 77, pz + 1, "glowstone");
+  }
+}
+
+// ---- rubble field in the chasm under the broken span -----------------
+const RZ = (PIERS[GONE] + PIERS[GONE + 1]) / 2;
+for (let n = 0; n < 5200; n++) {
+  const a = rng() * Math.PI * 2, rr = Math.pow(rng(), 0.6) * 34;
+  const x = Math.round(XC + Math.cos(a) * rr * 0.8);
+  const z = Math.round(RZ + Math.sin(a) * rr);
+  const hgt = Math.round(1 + rng() * 6 * (1 - rr / 40));
+  for (let y = 4; y <= 4 + hgt; y++)
+    block(x, y, z, rng() < 0.5 ? COBB : rng() < 0.5 ? GRAV : CRACK);
+}
+// fallen deck slab, half buried, tilted
+for (let k = 0; k < 22; k++)
+  for (let x = 112; x <= 140; x++)
+    box(x, 5 + Math.floor(k / 3), RZ - 16 + k, x, 6 + Math.floor(k / 3), RZ - 16 + k, CRACK);
+
+// ---- ruined gate arch at the approach --------------------------------
+for (let y = 44; y <= 78; y++)
+  for (let z = 18; z <= 23; z++)
+    for (let x = 100; x <= 156; x++) {
+      const dz = 0, dy = y - 60;
+      const inOpen = (y >= 60) ? ((x - XC) * (x - XC) + dy * dy < 18 * 18)
+                              : (Math.abs(x - XC) < 18);
+      if (inOpen) continue;
+      if (y > 70 && ((x * 13 + y * 7) % 19) < 6) continue;      // ruined crown
+      block(x, y, z, mix(x, y, z, STONE, CRACK, MOSS));
+    }
+for (let a = 0; a <= 40; a++) {
+  const th = (a / 40) * Math.PI;
+  const xx = Math.round(XC + Math.cos(th) * 19), yy = Math.round(60 + Math.sin(th) * 19);
+  for (let z = 18; z <= 23; z++) block(xx, yy, z, GOLD);
+}

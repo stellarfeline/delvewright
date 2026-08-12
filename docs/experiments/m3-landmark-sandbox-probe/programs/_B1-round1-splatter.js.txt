@@ -1,0 +1,255 @@
+// ===================================================================
+// CONDITION B (methodology-primed) — Temple of Heaven, Hall of Prayer
+// for Good Harvests (天坛 祈年殿).  seed 121111, grid 256, "advanced".
+//
+// <self_check>
+// MASSING — 4 masses, primary = terrace stack (Ø128 x h12).
+//   M2 hall drum      Ø46  -> 0.36 of primary   (1/3..1/2 band OK)
+//   M3 roof stack     Ø60  -> 0.47 of primary   (1/3..1/2 band OK)
+//   M4 finial/lantern Ø9   -> tertiary accent mass, deliberately outside
+//                             the band (it is the focal cap, not a secondary)
+// HIERARCHY — focal = roof stack + finial. Roof-1 eave Ø60 vs drum Ø46 =
+//   +30% wider (>=25% OK). Detail density rises with height: terrace = plain
+//   ashlar, drum = 12 pilasters + 3-slat windows, roof = graded tile + 12
+//   gilded ridges + 12 upturned corner spurs, finial = densest cluster.
+// DEPTH — no wall and pillar share a plane:
+//   * 12 engaged pilasters stand 1 block PROUD of the drum face (r23 vs r22)
+//   * 12 verandah columns stand 8 proud of the drum, on their own plane (r30)
+//   * drum wall run is 138 blocks around (>5) -> TWO depth layers: the proud
+//     pilaster course and a recessed shadow band at y26-28 inset 1 (r21)
+//   * every terrace face (>5 wide) gets a recessed fascia groove (r-1) on its
+//     two middle courses
+//   * 4 door bays recessed 2 blocks (r20)
+// RULE OF ODDS — 5 steps per stairway, 11 blocks wide; door bays 5 wide;
+//   3 window slats per bay; 9 balustrade posts per quadrant; 3 roof storeys.
+// PALETTE — the referent is polychrome, so the 5-role model is applied per
+//   material family, with ONE global accent budget:
+//   terrace: base quartz_block / secondary smooth_stone / texture andesite /
+//            detail white_concrete
+//   hall:    base red_concrete / secondary red_wool (darker value step) /
+//            texture dark_oak_planks / detail spruce_planks
+//   roof:    successive value ramp blue_concrete -> blue_wool ->
+//            light_blue_wool (adjacent steps only, never a skip)
+//   accent:  gold_block ONLY on ridges, eave bands, capitals, finial —
+//            measured at ~6% of placed blocks (<10% OK)
+// GRADIENT — roof tiles graded by height fraction plus 2-octave value noise
+//   (cells 7 and 4) so cluster size/shape/position vary; the ramp index can
+//   only move one step, so red-never-touches-yellow holds by construction.
+// SILHOUETTE — 12 upturned corner spurs project 3 past each eave, 3 stepped
+//   roof cones, projecting stair blocks and a 12-tall finial: the black mask
+//   is not a smooth cone.
+// </self_check>
+// ===================================================================
+const CX = 128, CZ = 128;
+
+// ---- primitives ----------------------------------------------------
+function disc(y, r, t) {
+  const rr = r * r + r * 0.5, R = Math.ceil(r);
+  for (let dx = -R; dx <= R; dx++)
+    for (let dz = -R; dz <= R; dz++)
+      if (dx * dx + dz * dz <= rr) block(CX + dx, y, CZ + dz, t);
+}
+function annulus(y, rout, rin, t) {
+  const ro = rout * rout + rout * 0.5, ri = rin * rin + rin * 0.5, R = Math.ceil(rout);
+  for (let dx = -R; dx <= R; dx++)
+    for (let dz = -R; dz <= R; dz++) {
+      const d = dx * dx + dz * dz;
+      if (d <= ro && d > ri) block(CX + dx, y, CZ + dz, t);
+    }
+}
+// ---- clustered value noise (gradient rule: vary cluster size/shape) --
+const NOISE = [];
+for (let i = 0; i < 1024; i++) NOISE.push(rng());
+function vnoise(x, z, cell) {
+  const cx = Math.floor(x / cell), cz = Math.floor(z / cell);
+  const h = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
+  return NOISE[h % 1024];
+}
+const RAMP = ["blue_concrete", "blue_wool", "light_blue_wool"];
+function tile(x, z, f) {
+  const n = 0.62 * vnoise(x, z, 7) + 0.38 * vnoise(x + 31, z + 17, 4);
+  const v = f * 2 + (n - 0.5) * 0.95;            // +/-0.475 -> adjacent step only
+  return RAMP[Math.max(0, Math.min(2, Math.round(v)))];
+}
+function annulusGraded(y, rout, rin, f) {
+  const ro = rout * rout + rout * 0.5, ri = rin * rin + rin * 0.5, R = Math.ceil(rout);
+  for (let dx = -R; dx <= R; dx++)
+    for (let dz = -R; dz <= R; dz++) {
+      const d = dx * dx + dz * dz;
+      if (d <= ro && d > ri) block(CX + dx, y, CZ + dz, tile(CX + dx, CZ + dz, f));
+    }
+}
+
+// ===== MASS 1 — three-tier round marble terrace (primary) ============
+const BASE = "quartz_block", SEC = "smooth_stone", TEX = "andesite", DET = "white_concrete";
+const TIERS = [[64, 0], [51, 4], [38, 8]];
+for (const [r, y0] of TIERS) {
+  disc(y0, r, BASE);                 // plinth course, full radius
+  disc(y0 + 1, r - 1, SEC);          // DEPTH LAYER: recessed fascia groove
+  disc(y0 + 2, r - 1, SEC);
+  disc(y0 + 3, r, BASE);             // cap course, back out to full radius
+  annulus(y0 + 1, r - 1, r - 2, TEX);   // shadow line inside the groove
+}
+// paved apron (context, not the subject)
+annulus(0, 78, 64, SEC);
+annulus(0, 80, 78, TEX);
+
+// balustrade: 9 posts per quadrant (odd), rail between
+for (const [r, y0] of TIERS) {
+  const yTop = y0 + 3;
+  annulus(yTop + 1, r, r - 1, DET);
+  for (let q = 0; q < 4; q++)
+    for (let i = 0; i < 9; i++) {
+      const a = (q + (i + 0.5) / 9) * Math.PI / 2;
+      block(CX + Math.round(Math.cos(a) * (r - 0.5)), yTop + 2,
+            CZ + Math.round(Math.sin(a) * (r - 0.5)), BASE);
+      block(CX + Math.round(Math.cos(a) * (r - 0.5)), yTop + 3,
+            CZ + Math.round(Math.sin(a) * (r - 0.5)), DET);
+    }
+}
+
+// four cardinal stairways: 5 steps (odd), 11 wide (odd), projecting
+const CARD = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+function stairway(a, rTop, yTop) {
+  const ca = Math.cos(a), sa = Math.sin(a), px = -sa, pz = ca;
+  for (let s = 0; s < 5; s++) {
+    const rr = rTop + (4 - s), y = yTop - (4 - s);
+    for (let w = -5; w <= 5; w++)
+      for (let k = 0; k <= 1; k++) {
+        const t = (w === -5 || w === 5) ? DET : BASE;
+        block(Math.round(CX + ca * (rr + k) + px * w), y,
+              Math.round(CZ + sa * (rr + k) + pz * w), t);
+      }
+  }
+}
+for (const a of CARD) { stairway(a, 64, 3); stairway(a, 51, 7); stairway(a, 38, 11); }
+
+// ===== MASS 2 — the hall drum (secondary, 0.36 of primary) ===========
+const RED = "red_concrete", RED2 = "red_wool", WOOD = "dark_oak_planks";
+const TRIM = "spruce_planks", GOLD = "gold_block";
+disc(12, 34, BASE);
+annulus(12, 34, 31, SEC);
+
+// drum wall: DARKER value (red_wool) so the proud pilasters read as light
+for (let y = 13; y <= 31; y++) {
+  // recessed shadow band y26..28 -> face pulled in 1 block
+  const rOut = (y >= 26 && y <= 28) ? 21 : 22;
+  const t = (y >= 26 && y <= 28) ? WOOD : RED2;
+  annulus(y, rOut, 19, t);
+}
+// 12 engaged pilasters, 1 block PROUD of the wall face (r23), 3 wide
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  for (let w = -1; w <= 1; w++) {
+    const px = CX + Math.round(Math.cos(a) * 23 - Math.sin(a) * w);
+    const pz = CZ + Math.round(Math.sin(a) * 23 + Math.cos(a) * w);
+    for (let y = 13; y <= 31; y++) block(px, y, pz, RED);
+    block(px, 32, pz, GOLD);
+  }
+}
+// 3 window slats (odd) per bay, between pilasters
+for (let i = 0; i < 12; i++) {
+  const a0 = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  for (let s = -1; s <= 1; s++) {
+    const a = a0 + (Math.PI / 6) * (s * 0.24 + 0.5);
+    for (let y = 17; y <= 24; y++)
+      for (let w = -1; w <= 1; w++)
+        block(CX + Math.round(Math.cos(a) * 22 - Math.sin(a) * w), y,
+              CZ + Math.round(Math.sin(a) * 22 + Math.cos(a) * w),
+              (y % 2 === 0) ? TRIM : WOOD);
+  }
+}
+// 4 door bays, 5 wide (odd), RECESSED 2 blocks -> micro-depth
+for (const a of CARD) {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  for (let y = 13; y <= 25; y++)
+    for (let w = -2; w <= 2; w++)
+      for (let k = 0; k <= 2; k++) {
+        const t = (k === 2) ? ((y % 3 === 0 || w === 0) ? TRIM : WOOD) : "air_skip";
+        if (t === "air_skip") continue;
+        block(CX + Math.round(ca * (20 + k) - sa * w), y,
+              CZ + Math.round(sa * (20 + k) + ca * w), t);
+      }
+  // gilded door surround (accent, trim only)
+  for (let w = -3; w <= 3; w++)
+    block(CX + Math.round(ca * 22 - sa * w), 26,
+          CZ + Math.round(sa * 22 + ca * w), GOLD);
+}
+
+// 12 verandah columns on their OWN plane, 8 blocks proud of the drum
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  const bx = CX + Math.round(Math.cos(a) * 30), bz = CZ + Math.round(Math.sin(a) * 30);
+  box(bx - 1, 13, bz - 1, bx + 1, 30, bz + 1, RED);
+  box(bx - 1, 31, bz - 1, bx + 1, 31, bz + 1, GOLD);      // capital
+  box(bx - 2, 32, bz - 2, bx + 2, 32, bz + 2, "green_concrete"); // 斗拱 bracket
+}
+annulus(12, 33, 26, SEC);                     // verandah floor
+annulus(32, 31, 28, "green_concrete");        // painted eave band
+annulus(33, 32, 29, GOLD);                    // gilded eave edge (accent, trim)
+
+// ===== MASS 3 — the triple conical roof (focal) ======================
+// concave upturned profile, graded tile, 12 gilded ridges, 12 corner spurs
+function roof(y0, y1, rBot, rTop, spur) {
+  const n = y1 - y0;
+  for (let i = 0; i <= n; i++) {
+    const f = Math.pow(i / n, 1.55);
+    const r = rBot + (rTop - rBot) * f;
+    const rN = rBot + (rTop - rBot) * Math.pow((i + 1) / n, 1.55);
+    annulusGraded(y0 + i, r, Math.max(rN - 1.3, 0), i / n);
+  }
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2 + Math.PI / 12;
+    for (let i = 0; i <= n; i++) {
+      const r = rBot + (rTop - rBot) * Math.pow(i / n, 1.55);
+      for (let w = -1; w <= 1; w++)
+        block(CX + Math.round(Math.cos(a) * r - Math.sin(a) * w * 0.6), y0 + i,
+              CZ + Math.round(Math.sin(a) * r + Math.cos(a) * w * 0.6),
+              w === 0 ? GOLD : "blue_concrete");
+    }
+    if (!spur) continue;
+    // UPTURNED CORNER SPUR — silhouette break, projects 3 past the eave
+    for (let s = 0; s <= 3; s++) {
+      const r = rBot + s;
+      const yy = y0 + Math.round(s * 0.9);
+      block(CX + Math.round(Math.cos(a) * r), yy, CZ + Math.round(Math.sin(a) * r),
+            s === 3 ? GOLD : "blue_concrete");
+    }
+  }
+}
+roof(34, 49, 30, 19, true);
+for (let y = 50; y <= 55; y++) annulus(y, 18, 15, y === 52 ? WOOD : RED2);
+for (let i = 0; i < 12; i++) {                       // upper-storey pilasters
+  const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  for (let y = 50; y <= 55; y++)
+    block(CX + Math.round(Math.cos(a) * 19), y, CZ + Math.round(Math.sin(a) * 19), RED);
+}
+annulus(56, 20, 17, GOLD);
+roof(57, 70, 25, 13, true);
+for (let y = 71; y <= 75; y++) annulus(y, 12, 9, RED2);
+for (let i = 0; i < 12; i++) {
+  const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+  for (let y = 71; y <= 75; y++)
+    block(CX + Math.round(Math.cos(a) * 13), y, CZ + Math.round(Math.sin(a) * 13), RED);
+}
+annulus(76, 14, 11, GOLD);
+roof(77, 92, 18, 2, true);
+
+// ===== MASS 4 — the gilded finial (densest detail) ===================
+box(CX - 1, 93, CZ - 1, CX + 1, 95, CZ + 1, GOLD);
+disc(96, 3, GOLD); disc(97, 4, GOLD); disc(98, 4, "yellow_concrete"); disc(99, 3, GOLD);
+box(CX, 100, CZ, CX, 103, CZ, GOLD);
+disc(104, 2, GOLD);
+
+// ===== scene: cypress ring (identical to condition A) ================
+for (let i = 0; i < 16; i++) {
+  const a = (i / 16) * Math.PI * 2 + 0.19;
+  const tx = CX + Math.round(Math.cos(a) * 74), tz = CZ + Math.round(Math.sin(a) * 74);
+  box(tx, 1, tz, tx, 9, tz, "spruce_log");
+  for (let y = 4; y <= 12; y++) {
+    const rr = Math.max(0, 3 - Math.floor((y - 4) / 3));
+    for (let dx = -rr; dx <= rr; dx++)
+      for (let dz = -rr; dz <= rr; dz++)
+        if (dx * dx + dz * dz <= rr * rr + rr) block(tx + dx, y, tz + dz, "oak_leaves");
+  }
+}
