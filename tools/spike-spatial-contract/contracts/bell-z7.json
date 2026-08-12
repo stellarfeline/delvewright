@@ -1,0 +1,29 @@
+{
+ "zone": "bell Z7 — the Bell Tower (41x14x125, seed 1) — hand-written honest contract [defaults]",
+ "entry": "stair-foot",
+
+ "spaces": [
+  {"name": "stair-foot", "envelope": "enclosed", "box": [22, 0, 106, 40, 13, 124]},
+  {"name": "stair-head", "envelope": "enclosed", "box": [22, 0, 101, 40, 13, 105]},
+  {"name": "hearth",     "envelope": "enclosed", "box": [22, 8, 81, 40, 13, 100]},
+  {"name": "loft",       "envelope": "enclosed", "box": [22, 8, 61, 40, 13, 80]},
+  {"name": "landing",    "envelope": "enclosed", "box": [21, 8, 40, 40, 13, 60]},
+  {"name": "threshold",  "envelope": "enclosed", "box": [22, 8, 20, 40, 13, 39]},
+  {"name": "ring",       "envelope": "enclosed", "box": [22, 8, 0, 40, 13, 19]},
+  {"name": "lift-shaft", "envelope": "enclosed", "box": [18, 0, 49, 20, 13, 51]}
+ ],
+
+ "no_body": [],
+
+ "edges": [
+  {"a": "exterior",   "b": "stair-foot", "class": "walk"},
+  {"a": "stair-foot", "b": "stair-head", "class": "stair", "rise": 8},
+  {"a": "stair-head", "b": "hearth",     "class": "walk",  "rise": 0},
+  {"a": "hearth",     "b": "loft",       "class": "walk"},
+  {"a": "loft",       "b": "landing",    "class": "walk"},
+  {"a": "landing",    "b": "threshold",  "class": "walk"},
+  {"a": "threshold",  "b": "ring",       "class": "walk"},
+  {"a": "landing",    "b": "lift-shaft", "class": "drop"},
+  {"a": "ring",       "b": "exterior",   "class": "walk"}
+ ]
+}

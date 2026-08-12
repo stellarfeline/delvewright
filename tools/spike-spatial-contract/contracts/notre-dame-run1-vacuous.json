@@ -1,0 +1,26 @@
+{
+ "zone": "trial-0001 run 1 — the CHEAPEST GREEN CONTRACT. Two one-cell spaces on the two end faces, everything else declared standable-but-unowned. It passes every obligation in spec-PENDING §2 and reports the whole cathedral as scenery.",
+ "entry": "in",
+
+ "spaces": [
+  {"name": "in",  "envelope": "open", "box": [15, 1, 0, 15, 1, 0]},
+  {"name": "out", "envelope": "open", "box": [15, 1, 92, 15, 1, 92]}
+ ],
+
+ "no_body": [
+  {"name": "scenery-mid",  "box": [0, 0, 1, 30, 63, 91]},
+  {"name": "scenery-in-a", "box": [0, 0, 0, 14, 63, 0]},
+  {"name": "scenery-in-b", "box": [16, 0, 0, 30, 63, 0]},
+  {"name": "scenery-in-c", "box": [15, 2, 0, 15, 63, 0]},
+  {"name": "scenery-in-d", "box": [15, 0, 0, 15, 0, 0]},
+  {"name": "scenery-out-a", "box": [0, 0, 92, 14, 63, 92]},
+  {"name": "scenery-out-b", "box": [16, 0, 92, 30, 63, 92]},
+  {"name": "scenery-out-c", "box": [15, 2, 92, 15, 63, 92]},
+  {"name": "scenery-out-d", "box": [15, 0, 92, 15, 0, 92]}
+ ],
+
+ "edges": [
+  {"a": "exterior", "b": "in",  "class": "walk"},
+  {"a": "exterior", "b": "out", "class": "walk"}
+ ]
+}

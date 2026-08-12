@@ -1,0 +1,84 @@
+{
+ "zone": "trial-0001 run 1, Notre-Dame de Paris (31x64x93, seed 1) — hand-written honest contract",
+ "entry": "parvis",
+
+ "spaces": [
+  {"name": "parvis",            "envelope": "open",     "box": [0, 1, 0, 30, 3, 3]},
+  {"name": "west-front-steps",  "envelope": "open",     "box": [0, 1, 4, 30, 3, 6]},
+
+  {"name": "narthex",           "envelope": "enclosed", "box": [11, 1, 7, 19, 27, 13]},
+  {"name": "tower-n-ground",    "envelope": "enclosed", "box": [2, 1, 7, 8, 34, 13]},
+  {"name": "tower-s-ground",    "envelope": "enclosed", "box": [22, 1, 7, 28, 34, 13]},
+  {"name": "tower-n-belfry",    "envelope": "enclosed", "box": [1, 35, 4, 9, 46, 13]},
+  {"name": "tower-s-belfry",    "envelope": "enclosed", "box": [21, 35, 4, 29, 46, 13]},
+
+  {"name": "west-slot-a",       "envelope": "open_top", "box": [0, 1, 7, 0, 20, 13]},
+  {"name": "west-slot-b",       "envelope": "open_top", "box": [10, 1, 7, 10, 27, 13]},
+  {"name": "west-slot-c",       "envelope": "open_top", "box": [20, 1, 7, 20, 27, 13]},
+  {"name": "west-slot-d",       "envelope": "open_top", "box": [30, 1, 7, 30, 20, 13]},
+
+  {"name": "hall-nave",         "envelope": "enclosed", "box": [4, 1, 14, 26, 12, 49]},
+  {"name": "nave-clerestory",   "envelope": "enclosed", "box": [11, 13, 14, 19, 27, 49]},
+
+  {"name": "crossing",          "envelope": "enclosed", "box": [9, 1, 50, 21, 27, 62]},
+  {"name": "transept-n",        "envelope": "enclosed", "box": [2, 1, 52, 8, 27, 60]},
+  {"name": "transept-s",        "envelope": "enclosed", "box": [22, 1, 52, 28, 27, 60]},
+
+  {"name": "hall-choir",        "envelope": "enclosed", "box": [4, 1, 63, 26, 12, 80]},
+  {"name": "choir-clerestory",  "envelope": "enclosed", "box": [11, 13, 63, 19, 27, 80]},
+
+  {"name": "apse-bay",          "envelope": "enclosed", "box": [11, 1, 81, 19, 21, 84]},
+  {"name": "apse-mid",          "envelope": "enclosed", "box": [13, 1, 85, 17, 21, 88]},
+  {"name": "apse-head",         "envelope": "enclosed", "box": [14, 1, 89, 16, 21, 92]},
+  {"name": "apse-loft",         "envelope": "enclosed", "box": [12, 23, 81, 18, 27, 92]},
+
+  {"name": "apse-yard-n",       "envelope": "open",     "box": [0, 1, 83, 8, 3, 92]},
+  {"name": "apse-yard-n-in",    "envelope": "open",     "box": [9, 1, 87, 10, 3, 92]},
+  {"name": "apse-yard-n-tip",   "envelope": "open",     "box": [11, 1, 91, 12, 3, 92]},
+  {"name": "apse-yard-s",       "envelope": "open",     "box": [22, 1, 83, 30, 3, 92]},
+  {"name": "apse-yard-s-in",    "envelope": "open",     "box": [20, 1, 87, 21, 3, 92]},
+  {"name": "apse-yard-s-tip",   "envelope": "open",     "box": [18, 1, 91, 19, 3, 92]}
+ ],
+
+ "no_body": [
+  {"name": "aisle-roof-n",      "box": [0, 15, 14, 8, 16, 49]},
+  {"name": "aisle-roof-s",      "box": [22, 15, 14, 30, 16, 49]},
+  {"name": "choir-roof-n",      "box": [0, 15, 63, 8, 16, 82]},
+  {"name": "choir-roof-s",      "box": [22, 15, 63, 30, 16, 82]},
+  {"name": "buttress-ledge-n",  "box": [0, 17, 14, 1, 21, 82]},
+  {"name": "buttress-ledge-s",  "box": [29, 17, 14, 30, 21, 82]},
+  {"name": "buttress-lane-n",   "box": [0, 1, 14, 1, 3, 82]},
+  {"name": "buttress-lane-s",   "box": [29, 1, 14, 30, 3, 82]},
+  {"name": "west-parapet",      "box": [0, 16, 4, 30, 16, 6]},
+  {"name": "west-gable-course", "box": [0, 29, 4, 30, 33, 6]},
+  {"name": "west-gable-crown",  "box": [10, 34, 4, 20, 36, 6]},
+  {"name": "nave-roof",         "box": [0, 28, 14, 30, 36, 92]},
+  {"name": "spire",             "box": [11, 37, 52, 19, 62, 60]},
+  {"name": "tower-n-deck",      "box": [0, 47, 4, 10, 62, 13]},
+  {"name": "tower-s-deck",      "box": [20, 47, 4, 30, 62, 13]}
+ ],
+
+ "edges": [
+  {"a": "exterior",         "b": "parvis",           "class": "walk"},
+  {"a": "parvis",           "b": "west-front-steps", "class": "walk"},
+  {"a": "west-front-steps", "b": "narthex",          "class": "walk"},
+  {"a": "west-front-steps", "b": "tower-n-ground",   "class": "walk"},
+  {"a": "west-front-steps", "b": "tower-s-ground",   "class": "walk"},
+  {"a": "narthex",          "b": "hall-nave",        "class": "walk"},
+  {"a": "tower-n-ground",   "b": "hall-nave",        "class": "walk"},
+  {"a": "tower-s-ground",   "b": "hall-nave",        "class": "walk"},
+  {"a": "hall-nave",        "b": "crossing",         "class": "walk"},
+  {"a": "crossing",         "b": "transept-n",       "class": "walk"},
+  {"a": "crossing",         "b": "transept-s",       "class": "walk"},
+  {"a": "crossing",         "b": "hall-choir",       "class": "walk"},
+  {"a": "hall-choir",       "b": "apse-bay",         "class": "walk"},
+  {"a": "apse-bay",         "b": "apse-mid",         "class": "walk"},
+  {"a": "apse-mid",         "b": "apse-head",        "class": "walk"},
+  {"a": "exterior",         "b": "apse-yard-n",      "class": "walk"},
+  {"a": "apse-yard-n",      "b": "apse-yard-n-in",   "class": "walk"},
+  {"a": "apse-yard-n-in",   "b": "apse-yard-n-tip",  "class": "walk"},
+  {"a": "exterior",         "b": "apse-yard-s",      "class": "walk"},
+  {"a": "apse-yard-s",      "b": "apse-yard-s-in",   "class": "walk"},
+  {"a": "apse-yard-s-in",   "b": "apse-yard-s-tip",  "class": "walk"}
+ ]
+}
