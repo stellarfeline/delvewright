@@ -801,9 +801,14 @@ Symptom → tool:
      is reported as an empty frame: the anchor is aimed at nothing.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
-     For a tile set, `audit` takes the manifest and returns one zone verdict.
-     A grammar prefab has **no connectors and no lighting** until this step, so
-     it cannot enter a `prefab_pool` and will be dark, until you do it.
+     For a tile set, `audit` takes the manifest and returns one zone verdict —
+     but `socket`, `anchor` and `lighting` take a single structure template and
+     refuse a manifest (`DW0732`), so a zone past the axis cap gets `audit` and
+     nothing else, and keeps `"profile": "unmeasured"`. Do **not** run them on
+     one of its tiles to get round that: `lighting` on a tile succeeds and
+     writes a second, unprovenanced metadata file describing one slice of the
+     building. A grammar prefab has **no connectors and no lighting** until this
+     step, so it cannot enter a `prefab_pool` and will be dark, until you do it.
 
   What the grammar cannot express — **escalate, do not work around**: block
   entities of any kind (chest loot, sign text, spawners — bind those in the
