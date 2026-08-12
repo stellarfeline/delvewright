@@ -327,6 +327,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   queue of small levels that verify one mechanic and document it by example. Not
   necessarily built when the mechanic lands, but always queued; building the next
   one is the planning agent's standing idle work.
+- **Buildings are judged at playable scale** (owner, 2026-08-12): a structure
+  reads as what it depicts, and its interior belongs to the same theme. Fine
+  detail is deliberately dropped. Minecraft build art conventionally scales a
+  detailed referent up — several blocks per real metre — so that tracery,
+  mullions and mouldings survive; that is a different craft with a different
+  goal. A delve is walked at player scale, so a cathedral is a
+  cathedral-sized cathedral, and the **silhouette carries the recognition the
+  detail cannot**. The review question is therefore always "does this read as
+  the thing, and does the inside belong to it", never "is the detail right" —
+  and a piece is not rejected for lacking detail it was never going to have.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
