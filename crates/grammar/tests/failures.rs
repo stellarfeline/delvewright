@@ -22,7 +22,7 @@ fn program(json: &str) -> Program {
 #[test]
 fn an_absurd_region_is_a_diagnostic_not_an_allocation() {
     let p = program(
-        r#"{ "name": "solid", "start": "all",
+        r#"{ "version": "1.1.0", "name": "solid", "start": "all",
              "rules": { "all": [{ "body": { "op": "fill",
                "material": "minecraft:stone" } }] } }"#,
     );
@@ -61,7 +61,7 @@ fn an_absurd_region_is_a_diagnostic_not_an_allocation() {
 #[test]
 fn an_orientation_guard_that_is_not_a_permutation_is_refused_where_it_is_written() {
     let p = program(
-        r#"{ "name": "impossible", "start": "all",
+        r#"{ "version": "1.1.0", "name": "impossible", "start": "all",
              "rules": { "all": [
                { "when": { "cond": "orientation", "x": "z", "y": "z", "z": "z" },
                  "body": { "op": "fill", "material": "minecraft:stone" } },
@@ -83,7 +83,7 @@ fn an_orientation_guard_that_is_not_a_permutation_is_refused_where_it_is_written
 
     // A real permutation still passes, guard and all.
     let ok = program(
-        r#"{ "name": "possible", "start": "all",
+        r#"{ "version": "1.1.0", "name": "possible", "start": "all",
              "rules": { "all": [
                { "when": { "cond": "orientation", "x": "x", "y": "y", "z": "z" },
                  "body": { "op": "fill", "material": "minecraft:stone" } },
@@ -118,7 +118,7 @@ fn nested_errors_read_as_sentences_not_as_debug_structs() {
 
     // ...and that is what an expansion failure actually prints.
     let p = program(
-        r#"{ "name": "divzero", "start": "all", "params": { "zero": 0 },
+        r#"{ "version": "1.1.0", "name": "divzero", "start": "all", "params": { "zero": 0 },
              "rules": { "all": [{ "body": {
                "op": "split", "axis": "y",
                "sizes": [
@@ -138,7 +138,7 @@ fn nested_errors_read_as_sentences_not_as_debug_structs() {
     );
 
     let p = program(
-        r#"{ "name": "conflict", "start": "all",
+        r#"{ "version": "1.1.0", "name": "conflict", "start": "all",
              "rules": { "all": [{ "body": {
                "op": "reorient", "orient": { "x": "local_z", "y": "local_z" },
                "body": { "op": "fill", "material": "minecraft:stone" } } }] } }"#,

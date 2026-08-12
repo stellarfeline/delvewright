@@ -102,6 +102,8 @@ constructs! {
         Reorient = "node:reorient",
         /// [`Node::Mark`].
         Mark = "node:mark",
+        /// [`Node::Claim`].
+        Claim = "node:claim",
     }
 }
 
@@ -120,6 +122,7 @@ impl NodeKind {
             Node::Split(_) => NodeKind::Split,
             Node::Reorient { .. } => NodeKind::Reorient,
             Node::Mark { .. } => NodeKind::Mark,
+            Node::Claim { .. } => NodeKind::Claim,
         }
     }
 }
@@ -333,7 +336,9 @@ impl Tally {
                 Material::Inline(paint) => self.paint(paint),
             },
             Node::Void | Node::Skip | Node::Call { .. } => {}
-            Node::Reorient { body, .. } | Node::Mark { body, .. } => self.node(body),
+            Node::Reorient { body, .. } | Node::Mark { body, .. } | Node::Claim { body, .. } => {
+                self.node(body)
+            }
             Node::Split(split) => {
                 for child in &split.children {
                     self.node(child);

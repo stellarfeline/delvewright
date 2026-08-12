@@ -308,7 +308,7 @@ pub fn declared_anchors(program: &Program) -> BTreeSet<String> {
                 into.insert(mark.anchor.clone());
                 walk(body, into);
             }
-            Node::Reorient { body, .. } => walk(body, into),
+            Node::Reorient { body, .. } | Node::Claim { body, .. } => walk(body, into),
             Node::Split(split) => split.children.iter().for_each(|c| walk(c, into)),
             Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
         }
@@ -409,6 +409,22 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
         }),
         Node::Reorient { orient, body } => Node::Reorient {
             orient: *orient,
+            body: Box::new(self::node(prefix, renames, body)),
+        },
+        // A contract region name IS prefixed, and that is the opposite of the
+        // anchor rule one line down. The two names answer to different readers:
+        // an anchor is the campaign's id for a place, so qualifying it would
+        // break the binding it exists for, while a region is the *composing
+        // program's* private vocabulary — the same status as a rule, a
+        // parameter or a palette role. Left unqualified, a piece included twice
+        // would union its two boxes into one region and the composition would
+        // silently describe a room that is not there.
+        //
+        // The consequence is deliberate and loud: the destination's own
+        // contract has to classify the regions it just took on, and until it
+        // does, `validate` refuses with the region named.
+        Node::Claim { region, body } => Node::Claim {
+            region: qualify(prefix, region),
             body: Box::new(self::node(prefix, renames, body)),
         },
         Node::Mark { mark, body } => Node::Mark {

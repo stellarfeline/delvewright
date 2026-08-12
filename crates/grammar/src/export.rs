@@ -128,8 +128,10 @@ pub fn program_hash(program: &Program) -> String {
 // how `license.generated_by` — the ADR-0006 row this whole module exists to emit
 // — got dropped by the next documented step in the procedure.
 pub use delvewright_schem::prefab::{
-    Anchor as AnchorMetadata, Connector, GeneratedBy, License as LicenseMetadata,
-    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, StructureMeta as StructureMetadata,
+    Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractNoBody, ContractSpace,
+    ContractVolume, GeneratedBy, License as LicenseMetadata, Lighting as LightingMetadata,
+    PrefabMeta as PrefabMetadata, Region as RegionMetadata, SpatialContract,
+    StructureMeta as StructureMetadata,
 };
 
 /// The manifest of a zone too big for one structure template.
@@ -169,6 +171,10 @@ pub struct TileSetMetadata {
     pub lighting: LightingMetadata,
     /// Licence and provenance.
     pub license: LicenseMetadata,
+    /// The zone's spatial contract, in **zone** coordinates, for the reason
+    /// `anchors` are: a cut is not part of the building.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_contract: Option<SpatialContract>,
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +481,7 @@ pub fn export_prefab(
             ..LightingMetadata::unmeasured()
         },
         license: license_metadata(program, &hash, options.seed, size, None),
+        spatial_contract: contract_metadata(&expansion),
     };
     let metadata_json = metadata.to_json();
 
@@ -588,6 +595,7 @@ pub fn export_zone(
             size,
             Some((plan.grid, tiles.len())),
         ),
+        spatial_contract: contract_metadata(&expansion),
     };
     let metadata_json =
         serde_json::to_string_pretty(&metadata).expect("tile-set manifest serialises") + "\n";
@@ -616,6 +624,86 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
             )
         })
         .collect()
+}
+
+/// The spatial contract an expansion resolved, in the metadata shape.
+///
+/// Zone-relative in both export shapes, for the reason the anchors are: a
+/// declaration is a fact about the building, and a tile boundary is not part of
+/// the building.
+///
+/// Nothing here is inferred and nothing is checked. The declarations went in as
+/// the program's intent and come out as the boxes that intent resolved to; a
+/// space with no boxes is written with none, because a zero binding is a finding
+/// for whatever reads the contract and deleting it would hide the finding.
+fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
+    let contract = expansion.contract.as_ref()?;
+    let ranges = |boxes: &[Box3]| -> Vec<RegionMetadata> { boxes.iter().map(range).collect() };
+    Some(SpatialContract {
+        entry: contract.entry.clone(),
+        spaces: contract
+            .spaces
+            .iter()
+            .map(|(name, space)| {
+                (
+                    name.clone(),
+                    ContractSpace {
+                        envelope: space.envelope.as_str().to_string(),
+                        boxes: ranges(&space.region.boxes),
+                    },
+                )
+            })
+            .collect(),
+        no_body: contract
+            .no_body
+            .iter()
+            .map(|(name, region)| {
+                (
+                    name.clone(),
+                    ContractNoBody {
+                        reason: region.reason.clone(),
+                        boxes: ranges(&region.region.boxes),
+                    },
+                )
+            })
+            .collect(),
+        edges: contract
+            .edges
+            .iter()
+            .map(|edge| ContractEdge {
+                a: edge.a.clone(),
+                b: edge.b.clone(),
+                class: edge.class.to_string(),
+                rise: edge.rise,
+                via: edge.via.as_ref().map(|v| ContractVolume {
+                    region: v.region.clone(),
+                    boxes: ranges(&v.boxes),
+                }),
+                bar: edge.bar.as_ref().map(|b| ContractBar {
+                    region: b.region.clone(),
+                    boxes: ranges(&b.boxes),
+                    block: b.block.to_string(),
+                }),
+            })
+            .collect(),
+        no_body_majority_ack: contract.no_body_majority_ack.clone(),
+    })
+}
+
+/// A half-open box as the metadata's inclusive `from`/`to` range.
+///
+/// The document has exactly one way to name a range of cells — the one a gate
+/// anchor already uses — so a contract box is that same type rather than a
+/// second spelling of it.
+fn range(b: &Box3) -> RegionMetadata {
+    RegionMetadata {
+        from: b.origin,
+        to: [
+            b.origin[0] + b.size[0] as i32 - 1,
+            b.origin[1] + b.size[1] as i32 - 1,
+            b.origin[2] + b.size[2] as i32 - 1,
+        ],
+    }
 }
 
 /// The `license` block, shared by both export shapes so the provenance sentence

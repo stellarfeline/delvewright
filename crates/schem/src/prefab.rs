@@ -51,6 +51,99 @@ pub struct PrefabMeta {
     pub lighting: Lighting,
     /// Licence, provenance prose, and the machine-readable provenance row.
     pub license: License,
+    /// The piece's spatial contract, when it declares one.
+    ///
+    /// Absent means legacy metadata — the piece makes no spatial claim — exactly
+    /// as an absent `lighting` block differs from `unmeasured`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_contract: Option<SpatialContract>,
+}
+
+/// A piece's declared spaces, out-of-walk regions and edges, **already
+/// resolved**: every box is a local cell range of these exact bytes.
+///
+/// Resolved rather than parametric on purpose. A grammar program's declarations
+/// are scope-bound and mean different boxes at different parameters, so the only
+/// contract that can describe *this* `.nbt` is the one its own expansion
+/// produced. That is also what lets a hand-built piece carry the same block: it
+/// has no parameters to resolve, so the two routes write the same shape and one
+/// reader serves both.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpatialContract {
+    /// The space a body enters at.
+    pub entry: String,
+    /// Named spaces.
+    #[serde(default)]
+    pub spaces: BTreeMap<String, ContractSpace>,
+    /// Named standable-but-out-of-walk regions.
+    #[serde(default)]
+    pub no_body: BTreeMap<String, ContractNoBody>,
+    /// The graph, in declaration order.
+    #[serde(default)]
+    pub edges: Vec<ContractEdge>,
+    /// The author's acknowledgement that this piece is mostly out-of-walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_body_majority_ack: Option<String>,
+}
+
+/// One entry of `spatial_contract.spaces`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractSpace {
+    /// `enclosed` | `open_top` | `open`.
+    pub envelope: String,
+    /// The cells it covers.
+    pub boxes: Vec<Region>,
+}
+
+/// One entry of `spatial_contract.no_body`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractNoBody {
+    /// Why these cells are out of play, in the author's words. Which exemption
+    /// the region qualifies for is a fact about the blocks and is not recorded
+    /// here.
+    pub reason: String,
+    /// The cells it covers.
+    pub boxes: Vec<Region>,
+}
+
+/// One entry of `spatial_contract.edges`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractEdge {
+    /// A declared space name, or `exterior`.
+    pub a: String,
+    /// A declared space name, or `exterior`.
+    pub b: String,
+    /// `walk` | `stair` | `drop` | `barred` | `vision`.
+    pub class: String,
+    /// The declared level change, on the classes that carry one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rise: Option<i64>,
+    /// The opening or transit volume, when the edge declares one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<ContractVolume>,
+    /// The bar, on a `barred` edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bar: Option<ContractBar>,
+}
+
+/// An edge's own volume — an opening, a stair's treads, a fall column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractVolume {
+    /// The region's name, which is what content binds to.
+    pub region: String,
+    /// The cells it covers.
+    pub boxes: Vec<Region>,
+}
+
+/// A `barred` edge's bar: the region that stands in the way, and its block.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractBar {
+    /// The region's name.
+    pub region: String,
+    /// The cells it covers.
+    pub boxes: Vec<Region>,
+    /// The block state the bar is built from.
+    pub block: String,
 }
 
 /// The `structure` block: which file, how big, for which MC version.
@@ -248,6 +341,7 @@ impl PrefabMeta {
                 ..Lighting::unmeasured()
             },
             license,
+            spatial_contract: None,
         }
     }
 
