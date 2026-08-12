@@ -133,10 +133,24 @@ exercises. This was measured by hand once; unmeasured next time is dark again.
    name, not a planner's guess about typologies, is what justifies the tenth
    entry. An idiom added without a failed trial behind it is a catalogue entry
    in disguise.
-7. The report runs as a step of the grammar CI job — bound to the event that a
-   corpus or IR change is pushed, never to a line in a document (CLAUDE.md: a
-   gate nothing invokes is unrun).
-8. No campaign content is authored against this spec. Zone programs are a
+7. The report is bound to the events that a corpus or an IR change is pushed,
+   never to a line in a document (CLAUDE.md: a gate nothing invokes is unrun).
+   Both bindings are compile- or test-level inside the existing **required**
+   Rust job. There is no separate grammar CI job and this spec does not ask for
+   one: every job name here is a required status context, so a new job is
+   advisory until branch protection is edited — the exact shape CLAUDE.md
+   rejects.
+8. **The idiom index and the coverage corpus are two different sets, and they
+   grow by different rules.** The index (§3A) is a curated set of *techniques*
+   and grows only by a failed trial, per §4.6. The corpus is the
+   *demonstration* set, and every IR construct owes it at least one example
+   reachable from `delve-grammar list`. A minimal program showing what a
+   construct looks like is **not** a claim that it is a technique — `Cond::NoneOf`
+   is negation of guards, a language feature and not a way of building
+   anything, and it earns a corpus example without earning an index entry.
+   Without this distinction §4.3 and §4.6 contradict each other the first time
+   the report reds on a construct no idiom covers, which happened immediately.
+9. No campaign content is authored against this spec. Zone programs are a
    separate, later round; this spec ends when the idioms, their examples and
    the measurement exist, and one authoring trial has run.
 

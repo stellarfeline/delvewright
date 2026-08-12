@@ -12,13 +12,15 @@
 //! write a Rust test. A back end a creator cannot invoke is a library, not a
 //! back end.
 //!
-//! Three commands, which are the three steps of the loop:
+//! Five commands. The first four are the steps of the loop; the last asks what
+//! the corpus those steps start from actually demonstrates.
 //!
 //! ```text
 //! delve-grammar list                                  # what can be built
 //! delve-grammar show --program store-room > scene.json # start from the corpus
 //! delve-grammar check --file scene.json                # does the program hold together
 //! delve-grammar expand --file scene.json --region 11x6x13 -o out/   # build + judge + freeze
+//! delve-grammar coverage                              # what no example demonstrates
 //! ```
 //!
 //! `--file` takes the typed JSON IR, which is the authoring form spec-0027 §3
@@ -34,6 +36,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use delvewright_grammar::block::BlockState;
+use delvewright_grammar::coverage;
 use delvewright_grammar::gates;
 use delvewright_grammar::ir::{Paint, Program};
 use delvewright_grammar::{Box3, ExpandOptions, expand, export, library};
@@ -77,6 +80,22 @@ enum Command {
     Show {
         #[command(flatten)]
         source: Source,
+    },
+    /// Report which IR constructs the rule library demonstrates, and which
+    /// none of it does.
+    ///
+    /// `prefab-procedure.md` §3 sends an author to the corpus, not the schema,
+    /// so a construct no example writes does not exist in practice. This counts
+    /// every `Node` kind, every `Cond` kind and every palette paint kind over
+    /// the programs `list` names, and calls a zero what it is.
+    ///
+    /// It measures **demonstration, not expressiveness**: a pass means no part
+    /// of the language is left undemonstrated. It is not evidence that an
+    /// author can build any particular thing.
+    Coverage {
+        /// Also write the report as JSON to this path.
+        #[arg(long, value_name = "PATH")]
+        json: Option<PathBuf>,
     },
     /// Expand a program over a region and freeze it as a prefab.
     Expand {
@@ -279,6 +298,69 @@ fn run_check(source: &Source) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => bad_input(format!("{id}: {e}")),
+    }
+}
+
+fn run_coverage(json: Option<&Path>) -> ExitCode {
+    let report = coverage::measure(library::PROGRAMS);
+
+    println!(
+        "demonstration coverage over {} library program(s): {}",
+        report.measurements.programs, report.verdict
+    );
+    for c in &report.constructs {
+        println!(
+            "  {:<18} {}  bound {:<6} {}",
+            c.id,
+            if c.pass { "shown" } else { "NONE " },
+            c.bound,
+            match c.exempt {
+                Some(why) => format!("{} [exempt: {why}]", c.detail),
+                None => c.detail.clone(),
+            }
+        );
+    }
+    let m = &report.measurements;
+    println!(
+        "  measurements       {} rule(s) · {} alternative(s) · {} IR node(s) · {} palette role(s) \
+         · {} mix(es) containing air · {} distinct block state(s)",
+        m.rules,
+        m.alternatives,
+        m.ir_nodes,
+        m.palette_roles,
+        m.mixes_containing_air,
+        m.distinct_block_states
+    );
+    for finding in &report.findings {
+        println!("  finding: {finding}");
+    }
+    // Printed on every run, pass or fail, because the sentence exists to stop a
+    // GREEN being cited for something it never measured.
+    println!("\n{}", coverage::MEASURES);
+
+    if let Some(path) = json {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            eprintln!("error: create {}: {e}", parent.display());
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+        if let Err(e) = std::fs::write(path, report.to_json()) {
+            eprintln!("error: write {}: {e}", path.display());
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+    }
+
+    if report.is_pass() {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!(
+            "error: {} construct(s) of the IR have no example in the corpus. Add one, or add an \
+             exemption with its reason to `coverage::EXEMPT` — never shrink the required set.",
+            report.constructs.iter().filter(|c| !c.pass).count()
+        );
+        ExitCode::from(EXIT_GATE)
     }
 }
 
@@ -499,6 +581,7 @@ fn main() -> ExitCode {
         Command::List => run_list(),
         Command::Show { source } => run_show(&source),
         Command::Check { source } => run_check(&source),
+        Command::Coverage { json } => run_coverage(json.as_deref()),
         Command::Expand {
             source,
             region,

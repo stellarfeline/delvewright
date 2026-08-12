@@ -115,6 +115,7 @@ delve-grammar check  (--program <id> | --file <p.json>)
 delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
     [--id <prefab-id>] [--traversable [--allow-falls]]
+delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
 ```
 
 **There is no maximum region.** A vanilla structure template holds 48 blocks per
@@ -123,6 +124,12 @@ manifest, cut deterministically from the region alone. The cap is an internal
 packaging detail and reaches no author and no flag (DEC-0069). `piece` and
 `audit` below take that manifest and treat the zone as one thing; both refuse a
 lone tile of a set and name the manifest instead.
+
+`list` names an **`idiom-*` block**: ten teaching programs, one per technique of
+the IR plus one composition, each documented at a region and seed in
+[`grammar.md`](grammar.md) §2c. `show --program idiom-shape` prints one, and it
+is the fastest way to see how a taper, an erosion mix or a symmetric aperture is
+actually written. Read that block before starting a piece.
 
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". `check` validates structure with no
@@ -150,6 +157,15 @@ cells, footprint area/perimeter, silhouette complexity, per-block shares — are
 reported with no threshold and are deliberately not called gates: spec-0027 §4's
 craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
 them.
+
+`coverage` measures the **corpus**, not a program: `show --program` is where an
+author starts, so an IR construct no library program writes does not exist in
+practice however well the IR supports it. It counts every `Node` kind, every
+`Cond` kind and every palette paint kind, prints each with its binding count,
+names every zero as a finding, and exits `4` when any construct is
+undemonstrated. `--json` writes the same report as a file. It measures
+**demonstration, not expressiveness** — see [`grammar.md`](grammar.md) §8, and
+the sentence the command itself prints on every run.
 
 Exit: `0` ok · `2` input/usage · `3` output · `4` a gate went red.
 
