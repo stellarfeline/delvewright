@@ -51,13 +51,50 @@ jobs:
       - uses: ./.github/actions/checkout-content
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
+      #
+      # Two workspaces since `crates/render` was excluded from the root one
+      # (/Cargo.toml): each needs its own target dir cached, or the render steps
+      # below recompile wgpu from scratch on every run.
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            crates/render
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
+
+      # `crates/render` is its own workspace so that its git dependency stops
+      # being a precondition for every cargo command in the repo (/Cargo.toml).
+      # Excluding it from `--workspace` would have taken its coverage with it, so
+      # the same three checks run against its manifest — this is the ONLY place in
+      # CI that builds the render crate, and the only place that needs its
+      # dependency. `fmt` first: rustfmt resolves nothing, so a formatting error
+      # reds without waiting on a network reach.
+      - name: cargo fmt --check (render workspace)
+        run: cargo fmt --manifest-path crates/render/Cargo.toml --all -- --check
+      # The one git fetch in this repo's CI, in a step that says so. Nucleation is
+      # pinned by rev, so a warm rust-cache satisfies this without touching the
+      # network at all (measured: 0.47s and zero `Updating git repository` lines
+      # against a populated db); a cold cache clones 227 MB. Either way it happens
+      # HERE, named, and never inside a step named for clippy or for a test —
+      # which is what a docs-only PR hit as a raw TLS error in a step called
+      # "build the hello-world delve output" (#388).
+      - name: fetch — the render workspace's pinned git dependency
+        run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
+      # BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS).
+      # `--offline` is what makes the fetch step above load-bearing: if it did not
+      # populate the cache, these red immediately instead of quietly re-fetching
+      # and leaving the job as exposed as it was while green.
+      - name: cargo clippy -D warnings (render workspace)
+        run: |
+          cargo clippy --locked --offline --manifest-path crates/render/Cargo.toml \
+            --all-targets -- -D warnings
+      - name: cargo test (render workspace)
+        run: cargo test --locked --offline --manifest-path crates/render/Cargo.toml
       # task #52 (owner directive 2026-08-07): authored JSON has ONE canonical
       # form, so an insertion is a one-line diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced
@@ -248,7 +285,7 @@ jobs:
         run: pip install "mecha==0.104.1" beet
       - name: build the hello-world delve
         run: |
-          cargo run -p delvec --bin delvec -- \
+          cargo run --locked -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o out --prefabs campaigns/prefabs
       - name: mecha validates every emitted mcfunction
@@ -267,6 +304,16 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # Every owner decision this repo has written down is bound to the place it
+      # landed, both directions. A `landed` row whose implementation is deleted
+      # or renamed reds here; a decision written into an ADR, an owner-approved
+      # spec's Status, or a dated `(owner …)` rule in CLAUDE.md with no ledger
+      # row also reds. It rides in THIS job rather than a new one on purpose:
+      # a new job needs a new required context, and an advisory gate is a gate
+      # that does not gate (task #31). It also PRINTS the open and unenforced
+      # decisions on every run — those lists are the deliverable, not a warning.
+      - name: every recorded owner decision is bound to where it landed
+        run: python3 tools/check-decisions.py
       # The same document's VERSION HEADER was bound to nothing. It claimed
       # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
       # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body
@@ -314,6 +361,21 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # A required status check answers for the uptime of every host it reaches,
+      # and a git dependency is the reach nothing in cargo's surface lets a job
+      # decline: it is cloned during RESOLUTION of the workspace that declares it,
+      # a workspace resolves all its members, and neither `-p <crate>` nor
+      # `--locked` nor `optional` narrows that (all three measured). So one git
+      # dependency put `cargo run -p delvec` — five required jobs, none of which
+      # build the crate that declared it — behind 227 MB of clone from two
+      # repositories, and a transient TLS failure there reddened `tier 2` on a
+      # docs-only PR (#388). Same class as this job's own `lychee --offline` and
+      # as task #41's single Mojang fetch, now as a gate rather than as three
+      # separate lessons. States its binding count; an allowlisted lock that has
+      # stopped carrying one is a finding too. Deterministic, offline,
+      # stdlib-only python3.
+      - name: no workspace resolves a git dependency it does not quarantine
+        run: python3 tools/check-workspace-git-deps.py
       # Isolation by construction (task #185, validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
@@ -533,9 +595,18 @@ jobs:
         run: bash validation/server-bootstrap-cache.sh
 
       - uses: Swatinem/rust-cache@v2
+      # Built ONCE and handed to the nine build steps below, the same shape the
+      # `campaign builds` job uses. Every one of those steps is named for a
+      # fixture, and a `cargo run` per step let any of them fail for a reason with
+      # nothing to do with its fixture: #388 reddened "build the hello-world delve
+      # output" with a TLS error from cargo's dependency resolution. Resolution is
+      # now one step that says it is the compiler build, and `--locked` forbids it
+      # from re-resolving (and so from reaching the network) at all.
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
 
@@ -644,7 +715,7 @@ jobs:
       # the compiler is already built, so there is no new pull and no new compile.
       - name: build the cast-ledger delve output (spec-0020)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/cast-ledger \
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
@@ -664,7 +735,7 @@ jobs:
       # pull, no new compile.
       - name: build the keep-trial delve output (held-item interact)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/dsl/fixtures/valid/keep-trial \
             -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
 
@@ -683,7 +754,7 @@ jobs:
       # no new compile.
       - name: build the souls-bonfire delve output (spec-0016 §1)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-bonfire \
             -o validation/delve-output-bonfire --prefabs campaigns/prefabs
 
@@ -703,7 +774,7 @@ jobs:
       # here, on the re-summon itself, rather than through a rest.
       - name: build the souls-td-lanes delve output (spec-0016 §6)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-td-lanes \
             -o validation/delve-output-lanes --prefabs campaigns/prefabs
 
@@ -739,7 +810,7 @@ jobs:
       # no new compile.
       - name: build the lethal-volume delve output (spec-0031)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/lethal-volume \
             -o validation/delve-output-lethal --prefabs campaigns/prefabs
 
@@ -764,7 +835,7 @@ jobs:
       # pull, no new compile.
       - name: build the teleport-volume delve output (spec-0031)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/teleport-volume \
             -o validation/delve-output-teleport --prefabs campaigns/prefabs
 
@@ -786,7 +857,7 @@ jobs:
       # compile.
       - name: build the economy delve output (spec-0032)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/economy \
             -o validation/delve-output-economy --prefabs campaigns/prefabs
 
@@ -830,7 +901,7 @@ jobs:
       # toolserver boot, no new pull, no new compile.
       - name: build the lift delve output (spec-0031 AC9)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/lift \
             -o validation/delve-output-lift --prefabs campaigns/prefabs
 
@@ -841,7 +912,7 @@ jobs:
 
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-timed-gate-disarm \
             -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
 

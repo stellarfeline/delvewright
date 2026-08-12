@@ -202,13 +202,20 @@ req = req if isinstance(req, str) else req.get("version", "<absent>")
     f"compiler depends on {e['dsl_crate']} {req!r} (manifest: {e['dsl_crate_req']!r})")
 
 # 4. Publishability inventory, in BOTH directions. The two crates that must be
-#    publishable, and every other workspace member that must NOT be — a new
+#    publishable, and every other crate under `crates/` that must NOT be — a new
 #    crate added without `publish = false` would otherwise be swept onto
 #    crates.io by the first `--workspace` anything, irreversibly.
-members = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]["members"]
+#
+#    `exclude` counts as much as `members`: `crates/render` sits outside the
+#    workspace (its git dependency is quarantined there, /Cargo.toml), and a
+#    members-only walk would have quietly dropped it from this inventory — the
+#    exemption a crate gets for free by leaving the workspace is exactly the kind
+#    that nobody notices. The binding count below is what makes that visible.
+ws = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]
+crates = list(ws["members"]) + [x for x in ws.get("exclude", []) if x.startswith("crates/")]
 publishable = {e["crate"], e["dsl_crate"]}
 n_pub = n_priv = 0
-for m in members:
+for m in crates:
     mani = tomllib.load((root / m / "Cargo.toml").open("rb"))
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
     if name in publishable:
@@ -219,10 +226,11 @@ for m in members:
         (ok if flag is False else bad)(
             f"{name} declares `publish = false` (it is not on the release line "
             f"and must never reach crates.io)")
-missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in members}
+missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in ws["members"]}
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")
-ok(f"publish inventory: {len(members)} member(s) = {n_pub} publishable + {n_priv} private")
+ok(f"publish inventory: {len(crates)} crate(s) = {n_pub} publishable + {n_priv} private "
+   f"({len(ws['members'])} workspace member(s) + {len(crates) - len(ws['members'])} excluded)")
 
 # 5. `rust-version` in a published manifest is a promise to a stranger running
 #    `cargo install`. It must be the toolchain this repo actually builds on, not
