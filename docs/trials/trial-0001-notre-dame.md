@@ -303,6 +303,29 @@ west rose and both transept roses. Neither can pass a paint, a size or a role.
 
 "Two roofs cannot form a valley" — see above.
 
+### What a body can reach, measured on both artifacts
+
+Neither run was asked for an upper floor, and neither is faulted for not building
+one. The measurement is recorded because it is a property of the delivered zones
+that later rounds will cite, and because the gate that passed does not imply it.
+
+|  | run 0 | run 1 |
+|---|---|---|
+| standable cells | 3560 | 4982 |
+| reachable on foot from the grade entrance | 1548 (43.5%) | 2267 (45.5%) |
+| **reachable above the ground band** | **0** | **0** |
+| unreachable, open to the sky | 1835 | 2478 |
+| unreachable, **under a roof** | 177 | 237 |
+
+`traversable` passes on both, because it proves a route between two ground-level
+faces and nothing about the rest of the floor.
+
+The distinction in the last two rows is the whole finding. Most stranded floor is
+aisle roof and tower deck — standable, open to the sky, and nobody's defect. The
+actionable part is small and locatable: run 0's two west-tower ground chambers
+with no door (60 cells each, x 1–6 and 20–25, y 1, z 65–74); run 1's 84-cell
+chamber at y 23 over the west front, and two belfry floors at y 35–36.
+
 ### Judgement on R1 and R2, recorded so a later reader can disagree
 
 The planner's read of the shots differs from the agent's on R1 and is recorded
