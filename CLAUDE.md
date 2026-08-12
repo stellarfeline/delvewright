@@ -347,6 +347,23 @@ validation/          # docker compose: headless server + bot, same image as CI &
   **hunk-granular for every file**, and the review asks for a full re-audit,
   never a targeted deletion (one targeted pass named two leaked hunks; there were
   three). Code leaks fail CI; doc leaks merge green.
+- **A clean auto-merge is not evidence of semantic compatibility** (integration
+  of #395+#400+#402+#403, 2026-08-12). When two branches change the same
+  subsystem's *intent*, the dangerous hunk is the one git resolves **without a
+  conflict marker**. One branch made an oversize region tile automatically; the
+  other had added an early refusal of oversize regions. Git merged the refusal
+  in silently. It compiled, passed `clippy`, and passed every test that existed
+  on either branch — and it undid the entire point of the other PR. What caught
+  it was reading for intent, not any tool. So: **enumerate what each branch
+  claims to DO, and re-demonstrate every claim on the merged tree**; a textual
+  conflict count measures nothing. Two corollaries from the same round. Docs
+  merge as text and are never re-read: three sentences across three reference
+  files still asserted the refused behaviour afterwards, and
+  `check-doc-dupes`, `check-dw-codes` and `check-reference-versions` all stayed
+  green. And an integration is the first place a **cross-feature interaction**
+  exists at all — the eye camera over a tiled zone belonged to neither branch,
+  so neither could test it; naming such pairs up front is part of the merge,
+  and the test that covers one goes in with the merge.
 - **A worktree is created by the dispatch and destroyed by the MERGE** (owner,
   2026-08-11). Reclaim it — `git worktree remove` plus the local branch — as the
   last step of merging its work, in the same breath as the evidence entry, and
