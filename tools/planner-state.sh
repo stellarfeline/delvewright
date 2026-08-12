@@ -27,10 +27,33 @@
 #
 # Read-only. Never fails the session: a section that cannot be computed says so
 # and the page continues — an absent answer is itself state worth seeing.
+#
+# INVOCATION (owner workflow, 2026-08-11: one long-lived session, so a
+# session-start-only binding would almost never fire):
+#   - SessionStart hook, unconditional — fires on startup, resume, AND after
+#     every context compaction, which is exactly the moment the planner is a
+#     reconstruction of its former self and most likely to be missing state.
+#   - UserPromptSubmit hook with `--if-stale <hours>` — inside one long session
+#     the page refreshes with the next user message once the stamp is older
+#     than the window, and stays silent otherwise.
+# The stamp lives in .git/ (never committed, per-checkout, survives nothing it
+# shouldn't).
 
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ "${1:-}" = "--if-stale" ]; then
+  window_h="${2:-12}"
+  stamp="$ROOT/.git/planner-state-stamp"
+  now="$(date +%s)"
+  if [ -f "$stamp" ]; then
+    last="$(cat "$stamp" 2>/dev/null || echo 0)"
+    age=$(( now - last ))
+    [ "$age" -lt $(( window_h * 3600 )) ] && exit 0
+  fi
+  printf '%s\n' "$now" > "$stamp"
+fi
 CONTENT="$(cd "$ROOT" && cd "$(readlink campaigns 2>/dev/null || echo campaigns)" 2>/dev/null && pwd || true)"
 
 section() { printf '\n== %s\n' "$1"; }
