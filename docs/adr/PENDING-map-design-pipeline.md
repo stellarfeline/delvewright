@@ -1,12 +1,14 @@
 # ADR-PENDING: The spatial contract — declared spaces and edges, checked against the emitted bytes
 
 - **Status**: Proposed
-- **Date**: 2026-08-12 (amended same day against the prototype's evidence)
+- **Date**: 2026-08-12 (amended twice same day against the prototype's two
+  evidence rounds)
 - **Source**: owner ruling 2026-08-12 ("the map-design pipeline needs restructuring,
   or our gameplay and our scenery cannot be unified"); trial-0001 (Notre-Dame),
   both runs; the planner's tree/graph analysis, amended below; the
   `tools/spike-spatial-contract` prototype (branch
-  `feat/spatial-contract-prototype`, `./run-evidence.sh` reproduces)
+  `feat/spatial-contract-prototype`, re-validated at `d3ce851`,
+  `./run-evidence.sh` reproduces)
 - **Refines**: ADR-0004 (extends its "layout validation reduces to graph
   properties" consequence down into pieces; does **not** supersede it),
   spec-0027 (adds a gate family), ADR-0018 §7 (rides the `Program` version fence)
@@ -33,10 +35,10 @@ broken artifacts. Verified on the saved artifacts:
    symmetric) — verified independently on the bytes. Two hand probes
    under-measured the same defect because both searched for a specific shape;
    the closure obligation binds to every boundary cell (1 668 over 8 spaces
-   on this artifact) and does not need to know the shape in advance. That is
-   the argument for the obligation stated as evidence. (`grammar.md` §2c
-   idiom 5 documents the same class one scale down: a rounded split's
-   unwritten thirteenth course, 27 cells of daylight, both gates green.)
+   on this artifact) and does not need to know the shape in advance.
+   (`grammar.md` §2c idiom 5 documents the same class one scale down: a
+   rounded split's unwritten thirteenth course, 27 cells of daylight, both
+   gates green.)
 3. **Duplication grows with scale.** 26 % of run 0's rules and 30 % of run 1's
    are copies of another rule once role names and call targets are erased
    (re-measured: 29 of 113, 44 of 145). Real, already filed (task #107), and
@@ -77,116 +79,106 @@ boundary cell that no traversal claim would ever visit. A blockout graph alone
 passes them. The contract therefore carries two kinds of obligation, not one:
 connectivity (spaces, edges, reachability) and **closure**.
 
-### What the prototype settled (2026-08-12, before any IR work)
+### What the two prototype rounds settled (2026-08-12, before any IR work)
 
-The spec's own order of work put a prototype checker plus hand-written
-contracts for run 1 and bell Z7 ahead of implementation. Results, all folded
-into the Decision below:
+**Round 1** (against the first draft):
 
-- **Cost is bounded and reviewable**: 28 spaces / 21 edges / 84 lines,
-  ~45 minutes, for an honest cathedral; 8 / 9 / 29 lines, ~15 minutes and
-  fully green, for Z7. The real cost was not box count but the strict
-  partition rule (every box face a wall or an abutting space's face), which
-  drove four revision rounds — answered by union-of-boxes spaces (§1 below).
+- **Cost is bounded and reviewable** — an honest cathedral contract is tens
+  of declarations, not hundreds; Z7 is 29 lines and green.
 - **Topology obligations alone do not catch the bell drifts.** Of Z7's four
   recorded drifts, one is refused upstream and produces no bytes; the other
-  three reach geometry and were green on every original obligation — a
+  three reach geometry and were green on every topology obligation — a
   one-course seam moves the flight's head landing, `connected` steps ±1, so
-  the walk holds. What `zones.rs` catches it with is a *height* assertion.
-  The contract therefore carries a **declared level relation across an edge**
-  (§2.4); with it, the prototype reds all three geometry-reaching drifts with
-  both numbers named.
-- **The cheap escape hatch is `no_body`, not the `open` envelope.** An
-  all-`no_body` contract passed the original obligations in 26 lines on the
-  broken artifact, with findings printed that gate nothing. Findings that do
-  not gate are findings nobody reads: the vacuity rules now **red** (§2.7),
-  and `no_body` carries an obligation of its own (§2.6).
-- **Per-space reachability is one line away from vacuous** ("declare it all
-  one space"); reachability is therefore **per-cell** within declared spaces
-  (§2.5), which is also what run 1's honest contract actually reds on —
-  coverage is green when the author honestly declares the gallery; the red is
-  that its cells are unreached.
+  the walk holds. The contract therefore carries a **declared level relation
+  (`rise`) on every traversal edge**; with it, all three building drifts red
+  with both numbers named.
+- **Per-space reachability and exterior-as-node are unsound** (one line from
+  vacuous; mutual reachability through the outside). Reachability is
+  per-cell; `exterior` is a face, never a node.
+
+**Round 2** (against the amended draft) is the structural finding of this
+ADR: **the opt-outs were mechanically defeatable.** A 90-line script that
+read the checker's own red cell-lists bought a full pass on the broken
+artifact by declaring every unreached cell `sealed` and downgrading every
+breached space to `open` — because `sealed`'s proof (unreachable) was
+*entailed by the defect it existed to catch*, and `open` was an
+unconditional exemption. Two more of the same character: an unconstrained
+`via` was a closure exemption anywhere, and a union-merged space hid a seam
+by having no internal edge to carry a `rise`.
+
+The repair is one principle, now §0 of the spec and binding on every future
+surface here: **an opt-out must be secured by a property the defect cannot
+supply.** Concretely — `sealed` demands its own closure (walled off, not
+merely unreached); `open` demands sky (a roofed room cannot be downgraded
+out of closure); the new `posted` kind demands an anchor (the case
+`rafter_hall`'s intentionally-unreachable perches prove necessary, which the
+two-kind taxonomy could not classify at all); `via` demands its endpoints'
+own shared boundary; and **a space is one floor** (standable span ≤ 2
+y-levels), so a merge that would hide a seam is refused and every level
+change crosses an edge that owes a `rise`. Both adversary scripts are kept
+verbatim as permanent red fixtures.
+
+On cost, stated against this ADR's earlier framing rather than for it:
+union-of-boxes spaces **moved** the decomposition work rather than dissolving
+it (spaces 28→17 and the nave's 936 phantom breaches → 0, but total boxes
+43→58 and revision rounds 4→6). Unions are the fix for a case that had no
+fix — a non-box room — not a cost reduction, and the ADR claims only that.
 
 ## Decision
 
 ### 1. The artifact: a **spatial contract**, owned by the prefab object class
 
 A prefab — grammar-generated, hand-built, or ingested — may carry a spatial
-contract: named **spaces** (each the union of one or more boxes claimed by
-scope-bound declarations), typed **edges** between them, an **entry**
-designation, per-space **envelope** declarations, and **`no_body`** regions
-(standable cells deliberately outside play). The contract is *declared
-intent*; a checker proves the delivered blocks agree with it. Nothing is ever
-inferred from the block pattern — that direction is the folklore the no-hacks
-rule forbids.
+contract: named **spaces** (unions of scope-claimed boxes, each one floor),
+typed **edges** between them (`walk` / `stair` / `drop` / `barred` /
+`vision`, each traversal edge carrying its declared **`rise`**), an
+**entry** with an exterior traversal edge, per-space **envelope**
+declarations that demand sky when they claim openness, and **`no_body`**
+regions (`sealed` / `open` / `posted`, each with its own proof and a
+required reason). The contract is *declared intent*; a checker proves the
+delivered blocks agree with it. Nothing is ever inferred from the block
+pattern — that direction is the folklore the no-hacks rule forbids.
 
 The capability sits on the prefab metadata type (`delvewright_schem::prefab`),
-not on the grammar verb: the grammar program is **one authoring surface** for
-it — declaration nodes claim *the scope's box*, never literal coordinates, so
-a parametric program resolves its contract per expansion exactly as `mark`
-resolves anchors — `delve-admit` is the surface for hand-built and ingested
+not on the grammar verb: the grammar program is one authoring surface
+(scope-bound declaration nodes, resolved per expansion exactly as `mark`
+resolves anchors), `delve-admit` is the surface for hand-built and ingested
 pieces, and the exported metadata always carries the **resolved** contract of
-the expansion that produced the bytes. The checker runs on delivered blocks,
-so both routes get the same proof.
-
-**A space is a union of boxes.** Multiple declarations claiming one name merge.
-This is what lets a non-box room (the cathedral nave's stepped cross-section —
-the ordinary case, per the prototype) be one space instead of a forced split
-whose upper box has no standable cells and reds forever, and it is what
-dissolved most of the prototype's decomposition cost. True overlap of two
-*different* spaces remains refused; `no_body` regions may nest inside spaces
-(required by §2.5 — `rafter_hall`'s intentionally unreachable perches are the
-proving case).
-
-**`exterior` is a face, not a node.** An edge naming `exterior` declares a
-face contract (and feeds connector emission); it contributes **no
-connectivity** — the reachability walk never routes through it. The prototype
-showed the alternative is unsound: exterior-as-node made any two
-exterior-doored spaces mutually reachable, so deleting Z7's stair edge stayed
-green and `barred` gating was defeated.
-
-Edge classes are mechanisms mapped to existing nav predicates: `walk`, `stair`,
-`drop` (directed), `barred` (sealed now; connected through exactly the declared
-bar region with it voided), `vision`. Every traversal edge additionally
-declares its **level relation** — `rise`, checked as `min_y(b) − min_y(a)` in
-the resolved boxes: 0 by default on `walk` (two rooms meet on one surface —
-the seam claim the bell zones are built on), required and exact on `stair` and
-`drop`. This is the amendment that makes the bell drift family expressible;
-without it the contract is topology-blind to a one-course seam error, which
-the prototype demonstrated on Z7.
+the expansion that produced the bytes. One checker, two doors.
 
 A `barred` edge's declared bar region is, deliberately, the **region anchor**
 that §7 of `grammar.md` records as inexpressible: one declaration serves the
 proof and the campaign binding — the capability lands on the object (the
 edge), not on the verb that first needed it.
 
-### 2. The obligations (full statement in the spec)
+### 2. The obligations (full statement and per-class detail in the spec)
 
-Coverage (every standable cell in a space or `no_body`); closure (an
-`enclosed` space's boundary is non-passable except declared openings and
-abutting declared regions — with one named residual, spec §2.3); edge proof
-per class **plus the declared `rise`**; **per-cell reachability** (every
-standable cell of every space, minus nested `no_body`, reached from entry
-with bars closed and drops directed); the **`no_body` obligation** (each
-region declares `sealed` — its cells provably unreachable from entry — or
-`open` — exterior decoration — with a per-region reason); anchors resolve to
-the closed extent of a space or to a declared edge region; **vacuity reds** —
-a zero binding on closure, edge proof or reachability is red, and a `no_body`
-majority is red unless acknowledged per-region.
+Coverage (spaces, `no_body`, or a traversal edge's transit volume); closure
+with sky-secured envelopes; edge proof per class plus the declared `rise`;
+**per-cell, graph-confined reachability** (declared edges are the only doors
+the walk may use — the physical-walk reading was rejected because it makes
+edges decoration); the three-kind `no_body` obligation; anchors resolving to
+closed extents or edge regions; vacuity reds (zero bindings on
+closure/edge/reachability red; `no_body` majority red unless acknowledged,
+and the acknowledgement never weakens the per-region proofs). The verdict
+block enumerates every opt-out instance by name — envelopes, vision vias,
+posted regions, opened-bar sets — the per-instance form a blind script
+cannot satisfy and a reviewer actually reads.
 
-Per-cell reachability is what makes run 1's failure unshippable — the honest
-contract is coverage-green and reachability-red, unreached cells counted.
-Closure is what found the wall-less transept flanks. Neither obligation asks
-the machine to judge intent; both ask the author to state it once and let the
-bytes disagree audibly.
+**On the drift the checker cannot see**: one of Z7's four drifts is refused
+at expansion and produces no bytes. That is not a checker gap; a refusal is
+the *stronger* channel — loud, upstream, artifact-free — and a checker over
+delivered blocks is correctly silent about artifacts that do not exist. The
+spec pins both halves, so a later change that lets the drift build cannot
+pass unnoticed. (Conceded by the prototype in re-validation.)
 
-**On the drift the checker cannot see**: one of Z7's four drifts is refused at
-expansion and produces no bytes. The prototype counts this against the
-checker; this ADR does not. A refusal is the *stronger* channel — loud,
-upstream, artifact-free — and a checker over delivered blocks is correctly
-silent about artifacts that do not exist. The spec asserts the refusal stays a
-refusal; and if a later change ever lets that drift build, the declared `rise`
-is positioned to catch what the refusal no longer does.
+**Residual risk, named rather than smoothed**: `posted` is the softest
+opt-out — its security is that anchors are the campaign's exported
+namespace, so decoy anchors are visible in every downstream surface and
+enumerated in the verdict block, but visibility is review pressure, not a
+proof. And the closure residual stands: a sub-body visual breach into an
+abutting `open` region is render-review territory. Either recurring as an
+owner finding gets a machine form then (finding-to-diagnostic rule).
 
 ### 3. What the contract feeds
 
@@ -213,8 +205,8 @@ is positioned to catch what the refusal no longer does.
   index are real R4 findings on a different layer (authoring cost, not
   checked truth). Each proceeds on its own spec under the ADR-0018 §7 fence.
 - **Sightline, density, and craft claims stay out.** The bell zones' Rust
-  gates assert more than topology and levels (blindness, exactly-one-tell,
-  perch density); the contract does not replace those and must not try.
+  gates assert more than topology and levels; the contract does not replace
+  those and must not try.
 
 ## Consequences
 
@@ -231,20 +223,25 @@ is positioned to catch what the refusal no longer does.
 - Authoring order changes: procedure §1's scene description gains its
   machine-checkable half — the contract is written before the rules. Docs and
   the skill update in the same PR (tooling-sync rule).
-- The prototype and its evidence script are kept as the fixture seed
-  (`tools/spike-spatial-contract/`); its `[BEYOND SPEC]` rise check is
-  §2.4's origin and is credited as such.
+- The prototype, its evidence script, and **both adversary scripts** are kept
+  (`tools/spike-spatial-contract/`) as the fixture seed; the `rise` check and
+  the closed-`sealed` rule originated there and are credited as such.
 
 ## Revisit triggers
 
 - The second authoring trial (Stormveil-class wall section) ships a green
   artifact in which an independent probe still finds a stranded declared-space
   cell or an undeclared opening — the obligations are unsound; reopen.
-- Honest contracts prove writable only by falsifying classes or by `sealed`
-  `no_body` blankets that the unreachability proof happens to bless — the
-  cost model or the `no_body` obligation is wrong; reopen.
-- True overlap of two different spaces turns out to be required by real
-  builds — the union-of-boxes model needs a semantics this ADR deferred.
-- The closure residual (spec §2.3: sub-body visual breaches into declared
-  `open` regions are render-review territory) recurs as an owner finding —
-  it then needs a machine form, per the finding-to-diagnostic rule.
+- A third mechanical-defeat script survives §0 — the principle itself is
+  insufficient, not merely an instance; reopen rather than patch.
+- Honest contracts prove writable only by falsifying kinds or by `posted`
+  anchor spam — the cost model or the `posted` proof is wrong; reopen.
+- The one-floor rule forces a genuinely terraced single room into an
+  edge-chain that authors demonstrably fight — the merge rule needs the
+  within-space rise alternative that was rejected here; reopen with that
+  evidence.
+- True overlap of two different spaces turns out to be required — the
+  union-of-boxes model needs a semantics this ADR deferred.
+- Either named residual (`posted` decoys, sub-body visual breaches) recurs
+  as an owner finding — it then needs a machine form, per the
+  finding-to-diagnostic rule.

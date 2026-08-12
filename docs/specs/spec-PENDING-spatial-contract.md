@@ -1,257 +1,276 @@
 # spec-PENDING: The spatial contract — spaces, edges, levels, closure, and coverage
 
 - **Status**: Proposed (ADR-PENDING-map-design-pipeline; owner ruling
-  2026-08-12; trial-0001 both runs are the motivating red; amended against the
-  `tools/spike-spatial-contract` prototype, whose `run-evidence.sh` is the
-  fixture seed)
+  2026-08-12; trial-0001 both runs are the motivating red; amended twice
+  against the `tools/spike-spatial-contract` prototype — build `d3ce851` and
+  its adversary scripts are the fixture seed)
 - **ADRs**: PENDING (decision), 0004 (extended), 0006 (determinism), 0018 §7
   (the `Program` version fence this rides)
 - **Non-goals**: parameterised / cross-program `call` (task #107, own spec);
   local-direction `mark` facing (`grammar.md` §7, own spec); overlay; the
   positional index; sightline/density/craft claims; campaign-side reachability
   diagnostics over unlock logic (follow-up fence); jigsaw connector emission
-  (unblocked by §3, delivered separately); any geometry **generation** from the
-  contract.
+  (unblocked by §2.8, delivered separately); any geometry **generation** from
+  the contract.
+
+## 0. The governing rule for every opt-out
+
+The re-validation defeated the first amendment round mechanically: a 90-line
+script read the checker's own red cell-lists and bought a pass by declaring
+every unreached cell `sealed` and downgrading every breached space to `open`.
+The root cause was structural — `sealed`'s proof (unreachable) was **entailed
+by the defect it existed to catch** (stranded), and `open` was an
+unconditional exemption. A gate whose proof condition is implied by the defect
+cannot discriminate.
+
+So this spec has one governing rule, applied to every opt-out below and
+binding on any future one: **an opt-out must be secured by a property the
+defect cannot supply.** `sealed` demands its own closure; `open` demands sky;
+`posted` demands an anchor; `via` demands the declared endpoints' own
+boundary; a merge demands one floor. Anything that exempts a cell from an
+obligation must prove a different positive fact about that cell.
 
 ## 1. Surface
 
 ### 1a. Program IR (fenced at the next `Program` version)
 
 - `contract` block on `Program`: `{ entry: <space>, edges: [Edge],
-  no_body_majority_ack?: <string> }`.
+  no_body_majority_ack?: <string> }`. **`entry` must carry at least one
+  `exterior` edge of a traversal class** — the piece is enterable where it
+  claims (Z4/Z6-style fall entries are an exterior `drop` edge).
 - Declaration node `{ "op": "space", "space": <kebab>, "envelope":
   "enclosed" | "open_top" | "open", "body": … }` — wraps a body like `mark`,
   writes no blocks, claims **the scope's box** (never literal coordinates; a
   parametric program resolves its contract per expansion exactly as `mark`
-  resolves anchors). **Multiple declarations claiming one name union**: a
-  space is the union of its claimed boxes, and its envelope is stated once
-  (a second differing envelope for the same name is refused). This is what
-  lets a stepped cross-section — the cathedral nave, the ordinary case per
-  the prototype — be one space rather than a forced split whose upper box
-  has no standable cells and can never go green.
-- `{ "op": "no-body", "region": <kebab>, "kind": "sealed" | "open",
-  "reason": <non-empty string>, "body": … }` — standable-but-out-of-play
-  cells. `kind` and `reason` are **required per region**: `sealed` claims the
-  cells are unreachable (checked, §2.6); `open` claims exterior decoration
-  open to sky (checked, §2.6). A `no_body` region **may nest inside a
-  space** (the one licensed overlap; `rafter_hall`'s intentionally
-  unreachable perches are the proving case). Two different *spaces* may
-  abut but never overlap.
+  resolves anchors). **Multiple declarations claiming one name union**; the
+  envelope is stated once. Unions exist because a non-box room (the
+  cathedral nave's stepped cross-section) is otherwise a forced split whose
+  upper box has no standable cells and can never go green — they are the fix
+  for a case that had no fix, not a cost reduction (measured: spaces 28→17
+  and nave closure breaches 936→0, but total boxes 43→58 and revision
+  rounds 4→6).
+- **A space is one floor** (the merge rule, §0 applied to unions): the
+  standable cells of a space span at most 2 consecutive y-levels (a room may
+  hold a dais; `connected` itself steps ±1). Greater relief means the author
+  is describing two places and a transition, and transitions are edges. This
+  is what stops a merged space from hiding a seam: fusing `stair-foot` and
+  `stair-head` into one space is refused at well-formed, so the seam always
+  crosses an edge and always owes a declared `rise`. (The alternatives — a
+  per-space relief declaration, or named boxes with internal rises — were
+  rejected: the first re-opens the hatch behind one reviewable line, the
+  second adds surface that duplicates what edges already say.)
+- `{ "op": "no-body", "region": <kebab>, "kind":
+  "sealed" | "open" | "posted", "reason": <non-empty string>, "body": … }` —
+  standable-but-out-of-play cells, each kind carrying its own §2.6 proof.
+  A `no_body` region may nest inside a space (the one licensed overlap);
+  a region spanning hosts splits by host. Two different *spaces* may abut
+  but never overlap.
 - `Edge`: `{ a: <space | "exterior">, b: <space | "exterior">, class:
   "walk" | "stair" | "drop" | "barred" | "vision", rise?: <i64>,
-  via?: <box>, bar?: { region: <scope-declared>, block: <role> } }`.
-  - `rise` is the **declared level relation**, checked as
-    `min_y(b) − min_y(a)` over the resolved boxes: optional on `walk`
-    (default 0 — "these two rooms meet on one surface", the seam claim the
-    bell zones are built on), **required** on `stair` (≥ 1) and `drop`
-    (≤ −1), meaningless and refused on `vision`. This field is what makes
-    the bell drift family expressible: the prototype showed a one-course
-    seam error green on every topology obligation — `connected` steps ±1 —
-    and red on nothing until the level relation existed.
+  via?: <box | [box]>, bar?: { region: <scope-declared>, block: <role> } }`.
+  - `rise` — the declared level relation, checked as `min_y(b) − min_y(a)`
+    over resolved boxes: default 0 on `walk` **and `barred`** (checked when
+    the bar-voided proof runs), required on `stair` (≥ 1) and `drop` (≤ −1),
+    refused on `vision` and on any edge with an `exterior` endpoint
+    (exterior has no resolved box; the assembly-time counterpart belongs to
+    connector emission).
+  - `via` — **constrained** (§0): on `walk`/`barred`/`vision`, a rectangle
+    lying wholly on the shared boundary of the edge's endpoints (the piece's
+    outer face for `exterior` edges); on `stair`/`drop`, a **transit
+    volume** — disjoint from every space, abutting both endpoints — whose
+    standable cells (treads, fall column) it covers. `via` is **required on
+    `stair`** (the run's cells must belong to something; they belong to the
+    edge). An unconstrained `via` was a one-line closure exemption anywhere
+    on the model; this paragraph is what killed that.
   - `drop` is directed a→b. `bar` is required exactly on `barred`.
-  - **`exterior` is a face, not a node**: an exterior edge declares the
-    piece's face contract (§2.8) and contributes no connectivity — the
-    reachability walk never routes through it. (Prototype: exterior-as-node
-    made any two exterior-doored spaces mutually reachable; deleting Z7's
-    stair edge stayed green; `barred` gating was defeated.)
+  - **`exterior` is a face, not a node**: contributes no connectivity;
+    the reachability walk never routes through it.
 - Collected into `Expansion::spaces` / `Expansion::no_body` /
   `Expansion::edges` (BTreeMaps), never into the `VoxelModel`.
 
 ### 1b. Prefab metadata
 
 `spatial_contract` block in the metadata JSON: always the **resolved**
-contract of the expansion that produced the bytes (literal boxes are correct
-there because the bytes are frozen with them; a re-parameterised program is a
-*different expansion* and export writes its own resolved contract). Hand-built
-and ingested pieces get the same block via `delve-admit space` /
-`delve-admit no-body` / `delve-admit edge` (owns its block, leaves the rest
-untouched, like `socket`); their bytes never re-parameterise, so literal boxes
-are the natural form there. Every declared anchor gains a `resolves_to` field
-(§2.7). Absent block = legacy metadata, exactly as `lighting` distinguishes
-absent from `unmeasured`.
+contract of the expansion that produced the bytes. Hand-built and ingested
+pieces get the same block via `delve-admit space` / `delve-admit no-body` /
+`delve-admit edge`; their bytes never re-parameterise, so literal boxes are
+the natural form there. Every declared anchor gains a `resolves_to` field
+(§2.7). Absent block = legacy metadata.
 
 ### 1c. Checker
 
 One checker over (block grid, resolved contract), callable from
-`delve-grammar expand` (on the expansion, before export — a red writes no
-`.nbt`) and from `delve-admit audit` (on delivered `.nbt` bytes + the resolved
-contract in metadata). Same bytes + same resolved contract → same verdict,
-whichever door (AC6). Both invocations are bound to the events they guard;
-there is no separately-run gate.
+`delve-grammar expand` (a red writes no `.nbt`) and from `delve-admit audit`.
+Same bytes + same resolved contract → same verdict, whichever door (AC6).
+Both invocations are bound to the events they guard.
 
 ## 2. Obligations (each a gate with a verdict and a binding count)
 
-1. **well-formed**: `entry` names a declared space; every edge endpoint is a
-   declared space or `exterior`; `bar.region` lies on the shared boundary of
-   its edge's endpoints; `rise` present/absent per class as §1a; two spaces
-   overlap nowhere; `no_body` overlaps nothing except a space it nests
-   wholly inside. Validate-time where the inputs allow, expansion-time
-   otherwise.
-2. **coverage**: every standable cell lies in ≥ 1 declared space or `no_body`
-   region. Binding: standable count, covered count. Uncovered > 0 → red,
-   cells listed.
+1. **well-formed**: `entry` declared and carrying an exterior traversal edge;
+   endpoints declared; `bar.region` on its endpoints' shared boundary; `via`
+   as §1a per class; `rise` present/absent per class; the one-floor rule per
+   space; spaces overlap nowhere; `no_body` overlaps nothing except a space
+   it nests wholly inside; stair/drop transit volumes disjoint from spaces.
+2. **coverage**: every standable cell lies in a declared space, a `no_body`
+   region, or a traversal edge's transit volume. Uncovered > 0 → red, cells
+   listed.
 3. **closure**: for every `enclosed` space (and the side faces of
-   `open_top`), every boundary cell is non-passable, except cells inside a
-   declared edge's opening (`via` when given, else the discovered openings on
-   the shared face), faces shared with an abutting declared space, and faces
-   shared with an abutting `no_body` region. Binding: boundary cells
-   examined. Any unexplained passable boundary cell → red, cell and writing
-   rule named (a cell written by a weighted mix says so — erosion into an
-   enclosed shell is a conflict of declared intents and reds loudly).
-   **Named residual**: the `no_body` exemption means a sub-body-height visual
-   breach into an `open` region (a daylight slot too small to walk) is not
-   machine-caught here — a *walkable* breach is caught by §2.6's
-   unreachability proof instead. The residual belongs to render review; if it
-   recurs as an owner finding it gets a machine form then (ADR revisit
-   trigger).
-4. **edge proof**, per class, over the union of the two endpoint spaces plus
-   the opening, using the existing predicates (`nav::connected`,
-   `nav::reachable_with_fall`) — **and in every class the declared `rise`
-   equals the measured `min_y(b) − min_y(a)`**:
+   `open_top`), every boundary cell is non-passable except: a declared
+   edge's `via` (constrained per §1a), the discovered opening of an edge
+   with no `via`, faces shared with an abutting declared space, and faces
+   shared with an abutting `no_body` region. **Envelopes demand sky** (§0):
+   `open_top` and `open` are refused when any standable cell of the space
+   has artifact solid above it — a roofed room cannot be downgraded out of
+   closure, which was the adversary's second move and the one the three-
+   decision list did not cover. Binding: boundary cells examined; any
+   unexplained passable boundary cell → red, cell and writing rule named.
+   **Named residual**: a sub-body visual breach into an abutting `open`
+   region is render-review territory (a *walkable* breach is caught by
+   §2.6); recurring as an owner finding gives it a machine form then.
+4. **edge proof**, per class, over the endpoint spaces plus via, using
+   `nav::connected` / `nav::reachable_with_fall`, and in every non-`vision`,
+   non-exterior class the declared `rise` equals the measured value:
    - `walk`: connected both ways; rise as declared (default 0).
-   - `stair`: connected both ways; rise as declared, ≥ 1.
-   - `drop` (a→b): reachable under walk-and-fall; **not** reachable b→a
-     under the plain step; rise as declared, ≤ −1.
+   - `stair`: connected both ways through its transit volume; rise ≥ 1 as
+     declared.
+   - `drop` (a→b): reachable under walk-and-fall; **not** b→a under the
+     plain step; rise ≤ −1 as declared.
    - `barred`: **not** connected while `bar.region` stands; connected
-     through exactly that opening with the region voided (a pure re-check on
-     a copy; deterministic).
-   - `vision`: no traversal claim; exempts its opening from closure; no rise.
-5. **reachability — per cell, not per space**: every standable cell of every
-   declared space, minus cells inside nested `no_body` regions, is reached by
-   the voxel walk from `entry` with `barred` bars standing and drops
-   available forward only. Binding: cells examined, cells reached. Unreached
-   > 0 → red, counted per space. Per-space graph reachability is one line
-   from vacuous ("declare it all one space"); per-cell is what run 1's
-   honest contract actually reds on — coverage green, 
-   reachability red with the stranded gallery counted. A space unreachable
-   only while bars stand is re-walked with named bar sets opened and the
-   required set printed per space (the campaign-side unlock check consumes
-   this later); unreachable under every opening → red.
-6. **the `no_body` obligation** — what separates "aisle roof" from "sealed
-   belfry", and what closes the escape hatch the prototype found (an
-   all-`no_body` contract passed the unamended obligations on a broken
-   artifact in 26 lines):
-   - `sealed`: every standable cell of the region is **not** reached by the
-     §2.5 walk, even with every bar opened. A reachable cell in a `sealed`
-     region → red (it is play space wearing a `no_body` label — declare it a
-     space or wall it off).
-   - `open`: every cell of the region is open to sky (no solid above within
-     the artifact). A roofed-over `open` region → red.
+     through exactly that opening with the region voided; rise (default 0)
+     checked on the voided copy.
+   - `vision`: no traversal claim; exempts exactly its `via` from closure.
+5. **reachability — per cell, graph-confined**: every standable cell of
+   every declared space, minus nested `no_body`, is reached from `entry` by
+   the voxel walk **confined to declared spaces and transit volumes, crossing
+   between them only through declared edges** — bars standing, drops forward
+   only. The physical-walk reading was rejected and the choice is
+   load-bearing: under it §2.5 is independent of the declared edges
+   (deleting Z7's stair edge stays green) and edges decay into decoration;
+   graph-confined is what makes an edge a checked claim. Unreached > 0 →
+   red, counted per space. A space unreachable only while bars stand is
+   re-walked with named bar sets opened and the required set printed per
+   space; unreachable under every opening → red.
+6. **the `no_body` obligation** — three kinds, each demanding what the
+   defect cannot supply (§0); a region satisfying several may declare any
+   one, because each demand is defect-independent:
+   - `sealed`: **the union of all `sealed` regions is itself closed** —
+     every boundary cell non-passable. "Walled off", not "we failed to
+     reach it": stranding is entailed by the §2.5 defect, closure is not.
+     A genuinely walled recess passes as decoration; a stranded gallery's
+     boundary opens onto the nave air and reds.
+   - `open`: every standable cell of the region has no artifact solid above
+     it (sky-open; the standable-cell reading — the volume reading is
+     unsatisfiable under any sloped roof, measured at 3 690 cells on the
+     cathedral).
+   - `posted` (new): out-of-walk standables placed bodies use. Demands an
+     anchor: the region contains ≥ 1 declared anchor and every standable
+     cell lies within Chebyshev 2 of one. Anchors are the campaign's
+     namespace, exported and consumed downstream — a blanket of decoy
+     anchors is visible in every later surface, which is the cost that
+     secures the kind (and the honestly-stated softest of the three; see
+     the ADR's residual-risk note).
    Binding: regions, cells per kind.
 7. **anchors**: every declared anchor resolves to a contract element — the
-   closed extent (interior + boundary) of a covered space, a declared edge's
-   opening or bar region, or a `no_body` region (the latter printed as a
-   finding). Binding: anchor count, by element kind. Closed extent, not
-   interior: a block-addressing anchor is a boundary fact —
-   `boulder_stair`'s `volley-slot` is a ceiling cell of the run's space, and
-   `far_side_bar`'s `gate` sits inside its own bar region — both first-party
-   cases must resolve without special cases (AC9).
+   closed extent of a covered space, a declared edge's via or bar region, or
+   a `no_body` region (`posted` is the expected kind; others print a
+   finding). Binding: anchor count, by element kind.
 8. **exterior faces**: edges naming `exterior` are exported as the piece's
-   face contract; `--traversable`'s claim is re-derived from them
-   (entry-class exterior edge ↔ exit-class exterior edge), retiring the
-   standable-face approach-count heuristic (task #108's miscount).
-9. **vacuity reds** (amended: a finding that does not gate is a finding
-   nobody reads — prototype evidence): a **zero binding** on closure, edge
-   proof, or reachability is **red**, not a finding. A `no_body` majority
-   (its standable share exceeding the spaces') is **red** unless the
-   contract carries `no_body_majority_ack` — and the per-region `reason`
-   fields are already mandatory, so acknowledging costs writing something a
-   reviewer will read. `1 space, 0 edges` remains a printed finding (a
-   genuine one-room piece exists; its closure and reachability bindings are
-   non-zero or it reds anyway).
+   face contract; `--traversable`'s claim is re-derived from them, retiring
+   the standable-face approach-count heuristic (task #108's miscount).
+9. **vacuity reds**: a zero binding on closure, edge proof, or reachability
+   is red. A `no_body` majority is red unless the contract carries
+   `no_body_majority_ack` — the acknowledgement does not weaken §2.6, which
+   still binds every region (AC8). `1 space, 0 edges` remains a printed
+   finding. The verdict block enumerates, always: every `open`/`open_top`
+   envelope, every `vision` via with its area, every `posted` region with
+   its anchors, and every opened-bar set §2.5 used — the per-instance,
+   named form that a blind script cannot satisfy and a reviewer actually
+   reads.
 
 ## 3. Determinism and transparency
 
 - Contract data serialises canonically; the double-expand suite extends over
   `spaces`/`no_body`/`edges` exactly as it covers anchors.
-- Wrapper transparency: inserting `space` / `no-body` / edge declarations into
-  a program moves no block bytes — asserted the way `mark`'s transparency is.
-- Checker verdicts are pure over (grid, resolved contract): same inputs, same
-  report bytes.
+- Wrapper transparency: declarations move no block bytes (asserted as
+  `mark`'s is).
+- Checker verdicts are pure over (grid, resolved contract).
 
 ## 4. Order of work
 
-1. **Prototype — done** (`tools/spike-spatial-contract/`,
-   `feat/spatial-contract-prototype`). What it established is folded into §1
-   and §2 above: cost bounded (cathedral 28 spaces / 21 edges / 84 lines /
-   ~45 min; Z7 8 / 9 / 29 / ~15 min, green); the level relation is
-   load-bearing (three of Z7's four drifts reach geometry and red **only**
-   through `rise`; the fourth is refused upstream and produces no bytes —
-   deliberately out of the checker's reach, see AC5); `no_body` is the escape
-   hatch; per-space reachability and exterior-as-node are unsound. Its
-   contracts and artifacts become the in-tree fixtures.
+1. **Prototype — done, twice** (`tools/spike-spatial-contract/`, re-validated
+   at `d3ce851`). Round 1 established: cost bounded; the level relation is
+   load-bearing (three of Z7's four drifts red only through `rise`; the
+   fourth refuses upstream, deliberately outside the checker — AC5);
+   per-space reachability and exterior-as-node unsound. Round 2 established:
+   the opt-outs were mechanically defeatable, which is where §0 comes from;
+   its two adversary scripts become permanent red fixtures (AC8).
 2. IR surface + checker in-engine, fenced; export + `delve-admit` halves.
 3. Docs and skill in the same PR (`grammar.md`, `prefab-procedure.md`
-   §1/§3/§4, `tools.md`; the `/new-delve` workflow gains
-   contract-before-rules as a mandatory step).
+   §1/§3/§4, `tools.md`; `/new-delve` gains contract-before-rules).
 4. Bell adoption round (same milestone): contracts for the eight zone
    programs, translated from `tests/zones.rs`'s topology **and level**
    assertions; the Rust suite keeps sightline/tell/density claims and gains
-   "the checker catches the same drifts" fixtures.
-5. Trial 2 (owner's Stormveil-class brief) runs against the reader-facing
-   docs only, as trial-0001 did.
+   checker-teeth fixtures.
+5. Trial 2 (owner's Stormveil-class brief) against the reader-facing docs
+   only, as trial-0001 was run.
 
 ## 5. Acceptance criteria
 
 1. A `Program` at the new version with no `contract` block: refused, naming
-   the field (fenced obligation). At the old version: compiles byte-identically
-   to today (fence test both directions, red-demo per the fence rules).
-2. The run-1 artifact under its honest contract (ported from the prototype):
-   **coverage green, per-cell reachability red**, and the unreached-cell
-   count equals an independent probe's stranded count restricted to declared
-   spaces — the assertion is the agreement of two implementations, not a
-   pinned number. Closure red on the wall-less transept flanks with the
-   cells listed. The corrected twin of each distilled defect fixture
-   (stranded storey, boundary slot into a `sealed` region, seam overshoot)
-   is green.
-3. Each edge class has a passing fixture and a teeth fixture: `drop`'s teeth
-   is a rescue ladder (reuses `drop_shaft`'s knob), `barred`'s is `unbarred`,
-   `stair`'s is `broken_step`, `walk`'s is a sealed doorway — plus a **rise
-   teeth** fixture per traversal class: geometry one course off the declared
-   `rise` reds naming both numbers, on an artifact where every topology
-   obligation is green (the prototype's Z7 seam case, pinned).
-4. Closure's mix interaction is pinned both ways: an `enclosed` space whose
-   shell role carries weighted air reds closure at a seed that voids a shell
-   cell, and the identical program with the space declared `open` is green.
-5. Bell Z7's contract passes all obligations at the fixture region/seed.
-   Of its four recorded drifts, the **three that build** red through the
-   contract checker (via `rise`); the fourth is asserted to **refuse before
-   any bytes exist** — a refusal is the stronger channel, and the checker's
-   silence over a non-artifact is correct, not a gap. The assertion pins
-   both halves so a later change that lets it build cannot pass unnoticed.
-6. `delve-admit audit` on a `.nbt` whose metadata carries a resolved
-   contract runs the same checker and agrees with `expand`'s verdict for the
-   same bytes and same resolved contract (one checker, two doors). A
-   re-parameterised expansion is a different resolved contract by
-   construction (§1b) and is asserted to carry different boxes, not to
-   reuse stale ones.
-7. Double-expand determinism holds over `spaces`/`no_body`/`edges`; wrapper
-   transparency holds (block bytes unmoved by declaration insertion).
-8. **The escape hatch is shut and stays shut**: the prototype's 26-line
-   all-`no_body` contract for the broken artifact — verbatim, as a fixture —
-   now exits non-zero (red on §2.6 `sealed` reachable-cells or §2.9
-   majority), and the same contract with `no_body_majority_ack` added still
-   reds on §2.6. A vacuous-binding fixture (all-`open` envelopes, zero
-   closure binding) reds on §2.9.
-9. First-party anchor resolution: `far_side_bar`'s `gate` (in its bar
-   region), `boulder_stair`'s `volley-slot` (boundary cell), and
-   `rafter_hall`'s perches (nested `no_body`, finding printed) all resolve
-   under §2.7 with no per-rule exception, asserted over the library.
-10. Non-box spaces: the run-1 nave declared as one union-of-boxes space is
-    green on well-formed/coverage/closure where the prototype's forced
-    two-box split produced a phantom forever-red space; the phantom
-    decomposition is kept as the red fixture for the union rule's absence.
-11. Exterior semantics: deleting Z7's stair edge from its contract reds
-    reachability (the prototype's exterior-as-node counterexample, inverted
-    into teeth); an exterior edge never appears in any reachability
-    explanation the report prints.
-12. Anchors round-trip with their `resolves_to` field through
-    `PrefabRegistry` (`crates/compiler/tests/grammar_prefab.rs` extended).
-13. Trial 2 is run and recorded in `docs/trials/` with the same
-    written-before rubric discipline as trial-0001, judged on: no structural
-    defect of the verified classes ships green (checked by an independent
-    probe, not by the gates under test); the breach-walkway and the one-way
-    drop are stated in edge classes without falsification; and the agent's
-    account does not name the contract as the reason a stated concept was
-    cut. **Any of those three failing is this spec's design failing**, and
-    the record must say which.
+   the field. At the old version: byte-identical compile (fence test both
+   directions, red-demo per the fence rules).
+2. The run-1 artifact under its honest contract: coverage green, per-cell
+   reachability red, unreached count agreeing with an independent probe
+   restricted to declared spaces (two implementations, not a pinned
+   number). Closure red on the wall-less transept flanks, cells listed.
+   Corrected twins of the distilled fixtures green.
+3. Edge-class fixtures, pass + teeth: `drop`/rescue-ladder,
+   `barred`/`unbarred`, `stair`/`broken_step`, `walk`/sealed doorway — plus
+   rise teeth per traversal class: one course off the declared `rise` reds
+   naming both numbers on an artifact where every topology obligation is
+   green (the Z7 seam case, pinned).
+4. Closure × mix pinned both ways: weighted air voiding an `enclosed`
+   shell cell reds at that seed; the same program with the space *honestly*
+   sky-open declared `open` is green — and a **roofed** space declared
+   `open` is refused (envelope-sky teeth).
+5. Z7 green on all obligations at the fixture region/seed; its three
+   building drifts red through the checker via `rise`; the fourth asserted
+   to refuse before bytes exist (both halves pinned — a refusal is the
+   stronger channel, and the checker's silence over a non-artifact is
+   correct).
+6. One checker, two doors: `delve-admit audit` agrees with `expand` for the
+   same bytes and resolved contract; a re-parameterised expansion carries
+   its own resolved boxes, never stale ones.
+7. Double-expand determinism over `spaces`/`no_body`/`edges`; wrapper
+   transparency.
+8. **Both adversary scripts are dead and stay dead**: the 26-line
+   all-`no_body` contract and the 90-line red-list-reader
+   (sealed-blankets + envelope downgrades + acknowledgement), verbatim as
+   fixtures, exit non-zero on the broken artifact — the blankets on §2.6
+   `sealed` closure, the downgrades on §2.3 envelope-sky — and remain
+   non-zero with `no_body_majority_ack` present. A vacuous-binding fixture
+   (nothing enclosed, zero closure binding) reds on §2.9.
+9. First-party anchor resolution with no per-rule exception, asserted over
+   the library: `far_side_bar`'s `gate` (bar region), `boulder_stair`'s
+   `volley-slot` (boundary cell), `rafter_hall`'s perches (**`posted`**
+   `no_body`, green — and the same shelves stripped of their anchors red
+   under all three kinds, which is the stranded-belfry discrimination).
+10. Union and one-floor rules, both directions: the run-1 nave as one
+    union-of-boxes space is green where the forced two-box split produced a
+    phantom forever-red space (kept as the union rule's red fixture); Z7's
+    `stair-foot`+`stair-head` merged into one space is **refused** at
+    well-formed (one-floor teeth — the merge that silently re-greened all
+    three drifts in re-validation).
+11. Exterior and graph-confinement: deleting Z7's stair edge reds
+    reachability; an exterior edge never appears in a reachability
+    explanation; a `via` off its endpoints' shared boundary is refused
+    (the five-boxes-over-the-breaches cheat, kept as a fixture).
+12. Anchors round-trip with `resolves_to` through `PrefabRegistry`
+    (`crates/compiler/tests/grammar_prefab.rs` extended).
+13. Trial 2 run and recorded in `docs/trials/` under the written-before
+    rubric discipline, judged on: no structural defect of the verified
+    classes ships green (independent probe, not the gates under test); the
+    breach-walkway and one-way drop stated in edge classes without
+    falsification; the agent's account does not name the contract as the
+    reason a concept was cut. Any of the three failing is this spec's
+    design failing, and the record says which.
