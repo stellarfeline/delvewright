@@ -69,6 +69,14 @@
 //! it all exists for — one grammar program per campaign zone, composed from the
 //! staging vocabulary.
 //!
+//! # Demonstration coverage
+//!
+//! [`coverage`] counts, over the rule library, how many times each IR construct
+//! is written, and reports a zero as a finding: an author is sent to the corpus
+//! rather than to the schema, so a construct no example writes does not exist in
+//! practice. It measures **demonstration, not expressiveness** — see that
+//! module, which says so in its own output.
+//!
 //! # Not built yet
 //!
 //! The craft-rule diagnostics of spec-0027 §4, jigsaw connector emission, and
@@ -81,6 +89,7 @@
 
 pub mod block;
 pub mod compose;
+pub mod coverage;
 pub mod eval;
 pub mod expand;
 pub mod export;

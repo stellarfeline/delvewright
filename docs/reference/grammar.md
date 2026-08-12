@@ -1984,3 +1984,47 @@ generalise to a rule with two symmetric sides.
 That is now two worked examples with the same shape and one rule that only
 avoided it by luck of layout. Still not built here — the red line for W2 was
 compose-existing-verbs-only — but the case is no longer thin.
+
+## 8. Demonstration coverage — what the corpus proves is reachable
+
+`prefab-procedure.md` §3 sends an author to the corpus, never to the schema. Under
+that instruction the corpus **is** the language: a construct no example writes
+does not exist in practice, whatever §2 says the IR supports.
+
+```sh
+delve-grammar coverage            # the table; exit 4 when anything is at zero
+delve-grammar coverage --json coverage.json
+```
+
+It counts, over every program `delve-grammar list` names, how many times each
+`Node` kind, each `Cond` kind and each palette paint kind is written, and prints
+each with its **binding count** and the programs that demonstrate it — the same
+shape the expansion gates use, and for the same reason: a number beside the word
+`pass` that examined nothing is worse than no number.
+
+**What it measures, and the thing it must never be read as.** It measures
+demonstration, not expressiveness. A pass means no part of the IR is left
+undemonstrated by the corpus an author is sent to. It is **not** evidence that an
+author can build any particular thing, and no document, PR or review may cite it
+as such. The command prints that sentence on every run, pass or fail, and carries
+it in the JSON, because a number travels further than the page that qualifies it.
+
+**How to read a zero.** A zero is not "the language cannot". It is "an author
+following the procedure would never find this", which is the more actionable of
+the two and the only one the corpus can answer. Close it by writing the smallest
+program that teaches the construct and putting it in the library — not by
+removing the construct from the required set. Every construct is required; an
+exemption is an entry in `coverage::EXEMPT` carrying its reason, and the report
+reds if the corpus later demonstrates an exempt construct, so the allowlist can
+only shrink.
+
+**Why the construct list cannot go stale.** The kinds are generated from one
+list that produces both the enum and its `ALL` slice, and each kind is assigned
+by an exhaustive `match` over `Node`, `Cond` and `Paint`. A new IR variant
+therefore **fails to compile** until someone classifies it, and it then begins
+life at zero bindings — a surface nothing demonstrates is a finding on the day it
+lands. The check is bound to two events rather than to a line in this document:
+an IR change cannot compile past it, and a corpus change cannot be pushed past
+the `#[test]` in `crates/grammar/src/coverage.rs` that carries the same
+assertion inside `cargo test --workspace`. CI runs the command as its own step so
+the table reaches the log.
