@@ -83,3 +83,4 @@ conversation months later.
 | DEC-0064 | 2026-08-02 | Privacy in repo artifacts | `claude/privacy-in-repo-artifacts@2026-08-02` | unenforced | — |
 | DEC-0065 | 2026-07-31 | Attribution ledger | `claude/attribution-ledger@2026-07-31` | landed | `docs/ACKNOWLEDGEMENTS.md` |
 | DEC-0066 | 2026-07-31 | DW-diagnostic coverage | `claude/dw-diagnostic-coverage@2026-07-31` | landed | `tools/check-dw-codes.py` |
+| DEC-0068 | 2026-08-11 | An approved design becomes a campaign file, and every later stage reads it from the campaign, never from a chat artifact | `skill/new-delve-design-persistence` | landed | `.claude/skills/new-delve/SKILL.md::design/concept` |
