@@ -89,3 +89,4 @@ conversation months later.
 | DEC-0070 | 2026-08-12 | When an approved concept and the back end disagree, grow the back end — never cut the concept down to what the tooling happens to say | `spec/0033` | open | — |
 | DEC-0071 | 2026-08-12 | Buildings are judged at playable scale — silhouette reads as the thing, interior fits the theme, fine detail deliberately dropped | `claude/buildings-are-judged-at-playable-scale@2026-08-12` | unenforced | — |
 | DEC-0072 | 2026-08-12 | A clean auto-merge is not evidence of semantic compatibility — re-demonstrate every branch's claims on the merged tree | `claude/a-clean-auto-merge-is-not-evidence-of-semanti@2026-08-12` | unenforced | — |
+| DEC-0073 | 2026-08-12 | A prefab declares the spaces a body may occupy and the edges between them, and a checker proves that declaration against the emitted blocks — the per-zone gate discipline made authorable as data rather than re-written as Rust per campaign | `spec/0036` | open | — |

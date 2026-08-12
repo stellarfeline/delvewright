@@ -1,11 +1,11 @@
-# spec-PENDING: The spatial contract — spaces, edges, levels, closure, and coverage
+# spec-0036: The spatial contract — spaces, edges, levels, closure, and coverage
 
-- **Status**: Proposed (ADR-PENDING-map-design-pipeline; owner ruling
+- **Status**: Proposed (ADR-0020-map-design-pipeline; owner ruling
   2026-08-12; trial-0001 both runs are the motivating red; amended three
   times against the `tools/spike-spatial-contract` prototype — build
   `d3ce851`, its adversary scripts, and the round-3 cost measurement are the
   fixture seed; step 1, the declaration surface, is dispatched)
-- **ADRs**: PENDING (decision), 0004 (extended), 0006 (determinism), 0018 §7
+- **ADRs**: 0020 (decision), 0004 (extended), 0006 (determinism), 0018 §7
   (the `Program` version fence this rides)
 - **Non-goals**: parameterised / cross-program `call` (task #107, own spec);
   local-direction `mark` facing (`grammar.md` §7, own spec); overlay; the

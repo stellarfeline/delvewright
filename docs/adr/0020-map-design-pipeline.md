@@ -1,4 +1,4 @@
-# ADR-PENDING: The spatial contract — declared spaces and edges, checked against the emitted bytes
+# ADR-0020: The spatial contract — declared spaces and edges, checked against the emitted bytes
 
 - **Status**: Proposed
 - **Date**: 2026-08-12 (amended three times same day against the prototype's
