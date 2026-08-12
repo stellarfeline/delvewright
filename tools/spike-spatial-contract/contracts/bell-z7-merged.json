@@ -1,0 +1,185 @@
+{
+ "zone": "bell Z7 \u2014 the Bell Tower (41x14x125, seed 1) \u2014 hand-written honest contract [defaults] \u2014 ATTACK D: the flight and its head landing merged into one union space, so no edge crosses the seam",
+ "entry": "stair-foot",
+ "spaces": [
+  {
+   "name": "stair-foot",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     0,
+     106,
+     40,
+     13,
+     124
+    ],
+    [
+     22,
+     0,
+     101,
+     40,
+     13,
+     105
+    ]
+   ]
+  },
+  {
+   "name": "hearth",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     8,
+     81,
+     40,
+     13,
+     100
+    ]
+   ]
+  },
+  {
+   "name": "loft",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     8,
+     61,
+     40,
+     13,
+     80
+    ]
+   ]
+  },
+  {
+   "name": "landing",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     21,
+     8,
+     40,
+     40,
+     13,
+     60
+    ]
+   ]
+  },
+  {
+   "name": "threshold",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     8,
+     20,
+     40,
+     13,
+     39
+    ]
+   ]
+  },
+  {
+   "name": "ring",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     8,
+     0,
+     40,
+     13,
+     19
+    ]
+   ]
+  },
+  {
+   "name": "lift-shaft",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     18,
+     0,
+     49,
+     20,
+     13,
+     51
+    ]
+   ]
+  }
+ ],
+ "no_body": [
+  {
+   "name": "loft-rafters",
+   "kind": "sealed",
+   "reason": "rafter_hall's perches: beams over the loft floor, standable by construction and deliberately not a landing",
+   "boxes": [
+    [
+     23,
+     12,
+     61,
+     24,
+     13,
+     80
+    ],
+    [
+     38,
+     12,
+     61,
+     40,
+     13,
+     80
+    ]
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "a": "exterior",
+   "b": "stair-foot",
+   "class": "walk"
+  },
+  {
+   "a": "hearth",
+   "b": "loft",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "loft",
+   "b": "landing",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "landing",
+   "b": "threshold",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "threshold",
+   "b": "ring",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "landing",
+   "b": "lift-shaft",
+   "class": "drop",
+   "rise": -8
+  },
+  {
+   "a": "ring",
+   "b": "exterior",
+   "class": "walk"
+  },
+  {
+   "a": "stair-foot",
+   "b": "hearth",
+   "class": "walk",
+   "rise": 8
+  }
+ ]
+}

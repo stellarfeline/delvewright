@@ -3,14 +3,15 @@
  "entry": "near",
 
  "spaces": [
-  {"name": "near", "envelope": "enclosed", "box": [1, 1, 8, 9, 5, 14]},
-  {"name": "far",  "envelope": "enclosed", "box": [1, 1, 0, 9, 5, 6]}
+  {"name": "near", "envelope": "enclosed", "boxes": [[1, 1, 8, 9, 5, 14]]},
+  {"name": "far",  "envelope": "enclosed", "boxes": [[1, 1, 0, 9, 5, 6]]}
  ],
 
  "no_body": [],
 
  "edges": [
   {"a": "exterior", "b": "near", "class": "walk"},
-  {"a": "near", "b": "far", "class": "barred", "bar": [0, 1, 7, 10, 5, 7]}
+  {"a": "far", "b": "exterior", "class": "walk"},
+  {"a": "near", "b": "far", "class": "barred", "rise": 0, "bar": [0, 1, 7, 10, 5, 7]}
  ]
 }

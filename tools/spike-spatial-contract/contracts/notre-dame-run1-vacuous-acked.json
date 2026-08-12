@@ -1,6 +1,7 @@
 {
  "zone": "trial-0001 run 1 — AC8 fixture: the prototype's 26-line all-no_body contract, ported to the amended surface with the `kind` and `reason` fields §1a now requires and nothing else changed",
  "entry": "in",
+ "no_body_majority_ack": "the piece is a backdrop; only the two doorways are play space",
 
  "spaces": [
   {"name": "in",  "envelope": "open", "boxes": [[15, 1, 0, 15, 1, 0]]},

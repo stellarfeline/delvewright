@@ -1,0 +1,790 @@
+{
+ "zone": "trial-0001 run 1, Notre-Dame de Paris (31x64x93, seed 1) \u2014 hand-written honest contract \u2014 ATTACK E: every closure breach swallowed by a `via` on an edge that already existed",
+ "entry": "parvis",
+ "spaces": [
+  {
+   "name": "parvis",
+   "envelope": "open",
+   "boxes": [
+    [
+     0,
+     1,
+     0,
+     30,
+     3,
+     3
+    ]
+   ]
+  },
+  {
+   "name": "narthex",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     11,
+     1,
+     4,
+     19,
+     27,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "tower-n",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     2,
+     1,
+     7,
+     8,
+     12,
+     13
+    ],
+    [
+     2,
+     13,
+     7,
+     8,
+     34,
+     12
+    ],
+    [
+     1,
+     1,
+     4,
+     9,
+     12,
+     6
+    ]
+   ]
+  },
+  {
+   "name": "tower-s",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     1,
+     7,
+     28,
+     12,
+     13
+    ],
+    [
+     22,
+     13,
+     7,
+     28,
+     34,
+     12
+    ],
+    [
+     21,
+     1,
+     4,
+     29,
+     12,
+     6
+    ]
+   ]
+  },
+  {
+   "name": "tower-n-belfry",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     2,
+     35,
+     5,
+     8,
+     46,
+     12
+    ]
+   ]
+  },
+  {
+   "name": "tower-s-belfry",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     35,
+     5,
+     28,
+     46,
+     12
+    ]
+   ]
+  },
+  {
+   "name": "west-slot-a",
+   "envelope": "open_top",
+   "boxes": [
+    [
+     0,
+     1,
+     7,
+     0,
+     20,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "west-slot-b",
+   "envelope": "open_top",
+   "boxes": [
+    [
+     10,
+     1,
+     7,
+     10,
+     27,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "west-slot-c",
+   "envelope": "open_top",
+   "boxes": [
+    [
+     20,
+     1,
+     7,
+     20,
+     27,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "west-slot-d",
+   "envelope": "open_top",
+   "boxes": [
+    [
+     30,
+     1,
+     7,
+     30,
+     20,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "nave",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     4,
+     1,
+     14,
+     26,
+     12,
+     49
+    ],
+    [
+     11,
+     13,
+     14,
+     19,
+     27,
+     49
+    ]
+   ]
+  },
+  {
+   "name": "crossing",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     9,
+     1,
+     50,
+     21,
+     27,
+     62
+    ]
+   ]
+  },
+  {
+   "name": "transept-n",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     2,
+     1,
+     52,
+     8,
+     27,
+     60
+    ]
+   ]
+  },
+  {
+   "name": "transept-s",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     22,
+     1,
+     52,
+     28,
+     27,
+     60
+    ]
+   ]
+  },
+  {
+   "name": "choir",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     4,
+     1,
+     63,
+     26,
+     12,
+     80
+    ],
+    [
+     11,
+     13,
+     63,
+     19,
+     27,
+     80
+    ]
+   ]
+  },
+  {
+   "name": "apse",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     11,
+     1,
+     81,
+     19,
+     21,
+     84
+    ],
+    [
+     13,
+     1,
+     85,
+     17,
+     21,
+     88
+    ],
+    [
+     14,
+     1,
+     89,
+     16,
+     21,
+     92
+    ]
+   ]
+  },
+  {
+   "name": "apse-loft",
+   "envelope": "enclosed",
+   "boxes": [
+    [
+     11,
+     23,
+     81,
+     19,
+     27,
+     92
+    ]
+   ]
+  }
+ ],
+ "no_body": [
+  {
+   "name": "tower-n-walltop",
+   "kind": "sealed",
+   "reason": "the north tower's own wall head, a one-cell ring inside a shell capped at y47",
+   "boxes": [
+    [
+     1,
+     35,
+     4,
+     1,
+     46,
+     13
+    ],
+    [
+     9,
+     35,
+     4,
+     9,
+     46,
+     13
+    ],
+    [
+     1,
+     35,
+     4,
+     9,
+     46,
+     4
+    ],
+    [
+     1,
+     35,
+     13,
+     9,
+     46,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "tower-s-walltop",
+   "kind": "sealed",
+   "reason": "the south tower's own wall head, mirror of the north",
+   "boxes": [
+    [
+     21,
+     35,
+     4,
+     21,
+     46,
+     13
+    ],
+    [
+     29,
+     35,
+     4,
+     29,
+     46,
+     13
+    ],
+    [
+     21,
+     35,
+     4,
+     29,
+     46,
+     4
+    ],
+    [
+     21,
+     35,
+     13,
+     29,
+     46,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "aisle-roof-n",
+   "kind": "open",
+   "reason": "the north aisle's roof plate \u2014 exterior surface, no route is claimed onto it",
+   "boxes": [
+    [
+     0,
+     15,
+     14,
+     8,
+     16,
+     49
+    ],
+    [
+     0,
+     15,
+     63,
+     8,
+     16,
+     82
+    ]
+   ]
+  },
+  {
+   "name": "aisle-roof-s",
+   "kind": "open",
+   "reason": "the south aisle's roof plate, mirror of the north",
+   "boxes": [
+    [
+     22,
+     15,
+     14,
+     30,
+     16,
+     49
+    ],
+    [
+     22,
+     15,
+     63,
+     30,
+     16,
+     82
+    ]
+   ]
+  },
+  {
+   "name": "buttress-ledge",
+   "kind": "open",
+   "reason": "the tops of the flying buttresses either flank \u2014 exterior stonework",
+   "boxes": [
+    [
+     0,
+     17,
+     14,
+     1,
+     21,
+     82
+    ],
+    [
+     29,
+     17,
+     14,
+     30,
+     21,
+     82
+    ]
+   ]
+  },
+  {
+   "name": "buttress-lane",
+   "kind": "sealed",
+   "reason": "the recesses between the ground-level buttresses \u2014 walled off from this piece's own entry, and under the flying buttresses above them",
+   "boxes": [
+    [
+     0,
+     1,
+     14,
+     1,
+     3,
+     82
+    ],
+    [
+     29,
+     1,
+     14,
+     30,
+     3,
+     82
+    ]
+   ]
+  },
+  {
+   "name": "west-face-n",
+   "kind": "sealed",
+   "reason": "the north tower's own parapet course, standing under the gable above it",
+   "boxes": [
+    [
+     2,
+     16,
+     4,
+     8,
+     16,
+     6
+    ]
+   ]
+  },
+  {
+   "name": "west-face-s",
+   "kind": "sealed",
+   "reason": "the south tower's parapet course, mirror of the north",
+   "boxes": [
+    [
+     22,
+     16,
+     4,
+     28,
+     16,
+     6
+    ]
+   ]
+  },
+  {
+   "name": "west-face-c",
+   "kind": "sealed",
+   "reason": "the centre bay's parapet course and cornice ledges between the two towers",
+   "boxes": [
+    [
+     11,
+     16,
+     4,
+     19,
+     22,
+     6
+    ],
+    [
+     11,
+     16,
+     7,
+     11,
+     22,
+     13
+    ],
+    [
+     19,
+     16,
+     7,
+     19,
+     22,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "west-gable",
+   "kind": "sealed",
+   "reason": "the west front's own gable steps \u2014 each course stands under the one above it",
+   "boxes": [
+    [
+     0,
+     29,
+     4,
+     30,
+     33,
+     6
+    ],
+    [
+     10,
+     34,
+     4,
+     20,
+     36,
+     6
+    ]
+   ]
+  },
+  {
+   "name": "nave-roof",
+   "kind": "open",
+   "reason": "the nave, transept and choir roof slopes \u2014 exterior surface",
+   "boxes": [
+    [
+     0,
+     28,
+     14,
+     30,
+     36,
+     92
+    ]
+   ]
+  },
+  {
+   "name": "spire",
+   "kind": "open",
+   "reason": "the crossing spire's own steps above the roof",
+   "boxes": [
+    [
+     11,
+     37,
+     52,
+     19,
+     62,
+     60
+    ]
+   ]
+  },
+  {
+   "name": "tower-deck",
+   "kind": "open",
+   "reason": "both tower roofs and their parapets",
+   "boxes": [
+    [
+     0,
+     47,
+     4,
+     10,
+     62,
+     13
+    ],
+    [
+     20,
+     47,
+     4,
+     30,
+     62,
+     13
+    ]
+   ]
+  },
+  {
+   "name": "apse-yard",
+   "kind": "sealed",
+   "reason": "the ground outside the chevet \u2014 reached from a neighbouring piece, never from this one's own entry",
+   "boxes": [
+    [
+     0,
+     1,
+     83,
+     8,
+     3,
+     92
+    ],
+    [
+     9,
+     1,
+     87,
+     10,
+     3,
+     92
+    ],
+    [
+     11,
+     1,
+     91,
+     12,
+     3,
+     92
+    ],
+    [
+     22,
+     1,
+     83,
+     30,
+     3,
+     92
+    ],
+    [
+     20,
+     1,
+     87,
+     21,
+     3,
+     92
+    ],
+    [
+     18,
+     1,
+     91,
+     19,
+     3,
+     92
+    ]
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "a": "exterior",
+   "b": "parvis",
+   "class": "walk"
+  },
+  {
+   "a": "parvis",
+   "b": "narthex",
+   "class": "walk",
+   "rise": 0,
+   "via": [
+    11,
+    1,
+    3,
+    19,
+    28,
+    13
+   ]
+  },
+  {
+   "a": "parvis",
+   "b": "tower-n",
+   "class": "walk",
+   "rise": 0,
+   "via": [
+    1,
+    1,
+    3,
+    9,
+    27,
+    14
+   ]
+  },
+  {
+   "a": "parvis",
+   "b": "tower-s",
+   "class": "walk",
+   "rise": 0,
+   "via": [
+    21,
+    1,
+    3,
+    29,
+    27,
+    14
+   ]
+  },
+  {
+   "a": "narthex",
+   "b": "nave",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "tower-n",
+   "b": "nave",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "tower-s",
+   "b": "nave",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "nave",
+   "b": "crossing",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "crossing",
+   "b": "transept-n",
+   "class": "walk",
+   "rise": 0,
+   "via": [
+    1,
+    1,
+    52,
+    1,
+    27,
+    60
+   ]
+  },
+  {
+   "a": "crossing",
+   "b": "transept-s",
+   "class": "walk",
+   "rise": 0,
+   "via": [
+    29,
+    1,
+    52,
+    29,
+    27,
+    60
+   ]
+  },
+  {
+   "a": "crossing",
+   "b": "choir",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "choir",
+   "b": "apse",
+   "class": "walk",
+   "rise": 0
+  },
+  {
+   "a": "apse",
+   "b": "exterior",
+   "class": "walk"
+  }
+ ]
+}
