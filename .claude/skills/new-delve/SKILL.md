@@ -637,6 +637,20 @@ have caught gets paid for twice once stages 5–6 are written against it.
   "is the set pretty"; only an eye-height frame on the walk answers "what does a
   player walking in experience", and the second question is the one the review
   exists for.
+- **The moment she confirms, the approved images become campaign files.** Copy
+  them to `campaigns/<id>/design/concept/`, one per scene, named for the scene,
+  and write `campaigns/<id>/design/README.md` carrying the approval date, the
+  approved names, and the sentence that every later round is held to: *author
+  from the image, judge against it, present every choice beside it.* Commit them
+  with the campaign. `tools/refimg.py` writes to a gitignored working directory,
+  which is right for a draft and wrong for an approved one — **an approval that
+  lives only in a published page is bound to nothing.**
+- **Every later step that asks the owner to choose reads `design/` FIRST**, and
+  presents the choice beside that scene's image, under the approved name, saying
+  which element of the image the thing on offer corresponds to. A round that
+  cannot say that is not ready to ask. This binds hardest on contact-sheet
+  curation, which is the step most likely to run in a later session that never
+  saw the gate.
 - **Do not begin stage 5 until she has confirmed it.** A confirmation is her
   words in chat, not the absence of an objection.
 - In **e2e mode** the Artifact is still produced and still shown — e2e removes
