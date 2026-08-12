@@ -12,15 +12,22 @@
 //! write a Rust test. A back end a creator cannot invoke is a library, not a
 //! back end.
 //!
+<<<<<<< HEAD
 //! Four commands. The first four lines are the steps of the loop; the last asks
 //! what the corpus those steps start from actually demonstrates.
+=======
+//! Three commands, which are the three steps of the loop:
+>>>>>>> origin/main
 //!
 //! ```text
 //! delve-grammar list                                  # what can be built
 //! delve-grammar show --program store-room > scene.json # start from the corpus
 //! delve-grammar check --file scene.json                # does the program hold together
 //! delve-grammar expand --file scene.json --region 11x6x13 -o out/   # build + judge + freeze
+<<<<<<< HEAD
 //! delve-grammar coverage                              # what no example demonstrates
+=======
+>>>>>>> origin/main
 //! ```
 //!
 //! `--file` takes the typed JSON IR, which is the authoring form spec-0027 §3
@@ -36,7 +43,10 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use delvewright_grammar::block::BlockState;
+<<<<<<< HEAD
 use delvewright_grammar::coverage;
+=======
+>>>>>>> origin/main
 use delvewright_grammar::gates;
 use delvewright_grammar::ir::{Paint, Program};
 use delvewright_grammar::{Box3, ExpandOptions, expand, export, library};
@@ -81,6 +91,7 @@ enum Command {
         #[command(flatten)]
         source: Source,
     },
+<<<<<<< HEAD
     /// Report which IR constructs the rule library demonstrates, and which
     /// none of it does.
     ///
@@ -97,6 +108,8 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         json: Option<PathBuf>,
     },
+=======
+>>>>>>> origin/main
     /// Expand a program over a region and freeze it as a prefab.
     Expand {
         #[command(flatten)]
@@ -301,6 +314,7 @@ fn run_check(source: &Source) -> ExitCode {
     }
 }
 
+<<<<<<< HEAD
 fn run_coverage(json: Option<&Path>) -> ExitCode {
     let report = coverage::measure(library::PROGRAMS);
 
@@ -364,6 +378,8 @@ fn run_coverage(json: Option<&Path>) -> ExitCode {
     }
 }
 
+=======
+>>>>>>> origin/main
 #[allow(clippy::too_many_arguments)]
 fn run_expand(
     source: &Source,
@@ -581,7 +597,10 @@ fn main() -> ExitCode {
         Command::List => run_list(),
         Command::Show { source } => run_show(&source),
         Command::Check { source } => run_check(&source),
+<<<<<<< HEAD
         Command::Coverage { json } => run_coverage(json.as_deref()),
+=======
+>>>>>>> origin/main
         Command::Expand {
             source,
             region,
