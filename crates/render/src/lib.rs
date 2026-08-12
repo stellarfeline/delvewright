@@ -8,6 +8,7 @@
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
 //! - [`meta`] — prefab metadata (sockets/anchors) for interior shots.
+//! - [`occupancy`] — where a body fits inside a prefab, and where its eye goes.
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (free-camera path — the renderer for the first-person player-POV shots).
 //! - [`panorama`] — the whole-map 45° oblique release panorama.
@@ -27,6 +28,7 @@ pub mod font;
 pub mod index;
 pub mod meta;
 pub mod nbt;
+pub mod occupancy;
 pub mod panorama;
 pub mod render;
 pub mod scene;

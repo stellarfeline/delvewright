@@ -748,10 +748,19 @@ Symptom → tool:
      writes no `.nbt` (exit 4). **Read the `findings` in the report** — a gate
      that bound to zero objects, or a program that declared no anchors, is a
      finding, not a pass.
-  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/` — including the
-     per-anchor eye-height shots — and compare against step 1. The gates prove
-     it is buildable and walkable; they say nothing about whether it is the
-     scene you asked for.
+  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
+     against step 1. The gates prove it is buildable and walkable; they say
+     nothing about whether it is the scene you asked for.
+     **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras
+     inside the piece — a body's eye at 1.62, at each declared anchor, looking
+     the way that anchor faces. The orbit shots (`ext-*`, `top`, `door-*`,
+     `anchor-*`) are fitted from outside, and on a roofed piece they are all the
+     same picture of the same rock. Read `<id>-shots.json` beside the images for
+     which cell each body is standing in: a camera whose anchor cell held a gate
+     or a barrel steps back along the facing and says so (`DW0727`), and an
+     anchor with no body cell gets no eye shot at all — the run states that count.
+     A flat grey frame is outside the piece, and an eye shot that is *only* that
+     is reported as an empty frame: the anchor is aimed at nothing.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
      A grammar prefab has **no connectors and no lighting** until this step, so
@@ -1023,11 +1032,12 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
      hand-edit output.
 
    **Judge the player's eye first, and the set second** (owner concern, recorded
-   during the nobodys-cave QA rounds). The per-prefab renders are orbit cameras:
-   they answer *"is the set well made"*, which is not the question a playtest
-   asks. The question is *"what does a player walking in experience"*, and only a
-   first-person frame on the actual route answers it. The compiler already emits
-   those shots — a `pov` camera at eye height on every corner-thinned
+   during the nobodys-cave QA rounds). A per-prefab eye shot is a body inside one
+   piece; it cannot see the route, the seams between pieces, or the world's real
+   light. The question a playtest asks is *"what does a player walking in
+   experience"*, and only a first-person frame on the actual assembled route
+   answers it. The compiler emits those shots — a `pov` camera at eye height on
+   every corner-thinned
    critical-path waypoint, looking along the walk and, at each leg's end, toward
    the objective it arrives at, each with its own machine `expect` line. Every POV
    eye sits on a proven-standable waypoint, so the camera is provably in open air.
