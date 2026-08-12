@@ -63,7 +63,7 @@ pub fn validate_campaign_with(
     // for the same reason — every loop inside is empty for a campaign that
     // declares neither, and the version fence lives in `reserved_v10`.
     economy_checks(c, &mut d);
-    // DSL v0.11 (spec-0033): the per-body traversal declaration. Unconditional
+    // DSL v0.11 (spec-0034): the per-body traversal declaration. Unconditional
     // for the same reason its neighbours are — the walk is empty for a campaign
     // that declares none, and the version fence lives in `reserved_v11`.
     body_traversal_checks(c, &mut d);
@@ -1370,7 +1370,7 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v11(c, d);
 }
 
-/// DSL v0.11 reserved-feature gating (spec-0033): the per-body `traversal`
+/// DSL v0.11 reserved-feature gating (spec-0034): the per-body `traversal`
 /// declaration.
 ///
 /// **Fenced per stage, because the surface is per stage.** The stage-2 NPC's
@@ -1421,7 +1421,7 @@ fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// DSL v0.11 (spec-0033): a declared locomotion the engine cannot hold the body
+/// DSL v0.11 (spec-0034): a declared locomotion the engine cannot hold the body
 /// to is refused at declaration time (`DW0455`).
 ///
 /// Today that is exactly `aquatic`, and the reason is structural rather than a

@@ -56,7 +56,7 @@
 //! do — [`Traversal`], derived from the entity id, or **declared by the author**
 //! and then proven (below).
 //!
-//! ## The author's side: a declaration the build holds you to (spec-0033)
+//! ## The author's side: a declaration the build holds you to (spec-0034)
 //!
 //! Spiders really do climb, so the rules here cannot be absolute — which means
 //! there has to be a way to say "this body is an exception", or the exception
@@ -248,7 +248,7 @@ pub const DW_TRAVERSAL_IMPOSSIBLE: &str = "DW0452";
 pub const DW_BARRIER_SURMOUNTED: &str = "DW0453";
 
 /// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
-/// rule's verdict, so nothing in this build holds the body to it (spec-0033).
+/// rule's verdict, so nothing in this build holds the body to it (spec-0034).
 pub const DW_TRAVERSAL_DECLARATION_INERT: &str = "DW0454";
 
 /// How many route steps after a rise still count as "and came down the other
@@ -258,7 +258,7 @@ pub const DW_TRAVERSAL_DECLARATION_INERT: &str = "DW0454";
 pub const SURMOUNT_WINDOW: usize = 4;
 
 /// How a body gets around. **The vocabulary lives in the DSL crate** since
-/// spec-0033 made it authorable ([`delvewright_dsl::BodyTraversal`]) — one enum,
+/// spec-0034 made it authorable ([`delvewright_dsl::BodyTraversal`]) — one enum,
 /// so what an author declares and what this module derives can never mean two
 /// different things. The derivation table, the membership rule and the asymmetry
 /// it is built around stay here; see the module docs.
@@ -407,12 +407,12 @@ pub struct TraversalGate {
     pub gate_rule_cells: usize,
     /// Rises tested against the surmount rule (`DW0453`).
     pub surmount_rule_rises: usize,
-    /// The author-declared side of the proof (spec-0033).
+    /// The author-declared side of the proof (spec-0034).
     pub declared: DeclaredLedger,
 }
 
 /// What the campaign's own `traversal` declarations bought — the second binding
-/// axis spec-0033 introduces.
+/// axis spec-0034 introduces.
 ///
 /// A declaration silences a rule for a body, so counting only what the rules
 /// examined would report green over exactly the bodies an author asked the proof
@@ -468,7 +468,7 @@ impl TraversalGate {
             "legs": self.legs,
             "route_cells": self.route_cells,
             "legs_by_class": by_class,
-            // spec-0033: what the campaign's own declarations claimed and what
+            // spec-0034: what the campaign's own declarations claimed and what
             // the world paid for them. A declaration SILENCES a rule, so a
             // ledger that counted only what the rules examined would report
             // green over exactly the bodies an author asked to be treated
@@ -527,7 +527,7 @@ struct Leg<'a> {
     cells: &'a [[i32; 3]],
     /// The entity whose body (and capabilities) the puppet wears.
     entity: String,
-    /// The locomotion this body's author DECLARED, if any (spec-0033). `None` =
+    /// The locomotion this body's author DECLARED, if any (spec-0034). `None` =
     /// the class derived from [`Leg::entity`].
     declared: Option<Locomotion>,
     /// JSON pointer at the declaration, for a warning's diagnostic path.

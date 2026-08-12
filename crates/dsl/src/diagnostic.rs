@@ -613,7 +613,7 @@ pub mod codes {
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: &str = "DW0527";
 
-    /// (v0.11, spec-0033) **A declared locomotion the engine cannot hold the
+    /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
     /// body to** — today exactly one value, `aquatic`.
     ///
     /// The declaration surface exists so an author can claim a capability and

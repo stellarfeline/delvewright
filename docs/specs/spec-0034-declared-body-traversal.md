@@ -1,4 +1,4 @@
-# spec-0033 — Declared body traversal
+# spec-0034 — Declared body traversal
 
 - Status: Accepted (owner ruling, 2026-08-09)
 - DSL version: 0.11.0

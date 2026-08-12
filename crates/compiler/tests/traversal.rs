@@ -135,7 +135,7 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
 }
 
 /// hello-world's npcs doc with the keeper's body and traversal declaration
-/// chosen by the caller, re-fenced to v0.11 (spec-0033).
+/// chosen by the caller, re-fenced to v0.11 (spec-0034).
 ///
 /// The declaration is fenced on the **npcs** document's own `dsl_version`, which
 /// is why this fixture can adopt it without touching the quests stage — the
@@ -486,7 +486,7 @@ fn a_climber_is_exempt_from_the_advisory_tier_only() {
 }
 
 // ---------------------------------------------------------------------------
-// spec-0033 — the author's side: a declaration the build holds you to
+// spec-0034 — the author's side: a declaration the build holds you to
 // ---------------------------------------------------------------------------
 
 /// A wall line the route must cross over its one full-cube course — the shape

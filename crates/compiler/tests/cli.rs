@@ -38,7 +38,7 @@ fn version_line() {
     // `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
     // numeric comparison carried by every gate consumer — the campaign-wide
     // `on_death` bundle, effect root R7, and the stage-5 `lethal_volumes`
-    // declaration. spec-0033 raised it again to 0.11.0: the per-body `traversal`
+    // declaration. spec-0034 raised it again to 0.11.0: the per-body `traversal`
     // declaration — what a body can do when it moves — carried by the stage-2
     // NPC and the stage-5 actor through one shared type.
     assert!(s.contains("dsl 0.11.0"), "{s}");

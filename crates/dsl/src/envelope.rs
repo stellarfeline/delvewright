@@ -34,7 +34,7 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
 /// comparison on every gate consumer — the campaign-wide `on_death` effect
 /// root, the bundle that runs at the moment a player dies, and the stage-5
-/// `lethal_volumes` declaration; v0.11 (spec-0033) adds the per-body
+/// `lethal_volumes` declaration; v0.11 (spec-0034) adds the per-body
 /// `traversal` declaration — what a body can do when it moves — on the stage-2
 /// NPC and the stage-5 actor.
 /// Older campaigns remain valid and compile byte-identically. A construct
@@ -178,7 +178,7 @@ pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
 }
 
-/// True if `version` enables the DSL v0.11 surface (spec-0033, owner ruling
+/// True if `version` enables the DSL v0.11 surface (spec-0034, owner ruling
 /// 2026-08-09): the per-body **`traversal` declaration** — what a body can do
 /// when it moves — carried by the stage-2 NPC and the stage-5 actor through one
 /// shared [`crate::stages::BodyTraversal`] type.

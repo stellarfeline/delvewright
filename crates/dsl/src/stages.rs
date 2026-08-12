@@ -441,7 +441,7 @@ pub struct Pieces {
 
 // ---------------------------------------------------------------------------
 // Body traversal — the declaration every body that moves carries (DSL v0.11,
-// spec-0033)
+// spec-0034)
 // ---------------------------------------------------------------------------
 
 /// How a body gets around.
@@ -494,7 +494,7 @@ impl Locomotion {
 }
 
 /// What a body can do when it moves, **declared by the author** (DSL v0.11,
-/// spec-0033; owner ruling 2026-08-09).
+/// spec-0034; owner ruling 2026-08-09).
 ///
 /// Carried by every object class in the DSL that has a body and a position and
 /// is walked by a compiler-emitted route — the stage-2 [`Npc`] and the stage-5
@@ -671,7 +671,7 @@ pub struct Npc {
     /// init, byte-identical to pre-0.6.
     #[serde(default, skip_serializing_if = "is_false")]
     pub deferred: bool,
-    /// What this body can do when it moves (DSL v0.11, spec-0033). Absent = the
+    /// What this body can do when it moves (DSL v0.11, spec-0034). Absent = the
     /// class the compiler derives from `base_entity` (or from `minecraft:mannequin`
     /// when `skin` is set — the body that actually ships). See [`BodyTraversal`]:
     /// the declaration must change a verdict or it is `DW0454`, and it can never
@@ -3361,7 +3361,7 @@ pub struct Actor {
     /// souls re-seat) never scatters its axe.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
-    /// What this body can do when it moves (DSL v0.11, spec-0033) — the same
+    /// What this body can do when it moves (DSL v0.11, spec-0034) — the same
     /// [`BodyTraversal`] a stage-2 [`Npc`] carries, because traversal belongs to
     /// the body and not to the stage that declares it. Absent = the class the
     /// compiler derives from `entity` (or from `minecraft:mannequin` when `skin`
