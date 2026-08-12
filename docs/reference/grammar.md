@@ -1452,7 +1452,11 @@ determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0
 A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
-The metadata is the hand-built shape, minus what expansion cannot know:
+The metadata is the hand-built shape, minus what expansion cannot know. Its
+shape is defined once, in `delvewright_schem::prefab` — the crate that also
+writes the `.nbt` half — and every tool that produces or edits a prefab reads and
+writes it through that one type, so an admission step cannot drop the parts it
+does not itself model:
 
 ```json
 {
@@ -1461,6 +1465,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
   "anchors": {},
+  "connectors": [],
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -1480,8 +1485,11 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   indexes normally. The castle, which marks, exports
   `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
   over its 41×14×25 region.
-- **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
-  tileset conventions; a guessed socket is worse than none.
+- **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
+  tileset conventions; a guessed socket is worse than none. The key is present
+  and empty rather than absent, because "this piece has no sockets" and "this
+  metadata was written before sockets existed" are different claims, and
+  `delve-admit socket` appends to it.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
   the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
   the true thing and admission to a campaign still runs the probe. `unmeasured`
@@ -1495,8 +1503,9 @@ The metadata is the hand-built shape, minus what expansion cannot know:
 
 A zone past the cap carries `structure_set` where a single prefab carries
 `structure`. Everything else is the same file: same `prefab_id`, same
-zone-relative `anchors`, same `lighting`, same `license` — the provenance row
-regenerates the whole set at once, because one expansion produced all of it.
+zone-relative `anchors`, same empty `connectors`, same `lighting`, same
+`license` — the provenance row regenerates the whole set at once, because one
+expansion produced all of it.
 
 ```json
 {
@@ -1511,7 +1520,7 @@ regenerates the whole set at once, because one expansion produced all of it.
         "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
     ]
   },
-  "anchors": { … }, "lighting": { … }, "license": { … }
+  "anchors": { … }, "connectors": [], "lighting": { … }, "license": { … }
 }
 ```
 
@@ -1549,6 +1558,13 @@ Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
 region, and a model containing a block the structure safety strip would replace
 with air — a grammar that asked for a command block meant to, so shipping a
 silent hole is refused instead. **Size is not among them.**
+
+The first two are properties of the inputs alone, and are refused before the
+expansion runs: `export::is_valid_id` is public so the CLI can ask before it
+expands anything, rather than after it has printed a verdict. The third is
+knowable only from the expanded model, so it is refused after the gates have
+passed — and the verdict is printed only once the prefab is on disk, so no
+`pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.

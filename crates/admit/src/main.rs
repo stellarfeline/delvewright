@@ -17,7 +17,7 @@ use delvewright_admit::catalog::CatalogCard;
 use delvewright_admit::diag::{DW_GALLERY, DW_INPUT, DW_TOOLING, Diagnostic};
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD};
-use delvewright_admit::meta::{Anchor, License, PrefabMeta, Region};
+use delvewright_admit::meta::{self, Anchor, License, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
 
@@ -487,7 +487,7 @@ fn run_lighting(nbt: &Path, write: bool, dark_threshold: i32, json: bool) -> Exi
             Ok(None) => skeleton_for(nbt, &structure),
             Err(e) => return input_err(&e, json),
         };
-        meta.set_lighting_from_probe(&probe);
+        meta::set_lighting_from_probe(&mut meta, &probe);
         if let Err(e) = write_meta(nbt, &meta) {
             return output_err(&format!("cannot write metadata: {e}"), json);
         }
@@ -715,11 +715,15 @@ fn skeleton_for(nbt: &Path, structure: &Structure) -> PrefabMeta {
         &id,
         structure.size,
         structure.data_version,
+        "delve-admit (external admission)",
         License {
             source: "unknown".to_string(),
             spdx: "UNKNOWN".to_string(),
             note: "set at admission — see catalog card".to_string(),
             provenance: "external admission via delve-admit".to_string(),
+            // Nothing regenerates an ingested piece: there is no program and no
+            // seed, so the row is absent rather than invented.
+            generated_by: None,
         },
     )
 }

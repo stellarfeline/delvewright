@@ -106,11 +106,13 @@ fn carved_jigsaw_socket_passes_the_audit() {
         "clean",
         s.size,
         s.data_version,
+        "delve-admit (external admission)",
         License {
             source: "original".into(),
             spdx: "CC0-1.0".into(),
             note: String::new(),
             provenance: String::new(),
+            generated_by: None,
         },
     );
     socket::carve(&mut s, &mut meta, &SocketDecl::new([3, 1, 0], "north")).unwrap();

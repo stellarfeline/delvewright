@@ -123,10 +123,28 @@ unmatchable guards without a region or a seed. Run it after every edit.
 
 ```sh
 delve-grammar expand --file my-piece.json --region 9x6x21 --seed 1 \
-    --traversable -o out/
+    --traversable --id my-piece -o out/
 ```
 
 Writes `<id>.nbt`, `<id>.json` (prefab metadata) and `<id>.report.json`.
+
+**What `<id>` is.** It is the prefab's identity: it names all three files and
+becomes the datapack structure path, so it may contain only lowercase letters,
+digits and hyphens. `--id` sets it. Without `--id` it defaults to the library
+program id (`--program`) or **to the input file's stem** (`--file`) — so
+`var-B.json` asks for the id `var-B`, which is refused, before anything is
+expanded or written. Name the file in lowercase kebab or pass `--id`.
+
+The program's own `name` field is **not** the id and never becomes one. It
+identifies the *program* in the metadata's provenance row
+(`license.generated_by.program`), where an underscore is fine; the artifact is
+named separately because one program expands into many prefabs at different
+seeds, regions and parameters.
+
+The id is knowable from the inputs alone, so an unusable one is refused up
+front, with nothing written. (The region is not on this list: a region past the
+48-block cap is not an error — it tiles. See §6.) A verdict line is printed only
+once the prefab exists, so a `pass` never sits above a failure.
 
 **Gates** (a red gate writes no `.nbt`; exit 4):
 
@@ -224,6 +242,11 @@ everything else.
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
 
+Each of these steps owns one block of the metadata — `socket` the connectors,
+`anchor` the anchors, `lighting` the lighting — and leaves the rest of the
+document exactly as it found it, provenance row included. Run them in any order,
+as many times as the piece needs.
+
 ## 8. Where the files go
 
 Generated `.nbt` + metadata live in the **content repo**
@@ -232,6 +255,13 @@ is the artifact of record and lives beside the campaign that uses it; the
 `.nbt` is a snapshot of one expansion of it, and its metadata carries the
 program hash and seed that regenerate those exact bytes (ADR-0006 — verified:
 same inputs twice gives byte-identical `.nbt` and metadata).
+
+Those four inputs are `license.generated_by { generator, program, program_hash,
+seed }` — a **machine-readable** row, not only the prose `provenance` sentence
+beside it. A shipped prefab carries it through every step above, so a tool can
+answer "what regenerates this file" without a human reading the sentence. The
+one prefab that legitimately has no row is one nothing can regenerate: an
+ingested community build, or a hand-edited piece.
 
 ## 9. Hand-written Rust generators
 
