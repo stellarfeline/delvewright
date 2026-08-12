@@ -281,7 +281,7 @@ fn an_eye_shot_on_a_tiled_zone_stands_in_the_zone_and_sees_across_the_cut() {
 
     let (piece, meta_path) = load_piece(&manifest).unwrap();
     let meta = PrefabMeta::at_path(&meta_path).unwrap().unwrap();
-    let plan = shots::plan_piece(piece.structure(), Some(&meta));
+    let plan = shots::plan_piece(piece.structure(), Some(&meta), &[]).unwrap();
 
     assert_eq!(plan.binding.declared, 1);
     assert_eq!(plan.binding.eligible, 1);

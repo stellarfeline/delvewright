@@ -4,6 +4,8 @@
 //!
 //! - [`nbt`] — vanilla-structure `.nbt` → Nucleation adapter.
 //! - [`shots`] — per-piece shot planner (`delve-render piece`).
+//! - [`view`] — author-declared cameras (`--view`): a bearing and a subject box,
+//!   in the language `<stem>-shots.json` already writes back.
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
@@ -37,3 +39,4 @@ pub mod scene;
 pub mod sheet;
 pub mod shots;
 pub mod tileset;
+pub mod view;

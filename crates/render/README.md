@@ -24,8 +24,9 @@ Two renderers, one 1.21.11 **fidelity gate**:
 ```
 delve-render [--json] [--textures <jar>] [--size <px>] <command>
 
-piece <prefab.nbt> -o <dir>     deterministic multi-angle set for one prefab
-batch <dir> -o <dir>            piece set for every .nbt in a library dir
+piece <prefab.nbt> -o <dir>     planned multi-angle set for one prefab
+                                [--view SPEC]... cameras you aim yourself
+batch <dir> -o <dir>            piece set for every .nbt in a library dir [--view SPEC]...
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
 scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
 panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
@@ -78,6 +79,14 @@ inside a room. So the deterministic per-piece set is:
 Metadata is read from `<basename>.json` beside the `.nbt` (sockets from
 `connectors`, anchors from `anchors`, lighting from `lighting`); it **degrades
 gracefully** — a missing/partial file still yields the exterior + top-down set.
+
+Nothing in that set is **square-on at a face**, so `--view` (repeatable, on
+`piece` and `batch`) appends cameras the author aims: a bearing (`face=north` for
+a level elevation of that face of the subject box, or `yaw=<deg>`) on a subject
+(`of=model`, or any declared anchor), with optional `name=`, `pitch=`, `fov=`,
+`zoom=` and `cutaway=`. A `face=` view frames that face rather than the whole
+box, so an elevation of a deep building fills the frame without a hand-tuned
+zoom. Full key list: `docs/reference/tools.md` §4.
 
 True free-camera **in-room** shots are the **Chunky path** (`scene`), which places
 cameras anywhere in the built world. The per-piece cutaways are the fast

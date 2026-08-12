@@ -236,7 +236,7 @@ the orbit shots and the eye shots alike — frames the whole zone and a body can
 look straight across a cut. A single tile is refused: reviewing one would show a
 building sliced at a packaging plane.
 
-Two kinds of camera, and only one of them answers this step's question.
+Three kinds of camera. Two are planned for you; the third you aim.
 
 **Orbit cameras** — four exterior three-quarters, a plan cutaway, one per socket,
 and one per anchor showing where in the piece that anchor sits — are fitted to
@@ -256,6 +256,34 @@ cell often holds a gate or a barrel; the camera then steps back along the facing
 so the anchor's object stays in the foreground, and says so (`DW0727`). An anchor
 with no body cell within three blocks gets **no** eye shot, and that is named too
 — per anchor and in the run's binding count.
+
+**Views** are the cameras you aim, `--view` per camera, appended to the set under
+a name you choose. Neither planned camera is square-on at a face: the exteriors
+are corner three-quarters and the eye shots are inside the piece, so a building
+whose identity is one elevation — a west front, a gatehouse, an approach face —
+has no picture until you ask for one.
+
+```sh
+delve-render piece out/<id>.json -o shots/ --size 640 \
+    --view name=west-front,face=north \
+    --view name=long-flank,face=west
+```
+
+A view is a bearing plus a subject box: `face=<north|south|east|west|up|down>`
+(or `yaw=<deg>`), on `of=model` by default or on any anchor the piece declares.
+A `face=` view frames **that face** — a 93-block-deep nave does not push its own
+west front into the distance — so `zoom=` is a choice, not a number you have to
+find. The full key list is [`tools.md` §4](tools.md).
+
+Do not reach for a forecourt anchor instead. A level eye camera with a 70° field
+reaches about `0.7 × distance` above eye height, so a 20-block front needs some
+26 blocks of standoff; an anchor on the parvis looks straight through the doorway
+and never sees the façade, and building a forecourt long enough to frame it
+shrinks the whole piece in every exterior shot.
+
+A view is refused before anything renders if it names a subject the piece does
+not declare or a name a planned shot already has. A view that comes back as flat
+background is an empty frame (`DW0727`) and is re-aimed, never read as an answer.
 
 Every run writes `<id>-shots.json` beside the images: which file is which camera,
 and for each eye shot the cell the body is standing in, how it was chosen, and

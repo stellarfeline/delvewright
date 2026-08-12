@@ -797,8 +797,17 @@ Symptom → tool:
      which cell each body is standing in: a camera whose anchor cell held a gate
      or a barrel steps back along the facing and says so (`DW0727`), and an
      anchor with no body cell gets no eye shot at all — the run states that count.
-     A flat grey frame is outside the piece, and an eye shot that is *only* that
-     is reported as an empty frame: the anchor is aimed at nothing.
+     A flat grey frame is outside the piece, and a shot that is *only* that
+     is reported as an empty frame: the camera is aimed at nothing.
+     **When the piece is a building whose identity is one elevation** — a west
+     front, a gatehouse, an approach face — add the camera for it: `--view
+     name=west-front,face=north` (repeatable) appends a level, square-on shot of
+     that face of the model, and no planned camera is square-on at a face. `of=`
+     aims it at a declared anchor instead of the whole model; `zoom=` tightens or
+     backs off. Do not build a forecourt and stand an anchor on it: a 70° eye
+     camera reaches only ≈0.7 × its distance above eye height, so it looks
+     through the doorway instead of at the façade, and the forecourt shrinks the
+     building in every exterior frame. Keys: `docs/reference/tools.md` §4.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
      For a tile set, `audit` takes the manifest and returns one zone verdict.

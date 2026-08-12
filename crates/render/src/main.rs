@@ -16,20 +16,19 @@ use clap::{Parser, Subcommand};
 use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
-    DW_ANCHOR_EYE, DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER,
-    Diagnostic, exit,
+    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
 use delvewright_render::meta::PrefabMeta;
 use delvewright_render::nbt;
-use delvewright_render::occupancy;
 use delvewright_render::panorama::{self, Bearing, PanoramaOptions};
 use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
 use delvewright_render::sheet::{self, ScoreSet, SheetOptions};
 use delvewright_render::shots;
 use delvewright_render::tileset;
+use delvewright_render::view::View;
 
 #[derive(Parser)]
 #[command(
@@ -63,6 +62,12 @@ enum Command {
         /// Output directory for the PNGs.
         #[arg(short, long)]
         out: PathBuf,
+        /// An extra camera you aim yourself, appended to the planned set.
+        /// Repeatable. `key=value,…` — `face=north|south|east|west|up|down`
+        /// (square-on at that face of the subject box) or `yaw=<deg>`; plus
+        /// `name=`, `pitch=`, `fov=`, `zoom=`, `of=model|<anchor>`, `cutaway=`.
+        #[arg(long = "view", value_name = "SPEC")]
+        views: Vec<String>,
     },
     /// Render the piece set for every prefab in a library directory.
     Batch {
@@ -71,6 +76,11 @@ enum Command {
         /// Output directory (one subdirectory per prefab).
         #[arg(short, long)]
         out: PathBuf,
+        /// An extra camera you aim yourself, added to EVERY prefab's set (see
+        /// `piece --view`). A view naming a subject some prefab does not declare
+        /// is an error for that prefab, never a silently different picture.
+        #[arg(long = "view", value_name = "SPEC")]
+        views: Vec<String>,
     },
     /// Render the newest-1.21.11-block fixture and FAIL if any missing-texture
     /// placeholder is detected.
@@ -153,8 +163,8 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match &cli.command {
-        Command::Piece { input, out } => run_piece(input, out, &cli),
-        Command::Batch { dir, out } => run_batch(dir, out, &cli),
+        Command::Piece { input, out, views } => run_piece(input, out, views, &cli),
+        Command::Batch { dir, out, views } => run_batch(dir, out, views, &cli),
         Command::FidelityGate { out } => run_fidelity_gate(out.as_deref(), &cli),
         Command::Scene {
             build_dir,
@@ -215,7 +225,22 @@ fn resolve_textures(cli: &Cli) -> Result<String, Diagnostic> {
     ))
 }
 
-fn run_piece(input: &Path, out: &Path, cli: &Cli) -> ExitCode {
+/// Parse the `--view` specs before anything else runs.
+///
+/// A malformed spec is a usage error, and it is worth exactly nothing to find it
+/// after a GPU has been initialised and twenty-eight frames have been written.
+fn parse_views(specs: &[String]) -> Result<Vec<View>, Diagnostic> {
+    specs
+        .iter()
+        .map(|s| View::parse(s).map_err(|e| Diagnostic::error(DW_INPUT, e)))
+        .collect()
+}
+
+fn run_piece(input: &Path, out: &Path, view_specs: &[String], cli: &Cli) -> ExitCode {
+    let views = match parse_views(view_specs) {
+        Ok(v) => v,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
     let textures = match resolve_textures(cli) {
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
@@ -224,7 +249,7 @@ fn run_piece(input: &Path, out: &Path, cli: &Cli) -> ExitCode {
         Ok(p) => p,
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };
-    match render_piece(input, out, &pack, cli.size, cli.json) {
+    match render_piece(input, out, &pack, &views, cli.size, cli.json) {
         Ok(r) => {
             eprintln!(
                 "rendered {} shot(s) for {} -> {} ({})",
@@ -245,6 +270,7 @@ struct PieceResult {
     shots: usize,
     manifest: PathBuf,
     binding: shots::AnchorBinding,
+    views: shots::ViewBinding,
 }
 
 impl PieceResult {
@@ -266,6 +292,12 @@ impl PieceResult {
                         contains no interior view",
             );
         }
+        if self.views.declared > 0 {
+            s.push_str(&format!(
+                "; {} declared view(s), {} planned",
+                self.views.declared, self.views.planned
+            ));
+        }
         s
     }
 }
@@ -285,6 +317,7 @@ fn render_piece(
     input: &Path,
     out: &Path,
     pack: &nucleation::meshing::ResourcePackSource,
+    views: &[View],
     size: u32,
     json: bool,
 ) -> Result<PieceResult, (Diagnostic, u8)> {
@@ -302,7 +335,7 @@ fn render_piece(
     let st = piece.structure();
     let meta = PrefabMeta::at_path(&meta_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
-    let mut plan = shots::plan_piece(st, meta.as_ref());
+    let mut plan = shots::plan_piece(st, meta.as_ref(), views).map_err(|d| (d, exit::INPUT))?;
     for d in &plan.diagnostics {
         d.print(json);
     }
@@ -342,42 +375,14 @@ fn render_piece(
             )
             .print(json);
         }
-        // An eye shot that shows nothing: the render succeeded and the file is a
+        // A frame that shows nothing: the render succeeded and the file is a
         // rectangle of background. Left unsaid it reads, in a directory listing,
-        // as one more shot of the room.
-        if let Some(e) = &shot.eye
-            && let Some(f) = detect::is_featureless(&frame.rgba, frame.width, frame.height)
-        {
-            // Two causes, two different things for the reader to do — the piece
-            // is either aimed at nothing, or aimed out of itself, and only the
-            // first is a defect.
-            let cause = match &e.clearance {
-                occupancy::Clearance::LeavesThePiece { open } => format!(
-                    "The view runs {open} open cell(s) and then leaves the template. If this \
-                     anchor is meant to face outward (an approach, a threshold), what it is about \
-                     lives in the assembled world, and its real view is the campaign's own \
-                     player-POV shot, not a per-piece render. Otherwise the piece is missing the \
-                     thing the anchor names"
-                ),
-                occupancy::Clearance::Blocked { open, state } => format!(
-                    "The view runs {open} open cell(s) and then meets `{state}`, whose face fills \
-                     the frame — the anchor is pressed against a surface"
-                ),
-            };
-            let d = Diagnostic::warning(
-                DW_ANCHOR_EYE,
-                format!(
-                    "{stem}/{}: the eye shot for `{}` is an EMPTY frame ({} distinct colour(s)) — \
-                     a body standing at {:?} and looking {} sees nothing but flat background. \
-                     {cause}. Whatever the cause, no image in this set shows what that anchor is \
-                     about; the fix is the anchor or the geometry, never the camera",
-                    shot.name,
-                    e.anchor,
-                    f.distinct,
-                    e.cell,
-                    e.facing.as_str(),
-                ),
-            );
+        // as one more shot of the room. Measured on every camera, not only the
+        // eye ones — "this picture is blank" is a property of a rendered frame,
+        // and an aimable camera is far easier to point at nothing than a derived
+        // one is.
+        if let Some(f) = detect::is_featureless(&frame.rgba, frame.width, frame.height) {
+            let d = shots::empty_frame_diagnostic(stem, shot, &f);
             d.print(json);
             empty.push(d);
         }
@@ -399,6 +404,7 @@ fn render_piece(
         shots: plan.shots.len(),
         manifest,
         binding: plan.binding,
+        views: plan.views,
     })
 }
 
@@ -446,6 +452,18 @@ fn shot_manifest(
                     "supported": e.supported,
                 });
             }
+            if let Some(w) = &s.view {
+                v["view"] = serde_json::json!({
+                    "spec": w.spec,
+                    "face": w.face.map(|f| f.as_str()),
+                    "subject": w.subject.tag(),
+                    "aim": match s.framing {
+                        shots::Framing::Orbit { target, .. } => target,
+                        shots::Framing::Eye { pos } => Some(pos),
+                    },
+                    "zoom": w.zoom,
+                });
+            }
             v
         })
         .collect();
@@ -461,6 +479,10 @@ fn shot_manifest(
             "eye_shots": plan.binding.eye_shots,
             "unplaceable": plan.binding.unplaceable,
         },
+        "views": {
+            "declared": plan.views.declared,
+            "planned": plan.views.planned,
+        },
         "diagnostics": plan.diagnostics,
         "shots": entries,
     });
@@ -474,7 +496,11 @@ fn shot_manifest(
     Ok(bytes)
 }
 
-fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
+fn run_batch(dir: &Path, out: &Path, view_specs: &[String], cli: &Cli) -> ExitCode {
+    let views = match parse_views(view_specs) {
+        Ok(v) => v,
+        Err(d) => return fail(d, cli.json, exit::INPUT),
+    };
     let textures = match resolve_textures(cli) {
         Ok(t) => t,
         Err(d) => return fail(d, cli.json, exit::RENDER),
@@ -534,7 +560,7 @@ fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
             .and_then(|s| s.to_str())
             .unwrap_or("prefab");
         let sub = out.join(stem);
-        match render_piece(path, &sub, &pack, cli.size, cli.json) {
+        match render_piece(path, &sub, &pack, &views, cli.size, cli.json) {
             Ok(r) => {
                 total += r.shots;
                 eprintln!("  {stem}: {} shot(s) — {}", r.shots, r.binding_line());

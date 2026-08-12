@@ -251,8 +251,11 @@ the crate that needs it; `tools/check-workspace-git-deps.py` is what keeps it
 confined.
 
 ```
-delve-render piece <nbt|manifest.json> -o <dir>   # deterministic multi-angle set for one prefab
-delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
+delve-render piece <nbt|manifest.json> -o <dir> [--view SPEC]…
+                                             # planned multi-angle set for one prefab, plus any
+                                             #   camera you aim yourself
+delve-render batch <prefab-dir> -o <dir> [--view SPEC]…
+                                             # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
@@ -268,7 +271,8 @@ review policy: [`compiler.md` §5](compiler.md).
 
 ### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
 
-Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+Three kinds of camera per prefab, and a `<stem>-shots.json` manifest naming every
+one. Two are planned for you; the third you aim.
 
 **Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
 themselves to the model from outside: massing, silhouette, floor plan, where a
@@ -296,6 +300,50 @@ standing cell and offset, the camera point, the facing, whether the cell has a
 floor, and how many open cells lie ahead before the view is stopped (and by
 what). A camera that stepped back is invisible in its own frame, so it is written
 down rather than implied.
+
+**Views** (`--view`, repeatable) are cameras you aim, appended to the planned set
+under a name you choose. A view is a **bearing** plus a **subject box**:
+
+```sh
+delve-render piece out/notre-dame.json -o shots/ \
+    --view name=west-front,face=north \
+    --view name=north-flank,face=west
+```
+
+| Key | Meaning |
+|---|---|
+| `face=` | `north\|south\|east\|west\|up\|down` — square-on at that face of the subject box |
+| `yaw=` | any other bearing, in degrees (`face` and `yaw` are alternatives; one is required) |
+| `of=` | the subject box: `model` (default) or a declared anchor's full name |
+| `name=` | shot name and file stem; defaults to `view-<face>` / `view-yaw<deg>` |
+| `pitch=` | degrees, default 0 — a face view is level |
+| `fov=` | degrees, default 45 (the orbit lens, so a view is comparable with `ext-*`) |
+| `zoom=` | 1 frames the whole framed box; >1 closer, <1 further back |
+| `cutaway=` | `true` strips the top Y layer, as `top` and `anchor-*` do |
+
+A `face=` view frames **that face**, not the whole box, which is what makes it a
+usable elevation of a deep building: the west front of a 31×64×93 cathedral fills
+the frame at `zoom=1` instead of retreating behind ninety blocks of nave. `of=`
+narrows the framed box further, so `face=east,of=anchor/altar` is a close-up of
+one anchor's east side.
+
+This is the only camera in the set that is **square-on at a face**. A building
+whose identity is one elevation — a west front, a gatehouse, a castle's approach
+face — has no picture in the planned set, and the near workaround does not work:
+a level eye camera with a 70° field reaches ≈ `0.7 × distance` above eye height,
+so framing a 20-block front needs ≈26 blocks of standoff, and a forecourt long
+enough to hold it shrinks the building in every orbit frame instead.
+
+A view is refused, before a single frame is rendered, when its spec is malformed,
+when it names a subject the piece does not declare (the error lists the anchors
+that exist), or when its name is already a planned shot's — which would overwrite
+that image (`DW0721`, exit 2). A view that renders as nothing but background is
+reported as an empty frame under `DW0727`, the same code an anchor's blank eye
+shot gets, and says which bearing and zoom produced it. Every run states its view
+binding count, in the summary line and in the manifest, beside the anchor counts.
+
+The manifest records a view's `spec` verbatim along with its face, subject, aim
+point and zoom, so any frame in a review set can be re-asked for exactly.
 
 **On a tiled zone the eye shots are the zone's.** Pass the manifest and the
 tiles are reassembled before anything is planned, so a body stands at the
