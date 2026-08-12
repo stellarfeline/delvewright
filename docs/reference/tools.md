@@ -230,6 +230,37 @@ delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot e
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
 review policy: [`compiler.md` §5](compiler.md).
 
+### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
+
+Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+
+**Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
+themselves to the model from outside: massing, silhouette, floor plan, where a
+socket or an anchor sits. `top`, `door-*` and `anchor-*` strip the top Y layer so
+an outside camera can see into a roofed piece.
+
+**Eye** (`eye-<anchor>`) stand *inside* the piece — a body's eye at 1.62 above a
+standing cell, at each declared anchor, looking along that anchor's own `facing`,
+at Minecraft's first-person field of view. This is the only camera that shows
+what a body in the piece sees, and it is what §5 of
+[`prefab-procedure.md`](prefab-procedure.md) judges the scene against.
+
+The eye cell is resolved, not assumed: the anchor's own cell when a body fits
+there, else up to 3 blocks back along the facing (so the anchor's object stays in
+frame), else the nearest open body cell that still has the anchor in front of it.
+Anything but the anchor's own cell raises `DW0727` and is recorded in the
+manifest with its offset. An anchor with no body cell in reach gets **no** eye
+shot; that is `DW0727` too, and the run's summary line always states the binding
+count (eye shots / eligible anchors / declared anchors). An eye shot that renders
+as nothing but background is reported as an empty frame under the same code — the
+anchor is aimed at nothing in the piece.
+
+The manifest carries, per eye shot, the anchor and its declared cell, the
+standing cell and offset, the camera point, the facing, whether the cell has a
+floor, and how many open cells lie ahead before the view is stopped (and by
+what). A camera that stepped back is invisible in its own frame, so it is written
+down rather than implied.
+
 ### `contact-sheet` — the curation page (spec-0027 §3, spec-0028 §3) · agent builds it, owner chooses from it
 
 Lays candidate renders out as one page the owner picks massing from. **Building

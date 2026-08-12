@@ -16,12 +16,14 @@ use clap::{Parser, Subcommand};
 use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
-    DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, Diagnostic, exit,
+    DW_ANCHOR_EYE, DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER,
+    Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
 use delvewright_render::meta::PrefabMeta;
 use delvewright_render::nbt;
+use delvewright_render::occupancy;
 use delvewright_render::panorama::{self, Bearing, PanoramaOptions};
 use delvewright_render::render::{self, RenderParams};
 use delvewright_render::scene::{self, SceneOptions};
@@ -223,31 +225,69 @@ fn run_piece(input: &Path, out: &Path, cli: &Cli) -> ExitCode {
         Err(e) => return fail(Diagnostic::error(DW_RENDER, e), cli.json, exit::RENDER),
     };
     match render_piece(input, out, &pack, cli.size, cli.json) {
-        Ok(n) => {
+        Ok(r) => {
             eprintln!(
-                "rendered {n} shot(s) for {} -> {}",
+                "rendered {} shot(s) for {} -> {} ({})",
+                r.shots,
                 input.display(),
-                out.display()
+                out.display(),
+                r.binding_line()
             );
+            eprintln!("shot manifest -> {}", r.manifest.display());
             ExitCode::SUCCESS
         }
         Err((d, code)) => fail(d, cli.json, code),
     }
 }
 
-/// Render every planned shot for one prefab into `out`. Returns the shot count.
+/// What one prefab's render produced, for the caller's summary line.
+struct PieceResult {
+    shots: usize,
+    manifest: PathBuf,
+    binding: shots::AnchorBinding,
+}
+
+impl PieceResult {
+    /// The eye-shot binding count, always stated: a validation artifact that
+    /// does not say what it bound to cannot be told from one that bound to
+    /// nothing (CLAUDE.md).
+    fn binding_line(&self) -> String {
+        let b = &self.binding;
+        let mut s = format!(
+            "{} eye-level shot(s) over {} anchor(s), {} of them eye-eligible",
+            b.eye_shots, b.declared, b.eligible
+        );
+        if !b.unplaceable.is_empty() {
+            s.push_str(&format!("; NO body cell for {}", b.unplaceable.join(", ")));
+        }
+        if b.eligible == 0 && b.declared > 0 {
+            s.push_str(
+                "; no anchor declares both a position and a cardinal facing, so this set \
+                        contains no interior view",
+            );
+        }
+        s
+    }
+}
+
+/// Render every planned shot for one prefab into `out`, and write the shot
+/// manifest beside them.
 ///
 /// `input` is either a structure `.nbt` or a tile-set manifest. Which one it is
 /// changes how the blocks are loaded and nothing else: a zone that needed tiling
-/// is reassembled first, so the shot plan, the cutaways and the filenames are
-/// the ones the zone would have had if a structure template had no size limit.
+/// is reassembled first, so the shot plan — the orbit cameras, the cutaways, the
+/// eye cameras and the filenames — is the one the zone would have had if a
+/// structure template had no size limit. In particular the eye shots work on a
+/// tiled zone for the same reason the orbit shots do: the planner is handed the
+/// assembled zone and the manifest's anchors are already in zone coordinates, so
+/// a body stands where the anchor says and can look across a cut.
 fn render_piece(
     input: &Path,
     out: &Path,
     pack: &nucleation::meshing::ResourcePackSource,
     size: u32,
     json: bool,
-) -> Result<usize, (Diagnostic, u8)> {
+) -> Result<PieceResult, (Diagnostic, u8)> {
     let (piece, meta_path) = tileset::load_piece(input)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
     if let tileset::PieceInput::Zone { tiles, grid, .. } = &piece {
@@ -262,7 +302,13 @@ fn render_piece(
     let st = piece.structure();
     let meta = PrefabMeta::at_path(&meta_path)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
-    let plan = shots::plan_piece(st.size, meta.as_ref());
+    let mut plan = shots::plan_piece(st, meta.as_ref());
+    for d in &plan.diagnostics {
+        d.print(json);
+    }
+    // Findings only the rendered pixels can raise; folded back into the plan so
+    // the manifest carries every diagnostic the run produced.
+    let mut empty: Vec<Diagnostic> = Vec::new();
     std::fs::create_dir_all(out).map_err(|e| {
         (
             Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
@@ -274,12 +320,12 @@ fn render_piece(
         .and_then(|s| s.to_str())
         .unwrap_or("prefab");
 
-    for shot in &plan {
+    for shot in &plan.shots {
         let params = RenderParams {
             yaw_deg: shot.yaw_deg,
             pitch_deg: shot.pitch_deg,
-            zoom: shot.zoom,
-            target: shot.target,
+            fov_deg: shot.fov_deg,
+            framing: shot.framing,
             dim: size,
         };
         let frame = render::render_structure(st, pack, shot.cutaway, &params)
@@ -296,10 +342,136 @@ fn render_piece(
             )
             .print(json);
         }
+        // An eye shot that shows nothing: the render succeeded and the file is a
+        // rectangle of background. Left unsaid it reads, in a directory listing,
+        // as one more shot of the room.
+        if let Some(e) = &shot.eye
+            && let Some(f) = detect::is_featureless(&frame.rgba, frame.width, frame.height)
+        {
+            // Two causes, two different things for the reader to do — the piece
+            // is either aimed at nothing, or aimed out of itself, and only the
+            // first is a defect.
+            let cause = match &e.clearance {
+                occupancy::Clearance::LeavesThePiece { open } => format!(
+                    "The view runs {open} open cell(s) and then leaves the template. If this \
+                     anchor is meant to face outward (an approach, a threshold), what it is about \
+                     lives in the assembled world, and its real view is the campaign's own \
+                     player-POV shot, not a per-piece render. Otherwise the piece is missing the \
+                     thing the anchor names"
+                ),
+                occupancy::Clearance::Blocked { open, state } => format!(
+                    "The view runs {open} open cell(s) and then meets `{state}`, whose face fills \
+                     the frame — the anchor is pressed against a surface"
+                ),
+            };
+            let d = Diagnostic::warning(
+                DW_ANCHOR_EYE,
+                format!(
+                    "{stem}/{}: the eye shot for `{}` is an EMPTY frame ({} distinct colour(s)) — \
+                     a body standing at {:?} and looking {} sees nothing but flat background. \
+                     {cause}. Whatever the cause, no image in this set shows what that anchor is \
+                     about; the fix is the anchor or the geometry, never the camera",
+                    shot.name,
+                    e.anchor,
+                    f.distinct,
+                    e.cell,
+                    e.facing.as_str(),
+                ),
+            );
+            d.print(json);
+            empty.push(d);
+        }
         let path = out.join(format!("{stem}-{}.png", shot.name));
         save_png(&frame, &path)?;
     }
-    Ok(plan.len())
+
+    plan.diagnostics.extend(empty);
+
+    let manifest = out.join(format!("{stem}-shots.json"));
+    std::fs::write(&manifest, shot_manifest(stem, &st.size, &plan)?).map_err(|e| {
+        (
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", manifest.display())),
+            exit::OUTPUT,
+        )
+    })?;
+
+    Ok(PieceResult {
+        shots: plan.shots.len(),
+        manifest,
+        binding: plan.binding,
+    })
+}
+
+/// The shot manifest written beside every piece render set: which image is which
+/// camera, and — for the eye shots — exactly which cell the body is standing in
+/// and how that cell was chosen.
+///
+/// A nudged eye camera is invisible in its own frame: the picture of a room one
+/// block east of an anchor looks exactly like the picture of a room at it. So
+/// the placement is written down rather than implied, and the reviewer comparing
+/// a frame to a concept image can always tell where they are standing.
+fn shot_manifest(
+    stem: &str,
+    size: &[i32; 3],
+    plan: &shots::PiecePlan,
+) -> Result<Vec<u8>, (Diagnostic, u8)> {
+    let entries: Vec<serde_json::Value> = plan
+        .shots
+        .iter()
+        .map(|s| {
+            let mut v = serde_json::json!({
+                "name": s.name,
+                "kind": s.kind,
+                "image": format!("{stem}-{}.png", s.name),
+                "yaw": s.yaw_deg,
+                "pitch": s.pitch_deg,
+                "fov": s.fov_deg,
+                "cutaway": s.cutaway,
+            });
+            if let Some(e) = &s.eye {
+                v["eye"] = serde_json::json!({
+                    "anchor": e.anchor,
+                    "anchor_cell": e.anchor_cell,
+                    "facing": e.facing.as_str(),
+                    "standing_cell": e.cell,
+                    "camera": e.pos,
+                    "placement": e.placement.tag(),
+                    "clearance_open_cells": e.clearance.open(),
+                    "clearance_stopped_by": e.clearance.stopped_by(),
+                    "offset": [
+                        e.cell[0] - e.anchor_cell[0],
+                        e.cell[1] - e.anchor_cell[1],
+                        e.cell[2] - e.anchor_cell[2],
+                    ],
+                    "supported": e.supported,
+                });
+            }
+            v
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "prefab": stem,
+        "size": size,
+        // Rounded for the reader: the constant is an `f32`, and its exact `f64`
+        // widening (1.6200000047683716) says nothing a reviewer wants.
+        "eye_height": (f64::from(delvewright_render::occupancy::EYE_HEIGHT) * 1000.0).round() / 1000.0,
+        "anchors": {
+            "declared": plan.binding.declared,
+            "eye_eligible": plan.binding.eligible,
+            "eye_shots": plan.binding.eye_shots,
+            "unplaceable": plan.binding.unplaceable,
+        },
+        "diagnostics": plan.diagnostics,
+        "shots": entries,
+    });
+    let mut bytes = serde_json::to_vec_pretty(&doc).map_err(|e| {
+        (
+            Diagnostic::error(DW_OUTPUT, format!("serialize shot manifest: {e}")),
+            exit::INTERNAL,
+        )
+    })?;
+    bytes.push(b'\n');
+    Ok(bytes)
 }
 
 fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
@@ -363,9 +535,9 @@ fn run_batch(dir: &Path, out: &Path, cli: &Cli) -> ExitCode {
             .unwrap_or("prefab");
         let sub = out.join(stem);
         match render_piece(path, &sub, &pack, cli.size, cli.json) {
-            Ok(n) => {
-                total += n;
-                eprintln!("  {stem}: {n} shot(s)");
+            Ok(r) => {
+                total += r.shots;
+                eprintln!("  {stem}: {} shot(s) — {}", r.shots, r.binding_line());
             }
             Err((d, code)) => return fail(d, cli.json, code),
         }
@@ -392,8 +564,11 @@ fn run_fidelity_gate(out: Option<&Path>, cli: &Cli) -> ExitCode {
     let params = RenderParams {
         yaw_deg: 25.0,
         pitch_deg: 35.0,
-        zoom: 1.0,
-        target: None,
+        fov_deg: shots::ORBIT_FOV_DEG,
+        framing: shots::Framing::Orbit {
+            zoom: 1.0,
+            target: None,
+        },
         dim: cli.size,
     };
     let frame = match render::render_structure(&st, &pack, false, &params) {

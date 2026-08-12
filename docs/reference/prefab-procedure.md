@@ -184,9 +184,41 @@ read-the-rule round-trip per guard refusal.
 delve-render piece out/<id>.nbt -o shots/ --size 640
 ```
 
-Four exterior three-quarters, a plan cutaway, one shot per socket, and one from
-**each declared anchor's own eye height** — which is the shot that shows whether
-an anchor is looking at the thing it is about.
+Two kinds of camera, and only one of them answers this step's question.
+
+**Orbit cameras** — four exterior three-quarters, a plan cutaway, one per socket,
+and one per anchor showing where in the piece that anchor sits — are fitted to
+the model from outside it. They show massing, silhouette and layout. On a roofed
+piece they show the roof: eleven orbit shots of a 16×9×26 ward that is 81% solid
+rock are eleven pictures of the same grey slab, and none of them can tell you the
+piece has a corridor in it.
+
+**Eye cameras** stand *inside*, at a body's eye height (1.62), at each declared
+anchor, looking the way that anchor faces — `eye-<anchor>.png`. This is the shot
+that shows the doorway's shape and proportion, what is in front of a body, how
+the walls read, and whether an anchor is looking at the thing it is about. Read
+these first.
+
+The eye point is resolved, never assumed. A prefab is mostly solid, so an anchor
+cell often holds a gate or a barrel; the camera then steps back along the facing
+so the anchor's object stays in the foreground, and says so (`DW0727`). An anchor
+with no body cell within three blocks gets **no** eye shot, and that is named too
+— per anchor and in the run's binding count.
+
+Every run writes `<id>-shots.json` beside the images: which file is which camera,
+and for each eye shot the cell the body is standing in, how it was chosen, and
+how many open cells lie ahead of it before something stops the view. A nudged
+camera is invisible in its own frame, so it is written down instead.
+
+Two shapes worth knowing when you read the set:
+
+- A **flat grey rectangle** is outside the piece. A per-piece render has no
+  neighbours, so a view that leaves the template shows background. An eye shot
+  that is *nothing but* background is reported as an empty frame (`DW0727`):
+  that anchor is aimed at nothing in this piece.
+- Anchors are declared with a cardinal facing only, so an eye shot is level.
+  A shot that is mostly near wall is telling you the anchor stands against one —
+  the manifest's clearance count says how far ahead the first block is.
 
 Compare against the description from §1. The gates prove the piece is buildable
 and walkable; they say nothing about whether it is the scene that was asked for.
