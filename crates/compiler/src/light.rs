@@ -327,6 +327,7 @@ pub fn passes_light(name: &str) -> bool {
             | "tinted_glass"
             | "iron_bars"
             | "chain"
+            | "iron_chain"
             | "campfire"
             | "soul_campfire"
             | "lantern"

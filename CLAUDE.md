@@ -195,6 +195,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
   act — never internal machinery such as model tiers, subagent dispatch,
   worker roles, or pipeline plumbing. Applies to both repos, including the
   content repo's play/hosting tutorials.
+- **A reader-facing document is written in the present tense of the current
+  version** (owner, 2026-08-11). It says what the thing IS and how to use it,
+  as if it had always been that way. No "this used to be X and is now Y", no
+  "originally", "formerly", "as of vN", no parenthetical citing the internal
+  decision a behaviour came from. An outside reader does not care how the
+  software arrived at its present shape, and **a page that keeps telling them
+  reads as a half-finished project** — which is the cost, and it is paid on the
+  page a stranger lands on first.
+  Two ways this leaks in, and the second is the one to watch. The obvious one
+  is an internal reference number (`spec-0001`, a task id, a PR link) on a
+  crates.io front page: a stranger cannot resolve it and gains nothing.
+  The subtle one is the *repair*: stripping the reference while narrating what
+  it used to assert just trades an unresolvable citation for a changelog. Keep
+  the BEHAVIOUR as a plain present-tense fact, or delete it — a shorter true
+  page beats a page that explains itself. Relocating a historically-worded
+  sentence into `docs/reference/` is not a fix either; that file is a
+  current-behaviour record too. **ADRs are the one place history legitimately
+  lives**, because superseding is their mechanism.
 - **Version-adoption discipline** (owner, 2026-08-04): whenever a `dsl_version`
   introduces new obligations, adoption rounds for every ACTIVE campaign are
   scheduled within the same milestone — never left to accumulate (the island
@@ -309,6 +327,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   queue of small levels that verify one mechanic and document it by example. Not
   necessarily built when the mechanic lands, but always queued; building the next
   one is the planning agent's standing idle work.
+- **Buildings are judged at playable scale** (owner, 2026-08-12): a structure
+  reads as what it depicts, and its interior belongs to the same theme. Fine
+  detail is deliberately dropped. Minecraft build art conventionally scales a
+  detailed referent up — several blocks per real metre — so that tracery,
+  mullions and mouldings survive; that is a different craft with a different
+  goal. A delve is walked at player scale, so a cathedral is a
+  cathedral-sized cathedral, and the **silhouette carries the recognition the
+  detail cannot**. The review question is therefore always "does this read as
+  the thing, and does the inside belong to it", never "is the detail right" —
+  and a piece is not rejected for lacking detail it was never going to have.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
@@ -319,6 +347,23 @@ validation/          # docker compose: headless server + bot, same image as CI &
   **hunk-granular for every file**, and the review asks for a full re-audit,
   never a targeted deletion (one targeted pass named two leaked hunks; there were
   three). Code leaks fail CI; doc leaks merge green.
+- **A clean auto-merge is not evidence of semantic compatibility** (integration
+  of #395+#400+#402+#403, 2026-08-12). When two branches change the same
+  subsystem's *intent*, the dangerous hunk is the one git resolves **without a
+  conflict marker**. One branch made an oversize region tile automatically; the
+  other had added an early refusal of oversize regions. Git merged the refusal
+  in silently. It compiled, passed `clippy`, and passed every test that existed
+  on either branch — and it undid the entire point of the other PR. What caught
+  it was reading for intent, not any tool. So: **enumerate what each branch
+  claims to DO, and re-demonstrate every claim on the merged tree**; a textual
+  conflict count measures nothing. Two corollaries from the same round. Docs
+  merge as text and are never re-read: three sentences across three reference
+  files still asserted the refused behaviour afterwards, and
+  `check-doc-dupes`, `check-dw-codes` and `check-reference-versions` all stayed
+  green. And an integration is the first place a **cross-feature interaction**
+  exists at all — the eye camera over a tiled zone belonged to neither branch,
+  so neither could test it; naming such pairs up front is part of the merge,
+  and the test that covers one goes in with the merge.
 - **A worktree is created by the dispatch and destroyed by the MERGE** (owner,
   2026-08-11). Reclaim it — `git worktree remove` plus the local branch — as the
   last step of merging its work, in the same breath as the evidence entry, and

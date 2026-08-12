@@ -66,6 +66,32 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
+      # spec-0033 §4.7. `prefab-procedure.md` §3 sends an author to the corpus
+      # rather than to the schema, so an IR construct no example writes does not
+      # exist in practice — which was measured by hand once and would otherwise
+      # never be measured again.
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited. As a step it
+      # gates from the moment it merges.
+      #
+      # BINDING — the review question CLAUDE.md asks of every gate ("what calls
+      # this, and what happens if someone does the guarded thing without calling
+      # it?") has two answers here, and neither is a doc line:
+      #   * an IR change cannot COMPILE past it. The construct list is assigned
+      #     by exhaustive matches over `Node`/`Cond`/`Paint`
+      #     (`crates/grammar/src/coverage.rs`), so a new variant reds `cargo
+      #     build`, `clippy`, `test` and this step alike until it is classified,
+      #     and it then begins life at zero bindings.
+      #   * a CORPUS change cannot be pushed past it. The same assertion is a
+      #     `#[test]` in that module, so it runs inside `cargo test --workspace`
+      #     above as well as here. This step exists on top of the test because a
+      #     table is what a reader acts on and an assertion message is not.
+      # `if: always()` so the table reaches the log even when an unrelated test
+      # above went red.
+      - name: grammar demonstration coverage (no IR construct is undemonstrated)
+        if: always()
+        run: cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- coverage
 
       # `crates/render` is its own workspace so that its git dependency stops
       # being a precondition for every cargo command in the repo (/Cargo.toml).
@@ -304,6 +330,16 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # Every owner decision this repo has written down is bound to the place it
+      # landed, both directions. A `landed` row whose implementation is deleted
+      # or renamed reds here; a decision written into an ADR, an owner-approved
+      # spec's Status, or a dated `(owner …)` rule in CLAUDE.md with no ledger
+      # row also reds. It rides in THIS job rather than a new one on purpose:
+      # a new job needs a new required context, and an advisory gate is a gate
+      # that does not gate (task #31). It also PRINTS the open and unenforced
+      # decisions on every run — those lists are the deliverable, not a warning.
+      - name: every recorded owner decision is bound to where it landed
+        run: python3 tools/check-decisions.py
       # The same document's VERSION HEADER was bound to nothing. It claimed
       # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
       # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body

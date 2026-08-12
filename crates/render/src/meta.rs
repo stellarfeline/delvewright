@@ -57,12 +57,22 @@ impl PrefabMeta {
     /// Load `<nbt_path with .json>` if present; `Ok(None)` when absent, `Err` only
     /// on a malformed file.
     pub fn beside_nbt(nbt_path: &Path) -> Result<Option<PrefabMeta>, String> {
-        let json_path = nbt_path.with_extension("json");
+        Self::at_path(&nbt_path.with_extension("json"))
+    }
+
+    /// Load a metadata file by path; `Ok(None)` when absent, `Err` only on a
+    /// malformed file.
+    ///
+    /// A tiled zone's metadata is not beside any one `.nbt` — it is the manifest
+    /// the whole set was reassembled from — so the caller says which file to
+    /// read. The anchors and the lighting profile live under the same keys in
+    /// both shapes, which is why one reader serves them.
+    pub fn at_path(json_path: &Path) -> Result<Option<PrefabMeta>, String> {
         if !json_path.exists() {
             return Ok(None);
         }
         let bytes =
-            std::fs::read(&json_path).map_err(|e| format!("read {}: {e}", json_path.display()))?;
+            std::fs::read(json_path).map_err(|e| format!("read {}: {e}", json_path.display()))?;
         let meta: PrefabMeta = serde_json::from_slice(&bytes)
             .map_err(|e| format!("parse {}: {e}", json_path.display()))?;
         Ok(Some(meta))

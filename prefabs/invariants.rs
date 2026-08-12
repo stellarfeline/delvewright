@@ -14,6 +14,84 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
+/// The pinned 1.21.11 block-state registry, source-included the same way this
+/// file is: one authority, five generators, no dependency edge.
+///
+/// `crates/schem` parses the identical file for the in-workspace emitters
+/// (`delvewright_schem::blocks`). Two readers of one file is not two authorities
+/// — the alternative here would be a *sixth* hand-maintained block list, which
+/// is the defect this gate exists to catch.
+const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/compiler/data/blocks-1.21.11.json");
+
+fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
+    static REGISTRY: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        serde_json::from_str(BLOCK_REGISTRY_JSON).expect("the vendored block registry parses")
+    })
+}
+
+/// **A generator may only emit blocks the pinned game actually has.**
+///
+/// (Task #341 follow-up; the instance was `minecraft:chain`, renamed
+/// `minecraft:iron_chain` in 1.21.11.) A structure template carrying an unknown
+/// block id loads it as **air**. So this defect costs the whole feature — eight
+/// cells of bell-rope in `tk-bell-tower.nbt` — while the generator exits 0, the
+/// `.nbt` round-trips, the byte-identity check passes, and nothing anywhere
+/// says a word. It is the exact shape of the `delve-admit` finding CLAUDE.md
+/// records: *a command whose response nobody reads cannot fail*, one layer
+/// down, on blocks instead of commands.
+///
+/// Property names and values are checked too, because vanilla drops the whole
+/// state — not just the offending property — when it cannot parse one.
+///
+/// A non-`minecraft:` namespace is left alone: this registry has nothing to say
+/// about a datapack's own blocks.
+pub fn assert_blocks_are_real(id: &str, cells: &Cells) {
+    let registry = block_registry();
+    let mut bad: BTreeMap<String, usize> = BTreeMap::new();
+    for (name, props) in cells.values() {
+        if !name.starts_with("minecraft:") {
+            continue;
+        }
+        let reason = match registry.get(name) {
+            None => format!("{name} is not a block in Minecraft 1.21.11"),
+            Some(known) => {
+                let mut reason = None;
+                for (property, value) in props {
+                    match known.get(property) {
+                        None => {
+                            reason = Some(format!("{name} has no property {property:?}"));
+                            break;
+                        }
+                        Some(legal) if !legal.contains(value) => {
+                            reason =
+                                Some(format!("{name}[{property}={value}] is not a legal state"));
+                            break;
+                        }
+                        Some(_) => {}
+                    }
+                }
+                match reason {
+                    Some(r) => r,
+                    None => continue,
+                }
+            }
+        };
+        *bad.entry(reason).or_insert(0) += 1;
+    }
+    assert!(
+        bad.is_empty(),
+        "{id}: the piece places block states Minecraft 1.21.11 does not have. A structure \
+         template loads an unknown block as AIR, so this ships a hole and reports nothing. \
+         Offenders: {}",
+        bad.iter()
+            .map(|(reason, cells)| format!("{reason} ({cells} cell(s))"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+}
 
 /// A placed block, flattened out of a structure palette: name + block-state
 /// properties. Each generator builds this view from the `Structure` it is about to
@@ -64,7 +142,7 @@ const TREAD_ATTACHMENT_NAMES: &[&str] = &[
     "minecraft:soul_torch",
     "minecraft:lantern",
     "minecraft:soul_lantern",
-    "minecraft:chain",
+    "minecraft:iron_chain",
     "minecraft:snow",
     "minecraft:vine",
     "minecraft:glow_lichen",
@@ -167,32 +245,82 @@ pub fn assert_distress_never_stacks(id: &str, cells: &Cells) {
 /// `None` means "this surface has no weathered form": the caller then leaves the
 /// surface untouched and drops the distress, which still satisfies the invariant.
 pub fn weathered(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "minecraft:stone" => "minecraft:cobblestone",
-        "minecraft:stone_stairs" => "minecraft:cobblestone_stairs",
-        "minecraft:stone_slab" => "minecraft:cobblestone_slab",
-        "minecraft:cobblestone" => "minecraft:mossy_cobblestone",
-        "minecraft:cobblestone_stairs" => "minecraft:mossy_cobblestone_stairs",
-        "minecraft:cobblestone_slab" => "minecraft:mossy_cobblestone_slab",
-        "minecraft:cobblestone_wall" => "minecraft:mossy_cobblestone_wall",
-        "minecraft:stone_bricks" => "minecraft:cracked_stone_bricks",
-        "minecraft:stone_brick_stairs" => "minecraft:mossy_stone_brick_stairs",
-        "minecraft:stone_brick_slab" => "minecraft:mossy_stone_brick_slab",
-        "minecraft:stone_brick_wall" => "minecraft:mossy_stone_brick_wall",
-        "minecraft:polished_andesite" => "minecraft:andesite",
-        "minecraft:polished_andesite_stairs" => "minecraft:andesite_stairs",
-        "minecraft:polished_andesite_slab" => "minecraft:andesite_slab",
-        "minecraft:polished_deepslate" => "minecraft:cobbled_deepslate",
-        "minecraft:polished_deepslate_stairs" => "minecraft:cobbled_deepslate_stairs",
-        "minecraft:polished_deepslate_slab" => "minecraft:cobbled_deepslate_slab",
-        "minecraft:deepslate_bricks" => "minecraft:cracked_deepslate_bricks",
-        "minecraft:deepslate_tiles" => "minecraft:cracked_deepslate_tiles",
-        "minecraft:bricks" => "minecraft:mud_bricks",
-        "minecraft:oak_planks" => "minecraft:stripped_oak_log",
-        "minecraft:spruce_planks" => "minecraft:stripped_spruce_log",
-        _ => return None,
-    })
+    WEATHERED
+        .iter()
+        .find(|(from, _)| *from == name)
+        .map(|(_, to)| *to)
 }
+
+/// The wear map itself.
+///
+/// A table rather than a `match` arm set for one reason: a test can walk a
+/// table. `every_curated_block_name_is_a_real_block` asserts every key *and*
+/// every value here is a block Minecraft 1.21.11 actually has — the claim the
+/// doc comment above makes in prose, made checkable. A `match` can only be
+/// spot-checked at names somebody thought to write down.
+const WEATHERED: &[(&str, &str)] = &[
+    ("minecraft:stone", "minecraft:cobblestone"),
+    ("minecraft:stone_stairs", "minecraft:cobblestone_stairs"),
+    ("minecraft:stone_slab", "minecraft:cobblestone_slab"),
+    ("minecraft:cobblestone", "minecraft:mossy_cobblestone"),
+    (
+        "minecraft:cobblestone_stairs",
+        "minecraft:mossy_cobblestone_stairs",
+    ),
+    (
+        "minecraft:cobblestone_slab",
+        "minecraft:mossy_cobblestone_slab",
+    ),
+    (
+        "minecraft:cobblestone_wall",
+        "minecraft:mossy_cobblestone_wall",
+    ),
+    ("minecraft:stone_bricks", "minecraft:cracked_stone_bricks"),
+    (
+        "minecraft:stone_brick_stairs",
+        "minecraft:mossy_stone_brick_stairs",
+    ),
+    (
+        "minecraft:stone_brick_slab",
+        "minecraft:mossy_stone_brick_slab",
+    ),
+    (
+        "minecraft:stone_brick_wall",
+        "minecraft:mossy_stone_brick_wall",
+    ),
+    ("minecraft:polished_andesite", "minecraft:andesite"),
+    (
+        "minecraft:polished_andesite_stairs",
+        "minecraft:andesite_stairs",
+    ),
+    (
+        "minecraft:polished_andesite_slab",
+        "minecraft:andesite_slab",
+    ),
+    (
+        "minecraft:polished_deepslate",
+        "minecraft:cobbled_deepslate",
+    ),
+    (
+        "minecraft:polished_deepslate_stairs",
+        "minecraft:cobbled_deepslate_stairs",
+    ),
+    (
+        "minecraft:polished_deepslate_slab",
+        "minecraft:cobbled_deepslate_slab",
+    ),
+    (
+        "minecraft:deepslate_bricks",
+        "minecraft:cracked_deepslate_bricks",
+    ),
+    (
+        "minecraft:deepslate_tiles",
+        "minecraft:cracked_deepslate_tiles",
+    ),
+    ("minecraft:bricks", "minecraft:mud_bricks"),
+    ("minecraft:oak_planks", "minecraft:stripped_oak_log"),
+    ("minecraft:spruce_planks", "minecraft:stripped_spruce_log"),
+];
 
 #[cfg(test)]
 mod tests {
@@ -271,6 +399,70 @@ mod tests {
         cells.insert([0, 0, 0], ("minecraft:cobblestone_stairs".into(), props));
         cells.insert([0, 1, 0], cell("minecraft:mossy_cobblestone"));
         assert_distress_never_stacks("fixture", &cells);
+    }
+
+    /// The gate itself: the shipped-and-silent defect, and the id that fixes it.
+    #[test]
+    #[should_panic(expected = "minecraft:chain is not a block in Minecraft 1.21.11")]
+    fn a_block_the_pinned_version_does_not_have_fails() {
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], cell("minecraft:chain"));
+        assert_blocks_are_real("fixture", &cells);
+    }
+
+    #[test]
+    fn the_rename_passes_and_so_does_a_datapacks_own_block() {
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], cell("minecraft:iron_chain"));
+        cells.insert([0, 1, 0], cell("delvewright:nonesuch"));
+        assert_blocks_are_real("fixture", &cells);
+    }
+
+    /// Vanilla drops the whole block state when one property will not parse, so
+    /// a bad value is the same class of defect as a bad id.
+    #[test]
+    #[should_panic(expected = "is not a legal state")]
+    fn an_impossible_property_value_fails() {
+        let mut props = BTreeMap::new();
+        props.insert("facing".to_string(), "up".to_string());
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], ("minecraft:oak_stairs".into(), props));
+        assert_blocks_are_real("fixture", &cells);
+    }
+
+    /// **Every hand-curated block list in this file is bound to the registry.**
+    ///
+    /// `TREAD_ATTACHMENT_NAMES` carried `minecraft:chain` — a block that has not
+    /// existed since 1.21.11 — which made one of its 23 entries dead code
+    /// nothing could ever match. A curated list that names an impossible block
+    /// is the same defect as a generator emitting one, one layer up: it is a
+    /// belief about the game with nothing checking it. The binding counts are
+    /// asserted so a list that shrank to nothing cannot pass quietly.
+    #[test]
+    fn every_curated_block_name_is_a_real_block() {
+        let registry = block_registry();
+        for name in TREAD_ATTACHMENT_NAMES {
+            assert!(
+                registry.contains_key(*name),
+                "TREAD_ATTACHMENT_NAMES names {name}, which Minecraft 1.21.11 does not have"
+            );
+        }
+        assert_eq!(TREAD_ATTACHMENT_NAMES.len(), 23);
+
+        // The whole wear map: every surface it is keyed on and every surface it
+        // answers with. The doc comment on `weathered` claims "every entry is a
+        // real 1.21.11 block"; this is that claim, checked.
+        for (from, to) in WEATHERED {
+            assert!(
+                registry.contains_key(*from),
+                "weathered() is keyed on {from}, which Minecraft 1.21.11 does not have"
+            );
+            assert!(
+                registry.contains_key(*to),
+                "weathered({from}) is {to}, which Minecraft 1.21.11 does not have"
+            );
+        }
+        assert_eq!(WEATHERED.len(), 22, "the wear map lost entries");
     }
 
     /// Wear keeps the shape it wore: a stair weathers to a stair, a slab to a slab.

@@ -528,6 +528,32 @@ impl PrefabRegistry {
                 }
                 continue;
             }
+            // A tile-set manifest is a shape this delvec understands and cannot
+            // yet PLACE, which is a different fact from a schema it has never
+            // heard of — and "upgrade delvec, or fix the field" is advice that
+            // would not have worked. Placing a tile group in world assembly is
+            // queued (chunked export phase 2); until it lands, say so.
+            if serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("structure_set").cloned())
+                .is_some()
+            {
+                load_diagnostics.push(Diagnostic::error(
+                    DW_PREFAB_META_INVALID,
+                    "prefabs",
+                    file.clone(),
+                    format!(
+                        "prefab metadata `{file}` describes a TILE SET (`structure_set`): a zone \
+                         too big for one 48-per-axis structure template, exported as several \
+                         `.nbt` tiles plus this manifest. Placing a tile group during world \
+                         assembly is queued engine work (chunked export phase 2) and this delvec \
+                         cannot do it, so the zone is skipped rather than half-placed. Authoring \
+                         and review already handle it: `delve-render piece` and `delve-admit \
+                         audit` both take this manifest."
+                    ),
+                ));
+                continue;
+            }
             match serde_json::from_str::<PrefabMeta>(&raw) {
                 Ok(meta) => {
                     let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();

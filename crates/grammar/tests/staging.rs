@@ -1532,7 +1532,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
             (region.origin[0]..region.maximum()[0]).any(|x| {
                 out.model
                     .get([x, y, narrate[2]])
-                    .is_some_and(|b| b.name == "minecraft:chain")
+                    .is_some_and(|b| b.name == "minecraft:iron_chain")
             })
         })
         .expect("the doorband has a curtain band somewhere above the floor");
@@ -1540,7 +1540,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
         .filter(|&x| {
             out.model
                 .get([x, y, narrate[2]])
-                .is_some_and(|b| b.name == "minecraft:chain")
+                .is_some_and(|b| b.name == "minecraft:iron_chain")
         })
         .count()
 }

@@ -91,6 +91,16 @@ pub fn spawner_piece() -> Structure {
 
 /// The clean room plus a block **not in the default allowlist** (`minecraft:tnt`)
 /// — clean of injection vectors, but a reviewer should see it.
+/// The clean room plus a block Minecraft 1.21.11 does **not** have: the
+/// `minecraft:chain` → `minecraft:iron_chain` rename. The template would load it
+/// as air, so the piece admits clean and ships with the block silently missing —
+/// which is what `DW0733` exists to stop.
+pub fn renamed_block_piece() -> Structure {
+    let mut s = clean_room();
+    s.set_cell([2, 1, 2], PaletteEntry::simple("minecraft:chain"), None);
+    s
+}
+
 pub fn disallowed_palette_piece() -> Structure {
     let mut s = clean_room();
     s.set_cell([2, 1, 2], PaletteEntry::simple("minecraft:tnt"), None);
