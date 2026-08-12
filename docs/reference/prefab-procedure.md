@@ -58,6 +58,15 @@ the material feeling, and any element the campaign will need to attach to.
 It is written first so that §5 has something to judge against. A description
 invented after the render is a description of the render.
 
+**Fix the region in the same breath, and check it against the 48-block
+template cap then** — not after the program is authored. A scene whose route
+needs more than 48 blocks on any axis cannot ship as one prefab (§6), and
+discovering that at export costs the whole authoring loop: five of the eight
+drowned-bell zone programs were designed at zone scale (60–145 blocks of
+travel) and hit the cap only when first exported. Record the chosen region and
+seed beside the program — in the campaign's `GENERATION.md`, since the program
+JSON does not yet carry its own region (queued engine surface).
+
 ## 2. Choose the palette by MEASUREMENT
 
 **Never name a block from memory.** Block names are not descriptions of block
@@ -144,9 +153,14 @@ silhouette complexity (1.00 is a plain box), and the five commonest blocks with
 their shares. Use the shares to see monoculture; the craft gates that would
 *fail* on it are not built (see §6).
 
-If the region is wrong the tool refuses and says which rule needed how much
-space. A refusal is the correct outcome — a region too small never yields a
-smaller building.
+If the region is wrong the tool refuses. A refusal is the correct outcome — a
+region too small never yields a smaller building. Two refusal shapes today:
+a **sized** rule that does not fit names itself and its requirement; a
+**guard-exhaustion** refusal (`no alternative of rule "…" applies`) names only
+the rule — the guards it tried are read from the program, not from the error.
+Making that refusal print each alternative's failed inequality with its
+evaluated operands is queued engine work; until it lands, budget one
+read-the-rule round-trip per guard refusal.
 
 ## 5. See it before believing it
 
