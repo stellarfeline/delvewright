@@ -33,7 +33,14 @@ doing). Everything else in this file is pipeline-repo-only and has one path.
 A release archive and `cargo install delvec@<version>` at the same version are
 the same engine: both are built from the tag whose name equals
 `versions.toml [engine].version`, and the release workflow refuses to run when
-they disagree.
+they disagree. They are not the same *bytes*: the archive is stripped and the
+`cargo install` build is not (8,053,424 B vs 10,012,928 B at v1.1.0).
+
+**How big is all this?** `delvec` is ~3 MB to download and ~8 MB installed; the
+prefab library is another ~95 KB; nothing else in the authoring loop is large.
+The measured inventory — per platform, what each install path costs, what the
+validation tiers cost on top, and why the binary is 8 MB rather than 1 MB — is
+[`distribution-size.md`](distribution-size.md). Read it before quoting a size.
 
 **Profile.** Either form is fine: the workspace sets `[profile.dev] opt-level = 1`
 so an ordinary `cargo build` / `cargo run` produces a `delvec` fast enough for a
