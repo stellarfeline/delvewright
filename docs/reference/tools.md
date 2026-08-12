@@ -121,7 +121,7 @@ delve-grammar show   --program <id>      # that program as the typed JSON IR (th
 delve-grammar check  (--program <id> | --file <p.json>)
 delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
-    [--id <prefab-id>] [--traversable [--allow-falls]]
+    [--id <prefab-id>] [--traversable [--allow-falls]] [--reachable-floor]
 delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
 ```
 
@@ -153,17 +153,30 @@ expansion runs — nothing is written and no verdict is printed, because a `pass
 above a failure is the line a reader stops at.
 
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
-state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
-from the approach end to the exit end; `--allow-falls` for a piece entered off a
-ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
-tiled or not — a tile is a packaging unit and never a semantic one, so binding
-counts stay zone-level. The verdict is printed only once the prefab has been
-written, so every `pass` on the terminal is a `pass` about files that exist.
-Measurements — fill ratio, standable
-cells, footprint area/perimeter, silhouette complexity, per-block shares — are
-reported with no threshold and are deliberately not called gates: spec-0027 §4's
-craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
-them.
+state exists in 1.21.11), `non-empty`, `traversable` (opt-in: a body walks from
+the approach end to the exit end; `--allow-falls` for a piece entered off a
+ledge) and `reachable-floor` (opt-in: every cell of floor **under a roof** can be
+walked to from the grade entrance). A red gate writes **no** `.nbt`. Every gate
+judges the whole expansion, tiled or not — a tile is a packaging unit and never a
+semantic one, so binding counts stay zone-level. The verdict is printed only once
+the prefab has been written, so every `pass` on the terminal is a `pass` about
+files that exist.
+
+`traversable` is a claim about the **route** and nothing more: both faces it
+joins are at ground level, so a piece can pass it with every storey above the
+floor stranded. The **reachability measurement** answers the other question and
+runs on every expansion, flag or no flag — how much of the standable floor a body
+reaches on foot from the grade entrance, how much of the rest sits under a roof
+(a room with no way in) versus open to the sky (a roof, a parapet, a terrace: the
+engine cannot tell which and never gates on them), how many disconnected pockets
+there are, and the bounding box of the five worth walking to. `--reachable-floor`
+turns the roofed half of that into a verdict, for a piece that claims a body can
+get everywhere indoors.
+
+Measurements — fill ratio, standable cells, footprint area/perimeter, silhouette
+complexity, per-block shares, reachability — are reported with no threshold and
+are deliberately not called gates: spec-0027 §4's craft gates are not built, and
+`crates/grammar/src/gates.rs` says what blocks them.
 
 `coverage` measures the **corpus**, not a program: `show --program` is where an
 author starts, so an IR construct no library program writes does not exist in

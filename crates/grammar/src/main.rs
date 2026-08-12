@@ -130,6 +130,15 @@ enum Command {
         /// stepping off a ledge.
         #[arg(long)]
         allow_falls: bool,
+        /// Also gate on every piece of floor **under a roof** being walkable to
+        /// from the grade entrance.
+        ///
+        /// The reachability numbers are measured and printed either way; this
+        /// only says the piece claims a body can get everywhere indoors. Floor
+        /// open to the sky is never gated — the engine cannot tell a roof from
+        /// a terrace.
+        #[arg(long)]
+        reachable_floor: bool,
         /// Output directory. Created if absent.
         #[arg(short, long)]
         out: PathBuf,
@@ -548,7 +557,7 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
     eprintln!("{id}: {}", report.verdict);
     for gate in &report.gates {
         eprintln!(
-            "  {:<14} {}  bound {:<6} {}",
+            "  {:<15} {}  bound {:<6} {}",
             gate.id,
             if gate.pass { "pass" } else { "FAIL" },
             gate.bound,
@@ -569,6 +578,25 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
     );
     for (block, share) in &m.top_blocks {
         eprintln!("      {:>5.1}%  {block}", share * 100.0);
+    }
+    // Printed on every expansion, gate or no gate. This is the whole binding of
+    // the reachability work: a report nobody has to ask for cannot be the report
+    // nobody ran (CLAUDE.md, "a gate nothing INVOKES is not a gate").
+    let r = &m.reachability;
+    eprintln!(
+        "  reachability   {} of {} standable cell(s) reachable on foot from {} grade entry cell(s) \
+         ({:.1}%) · {} sheltered · unreachable {} sheltered + {} open to the sky, in {} pocket(s)",
+        r.reachable,
+        r.standable,
+        r.entry_cells,
+        r.reachable_share * 100.0,
+        r.sheltered,
+        r.unreachable_sheltered,
+        r.unreachable_open,
+        r.pockets
+    );
+    for pocket in &r.largest_pockets {
+        eprintln!("      pocket  {}", pocket.describe());
     }
     for finding in &report.findings {
         eprintln!("  finding: {finding}");
@@ -591,6 +619,7 @@ fn main() -> ExitCode {
             id,
             traversable,
             allow_falls,
+            reachable_floor,
             out,
         } => {
             if allow_falls && !traversable {
@@ -606,6 +635,7 @@ fn main() -> ExitCode {
                 gates::Options {
                     traversable,
                     allow_falls,
+                    reachable_floor,
                 },
                 &out,
             )
