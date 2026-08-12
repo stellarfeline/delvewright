@@ -12,8 +12,8 @@
 //! write a Rust test. A back end a creator cannot invoke is a library, not a
 //! back end.
 //!
-//! Four commands. The first four lines are the steps of the loop; the last asks
-//! what the corpus those steps start from actually demonstrates.
+//! Five commands. The first four are the steps of the loop; the last asks what
+//! the corpus those steps start from actually demonstrates.
 //!
 //! ```text
 //! delve-grammar list                                  # what can be built
