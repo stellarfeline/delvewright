@@ -45,14 +45,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ "${1:-}" = "--if-stale" ]; then
   window_h="${2:-12}"
-  stamp="$ROOT/.git/planner-state-stamp"
-  now="$(date +%s)"
-  if [ -f "$stamp" ]; then
-    last="$(cat "$stamp" 2>/dev/null || echo 0)"
-    age=$(( now - last ))
-    [ "$age" -lt $(( window_h * 3600 )) ] && exit 0
+  # In a linked worktree `.git` is a file; resolve the real directory. If it
+  # cannot be resolved the throttle fails OPEN (emit, don't stamp): a missing
+  # stamp home must never silence the page.
+  gitdir="$(git -C "$ROOT" rev-parse --git-dir 2>/dev/null || true)"
+  case "$gitdir" in /*) ;; ?*) gitdir="$ROOT/$gitdir" ;; esac
+  if [ -n "$gitdir" ] && [ -d "$gitdir" ]; then
+    mkdir -p "$gitdir"
+    stamp="$gitdir/planner-state-stamp"
+    now="$(date +%s)"
+    if [ -f "$stamp" ]; then
+      last="$(cat "$stamp" 2>/dev/null || echo 0)"
+      age=$(( now - last ))
+      [ "$age" -lt $(( window_h * 3600 )) ] && exit 0
+    fi
+    printf '%s\n' "$now" > "$stamp"
   fi
-  printf '%s\n' "$now" > "$stamp"
 fi
 CONTENT="$(cd "$ROOT" && cd "$(readlink campaigns 2>/dev/null || echo campaigns)" 2>/dev/null && pwd || true)"
 
