@@ -183,4 +183,131 @@ two-centred arch profile.
 
 ## Run 1 — result
 
-Not yet run.
+Run 2026-08-12 against `main` at `744c41e`, the commit that landed the idioms.
+Same brief, same rubric, same sandbox arrangement — verified to contain zero
+`.rs` files, and `delve-grammar list` showed 33 programs of which 10 are the
+`idiom-*` set.
+
+**The artifact.** 145 rules, 11 palette roles, region **31 × 64 × 93**, seed 1,
+program hash `sha256:d43ec535…`. Four tiles and a manifest. Gates:
+`blocks-exist` 28, `non-empty` 184512 (28633 filled), `traversable` 80 (49
+approach, 31 exit, 4982 standable, connected), `audit` pass over the whole zone,
+12 of 12 anchors eye-eligible with zero render diagnostics.
+
+Verified by the planner rather than accepted: the gate report was reproduced by
+re-running the expansion, and determinism was re-checked by expanding into a
+fresh directory — all four `.nbt` and the manifest byte-identical.
+
+**Rubric.**
+
+| # | Run 0 | Run 1 |
+|---|---|---|
+| R1 silhouette | **no** | **partial**, and the binding constraint moved out of the language — see below |
+| R2 interior | **yes** as a Gothic nave | **yes** as a Gothic nave, and now under a stepped pointed vault rather than a flat slab |
+| R3 gates | yes, `lighting` unrunnable | yes, `lighting` unrunnable — identically, from an independent agent |
+| R4 missing | six items | four of the six unchanged, two new, one withdrawn |
+
+### What the idioms bought
+
+The agent states the counterfactual itself: without the idiom index it would
+have read the escalation row and asked for a Rust generator, "which would have
+been the wrong call." Idiom 3 became every roof, every arch head, every window
+head, the vault, the flèche and the chevet plan — written eight times in
+different axes and paints. Idiom 7 became the rose window directly, where run 0
+had to derive the mirrored-body technique for itself and record it as a
+correction to the documents.
+
+So the measurement the trial was built to take: **the idioms did not raise the
+language's ceiling — they raised how much of it an author reaches on the first
+attempt.** Run 1 is a third larger (145 rules against 113, in a region 1.9× the
+volume) and spends none of that on rediscovery.
+
+### One documented impossibility falsified
+
+Run 0 recorded "two roofs cannot form a valley", and `prefab-procedure.md` §6
+implies a crossing needs a Rust generator. It does not. The union of two prisms
+has a **plus**-shaped cross-section at every course, and a plus is a partition,
+so the recursion peels the *ring* rather than the box — four rules, true valleys
+at all four re-entrant corners, both ridges at one height, any width. The step
+that makes it work is that at each level the recursion box's own X extent is
+already the width the Z-band needs, so the arm rules never track height.
+
+This is the second overclaim of the same shape found by the same probe (run 0
+killed "no curve → escalate"). Both said *escalate to Rust* about something the
+grammar states in four rules. Under §4.6 a tenth idiom is earned only by a
+failed trial, and this was a success against a false claim — so it belongs
+inside idiom 3 and as a correction to §6, not as a new row. Flagged for the
+owner rather than decided here.
+
+### Confirmed twice, independently
+
+Four findings reproduced by a second agent that could not see the first's work:
+`call` takes no arguments (#107), `lighting` dies on a manifest and manufactures
+an `UNKNOWN`-licence document from a fragment (#105), the lighting probe binds
+to the box rather than player space (#106), and `traversable`'s approach count
+is standable cells rather than ways in (#108). None is a matter of taste.
+
+`call`'s cost **grew with scale**: 29 of 113 rules were duplicates in run 0
+(26%), 44 of 145 in run 1 (30%), 27 shape-groups. The worst case is one pointed
+arch recursion written four times because neither the axis nor the paint can be
+passed. Two partial workarounds are worth documenting because they are real and
+undocumented: an `absolute` size takes an expression of `dim`, so anything
+derivable from the scope's own extents needs no argument; and `reorient` is the
+one thing that *can* be handed to a call — one rose-window rule family serves the
+west rose and both transept roses. Neither can pass a paint, a size or a role.
+
+### New in run 1
+
+- **Mirroring is a silent-defect generator, and it shipped a hole past every
+  gate.** One `transept_arm` rule served both arms; because a split lays its
+  pieces low-to-high, the end wall landed on the outer face of one arm and the
+  crossing-facing face of the other, leaving **a 7 × 12 × 9 opening to the sky in
+  the south flank**. `blocks-exist`, `non-empty`, `traversable` and `audit` all
+  passed, and four 45° orbit renders did not show it; it was found by reading one
+  eye shot. Idiom 7 presents a mirrored rule body as an enabling technique — it
+  is equally a way to ship a hole, because nothing in the toolchain can tell you
+  the copy you did not write is missing. A `mirror` node, or `mirror: true` on
+  `split` reversing piece order, removes the class; it is additive and needs no
+  new geometry.
+- **The renderer has no camera an author can aim, and for this subject that is
+  decisive.** The shot set is fixed: four exteriors at yaw 45/135/225/315, `top`
+  at pitch 90, eye shots at pitch 0. **There is no square-on elevation of any
+  face**, so a building whose identity is one elevation cannot be photographed,
+  and that alone is the whole of R1's "partial". The obvious fix fails
+  instructively: a parvis with an eye anchor facing the west front looks straight
+  through the central portal, and because the orbit cameras fit the model bbox, a
+  forecourt long enough to frame a 49-block front shrinks the building in *every*
+  exterior frame. The workaround that did work deserves to be standard practice —
+  give the building a high place a body can stand and anchor there; the shot from
+  the north tower down the roof to the flèche is the only image in the set that
+  is a photograph rather than a model view. And the parapet must be **one**
+  course: at two it sits exactly at eye height and the shot is a wall.
+- **`traversable`'s axis and direction are undocumented and inverted from what an
+  author would guess.** Three probe expansions established it: the axis is always
+  world Z, never the longest axis, and **approach = Z-max, exit = Z-min** — so the
+  west portals are the "exit" and the apse is the "approach". This drove a real
+  design decision (an axial chevet door, without which the gate would have
+  refused correctly and confusingly). Extends #108, which was about the count.
+
+### Withdrawn from run 0's list
+
+"Two roofs cannot form a valley" — see above.
+
+### Judgement on R1 and R2, recorded so a later reader can disagree
+
+The planner's read of the shots differs from the agent's on R1 and is recorded
+as such. The exterior does read as a Gothic cathedral, and the moves that
+identify this one are present in kind: twin flat-topped towers joined by a
+horizontal gallery rather than a gable, a long steep nave roof, a flèche over
+the crossing rather than a tower, a stepped chevet. Under DEC-0071 the
+silhouette is what carries recognition, and this silhouette carries most of it —
+the planner would put R1 at partial-leaning-yes where the agent put it at
+partial-leaning-no. What is genuinely lost is the flanks: flat walls where the
+buttressing should be, excluded by the no-diagonal rule.
+
+R2 needs no qualification. The interior reads as a nave without being told:
+a tall central vessel, a pointed arcade on piers, a glazed band above, stone
+paving running the full length, the west rose closing the vista. Two of the
+agent's own criticisms are visible in the same frame — the vault reads as a dark
+void, and the pier sconces read as lit *bands* rather than fixtures, because a
+`fill` of a light role covers a whole 2 × 1 × 2 pier.
