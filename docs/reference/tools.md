@@ -33,7 +33,14 @@ doing). Everything else in this file is pipeline-repo-only and has one path.
 A release archive and `cargo install delvec@<version>` at the same version are
 the same engine: both are built from the tag whose name equals
 `versions.toml [engine].version`, and the release workflow refuses to run when
-they disagree.
+they disagree. They are not the same *bytes*: the archive is stripped and the
+`cargo install` build is not (8,053,424 B vs 10,012,928 B at v1.1.0).
+
+**How big is all this?** `delvec` is ~3 MB to download and ~8 MB installed; the
+prefab library is another ~95 KB; nothing else in the authoring loop is large.
+The measured inventory — per platform, what each install path costs, what the
+validation tiers cost on top, and why the binary is 8 MB rather than 1 MB — is
+[`distribution-size.md`](distribution-size.md). Read it before quoting a size.
 
 **Profile.** Either form is fine: the workspace sets `[profile.dev] opt-level = 1`
 so an ordinary `cargo build` / `cargo run` produces a `delvec` fast enough for a
@@ -114,7 +121,7 @@ delve-grammar show   --program <id>      # that program as the typed JSON IR (th
 delve-grammar check  (--program <id> | --file <p.json>)
 delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
-    [--id <prefab-id>] [--traversable [--allow-falls]]
+    [--id <prefab-id>] [--traversable [--allow-falls]] [--reachable-floor]
 delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
 ```
 
@@ -146,17 +153,30 @@ expansion runs — nothing is written and no verdict is printed, because a `pass
 above a failure is the line a reader stops at.
 
 Gates, each reporting its **binding count**: `blocks-exist` (every painted block
-state exists in 1.21.11), `non-empty`, and `traversable` (opt-in: a body walks
-from the approach end to the exit end; `--allow-falls` for a piece entered off a
-ledge). A red gate writes **no** `.nbt`. Every gate judges the whole expansion,
-tiled or not — a tile is a packaging unit and never a semantic one, so binding
-counts stay zone-level. The verdict is printed only once the prefab has been
-written, so every `pass` on the terminal is a `pass` about files that exist.
-Measurements — fill ratio, standable
-cells, footprint area/perimeter, silhouette complexity, per-block shares — are
-reported with no threshold and are deliberately not called gates: spec-0027 §4's
-craft gates are not built, and `crates/grammar/src/gates.rs` says what blocks
-them.
+state exists in 1.21.11), `non-empty`, `traversable` (opt-in: a body walks from
+the approach end to the exit end; `--allow-falls` for a piece entered off a
+ledge) and `reachable-floor` (opt-in: every cell of floor **under a roof** can be
+walked to from the grade entrance). A red gate writes **no** `.nbt`. Every gate
+judges the whole expansion, tiled or not — a tile is a packaging unit and never a
+semantic one, so binding counts stay zone-level. The verdict is printed only once
+the prefab has been written, so every `pass` on the terminal is a `pass` about
+files that exist.
+
+`traversable` is a claim about the **route** and nothing more: both faces it
+joins are at ground level, so a piece can pass it with every storey above the
+floor stranded. The **reachability measurement** answers the other question and
+runs on every expansion, flag or no flag — how much of the standable floor a body
+reaches on foot from the grade entrance, how much of the rest sits under a roof
+(a room with no way in) versus open to the sky (a roof, a parapet, a terrace: the
+engine cannot tell which and never gates on them), how many disconnected pockets
+there are, and the bounding box of the five worth walking to. `--reachable-floor`
+turns the roofed half of that into a verdict, for a piece that claims a body can
+get everywhere indoors.
+
+Measurements — fill ratio, standable cells, footprint area/perimeter, silhouette
+complexity, per-block shares, reachability — are reported with no threshold and
+are deliberately not called gates: spec-0027 §4's craft gates are not built, and
+`crates/grammar/src/gates.rs` says what blocks them.
 
 `coverage` measures the **corpus**, not a program: `show --program` is where an
 author starts, so an IR construct no library program writes does not exist in
@@ -470,6 +490,7 @@ Never shipped inside a delve.
 | `tools/check-capability-ownership.py` | CI | `python3 tools/check-capability-ownership.py` — a capability must belong to the **object class it acts on**, not to the verb that first needed it. Motivating instance: `close-gate.sealed_hint` emits its own interaction bodies, its own actionbar reply and its own baked English, privately re-implementing `EnvTrigger{on:use} + narrate`, which the DSL already exposes generally. Five ledgers, each an allowlist carrying a REASON per entry: **A** every `summon minecraft:interaction` in the compiler (9 today — exactly one is `EnvTrigger`); **B** every compiler-baked player-facing English string (5); **C** DSL structs declared separately with an identical field set (`TrapDisarm`/`TimedGateDisarm`); **D** a cross-cutting modifier absent from some variants of a tagged enum (`requires_flags` rides 16 of 26 effects); **E** every `Vec<QuestEffect>` bundle must be reachable by some enumeration — this is the one that catches a *sixth* effect root, which `check-effect-roots.py` cannot see because it greps for the five it knows. Most entries are **OPEN FINDINGS** with a named lift, catalogued in `docs/notes/capability-ownership-audit.md`; the gate's job is that none can be added or removed in silence. **Known non-proof, stated in its docstring**: A/B are text scans (a body built through a helper that hides the `summon`, or a default assembled from fragments, is invisible); C/D/E parse `stages.rs` structurally but see only what `pub` fields and variant blocks look like textually. States a binding count per check every run; **a check that examined zero objects or matched zero is a red**. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-effect-roots.py` | CI | `python3 tools/check-effect-roots.py` — no source file may enumerate the campaign's **effect roots** by hand. An effect root is a `Vec<QuestEffect>` emission can lower; there are five, four hang off the quests stage and the fifth off dialogue, and nothing about the DSL's shape makes them findable by inspection — so every walk that needed "every effect" was written by someone enumerating the roots they knew about. Six were found and fixed independently; a sweep found thirteen more; this gate, on the run that introduced it, found three the sweep had missed (`continuity::excluded_npcs`, `emit::first_damage_players`, `emit_v04_packtests`' despawn scan). **None was ever red** — a walk that visits four of five roots looks correct over any campaign that does not use the fifth. `delvewright_dsl::effects` is now the one enumeration and every walk inherits it, which closes the thirteen; this gate is what stops a fourteenth, since the root fields are ordinary public fields and no type can forbid the loop. Flags a window of 40 source lines naming **3+ distinct** roots, outside an allowlist that carries a REASON per entry (the enumeration itself; `validate::reserved_v06_world`, sound by construction; `plan::required_anchors_for_area`, an open finding printed on every run). **Known non-proof, stated in its docstring**: a proximity heuristic over text — roots spread across a hundred lines, or reached through a helper taking the list as an argument, are invisible. States its binding count every run (currently 128 files, 92 markers); **examining zero files or finding zero markers is a red**, because a renamed field would otherwise leave it quietly green forever. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-doc-dupes.py` | CI | `python3 tools/check-doc-dupes.py [path …]` — merge-artifact gate over `docs/**/*.md` + `README.md`: no two body rows in one markdown table share a first-cell key, no heading repeats within a file, no git conflict markers. Kills the class that put `shortcuts[]` in the stage-5 table twice (owner finding 2026-08-03). Same-key rows in *different* tables are fine; a genuine same-table collision means restructure the table, not allowlist it |
+| `tools/check-numbered-doc-uniqueness.py` | CI | `python3 tools/check-numbered-doc-uniqueness.py [--base <ref>]` (default `origin/main`) — `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both picked by an agent LISTING the directory and writing the next integer, and two new files never produce a git conflict, so a check that only looks at the working tree is green on every branch that collides (task #111): PR #361 (`spec-0033-declared-body-traversal.md`, opened 2026-08-09, left open) and a later PR (`spec-0033-grammar-corpus.md`, which listed `docs/specs/` on a `main` that did not yet have #361's file) both claimed 0033 for three days, and every per-branch check stayed green because each branch's own directory was internally consistent — the collision existed only in the union of the two trees. This gate computes that union: for every number, it takes every filename claiming it in the checkout AND every filename claiming it at `--base` (fetched by a preceding CI step, never by the script itself — it does no network I/O), and fails if more than one distinct filename claims a number. One rule catches three shapes without distinguishing them up front — a cross-branch collision (the #361 shape), a self-collision within this branch alone, and a pre-existing self-collision already on `--base` regardless of whether this branch touches that series. **Known limitation, stated in its own docstring, not just here**: it is blind to any OTHER open branch that has not yet merged into `--base` — nothing short of the GitHub API would see that, and this repo's CI token deliberately stays `contents: read` (same stance as `check-required-contexts.py`). The gap closes only when the first colliding PR merges and the second one's CI is RE-RUN against the updated base (automatic only if branch protection requires branches to be up to date before merging); absent that, a stale-green PR can still merge a collision. `DEC-NNNN` (single-file, `check-decisions.py`) and `DW-NNNN` (own dedicated uniqueness section in `check-dw-codes.py`) are deliberately NOT covered by this script — both considered and excluded with reasons in its docstring. States its binding count (files examined per series, on both sides) every run; a series with zero files on BOTH sides is a red. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-workspace-git-deps.py` | CI | `python3 tools/check-workspace-git-deps.py` — no cargo workspace in this repo resolves a **git dependency** it has not quarantined. A required status check answers for the uptime of every host it reaches, and a git dependency is the one reach cargo gives a job no way to decline: it is cloned while RESOLVING the workspace that declares it, a workspace resolves all of its members, and neither `-p <crate>` nor `--locked` nor marking the dependency `optional` narrows that — all three measured, and the `optional` result is the surprising one. So `delvewright-render`'s Nucleation pin made 227 MB of clone from two repositories a precondition for `cargo run -p delvec`, in five required jobs that never build the render crate, and one transient TLS failure on that reach (`the SSL certificate is invalid; class=Ssl (16)`) reddened `tier 2` on a **docs-only** PR (#388). Reads every `Cargo.lock` in the repo, which IS the resolved graph of the workspace that owns it, and flags any package whose `source` is `git+…`. `ALLOWED` carries `crates/render/Cargo.lock` with its reason — that crate is its own workspace precisely so the reach belongs to it — and an allowlisted lock carrying **no** git dependency is a finding too, since an exemption that has outlived its reason is how the next one gets waved through. It deliberately does not check that `crates/render` is still excluded: if it re-enters the root workspace the root lock gains the git packages and this reds on the lock, which is the property that actually matters. Registry (crates.io) dependencies are out of scope — content-addressed, cached, and not on the table. States its binding count; examining zero locks is a red. Third site of the class this repo already refuses at the `docs` job's `lychee --offline` and at task #41's single Mojang fetch. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/check-compose-isolation.py` | CI | `python3 tools/check-compose-isolation.py` — isolation-by-construction gate (task #185): no service in `validation/compose.yaml` may pin a `container_name` or publish `ports`, because those are the only two things `docker compose -p <project>` does NOT isolate. `validation/owner-play.yaml` is the ONLY file allowed a fixed host port, and only `127.0.0.1:25565:25565` (the owner's client address) plus the container names a human needs to find; every other override may publish only ephemeral ports (`127.0.0.1::<port>`). Replaces `check-worker-override.py`, which merely required a matching `!reset` — so the pin survived and every caller had to remember an extra `-f`; the omission cost a run twice (`server` #190, then `bot`) |
 | `tools/check-harness-dsl-version.py` | CI | `python3 tools/check-harness-dsl-version.py` — sync gate: the compiler's `SUPPORTED_DSL_VERSION` (`crates/dsl/src/envelope.rs`) must be a member of the harness's `SUPPORTED_DSL_VERSIONS` allowlist (`harness/src/critical-path.ts`). Nothing else relates the two files; spec-0026 moved the compiler to `0.9.0` while the harness allowlist still ended at `0.8.0`, and the bot tier refused every campaign at the version gate after the server booted and the bot connected (task #157) |
