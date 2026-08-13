@@ -1914,19 +1914,31 @@ that merely lands on support is left to the faithful settle model (no diagnostic
 and the tileset generator's own zero-unsupported invariant catches unintended
 falls at authoring time (strongest-form defence, per the debug doctrine).
 
-The settle pass is followed by a **water-flood pass** (task #45), the fluid peer of
-gravity settling. Free `minecraft:water` cells **and every `waterlogged=true`
+The settle pass is followed by a **fluid-flood pass** (task #45), the fluid peer of
+gravity settling. Free-fluid cells — `minecraft:water` **and `minecraft:lava`**,
+namespace- and state-insensitively (`crate::assembled::is_fluid`, the one predicate
+a runtime `fill-region` is classified by too) — **and every `waterlogged=true`
 block** (task #78) seed a deterministic, **conservative superset** of vanilla flow (mirroring spec-0010's never-overestimate-walkability
 stance): (1) infinite-water source formation — a supported air cell flanked by ≥2
 source cells becomes a source, cascading, so a walled pool basin fills completely,
 not just 7 cells from its seeds; (2) 7-level horizontal decay from the completed
 source set plus infinite downward flow. Vanilla's drop-seeking *direction* rule is
 omitted (spread goes every way), which only over-marks. Every flooded cell (any
-water level, plus sources) is **impassable and never standable floor** for every
+fluid level, plus sources) is **impassable and never standable floor** for every
 consumer — nav, wave seating, relight fixture placement, waypoint export — the same
 single-model discipline as settle. This closes the water analogue of the gravity
 divergence: a `cave-shore` pool floods `[261,66,1]`, a cell an unpatched model
 routed a talk-to leg's step-up through.
+
+**Both fluids, one answer.** A body stands on lava no more than on water, so the
+classifier asks `is_fluid` and both land in `flooded`. Lava's own flow differs —
+overworld lava decays over 3 cells and forms no new sources, and a delve ships into
+an ordinary overworld (a superflat with the `minecraft:the_void` biome, never an
+ultrawarm dimension) — so running it through the water flow above **over-marks** a
+lava pool's reach, which is the permitted direction. A free fluid is deliberately
+not a flood *barrier* either: water spreads through a lava cell rather than being
+dammed by it, and the stone or obsidian vanilla would make of that meeting is a
+solid the model declines to invent. The cell stays impassable and not floor.
 
 **Waterlogging is water** (task #78). Since MC 1.13 a `waterlogged=true` block's
 cell holds a genuine water *source* that ticks and spreads into adjacent air
@@ -1957,7 +1969,7 @@ classified:
 | tall barrier | `*_fence` (incl. `nether_brick_fence`), `*_wall` — 1.5-tall | no | **no** |
 | use-gate | closed `*_fence_gate` (1.5-tall, right-click-openable) | player: yes (USE); autonomous mobs: no | **no** |
 | passable | open `*_fence_gate` (block state `open=true`, read from the prefab palette **or written by a stage-7 edit** — see below), trap triggers, thin decoration (< 8/16 collision) | yes | no |
-| flooded | water reach | no | no |
+| flooded | fluid reach — `minecraft:water` / `minecraft:lava` (`is_fluid`), plus waterlogged sources | no | no |
 | partial | a solid cell's true top-face height in sixteenths, when < 16 | no | yes, **at that height** |
 
 **Partial floor heights (task #78).** `crate::assembled::collision_top_16` reports
@@ -1979,7 +1991,7 @@ passage but its walkable face is recorded in `Occupancy::partial`, which is what
 makes the nav step rule physical rather than cell-counting — see below.
 
 Modelled **precisely**: fences, walls, fence gates (open vs closed), trap
-triggers, thin decoration, water and waterlogging, and partial floor heights.
+triggers, thin decoration, free fluid and waterlogging, and partial floor heights.
 Modelled **conservatively** — treated as a full solid cube, never as
 walkable-through: stairs, doors, trapdoors, and every other partial-collision
 block. The tall/gate classes close the owner-hit soundness hole:
