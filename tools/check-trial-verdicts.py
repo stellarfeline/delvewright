@@ -125,16 +125,21 @@ def main():
         return 0
 
     files = sorted(TRIALS.glob("trial-*.md"))
-    problems, verdicts, declared = [], 0, 0
+    problems, verdicts, artifact, instrument = [], 0, 0, 0
     for path in files:
         p, required, bounds = audit(path)
         problems += p
         verdicts += len(required)
-        declared += len(bounds)
+        # Split by kind. A single `declared` total labelled with ONE of the two
+        # kinds is the defect this whole gate exists to catch, one layer out:
+        # the count would be right and the sentence would not be about it.
+        artifact += sum(1 for b in bounds.values() if b == "artifact-bound")
+        instrument += sum(1 for b in bounds.values() if INSTRUMENT_BOUND.match(b))
 
     print(
         f"check-trial-verdicts: {len(files)} trial record(s), {verdicts} judged "
-        f"verdict(s), {declared} instrument-bound declaration(s)"
+        f"verdict(s), {artifact} artifact-bound + {instrument} instrument-bound "
+        f"declaration(s)"
     )
     if files and not verdicts:
         problems.append(
