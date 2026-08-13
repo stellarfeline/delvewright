@@ -17368,6 +17368,54 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
 }
 
+/// Shipped `view-distance`, in chunks — **10** = a 160-block render radius.
+///
+/// What it answers to, in the order the number was established:
+///
+/// * **The scenes.** Measured from the `forceload` AABBs the compiler emits for
+///   the shipped campaigns, the largest delve built to date spans 114 × 165
+///   blocks and the next 35 × 115. A 160-block radius therefore reaches the far
+///   side of either from any standpoint inside it, and on an `ocean` horizon it
+///   puts the fog line 160 blocks of open sea past the shore — already all
+///   backdrop. Going up to 12 buys 32 more blocks of empty water or void on
+///   every delve that exists; going down to 8 (128 blocks) would clip the long
+///   axis of the largest scene from a standpoint at either end.
+/// * **The existing record.** `docs/notes/horizon-library-dossier.md` §3–4 and
+///   `docs/specs/spec-0026-horizon-library.md` §6 already do their vista
+///   arithmetic against a shipped `view-distance` of 10 (→ 160 blocks), with 12
+///   reserved as the summit horizon's floor. Writing the key makes that
+///   arithmetic bind to a fact rather than to an assumption about the host.
+/// * **Prod.** Perf is non-gating on the Raspberry Pi (owner ruling 2026-08-04),
+///   so the Pi does not push the number DOWN; it is the absence of any delve
+///   content past 160 blocks that stops it going up.
+///
+/// It is also what both boot paths land on today, so pinning it changes no
+/// player-visible behaviour — this is a determinism fix, not a retune.
+pub const DELVE_VIEW_DISTANCE: u32 = 10;
+
+/// Shipped `simulation-distance`, in chunks — **10**, and the same number as
+/// [`DELVE_VIEW_DISTANCE`] for an unrelated reason. The two answer different
+/// questions and are deliberately separate constants.
+///
+/// This value is **not** what makes a delve tick. `setup` force-loads every
+/// placed piece and never releases it, so scene chunks are entity-ticking
+/// wherever the party is standing; simulation distance governs only the chunks
+/// around a player that are *not* scene — backdrop ocean or void, which is inert
+/// by construction (`spawn-monsters=false` + the `spawn_mobs` seal, and traps are
+/// command-driven, never redstone).
+///
+/// Its job is to make the ticking rim a **known radius**. With both distances
+/// pinned, the set of chunks that can tick or be seen is bounded by the
+/// force-loaded scene ∪ a Chebyshev radius of 10 (+1 for the loading margin)
+/// chunks around any player — one number a whole-plane proof can be written
+/// against. Unpinned, that set has no upper bound the compiler can state.
+///
+/// 10 is vanilla's own default and what every delve boots with today. Lowering it
+/// below the view distance would be a live change to what the party experiences,
+/// gated on the owner's playtest, for no measured gain; raising it would tick
+/// backdrop nobody can see.
+pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
+
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
     // the historical derivation, which is what keeps every pre-0.6 campaign
@@ -17402,6 +17450,21 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
     };
     // server.properties (keys sorted for determinism).
+    //
+    // Every key a delve's CONTENT depends on is written here, because an unwritten
+    // key is decided by whichever host boots the build, and two hosts that decide
+    // it differently are two different worlds (ADR-0006). The two boot paths a
+    // delve actually has do not share a default source: the shipped image
+    // (`validation/Dockerfile.delve`) starts from the itzg base's own
+    // `/image/server.properties` template, while the owner's playtest server
+    // (`tools/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies THIS
+    // file in and lets the vanilla jar fill in the rest. Where the two default
+    // sources happen to agree it is a coincidence of an upstream file we do not
+    // own, not an invariant — so a key that matters is pinned, never inherited.
+    //
+    // [`DELVE_VIEW_DISTANCE`] / [`DELVE_SIMULATION_DISTANCE`] carry the reasoning
+    // for the two chunk-distance values; `validation/world-settings-entrypoint.sh`
+    // derives both from this file, so the image cannot boot a different pair.
     let props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
         ("difficulty", difficulty.to_string()),
@@ -17414,8 +17477,10 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("level-type", "minecraft:flat".to_string()),
         ("online-mode", "false".to_string()),
         ("pvp", "false".to_string()),
+        ("simulation-distance", DELVE_SIMULATION_DISTANCE.to_string()),
         ("spawn-monsters", "false".to_string()),
         ("spawn-protection", "0".to_string()),
+        ("view-distance", DELVE_VIEW_DISTANCE.to_string()),
     ]);
     let mut text = String::new();
     text.push_str(&format!(
@@ -17456,11 +17521,17 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
-- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\n\
+- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\
+- `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
+  than left to the host: the delve renders and ticks the same everywhere.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
-            plan.namespace, horizon_bullet, plan.seed
+            plan.namespace,
+            horizon_bullet,
+            plan.seed,
+            DELVE_VIEW_DISTANCE,
+            DELVE_SIMULATION_DISTANCE
         )
         .into_bytes(),
     );
