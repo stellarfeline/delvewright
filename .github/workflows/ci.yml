@@ -549,6 +549,19 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: the /new-delve skill's declared delvec range is true
         run: python3 tools/check-skill-version.py
+      # A trial's rubric answer is a judgement, and a judgement is bounded by the
+      # instrument that took the picture. Trial 0001 answered R1 `partial` for
+      # run 1 and, three paragraphs later, recorded that the renderer had no
+      # camera an author could aim and that this "alone is the whole of R1's
+      # partial". The verdict is what later rounds cite; the disclaimer is not.
+      # Re-photographed square-on from the same delivered bytes, the answer was
+      # `yes` — the record understated its own result for as long as it existed.
+      # So every judged verdict declares `artifact-bound`, or `instrument-bound`
+      # with the blocker NAMED so it can be fixed and the verdict re-taken. It
+      # rides in this job because a new job needs a new required context, and an
+      # advisory gate does not gate. Deterministic, offline, stdlib-only python3.
+      - name: every judged trial verdict declares what bounded it
+        run: python3 tools/check-trial-verdicts.py
       # --offline: check only local/internal links — the ones this repo can
       # actually keep true. This used to be justified by the repo being private;
       # it is PUBLIC, so that premise was false, but the flag is still right for

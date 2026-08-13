@@ -282,6 +282,49 @@ Known gaps, each a reason a row may be missing rather than closed:
   wrong-but-existing code passes silently. That is the gate's own known blind
   spot.
 
+## Rule 8 — a judged verdict declares whether the instrument or the artifact bounded it
+
+Rules 1–7 govern gates, which answer by themselves. A round also produces
+**judgements** — does this read as the thing, is this interior right, is this
+fight too hard — and a judgement is bounded twice: by the artifact, and by
+whatever took the picture. Only the first is worth recording.
+
+The two are separable and the separation is cheap. Trial 0001 answered R1
+`partial` for its second run and, in the same section, recorded that the shot set
+was four fixed 45° orbits with no square-on elevation of any face, and that this
+"alone is the whole of R1's `partial`". Both statements are true and three
+paragraphs apart. The verdict is the half later rounds cite. Re-photographed
+square-on from the same delivered bytes with an aimed camera, the answer is
+`yes`: the record understated its own result, and the number that was wrong was
+the headline one.
+
+**Obligation.** Every judged verdict in a round or trial record carries, beside
+the verdict, one of two declarations:
+
+- **artifact-bound** — the instrument could frame the thing being judged, and
+  the answer is about the artifact. Name the instrument anyway; a later reader
+  re-takes the shot to disagree.
+- **instrument-bound — `<blocker>`** — it could not, and the blocker is named.
+  A named blocker is a capability-gap finding and rule 4 applies to it: it lands
+  before the next round, or the summary says the verdict is not to be trusted
+  yet. An instrument-bound verdict is re-taken when its blocker closes; it is
+  never left standing as though it were about the artifact.
+
+`tools/check-trial-verdicts.py` enforces this over `docs/trials/`, in the docs
+job. It enumerates the entry points rather than trusting a checklist — every
+trial record, every `## Run N — result` section in it, every rubric row that
+carries a bolded verdict — so a record cannot gain a run, or an answer, without
+gaining the declaration. It reds three ways: a verdict with no declaration, an
+`instrument-bound` declaration that names no blocker, and a record whose rubric
+yields zero verdicts, which means the gate has bound to nothing.
+
+The general form of the failure is wider than photographs, and the review
+question is the one the gate cannot ask: **what would this verdict have to look
+like for the instrument to be unable to tell?** A bot that cannot jump reports
+every ledge as impassable. A probe that measures the region box reports every
+free-standing building as dark. A judgement is not evidence about the artifact
+until that question has an answer.
+
 ## Why the final round was clean
 
 Not because one round fixed everything. Because:
@@ -303,5 +346,5 @@ Not because one round fixed everything. Because:
    and the invitation.
 
 The owner found nothing because everything machine-findable had already been
-found. That is the target state for every campaign, and rules 1–6 are how a round
+found. That is the target state for every campaign, and rules 1–8 are how a round
 gets there without spending twenty-two of her hours discovering them again.
