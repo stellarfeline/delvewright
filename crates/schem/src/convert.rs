@@ -1,8 +1,8 @@
 //! Schematic region -> vanilla structure `.nbt`.
 //!
-//! Emits the same structure-template shape the compiler's `gen_hello_room`
-//! writes (`DataVersion`, `size`, `palette`, `blocks`, `entities`), so the
-//! output drops straight into the prefab library. The safety strip
+//! Emits the same structure-template shape the tileset generators under
+//! `prefabs/` write (`DataVersion`, `size`, `palette`, `blocks`, `entities`), so
+//! the output drops straight into the prefab library. The safety strip
 //! (spec-0007 community contract) runs here: command/structure/jigsaw blocks and
 //! NBT-bearing spawners are replaced with air and reported.
 
@@ -200,15 +200,30 @@ pub fn build_region(
         .map(|(i, s)| (s.to_state_string(), i as i32))
         .collect();
 
+    // **The emitted entry states every property the block has.**
+    //
+    // This is the byte boundary — the one place a structure template becomes
+    // bytes for everything inside the workspace (the `.schem` import path and
+    // the grammar back end both arrive here) — and that is deliberately where
+    // the completion lives rather than in each caller's palette construction. A
+    // caller can build a palette any way it likes; it cannot emit a template
+    // without passing through this function, so a new caller cannot be lossy by
+    // omission. The file already writes the pinned `DataVersion`, so it is
+    // already asserting these are 1.21.11 states; completing them says out loud
+    // what vanilla's BlockState codec would otherwise fill in from the block's
+    // default state, and changes no state at all.
+    //
+    // An id the registry does not know is returned as written — spelling is
+    // `blocks::BlockRegistry::validate`'s verdict, not this one.
+    let registry = crate::blocks::BlockRegistry::v1_21_11();
     let palette: Vec<OutPaletteEntry> = states
         .iter()
-        .map(|s| OutPaletteEntry {
-            name: s.name.clone(),
-            properties: if s.properties.is_empty() {
-                None
-            } else {
-                Some(s.properties.clone())
-            },
+        .map(|s| {
+            let full = registry.complete(&s.name, &s.properties);
+            OutPaletteEntry {
+                name: s.name.clone(),
+                properties: if full.is_empty() { None } else { Some(full) },
+            }
         })
         .collect();
 

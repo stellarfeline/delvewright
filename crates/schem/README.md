@@ -48,7 +48,9 @@ usage) · `3` output error (cannot write) · `≥10` internal error.
 
 The output is a standard structure template: `DataVersion`, `size`, `palette`
 (`Name` + optional `Properties`), `blocks` (`pos`, `state`, optional `nbt`), and
-an empty `entities` list — identical in shape to the compiler's `hello-room.nbt`.
+an empty `entities` list. Every palette entry states every property the block
+has, so nothing reading the file needs a table of 1.21.11 default states to know
+what a cell is.
 
 ## Safety strip (community-contract audit hook)
 
@@ -110,8 +112,8 @@ at its `offset` within a `source_size` volume reconstructs the original exactly.
   templates have no offset field. It is preserved in the split manifest.
 - **No block-state migration.** Output is always tagged `DataVersion` 4671
   (1.21.11); a source with a different `DataVersion` produces a `DW0702` warning
-  and its block-state strings are reused verbatim. Convert legacy schematics with
-  the vanilla client first if the states differ.
+  and its block-state strings are read as 1.21.11 states. Convert legacy
+  schematics with the vanilla client first if the states differ.
 - **Palette must be dense** (indices `0..N` with no gaps) and non-negative;
   malformed palettes are rejected as an input error.
 - The strip's recursive `Command`-key scan is conservative: a surviving block

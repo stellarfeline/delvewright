@@ -1,9 +1,9 @@
-//! Cross-tileset generator invariants — one authority, five generators.
+//! Cross-tileset generator invariants — one authority, every generator.
 //!
-//! The five tileset generators are deliberately separate Cargo workspaces
+//! The tileset generators are deliberately separate Cargo workspaces
 //! (`docs/reference/tools.md` §9) so that none of them can enter the shipped
 //! `delvec`. That isolation is worth its cost, but it must not cost us the same
-//! lesson five times: this file is included by every generator as
+//! lesson once per generator: this file is included by every one of them as
 //! `#[path = "../../invariants.rs"] mod invariants;` — a source include, not a
 //! dependency, so the workspaces stay independent while the rule stays single.
 //!
@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 /// The pinned 1.21.11 block-state registry, source-included the same way this
-/// file is: one authority, five generators, no dependency edge.
+/// file is: one authority, every generator, no dependency edge.
 ///
 /// `crates/schem` parses the identical file for the in-workspace emitters
 /// (`delvewright_schem::blocks`). Two readers of one file is not two authorities

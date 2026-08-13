@@ -16,9 +16,15 @@
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
 //! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
 //!
-//! So this module is the block half of the command rule. It is deliberately in
-//! `delvewright-schem` — the one crate that writes structure `.nbt` bytes — so
-//! that a new emitter reaches it by depending on the writer it already needs.
+//! So this module is the block half of the command rule. It lives in
+//! `delvewright-schem` because that is where the workspace's structure-template
+//! byte boundary is (`convert::build_region`), which every in-workspace emitter
+//! passes through. It is **not** the only place a template is written: the
+//! tileset generators under `prefabs/` are separate Cargo workspaces that cannot
+//! depend on this crate at all, and reach the same rule by source-including
+//! `prefabs/invariants.rs`. Which sites owe the rule is therefore not a fact
+//! anyone can hold in their head — `tools/check-structure-emitters.py`
+//! discovers them.
 //!
 //! # What it validates
 //!
@@ -335,6 +341,13 @@ impl BlockRegistry {
     pub fn validate_state_string(&self, state: &str) -> Result<(), BlockError> {
         let (name, properties) = parse_state(state);
         self.validate(name, &properties)
+    }
+
+    /// [`BlockRegistry::validate_complete`] over a `name[k=v,...]` state string
+    /// — the form a template reads back as.
+    pub fn validate_complete_state_string(&self, state: &str) -> Result<(), BlockError> {
+        let (name, properties) = parse_state(state);
+        self.validate_complete(name, &properties)
     }
 
     /// Registry ids most likely to be what an unknown id meant.

@@ -127,8 +127,15 @@ fn assert_chest_and_command_strip(schem_bytes: &[u8]) {
         "expected a strip diagnostic at 2,0,0"
     );
 
-    // Chest survives with its facing state and carried Items.
-    assert_eq!(view.state_at(0, 0, 0), "minecraft:chest[facing=north]");
+    // Chest survives with its facing state and carried Items. The schematic
+    // wrote `facing` alone; the emitted template states every property the
+    // block has, `facing` still at the value the schematic decided — the same
+    // BlockState, said in full instead of left to a reader's table of 1.21.11
+    // defaults.
+    assert_eq!(
+        view.state_at(0, 0, 0),
+        "minecraft:chest[facing=north,type=single,waterlogged=false]"
+    );
     let be = view
         .block_entities
         .get(&[0, 0, 0])
@@ -242,5 +249,51 @@ fn palette_report_lists_all_states() {
             "minecraft:chest[facing=north]".to_string(),
             "minecraft:command_block[conditional=false]".to_string(),
         ]
+    );
+}
+
+/// **Nothing this crate emits leaves a block-state property unwritten.**
+///
+/// The post-condition of the completion in `convert::build_region`, asserted at
+/// the byte boundary rather than per caller: a `.schem` written by a tool that
+/// spelled out only the properties it cared about (`chest[facing=north]` —
+/// exactly what the reference fixture carries) becomes a template that states
+/// all three. Vanilla reads the two identically; every other reader of the file
+/// — the renderer, the prefab viewer, the occupancy pass, `delve-admit` — reads
+/// only the second.
+///
+/// The binding count is asserted: a fixture whose palette went empty would
+/// otherwise make this pass by examining nothing.
+#[test]
+fn every_emitted_palette_entry_states_every_property() {
+    use delvewright_schem::blocks::BlockRegistry;
+
+    let registry = BlockRegistry::v1_21_11();
+    let mut examined = 0usize;
+    let mut lossy: Vec<String> = Vec::new();
+
+    for (name, bytes) in [
+        ("v2_basic", fixtures::v2_basic()),
+        ("v3_basic", fixtures::v3_basic()),
+        ("v2_block_entities", fixtures::v2_block_entities()),
+        ("v3_block_entities", fixtures::v3_block_entities()),
+    ] {
+        let view = read_structure(&single(&bytes)).unwrap();
+        for state in &view.cells {
+            examined += 1;
+            if let Err(e) = registry.validate_complete_state_string(state) {
+                lossy.push(format!("{name}: {e}"));
+            }
+        }
+    }
+
+    assert!(examined > 0, "binding count is zero: {examined} cell(s)");
+    lossy.sort();
+    lossy.dedup();
+    assert!(
+        lossy.is_empty(),
+        "{} of {examined} emitted cell(s) leave a property unwritten:\n  {}",
+        lossy.len(),
+        lossy.join("\n  ")
     );
 }

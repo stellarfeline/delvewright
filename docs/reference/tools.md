@@ -108,6 +108,15 @@ delve-schem convert <input.schem> -o <out.nbt>
     [--json]
 ```
 
+Every palette entry it writes states **every** property the block has. A schematic
+may spell out only the properties its author cared about; the template is stamped
+at the pinned DataVersion, so the completion says out loud what vanilla would
+otherwise fill in from the block's default state, and no reader of the file has to
+carry a table of 1.21.11 defaults to know what a cell is. It happens at
+`convert::build_region` — the workspace's one structure-template byte boundary,
+which the grammar back end passes through too — rather than in each caller's
+palette construction, so a new caller cannot be lossy by omission.
+
 ## 2a. `delve-grammar` — the box-split grammar back end (`crates/grammar`) · agent
 
 **The entry point for making a prefab** (spec-0027 §3; the whole procedure is
@@ -518,6 +527,7 @@ Never shipped inside a delve.
 | `tools/check-shell-pipe-shortcircuit.py` | CI | `python3 tools/check-shell-pipe-shortcircuit.py` — forbids a consumer that stops reading before its producer stops writing on the right of a pipe (`grep -q`, `grep -m N`, `head -N`) in every repo `*.sh`. Under `set -o pipefail` such a consumer exits at the first match, the producer dies of SIGPIPE (141), and pipefail promotes 141 to the pipeline: **the pipeline reports failure precisely because the match succeeded**, at a rate set by how much the producer still had to write. Measured against a live, healthy server whose log contained `Done (` exactly once: 28 false negatives in 30 runs. This is what made `playtest-server.sh` print "server did not come up" for a server that was up (task #173/#16), and the same shape sat under both 25565 guards and `dw_mutex_port_bound` — where a false negative frees the owner's sacred mutex while a human is playing. Prescribed idiom: capture, then test with bash's own `[[ $out == *pat* ]]` / `[[ $out =~ re ]]` / `${out%%$'\n'*}`, spawning no process at all. `docs/experiments/` is excluded (frozen record); `EXEMPT_LINES` carries exactly one justified line-level exemption, and a stale entry there is itself a red |
 | `tools/check-python-shell-newlines.py` | CI | `python3 tools/check-python-shell-newlines.py` — every **inline** python a repo shell script or workflow `run:` block executes and that writes to stdout must declare `sys.stdout.reconfigure(newline="\n")`. Python's text-mode stdout translates `\n` to `\r\n` **on Windows**, and the trailing `\r` survives both command substitution and `IFS= read -r` — so on the first-ever release run (v1.0.0, 2026-08-06) `tools/build-release-binaries.sh` rejected `x86_64-pc-windows-msvc` as "not in versions.toml [engine].targets" on the msvc runner and only there, while the four unix targets went green. Invisible on every runner but one, and the eleven green checks on the PR that added the script (#318) never ran that one. The rule is deliberately "every printing program", not "every captured one": the site that broke was a heredoc inside a shell FUNCTION whose capture happens at three separate call sites, so a checker reasoning about the invocation would have passed the one bug it exists to catch — and pinning `\n` on a stream nobody reads costs one line and changes nothing. Out of scope by rule, not by allowlist: `python3 script.py` (no inline text — a committed `.py` is not a shell boundary), programs with no `print(`/`sys.stdout` (they answer by exit status), and python run inside `docker run`/`docker exec` (a pinned Linux image by construction). States its binding count; zero files or zero programs is a red |
 | `tools/check-live-commands.py` | CI | `python3 tools/check-live-commands.py` — nothing in this repo may speak to a Minecraft server without being able to hear it (task #70). Three rules, the first two driven by pinned artifacts rather than a typed list. **(1)** A shell/Node file that invokes `rcon-cli` must reach it through the shared rejection rule (`tools/lib/rcon.sh` / `tools/lib/rcon.mjs`); six sites did not, and the rule already existed — correct — privately inside one spike, which is exactly why the next two callers wrote the unchecked version. **(2)** A `gamerule <name> <value>` line anywhere in `*.sh`/`*.mjs`/`*.js`/`*.ts`/`*.rs`/`*.mcfunction` must name a rule the pinned 1.21.11 server has, checked against the literal children of `gamerule` in `crates/compiler/data/commands-1.21.11.json`, so it cannot drift from ADR-0009. Motivating instances: the gallery's four legacy camelCase rules (which cost `admit:load` and `admit:finish` in their entirety — the gallery world had no objectives, nothing forceloaded, nothing placed), `spike-jump-arc`'s `fallDamage`, `warden-probe`'s `doMobSpawning`/`randomTickSpeed`. **Known non-proof, stated in its docstring**: rule (2) only sees a `gamerule` with a LITERAL name and a literal value — a dynamic name (`gamerule ${g}`) is a probe it cannot judge — and line comments are stripped, which can hide a violation but never invent one. **(3)** `rcon.sh`'s refusal list and `rcon.mjs`'s must recognise the SAME reply shapes. The rule has to exist twice (shell sources, Node imports), and two copies of one truth is the very shape rules (1) and (2) exist to prevent — so they are compared, not trusted. Found on its first run: the area-effect-arrow spike's private copy knew `No targets matched`, `Malformed ` and a broad `Failed to `, which the shared rule did not, while the shared rule knew the `<--[HERE]` cursor, which the spike's did not. **Every private copy ever found was silent on exactly the refusals its own run never provoked**, so the shared list is the union and a shape leaves it only when the pinned server stops producing it. `docs/experiments/` is excluded (frozen record); a negative fixture may carry an inline `check-live-commands: allow (<reason>)`, and **every honoured exemption is printed with its reason on every run**. States all three binding counts every run; **zero live command sites, zero gamerule lines or zero compared shapes is a red**. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
+| `tools/check-structure-emitters.py` | CI | `python3 tools/check-structure-emitters.py` — **which sites owe the block-state completion rule, decided by discovery rather than by a list.** The rule (`prefabs/invariants.rs::complete_state`, `BlockRegistry::complete`) was placed at five tileset generators by hand; a sixth emitter — `hello-room`, which hand-built its own palette from an `examples/` target — was missed, and shipped 2 palette entries over 10 cells that only a running 1.21.11 server can read. **(1)** Every tracked `.rs` naming `fastnbt::to_bytes` (the one way anything here produces NBT) must either name the completion rule — following its own `mod` declarations, since a generator may split palette from emission — or be listed in the script's `NOT_EMITTERS` with a reason, which is printed on every run. The exemptions are enumerated file by file on purpose: a class exemption (“anything under `tests/`/`examples/` is a fixture”) is the exact assumption that hid the sixth emitter, which was production tooling living in `examples/`. The polarity is the point — a list of inclusions fails silently when it misses a site, a list of exclusions fails loudly. **(2)** Every `prefabs/*/Cargo.toml` on disk is named by the `prefab-generators` job's cache list and both of its `for g in` loops, in both directions, so a new generator cannot be added without CI running it twice. Both checks print their binding count. |
 | `tools/lib/rcon.sh`, `tools/lib/rcon.mjs` | library (agent + human) | Sourced/imported, never run. The repo's ONE definition of "the server refused that command", measured on the pinned 1.21.11 server: a PARSE failure (every Brigadier error carries a `<--[HERE]` cursor) and a REFUSAL (`That position is not loaded`, `No entity was found`, `No targets matched`, `Failed to `, …). The list is the **union** of every private copy that has been found, and the two halves are held equal by `check-live-commands.py` rule (3). Shell: `dw_rcon <container> <cmd>` asserts and returns non-zero on a refusal, `dw_rcon_probe` is the unjudged form, `DW_RCON_ARGS` carries extra `rcon-cli` flags. Node: `rconChannel(container).run(cmd)` throws, `.probe(cmd)` does not; `REJECTION`/`assertAccepted` are exported for a tool with its own transport (the death spike's pipelined channel). **Which channel a call uses is a statement about that call**: `probe` is for a liveness poll or a measurement whose subject IS the rejection, and nothing else. `tools/check-live-commands.py` is what makes the choice unavoidable |
 | `tools/check-shell-redirect-dirs.py` | CI | `python3 tools/check-shell-redirect-dirs.py` — every `>`/`>>` in a repo `*.sh` that writes **into a directory** must have that directory guaranteed first: a `mkdir -p` covering it, a `mkdir` naming it exactly, a `mktemp -d`, a directory tracked in this repo, or an always-present one (`/tmp`, `/dev`, and `/data` — the itzg image's own data dir, written only from inside that image). Variables are resolved through their literal assignments, so hoisting the path into `LOG=` does not hide it, and `>` inside a quoted string is text, not a redirection. **Why**: the shell opens a redirect *before* running the command it captures, so on the v1.0.0 preflight — a runner with no build cache and therefore no `target/` — the redirect failed, `cargo package` never ran, and the else-branch `sed`ed the log whose absence was the finding, reporting "cargo package failed" about a command that had not been executed. The general form is **an error path must not depend on an artifact the error may have prevented from existing**; this gate removes the root cause, and the other half — a failure branch that names a missing or empty log instead of quoting it — is exercised by `tools/tests/test_check_shell_redirect_dirs.py`, since syntax cannot check a message. States its binding count |
 | `tools/extract-sound-registry.py` | maintenance | `python3 tools/extract-sound-registry.py <registries/data.min.json> <out.json>` — regenerates the compiler's sound registry for a new MC pin (positional args only, no `--help`) |
@@ -631,10 +641,13 @@ marker — but the log now says which of the two happened instead of showing a b
 
 ## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
 
-The tileset libraries are **generated, not hand-built**. Five separate Cargo
+The tileset libraries are **generated, not hand-built**. Separate Cargo
 workspaces, deliberately outside `crates/` so none of them can enter the shipped
-`delvec` and no existing `.nbt` moves (ADR-0006). All five share one CLI —
-`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export:
+`delvec` and no existing `.nbt` moves (ADR-0006). They share one CLI —
+`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export. It must
+already exist: a generator that creates its own destination cannot tell a fresh
+library from a typo, and a piece written where nothing reads is indistinguishable
+from a piece written correctly.
 
 ```sh
 cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
@@ -647,8 +660,9 @@ cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
 | `island-generator` | `island-prefab-gen` | `island-*` set-pieces | `prefabs/island-tileset.md` |
 | `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
 | `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
+| `hello-room-generator` | `hello-room-gen` | `hello-room` (the M1 piece) | — |
 
-Each generator prints the `pool/*` block to merge into the content repo's
+Each tileset generator prints the `pool/*` block to merge into the content repo's
 `pools.json` — printed, never written, because every `*.json` in that directory
 is parsed as prefab metadata and a stray snippet is `DW0346`.
 
@@ -659,7 +673,7 @@ sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
 
 Invariants true of **every** tileset live once, in
 [`../../prefabs/invariants.rs`](../../prefabs/invariants.rs), source-included by
-all five (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
+every one of them (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
 dependency, so the workspaces stay independent). Today: **distress embeds, it
 never stacks** (`assert_distress_never_stacks`) — a walkable stair tread may
 carry nothing but air or a declared attachment (railing, hardware, light fitting,
@@ -672,9 +686,11 @@ gate *fails* — run by the same CI job. Debug flags, all
 cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
 (every flank the seal pass closed).
 
-CI (`prefab-generators` job, tier 1) runs all five twice into separate trees on
-every PR: a panic fails the job, and the two trees must be byte-identical
-(ADR-0006). Wired 2026-08-03 — before that nothing in CI compiled these
+CI (`prefab-generators` job, tier 1) runs every generator twice into separate trees
+on every PR: a panic fails the job, and the two trees must be byte-identical
+(ADR-0006). `tools/check-structure-emitters.py` holds that job's lists equal to the
+`prefabs/*/Cargo.toml` workspaces on disk, so a generator it does not run is a red.
+Wired 2026-08-03 — before that nothing in CI compiled these
 workspaces, which is how a tileset with 132 reversed stair blocks (`DW0430`)
 reached an owner playtest through a green pipeline. `clippy -D warnings` is not
 yet part of that job (`prefabs/generator` carries two legacy style lints).

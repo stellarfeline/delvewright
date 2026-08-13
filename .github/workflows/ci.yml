@@ -200,6 +200,7 @@ jobs:
           workspaces: |
             prefabs/generator
             prefabs/cave-generator
+            prefabs/hello-room-generator
             prefabs/island-generator
             prefabs/island-terrain-generator
             prefabs/tidal-keep-generator
@@ -211,7 +212,7 @@ jobs:
       - name: cargo fmt --check each generator workspace
         run: |
           set -euo pipefail
-          for g in generator cave-generator island-generator \
+          for g in generator cave-generator hello-room-generator island-generator \
                    island-terrain-generator tidal-keep-generator; do
             cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
           done
@@ -226,7 +227,7 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in generator cave-generator island-generator \
+          for g in generator cave-generator hello-room-generator island-generator \
                    island-terrain-generator tidal-keep-generator; do
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
@@ -454,6 +455,14 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no command is issued to a server that cannot answer back (task #70)
         run: python3 tools/check-live-commands.py
+      # The set of things that write a prefab .nbt was enumerated by hand, and the
+      # hand missed one: hello-room built its own palette from an examples/ target
+      # and shipped 2 entries over 10 cells only a running server can read. The set
+      # is discovered here instead — by the ingredient (fastnbt::to_bytes), with
+      # non-emitters named one by one and printed, so a NEW emitter is red on
+      # arrival rather than silently outside somebody's list.
+      - name: every site that writes a prefab .nbt completes its block states
+        run: python3 tools/check-structure-emitters.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
       #
