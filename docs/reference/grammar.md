@@ -1962,6 +1962,17 @@ passed — and the verdict is printed only once the prefab is on disk, so no
 The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage in
 front of the IR. Later phases of spec-0027.
 
+The §4 palette budget's **measurement** does exist, out of the compiler:
+`python3 tools/block-appearance.py --program <p.json>` reads every `palette` role
+and every inline `fill` material of a program and reports each mix's
+`chroma_mass`, `chromatic_area`, **named** `loudest_member` with its area share,
+and `dominant_hue`, stating its binding count. What is missing is the *binding* —
+the compiler cannot run it, because the numbers are measured from the EULA-gated
+client jar and whether the derived table may be committed is spec-0035 §7's open
+question for the owner. Until that is answered the measurement is an authoring
+aid an author runs, not a gate, and it must not be described as one. It is also
+whole-zone today: scoping it to player-reachable mass is the risk §5 records.
+
 The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
 candidate renders out as one page, optionally ordered by a similarity score
 against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS

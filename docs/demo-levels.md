@@ -40,6 +40,7 @@ Rules of the queue:
 | i18n zh-cn sidecar | covered by both shipped campaigns | covered |
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
+| Block palette selection — screened shelf + mix report (0035) | **Two Naves** — one grammar program, one region, one seed, expanded twice under two palettes whose mean colours sit 13.5 RGB units apart and whose chromatic areas are 60% and 30%. The player walks from one into the other; the point is that a number said they were the same room and the eye says they are different buildings. Ships with its swatch sheet and both mix reports beside it, so the level IS the argument for measuring area share instead of a mean | pending |
 
 ## M5 theme suite (owner-approved 2026-08-03, all five)
 
