@@ -1,12 +1,13 @@
 # spec-0037: Named partitions — what the citadel concept actually asks of the grammar
 
-- **Status**: Proposed (DEC-0070, owner, 2026-08-12 — when an approved concept
+- **Status**: Proposed
+- **Basis**: DEC-0070, owner, 2026-08-12 — when an approved concept
   and the back end disagree, grow the back end, never cut the concept down;
   DEC-0071, owner, 2026-08-12 — a building is judged at playable scale, the
   silhouette carries the recognition. Every claim below is measured against the
   eight approved *Drowned Bell* concept images
   (`campaigns/the-drowned-bell-r2/design/concept/`, branch `campaign/bell-r2`)
-  and against runs of `delve-grammar`; probe programs and commands in §5.)
+  and against runs of `delve-grammar`; probe programs and commands in §5.
 - **Specs**: 0027 (the back end), 0033 (corpus/idiom discipline — §4.6 and
   §4.8 govern what this spec may and may not add), 0036 (spatial contract:
   *detects* spatial defects after expansion; this spec *removes* one class of
