@@ -180,6 +180,36 @@ at 1.21.11 from jar-derived resources, judged against the current viewer's
 output. If the spike fails, §4 is struck and the bespoke page stands; the rest
 of this ADR does not depend on it.
 
+**The spike has run and passed** (2026-08-13), across eleven prefabs plus a
+49-block torture fixture; the owner's own judgement of the pages is still the
+adoption gate. Three things it established that change this section rather than
+merely confirming it:
+
+- **The suspected failure category was the wrong one.** deepslate is not a plain
+  model renderer — `SpecialRenderer.js` covers chests, signs, banners, bells,
+  beds, skulls, shulker boxes, conduits, decorated pots and fluids. Of those,
+  only **banners** fail, and for a texture-path reason (it asks for
+  `entity/banner/banner_base`; 1.21.11 ships `entity/banner/base.png`), fixable
+  by a one-line alias in our extractor.
+- **Two data sources the client jar cannot supply**, and adoption depends on
+  both: a `BlockPropertiesProvider` for **multipart** blocks — obtainable from
+  the pinned *server* jar's `--reports` output, generated locally and never
+  redistributed — and deepslate's private special-texture id table, where a
+  wrong id fails **silently** as magenta. Three ids were wrong on the first pass
+  and only an in-page mesh probe caught them, so that probe is bound to every
+  version bump rather than to a doc line.
+- **Two capabilities the swap deletes**, named so they are decided rather than
+  discovered: biome tint (deepslate's colour table is fixed, so `--biome` and
+  the colormap sampling stop affecting the picture) and `--palette`, the
+  jar-free page — acceptable under DEC-0075, but a real loss.
+
+Measured cost: vendored bundle 287,920 B (82 KB gzipped, byte-identical across
+repeated builds); pages 320–518 KB against 48–85 KB today; browser load 31 ms at
+315 cells to 1,482 ms at 42,336; three consecutive builds byte-identical, so
+ADR-0006 holds. `page.js` falls from 1,069 lines to 341 even with an atlas
+packer deepslate does not ship; `blockcolor.rs` stays, because `palette`,
+`snapshot`/`blocking-chart` and the fidelity gate all still use it.
+
 Everything else surveyed, with the disqualifier: **WebSchematics**
 (Apache-2.0, but archived June 2024 and `.schem`-only);
 **Jopgood/minecraft-schematic-viewer** (no licence — not a licence);
@@ -255,8 +285,11 @@ else is either a wheel kept in its upstream language or CI-only Python.
 - The shelf archives stay whole per target: DEC-0077 forbids re-splitting the
   download to save disk.
 - PR #392 (viewer) and PR #422 (aimable camera) rebase onto whichever half of
-  this lands first; the viewer's emitted-page contract (`SCHEMA` id) is
-  unchanged by §4.
+  this lands first. **§4 changes the viewer's emitted-page contract and the
+  `SCHEMA` id must bump** — an earlier draft of this ADR asserted the opposite,
+  and the adoption spike disproved it: the payload goes from
+  `{palette, RLE voxels, box}` to `{nbt, blockstates, models, textures, flags,
+  defaults}`. Nothing about the two page formats is compatible.
 
 ## Revisit triggers
 
