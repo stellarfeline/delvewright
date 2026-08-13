@@ -432,7 +432,12 @@ def resolve_jar(explicit: str | None) -> Path:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--jar", help="1.21.11 client jar (EULA-gated, never committed)")
-    ap.add_argument("--id", action="append", default=[], help="measure these block ids")
+    ap.add_argument(
+        "--id",
+        action="append",
+        default=[],
+        help="measure this block id; repeatable, and every id given is measured",
+    )
     ap.add_argument("--near", help="rank blocks by closeness to a #rrggbb colour")
     ap.add_argument("--list", action="store_true", help="measure every block")
     ap.add_argument("-n", type=int, default=15, help="how many rows to print (--near)")
