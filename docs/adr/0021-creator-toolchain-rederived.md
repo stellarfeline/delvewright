@@ -5,7 +5,9 @@
 - **Source**: owner request, 2026-08-13 — re-derive the toolchain shape under the
   dependencies as they are today, not as they were when ADR-0017/0018 were
   written; DEC-0075 (client jar is a creator prerequisite), DEC-0077 (never
-  trade a user decision for disk space)
+  trade a user decision for disk space); owner rulings 2026-08-13 (binary size
+  under 100 MB and build time are not concerns; client-jar download is the
+  default and any disk scan is explicit opt-in)
 - **Refines**: ADR-0017 (its §3 revisit trigger has fired), ADR-0018
 - **Constrained by**: ADR-0006 (determinism), ADR-0013 (licence allowlist),
   ADR-0010 (EULA: never redistribute Mojang jars)
@@ -65,6 +67,15 @@ The CPU render surface — `viewer`, `scene`, `panorama`, `contact-sheet`,
 the three existing paths (ADR-0017); nothing render-shaped is a second
 download.
 
+**This move drags no `nucleation`, and that fact is load-bearing** —
+`nucleation` is not pure Rust (§3 blocker 1), so pulling it would red the
+cross-build shelf gate on both musl targets. Verified at module level, not by
+grep (`docs/notes/musl-static-dlopen-gpu-verification.md`): `render.rs` is
+reached only from the `piece`/`batch`/`fidelity-gate` arms,
+`nbt::build_schematic` — the one nucleation-typed function outside it — only
+from `render.rs`, and the CPU arms reach `scene`/`panorama`/`sheet`/`index`
+only. So `delvec`'s dependency graph stays nucleation-free under this section.
+
 **No cargo feature may gate any subcommand.** A feature ships a
 same-name-different-capability binary — the defect where the artifact's name
 promises a surface its bytes do not carry. The surface is unconditional code,
@@ -89,8 +100,12 @@ red.
 
 CI: the render workspace's duplicate `fmt`/`clippy`/`test` steps, its second
 target-dir cache, and the named git-fetch step all collapse into the workspace
-jobs. Cost: workspace builds that touch the render crate now compile the wgpu
-stack — unmeasured here; the implementing PR measures it before merging.
+jobs. Workspace builds that touch the render crate then compile the wgpu stack;
+build time is not a concern (owner ruling, 2026-08-13), so this is a note, not
+an argument. The root `Cargo.lock` gains the nucleation/wgpu entries, but the
+cross-build shelf gate compiles only `delvec`'s own graph
+(`cargo check -p delvec --bin delvec`, `tools/build-release-binaries.sh`), so
+§3's blocker 1 stays out of its reach.
 
 ### 3. GPU rendering stays pipeline-internal
 
@@ -103,9 +118,42 @@ stack — unmeasured here; the implementing PR measures it before merging.
   already out-of-process).
 - The shelf's Linux targets are **musl-static** on purpose (no glibc floor),
   and a fully static musl binary cannot `dlopen` a Vulkan loader, which is how
-  wgpu reaches a Linux GPU. **This claim is not verified here** (no Linux host
-  in this session); it is named so that whoever proposes folding wgpu into
-  `delvec` knows exactly what to falsify first.
+  wgpu reaches a Linux GPU. **Verified on a real Linux host, end to end with
+  the real crate** (`docs/notes/musl-static-dlopen-gpu-verification.md`): a
+  crate-free `dlopen` probe under the shelf's exact `RUSTFLAGS` answers
+  `Dynamic loading not supported` on both static-musl targets while the gnu
+  control succeeds; the real render crate on `=0.10.8` reports `DW0723 gpu
+  init: NoGpuAdapter` (exit 5) where the glibc build of the same source, same
+  container, same lavapipe passes the fidelity gate; `strace` shows the static
+  binary opens **0** Vulkan/EGL/GL objects against the control's 164. The
+  cause is `crt-static`, isolated by a native-Alpine reproduction.
+
+Two further blockers, both hit **before** `dlopen` is ever reached and both
+stronger than the claim above (same note, "Beyond the claim"):
+
+1. **`nucleation` is not pure Rust.** `blake3 1.8.6` is a non-optional
+   dependency — a bare `nucleation = "=0.10.8"` pulls it, `rendering` or not —
+   and its build script compiles C: `cargo check --target
+   aarch64-unknown-linux-musl` fails with `failed to find tool
+   "aarch64-linux-musl-gcc"`. This contradicts the "whole dependency set is
+   pure Rust" premise recorded beside `versions.toml [engine].targets` (that
+   comment stays true of `delvec` only because §1 keeps nucleation out of its
+   graph; the implementing PR re-words it to say so). Build scripts run under
+   `cargo check`, so the `engine binaries (cross-build shelf)` gate reds on
+   both musl targets the moment `delvec` acquires **any** nucleation
+   dependency.
+2. **The shelf's linker cannot resolve `-ldl`.** `libloading` emits `-ldl`,
+   and rustc's self-contained musl sysroot carries no `libdl.a` (musl folds
+   `dl` into libc); the verification's static build linked only because a
+   Debian `musl-dev` empty `libdl.a` was injected by hand. Nothing in the
+   release recipe supplies that.
+
+The falsifying branch exists and is **deliberately not decided here**: a
+*dynamically linked* musl build passes the fidelity gate with a PNG
+byte-identical to the glibc one across two distros — so dropping `crt-static`
+does buy Linux GPU rendering, at the price of a binary that no longer starts
+on a machine without musl's loader (the exact property the shelf exists for).
+Whether that trade is acceptable is the owner's call, unmade.
 
 ### 4. The viewer's rendering core is `deepslate` (MIT), not hand-written WebGL
 
@@ -153,9 +201,10 @@ fetch-once, hash-refusing cache in the exact shape of
 `validation/server-bootstrap-cache.sh` fills the existing resolution ladder
 (`--textures` / `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky/resources`). Fetching
 from Mojang's CDN is what every launcher does; the jar is never committed,
-baked, or redistributed (ADR-0010). **Scanning the creator's disk for
-launcher-installed jars happens only behind an explicit opt-in flag** — the
-owner has ruled the scan sensitive, so the default path is the pinned fetch.
+baked, or redistributed (ADR-0010). **Download is the default and scanning the
+creator's disk for launcher-installed jars happens only behind an explicit
+opt-in flag** — this is an owner ruling (2026-08-13), not a proposal of this
+ADR.
 
 ### 6. What stays non-Rust, and the criterion that decides
 
@@ -177,8 +226,12 @@ else is either a wheel kept in its upstream language or CI-only Python.
 
 - **Status quo** (render undistributed, own workspace, bespoke WebGL): every
   ground it rests on is stale or narrowed — see Context.
-- **Full one-binary including the GPU arms**: blocked by the musl/dlopen claim
-  (§3), and no creator need requires it once the CPU channel covers DEC-0075.
+- **Full one-binary including the GPU arms**: blocked three ways on the shelf
+  as it stands — verified dlopen failure under `crt-static`, nucleation's C
+  build script with no musl cross-compiler in the recipe, and the missing
+  `libdl.a` (§3) — and no creator need requires it once the CPU channel covers
+  DEC-0075. The dynamic-musl variant that would unblock it trades away the
+  no-loader-floor property and awaits an owner ruling.
 - **`delve-render` as a second shelf item**: a second distributed binary and a
   second version line (ADR-0016 arms grow) for a tool whose creator-facing
   need §1 just absorbed.
@@ -195,9 +248,10 @@ else is either a wheel kept in its upstream language or CI-only Python.
   visual review becomes an unconditional step. Same-PR skill/docs sync per the
   tooling-sync rule; `docs/reference/{tools,distribution-size,compiler}.md`
   re-measure and re-describe in the implementing PRs.
-- `delvec` grows by the CPU render surface — unmeasured until implemented; the
-  implementing PR adds the measurement to `distribution-size.md` before
-  quoting any number.
+- `delvec` grows by the CPU render surface — unmeasured until implemented.
+  Binary size under 100 MB and build time are not concerns (owner ruling,
+  2026-08-13), so the number is a record, not a gate: the implementing PR
+  re-measures into `distribution-size.md` per that file's own convention.
 - The shelf archives stay whole per target: DEC-0077 forbids re-splitting the
   download to save disk.
 - PR #392 (viewer) and PR #422 (aimable camera) rebase onto whichever half of
@@ -206,8 +260,15 @@ else is either a wheel kept in its upstream language or CI-only Python.
 
 ## Revisit triggers
 
-- The musl/dlopen claim is falsified on a real Linux host → reopen §3's
-  placement of the GPU arms.
+- The owner rules on `crt-static`: accepting a dynamically-linked musl (or a
+  gnu) Linux shelf target removes one of §3's three blockers and reopens the
+  placement of the GPU arms — the other two (nucleation's C build script, the
+  missing `libdl.a`) would still need their own answers.
+- What the verification left open: `x86_64` static musl was exercised with the
+  `dlopen` probe only (mechanism is in libc, not the architecture, but the
+  full render binary was not built for it), and no real GPU was involved
+  anywhere (lavapipe is a software ICD) — driver-specific behaviour is
+  unspoken for.
 - §4's spike fails on the 1.21.11 fixtures → strike §4, keep the bespoke page,
   record the failure beside the spike.
 - Nucleation's registry cadence stops carrying the API this repo needs → the
