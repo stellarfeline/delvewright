@@ -253,6 +253,40 @@ and not in the table above: `none_of` is negation of guards, a language feature
 rather than a way of building anything. The demonstration-coverage report is
 what holds the corpus to that.
 
+### The order of the splits — decided before any of the nine
+
+Not a tenth technique and not a row in the table: the nine below are how a shape
+is made, and this is the decision taken before any of them, in the first ten
+minutes, on almost no information. It decides which of the building's openings
+can line up at all.
+
+A split cuts one axis. Its children copy the parent box **unchanged on the two
+axes it does not cut**; only the cut axis differs. So two siblings of a split are
+guaranteed to have the same extent on the other two axes, and that guarantee is
+the only alignment this language gives away: there is no positional index and no
+way to say *this opening is the same cells as that one*. Every other alignment is
+a constant an author computed, which is a constant an author can get wrong, and
+nothing checks it.
+
+**The last axis you split is the only axis on which two things are guaranteed to
+meet — so split last on the axis your openings run through.** A hole is then a
+*piece of a split whose siblings are the two things that must meet*: a breach and
+the deck outside it are two children of one split across the wall's thickness, so
+they share their other two extents by construction and there is no sill height to
+match. The opening itself is best written as the **absence** of a sibling
+(`void`, or a piece with no child painting it), because an absence cannot be
+misaligned.
+
+Within one axis, pin a course to a band's **end** rather than to a height:
+`[relative 1, absolute 1]` down `Y` makes a slab *the last course of that band*
+at any band height — measured at bands 4, 7, 11 and 13 deep, one course each
+time, with no rule stating a rise. `[absolute 5, absolute 1]` is a course at a
+computed height, and it also refuses any band shorter than six. Write every slab
+the first way and the holes between storeys stop needing arithmetic.
+
+The order cannot be changed afterwards without rewriting the decomposition, so
+choose it from where the openings are, not from how the building is drawn.
+
 ### 1. Repetition
 
 The `-X` lane tiles its piers with `"repeat": true`; the `+X` lane peels one
@@ -284,6 +318,15 @@ arithmetic and the same recursion becomes a shape (idiom 3).
 The `otherwise` arm is the base case: the remainder too short for another
 pier-and-bay becomes the last pier. Strip it and the expansion is
 `NoApplicableRule` at the first scope the guard rejects.
+
+**`repeat` clamps the last tile; it does not rescue a box too short for the first
+one.** One pass of the pattern is resolved before any tiling happens, and its
+absolute pieces must fit the scope — so a `[absolute 3, absolute 5]` repeat
+handed a 7-deep box is `rule "row": split needs 8 blocks but the scope is 7
+across`, a refusal, not a single clamped tile. A rule that repeats therefore owes
+a guard on the extent and an `otherwise` arm for the short box, exactly as a
+recursion does; `boulder_stair` gives its short lane no pockets rather than an
+error.
 
 ### 2. Priority
 
@@ -580,8 +623,9 @@ from `nav::ground_entry` and reports:
 | `pockets`, `largest_pockets` | how many disconnected pockets, and the bounding box of five of them |
 
 **The entrance is derived, not assumed.** Grade is the lowest `Y` at which any
-side-face cell is standable, and the entry set is the side-face cells within one
-course of it — one course because that is the walk's own step height. A belfry
+side-face cell is standable, and the entry set is every side-face standable cell
+**at grade or one course above it** — `y <= grade + 1`, inclusive of both, one
+course because that is the walk's own step height. A belfry
 louvre is a standable cell on a side face and is deliberately *not* an entrance:
 seeding a walk from every opening in a building is how a reachability measure
 reports a stranded gallery as reached.
@@ -601,6 +645,20 @@ floor at all — `castle`, `church` and `stair-flight` among them — and the ga
 binds to zero on each, which is a finding and not a pass. A piece is entitled to
 strand floor: `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft`
 is one-way by design.
+
+**A one-way descent cannot be stated, and the gate cannot be told about it.**
+`nav::reachable_with_fall` is the predicate that would answer "a body gets down
+there but not back up", and `drop_shaft`'s own tests are gated on it in both
+directions — but nothing outside `cargo test` can ask, so no flag, no report
+field and no metadata carries the claim. On a piece whose design *is* a one-way
+drop, `--reachable-floor` is therefore not a gate to satisfy but one to leave
+off: `drop-shaft` at 9×12×9 seed 1 fails it with 28 of 63 roofed cells
+unreached, and a red gate writes **no** `.nbt` (exit 4), so passing the flag does
+not ship a piece with a red — it ships nothing. What to do instead: expand
+without the flag and read the always-on reachability line, where the stranded
+lower level appears as an `unreachable_sheltered` pocket with its bounding box.
+That pocket is the design, and the engine cannot tell it from a room with no way
+in. The verdict is bounded by the instrument, and this is where it says so.
 
 ## 5. Rule library — ported buildings
 
