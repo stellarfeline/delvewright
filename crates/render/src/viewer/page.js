@@ -763,7 +763,12 @@
       const c = cameraCenter();
       let fx = c[0] - state.eye[0], fz = c[2] - state.eye[2];
       const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
-      const rx = fz, rz = -fx;
+      // The strafe basis. In Minecraft's axes (+X east, +Z south, Y up) the
+      // vector to a body's right of `forward` is (-fz, fx): face north
+      // (0, -1) and it gives east (1, 0); face east (1, 0) and it gives
+      // south (0, 1). Written with the signs the other way round it is the
+      // LEFT vector, and A and D swap — which is how this shipped.
+      const rx = -fz, rz = fx;
       let mx = 0, my = 0, mz = 0;
       const v = keys.has("shift") ? 0.34 : 0.13;
       if (keys.has("w")) { mx += fx * v; mz += fz * v; }
