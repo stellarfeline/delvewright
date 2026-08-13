@@ -331,3 +331,47 @@ fn a_region_that_fits_writes_one_structure_and_its_metadata() {
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// **The reachability measurement is bound to the act of expanding, not to a
+/// flag and not to a doc line.**
+///
+/// A gate nothing invokes is not a gate (CLAUDE.md), and an author who never
+/// heard of reachability is exactly the author whose upper storey has no stair.
+/// So `expand` prints it and writes it into the report on every run, with no
+/// flag passed at all — this asserts the binding at the only place it can fail,
+/// which is the binary.
+#[test]
+fn every_expansion_prints_and_records_the_reachability_measurement() {
+    let dir = scratch("reachability-always");
+    let out_dir = dir.join("out");
+    let file = program_file(&dir, "store-room.json", &store_room());
+
+    let out = expand(&file, &out_dir, &[]);
+    assert!(out.status.success(), "{}", combined(&out));
+
+    let printed = combined(&out);
+    assert!(
+        printed.contains("reachability") && printed.contains("grade entry cell(s)"),
+        "no reachability line on a run with no flags:\n{printed}"
+    );
+
+    let report: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out_dir.join("store-room.report.json")).unwrap(),
+    )
+    .unwrap();
+    let reach = &report["measurements"]["reachability"];
+    assert!(
+        reach["standable"].as_u64().unwrap() > 0,
+        "the measurement bound to nothing: {reach}"
+    );
+    assert!(reach["entry_cells"].as_u64().unwrap() > 0, "{reach}");
+    assert!(reach["reachable"].as_u64().unwrap() > 0, "{reach}");
+    // No gate was asked for, so the two opt-in ones must not have appeared.
+    let ids: Vec<&str> = report["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["blocks-exist", "non-empty"], "{ids:?}");
+}

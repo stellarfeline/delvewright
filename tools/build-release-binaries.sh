@@ -94,10 +94,25 @@ sha256_line() { # <file>
 # workspace, so it lives at the call site rather than in `[profile.release]`
 # (which every developer's `cargo build --release` also uses).
 #
-#   -C strip=symbols  a downloaded binary carries no debug symbols. 11.7 MB ->
-#                     ~4 MB per target; the debug build in `target/` is
-#                     untouched, and a backtrace from a release binary was never
-#                     going to be useful without the matching source anyway.
+#   -C strip=symbols  a downloaded binary carries no debug symbols; the debug
+#                     build in `target/` is untouched, and a backtrace from a
+#                     release binary was never going to be useful without the
+#                     matching source anyway.
+#                     MEASURED (2026-08-11, aarch64-apple-darwin, rustc 1.97.1):
+#                     9,794,464 B -> 7,917,536 B built at 922cfb6, the commit
+#                     that first wrote this comment. It claimed "11.7 MB -> ~4 MB
+#                     per target", which was never true of any target — the
+#                     smallest v1.1.0 shelf artifact is 7,923,608 B. Corrected
+#                     rather than deleted, because the wrong figure was the only
+#                     statement in the repo about how big `delvec` is. Full
+#                     inventory + causes: docs/reference/distribution-size.md.
+#
+#                     NOTE this flag lives HERE and not in `[profile.release]`,
+#                     so `cargo install delvec` hands out an UNstripped binary
+#                     (10,012,928 B vs the shelf's 8,053,424 B at v1.1.0). That
+#                     is a deliberate trade — a repo-wide `strip` would take
+#                     symbols off every developer's `cargo build --release` —
+#                     and it is recorded, not hidden (distribution-size.md §6.1).
 #
 #   -C linker=rust-lld (musl only)  `*-linux-musl` normally wants `musl-gcc`,
 #                     which means an apt step on the runner and NOTHING on a

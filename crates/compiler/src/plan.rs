@@ -1075,7 +1075,8 @@ pub fn wave_area<'a>(campaign: &'a Campaign, wave_id: &str) -> Option<&'a str> {
 }
 
 /// Errors that stop planning (map to build failure, exit 3). Carries a stable
-/// `DW03xx` build/solver diagnostic code (see `crates/compiler/README.md`).
+/// `DW03xx` build/solver diagnostic code (catalogued in
+/// `docs/reference/compiler.md` §5).
 #[derive(Debug)]
 pub struct PlanError {
     /// The stable `DW03xx` code.

@@ -387,6 +387,26 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # task #111: `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
+      # picked by listing the directory and writing the next integer. Two new
+      # files never produce a git conflict, so a per-branch "no duplicate number
+      # in this tree" check is green on every branch that collides — the
+      # collision exists only in the UNION of two trees, and nothing computed
+      # that union. PR #361 (`spec-0033-declared-body-traversal.md`, opened
+      # 2026-08-09, left open) and a later PR (`spec-0033-grammar-corpus.md`,
+      # listed `docs/specs/` on a `main` that did not yet have #361's file)
+      # held number 0033 for three days; a human reading PR titles caught it.
+      # This gate fetches `origin/main` (same host `actions/checkout@v4` above
+      # already reached — not a new external dependency) and diffs this
+      # checkout's numbered files against it directly, rather than trusting
+      # that the checked-out tree already IS the merge preview. Deterministic
+      # given that fetch; the script itself takes no further network action.
+      # What it cannot see — another open PR that has not yet merged into
+      # `origin/main` — is stated in the script's own docstring, not buried.
+      - name: fetch origin/main for the spec/ADR numbering-uniqueness gate
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - name: no spec or ADR number collides with origin/main after this merges
+        run: python3 tools/check-numbered-doc-uniqueness.py
       # A required status check answers for the uptime of every host it reaches,
       # and a git dependency is the reach nothing in cargo's surface lets a job
       # decline: it is cloned during RESOLUTION of the workspace that declares it,
