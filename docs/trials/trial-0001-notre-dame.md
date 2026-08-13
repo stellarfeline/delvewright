@@ -207,7 +207,7 @@ fresh directory — all four `.nbt` and the manifest byte-identical.
 |---|---|---|
 | R1 silhouette | **no**, and a square-on elevation later confirmed it | **partial** at the time, and the binding constraint moved out of the language; **re-judged `yes`** once a camera could frame the west front — see below |
 | R2 interior | **yes** as a Gothic nave | **yes** as a Gothic nave, and now under a stepped pointed vault rather than a flat slab |
-| R3 gates | yes, `lighting` unrunnable | yes, `lighting` unrunnable — identically, from an independent agent |
+| R3 gates | **yes**, `lighting` unrunnable | **yes**, `lighting` unrunnable — identically, from an independent agent |
 | R4 missing | six items | four of the six unchanged, two new, one withdrawn |
 
 ### What the idioms bought

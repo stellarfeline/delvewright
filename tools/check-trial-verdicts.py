@@ -61,12 +61,22 @@ def audit(path):
     lines = path.read_text(encoding="utf-8").splitlines()
 
     runs = [m.group(1) for line in lines if (m := RUN_HEADING.match(line))]
-    rubric_ids, bounds = [], {}
+    # A judged verdict is (rubric id, THE RUN WHOSE SECTION IT IS IN) — not the
+    # cross product of every rubric id with every run. A record whose run 1 is
+    # written down and not yet performed has a `## Run 1 — result` heading and no
+    # answers under it, and demanding a declaration there asks the author to
+    # certify an instrument for a judgement nobody made. The cross product is the
+    # same defect this gate exists to catch: a set that is easy to compute
+    # standing in for the set the sentence names.
+    judged, bounds = set(), {}
     in_bounds = False
+    current_run = None
 
     for line in lines:
         if line.startswith("## "):
             in_bounds = bool(BOUNDS_HEADING.match(line))
+            m = RUN_HEADING.match(line)
+            current_run = m.group(1) if m else None
         row = cells(line)
         if row is None or not row:
             continue
@@ -93,19 +103,18 @@ def audit(path):
                     f"`artifact-bound`, or `instrument-bound — <named blocker>`"
                 )
             bounds[(b.group(1), b.group(2))] = bound
-        elif any(VERDICT.search(c) for c in row[1:]):
-            rubric_ids.append(head.group(1))
+        elif current_run is not None and any(VERDICT.search(c) for c in row[1:]):
+            judged.add((head.group(1), current_run))
 
-    rubric_ids = sorted(set(rubric_ids))
     if not runs:
         problems.append(f"{path.name}: no `## Run <n> — result` section")
-    if not rubric_ids:
+    if not judged:
         problems.append(
             f"{path.name}: zero rubric verdicts found — a trial record with no "
             f"judged verdict is a finding, not a pass"
         )
 
-    required = {(r, run) for r in rubric_ids for run in runs}
+    required = judged
     for key in sorted(required - set(bounds)):
         problems.append(
             f"{path.name}: {key[0]} run {key[1]} is judged but declares no "

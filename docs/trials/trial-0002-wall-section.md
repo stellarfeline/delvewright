@@ -265,6 +265,19 @@ openings run through.
 Tasks #121 (`--traversable`'s outside route), #122 (a one-way descent has no surface),
 #123 (the split-order design rule), plus the doc corrections in R4.
 
+## Instrument bounds
+
+Every judged verdict declares what bounded it: `artifact-bound` when the
+instrument could frame the thing being judged, so the answer is about the
+artifact; `instrument-bound` when it could not, with the blocker named so the
+verdict can be re-taken once it is fixed. Trial 0001 shipped a bounded answer as
+a verdict with the disclaimer three paragraphs away, and later rounds cited the
+verdict; `tools/check-trial-verdicts.py` is what makes this table exist.
+
+| Verdict | Bound | Judged from |
+|---|---|---|
+| R1 run 0 | artifact-bound | `castle-wall-elevation-field.png`, a square-on west elevation at 900 px, plus the close view of the breach |
+
 ## Run 1 — result
 
 Not yet run.
