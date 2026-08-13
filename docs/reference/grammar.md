@@ -784,9 +784,13 @@ Two mechanisms answer it, and both are enforced by
 `tools/check-grammar-ir-compat.py` in CI:
 
 1. Every IR object type is a **closed schema** (`deny_unknown_fields`), so an
-   engine meeting a document from a newer engine refuses it by name. The one
-   exception is `mark`, whose `at` is a flattened sum and which serde cannot
-   close; the ledger below is what holds it.
+   engine meeting a document from a newer engine refuses it by name. The
+   exceptions are the two types with a flattened sum inside them — `mark`, whose
+   `at` is flattened, and an `edge`, whose `class` is: serde cannot combine
+   `flatten` with the attribute, which compiles and then reads every flattened
+   key as unknown, so the engine would refuse its own documents. The ledger below
+   is what holds those two, and CI names the incompatibility rather than asking
+   for the attribute.
 2. Every optional field is in that ledger with the version it arrived at, checked
    in both directions, and anything above `1.0.0` must be refused by name in
    `ir.rs` — a version constant that nothing enforces does not count as a fence.

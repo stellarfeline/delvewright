@@ -62,6 +62,11 @@ EXEMPT: dict[str, str] = {
         "flattened key as unknown, refusing every well-formed mark. Held by the "
         "§2e ledger instead."
     ),
+    "ir::Edge": (
+        "`class` is #[serde(flatten)], the same incompatibility as `ir::Mark`: "
+        "with the attribute the engine refuses its own edges by name "
+        "(`unknown field \'class\'`). Held by the §2e ledger instead."
+    ),
 }
 
 TYPE_RE = re.compile(
@@ -69,16 +74,25 @@ TYPE_RE = re.compile(
 )
 
 
-def object_types() -> list[tuple[str, str, bool, bool]]:
+def object_types() -> list[tuple[str, str, bool, bool, bool]]:
     """Every deserialisable type that reads a JSON **object with named fields**.
 
-    Returned as `(qualified_name, kind, has_deny, is_untagged)`. Unit-only enums
-    (`Axis`, `Facing`, …) are excluded because they deserialise from a string and
-    an unknown one is already a serde error — they have no field to hide. Untagged
-    enums are reported but not required to carry the attribute: serde cannot apply
-    it there, and their variants are covered through the struct types they hold.
+    Returned as `(qualified_name, kind, has_deny, is_untagged, has_flatten)`.
+    Unit-only enums (`Axis`, `Facing`, …) are excluded because they deserialise
+    from a string and an unknown one is already a serde error — they have no
+    field to hide. Untagged enums are reported but not required to carry the
+    attribute: serde cannot apply it there, and their variants are covered
+    through the struct types they hold.
+
+    `has_flatten` is why this returns a fact rather than a verdict. A type with a
+    `#[serde(flatten)]` field CANNOT carry `deny_unknown_fields`: the attribute
+    compiles and then reads every flattened key as unknown, so the engine refuses
+    its own documents. Telling an author to add it there is advice that breaks the
+    build in a way `cargo build` cannot see — which is how `ir::Edge` got it
+    during the #413+#417 integration and shipped an engine that could not parse an
+    edge until one CLI round-trip test caught it.
     """
-    out: list[tuple[str, str, bool, bool]] = []
+    out: list[tuple[str, str, bool, bool, bool]] = []
     for module, path in SOURCES.items():
         src = path.read_text()
         for m in TYPE_RE.finditer(src):
@@ -94,6 +108,7 @@ def object_types() -> list[tuple[str, str, bool, bool]]:
                     kind,
                     "deny_unknown_fields" in attrs,
                     "untagged" in attrs,
+                    "serde(flatten)" in body,
                 )
             )
     return out
@@ -157,11 +172,22 @@ def main() -> int:
     # --- Gate 1: closed schemas. ------------------------------------------
     types = object_types()
     checked = [t for t in types if not t[3]]
-    for name, _kind, has_deny, _untagged in checked:
+    for name, _kind, has_deny, _untagged, has_flatten in checked:
         if name in EXEMPT and has_deny:
             failures.append(
                 f"{name} is listed in EXEMPT but now carries deny_unknown_fields — "
                 f"drop the exemption (this table may only shrink)"
+            )
+        elif name not in EXEMPT and not has_deny and has_flatten:
+            # Named as the incompatibility it is, never as a missing attribute:
+            # adding one here compiles and then refuses every well-formed
+            # document, which no build or clippy run can see.
+            failures.append(
+                f"{name} has a #[serde(flatten)] field, which serde CANNOT combine with "
+                f"deny_unknown_fields — the attribute would compile and then read every "
+                f"flattened key as unknown. Do not add it. Add an EXEMPT entry in "
+                f"tools/check-grammar-ir-compat.py naming the flattened field, and hold "
+                f"the type through the §2e ledger instead."
             )
         elif name not in EXEMPT and not has_deny:
             failures.append(
@@ -170,9 +196,19 @@ def main() -> int:
                 f"silently. Add the attribute, or add an EXEMPT entry in "
                 f"tools/check-grammar-ir-compat.py saying why serde cannot."
             )
+    flattening = {t[0] for t in checked if t[4]}
     for name in EXEMPT:
         if name not in {t[0] for t in checked}:
             failures.append(f"EXEMPT names {name}, which is not a document object type any more")
+        elif name not in flattening:
+            # The stated reason, held to the source. Every exemption so far is
+            # `flatten`; one that is not has to say so here rather than inherit a
+            # reason that stopped being true.
+            failures.append(
+                f"EXEMPT names {name}, which no longer has a #[serde(flatten)] field — the "
+                f"reason the exemption records is not the reason any more. Close it, or "
+                f"replace the entry with the incompatibility that is now true."
+            )
     print(f"closed-schema   bound {len(checked):3}  object type(s) examined, "
           f"{len(checked) - len(EXEMPT)} closed, {len(EXEMPT)} exempt")
     if not checked:

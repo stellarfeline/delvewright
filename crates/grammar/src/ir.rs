@@ -863,7 +863,6 @@ impl EdgeClass {
 
 /// One declared way between two spaces, or between a space and the exterior.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Edge {
     /// A declared space name, or [`EXTERIOR`].
     pub a: String,
