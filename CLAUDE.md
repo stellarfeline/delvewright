@@ -394,6 +394,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
   detail cannot**. The review question is therefore always "does this read as
   the thing, and does the inside belong to it", never "is the detail right" —
   and a piece is not rejected for lacking detail it was never going to have.
+- **Grandeur is playable content, not volume** (owner, 2026-08-13). Buildings
+  should be built grand — but a structure is grand because there is a lot in it
+  to play, not because it encloses a lot of air. **A big empty room is not a big
+  building; it is a small building that costs more to walk across.** The two
+  rules compose: the silhouette earns the recognition from outside, and the
+  density earns it from inside. So the question asked of an oversized space is
+  always *what does the player do in here*, and a space with no answer is cut or
+  filled — never kept because it looks impressive in an elevation.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
