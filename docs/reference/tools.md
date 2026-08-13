@@ -132,11 +132,12 @@ packaging detail and reaches no author and no flag (DEC-0069). `piece` and
 `audit` below take that manifest and treat the zone as one thing; both refuse a
 lone tile of a set and name the manifest instead.
 
-`list` names an **`idiom-*` block**: ten teaching programs, one per technique of
-the IR plus one composition, each documented at a region and seed in
+`list` names an **`idiom-*` block**: eleven teaching programs, one per technique
+of the IR plus one composition, each documented at a region and seed in
 [`grammar.md`](grammar.md) §2c. `show --program idiom-shape` prints one, and it
-is the fastest way to see how a taper, an erosion mix or a symmetric aperture is
-actually written. Read that block before starting a piece.
+is the fastest way to see how a taper, an erosion mix, a symmetric aperture or
+one rule called with different content is actually written. Read that block
+before starting a piece.
 
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". `check` validates structure with no

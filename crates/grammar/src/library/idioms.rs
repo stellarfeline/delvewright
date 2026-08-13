@@ -26,13 +26,13 @@
 use crate::block::BlockState;
 use crate::geom::Axis;
 use crate::ir::{
-    ArithOp, CmpOp, DimRef, Expr, MarkAt, Node, Program, Reorient, Rounding, Size, Split,
-    WeightedBlock,
+    ArithOp, AxisSpec, CmpOp, DimRef, Expr, MarkAt, Material, Node, Program, Reorient, Rounding,
+    Size, Split, WeightedBlock,
 };
 
 use super::{
     abs, abse, absp, all_of, alt_else, alt_when, call, cmp, dim, fill, int, marked, par, rel,
-    split, split_exact, split_repeat, void,
+    reoriented, split, split_exact, split_repeat, void,
 };
 
 // ---------------------------------------------------------------------------
@@ -707,6 +707,138 @@ pub fn light() -> Program {
                     abse(par("sconce_period").arith(ArithOp::Sub, int(1))),
                 ],
                 vec![fill("lamp"), fill("mass")],
+            ),
+        )
+}
+
+// ---------------------------------------------------------------------------
+// 10. Arguments
+// ---------------------------------------------------------------------------
+
+/// **Arguments** — one rule, called with different content.
+///
+/// A `call` names a rule and expands it in the current scope. Everything that
+/// rule reads — a parameter, a palette role — it reads from the frame it is
+/// expanded under, and `bind` is what puts a frame there. So the same rule
+/// builds a different thing at each call site, and the second instance of a
+/// shape stops being a copy of the first.
+///
+/// The piece is four stepped pointed heads in one box, and they differ in the
+/// two ways a head can differ:
+///
+/// * **the paint**, chosen by the caller — two heads open onto air, two onto
+///   glazing, and the choice is `{"op": "bind", "palette": {"opening":
+///   {"role": "glazing"}}}` wrapped round the call;
+/// * **the axis**, chosen by the caller with `reorient` — two heads taper
+///   across world `X`, two across world `Z`, because a turned frame is the one
+///   thing a call could always be handed.
+///
+/// **The paint is bound at the call and read three rules deeper.** `head` fills
+/// `opening`; `shoulders` calls `head` again; neither mentions glazing, and
+/// neither had to be edited to get a glazed head. That is the whole point of the
+/// frame being inherited through calls: an argument survives a recursion whose
+/// rules know nothing about it. Were it otherwise, every rule of the recursion
+/// would have to re-thread every name any caller might ever bind, and forgetting
+/// one would silently expand the default.
+///
+/// Without it, these four heads are **eight rules**: the paint is filled by
+/// `shoulders`, so changing it forces a copy of `shoulders`, which forces a copy
+/// of `head` to call the copy, twice over for the two axes. Nothing keeps four
+/// copies in step and no gate can tell that they have drifted —
+/// `tests/arguments.rs` builds exactly that program, edits one copy out of step,
+/// and shows every gate still green.
+///
+/// **A binding is not a global.** It lasts exactly as long as the body it wraps:
+/// the glazed head's sibling, expanded from the same rule one piece earlier, is
+/// still air. And bindings in one frame are simultaneous, evaluated in the
+/// enclosing scope, so a frame can swap two names rather than chaining them.
+///
+/// **What it also buys, stated narrowly**: a recursion can carry a counter, by
+/// binding a parameter to an expression over its own current value on the
+/// self-call. That is an index into the *recursion*, which for a peel-one-and-
+/// recurse rule is the index along the axis. It is still not an index into
+/// position: a `repeat` split's tiles remain unable to know how far along they
+/// are.
+///
+/// **What stops a changing argument from diverging** is what stops every other
+/// recursion: [`Limits`](crate::Limits). A guard that a binding keeps true for
+/// ever is an unguarded recursion, and an unguarded recursion is a `DepthLimit`
+/// — a deterministic, named error, never a hang.
+///
+/// Documented at **15 × 7 × 15, seed 1** — four quadrants of 7 × 7 × 7, each a
+/// head opening 7, 5, 3 and then one cell wide to the top.
+pub fn arguments() -> Program {
+    // The inset, per side, per course — [`shape`]'s, and read off the scope it
+    // is applied in, which is workaround the first: anything derivable from the
+    // box needs no argument at all.
+    let step = || max(int(1), dim(DimRef::X).arith(ArithOp::Div, par("run")));
+
+    /// Build `body` with the head's opening bound to the glazing.
+    fn glazed(body: Node) -> Node {
+        body.with_roles([("opening", Material::role("glazing"))])
+    }
+
+    /// Build `body` in a frame whose `X` is the caller's `Z` — the one argument
+    /// a call could always be handed.
+    fn turned(body: Node) -> Node {
+        reoriented(
+            Reorient::default().x(AxisSpec::LocalZ).z(AxisSpec::LocalX),
+            body,
+        )
+    }
+
+    fn quadrants(near: Node, far: Node) -> Node {
+        split_exact(
+            Axis::Z,
+            vec![rel(1), abs(1), rel(1)],
+            vec![near, fill("mass"), far],
+        )
+    }
+
+    Program::new("arguments", "piece")
+        .param("run", 6)
+        .role("mass", BlockState::simple("stone_bricks"))
+        .role("opening", BlockState::air())
+        .role("glazing", BlockState::simple("light_blue_stained_glass"))
+        .rule(
+            "piece",
+            split_exact(
+                Axis::X,
+                vec![rel(1), abs(1), rel(1)],
+                vec![
+                    quadrants(call("head"), glazed(call("head"))),
+                    fill("mass"),
+                    quadrants(turned(call("head")), turned(glazed(call("head")))),
+                ],
+            ),
+        )
+        .rule_alts(
+            "head",
+            vec![
+                alt_when(
+                    all_of(vec![
+                        cmp(
+                            dim(DimRef::X),
+                            CmpOp::Ge,
+                            add(step().arith(ArithOp::Mul, int(2)), int(1)),
+                        ),
+                        cmp(dim(DimRef::Y), CmpOp::Ge, int(2)),
+                    ]),
+                    split_exact(
+                        Axis::Y,
+                        vec![abs(1), rel(1)],
+                        vec![fill("opening"), call("shoulders")],
+                    ),
+                ),
+                alt_else(fill("opening")),
+            ],
+        )
+        .rule(
+            "shoulders",
+            split_exact(
+                Axis::X,
+                vec![abse(step()), rel(1), abse(step())],
+                vec![fill("mass"), call("head"), fill("mass")],
             ),
         )
 }

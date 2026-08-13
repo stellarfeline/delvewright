@@ -104,6 +104,8 @@ constructs! {
         Mark = "node:mark",
         /// [`Node::Claim`].
         Claim = "node:claim",
+        /// [`Node::Bind`].
+        Bind = "node:bind",
     }
 }
 
@@ -123,6 +125,7 @@ impl NodeKind {
             Node::Reorient { .. } => NodeKind::Reorient,
             Node::Mark { .. } => NodeKind::Mark,
             Node::Claim { .. } => NodeKind::Claim,
+            Node::Bind { .. } => NodeKind::Bind,
         }
     }
 }
@@ -338,6 +341,17 @@ impl Tally {
             Node::Void | Node::Skip | Node::Call { .. } => {}
             Node::Reorient { body, .. } | Node::Mark { body, .. } | Node::Claim { body, .. } => {
                 self.node(body)
+            }
+            Node::Bind { palette, body, .. } => {
+                // A rebinding to an inline paint is a paint demonstration for
+                // the same reason a `fill` of one is; a rebinding to another
+                // role is counted where that role is bound, as everywhere else.
+                for material in palette.values() {
+                    if let Material::Inline(paint) = material {
+                        self.paint(paint);
+                    }
+                }
+                self.node(body);
             }
             Node::Split(split) => {
                 for child in &split.children {

@@ -61,13 +61,13 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `version` | version string | **required**; the document's own version, not the crate's |
 | `name` | string | provenance label |
 | `start` | rule name | expanded into the whole region |
-| `params` | name → i64 | size/kind controls; read by `{"expr":"param"}` |
-| `palette` | role → paint | style controls; a paint is a block-state string or a weighted list |
+| `params` | name → i64 | size/kind controls; read by `{"expr":"param"}`. A declaration **and** a default: the outermost binding frame |
+| `palette` | role → paint | style controls; a paint is a block-state string or a weighted list. Also a frame — `bind` overrides it over a subtree |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
 | `contract` | `{entry, spaces, no_body, edges}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
-(leave as-is), `call`, `split`, `reorient`, `mark`, `claim`.
+(leave as-is), `call`, `split`, `reorient`, `bind`, `mark`, `claim`.
 
 **`version`** is the document's compatibility surface. A version this engine does
 not accept is refused outright rather than parsed for the parts that look
@@ -111,6 +111,51 @@ completed to a permutation: keep an axis where possible, otherwise complete the
 cycle the request started (asking for "my Z is the old X" swaps X and Z),
 otherwise take the lowest free axis.
 
+**`bind`** wraps a body and rebinds names over it — `params`, `palette`, or
+both:
+
+```json
+{ "op": "bind",
+  "params":  { "run":     { "expr": "int", "value": 3 } },
+  "palette": { "opening": { "role": "glazing" } },
+  "body":    { "op": "call", "symbol": "head" } }
+```
+
+A scope is a box, a set of axis names and a set of value names. `split` narrows
+the box, `reorient` renames the axes, `bind` rebinds the values, and **all three
+are inherited by every child scope, a `call`'s included** — which is what lets an
+argument survive a recursion whose rules never mention it. `head` fills
+`opening`, `shoulders` calls `head`, and a caller who binds `opening` gets a
+glazed arch out of both without editing either.
+
+Four things it is:
+
+- **A frame, not a global.** It lasts exactly as long as its body; the sibling
+  beside it reads the enclosing frame, and so does everything after it.
+- **Simultaneous.** Every binding in one frame is evaluated in the *enclosing*
+  scope before the frame is pushed, so `{"a": param b, "b": param a}` swaps the
+  two rather than chaining them.
+- **Shadowing.** An inner frame wins over an outer one, name by name; a name it
+  does not mention falls through.
+- **Closed.** A `bind` may only name a parameter or role the program itself
+  declares (`UnknownBinding`), so a misspelt binding is refused where it was
+  written instead of quietly expanding the default. A `bind` that binds nothing
+  is `EmptyBind`.
+
+A binding writes no cell and draws nothing from the seeded stream, so it can
+move no block by itself: rebinding every name of every rule of every library
+program to itself gives byte-identical models and identical anchors, at three
+seeds (`tests/arguments.rs`).
+
+**A binding is one more way to write a recursion that does not terminate** — an
+argument that keeps a guard true for ever — and it needs no new answer: an
+unguarded recursion is a `DepthLimit`, deterministic and named (§4). Used the
+other way it is a **base case**: a self-call that rebinds `n` to `n + 1` under a
+guard on `n` is a recursion that counts, which is an index into the recursion —
+for a peel-one-and-recurse rule, the index along the axis. It is still not an
+index into position; a `repeat` split's tiles cannot know how far along they
+are.
+
 **Guards** (`when`): `always` (default), `otherwise`, `cmp` over integer
 expressions of literals / params / scope dimensions with `+ - * / % max min`,
 `all` / `any` / `none_of`, and `orientation` (matches an exact axis mapping — how
@@ -151,7 +196,7 @@ positive integers and a zero is refused. **A mix moves no geometry** — the sam
 cells are visited whatever the weights say — so a restyle can never change what
 a gate walked, and a sweep over seeds is a sweep over texture alone.
 
-### Four things the surface above does not say
+### Six things the surface above does not say
 
 1. **`rounding` other than `truncate` is legal on a split with exactly one
    relative piece**, and at weight 1 it is inert: the remainder of dividing by
@@ -181,7 +226,20 @@ a gate walked, and a sweep over seeds is a sweep over texture alone.
    state that mapping wants, which is how `church` picks its four roof stair
    facings.
 
-All four are asserted in `tests/idioms.rs`.
+5. **An `absolute` size takes an expression, so anything derivable from the
+   scope's own extents needs no argument at all.** `max(1, X / run)` steps a
+   taper in two cells a side while its courses are wide and one when they are
+   narrow, read off the box each course is handed. This is the cheapest form of
+   parameterisation in the language and the first to reach for: it fails only
+   where two **same-sized** siblings need different content, which is what
+   `bind` is for.
+6. **`reorient` is an argument too.** It hands the callee a turned frame, so one
+   rule family serves a west rose and both transept roses, or a head that tapers
+   across `X` and the same head across `Z`. It cannot pass a paint, a size or a
+   role — that is the line between it and `bind`.
+
+Items 1–5 are asserted in `tests/idioms.rs`; item 6 in both `tests/idioms.rs`
+and `tests/arguments.rs`.
 
 ## 2b. `mark` — anchor declarations
 
@@ -241,7 +299,7 @@ corpus rather than from the schema, which means **the corpus is the
 expressiveness** — a technique no program in the library demonstrates does not
 exist in practice, whatever the IR supports.
 
-Nine techniques, one minimal program each, all reachable from the tool:
+Ten techniques, one minimal program each, all reachable from the tool:
 
 ```sh
 delve-grammar list                                     # the `idiom-*` block
@@ -260,7 +318,8 @@ delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
 | 7 | Symmetry without reflection | `idiom-mirror` | 15 × 11 × 2, 1 | a rule body written mirrored, since `reorient` permutes and never mirrors |
 | 8 | Skip | `idiom-skip` | 7 × 5 × 5, 1 | what `skip` does, and why show-through is not expressible yet |
 | 9 | Light | `idiom-light` | 5 × 6 × 13, 1 | a lamp is a role; a one-cell split is a sconce |
-| — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the nine at once — a ruined arcade |
+| 10 | Arguments | `idiom-arguments` | 15 × 7 × 15, 1 | one rule called with different content — `bind` for the paint, `reorient` for the axis |
+| — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the ten at once — a ruined arcade |
 
 Each program exists to teach one technique and nothing else, and each is
 expanded at exactly the region and seed above by
@@ -494,6 +553,37 @@ warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
 it: expansion places blocks, not photons. `delve-admit lighting --write`
 (procedure §7) is where the number comes from.
 
+### 10. Arguments
+
+One pointed-arch recursion, four heads: two open onto air and two onto glazing,
+two taper across world `X` and two across world `Z`. Three rules.
+
+```json
+{ "op": "bind", "palette": { "opening": { "role": "glazing" } },
+  "body": { "op": "call", "symbol": "head" } }
+```
+
+**Written without arguments the same four heads are eight rules.** The paint is
+filled by `shoulders`, the second rule of the recursion — so a glazed head needs
+a copy of `shoulders`, which needs a copy of `head` to call it, twice over for
+the two axes. Nothing keeps four copies in step and no gate reads the
+difference: `tests/arguments.rs` builds the eight-rule program, edits one copy's
+taper, and `blocks-exist`, `non-empty`, the coverage report and the determinism
+gate are all green over a building that now carries two different arches. The
+same file proves the collapse is exact — the four-copy program and
+`idiom-arguments` are byte-identical at four seeds, anchors included.
+
+The two mechanisms in the entry are not interchangeable and the piece uses both.
+`reorient` supplies the **axis** and is the older of the two; `bind` supplies the
+**paint**, and a size or a role the same way. Anything the callee can derive from
+its own box needs neither (§2, item 5).
+
+The other thing to take from it is where the binding is read: three rules below
+the call that pushed it, by a rule that mentions neither glazing nor the caller.
+A frame that stopped at the call would leave every rule of a recursion re-passing
+every name any caller might bind, and one forgotten thread would silently expand
+the default.
+
 ### A composition demonstration
 
 `idiom-composition-arcade` is a ruined arcade, and it is here to be **read**
@@ -502,14 +592,16 @@ the techniques, against its own fiction. Adding `gothic_arcade` to the
 vocabulary would be the catalogue mistake — the next creator wants a headframe,
 a gantry, a ziggurat, finds no entry and concludes the back end cannot.
 
-Eight of the nine are in it: the colonnade is a recursion (1) whose `otherwise`
+Eight of the ten are in it: the colonnade is a recursion (1) whose `otherwise`
 arm places the last pier (2); each bay's head is the taper with the paint
 inverted (3), so what narrows is the hole; every masonry role carries some air
 (4) and the footing, wall and crest are three mixes up the elevation (5); the
 crest's own top course is a litter layer (6); and every pier carries a sconce
 cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
-the recursion does not already centre for itself — and neither is idiom 8, since
-the bays are meant to be empty, which is what `void` says.
+the recursion does not already centre for itself — neither is idiom 8, since
+the bays are meant to be empty, which is what `void` says — and neither is idiom
+10: every bay is the same bay, so its recursion is stated once and called with
+nothing.
 
 ## 2d. The spatial contract — `claim`, and what a program says about a body
 
@@ -626,6 +718,13 @@ splitmix64 stream from the caller's seed; all maps are `BTreeMap`; cells iterate
 Expansion holds no global state — two programs cannot influence each other, which
 is regression-tested.
 
+A `bind` frame is resolved from `BTreeMap`s by name and draws nothing, so it can
+perturb neither the draw order nor the visit order. Measured rather than argued:
+`tests/arguments.rs` expands `idiom-arguments` — whose one recursion is reached
+under four different frames — in **two separate processes** and compares the
+`.nbt` and the metadata byte for byte, and reaches the same `.nbt` again through
+the JSON authoring form of the nine-rule program it replaces.
+
 The same promise is asserted one layer out, on the bytes that actually ship: a
 double-**export** test over the three ported programs of §5 at four seeds
 compares the `.nbt` and the metadata JSON byte for byte (§6). The §5b staging
@@ -641,8 +740,9 @@ expansion (unknown rule/role/param, empty rule or split, child/piece mismatch on
 a non-repeating split, zero weights, a `rounding` other than `truncate` on a
 split with no relative piece — nowhere to put the remainder — `split_axis` named
 outside a split, an `orientation` guard that is not a
-permutation — a guard nothing could ever match — and a `mark` whose anchor stem
-is not kebab-case). During expansion: `NoApplicableRule`,
+permutation — a guard nothing could ever match — a `mark` whose anchor stem
+is not kebab-case, a `bind` that binds nothing, and a `bind` naming a parameter
+or role the program does not declare). During expansion: `NoApplicableRule`,
 `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, `PaletteFull` (more
 than 65 536 distinct block states in one model), `MarkOutsideScope`,
 `MarkFacingNotCardinal`, `AnchorCollision`, and the `DepthLimit` / `ScopeLimit` /

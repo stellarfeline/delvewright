@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
-use crate::eval::{EvalError, Scope};
+use crate::eval::{Env, EvalError, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
     Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
@@ -469,11 +469,15 @@ pub fn expand(
         limits: options.limits,
         stats: Stats::default(),
     };
+    // The root binding frame is the program's own declarations, which are its
+    // defaults; every `bind` pushes a frame over this one.
+    let root = Env::root(&program.params, &program.palette);
     expander.run_rule(
         &program.start,
         &ScopeState {
             region,
             orient: options.orientation,
+            env: root,
         },
         0,
     )?;
@@ -569,11 +573,27 @@ fn resolve_contract(
     })
 }
 
-/// The box a node is expanding into, and what it calls its axes.
+/// The box a node is expanding into, what it calls its axes, and what its names
+/// mean.
+///
+/// All three are inherited by every child scope, and each has one construct that
+/// changes it: `split` the box, `reorient` the axes, `bind` the names.
 #[derive(Debug, Clone, Copy)]
-struct ScopeState {
+struct ScopeState<'e> {
     region: Box3,
     orient: Orientation,
+    env: Env<'e>,
+}
+
+impl ScopeState<'_> {
+    /// What a guard or size expression is measured against here.
+    fn scope(&self) -> Scope<'_> {
+        Scope {
+            region: &self.region,
+            orient: self.orient,
+            env: self.env,
+        }
+    }
 }
 
 struct Expander<'a> {
@@ -591,17 +611,6 @@ struct Expander<'a> {
 }
 
 impl<'a> Expander<'a> {
-    fn scope<'s>(&self, state: &'s ScopeState) -> Scope<'s>
-    where
-        'a: 's,
-    {
-        Scope {
-            region: &state.region,
-            orient: state.orient,
-            params: &self.program.params,
-        }
-    }
-
     fn enter(&mut self, depth: u32) -> Result<(), ExpandError> {
         if depth > self.limits.max_depth {
             return Err(ExpandError::DepthLimit {
@@ -621,7 +630,7 @@ impl<'a> Expander<'a> {
     fn run_rule(
         &mut self,
         symbol: &'a str,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -638,8 +647,8 @@ impl<'a> Expander<'a> {
             if matches!(alt.when, Cond::Otherwise) {
                 continue;
             }
-            let ok = self
-                .scope(state)
+            let ok = state
+                .scope()
                 .test(&alt.when)
                 .map_err(|error| ExpandError::Eval {
                     symbol: symbol.to_string(),
@@ -676,7 +685,7 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &'a str,
         node: &'a Node,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -696,10 +705,9 @@ impl<'a> Expander<'a> {
             }
             Node::Fill { material } => {
                 let paint = match material {
-                    Material::Role { role } => self
-                        .program
-                        .palette
-                        .get(role)
+                    Material::Role { role } => state
+                        .env
+                        .paint(role)
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
@@ -741,6 +749,47 @@ impl<'a> Expander<'a> {
                 let child = ScopeState {
                     region: state.region,
                     orient,
+                    env: state.env,
+                };
+                self.run_node(symbol, body, &child, depth + 1)
+            }
+            Node::Bind {
+                params,
+                palette,
+                body,
+            } => {
+                // Every binding is evaluated in the ENCLOSING scope, before the
+                // frame is pushed, and all of them at once: a frame is a
+                // simultaneous rebinding, so `{a: param b, b: param a}` swaps
+                // the two rather than chaining them. Nothing here draws from the
+                // RNG, so a `bind` cannot move a cell of the model on its own.
+                let mut bound_params = BTreeMap::new();
+                for (name, value) in params {
+                    let value = state
+                        .scope()
+                        .eval(value)
+                        .map_err(|error| ExpandError::Eval {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
+                    bound_params.insert(name.clone(), value);
+                }
+                let mut bound_palette = BTreeMap::new();
+                for (name, material) in palette {
+                    let paint = match material {
+                        Material::Role { role } => state
+                            .env
+                            .paint(role)
+                            .expect("validate() proved every role is bound")
+                            .clone(),
+                        Material::Inline(paint) => paint.clone(),
+                    };
+                    bound_palette.insert(name.clone(), paint);
+                }
+                let child = ScopeState {
+                    region: state.region,
+                    orient: state.orient,
+                    env: Env::child(&state.env, &bound_params, &bound_palette),
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -806,7 +855,7 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<(), ExpandError> {
         let cell = self.mark_cell(symbol, mark, state)?;
         let facing = match mark.facing {
@@ -855,7 +904,7 @@ impl<'a> Expander<'a> {
         &self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<[i32; 3], ExpandError> {
         let size = state.region.size;
         // Centre of an extent, rounding down; 0 for a degenerate axis, which the
@@ -885,7 +934,7 @@ impl<'a> Expander<'a> {
                 }
             }
             MarkAt::Offset { x, y, z } => {
-                let scope = self.scope(state);
+                let scope = state.scope();
                 for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
                     let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
@@ -918,13 +967,13 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &'a str,
         split: &'a Split,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         let world_axis = state.orient.get(split.axis);
         let extent = state.region.extent(world_axis);
 
-        let scope = self.scope(state);
+        let scope = state.scope();
         let mut sizes = Vec::with_capacity(split.sizes.len());
         for size in &split.sizes {
             let (expr, absolute) = match size {
@@ -980,6 +1029,7 @@ impl<'a> Expander<'a> {
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,
+                env: state.env,
             };
             let child = &split.children[i % split.children.len()];
             self.run_node(symbol, child, &child_state, depth + 1)?;
