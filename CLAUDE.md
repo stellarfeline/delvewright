@@ -402,6 +402,12 @@ validation/          # docker compose: headless server + bot, same image as CI &
   density earns it from inside. So the question asked of an oversized space is
   always *what does the player do in here*, and a space with no answer is cut or
   filled — never kept because it looks impressive in an elevation.
+  The same rule applied to objects, as design guidance: **when the vanilla block
+  that names a thing is too small to carry the weight the story gives it, the
+  thing is built out of blocks instead.** A vanilla bell is a fitting on a fence
+  post; a bell a campaign is named after is a structure a player stands under.
+  Placing the block that shares the name is not depicting the object — it is
+  labelling it.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
