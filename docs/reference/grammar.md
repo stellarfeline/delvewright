@@ -69,13 +69,33 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
 (leave as-is), `call`, `split`, `reorient`, `mark`, `claim`.
 
-**`version`** is the document's compatibility surface. The accepted versions are
-`1.0.0` and `1.1.0`; anything else is refused outright rather than parsed for
-the parts that look familiar, because a document whose newer half was skipped
-compiles green and builds the wrong world. A construct a version does not have
-is refused where it is written, naming the construct and both versions — which
-is what lets a document at `1.0.0` keep compiling to the same bytes forever.
-`1.1.0` adds the spatial contract; nothing else differs between the two.
+**`version`** is the document's compatibility surface. A version this engine does
+not accept is refused outright rather than parsed for the parts that look
+familiar, because a document whose newer half was skipped compiles green and
+builds the wrong world. A construct a version does not have is refused where it
+is written, naming the construct and both versions — which is what lets a
+document at `1.0.0` keep compiling to the same bytes forever.
+
+The ledger is every number the format has and the one surface each names
+(`crates/grammar/src/version.rs`):
+
+| version | surface | accepted |
+|---|---|---|
+| `1.0.0` | rules, splits, reorientations, marks | yes |
+| `1.1.0` | the frame's direction — `mirror` on a `reorient` request and on an `orientation` guard | no — reserved |
+| `1.2.0` | the spatial contract — the program-level `contract` block and the scope-bound `claim` node | yes |
+
+A number names exactly one surface, in every engine build that knows the number;
+otherwise two engines both call themselves `1.1.0`, disagree about what a
+`1.1.0` document means, and each silently drops the other's half.
+`tools/check-version-ledger-uniqueness.py` holds that against `origin/main`, for
+this ledger and for `dsl_version`.
+
+A **reserved** number is one the ledger names and this engine does not implement.
+It is reserved rather than skipped, because a skipped number is a free number and
+a free number is one two changes can take. A document declaring a reserved
+version is refused, and the refusal names the surface that owns the number —
+building it would mean deserialising that surface into nothing.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
 count, `relative` pieces share what is left. `rounding` (`truncate` — the

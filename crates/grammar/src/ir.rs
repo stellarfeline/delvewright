@@ -1126,7 +1126,9 @@ pub enum ProgramError {
         /// The mapping as written, local `X`/`Y`/`Z` to world axis.
         axes: [Axis; 3],
     },
-    /// The document declares a version this engine does not know.
+    /// The document declares a version this engine does not accept — one the
+    /// ledger does not name at all, or one it reserves for a surface this engine
+    /// does not implement (`crates/grammar/src/version.rs`).
     UnsupportedVersion {
         /// The version as written.
         version: String,
@@ -1258,14 +1260,26 @@ impl fmt::Display for ProgramError {
                  of the three world axes — no scope can ever match it, so the alternative is \
                  dead code"
             ),
-            ProgramError::UnsupportedVersion { version } => write!(
-                f,
-                "this program declares version {version:?}, which this engine does not know; it \
-                 accepts {:?}. An unknown version is refused rather than parsed for the parts \
-                 that look familiar, because a document whose newer half was skipped compiles \
-                 green and builds the wrong world",
-                crate::version::SUPPORTED_PROGRAM_VERSIONS
-            ),
+            ProgramError::UnsupportedVersion { version } => {
+                let accepted: Vec<&str> = crate::version::accepted_versions().collect();
+                match crate::version::reserved_for(version) {
+                    Some(anchor) => write!(
+                        f,
+                        "this program declares version {version:?}, a version the document \
+                         format has but this engine does not implement — the ledger reserves \
+                         it for the surface `{anchor}` introduces. It is refused rather than \
+                         built with that surface silently dropped. This engine accepts \
+                         {accepted:?}"
+                    ),
+                    None => write!(
+                        f,
+                        "this program declares version {version:?}, which this engine does not \
+                         know; it accepts {accepted:?}. An unknown version is refused rather \
+                         than parsed for the parts that look familiar, because a document whose \
+                         newer half was skipped compiles green and builds the wrong world"
+                    ),
+                }
+            }
             ProgramError::FencedConstruct {
                 construct,
                 since,

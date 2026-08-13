@@ -87,7 +87,7 @@ fn cases() -> Vec<(Program, Box3)> {
 /// A grammar program with a genuinely probabilistic rule, authored the way the
 /// pipeline will author one: as JSON. Doubles as the IR's schema-shape example.
 const CAIRN_JSON: &str = r#"{
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "cairn",
   "start": "cairn",
   "params": { "course": 1 },
@@ -281,7 +281,7 @@ fn runaway_recursion_stops_deterministically() {
     // authoring mistake into a diagnostic instead of a hang.
     let program: Program = serde_json::from_str(
         r#"{
-          "version": "1.1.0", "name": "runaway", "start": "loop",
+          "version": "1.2.0", "name": "runaway", "start": "loop",
           "rules": { "loop": [{ "body": { "op": "call", "symbol": "loop" } }] }
         }"#,
     )

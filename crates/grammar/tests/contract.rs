@@ -462,7 +462,7 @@ fn the_new_surface_is_refused_at_the_older_version() {
             ..
         }) => {
             assert!(construct.contains("claim"));
-            assert_eq!(since, "1.1.0");
+            assert_eq!(since, "1.2.0");
             assert_eq!(declared, "1.0.0");
         }
         other => panic!("{other:?}"),
@@ -495,6 +495,50 @@ fn an_unknown_version_is_refused() {
         broken.validate(),
         Err(ProgramError::UnsupportedVersion { .. })
     ));
+}
+
+/// A **reserved** ledger version is refused too, and the refusal is a different
+/// sentence because it is a different fact.
+///
+/// The ledger names `1.1.0`, so the number cannot be handed to a second surface;
+/// this engine does not implement that surface, so it cannot build a `1.1.0`
+/// document. Accepting it instead would deserialise the surface it does not know
+/// into nothing — the IR carries no `deny_unknown_fields` (ADR-0018 §7.3) — and
+/// build a different world under a version it claimed to understand, which is
+/// the failure the whole fence exists for.
+#[test]
+fn a_reserved_version_is_refused_and_says_which_surface_owns_it() {
+    let reserved: Vec<&str> = delvewright_grammar::RESERVED_VERSIONS
+        .iter()
+        .map(|(v, _)| *v)
+        .collect();
+    assert!(
+        !reserved.is_empty(),
+        "binding count 0: the ledger reserves nothing, so this test examined no \
+         version. Delete it with the last reservation."
+    );
+    for version in reserved {
+        let anchor = delvewright_grammar::reserved_for(version).unwrap();
+        let program = Program::new("reserved", "all")
+            .rule("all", Node::Void)
+            .at_version(version);
+        match program.validate() {
+            Err(ProgramError::UnsupportedVersion { version: got }) => {
+                assert_eq!(got, version);
+                let message = ProgramError::UnsupportedVersion { version: got }.to_string();
+                assert!(
+                    message.contains(anchor),
+                    "the refusal must name the surface that owns the number: {message}"
+                );
+                // The refusal must not offer the version it just refused as
+                // something to retry with.
+                for accepted in delvewright_grammar::accepted_versions() {
+                    assert_ne!(accepted, version);
+                }
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

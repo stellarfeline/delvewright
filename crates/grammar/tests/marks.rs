@@ -266,7 +266,7 @@ fn an_indexed_mark_numbers_itself_in_expansion_order() {
     // Three 3-wide slices along X, each marking its own floor centre.
     let program: Program = serde_json::from_str(
         r#"{
-          "version": "1.1.0", "name": "bays", "start": "row",
+          "version": "1.2.0", "name": "bays", "start": "row",
           "rules": {
             "row": [{ "body": {
               "op": "split", "axis": "x",

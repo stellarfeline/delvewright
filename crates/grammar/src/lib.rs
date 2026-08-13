@@ -121,5 +121,6 @@ pub use ir::{
 };
 pub use model::VoxelModel;
 pub use version::{
-    LATEST_PROGRAM_VERSION, SUPPORTED_PROGRAM_VERSIONS, is_supported_version, minor_ordinal,
+    LATEST_PROGRAM_VERSION, RESERVED_VERSIONS, SUPPORTED_PROGRAM_VERSIONS, accepted_versions,
+    is_supported_version, minor_ordinal, reserved_for,
 };
