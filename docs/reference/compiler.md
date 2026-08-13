@@ -440,8 +440,8 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
 | Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**; `text` → l10n; `sound` validated (`DW0326`); `art` = the `delve:art` pixel-banner font, glyph-checked (`DW0328`), width-checked (`DW0330`). | 0.4 / art 0.6 |
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.4 / state 0.6 |
-| Effect `fill-region{region,block}` | **Fill a declared region with a block at runtime** (spec-0031). `region` is the existing anchor-centred box (`anchor ± extent`, the same `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter, a `collapse` ceiling and a `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`); `block` is registry-checked with the same `DW0193` `set-block` gets. Emission is one unfiltered `fill <lo> <hi> <block>`. This is the **general spelling** of the capability `open-gate`/`close-gate` carried privately: those two are this operation with the box and the block read off a prefab gate anchor instead of authored, and `set-block` is the one-cell case at a point anchor. All of them lower through `emit::fill_region_command` and are modelled by one completability rule (`plan::RegionEvent`), so a third consumer inherits the proof instead of re-deriving it. Completability: the cells are **solid** from the DAG point the effect fires at, exactly as a `close-gate` seal is — a critical path that must cross afterwards fails `DW0311`. | 0.10 |
-| Effect `clear-region{region}` | **Clear a declared region to air at runtime** (spec-0031) — the physical dual of `fill-region`, and the general spelling of what `open-gate` does to a gate anchor's box. Emission is the same `fill` with `minecraft:air` and, unlike `open-gate`, **no `replace` filter**: an author's clear empties the box rather than scrubbing one block id out of it. Completability: the cells are **passable** from the DAG point the effect fires at — the half no gate could ever exercise, because the assembled model already holds every gate cell open unconditionally. Two limits are stated rather than discovered. (1) A cleared cell the model already floods stays impassable: clearing a block does not remove water, it lets the water in. A clear that *opens* a dry box into adjacent water is not modelled — re-deriving the flood needs the block map the collision view does not carry — so that campaign's route proof is optimistic there. (2) A clear never removes cells another proof has forced solid (`nav::World::pinned`): a `collapse`'s debris, an ambush's occupied cells, a timed gate's shut span. Clearing a region says the blocks the campaign put there are gone, not that another proof's hazard never happened. | 0.10 |
+| Effect `fill-region{region,block}` | **Fill a declared region with a block at runtime** (spec-0031). `region` is the existing anchor-centred box (`anchor ± extent`, the same `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter, a `collapse` ceiling and a `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`); `block` is registry-checked with the same `DW0193` `set-block` gets. Emission is one unfiltered `fill <lo> <hi> <block>`. This is the **general spelling** of the capability `open-gate`/`close-gate` carried privately: those two are this operation with the box and the block read off a prefab gate anchor instead of authored, and `set-block` is the one-cell case at a point anchor. All of them lower through `emit::fill_region_command` and are modelled by one completability rule (`plan::RegionEvent`), so a third consumer inherits the proof instead of re-deriving it. Completability: from the DAG point the effect fires at, the cells become what the **block** makes them — **solid** for a block that is a full cube, exactly as a `close-gate` seal is (a critical path that must cross afterwards fails `DW0311`), and **flooded** for `minecraft:water` / `minecraft:lava` (`assembled::is_fluid`): impassable, and never floor, because nothing stands on a fluid. A fill carries no `replace` filter, so a fluid fill over floor takes the floor away; a forced leg that needed that footing is `DW0543`. | 0.10 |
+| Effect `clear-region{region}` | **Clear a declared region to air at runtime** (spec-0031) — the physical dual of `fill-region`, and the general spelling of what `open-gate` does to a gate anchor's box. Emission is the same `fill` with `minecraft:air` and, unlike `open-gate`, **no `replace` filter**: an author's clear empties the box rather than scrubbing one block id out of it. Completability: the cells are **passable** from the DAG point the effect fires at — the half no gate could ever exercise, because the assembled model already holds every gate cell open unconditionally. Two limits are stated rather than discovered. (1) A cleared cell the model already floods stays impassable: clearing a block does not remove water, it lets the water in. A clear that *opens* a dry box into adjacent water is not modelled — re-deriving the flood needs the block map the collision view does not carry — so that campaign's route proof is optimistic there, and a runtime `fill-region` of a fluid is a second way to put water next to such a clear. (2) A clear never removes cells another proof has forced solid (`nav::World::pinned`): a `collapse`'s debris, an ambush's occupied cells, a timed gate's shut span. Clearing a region says the blocks the campaign put there are gone, not that another proof's hazard never happened. | 0.10 |
 | Effect `requires_flags[]` / `forbids_flags[]` (any effect) | Per-effect gates (v0.6): `requires_flags` wraps the effect's command(s) in a per-player `execute if score @s dw.f_<flag> matches 1 … run …`; `forbids_flags` adds `unless score @s dw.f_<flag> matches 1` clauses to the same guard (suppressed once any listed flag is set for the acting player). Valid on any `on_objective_complete` / `on_complete` / trigger effect **except** terminal `campaign-complete`; refs resolve like objective flags (`DW0172`). | 0.6 |
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
 | Effect `spawn-npc{npc}` | The dual of `despawn-npc` (v0.6): summons a stage-2 NPC — body + interaction hitbox + name display — at its declared anchor, via the **same** `npc_summon_commands` authority world init uses. Idempotent (per-entity tag guards), so a re-fire never doubles a body. Also a dialogue effect. World-global staging → no per-effect `requires_flags`. **`spawn_npc_<id>` is emitted for every NPC any `spawn-npc` site names**, not only `deferred` ones: the registration walk IS the call walk (quest/trigger/trap effect trees at any nesting depth, plus every dialogue option's `spawn-npc`), so a call and its callee can never disagree. It used to be deferred-only, which made `spawn-npc` on a non-deferred NPC — the legal, meaningful way to bring a character back after a `despawn-npc` — compile a call against nothing, so the character stayed gone (found by `DW0497` the day it landed). For an NPC already standing at its mark the entrance is exactly the no-op it reads as; a campaign that fires no `spawn-npc` and defers nobody emits nothing here (byte-identical to pre-0.6). | 0.6 |
@@ -2579,7 +2579,8 @@ world. Invariants:
     *reachable* walk region is what makes it a return, not just a landing.
 - **Gate-region collision (`DW0353`, advisory).** A world-edit inside a region a
   runtime write fills — a `close-gate`'s gate region, or a `fill-region`'s box — is
-  overwritten solid when that write fires and cleared to **air** when its dual does,
+  overwritten with that write's block when it fires (a solid, or water/lava) and
+  cleared to **air** when its dual does,
   so one cycle erases it. It reads `plan.region_events`, so the v0.10 verbs
   inherited this warning without a line of their own. The proofs stay sound (the occupancy model
   already treats the region as gate-controlled), and dressing the *sealed* state
@@ -3608,6 +3609,46 @@ that exists and reports zero is a finding rather than an absence.
 | `DW0540` | **A grant whose removal is a later effect, not its own duration.** A `give-effect` is still live at the moment a `clear-effect` for the same effect fires in the same bundle. Validation-tier (exit 1), `dsl::validate`. The message carries both numbers the author needs — how long the grant runs, and how long the bundle actually needs it for. Prescription: set `seconds` to the span the effect should last and delete the `clear-effect`; a duration expires with no cooperation from anything. `clear-effect` is for effects this campaign did not grant. |
 | `DW0541` | **A duration that is not a duration.** A `give-effect`'s `seconds` is zero or past `MAX_EFFECT_SECONDS` (50 000, derived from `MAX_POTION_DURATION_TICKS`), or its `amplifier` is past vanilla's unsigned byte. Validation-tier (exit 1), `dsl::validate`. Zero is the grant that never happens — the unbound-vacuity class as a number; the ceiling is vanilla's own field width, so a value above it is a duration typed in ticks or milliseconds. |
 | `DW0542` | **A teleport volume over an affordance bound to hardware.** A `teleport`'s `from` volume covers an interaction affordance the engine placed on a block it also places — an interact objective, a click trigger, a bonfire, a shortcut unlock, a trap or timed-gate disarm, a sealed gate's answer. Build-tier (exit 3), `compiler::teleport`. The teleport moves the entity and not the block, so the player is left with something they can see and reach that answers nothing. Prescription: move the affordance out of the volume, or shrink the volume's `extent`; do NOT add a type exemption to the selector — that would tear an NPC's dialogue hitbox off its body. |
+
+### DW0543 — a runtime write that fills a region with fluid (`compiler::nav`; DSL v0.10)
+
+A runtime region write concludes from the **block it writes**, not from the fact
+that it wrote. Only a block that is a full collision cube leaves floor behind;
+`minecraft:water` and `minecraft:lava` leave a cell a body sinks through, so
+those writes mark their cells **flooded** — impassable, and never standable —
+which is the set the model already carries for prefab-authored water. Water, lava,
+any block state (`water[level=3]` is water), and with or without the `minecraft:`
+namespace: an author's `fill-region` block is a hand-written string, a bare `water`
+passes block validation and is emitted verbatim, and vanilla resolves it, so the
+classifier (`assembled::is_fluid`) is namespace-insensitive like every other one
+beside it. A **waterlogged** block is not a fluid: its cell is occupied by its host
+block and is genuine floor, while its water spreads to neighbours — two questions,
+and only the first is asked here.
+
+Because a fill carries no `replace` filter, it *replaces* what was in the box, so
+a fluid fill over floor takes the floor away. Where a fluid fill and a solid fill
+overlap the fluid wins: a flooded cell is everything a walled cell is and one thing
+more, which also makes the answer independent of declaration order (ADR-0006).
+
+`DW0543` is derived from a counterfactual, exactly like `DW0510`: the leg is
+re-routed over the identical world with every runtime fluid fill treated as solid,
+and if *that* world routes, the fluid is what closed the leg and the boxes are
+named. So it fires on the case where the box supplied **footing** — the author is
+looking at a box they filled on purpose and must be told the fluid took the floor,
+not sent to hunt a wedged doorway. A fluid fill laid *across* a path rather than
+under it is an ordinary `DW0311`, because it would block the leg whatever block it
+held; that message names the fluid fill in its hint rather than blaming the prefab.
+
+**What is not modelled**: the fluid's spread beyond the written box. Vanilla flows
+a source outward at world-tick; this marks the written cells and no more, so the
+wet set can be under-marked. It is the same missing input as the limitation
+`World::with_cleared` carries — a runtime block map to re-derive the flood from —
+and a runtime fluid fill is now a second way to reach it: a later `clear-region`
+next to a filled box is credited as dry, and the server may flood it.
+
+| Code | Meaning |
+|------|---------|
+| `DW0543` | **A forced leg stands where a runtime write leaves fluid.** A critical-path leg has no collision-free path once runtime fluid fills are impassable and unstandable, but routes fine when they are treated as solid — or a visited objective's only footing lies in one. Build-tier (exit 3), `compiler::nav`. The message names the boxes the fluid-free route needs footing in. Prescription: fill with a block that is floor, put the walkable surface in the cell below the fluid, or route the forced path around the box; never swap in a solid you do not want in the world just to get green. |
 
 ### DW0510–DW0512 — lethal volumes (`compiler::nav` / `compiler::lethal` / `dsl::validate`; spec-0031, DSL v0.10)
 

@@ -243,8 +243,13 @@ pub fn is_fence_gate(name: &str) -> bool {
 /// A stored flowing-water cell (`level>0`) also reads as `minecraft:water`; the
 /// flood treats every water cell as a full-strength source, which over-marks its
 /// reach — deliberately safe (see [`flood`]).
+///
+/// Namespace-insensitive for the reason [`is_fluid`] gives: every classifier in
+/// this module answers the same question about the same string, and one of them
+/// answering differently for `water` than for `minecraft:water` is a hole waiting
+/// for the first caller that does not come from a `.nbt` palette.
 pub fn is_water(name: &str) -> bool {
-    base_id(name) == "minecraft:water"
+    strip_ns(name) == "water"
 }
 
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
@@ -267,14 +272,41 @@ pub fn is_waterlogged(name: &str) -> bool {
     state_value(name, "waterlogged") == Some("true")
 }
 
-/// Whether a cell's block is a **fluid** — water or lava. Vanilla's
-/// `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable blocks)
-/// as "no support": a falling block entity passes straight through it and keeps
-/// falling, displacing the fluid when it finally lands on something solid. Used
-/// by [`settle`]; deliberately narrower than `isFree` (replaceable plants are not
-/// modelled), which only ever makes settling *more* conservative.
-fn is_liquid(name: &str) -> bool {
-    matches!(base_id(name), "minecraft:water" | "minecraft:lava")
+/// Whether a cell's block is a **free fluid** — water or lava occupying the whole
+/// cell with no host block. **The one answer to "is this block id a fluid"**; every
+/// site that has to decide what a fluid does to a walker reads it, so the answer
+/// cannot differ between two of them.
+///
+/// What it covers, and why each case is the way it is:
+/// - **Block state is irrelevant.** [`strip_ns`] drops it, so a flowing
+///   `minecraft:water[level=3]` answers the same as a source `minecraft:water`.
+///   Both leave a body swimming rather than standing, which is the only question
+///   a collision model asks; the *reach* of the flow is [`flood`]'s problem, not
+///   this predicate's.
+/// - **So is the namespace**, and that is not cosmetic. Prefab palettes always
+///   carry `minecraft:`, but an author's `fill-region` block is a hand-written
+///   string, and a bare `water` passes DSL block validation
+///   (`registry::is_technical_block` normalizes before its lookup) and is emitted
+///   verbatim as `fill … water`, which vanilla resolves. A namespace-sensitive
+///   comparison here would read that as an ordinary solid and prove a floor made
+///   of it — measured, not assumed. Every other classifier in this module already
+///   goes through `strip_ns` for the same reason.
+/// - **`minecraft:lava` counts.** Nothing stands on lava either, and a model that
+///   answered only for water would prove a lava surface walkable.
+/// - **A waterlogged block does NOT count.** `oak_stairs[waterlogged=true]` is a
+///   cell occupied by its *host* block — solid, standable, and simultaneously a
+///   flood source for its neighbours ([`is_waterlogged`]). Folding it in here
+///   would delete a floor the game plainly has. The two predicates answer
+///   different questions and both are needed.
+///
+/// Vanilla's `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable
+/// blocks) as "no support": a falling block entity passes straight through it and
+/// keeps falling, displacing the fluid when it finally lands on something solid.
+/// Used by [`settle`] in that role; deliberately narrower than `isFree`
+/// (replaceable plants are not modelled), which only ever makes settling *more*
+/// conservative.
+pub fn is_fluid(name: &str) -> bool {
+    matches!(strip_ns(name), "water" | "lava")
 }
 
 /// Whether a block falls under gravity when the cell below cannot support it
@@ -612,7 +644,7 @@ pub struct Settled {
 /// cell it comes to rest in. The pre-#78 model treated a `minecraft:water` cell as
 /// an immovable support, so a sand block authored over a pool "settled on the
 /// water surface" — a floating floor the game does not have, which the flood then
-/// dammed and nav then walked on. See [`is_liquid`].
+/// dammed and nav then walked on. See [`is_fluid`].
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
@@ -634,7 +666,7 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
             let name = &blocks[&[x, *y, z]];
             if is_falling_block(name) {
                 falling.push((*y, name.clone()));
-            } else if !is_liquid(name) {
+            } else if !is_fluid(name) {
                 fixed.push(*y);
             }
         }
