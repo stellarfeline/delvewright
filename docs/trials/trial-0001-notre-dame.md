@@ -90,9 +90,10 @@ Run on `integration/prefab-stack`, 2026-08-12. Sandbox verified to contain zero
 program hash `sha256:cc1bdc05…`. Past the axis cap, so it shipped as two tiles
 and a manifest — which the agent reports as a non-event it never had to think
 about. Gates: `blocks-exist` 19, `non-empty` 98496, `traversable` 59 (47
-approach, 12 exit, 3560 standable, connected), `audit` pass over both tiles,
-11 of 11 anchors eye-eligible with zero render diagnostics. Determinism
-re-verified.
+approach, 12 exit, 3560 standable, connected), `audit` pass over the zone
+manifest — which is the only thing it will judge, since it refuses a lone tile
+by name — 11 of 11 anchors eye-eligible with zero render diagnostics.
+Determinism re-verified.
 
 **Rubric.**
 
@@ -192,7 +193,9 @@ Same brief, same rubric, same sandbox arrangement — verified to contain zero
 program hash `sha256:d43ec535…`. Four tiles and a manifest. Gates:
 `blocks-exist` 28, `non-empty` 184512 (28633 filled), `traversable` 80 (49
 approach, 31 exit, 4982 standable, connected), `audit` pass over the whole zone,
-12 of 12 anchors eye-eligible with zero render diagnostics.
+12 of 12 anchors eye-eligible, with **one** render diagnostic — `DW0727`, the
+north-tower anchor's own cell is solid, so its eye shot is taken from one cell
+off the anchor.
 
 Verified by the planner rather than accepted: the gate report was reproduced by
 re-running the expansion, and determinism was re-checked by expanding into a
@@ -202,7 +205,7 @@ fresh directory — all four `.nbt` and the manifest byte-identical.
 
 | # | Run 0 | Run 1 |
 |---|---|---|
-| R1 silhouette | **no** | **partial**, and the binding constraint moved out of the language — see below |
+| R1 silhouette | **no**, and a square-on elevation later confirmed it | **partial** at the time, and the binding constraint moved out of the language; **re-judged `yes`** once a camera could frame the west front — see below |
 | R2 interior | **yes** as a Gothic nave | **yes** as a Gothic nave, and now under a stepped pointed vault rather than a flat slab |
 | R3 gates | yes, `lighting` unrunnable | yes, `lighting` unrunnable — identically, from an independent agent |
 | R4 missing | six items | four of the six unchanged, two new, one withdrawn |
@@ -219,8 +222,13 @@ correction to the documents.
 
 So the measurement the trial was built to take: **the idioms did not raise the
 language's ceiling — they raised how much of it an author reaches on the first
-attempt.** Run 1 is a third larger (145 rules against 113, in a region 1.9× the
-volume) and spends none of that on rediscovery.
+attempt.** Run 1 carries 145 rules against run 0's 113 — 28% more — over a
+region of 184 512 cells against 98 496, 1.87× the volume, and spends none of
+that on rediscovery.
+
+That conclusion is about the *language*, and it survives. It is not a conclusion
+about the two buildings: on R1 they differ, and the trial under-reported run 1
+because no camera could take the picture. See the re-judgement below.
 
 ### One documented impossibility falsified
 
@@ -274,29 +282,44 @@ west rose and both transept roses. Neither can pass a paint, a size or a role.
   symmetric exactly. Nobody may cite the hole as a property of the delivered
   zone.
 
-  **What the delivered bytes carry instead is larger, and it is the same family.**
-  At the transept band, z 53–59, **both flanks stand open for seven blocks**: the
-  floor runs x 2–28 at y 0 and there is nothing above it until the roof caps at
-  y 12 — no end wall, no side wall, 11 courses of open air on each side. Seven
-  blocks away at z 52 the nave flank is solid wall from y 0 to y 14. The two arms
-  are broken identically, which is why the zone still reads as X-mirror
-  symmetric.
+  **A fourth reading, on the bytes and on the program, retracts the substitute
+  finding.** The section previously asserted that at the transept band, z 53–59,
+  both flanks stood open for seven blocks with no end wall and no side wall. The
+  delivered bytes do not say that. In each flank — the wall is two blocks thick,
+  x 2–3 and x 27–28 — there is an aperture five blocks wide at z 54–58 running
+  from y 1 to y 9, narrowing to three at y 10 and to one at y 11, solid above:
+  a pointed arch, eleven courses tall. Its jambs at z 53 and z 59 are solid stone
+  from y 0 to y 31, and the nave flank two blocks further out at z 52 is solid
+  from y 0 to y 30. Both flanks carry the same aperture, so the zone remains
+  X-mirror symmetric.
 
-  Every gate passes. Nothing walks there — a body at the arm's edge steps off
-  into no cell at all and the fall terminates — so no traversal claim visits it,
-  which is precisely the class: **a boundary the emitted bytes leave open and no
-  reachability property can see.**
+  It is not a hole. `transept_portal_wall` splits the flank 2 stone / 5 open /
+  2 stone and hands the middle to `tp_open`, which is eight courses of `void`
+  under `head_void_z` — the taper recursion that makes every other arch head in
+  the program. The transept portal is authored, and it is the size a transept
+  portal is.
 
-  Two probes missed it before a third found it, and the reason is worth keeping.
-  A mirror check missed it because the defect is symmetric. A search for air
-  cells "walled on three or more sides and open to the sky" missed it because the
-  space is not a pocket — it is wide open, with zero walls. Both probes were
-  looking for an enclosure; the defect is the absence of one.
-- **The renderer has no camera an author can aim, and for this subject that is
-  decisive.** The shot set is fixed: four exteriors at yaw 45/135/225/315, `top`
-  at pitch 90, eye shots at pitch 0. **There is no square-on elevation of any
-  face**, so a building whose identity is one elevation cannot be photographed,
-  and that alone is the whole of R1's "partial". The obvious fix fails
+  What the bytes do carry at that band is one measured fact, stated without a
+  verdict: the zone's own ground slab at y 0 runs x 0–30 everywhere except
+  z 53–59, where it stops at the building line, x 2–28. So the five threshold
+  cells of each portal are standable and reachable on foot from the grade
+  entrance, and the cell outside each is not floor but nothing — the walk ends at
+  the doorway. Whether that is a defect depends on what the piece is placed into,
+  which the zone alone cannot say.
+
+  **The lesson that survives is about the probe, not the building.** Three
+  successive probes each returned a plausible number about this band and each was
+  wrong in a different way, and the seven-block figure is the tell: it is the
+  extent of the *ground slab's* notch, read as if it were the extent of a missing
+  wall. A measurement that reports one object's extent under another object's
+  name cannot be caught by re-reading it — only by asking what, exactly, the
+  probe bound to.
+- **The renderer had no camera an author could aim, and for this subject that
+  was decisive.** The shot set was fixed: four exteriors at yaw 45/135/225/315,
+  `top` at pitch 90, eye shots at pitch 0. **There was no square-on elevation of
+  any face**, so a building whose identity is one elevation could not be
+  photographed, and that alone was the whole of R1's "partial" — which the
+  re-judgement below then confirmed by taking the picture. The obvious fix failed
   instructively: a parvis with an eye anchor facing the west front looks straight
   through the central portal, and because the orbit cameras fit the model bbox, a
   forecourt long enough to frame a 49-block front shrinks the building in *every*
@@ -337,7 +360,9 @@ The distinction in the last two rows is the whole finding. Most stranded floor i
 aisle roof and tower deck — standable, open to the sky, and nobody's defect. The
 actionable part is small and locatable: run 0's two west-tower ground chambers
 with no door (60 cells each, x 1–6 and 20–25, y 1, z 65–74); run 1's 84-cell
-chamber at y 23 over the west front, and two belfry floors at y 35–36.
+chamber over the **apse** (x 12–18, y 23, z 81–92 — run 1's west front is at
+z-min, its east end at z-max), and its two belfry floors (41 cells each,
+x 1–9 and 21–29, y 35–36, z 4–12).
 
 ### Judgement on R1 and R2, recorded so a later reader can disagree
 
@@ -353,7 +378,135 @@ buttressing should be, excluded by the no-diagonal rule.
 
 R2 needs no qualification. The interior reads as a nave without being told:
 a tall central vessel, a pointed arcade on piers, a glazed band above, stone
-paving running the full length, the west rose closing the vista. Two of the
-agent's own criticisms are visible in the same frame — the vault reads as a dark
-void, and the pier sconces read as lit *bands* rather than fixtures, because a
-`fill` of a light role covers a whole 2 × 1 × 2 pier.
+paving running the full length, the west rose closing the vista. One of the
+agent's own criticisms is visible in the same frame: the pier sconces read as
+lit *bands* rather than fixtures, because a `fill` of a light role covers a
+whole 2 × 1 × 2 pier.
+
+The second criticism, that run 1's vault reads as a dark void, was a judgement
+of one frame and does not separate the runs. Measured on the bytes, the block
+light on the nave vault's soffit is **0 along its whole length in both runs** —
+77 centre-line cells in run 1, 74 in run 0, none of them above the dark
+threshold. Neither vault is lit; run 0's simply photographs brighter, because
+run 0's nave is low enough that its ceiling fills the top of an eye shot while
+run 1's stands four courses higher and is almost out of frame at pitch 0. Any
+band-average of the two frames measures wall, not vault, and moves by fifteen
+points depending on which nave shot is picked — so no such average is quoted
+here.
+
+## R1 re-judged, with a camera that can frame the west front
+
+Run 1's R1 answer carried its own disclaimer: *"there is no square-on elevation
+of any face, so a building whose identity is one elevation cannot be
+photographed, and that alone is the whole of R1's `partial`."* An aimable camera
+now exists — `delve-render piece <manifest> --view name=…,face=…` — so the
+disclaimer is testable. Both zones were re-photographed from their delivered
+bytes, square-on to the west front, no cutaway:
+
+- run 0: `--view name=west-elev,face=south` (its west front is at z-max)
+- run 1: `--view name=west-elev,face=north` (its west front is at z-min)
+
+**Run 0: still `no`.** The elevation does show the identifying moves — twin
+flat-topped towers, a horizontal gallery between them in place of a gable, a
+centred rose, three portals, a flèche behind. They do not compose. The towers
+are narrow and stand *behind* a broad screen wall rather than forming its outer
+thirds, so they read as turrets on a keep; the gallery sits above the wall head
+instead of between the tower bases; there is no Gallery-of-Kings band and no
+vertical division of the front into three bays; and the rose is large and low
+enough to become the subject of the whole elevation. The dominant impression is
+a blank white plane with a wheel in it, which is the opposite of the referent's
+articulation. A viewer would say "a Gothic cathedral", exactly as recorded.
+
+**Run 1: `yes`, up from `partial`.** Square-on, the front carries the complete
+identifying set at close to the referent's proportions: two equal flat-topped
+towers occupying the outer thirds and flush with the façade, each with paired
+tall lancets; a horizontal gallery spanning between them at their base in place
+of a gable; a rose centred above it, flanked by glazed lancet groups; a
+horizontal band below the rose where the Gallery of Kings belongs; three portals
+on the axis; the flèche rising between the towers; and the whole divided into
+three bays by pilasters. What argues against it, visible in the same frame: the
+ground storey is open across nearly the full width, so the portals read as an
+arcade rather than as three deep portals in a wall — the densest zone of the
+referent is the emptiest zone here.
+
+**The finding is the change itself.** The trial reported the same building at
+`partial` because the shot set could not point at the thing being judged, and
+said so; the verdict still went into the record as a verdict. Under the rubric's
+own question — *from an exterior shot alone, and without being told, would a
+viewer name the building* — the answer for run 1 is yes, and the trial's summary
+line therefore understates what the idioms produced. It does not change the
+trial's conclusion about the *language*, which was measured on rule counts and
+rediscovery, not on the photographs.
+
+## Instrument bounds on the judged verdicts
+
+A verdict bounded by the instrument rather than by the artifact says so at the
+verdict. Every rubric answer above, and what it was judged from:
+
+| Verdict | Bound | Judged from |
+|---|---|---|
+| R1 run 0 | artifact-bound | square-on west elevation, `delve-render piece --view name=west-elev,face=south`, no cutaway |
+| R1 run 1 | artifact-bound | square-on west elevation, `delve-render piece --view name=west-elev,face=north`, no cutaway |
+| R2 run 0 | artifact-bound | the 11 eye shots, plus block light re-derived on the delivered bytes |
+| R2 run 1 | artifact-bound | the 12 eye shots, plus block light re-derived on the delivered bytes |
+| R3 run 0 | instrument-bound — `delve-admit lighting` cannot read a tile-set manifest, so the lighting leg of the answer covers no measurement the tool took | the three expansion gates and `audit`, both re-run on the delivered program |
+| R3 run 1 | instrument-bound — same unreadable manifest, reproduced independently | the three expansion gates and `audit`, both re-run on the delivered program |
+
+## Claim audit
+
+Every factual assertion this record makes about the two artifacts, re-derived
+from the delivered bytes rather than from the run logs. `checked` means it was
+reproduced; `corrected` means it was not, and the text above now states the true
+value; `unverifiable` means the artifact needed is gone, or the claim is a
+judgement and is marked in the text as one.
+
+The instruments: `delve-grammar expand` re-run on each delivered program;
+`delve-admit audit` / `lighting` and `delve-render piece` re-run on the
+delivered zones; and a reader that loads the tile set into a dense grid and
+transcribes `crates/grammar/src/nav.rs`'s own predicates. The reader is
+calibrated before it is believed — it reproduces the engine's filled-cell,
+standable, grade-entry, reachable, sheltered and pocket counts exactly on both
+zones — because the three corrections this record has already taken were each a
+plausible number from an uncalibrated probe.
+
+| Claim | Status | Re-derived by |
+|---|---|---|
+| run 0: 113 rules, 13 palette roles | checked | counting the program's `rules` / `palette` |
+| run 1: 145 rules, 11 palette roles | checked | same |
+| regions 27×48×76 and 31×64×93, seed 1 | checked | the manifests, and re-expansion at those regions |
+| program hashes `cc1bdc05…` / `d43ec535…` | checked | re-expansion recomputes both from the program files |
+| 2 tiles / 4 tiles and a manifest | checked | the manifests' `parts` |
+| run 0 gates: `blocks-exist` 19, `non-empty` 98496 (18167 filled), `traversable` 59 = 47 approach + 12 exit, 3560 standable, connected | checked | `delve-grammar expand --traversable`, re-run |
+| run 1 gates: `blocks-exist` 28, `non-empty` 184512 (28633 filled), `traversable` 80 = 49 approach + 31 exit, 4982 standable, connected | checked | same |
+| determinism: re-expansion is byte-identical | checked | all 2 + 4 `.nbt` compare identical to the delivered files |
+| run 0: `audit` passes | checked, wording tightened | `audit` refuses a lone tile by name and passes over the manifest; it never judged "both tiles" separately |
+| run 0: 11 of 11 anchors eye-eligible, zero render diagnostics | checked | the delivered shot manifest |
+| run 1: 12 of 12 anchors eye-eligible, **zero** render diagnostics | **corrected** | the delivered shot manifest carries one `DW0727` warning on `anchor/north-tower-roofward` |
+| run 0: all 11 anchors derive `north` | checked | the manifest's `facing` fields |
+| `call` duplication: 29 of 113 rules (26%), 19 shape-groups, wall-plane idiom 8 copies | checked | canonicalising each rule with role names and call targets erased; the 8-member group is `aisle_wall_w/e`, `arcade`, `transept_end`, `tower_wall`, `facade`, `east_wall`, `apse_wall` |
+| `call` duplication grew: 44 of 145 (30%), 27 shape-groups | checked | same |
+| run 1 is "a third larger, region 1.9×" | **corrected** | 145 vs 113 is 28% more rules; 184512 vs 98496 is 1.87× |
+| the rose is two rules that are each other's size-list reversed | checked | `rose_up` = [absolute 1, relative 1] over [fill, call]; `rose_down` = [relative 1, absolute 1] over [call, fill] |
+| run 0's nave is under a flat slab | checked | cross-section: interior open to y 19, solid slab y 20–22 |
+| run 1's nave is under a stepped pointed vault | checked | cross-section: open to y 23, stepped taper y 24–28 |
+| `traversable` approach = 47 cells, 3 real doors, rest sills and louvres | checked | of the 47 cells on run 0's z-max face, 7 are at y 1 in three runs of x (9–10, 12–14, 16–17); the other 40 sit at y 23, 27, 30 and 42 |
+| `traversable`'s axis is world Z; approach = Z-max, exit = Z-min | checked | `nav::ends`, and the face decomposition above |
+| `delve-admit lighting` dies on a manifest with a gzip error | checked | `DW0732 … gzip decode: invalid gzip header`, both runs' binaries |
+| `lighting` on a fragment succeeds and manufactures an anchorless `spdx: UNKNOWN` document | checked | `lighting --write` on one tile writes a sidecar with `"anchors": {}` and `"spdx": "UNKNOWN"` beside the correctly provenanced manifest |
+| `audit` and `render` refuse a lone tile by name | checked | `DW0732` and `DW0721`, both runs' binaries |
+| the lighting probe binds to the region box, so a free-standing building can only report `dark` | checked | on one run-1 tile it reports `profile: dark`, min 0 over 2438 floor cells; the building occupies x 2–28 of a 31-wide region, so the outside ground is in the measured set |
+| run 0's remeasured interior: min light 4, none below threshold | checked | the run's own probe re-run on the delivered zone: ground floor min 4, 0 cells below 3 |
+| run 0's authoring intermediate: 48 unlit cells on the nave centre line | unverifiable | the intermediate program was not kept; only the repaired artifact ships |
+| run 1's X-mirror symmetry is within 36 cells at z 5–6 / y 32–33; run 0 is symmetric exactly | checked | 72 occupancy mismatches = 36 unpaired cells, all at those coordinates; run 0 has 0. Measured on occupancy — directional block states differ under a mirror by construction |
+| run 1's transept band z 53–59: both flanks open seven blocks, no end wall, no side wall | **corrected** | each flank carries an authored pointed-arch portal, 5 wide at z 54–58, 11 courses tall, jambs solid; the seven-block figure is the ground slab's notch, not a wall's absence |
+| "nothing walks there" at the transept | **corrected** | the five threshold cells of each portal are standable and reachable on foot from the grade entrance |
+| reachability table: 3560/4982 standable, 1548/2267 reachable, 0 reachable above the ground band, 1835/2478 open, 177/237 sheltered | checked | `delve-grammar expand --reachable-floor`, and independently: every reachable cell in both zones is at y 1 |
+| run 0's two doorless west-tower chambers, 60 cells each, x 1–6 and 20–25, y 1, z 65–74 | checked | the two largest unreachable pockets, exactly those bounds |
+| run 1's 84-cell chamber at y 23 "over the west front" | **corrected** | it is over the apse: x 12–18, y 23, z 81–92 |
+| run 1's two belfry floors at y 35–36 | checked | 41 cells each, x 1–9 and 21–29, z 4–12 |
+| run 1's sandbox showed 33 programs, 10 of them `idiom-*` | checked | `delve-grammar list` from the run's own binary |
+| both sandboxes contained zero `.rs` files | checked | `find` over both trees |
+| run 1's vault "reads as a dark void" | unverifiable as stated, and reframed | a judgement of one frame; on the bytes both runs' vault soffits carry block light 0 for their whole length, so it does not separate them |
+| R1 and R2 verdicts | judgements, and re-judged above | R1 is now artifact-bound for both runs; R2 stands |
+| R4's language gaps: no positional index, no non-constant profile step, no overlay, `mark` cannot state a facing or mark a region, a directional role breaks under `largest` | unverifiable here | statements about the language's surface, not about these artifacts; each would need its own red demonstration against the current build |
+| the agent's account of where it got stuck, and the counterfactual it states about the idiom index | unverifiable | first-person report, recorded as such |

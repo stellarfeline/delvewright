@@ -387,6 +387,19 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # A trial's rubric answer is a judgement, and a judgement is bounded by the
+      # instrument that took the picture. Trial 0001 answered R1 `partial` for
+      # run 1 and, three paragraphs later, recorded that the renderer had no
+      # camera an author could aim and that this "alone is the whole of R1's
+      # partial". The verdict is what later rounds cite; the disclaimer is not.
+      # Re-photographed square-on from the same delivered bytes, the answer was
+      # `yes` — the record understated its own result for as long as it existed.
+      # So every judged verdict declares `artifact-bound`, or `instrument-bound`
+      # with the blocker NAMED so it can be fixed and the verdict re-taken. It
+      # rides in this job because a new job needs a new required context, and an
+      # advisory gate does not gate. Deterministic, offline, stdlib-only python3.
+      - name: every judged trial verdict declares what bounded it
+        run: python3 tools/check-trial-verdicts.py
       # A required status check answers for the uptime of every host it reaches,
       # and a git dependency is the reach nothing in cargo's surface lets a job
       # decline: it is cloned during RESOLUTION of the workspace that declares it,
