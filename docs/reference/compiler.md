@@ -201,8 +201,21 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
-  Brigadier tree (`compiler::commands`; structure-only — arity/paths, not arg
-  values). mecha re-validates in CI (ADR-0011); disagreement fails CI.
+  Brigadier tree (`compiler::commands`, `data/commands-1.21.11.json`;
+  structure-only — arity/paths, not arg values). mecha re-validates in CI
+  (ADR-0011); disagreement fails CI. The match is exact and complete: the first
+  token must be a known command root, `literal` nodes match verbatim, and
+  `argument` nodes consume a fixed per-parser token count (`vec3`/`block_pos` 3,
+  `vec2`/`column_pos`/`rotation` 2, `message` and greedy `string` the rest, else
+  one balanced token). Tokenizing is brace/bracket/quote-aware, so an NBT
+  compound, a block-state suffix and a selector are each one token. Matching
+  **backtracks** across ambiguous argument branches and follows `redirect`s
+  (`… matches N` → `execute`, `run <cmd>` → the tree root); a line is valid iff
+  every token is consumed ending on an `executable` node. What it therefore
+  catches is a misspelled command, a wrong argument count and a bogus subcommand
+  path; what it does not judge is numeric coordinates, well-formed NBT/JSON, or
+  whether a block or item id exists — those are mecha's cross-check and the DSL
+  item/block registries.
   **Single-entity arity** (round-7 live finding, spec-0018): an entity argument
   the tree marks `amount: "single"` rejects `@a`/`@e` without `limit=1`.
   `damage @a[…] 40 minecraft:generic` is a well-shaped command that 1.21.11
