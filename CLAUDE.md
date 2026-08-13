@@ -143,6 +143,35 @@ validation/          # docker compose: headless server + bot, same image as CI &
   match SIGPIPEs its producer; it read as flakiness for months, cost two owner
   playtest stagings, and the same idiom sat under both 25565 safety guards
   (task #173, PR #300).
+  **Non-trivial ad-hoc shell is written for bash, not for the interactive
+  shell** (owner, 2026-08-12). The tool layer runs the user's login shell, which
+  is zsh, and two of this doctrine's recorded traps exist only there: zsh does
+  not word-split an unquoted parameter, so `for x in $var` over a 33-item list
+  runs ONCE; and assigning to a variable named `path` destroys `PATH`, because
+  zsh ties them. Both vanish under `bash -c`. So anything with a loop, an array
+  or a variable holding a list goes through bash — and the repo's own scripts
+  already do, being `#!/usr/bin/env bash`, which is why no repo check can catch
+  this and why a check would red two correct scripts.
+  **That rule removes two of the six recorded instances and no more**, which is
+  the reason the next paragraph is not replaced by it.
+  **The dangerous shell idiom is the one that returns a plausible wrong number
+  instead of an error**, and an agent's own measurements are where it bites,
+  because nothing downstream re-checks them. Six in one session, each of which
+  first read as a real finding — and only two were about the shell at all.
+  Hashing `shasum` output hashes the FILE PATHS too, so comparing two
+  differently-named output dirs called all 62 expansions different when 0 were.
+  `cargo test --test X` rebuilds the binary under `CARGO_BIN_EXE`, so a reverted
+  perturbation stayed live in the binary then used to build campaigns, and a
+  real binding read as zero. A `cd` in the first clause of a compound command
+  persists through the rest of it, so `gh` and `git worktree` ran against the
+  wrong repository and reported ten live PRs as nonexistent. And `git
+  merge-tree`'s three-argument form reports no conflicts where the modern
+  `--write-tree` form reports five files — **a zero from a measurement that
+  disagrees with an independent observer is the measurement failing, not the
+  fact being absent.**
+  Hence the obligation, stated where it can bind: **when a measurement is the
+  deliverable, cross-check the number by a second method before reporting it.**
+  Three of the six were caught only after being reported.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red. The owner reviews PR
   descriptions and architecture-level diffs, not lines. Write PR descriptions
   accordingly: what changed at the design level, what CI now proves.
@@ -257,6 +286,26 @@ validation/          # docker compose: headless server + bot, same image as CI &
   shaped so it cannot become habit; a convenient override is the same defect one
   layer out. (Staging gate, task #341: the enumeration found a third path —
   the release workflow — that neither reviewer had named.)
+- **An opt-out must be secured by a property the defect cannot supply** — the
+  sixth vacuity mode, and the only one that survives every check the previous
+  five ask for. Such a gate is bound, invoked, reports an honest binding count
+  and is falsifiable in principle; it is nonetheless **logically incapable** of
+  separating pass from fail, because the escape hatch's own proof obligation is
+  entailed by the failure it exists to catch. Worked example: a prefab contract
+  let an author mark unreachable floor as "sealed — no body goes here", proved
+  by *showing those cells are unreachable*. That is the identical property that
+  made them a finding, so sealing was guaranteed to succeed on exactly the cells
+  that had failed, and a 90-line script that read the checker's own red list and
+  sealed everything in it turned a broken building green. The repair is not a
+  stronger threshold — it is a **different** demand: a sealed region must itself
+  be closed, which is what stranding cannot supply.
+  Two review questions, and the second is the one that catches this: *what does
+  this opt-out demand* — and *could the defect itself produce it?* Applies to
+  every escape hatch, acknowledgement and override, and a second hatch on the
+  same gate is the defect rather than the fix. Where an opt-out is a choice
+  among several kinds, the effective obligation is their **disjunction** and is
+  only as strong as the weakest, so the kind must be determined by the object
+  rather than picked by the author.
 - **A command whose response nobody reads cannot fail** (task #70). A site that
   issues a command to a server and discards the reply is asserting an effect it
   has not established, and it stays green forever: `delve-admit`'s gallery

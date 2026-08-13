@@ -385,6 +385,29 @@ inverted**; the two expansions are exact complements over all 405 cells, which
 the test measures rather than asserts. A straight jamb under the springing is
 one more `Y` split below the taper — see the composition.
 
+**Two of these crossing is one more rule, not a Rust generator.** Run a second
+prism across the first and the union has a **plus**-shaped cross-section at
+every course; a plus is a partition, so the recursion peels the **ring** of its
+box rather than insetting the box. Lay one solid course, then cut what is left
+into four one-cell slabs and a core — `[1, rel, 1]` down `Z`, and that split's
+middle piece `[1, rel, 1]` down `X` — and hand each slab the taper and the core
+the crossing rule again.
+
+Which taper each slab gets is the whole of it, and it is why no rule counts
+courses. The slabs taken by the first split still span the box's full width, so
+they step in one cell and then lay a course. The slabs taken from the middle
+piece have already lost a cell at each end to the first split, so **their own
+extent is already the width their course needs** and they lay it straight away.
+Both are the two rules above, entered at different points — `step_in` for the
+first pair, `profile` for the second — with the margins skipped rather than
+painted.
+
+Four rules build it: those two, the crossing rule, and one that places the two
+bands in the region. The result is a cross-gable with a true valley at each of
+the four re-entrant corners, both ridges at one height, over the whole
+footprint, at any size. The two bands are given the same width — that is what
+one pitch and one ridge height mean together.
+
 ### 4. Erosion
 
 A palette role that carries some air is a material that is partly not there, and
