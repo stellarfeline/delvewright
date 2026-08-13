@@ -708,6 +708,23 @@ politely and change nothing), and every sample batch is fenced by a `#sync`
 scoreboard round-trip so a desynchronised read aborts instead of shifting every
 later value by one.
 
+`tools/spike-fluid-plane/run.sh` (`EULA=TRUE tools/spike-fluid-plane/run.sh
+[--out <path>]`) measures, on the same throwaway pinned server booted with the
+delve ocean-superflat generator literal, the fluid physics spec-0038 rests on:
+plane-fill stillness and MSPT cost at 512×512 scale, edge behaviour at ticking
+vs never-ticking chunk rims, the ambient sea's silent re-flood of a cleared
+layer (fully healed ≤40 s with zero flowing block-states), saturated placement
+vs flow-and-settle vs an interior gap in a closed basin, waterloggable blocks
+under a rising and a falling level, the `/fill` block ceiling and
+`max_block_modifications`, and what a rising water column or a solid runtime
+fill does to the player standing in it. Raw data:
+`tools/spike-fluid-plane/observations.json`; the findings live in spec-0038 §4
+directly. Two hardenings this rig added over the death spike's channel, worth
+keeping: a dead rcon channel rejects the pending read instead of leaving node
+an empty event loop to exit 0 on, and channel start is a retried handshake
+(the readiness probe passing and the next connection being accepted are two
+events with a measured race between them).
+
 `tools/spike-area-effect-arrow/run.sh` (`EULA=TRUE
 tools/spike-area-effect-arrow/run.sh [--out <path>]`) answers whether a datapack
 alone can give a projectile a non-block-breaking explosion or a splash-potion
