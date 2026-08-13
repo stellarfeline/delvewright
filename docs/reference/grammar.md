@@ -177,6 +177,11 @@ move no block by itself: rebinding every name of every rule of every library
 program to itself gives byte-identical models and identical anchors, at three
 seeds (`tests/arguments.rs`).
 
+The three scope constructs compose, and the composition is asserted rather than
+assumed (`tests/frames_compose.rs`): a `claim` under a `bind` resolves to the box
+the pushed value made, a reflected rule claims the mirror-image box, and a
+binding reads the same extents reflected as not.
+
 **A binding is one more way to write a recursion that does not terminate** — an
 argument that keeps a guard true for ever — and it needs no new answer: an
 unguarded recursion is a `DepthLimit`, deterministic and named (§4). Used the
