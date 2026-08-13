@@ -376,10 +376,11 @@ delve-admit audit    out/<id>.nbt          # again, after the edits
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
-(`DW0733`), and the palette allowlist (`DW0730`). A grammar prefab passes it
-by construction for `DW0733` — the export already refused — but a *hand-built*
-or ingested piece does not, so `audit` is where that class is caught for
-everything else.
+(`DW0733`), block states that do not write every property the block has
+(`DW0734`), and the palette allowlist (`DW0730`). A grammar prefab passes it by
+construction for both block checks — the export refuses an unknown state and
+writes every property of the ones it keeps — but a *hand-built* or ingested piece
+does not, so `audit` is where those classes are caught for everything else.
 
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed

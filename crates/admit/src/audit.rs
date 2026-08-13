@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_schem::convert::{forbidden_nbt, strip_ns};
+use delvewright_schem::convert::{DATA_VERSION as PINNED_DATA_VERSION, forbidden_nbt, strip_ns};
 use delvewright_schem::nbt::Nbt;
 use delvewright_schem::split::TilePart;
 use serde::Serialize;
@@ -53,7 +53,9 @@ const HARD_FORBID_BE: &[&str] = &[
 ];
 
 use crate::allowlist::Allowlist;
-use crate::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
+use crate::diag::{
+    DW_ALLOWLIST, DW_FORBIDDEN, DW_UNDER_SPECIFIED_BLOCK, DW_UNKNOWN_BLOCK, Diagnostic,
+};
 use crate::structure::Structure;
 
 /// One machine-readable audit finding (mirrors a [`Diagnostic`] in JSON form).
@@ -83,6 +85,9 @@ pub struct AuditReport {
     pub not_allowlisted: usize,
     /// Count of palette block states the pinned Minecraft version does not have.
     pub unknown_blocks: usize,
+    /// Count of palette block states that leave properties unwritten. Always 0
+    /// for a template saved by an older game — see `DW0734`.
+    pub under_specified_blocks: usize,
     pub findings: Vec<Finding>,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
@@ -142,6 +147,7 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     let mut forbidden = 0usize;
     let mut not_allowlisted = 0usize;
     let mut unknown_blocks = 0usize;
+    let mut under_specified_blocks = 0usize;
     let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
 
     // --- Palette allowlist: report each offending palette entry once, at the
@@ -151,6 +157,8 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     let mut forbid_block_reported = vec![false; s.palette.len()];
     // --- Spelling: a palette entry the pinned game does not have. ---
     let mut unknown_reported = vec![false; s.palette.len()];
+    // --- Completeness: a palette entry that does not say what it means. ---
+    let mut under_reported = vec![false; s.palette.len()];
 
     for b in &s.blocks {
         let entry = &s.palette[b.state as usize];
@@ -209,6 +217,32 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
             diags.push(Diagnostic::error(DW_UNKNOWN_BLOCK, format!("{e}")).at(b.pos));
         }
 
+        // 3b. ...and it has to SAY what it is. A palette entry may name fewer
+        //     properties than the block has; vanilla fills the rest from the
+        //     block's default state, and nothing else can. That silence is
+        //     invisible in-game and corrupts every reader that is not the
+        //     server: the prefab viewer, given a `cobblestone_wall` with no
+        //     properties, could satisfy no `multipart` case, unioned all of
+        //     them — which is a full cube — and drew a solid block where a wall
+        //     post stands, under a report that said `0 unresolved`.
+        //
+        //     Bound to templates written AT the pin. An older `DataVersion` is
+        //     upgraded by vanilla's DataFixerUpper on load, and this registry
+        //     describes 1.21.11 only, so it cannot say what a 1.18.2 palette
+        //     left out.
+        if s.data_version == PINNED_DATA_VERSION
+            && !under_reported[b.state as usize]
+            && let Err(e) = registry.validate_complete(&entry.name, &entry.properties)
+            && matches!(
+                e,
+                delvewright_schem::blocks::BlockError::UnderSpecified { .. }
+            )
+        {
+            under_reported[b.state as usize] = true;
+            under_specified_blocks += 1;
+            diags.push(Diagnostic::error(DW_UNDER_SPECIFIED_BLOCK, format!("{e}")).at(b.pos));
+        }
+
         // 4. palette allowlist.
         if !allow.permits_entry(entry) && !allow_reported[b.state as usize] {
             allow_reported[b.state as usize] = true;
@@ -242,6 +276,7 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         forbidden,
         not_allowlisted,
         unknown_blocks,
+        under_specified_blocks,
         findings: diags.iter().map(to_finding).collect(),
         tiles: None,
     };
@@ -270,6 +305,7 @@ pub fn audit_tile_set(
     let mut audits: Vec<TileAudit> = Vec::with_capacity(tiles.len());
     let mut palette: BTreeSet<String> = BTreeSet::new();
     let (mut block_count, mut forbidden, mut not_allowlisted, mut unknown_blocks) = (0, 0, 0, 0);
+    let mut under_specified_blocks = 0usize;
 
     for (part, structure) in tiles {
         let (rep, diags) = audit(&part.file, structure, allow);
@@ -277,6 +313,7 @@ pub fn audit_tile_set(
         forbidden += rep.forbidden;
         not_allowlisted += rep.not_allowlisted;
         unknown_blocks += rep.unknown_blocks;
+        under_specified_blocks += rep.under_specified_blocks;
         palette.extend(rep.palette.iter().cloned());
         audits.push(TileAudit {
             file: part.file.clone(),
@@ -311,6 +348,7 @@ pub fn audit_tile_set(
         forbidden,
         not_allowlisted,
         unknown_blocks,
+        under_specified_blocks,
         findings: all_diags.iter().map(to_finding).collect(),
         tiles: Some(audits),
     };

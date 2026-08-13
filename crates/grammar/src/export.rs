@@ -674,18 +674,31 @@ struct ZonePalette {
 fn zone_palette(model: &VoxelModel) -> ZonePalette {
     // Palette index 0 is air in both representations, and both lay cells out
     // x-major, so the model's own cell order is already the schematic's.
+    //
+    // The EMITTED entry states every property the block has. Vanilla's
+    // BlockState codec fills an unwritten property from the block's default
+    // state, so completing it denotes the identical state and decides nothing;
+    // what it stops is the file meaning something only a running 1.21.11 server
+    // can work out. The prefab viewer, handed a `cobblestone_wall` with no
+    // properties, could satisfy no `multipart` case, unioned every case — a full
+    // cube — and drew a solid block where a wall post stands.
+    //
+    // `index_of` stays keyed on the AUTHORED state string, because that is what
+    // a cell lookup produces; only the emitted palette is completed.
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
     let states: Vec<SchemBlockState> = model
         .palette()
         .iter()
         .map(|b| SchemBlockState {
             name: b.name.clone(),
-            properties: b.properties.clone(),
+            properties: registry.complete(&b.name, &b.properties),
         })
         .collect();
-    let index_of: BTreeMap<String, i32> = states
+    let index_of: BTreeMap<String, i32> = model
+        .palette()
         .iter()
         .enumerate()
-        .map(|(i, b)| (b.to_state_string(), i as i32))
+        .map(|(i, b)| (b.to_string(), i as i32))
         .collect();
     ZonePalette { states, index_of }
 }

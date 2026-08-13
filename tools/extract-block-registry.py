@@ -14,13 +14,27 @@ Mojang's own generated block-state report republished verbatim. Its shape is
     {"oak_stairs": [{"facing": ["north", ...], ...}, {"facing": "north", ...}]}
 
 i.e. `[every property's legal values, the default state]`. The vendored form
-keeps only the first element, namespaced and sorted:
+keeps both, namespaced and sorted:
 
-    {"minecraft:oak_stairs": {"facing": ["north", ...], ...}}
+    {"minecraft:oak_stairs": {
+       "properties": {"facing": ["north", ...], ...},
+       "default":    {"facing": "north", ...}}}
 
-The default state is deliberately dropped: a validator needs to know which
-properties and values are legal, and vendoring a second copy of information
-nothing reads is a second thing that can go stale.
+**Both halves are load-bearing.** The legal values answer "is this a state the
+game has"; the DEFAULT answers "what state did the author actually write". A
+structure template's palette entry may omit any property, and vanilla's
+`BlockState` codec then fills it from the block's default — so an entry that
+says `{"Name": "minecraft:cobblestone_wall"}` and one that spells out all six
+properties at their defaults denote the *same* BlockState. Every consumer that
+is not a running server (`delve-render`, `delve-admit`, occupancy analysis) can
+only read what is written, and without the defaults it has to guess. The guess
+was measured: the viewer unioned every multipart case of an under-specified
+state, which drew a cobblestone wall as a solid 1x1x1 cube and reported nothing
+unresolved.
+
+The two halves are checked against each other here (same key set; every default
+value legal), so a source that carried one without the other is a red rather
+than a half-registry.
 
 Reproduce (the same shape as `tools/extract-sound-registry.py`):
 
@@ -74,13 +88,13 @@ def main(argv: list[str]) -> int:
         print("error: source is not a JSON object", file=sys.stderr)
         return 2
 
-    registry: dict[str, dict[str, list[str]]] = {}
+    registry: dict[str, dict[str, object]] = {}
     for block_id, entry in data.items():
-        if not isinstance(entry, list) or not entry:
+        if not isinstance(entry, list) or len(entry) != 2:
             print(f"error: {block_id!r} is not [properties, default]", file=sys.stderr)
             return 2
-        properties = entry[0]
-        if not isinstance(properties, dict):
+        properties, default = entry
+        if not isinstance(properties, dict) or not isinstance(default, dict):
             print(f"error: {block_id!r} has no property map", file=sys.stderr)
             return 2
         for name, values in properties.items():
@@ -90,9 +104,33 @@ def main(argv: list[str]) -> int:
                     file=sys.stderr,
                 )
                 return 2
+        # The two halves must describe the same block, or the registry would
+        # answer "is this legal" and "what did the author mean" about different
+        # things. Checked here rather than trusted: this is the one place the
+        # source is read.
+        if set(default) != set(properties):
+            print(
+                f"error: {block_id!r} default state has properties "
+                f"{sorted(default)}, but the block has {sorted(properties)}",
+                file=sys.stderr,
+            )
+            return 2
+        for name, value in default.items():
+            if str(value) not in [str(v) for v in properties[name]]:
+                print(
+                    f"error: {block_id!r} default {name}={value!r} is not one of "
+                    f"{sorted(str(v) for v in properties[name])}",
+                    file=sys.stderr,
+                )
+                return 2
         registry[f"minecraft:{block_id}"] = {
-            name: sorted(str(v) for v in values)
-            for name, values in sorted(properties.items())
+            "default": {
+                name: str(value) for name, value in sorted(default.items())
+            },
+            "properties": {
+                name: sorted(str(v) for v in values)
+                for name, values in sorted(properties.items())
+            },
         }
 
     if len(registry) != EXPECTED_BLOCKS:

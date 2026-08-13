@@ -101,9 +101,31 @@ pub fn renamed_block_piece() -> Structure {
     s
 }
 
+/// The clean room plus a `minecraft:cobblestone_wall` with **no properties at
+/// all** — the live shape, 10 cells each in `island-greenfield` and
+/// `island-greenfield-bend`. Every property is legal (there are none), so
+/// `DW0733` has nothing to say; the entry simply does not state what it is, and
+/// a reader without the 1.21.11 defaults has to guess. The one that guessed drew
+/// it as a solid cube. `DW0734` exists to stop this.
+pub fn under_specified_block_piece() -> Structure {
+    let mut s = clean_room();
+    s.set_cell(
+        [2, 1, 2],
+        PaletteEntry::simple("minecraft:cobblestone_wall"),
+        None,
+    );
+    s
+}
+
 pub fn disallowed_palette_piece() -> Structure {
     let mut s = clean_room();
-    s.set_cell([2, 1, 2], PaletteEntry::simple("minecraft:tnt"), None);
+    // `unstable` written out: the allowlist fixture is about the allowlist, and
+    // a lossy state would make it fail `DW0734` for an unrelated reason.
+    s.set_cell(
+        [2, 1, 2],
+        PaletteEntry::with_props("minecraft:tnt", &[("unstable", "false")]),
+        None,
+    );
     s
 }
 

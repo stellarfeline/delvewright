@@ -350,9 +350,15 @@ impl Palette {
         Palette { entries: vec![] }
     }
     fn idx(&mut self, name: &str, props: Option<BTreeMap<String, String>>) -> i32 {
+        // Every palette entry states every property the block has. Vanilla's
+        // BlockState codec would fill an unwritten one from the block's default
+        // state, so this changes no BlockState and decides no content — it stops
+        // the file meaning something only a running 1.21.11 server can work out.
+        // `invariants::assert_states_are_complete` is the post-condition.
+        let full = crate::invariants::complete_state(name, &props.unwrap_or_default());
         let e = PaletteEntry {
             name: name.to_string(),
-            properties: props,
+            properties: if full.is_empty() { None } else { Some(full) },
         };
         if let Some(i) = self.entries.iter().position(|x| *x == e) {
             return i as i32;

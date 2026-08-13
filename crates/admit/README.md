@@ -39,12 +39,24 @@ Two checks over a converted `.nbt`, producing a machine-readable `AuditReport`:
   `delve-schem` conversion strip uses (reused, no drift).
 - **Palette allowlist** (`DW0730`): every palette block name must be in the
   (configurable) allowlist, so a reviewer sees any surprising block.
+- **Block-state spelling** (`DW0733`): the state has to exist in the pinned
+  version. An allowlist cannot answer this — it is a list of names somebody
+  approved, so a name the game dropped permits itself forever.
+- **Block-state completeness** (`DW0734`, templates at the pin only): the state
+  has to *say what it is*. A palette entry may write fewer properties than the
+  block has and vanilla fills the rest from the block's default state; nothing
+  else can, so the file means something only a running server can read.
 
 **Jigsaw is intentionally not hard-forbidden here.** The conversion strip forbids
 jigsaw on *raw community schematics* (contributors don't bring their own sockets);
 but the admission audit runs on **library prefabs**, whose jigsaw blocks are the
 legitimate sockets the compiler's solver mates — and a jigsaw block entity cannot
-carry a `Command`. Verified: every shipped `campaigns/prefabs/*.nbt` passes.
+carry a `Command`.
+
+An audit binds to the moment a piece enters the library, which is one moment per
+piece — so a check added later reaches nothing already admitted.
+`tests/library.rs` re-runs the block-state half over every shipped
+`campaigns/prefabs/*.nbt` on `cargo test`, and states its binding count.
 
 The allowlist is a broad default vanilla **building + decoration** set (see
 `src/allowlist.rs`) — stone/wood/glass/copper families, plus inert flora (grasses,

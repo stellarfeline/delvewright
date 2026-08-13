@@ -213,6 +213,9 @@ fn write_piece(out: &Path, spec: &Spec) {
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Completeness, at the emitter: a state that omits a property means whatever
+    // a 1.21.11 server would fill in, and only a 1.21.11 server can read that.
+    invariants::assert_states_are_complete(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

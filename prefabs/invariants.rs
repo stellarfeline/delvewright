@@ -25,11 +25,96 @@ use std::sync::OnceLock;
 /// is the defect this gate exists to catch.
 const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/compiler/data/blocks-1.21.11.json");
 
-fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
-    static REGISTRY: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();
+/// One block: every property's legal values, and the state vanilla resolves an
+/// unwritten property to. Mirrors `delvewright_schem::blocks::BlockDef`, which
+/// reads the same file for the in-workspace emitters.
+#[derive(serde::Deserialize)]
+pub struct BlockDef {
+    pub properties: BTreeMap<String, Vec<String>>,
+    pub default: BTreeMap<String, String>,
+}
+
+fn block_registry() -> &'static BTreeMap<String, BlockDef> {
+    static REGISTRY: OnceLock<BTreeMap<String, BlockDef>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         serde_json::from_str(BLOCK_REGISTRY_JSON).expect("the vendored block registry parses")
     })
+}
+
+/// **What a palette entry means, spelled out.**
+///
+/// Vanilla's `BlockState` codec reads a palette entry as *the block's default
+/// state with the written properties applied over it*, so an entry that names
+/// no properties at all and one that names every property at its default denote
+/// the identical BlockState. Writing the second is therefore a **lossless**
+/// rewrite of the first — it decides nothing, it only stops the file depending
+/// on a table of 1.21.11 defaults that no reader of the file is required to
+/// have. Every generator applies it at its palette's single insertion point, so
+/// a piece cannot be emitted lossy.
+///
+/// The point is not tidiness. `island-greenfield` wrote `minecraft:cobblestone_wall`
+/// with no properties; the prefab viewer, having no defaults, could not resolve
+/// a single `multipart` case and unioned all of them — which is a full cube. It
+/// drew a solid block where a wall post stands and reported `0 unresolved`.
+///
+/// A value already written is never touched, an unknown block and a foreign
+/// namespace are returned as written (this registry has nothing to add), and a
+/// block with no properties stays propertyless — `minecraft:stone` does not
+/// acquire an empty map.
+pub fn complete_state(name: &str, props: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let Some(def) = block_registry().get(name) else {
+        return props.clone();
+    };
+    let mut out = def.default.clone();
+    for (k, v) in props {
+        out.insert(k.clone(), v.clone());
+    }
+    out
+}
+
+/// **A generator states every property of every block it places.**
+///
+/// The post-condition of [`complete_state`], and the reason forgetting to call
+/// it is not a thing that can happen quietly: a generator that grows a new
+/// placement path around its palette fails here instead of shipping a lossy
+/// piece. It is separate from [`assert_blocks_are_real`] because the two say
+/// different things — that one is about a state the game does not have, this one
+/// about a state the FILE does not fully describe.
+///
+/// Scoped to `minecraft:`: a datapack's own block has no entry here.
+pub fn assert_states_are_complete(id: &str, cells: &Cells) {
+    let registry = block_registry();
+    let mut bad: BTreeMap<String, usize> = BTreeMap::new();
+    let mut checked = 0usize;
+    for (name, props) in cells.values() {
+        let Some(def) = registry.get(name) else {
+            continue; // foreign namespace, or already an `assert_blocks_are_real` failure
+        };
+        checked += 1;
+        let missing: Vec<String> = def
+            .default
+            .iter()
+            .filter(|(k, _)| !props.contains_key(*k))
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        if !missing.is_empty() {
+            *bad.entry(format!("{name} does not write {}", missing.join(", ")))
+                .or_insert(0) += 1;
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{id}: {} of {checked} placed cell(s) leave a block-state property unwritten. Vanilla \
+         fills those from the block's default state; every other reader of this file — the \
+         renderer, the prefab viewer, the occupancy pass, `delve-admit` — has to guess, and the \
+         one that guessed drew a bare cobblestone_wall as a solid cube. Write the property, at \
+         the value shown, through `invariants::complete_state`. Offenders: {}",
+        bad.values().sum::<usize>(),
+        bad.iter()
+            .map(|(reason, cells)| format!("{reason} ({cells} cell(s))"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
 }
 
 /// **A generator may only emit blocks the pinned game actually has.**
@@ -57,7 +142,8 @@ pub fn assert_blocks_are_real(id: &str, cells: &Cells) {
         }
         let reason = match registry.get(name) {
             None => format!("{name} is not a block in Minecraft 1.21.11"),
-            Some(known) => {
+            Some(def) => {
+                let known = &def.properties;
                 let mut reason = None;
                 for (property, value) in props {
                     match known.get(property) {
@@ -428,6 +514,54 @@ mod tests {
         let mut cells = Cells::new();
         cells.insert([0, 0, 0], ("minecraft:oak_stairs".into(), props));
         assert_blocks_are_real("fixture", &cells);
+    }
+
+    /// The live instance: `island-greenfield` placed 10 cells of
+    /// `minecraft:cobblestone_wall` with no properties at all. Legal, and
+    /// unreadable by anything that is not the running game.
+    #[test]
+    #[should_panic(expected = "cobblestone_wall does not write")]
+    fn a_bare_cobblestone_wall_fails() {
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], cell("minecraft:cobblestone_wall"));
+        assert_states_are_complete("fixture", &cells);
+    }
+
+    /// The same wall through `complete_state` — what the emitter now writes.
+    /// The BlockState is unchanged; the file now says so.
+    #[test]
+    fn a_completed_wall_passes_and_says_what_vanilla_reads() {
+        let full = complete_state("minecraft:cobblestone_wall", &BTreeMap::new());
+        assert_eq!(full["up"], "true");
+        assert_eq!(full["north"], "none");
+        assert_eq!(full["waterlogged"], "false");
+        assert_eq!(full.len(), 6);
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], ("minecraft:cobblestone_wall".into(), full));
+        assert_states_are_complete("fixture", &cells);
+    }
+
+    /// Completion never overrides a decision the generator made — the whole
+    /// reason it is safe to apply to every placement.
+    #[test]
+    fn completion_preserves_what_the_generator_said() {
+        let mut written = BTreeMap::new();
+        written.insert("north".to_string(), "true".to_string());
+        let full = complete_state("minecraft:vine", &written);
+        assert_eq!(full["north"], "true");
+        assert_eq!(full["south"], "false");
+        assert_eq!(full["up"], "false");
+    }
+
+    /// A block with no properties must not acquire an empty map, and a
+    /// datapack's own block is left exactly as written.
+    #[test]
+    fn propertyless_and_foreign_blocks_are_untouched() {
+        assert!(complete_state("minecraft:stone", &BTreeMap::new()).is_empty());
+        let mut cells = Cells::new();
+        cells.insert([0, 0, 0], cell("minecraft:stone"));
+        cells.insert([0, 1, 0], cell("delvewright:nonesuch"));
+        assert_states_are_complete("fixture", &cells);
     }
 
     /// **Every hand-curated block list in this file is bound to the registry.**

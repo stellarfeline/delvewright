@@ -39,13 +39,24 @@ not third-party reconstructions.
 
 ## Vendored files (derived, committed here)
 
-- **`blocks-1.21.11.json`** — every 1.21.11 **block** with every property and its
-  legal values, from `blocks/data.min.json` of the same summary (source SHA-256
+- **`blocks-1.21.11.json`** — every 1.21.11 **block** with every property's legal
+  values *and* the block's default state, from `blocks/data.min.json` of the same
+  summary (source SHA-256
   `178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7`, retrieved
-  2026-08-11). 1166 blocks, namespaced and sorted. The source's second element —
-  the default state — is deliberately dropped: a validator needs to know which
-  properties and values are legal, and a second copy of information nothing reads
-  is a second thing that can go stale.
+  2026-08-11). 1166 blocks (777 of them with properties), namespaced and sorted;
+  each entry is `{"properties": {...}, "default": {...}}`, a lossless namespaced
+  rewrite of the source's `[properties, default]` pair. The two halves are checked
+  against each other at extraction (same key set, every default value legal).
+  **Both halves are read.** The legal values answer *is this a state the game
+  has*; the default answers *what state did the author actually write*. A
+  structure template's palette entry may omit any property and vanilla's
+  `BlockState` codec fills it from the default, so a bare
+  `minecraft:cobblestone_wall` and the same wall with all six properties spelled
+  out denote the same state — and every consumer that is not a running server
+  (`delve-render`, the prefab viewer, `delve-admit`, the occupancy pass) can only
+  read what is written. Consumed for that by `BlockRegistry::complete` /
+  `invariants::complete_state` (both emitters write the complete state) and by
+  `DW0734`.
   **Why it exists**: the repo checked every emitted *command* against a pinned
   command tree and every item id against a pinned item registry, and checked an
   emitted **block** against nothing. `minecraft:chain` was renamed

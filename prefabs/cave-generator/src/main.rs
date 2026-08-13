@@ -298,9 +298,15 @@ impl Palette {
         Palette { entries: vec![] }
     }
     fn idx(&mut self, name: &str, props: Option<BTreeMap<String, String>>) -> i32 {
+        // Every palette entry states every property the block has. Vanilla's
+        // BlockState codec would fill an unwritten one from the block's default
+        // state, so this changes no BlockState and decides no content — it stops
+        // the file meaning something only a running 1.21.11 server can work out.
+        // `invariants::assert_states_are_complete` is the post-condition.
+        let full = invariants::complete_state(name, &props.unwrap_or_default());
         let e = PaletteEntry {
             name: name.to_string(),
-            properties: props,
+            properties: if full.is_empty() { None } else { Some(full) },
         };
         if let Some(i) = self.entries.iter().position(|x| *x == e) {
             return i as i32;
@@ -1602,6 +1608,9 @@ fn write_piece(out: &Path, spec: &Spec) {
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Completeness, at the emitter: a state that omits a property means whatever
+    // a 1.21.11 server would fill in, and only a 1.21.11 server can read that.
+    invariants::assert_states_are_complete(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

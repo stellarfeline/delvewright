@@ -214,6 +214,80 @@ fn a_block_the_pinned_version_does_not_have_fails_the_audit() {
     assert_eq!(f.severity, "error");
 }
 
+/// `DW0734`: a state the pinned game *does* have, written so that only the
+/// pinned game can read it.
+///
+/// This is the half `DW0733` structurally cannot reach. `DW0733` asks "is every
+/// property you wrote legal", and a palette entry that writes none passes that
+/// question trivially — a bare `minecraft:cobblestone_wall` is a perfectly legal
+/// state. What it is not is a *stated* one: vanilla resolves it from the block's
+/// default state, and the prefab viewer, having no defaults, could satisfy no
+/// `multipart` case, unioned all of them, and drew a solid 1×1×1 cube where a
+/// wall post stands — over a report that said `0 unresolved`.
+#[test]
+fn a_state_that_does_not_say_what_it_is_fails_the_audit() {
+    let s = fixtures::under_specified_block_piece();
+    let (rep, _) = audit("meadow-wall", &s, &Allowlist::default_building());
+    assert!(!rep.is_pass());
+    assert_eq!(rep.under_specified_blocks, 1);
+    assert_eq!(
+        rep.unknown_blocks, 0,
+        "the state is legal — this is exactly what DW0733 cannot see"
+    );
+    let f = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0734")
+        .expect("DW0734 must fire");
+    assert_eq!(f.severity, "error");
+    // The message names what vanilla would have filled in, so the fix is the
+    // message: a wall post with an `up` column and no arms.
+    assert!(f.message.contains("up=true"), "{}", f.message);
+    assert!(f.message.contains("north=none"), "{}", f.message);
+}
+
+/// ...and the same wall, written out, audits clean. The BlockState is identical
+/// — completeness is about what the file says, not about what the world is — so
+/// the gate must accept it, or it would be refusing the fix it prescribes.
+#[test]
+fn the_same_wall_written_out_passes_the_audit() {
+    let mut s = fixtures::clean_room();
+    s.set_cell(
+        [2, 1, 2],
+        delvewright_admit::structure::PaletteEntry::with_props(
+            "minecraft:cobblestone_wall",
+            &[
+                ("east", "none"),
+                ("north", "none"),
+                ("south", "none"),
+                ("up", "true"),
+                ("waterlogged", "false"),
+                ("west", "none"),
+            ],
+        ),
+        None,
+    );
+    let (rep, _) = audit("meadow-wall", &s, &Allowlist::default_building());
+    assert_eq!(rep.under_specified_blocks, 0);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+}
+
+/// A template saved by an OLDER game is not this registry's business. Vanilla's
+/// DataFixerUpper upgrades a pre-pin palette on load, and the pinned registry
+/// describes 1.21.11 only, so it cannot say what a 1.18.2 entry left out. The
+/// three third-party pieces in the library are all pre-pin
+/// (`hero-temple-ruin-arch` at 2975, `hero-galleon-oak` at 3465,
+/// `hero-standing-monolith` at 4189); refusing them here would be a verdict the
+/// data cannot support.
+#[test]
+fn a_pre_pin_template_is_not_judged_for_completeness() {
+    let mut s = fixtures::under_specified_block_piece();
+    s.data_version = 2975; // MC 1.18.2
+    let (rep, _) = audit("moss-ruins", &s, &Allowlist::default_building());
+    assert_eq!(rep.under_specified_blocks, 0);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+}
+
 /// ...and the rename itself audits clean, so the gate is not simply refusing
 /// everything in that shape.
 #[test]
@@ -221,7 +295,13 @@ fn the_rename_passes_the_audit() {
     let mut s = fixtures::clean_room();
     s.set_cell(
         [2, 1, 2],
-        delvewright_admit::structure::PaletteEntry::simple("minecraft:iron_chain"),
+        // Written out: `iron_chain` has an `axis` and a `waterlogged`, and a
+        // fixture that leaves them for the game to fill in is the same lossy
+        // shape the library shipped (`DW0734`).
+        delvewright_admit::structure::PaletteEntry::with_props(
+            "minecraft:iron_chain",
+            &[("axis", "y"), ("waterlogged", "false")],
+        ),
         None,
     );
     let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
