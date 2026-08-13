@@ -935,7 +935,7 @@ each is a claim about a *kind* of piece rather than about every piece.
   runs on every expansion either way (§4d); this flag is only what turns its
   sheltered half into a verdict, for a piece that claims a body can get
   everywhere indoors. It is opt-in for the same reason `traversable` is and more
-  so: 12 of the 33 library programs have **no** roofed floor at all — `castle`,
+  so: 13 of the 35 library programs have **no** roofed floor at all — `castle`,
   `church` and `stair-flight` among them — and the gate binds to zero on each,
   which is a finding and not a pass. A piece is entitled to strand floor:
   `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft` is one-way
