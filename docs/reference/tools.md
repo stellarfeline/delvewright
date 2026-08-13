@@ -140,9 +140,13 @@ actually written. Read that block before starting a piece.
 
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". `check` validates structure with no
-region and no seed — run it after every edit. `expand` writes `<id>.nbt` (or the
-tile set above), `<id>.json` (prefab metadata, with the program hash + seed that regenerate the
-bytes) and `<id>.report.json` (the gate verdicts).
+region and no seed — run it after every edit, and budget it as a typo check
+rather than a review: every defect it can see is a name or an arity, and with no
+region it never sees geometry. A mirrored rule called on both sides, a sconce
+course at the wrong height and a parapet that blocks its own anchor all pass it.
+`expand` writes `<id>.nbt` (or the tile set above), `<id>.json` (prefab
+metadata, with the program hash + seed that regenerate the bytes) and
+`<id>.report.json` (the gate verdicts).
 
 `<id>` is the prefab's identity — all three filenames and the datapack structure
 path — so it is lowercase letters, digits and hyphens only. `--id` sets it;
@@ -269,6 +273,15 @@ review policy: [`compiler.md` §5](compiler.md).
 ### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
 
 Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+
+**The cameras are fixed and cannot be aimed.** Yaw, pitch and field of view
+belong to the shot kind; `--size` and `--textures` are the only knobs the
+command has. `<stem>-shots.json` is the reference for what each one did — it
+records kind, yaw, pitch and field of view per shot, and the eye height, on
+every run. The consequence worth planning around: the four exteriors sit at yaw
+45/135/225/315 and `top` looks straight down, so **the set contains no square-on
+elevation of any face**, and the only level camera is the eye camera, which
+stands inside the piece. A facade is only ever seen at a slant.
 
 **Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
 themselves to the model from outside: massing, silhouette, floor plan, where a
