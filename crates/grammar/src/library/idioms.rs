@@ -31,8 +31,8 @@ use crate::ir::{
 };
 
 use super::{
-    abs, abse, absp, all_of, alt_else, alt_when, call, cmp, dim, fill, int, marked, par, rel,
-    reoriented, split, split_exact, split_repeat, void,
+    abs, abse, absp, all_of, alt_else, alt_when, call, cmp, dim, fill, int, marked, mirrored, par,
+    rel, reoriented, split, split_exact, split_repeat, void,
 };
 
 // ---------------------------------------------------------------------------
@@ -487,29 +487,32 @@ pub fn surface_detail() -> Program {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Symmetry without reflection
+// 7. Symmetry
 // ---------------------------------------------------------------------------
 
-/// **Symmetry without reflection** — a rule body written mirrored.
+/// **Symmetry** — one rule standing at both sites of a mirror plane.
 ///
-/// A grammar orientation is a permutation of the three axes and never a
-/// reflection, so no `reorient` can hand a rule its own mirror image. That is
-/// true, and it is *not* the same as "the back end cannot make a symmetric
-/// shape": an orientation cannot mirror a piece, but a rule **body** can be
-/// written mirrored, and a size list reversed is exactly that.
+/// A frame says which world axis each local axis names *and which way it runs*,
+/// so `reorient`'s `mirror` hands a body its own reflection: the same rule, its
+/// splits laying their pieces from the other end, its marks landing on the
+/// mirror-image cell. A shape with a mirror plane is therefore **one** rule and
+/// a reflection of it, never two copies that nothing keeps in step.
 ///
-/// `lower_half` and `upper_half` here are the same rule twice, differing only in
-/// that one peels its courses off the low end (`[abs 1, rel 1]`) and the other
-/// off the high end (`[rel 1, abs 1]`), with the children swapped to match. Each
-/// chamfers by one cell per side per course. Above and below a full-width waist
-/// they give a chamfered octagon — a rose window — and they give it at any odd
-/// aperture, re-centring itself as the wall widens, because the aperture and
-/// every course inside it sit in the middle share of a `[margin, aperture,
+/// `half` here peels one course off the low end of its aperture and chamfers by
+/// one cell per side, recursing on the remainder. The waist is a single glazed
+/// course; below it the rule runs as written, above it the same rule runs under
+/// `mirror: {y}`. Together they give a chamfered octagon — a rose window — at
+/// any odd aperture, re-centring itself as the wall widens, because the aperture
+/// and every course inside it sit in the middle share of a `[margin, aperture,
 /// margin]` split.
 ///
 /// **This is enough for any shape with a mirror plane.** What it does not reach
 /// is a smooth curve: the steps are integers and integer arithmetic has no
-/// square root, so a circle is a polygon here whatever you do.
+/// square root, so a circle is a polygon here whatever you do. What it also does
+/// not reach is a block state: a `fill` writes what it was given verbatim, and
+/// nothing reflects a `facing=` property — the construct for that is the
+/// `orientation` guard, which matches the frame entire and so tells the two
+/// sides of a mirror pair apart.
 ///
 /// Documented at **15 × 11 × 2, seed 1** with `aperture` 9 — glazing course
 /// widths 3, 5, 7, 9, 9, 9, 7, 5, 3, symmetric about both centre lines.
@@ -536,18 +539,21 @@ pub fn mirror() -> Program {
                 vec![fill("mass"), call("window"), fill("mass")],
             ),
         )
+        // The waist, and the two sides of the mirror plane. Above it is `half`
+        // again, reflected: same rule, same arithmetic, its courses peeled off
+        // the other end because that is what a reflected local `Y` means.
         .rule(
             "window",
             split_centered(
                 Axis::Y,
                 vec![rel(1), abs(1), rel(1)],
-                vec![call("lower_half"), call("slot"), call("upper_half")],
+                vec![call("half"), call("slot"), mirrored(Axis::Y, call("half"))],
             ),
         )
-        // Below the waist: the widest course is the TOP one, so the recursion
-        // takes the low remainder.
+        // One course off the low end of the local `Y`, chamfered one cell per
+        // side, then the same rule on what is left.
         .rule_alts(
-            "lower_half",
+            "half",
             vec![
                 alt_when(
                     all_of(vec![
@@ -557,45 +563,18 @@ pub fn mirror() -> Program {
                     split_exact(
                         Axis::Y,
                         vec![rel(1), abs(1)],
-                        vec![call("lower_inset"), call("slot")],
+                        vec![call("inset"), call("slot")],
                     ),
                 ),
                 alt_else(call("slot")),
             ],
         )
         .rule(
-            "lower_inset",
+            "inset",
             split_exact(
                 Axis::X,
                 vec![abs(1), rel(1), abs(1)],
-                vec![fill("mass"), call("lower_half"), fill("mass")],
-            ),
-        )
-        // Above the waist: the same rule with the size list reversed and the
-        // children swapped. Nothing else differs, and nothing mirrors it.
-        .rule_alts(
-            "upper_half",
-            vec![
-                alt_when(
-                    all_of(vec![
-                        cmp(dim(DimRef::X), CmpOp::Ge, int(3)),
-                        cmp(dim(DimRef::Y), CmpOp::Ge, int(2)),
-                    ]),
-                    split_exact(
-                        Axis::Y,
-                        vec![abs(1), rel(1)],
-                        vec![call("slot"), call("upper_inset")],
-                    ),
-                ),
-                alt_else(call("slot")),
-            ],
-        )
-        .rule(
-            "upper_inset",
-            split_exact(
-                Axis::X,
-                vec![abs(1), rel(1), abs(1)],
-                vec![fill("mass"), call("upper_half"), fill("mass")],
+                vec![fill("mass"), call("half"), fill("mass")],
             ),
         )
         .rule("slot", fill("glazing"))

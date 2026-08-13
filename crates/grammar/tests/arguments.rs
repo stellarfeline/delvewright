@@ -328,6 +328,7 @@ fn gate_report(program: &Program, seed: u64) -> gates::Report {
         gates::Options {
             traversable: false,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: false,
         },
     )
@@ -539,6 +540,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
     ("lift-shaft", [5, 16, 7]),
     ("negated-guard", [5, 4, 12]),
     ("rafter-hall", [13, 6, 25]),
+    ("spatial-contract", [11, 6, 15]),
     ("stair-flight", [5, 14, 22]),
     ("store-room", [7, 5, 14]),
     ("tee-passage", [5, 5, 12]),
@@ -603,7 +605,9 @@ fn binds(program: &Program) -> usize {
     fn walk(node: &Node) -> usize {
         match node {
             Node::Bind { body, .. } => 1 + walk(body),
-            Node::Reorient { body, .. } | Node::Mark { body, .. } => walk(body),
+            Node::Reorient { body, .. } | Node::Mark { body, .. } | Node::Claim { body, .. } => {
+                walk(body)
+            }
             Node::Split(split) => split.children.iter().map(walk).sum(),
             Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => 0,
         }

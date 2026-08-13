@@ -497,6 +497,23 @@ jobs:
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
         run: python3 tools/check-shell-redirect-dirs.py
+      # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
+      # the two ways it grows new surface are not equally safe. A new variant of a
+      # tagged enum is safe — an older engine meets an `"op"` it does not know and
+      # fails loud at serde, and every exhaustive match forces an arm. A
+      # `#[serde(default)]` STRUCT FIELD is not: it rides through every walk
+      # untouched in both directions, so an engine that predates the field
+      # deserialises the document with the field's default, expands, passes every
+      # gate, and writes different geometry with nothing to say about it. That is
+      # what `reorient.mirror` would have done. ADR-0018 §7 answers it with closed
+      # schemas plus a version fence, and neither is worth anything as a
+      # convention: this is what makes "someone added an optional field and did
+      # not fence it" an ordinary red instead of a silently different world two
+      # engines apart. Bidirectional against `grammar.md` §2e, and a version above
+      # the floor must be REFUSED by name in `ir.rs` — a constant nothing enforces
+      # is not a fence. Deterministic, offline, stdlib-only python3.
+      - name: every optional field of the grammar IR is closed or fenced
+        run: python3 tools/check-grammar-ir-compat.py
       # EVERY job here is a required status check (owner decision 2026-08-05; it was
       # three, so `tier 2` — datapack load plus the whole PackTest suite — never
       # blocked a merge). Branch protection matches a required context by its NAME

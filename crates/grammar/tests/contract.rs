@@ -67,6 +67,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
     ("elite-ground", [19, 5, 25]),
     ("far-side-bar", [5, 5, 7]),
     ("hearth-ward", [8, 6, 14]),
+    ("idiom-arguments", [15, 7, 15]),
     ("idiom-composition-arcade", [3, 14, 20]),
     ("idiom-erosion", [9, 5, 3]),
     ("idiom-erosion-graded", [9, 13, 3]),
@@ -148,11 +149,25 @@ fn strip_claims(mut program: Program) -> Program {
                 orient,
                 body: Box::new(walk(*body)),
             },
+            Node::Bind {
+                params,
+                palette,
+                body,
+            } => Node::Bind {
+                params,
+                palette,
+                body: Box::new(walk(*body)),
+            },
             Node::Split(mut split) => {
                 split.children = split.children.into_iter().map(walk).collect();
                 Node::Split(split)
             }
-            other => other,
+            // Exhaustive on purpose. A catch-all here is how a new wrapper
+            // variant keeps the claims underneath it: the strip would return the
+            // node whole, the "stripped" program would still declare regions its
+            // contract no longer classifies, and the comparison this exists for
+            // would be against a program that was never stripped.
+            node @ (Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. }) => node,
         }
     }
     let rules = std::mem::take(&mut program.rules);
@@ -422,19 +437,30 @@ fn the_metadata_block_round_trips_and_its_absence_is_preserved() {
 
 /// An older document keeps compiling, and to the same bytes.
 ///
-/// Every program in the corpus, declared at the version before the contract
-/// existed: identical blocks. That is the promise the fence makes, and it is
-/// made over the corpus rather than over one program.
+/// Every program in the corpus that writes no fenced construct, declared at
+/// `1.0.0` — the surface the format had before any fence existed: identical
+/// blocks. That is the promise every fence makes, and it is made over the corpus
+/// rather than over one program.
+///
+/// Which programs those are is asked of `validate` rather than enumerated here.
+/// An enumeration is a list, and a list is the thing the fourth fence does not
+/// get added to — at which point its programs are silently compared against a
+/// version that refuses them, or worse, silently dropped from the comparison.
 #[test]
 fn a_program_at_the_older_version_compiles_to_identical_bytes() {
+    let mut compared = 0usize;
+    let mut fenced = 0usize;
     for (id, size) in CORPUS {
         let program = library::by_id(id).unwrap();
-        if program.contract.is_some() {
-            continue; // it writes the new surface; the fence refuses it below.
-        }
         let old = program.clone().at_version("1.0.0");
-        old.validate()
-            .unwrap_or_else(|e| panic!("{id} at 1.0.0: {e}"));
+        match old.validate() {
+            Err(ProgramError::FencedConstruct { .. }) => {
+                fenced += 1;
+                continue; // it writes fenced surface; the fence refuses it below.
+            }
+            Err(e) => panic!("{id} at 1.0.0: {e}"),
+            Ok(()) => {}
+        }
         for seed in [0u64, 1] {
             assert_eq!(
                 run(&program, Box3::at_origin(*size), seed)
@@ -446,7 +472,22 @@ fn a_program_at_the_older_version_compiles_to_identical_bytes() {
                 "{id} at seed {seed}"
             );
         }
+        compared += 1;
     }
+    println!(
+        "older-version identity   bound {compared:3}  program(s) compared at 1.0.0, \
+         {fenced} refused for writing fenced surface"
+    );
+    assert!(
+        compared > 0,
+        "binding count 0: every corpus program writes fenced surface, so this compared \
+         nothing and the identity promise is unproven"
+    );
+    assert!(
+        fenced > 0,
+        "binding count 0: no corpus program writes fenced surface, so the skip arm is \
+         untaken and this test cannot tell a fence from its absence"
+    );
 }
 
 /// The fence, in the direction that matters: the new surface cannot be written
@@ -495,50 +536,6 @@ fn an_unknown_version_is_refused() {
         broken.validate(),
         Err(ProgramError::UnsupportedVersion { .. })
     ));
-}
-
-/// A **reserved** ledger version is refused too, and the refusal is a different
-/// sentence because it is a different fact.
-///
-/// The ledger names `1.1.0`, so the number cannot be handed to a second surface;
-/// this engine does not implement that surface, so it cannot build a `1.1.0`
-/// document. Accepting it instead would deserialise the surface it does not know
-/// into nothing — the IR carries no `deny_unknown_fields` (ADR-0018 §7.3) — and
-/// build a different world under a version it claimed to understand, which is
-/// the failure the whole fence exists for.
-#[test]
-fn a_reserved_version_is_refused_and_says_which_surface_owns_it() {
-    let reserved: Vec<&str> = delvewright_grammar::RESERVED_VERSIONS
-        .iter()
-        .map(|(v, _)| *v)
-        .collect();
-    assert!(
-        !reserved.is_empty(),
-        "binding count 0: the ledger reserves nothing, so this test examined no \
-         version. Delete it with the last reservation."
-    );
-    for version in reserved {
-        let anchor = delvewright_grammar::reserved_for(version).unwrap();
-        let program = Program::new("reserved", "all")
-            .rule("all", Node::Void)
-            .at_version(version);
-        match program.validate() {
-            Err(ProgramError::UnsupportedVersion { version: got }) => {
-                assert_eq!(got, version);
-                let message = ProgramError::UnsupportedVersion { version: got }.to_string();
-                assert!(
-                    message.contains(anchor),
-                    "the refusal must name the surface that owns the number: {message}"
-                );
-                // The refusal must not offer the version it just refused as
-                // something to retry with.
-                for accepted in delvewright_grammar::accepted_versions() {
-                    assert_ne!(accepted, version);
-                }
-            }
-            other => panic!("{other:?}"),
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

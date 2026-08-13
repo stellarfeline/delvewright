@@ -310,9 +310,9 @@ pub fn declared_anchors(program: &Program) -> BTreeSet<String> {
                 into.insert(mark.anchor.clone());
                 walk(body, into);
             }
-            Node::Reorient { body, .. }
-            | Node::Claim { body, .. }
-            | Node::Bind { body, .. } => walk(body, into),
+            Node::Reorient { body, .. } | Node::Claim { body, .. } | Node::Bind { body, .. } => {
+                walk(body, into)
+            }
             Node::Split(split) => split.children.iter().for_each(|c| walk(c, into)),
             Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
         }
@@ -527,7 +527,9 @@ fn cond(prefix: &str, cond: &Cond) -> Cond {
         Cond::NoneOf { of } => Cond::NoneOf {
             of: of.iter().map(|c| self::cond(prefix, c)).collect(),
         },
-        orientation @ Cond::Orientation { .. } => orientation.clone(),
+        // A frame guard names axes and directions, never a program name, so
+        // there is nothing in it for a prefix to qualify.
+        frame @ Cond::Orientation { .. } => frame.clone(),
     }
 }
 

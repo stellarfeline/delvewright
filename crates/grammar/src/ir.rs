@@ -22,8 +22,11 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
-use crate::geom::{Axis, Orientation};
-use crate::version::{CONTRACT_SINCE, LATEST_PROGRAM_VERSION, has_contract, is_supported_version};
+use crate::geom::{Axis, Mirror, Orientation};
+use crate::version::{
+    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, MIRROR_SINCE, has_bind, has_contract,
+    has_mirror, is_supported_version,
+};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -80,7 +83,7 @@ pub enum ArithOp {
 /// An integer expression over constants, program parameters and scope
 /// dimensions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "expr", rename_all = "snake_case")]
+#[serde(tag = "expr", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expr {
     /// A literal.
     Int {
@@ -156,7 +159,7 @@ pub enum CmpOp {
 
 /// A rule guard, evaluated against the scope the rule is about to expand into.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "cond", rename_all = "snake_case")]
+#[serde(tag = "cond", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Cond {
     /// Always applicable.
     #[default]
@@ -188,9 +191,17 @@ pub enum Cond {
         /// Sub-conditions.
         of: Vec<Cond>,
     },
-    /// The scope's orientation is exactly this local-to-world mapping —
-    /// upstream's `orientation() == (0, 1, 2)` checks, which pick the correctly
-    /// facing stair/door variant.
+    /// The scope's frame is exactly this one — upstream's
+    /// `orientation() == (0, 1, 2)` checks, which pick the correctly facing
+    /// stair/door variant.
+    ///
+    /// The frame is the axis mapping **and** the reflection, and both are
+    /// matched exactly: `mirror` defaults to no reflection, so a guard that does
+    /// not mention it holds only in an unreflected scope. That is the strict
+    /// reading on purpose. A `fill` writes the block state it was given
+    /// verbatim, so a stair chosen for one frame is wrong in that frame's mirror
+    /// image; a guard that matched both would place it silently, and this
+    /// language has no silent wrong answers to spare.
     Orientation {
         /// World axis of the local `X`.
         x: Axis,
@@ -198,6 +209,9 @@ pub enum Cond {
         y: Axis,
         /// World axis of the local `Z`.
         z: Axis,
+        /// Which local axes run backwards.
+        #[serde(default, skip_serializing_if = "Mirror::is_none")]
+        mirror: Mirror,
     },
 }
 
@@ -205,6 +219,21 @@ impl Cond {
     /// `lhs <op> rhs`.
     pub fn cmp(lhs: Expr, op: CmpOp, rhs: Expr) -> Cond {
         Cond::Cmp { lhs, op, rhs }
+    }
+
+    /// The scope's frame is exactly this mapping, unreflected.
+    pub fn orientation(x: Axis, y: Axis, z: Axis) -> Cond {
+        Cond::Orientation {
+            x,
+            y,
+            z,
+            mirror: Mirror::NONE,
+        }
+    }
+
+    /// The scope's frame is exactly this mapping, reflected as given.
+    pub fn frame(x: Axis, y: Axis, z: Axis, mirror: Mirror) -> Cond {
+        Cond::Orientation { x, y, z, mirror }
     }
 }
 
@@ -214,7 +243,7 @@ impl Cond {
 
 /// One piece of a split.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "size", rename_all = "snake_case")]
+#[serde(tag = "size", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Size {
     /// A fixed number of blocks.
     Absolute {
@@ -290,9 +319,25 @@ pub enum AxisSpec {
     SplitAxis,
 }
 
-/// A (possibly partial) reorientation request: unset axes are filled in by
-/// [`crate::orient::reorient`].
+/// A (possibly partial) request for the child's frame: which parent axis each
+/// local axis names, and which of them run backwards.
+///
+/// Unset axes are filled in by [`crate::orient::reorient`].
+///
+/// **`mirror` is relative to the source axis**, not to the world: it reverses
+/// whichever direction the parent's chosen axis already ran in. So a rule need
+/// not know its own handedness to reflect a child, and reflecting a reflected
+/// frame gives the original back — which is what lets one rule be used at both
+/// sites of a mirror pair, at any depth, without a copy.
+///
+/// The reflection lives here, on the frame request, rather than on `split` or on
+/// a node of its own, because this struct **is** the language's statement about
+/// a child's frame and it appears in two places — [`Node::Reorient`] and
+/// [`Split::orient`]. A mirror keyed to either one of those would leave the
+/// other with no surface, and the second site would then grow a bespoke field of
+/// its own (CLAUDE.md: "a second bespoke field is the defect, not the fix").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Reorient {
     /// What the child should call its local `X`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,14 +348,18 @@ pub struct Reorient {
     /// What the child should call its local `Z`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<AxisSpec>,
+    /// Which of the child's local axes run backwards along the axis they name.
+    #[serde(default, skip_serializing_if = "Mirror::is_none")]
+    pub mirror: Mirror,
 }
 
 impl Reorient {
-    /// No reorientation: children keep the parent's axes.
+    /// No request at all: children keep the parent's frame entire.
     pub const KEEP: Reorient = Reorient {
         x: None,
         y: None,
         z: None,
+        mirror: Mirror::NONE,
     };
 
     /// True when nothing is requested.
@@ -335,10 +384,23 @@ impl Reorient {
         self.z = Some(spec);
         self
     }
+
+    /// Reverse one of the child's local axes.
+    pub fn flip(mut self, axis: Axis) -> Reorient {
+        self.mirror = self.mirror.and(axis);
+        self
+    }
+
+    /// Set the whole reflection at once.
+    pub fn mirror(mut self, mirror: Mirror) -> Reorient {
+        self.mirror = mirror;
+        self
+    }
 }
 
 /// A subdivision of the current scope along one local axis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Split {
     /// The local axis to cut along.
     pub axis: Axis,
@@ -373,6 +435,7 @@ fn is_false(v: &bool) -> bool {
 
 /// One block of a weighted material.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WeightedBlock {
     /// Relative weight; must be positive.
     pub weight: u32,
@@ -473,15 +536,15 @@ impl fmt::Display for Facing {
 /// cell), which is a choice, not an accident: it has to be one of the two, and
 /// it has to be the same one every time (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "at", rename_all = "snake_case")]
+#[serde(tag = "at", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MarkAt {
     /// The centre of the scope's **world** floor: lowest world `Y`, centred on
     /// world `X` and `Z`. Gravity is a world fact, so this one position ignores
     /// the scope's local axis names — an NPC stands on the floor however the
     /// rule chose to call its axes.
     FloorCenter,
-    /// The scope's minimum corner. A permutation cannot mirror, so the local
-    /// minimum corner and the world one are the same cell.
+    /// The scope's **local** minimum corner: the world minimum corner on
+    /// unreflected axes, and the far end of every axis the frame reflects.
     CornerMin,
     /// The centre of one face: the given **local** axis pinned to `side`, the
     /// other two centred.
@@ -533,6 +596,15 @@ pub enum MarkIndex {
 /// can express "this cell is where the boss stands", and reading one back out of
 /// the block pattern afterwards is a guess. So the rule that shapes the space
 /// says so while it has the box in hand (spec-0027 phase 2b).
+///
+/// **The one document type in this module that is not a closed schema**, and it
+/// cannot be one: `at` is `#[serde(flatten)]`, which serde cannot combine with
+/// `deny_unknown_fields` — every flattened key reads as unknown, so the attribute
+/// compiles and then refuses every well-formed mark. An unknown field on a mark
+/// is therefore dropped rather than refused, and a future optional field here
+/// would be silently droppable by an engine that predates it. What holds the line
+/// instead is the version ledger of `grammar.md` §2e, which `tools/check-grammar-ir-compat.py`
+/// enforces in both directions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mark {
     /// The anchor name stem, kebab-case. The exported key is `anchor/<stem>`
@@ -545,11 +617,12 @@ pub struct Mark {
     /// object under a key of the same name.
     #[serde(flatten)]
     pub at: MarkAt,
-    /// The facing to declare. Omitted, it is derived from the scope's
-    /// orientation: the negative direction of the world axis the scope calls
-    /// local `Z` (`north` when that is world `Z`, `west` when it is world `X`).
-    /// A scope whose local `Z` is vertical has no cardinal facing to derive, and
-    /// says so rather than guessing.
+    /// The facing to declare. Omitted, it is derived from the scope's frame as
+    /// the direction of *decreasing local `Z`*: `north`/`south` when local `Z`
+    /// names world `Z`, `west`/`east` when it names world `X`, the second of
+    /// each pair when the frame reflects local `Z`. A scope whose local `Z` is
+    /// vertical has no cardinal facing to derive, and says so rather than
+    /// guessing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
     /// Name completion.
@@ -660,6 +733,7 @@ impl Envelope {
 /// the scope with [`Node::Claim`] and resolved per expansion. This says what the
 /// named region **is**, once, however many rules claim boxes for it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpaceDecl {
     /// The envelope claim.
     pub envelope: Envelope,
@@ -674,6 +748,7 @@ pub struct SpaceDecl {
 /// ever as strong as the weakest one on offer. What the author does supply is
 /// the reason, because no measurement recovers that.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NoBodyDecl {
     /// Why these cells are out of play, in the author's words.
     pub reason: String,
@@ -682,6 +757,7 @@ pub struct NoBodyDecl {
 /// The bar of a `barred` edge: the region that stands in the way, and what
 /// fills it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Bar {
     /// A region name some rule claims.
     pub region: String,
@@ -697,7 +773,7 @@ pub struct Bar {
 /// `rise` on a sightline is not a thing an author can write and a check has to
 /// catch afterwards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "class", rename_all = "snake_case")]
+#[serde(tag = "class", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EdgeClass {
     /// Level passage.
     Walk {
@@ -787,6 +863,7 @@ impl EdgeClass {
 
 /// One declared way between two spaces, or between a space and the exterior.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Edge {
     /// A declared space name, or [`EXTERIOR`].
     pub a: String,
@@ -806,6 +883,7 @@ pub struct Edge {
 /// because a parametric program's boxes are not knowable until it is expanded,
 /// while its intent is knowable from the document alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Contract {
     /// The space a body enters at.
     pub entry: String,
@@ -892,7 +970,7 @@ impl Contract {
 
 /// One step of a rule body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Node {
     /// Write a material into every cell of the scope.
     Fill {
@@ -1032,6 +1110,7 @@ impl Node {
 
 /// One alternative of a rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Alternative {
     /// Selection weight among the applicable alternatives. Must be positive.
     #[serde(default = "one")]
@@ -1079,6 +1158,7 @@ impl Alternative {
 /// `BTreeMap` throughout: iteration order is the authoring-independent, stable
 /// order determinism requires (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Program {
     /// **The document's own version** (ADR-0018 §7), not the crate's.
     ///
@@ -1087,7 +1167,7 @@ pub struct Program {
     /// it did not understand would emit a world that is wrong in silence. A
     /// construct introduced later than this version is refused at
     /// [`Program::validate`], which is what lets an older document keep
-    /// compiling to the same bytes forever.
+    /// compiling to the same bytes forever. See [`crate::version`].
     pub version: String,
     /// Human-readable program name; part of the provenance record.
     pub name: String,
@@ -1473,9 +1553,9 @@ impl Program {
                         .or_insert_with(|| symbol.to_string());
                     walk(symbol, body, into);
                 }
-                Node::Mark { body, .. }
-                | Node::Reorient { body, .. }
-                | Node::Bind { body, .. } => walk(symbol, body, into),
+                Node::Mark { body, .. } | Node::Reorient { body, .. } | Node::Bind { body, .. } => {
+                    walk(symbol, body, into)
+                }
                 Node::Split(split) => split.children.iter().for_each(|c| walk(symbol, c, into)),
                 Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
             }
@@ -1765,6 +1845,24 @@ impl Program {
                 palette,
                 body,
             } => {
+                // The fence before the shape checks, as `claim`'s is: a document
+                // that may not write the construct at all is answered with the
+                // version it declares, never with a complaint about how the
+                // construct it may not write is spelled.
+                //
+                // The guard reads the two halves rather than the variant alone,
+                // because the two halves are what the §2e ledger names and what
+                // an older engine would have to honour — a `bind` IS its `params`
+                // and its `palette`. One that binds neither carries no surface at
+                // all and is `EmptyBind` at every version.
+                if !has_bind(&self.version) && !(params.is_empty() && palette.is_empty()) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a `bind` node",
+                        since: BIND_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
                 if params.is_empty() && palette.is_empty() {
                     return Err(ProgramError::EmptyBind {
                         symbol: symbol.to_string(),
@@ -1883,7 +1981,23 @@ impl Program {
         orient: &Reorient,
         in_split: bool,
     ) -> Result<(), ProgramError> {
-        for spec in [orient.x, orient.y, orient.z].into_iter().flatten() {
+        // Destructured with no `..` so a new field of a frame request has to be
+        // considered here rather than skipped. `mirror` needs no *semantic*
+        // check — every one of the eight reflections is a frame a scope can
+        // really be in, so a reflection request is always satisfiable and never
+        // dead code — but it does need the version fence: it is a
+        // `#[serde(default)]` field, so an engine that predates it drops it
+        // silently and builds the unreflected shape.
+        let Reorient { x, y, z, mirror } = orient;
+        if !mirror.is_none() && !has_mirror(&self.version) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a reflected frame (`reorient.mirror`)",
+                since: MIRROR_SINCE,
+                declared: self.version.clone(),
+                written_by: format!("rule {symbol:?}"),
+            });
+        }
+        for spec in [*x, *y, *z].into_iter().flatten() {
             if spec == AxisSpec::SplitAxis && !in_split {
                 return Err(ProgramError::SplitAxisOutsideSplit {
                     symbol: symbol.to_string(),
@@ -1901,7 +2015,22 @@ impl Program {
             // is expressible. It matches nothing, ever — which at expansion time
             // surfaces as a baffling `NoApplicableRule` about a *different*
             // alternative. Refuse it where it was written (PR #266 review).
-            Cond::Orientation { x, y, z } => {
+            // A reflection is legal on any mapping — every one of the eight
+            // reflections of a permutation is a frame a scope can really be in —
+            // so only the permutation half is *semantically* checkable here. The
+            // other half is the version fence, for the reason `check_orient`
+            // gives: a guard that names a reflection means something different
+            // on an engine that drops the field, and it is exactly the guard an
+            // author writes to keep a stair from being placed backwards.
+            Cond::Orientation { x, y, z, mirror } => {
+                if !mirror.is_none() && !has_mirror(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a reflected frame guard (`orientation.mirror`)",
+                        since: MIRROR_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
                 let axes = [*x, *y, *z];
                 if Orientation::from_axes(axes).is_permutation() {
                     Ok(())

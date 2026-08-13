@@ -126,9 +126,10 @@ fn offsets_are_read_through_the_scopes_orientation() {
     );
 }
 
-/// A facing nobody declared is derived from the scope's orientation — and since
-/// a grammar orientation is a permutation without reflection, that is always the
-/// negative direction of the world axis the scope calls local Z.
+/// A facing nobody declared is derived from the scope's frame: the direction of
+/// decreasing local `Z`. With an unreflected frame that is the negative
+/// direction of the world axis the scope calls local `Z`; `tests/mirror.rs`
+/// carries the reflected half, where it is the positive one.
 #[test]
 fn the_facing_follows_the_scope_unless_it_is_declared() {
     let plain = anchors(
@@ -266,7 +267,7 @@ fn an_indexed_mark_numbers_itself_in_expansion_order() {
     // Three 3-wide slices along X, each marking its own floor centre.
     let program: Program = serde_json::from_str(
         r#"{
-          "version": "1.2.0", "name": "bays", "start": "row",
+          "version": "1.3.0", "name": "bays", "start": "row",
           "rules": {
             "row": [{ "body": {
               "op": "split", "axis": "x",
