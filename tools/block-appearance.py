@@ -750,6 +750,10 @@ def mix_report(name: str, members: list[tuple[str, float]], by_id: dict[str, dic
             for row, share in rows
         ],
         "void_area": void_area,
+        # The count the BINDING is stated from. Air is a member, so a paint of
+        # stone + air is a two-member mix; deriving the count from `members`
+        # alone would under-report every eroded role in the corpus as a solid.
+        "member_count": len(rows) + (1 if void_area > 0 else 0),
         "chroma_mass": chroma_mass,
         "chromatic_area": chromatic_area,
         "chromatic_threshold": CHROMATIC_THRESHOLD,
@@ -1090,7 +1094,7 @@ def sheet_path_ok(target: Path) -> bool:
 
 def print_mix_report(reports: list[dict], roles_examined: int) -> None:
     """A mix report ALWAYS states what it bound to. A zero binding is a finding."""
-    multi = [r for r in reports if len(r["members"]) >= 2]
+    multi = [r for r in reports if r["member_count"] >= 2]
     print(f"binding: {roles_examined} paint(s) examined, {len(multi)} mix(es) with >= 2 members")
     if not multi:
         print(
@@ -1262,7 +1266,7 @@ def main(argv: list[str]) -> int:
     if mixes:
         reports = [mix_report(name, members, by_id) for name, members in mixes]
         if args.json:
-            multi = sum(1 for r in reports if len(r["members"]) >= 2)
+            multi = sum(1 for r in reports if r["member_count"] >= 2)
             print(
                 json.dumps(
                     {

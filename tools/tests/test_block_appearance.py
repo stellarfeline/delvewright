@@ -319,6 +319,10 @@ def test_air_is_a_member_and_is_reported_as_void_not_dropped(by_id):
     # The mean is of the SOLID share, so it still reads as sandstone.
     assert out["mean_rgb_not_a_verdict"] == FIXTURE["minecraft:sandstone"]["rgb"]
     assert out["loudest_member"]["id"] == "minecraft:sandstone"
+    # And it BINDS as a two-member mix. Counting only the measured members would
+    # report every eroded role in the corpus as a solid, which is the zero-binding
+    # lie one level down.
+    assert out["member_count"] == 2
 
 
 def test_a_paint_that_is_entirely_air_still_reports(by_id):
@@ -326,6 +330,7 @@ def test_a_paint_that_is_entirely_air_still_reports(by_id):
     assert out["void_area"] == pytest.approx(1.0)
     assert out["loudest_member"] is None
     assert out["chromatic_area"] == 0
+    assert out["member_count"] == 1
 
 
 def test_report_refuses_a_member_it_cannot_measure(by_id):
@@ -342,6 +347,9 @@ def test_zero_binding_is_reported_as_a_finding(by_id, capsys):
     printed = capsys.readouterr().out
     assert "binding: 1 paint(s) examined, 0 mix(es) with >= 2 members" in printed
     assert "FINDING: zero binding" in printed
+    # ...and a stone+air paint is NOT zero binding.
+    ba.print_mix_report([report("sandstone=1,air=1", by_id, "eroded")], 1)
+    assert "1 mix(es) with >= 2 members" in capsys.readouterr().out
 
 
 def test_binding_count_is_stated_on_every_artifact(by_id, capsys):
