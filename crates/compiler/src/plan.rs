@@ -1124,6 +1124,10 @@ pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306");
 /// land at sea level — the piece floats above the sea or is drowned by it.
 pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
 
+/// `DW0364` (advisory): an ocean-horizon world in which **no placed piece
+/// declares a waterline**, so [`DW_OCEAN_WATERLINE`] examined nothing.
+pub const DW_OCEAN_WATERLINE_UNBOUND: DwCode = DwCode::every_version("DW0364");
+
 /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
 /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
 /// a first-joining player, and cannot teleport a player who picks a class. The
@@ -1157,25 +1161,48 @@ pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 ///
 /// Pieces that declare no `waterline_y` (interior keep/cave pieces, `hello-room`)
 /// are not island pieces and are not checked.
+///
+/// # The binding count, and why it is a diagnostic
+///
+/// "Not checked" is the whole exposure. This invariant is keyed off a single
+/// optional metadata field, so a piece that loses that field does not fail the
+/// check — it leaves it, silently, and the world it was supposed to prove ships
+/// green. That is not hypothetical: the field lives on five island prefabs, and
+/// the admission tool that reads and rewrites their metadata modelled fewer
+/// fields than the document has, so every admission step deleted it. Had that
+/// reached the library, an ocean world would have compiled with this invariant
+/// examining zero pieces and nothing would have said so.
+///
+/// So the check returns how many placed pieces it examined, and an ocean world
+/// where that count is zero gets [`DW_OCEAN_WATERLINE_UNBOUND`]. A world with no
+/// sea-authoring pieces at all is a legitimate reason for the zero, which is why
+/// it is advisory — but it is stated rather than assumed.
 fn check_ocean_waterline(
     campaign: &Campaign,
     areas: &[AreaPlacement],
     prefabs: &PrefabRegistry,
-) -> Result<(), PlanError> {
+) -> Result<WaterlineBinding, PlanError> {
     if !matches!(
         campaign.world.content.horizon,
         Some(delvewright_dsl::Horizon::Ocean)
     ) {
-        return Ok(());
+        return Ok(WaterlineBinding::NOT_AN_OCEAN);
     }
+    let mut binding = WaterlineBinding {
+        ocean: true,
+        placed: 0,
+        checked: 0,
+    };
     for area in areas {
         for piece in &area.pieces {
+            binding.placed += 1;
             let Some(meta) = prefabs.get(&piece.prefab_id) else {
                 continue; // missing metadata is already DW0300 upstream
             };
             let Some(w) = meta.waterline_y else {
                 continue;
             };
+            binding.checked += 1;
             let placed = piece.pos[1] + w;
             if placed != SEA_LEVEL {
                 let delta = placed - SEA_LEVEL;
@@ -1209,7 +1236,54 @@ fn check_ocean_waterline(
             }
         }
     }
-    Ok(())
+    Ok(binding)
+}
+
+/// How much of the world the ocean-datum invariant actually examined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaterlineBinding {
+    /// Whether this world declares `horizon: ocean` at all.
+    pub ocean: bool,
+    /// Placed pieces in the world.
+    pub placed: usize,
+    /// Placed pieces that declare a `waterline_y` — the binding count.
+    pub checked: usize,
+}
+
+impl WaterlineBinding {
+    /// A world with no ocean horizon: the invariant does not apply, which is a
+    /// different statement from applying and binding to nothing.
+    pub const NOT_AN_OCEAN: WaterlineBinding = WaterlineBinding {
+        ocean: false,
+        placed: 0,
+        checked: 0,
+    };
+
+    /// The advisory a zero binding owes its reader, or `None`.
+    pub fn finding(&self) -> Option<Diagnostic> {
+        if !self.ocean || self.checked > 0 || self.placed == 0 {
+            return None;
+        }
+        Some(Diagnostic::warning(
+            DW_OCEAN_WATERLINE_UNBOUND,
+            "world",
+            "/content/horizon",
+            format!(
+                "the ocean-datum check examined ZERO pieces: this world declares `horizon: ocean` \
+                 and places {} piece(s), none of which declares a `waterline_y` in its prefab \
+                 metadata. Nothing here proves that anything in this world meets the sea at sea \
+                 level (y={SEA_LEVEL}) — a piece that declares no waterline authors no sea and is \
+                 not checked, so a world of only such pieces passes this invariant by having \
+                 nothing to say. Two readings, and they need different answers: if no piece here \
+                 is meant to author sea, the horizon is decoration and this is expected; if a \
+                 shore, beach or moored hull IS built into one of these pieces, its \
+                 `waterline_y` is missing from the metadata and the placement is unproven — \
+                 declare it (the local y of the piece's top water block) rather than leaving the \
+                 datum to the layout",
+                self.placed
+            ),
+        ))
+    }
 }
 
 /// Inter-area transport map: objective id → absolute teleport target (see
@@ -1433,8 +1507,31 @@ impl<'a> Plan<'a> {
             )?;
         }
 
-        // ---- ocean waterline invariant (DW0344) ----
-        check_ocean_waterline(campaign, &areas, prefabs)?;
+        // ---- ocean waterline invariant (DW0344/DW0364) ----
+        //
+        // Bound here and nowhere else, on the same reasoning as the mating check
+        // below: every campaign build goes through `Plan::build`. The binding
+        // count comes back with the verdict, because a check keyed off an
+        // optional metadata field goes quiet rather than red when the field
+        // disappears.
+        if let Some(finding) = check_ocean_waterline(campaign, &areas, prefabs)?.finding() {
+            warnings.push(finding);
+        }
+
+        // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
+        //
+        // Bound here and nowhere else: every campaign build goes through
+        // `Plan::build`, so a world whose pieces contradict each other at the
+        // faces they share cannot be compiled, packaged or shipped. There is no
+        // flag and no separate command to remember.
+        let binding = crate::faces::check(&areas, prefabs).map_err(|e| {
+            let mut w = warnings.clone();
+            w.extend(e.warnings.clone());
+            PlanError::new(e.code, e.message).with_warnings(w)
+        })?;
+        if let Some(finding) = binding.finding(crate::faces::placed_pieces(&areas)) {
+            warnings.push(finding);
+        }
 
         // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
         //

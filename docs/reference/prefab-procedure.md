@@ -509,7 +509,108 @@ answer "what regenerates this file" without a human reading the sentence. The
 one prefab that legitimately has no row is one nothing can regenerate: an
 ingested community build, or a hand-edited piece.
 
-## 9. Hand-written Rust generators
+## 9. The metadata document
+
+A prefab is a **pair** of files: `<id>.nbt` and `<id>.json` beside it. The JSON
+is the document below, and it has exactly one definition —
+`delvewright_dsl::prefab` (`crates/dsl/src/prefab.rs`). Every producer and every
+reader uses that type; nothing declares a local copy of the shape.
+
+It lives in the DSL crate because `delvec` is published to crates.io and may only
+depend on published crates, so that is the one crate every reader can reach.
+`delvewright_schem::prefab` re-exports it under the path the asset-pipeline tools
+use.
+
+### Fields
+
+| Key | Required | What it is |
+| --- | --- | --- |
+| `prefab_id` | yes | `prefab/<id>` — the id a campaign binds. |
+| `structure` | yes | `{file, id, size[3], data_version, generator?}` — the `.nbt` half. |
+| `anchors` | no (`{}`) | Named places, keyed by DSL anchor name. |
+| `connectors` | no (`[]`) | Jigsaw sockets `{name, target, local_pos[3], facing, opening[2], joint}`. |
+| `lighting` | no | `{profile, measured_min_light?, measured?, rationale?, method?}`. |
+| `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
+| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one raises `DW0364` rather than passing on an empty check. |
+| `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
+
+An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
+trigger_block?}` — one object class covering a point, a gate region and a trap's
+pre-wired hardware, each writing only the keys it means.
+
+`lighting.profile` is one of `unmeasured` | `lit` | `dim` | `dark`. The three
+measured profiles must carry both `measured_min_light` and `measured`;
+`unmeasured` must carry neither — a claim and its absence cannot both be true.
+This is the same type the compiler validates a campaign's lighting claims with,
+so a probe result that will not survive the compiler is refused where it is
+written.
+
+### Reading is total, writing preserves
+
+Every field a producer may legitimately omit is optional, and an absent optional
+is **omitted, never `null`** — so a legacy piece still loads, and a piece nothing
+has probed does not have to invent a measurement. Field order on write is the
+order of the table above, which is the order the checked-in library already uses.
+
+A key the reading version does not model is **kept** and written back out. That
+matters because these files are read-modify-written: `delve-admit socket` edits
+`connectors`, `lighting` edits `lighting`, `anchor` edits the four place fields
+(`pos`, `facing`, `region`, `block`) of the one anchor it names, and each leaves
+the rest of the document as it found it. A type that models fewer fields than the
+document has deletes the rest on the way out, silently, while every test it has
+passes.
+
+The depth matters as much as the breadth. A step that owned "`anchors`" would be
+licensed to replace an anchor whole, which deletes the `dispenser` cell and
+`trigger_block` a trap's hardware lives on, the `resolves_to` the exporter
+derived from the piece's own contract, and any anchor key the tool does not
+model — none of which the operator typed and all of which is the anchor's.
+`crates/admit/tests/metadata_preservation.rs` holds every step to the paths it
+declares, on a real export carrying each field at risk, and refuses to classify
+a subcommand it has never been told about.
+
+### `deny_unknown_fields`: where it belongs and where it does not
+
+- **Campaign stage documents keep it.** They are authored against a versioned
+  schema, a typo there is exactly the bug it catches, and forward compatibility
+  is the `dsl_version` fence's job.
+- **This document does not have it, on any struct.** Every reader of a prefab is
+  a *consumer*, not the document's owner, and a new key here is not a typo — it
+  is a content library newer than the engine reading it, which is the normal
+  state of a mixed-version pair. Refusing turns a forward addition into a hard
+  failure at the layer with the least context.
+- **Unknown keys are reported, not ignored**: `delvec` warns `DW0543`, naming
+  every key it does not model, at the document root and per anchor. That is the
+  typo-catching the attribute used to do, at a severity that does not stop a
+  build.
+
+Capture is at those same two levels — the document root and each anchor — which
+are where this document has grown every time (`waterline_y`, `spatial_contract`;
+`resolves_to`, `dispenser`, `trigger_block`). A key added *inside* a connector,
+a licence block or a spatial contract is accepted and ignored, not preserved; the
+day one is added, it is captured at that level too.
+
+**The `lighting` block is the one exception, and it is a known cost.** Its type
+is the DSL's own `Lighting`, which is a closed schema because its job is a rule
+about *values*: a measured profile must carry its measurement and an
+`unmeasured` one must not, and a misspelled measurement key there is a claim
+quietly becoming its own absence. The price is that a key added inside
+`lighting` — and only there — is still a hard parse failure (`DW0346`) for an
+older engine. Adding one is therefore a `dsl_version` matter, not a metadata
+edit.
+
+### Who reads it
+
+| Reader | Uses |
+| --- | --- |
+| `delvec` (`compiler::registry`) | the whole document; consumes anchors, connectors, lighting, `waterline_y`, `spatial_contract.faces` |
+| `delve-admit` | the whole document, read-modify-write |
+| `delve-grammar` | writes it (single template) and the tile-set manifest (several) |
+| `delve-render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
+| `delvewright_schem::split` | one key, `structure_set`, to tell the two shapes apart |
+| `prefabs/*-generator` | write it, serialize-only (separate Cargo workspaces; they never read a prefab back) |
+
+## 10. Hand-written Rust generators
 
 `prefabs/*-generator` are five standalone Cargo workspaces that predate the
 grammar back end. They are maintained, not extended: a new piece is a grammar
