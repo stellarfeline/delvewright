@@ -802,7 +802,8 @@ pub mod codes {
     /// nothing to hold an aquatic claim to. When routing grows one, this
     /// refusal is what has to be deleted to enable the value.
     ///
-    /// Error tier (exit 2). Prescription: remove the declaration — a body whose
+    /// Error tier, raised in `validate_campaign_with`, so the run ends at the
+    /// validation tier (exit 1). Prescription: remove the declaration — a body whose
     /// route crosses water is governed by the flooded-cell rules already, and
     /// the derived aquatic class still reaches the binding ledger.
     ///
