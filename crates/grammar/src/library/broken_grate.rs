@@ -70,7 +70,8 @@ pub const MIN_LINE: i64 = 3;
 /// must be ≤ `head`). Palette roles: `stone` (the room) and `grate_broken`
 /// (the break). The plain bars are NOT a role: their connection properties
 /// depend on the scope's orientation, so they are per-orientation guarded
-/// inline states (see `grate_bars` below), which one role name cannot express.
+/// inline states (see `grate_bars` below) rather than a role in the scope's own
+/// axes; the guard is kept here because the corpus needs a demonstration of it.
 pub fn broken_grate() -> Program {
     Program::new("broken_grate", "broken_grate")
         .param("head", 3)
@@ -150,12 +151,14 @@ pub fn broken_grate() -> Program {
         .rule("line_after_tell", call("grate_bars"))
         // The bars themselves. `iron_bars` connects along the row — the local
         // `Z` — and a connection property names a WORLD direction, which a
-        // reorientation does not rewrite (`crate::orient` permutes geometry
-        // only). So the bars cannot be a palette role (one state per name):
-        // they are one alternative per orientation, each guarded with the
-        // `orientation` cond and writing the connections that match — the
-        // `DW0736` mechanism, and the reason a bare `iron_bars` role was a
-        // `DW0735` isolated-post defect for as long as this rule shipped one.
+        // reorientation does not rewrite (`crate::orient` permutes and reflects
+        // geometry only). Two constructs answer that. A role written in the
+        // scope's own axes says it in ONE binding, which is what `far_side_bar`
+        // does; this piece keeps the other — one alternative per frame, each
+        // guarded with the `orientation` cond and writing the connections that
+        // match — because the guard is a live construct and the corpus needs a
+        // program that demonstrates it. Either way, a bare `iron_bars` role was
+        // a `DW0735` isolated-post defect for as long as this rule shipped one.
         // The root pins local `Y` to world `Y`, so these two orientations are
         // the only reachable ones; a third would refuse loudly.
         .rule_alts(
@@ -169,6 +172,7 @@ pub fn broken_grate() -> Program {
                             ("east", "false"),
                             ("north", "true"),
                             ("south", "true"),
+                            ("waterlogged", "false"),
                             ("west", "false"),
                         ],
                     )),
@@ -181,6 +185,7 @@ pub fn broken_grate() -> Program {
                             ("east", "true"),
                             ("north", "false"),
                             ("south", "false"),
+                            ("waterlogged", "false"),
                             ("west", "true"),
                         ],
                     )),

@@ -613,7 +613,7 @@ settled and the pieces it needs exist, **you deliver an Artifact and stop.**
 The Artifact tells the **complete story** and walks through **every scene's
 design**, and each scene carries images at **both near view and far view**. Not a
 document with pictures in it — a visual walkthrough, in the medium the owner
-actually reviews in. She does not read long documents (CLAUDE.md PR policy); a
+actually reviews in. She does not read long documents (the review protocol); a
 design she cannot see is a design she cannot approve, and every problem it would
 have caught gets paid for twice once stages 5–6 are written against it.
 
@@ -798,9 +798,13 @@ Symptom → tool:
      it**, which is the whole of decay and the cure for a piece that renders as
      one flat material; and a `facing=` block state **does not turn when the frame
      turns and does not flip when it reflects** — `oriented-fills` (`DW0736`)
-     refuses the piece rather than shipping it facing the wrong way, and the
-     answer is one alternative per frame under an `orientation` guard, which
-     names the reflection as well as the axes.
+     refuses the piece rather than shipping it facing the wrong way. Say which
+     axes the state is written in: wrap it as
+     `{"local": "minecraft:iron_bars[east=true,…]"}` and its directions mean the
+     scope's own, so one palette role gives the right state at every frame,
+     reflections included. Where the whole rule BODY differs by frame, use an
+     `orientation` guard instead — one alternative per frame, naming the
+     reflection as well as the axes.
      **Decide the split order before the first rule** (`grammar.md` §2c, the
      section before the ten). A split's children copy the parent box on the two
      axes it does not cut, so siblings of a split are the only two things
@@ -826,12 +830,29 @@ Symptom → tool:
      to walk around. A red gate writes no `.nbt` (exit 4). **Read the `findings`
      in the report** — a gate that bound to zero objects, or a program that
      declared no anchors, is a finding, not a pass.
+     Three of the always-on gates are about how a block state is SPELLED —
+     `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and
+     `oriented-fills` (`DW0736`). Write every property of every block state you
+     paint, including the ones whose default looks obvious: a state that omits
+     one means whatever a running server decides, and the render you are about
+     to check the piece against cannot know which. Where a property names a
+     direction — a bar's connections, a stair's facing, a skull's yaw — write
+     the state in the scope's own frame (`{"local": …}`) rather than guessing
+     which way the zone will hand your piece its box.
      **Read the `reachability` line too**, which prints whether you asked or not:
      `traversable` joins two ground-level faces and says nothing about the
      storeys above, so a building can pass every gate with half its floor
      stranded. Unreachable floor **under a roof** is a room with no way in, and
      the report gives you the box to go and look at. Unreachable floor open to
      the sky is a roof, and is nobody's defect.
+     If the piece is one of a campaign's **zones**, its program belongs to the
+     campaign: put it in `campaigns/<campaign>/design/programs/` and name it in
+     `zones.json` there with the region, seed and gate claims it is built at
+     (`traversable`, `allow_falls`, `reachable_floor`, `symmetric`).
+     `delve-grammar audit --campaign-root <content repo>` judges every zone a
+     campaign declares, and CI in both repos runs it — a program that directory
+     carries and the manifest does not name is a red.
+
      **One design the gate cannot be told about: a one-way descent.** A level a
      body drops into and does not climb back out of is unreachable on foot on
      purpose, and nothing in the CLI, the report or the metadata can state that

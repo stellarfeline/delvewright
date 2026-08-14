@@ -72,12 +72,16 @@ pub fn spatial_contract() -> Program {
         // isolated posts rather than as a grille (`DW0735`) — the doorway would
         // look barred in the metadata and walk-through in the world.
         //
-        // A single state, and it has to be: a `barred` edge's `bar` names a
-        // palette ROLE, and a role binds one state per name. That is the same
-        // named gap an oriented block has (`grammar.md` §4b), and it is why
-        // this program keeps the identity frame throughout — under a frame that
-        // turned local X onto world Z these connections would land crosswise,
-        // and the contract surface has no way to say which frame it meant.
+        // A single state, because a `barred` edge's `bar` names a palette ROLE
+        // and a role binds one state per name. The connections are written in
+        // the WORLD frame here and that is safe because this program never
+        // turns: its rules keep the identity frame throughout. A piece that did
+        // turn would write the same role in the scope's own axes (`grammar.md`
+        // §2), which is how one binding stays right at every orientation.
+        //
+        // Every property is written, including `waterlogged`: a state that
+        // omits one means whatever a server derives from the block's default,
+        // and no reader upstream of the server can know which (`DW0737`).
         .role(
             "bar",
             BlockState::with(
@@ -86,6 +90,7 @@ pub fn spatial_contract() -> Program {
                     ("east", "true"),
                     ("north", "false"),
                     ("south", "false"),
+                    ("waterlogged", "false"),
                     ("west", "true"),
                 ],
             ),

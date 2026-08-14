@@ -229,11 +229,18 @@ fn a_tiled_freeze_refusal_prints_no_pass_verdict_and_writes_no_tile() {
 /// A program whose every cell is a command block: the structure-template strip
 /// would silently replace them with air, so freezing refuses after every gate
 /// has passed.
+///
+/// The state is written out in full because the gates it must pass include
+/// `states-complete` (`DW0737`): a bare `minecraft:command_block` reds there,
+/// and this fixture's whole job is to reach the freeze with every gate green.
 fn armed() -> Program {
     Program::new("armed", "all").rule(
         "all",
         Node::Fill {
-            material: Material::block(BlockState::simple("minecraft:command_block")),
+            material: Material::block(BlockState::with(
+                "minecraft:command_block",
+                [("conditional", "false"), ("facing", "north")],
+            )),
         },
     )
 }
@@ -379,6 +386,7 @@ fn every_expansion_prints_and_records_the_reachability_measurement() {
         [
             "blocks-exist",
             "shape-complete",
+            "states-complete",
             "oriented-fills",
             "non-empty"
         ],

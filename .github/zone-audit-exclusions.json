@@ -1,0 +1,18 @@
+{
+  "_": [
+    "Zone programs that are KNOWN red, and the exact diagnostic codes each must fail with.",
+    "",
+    "This file INVERTS an assertion; it never removes one. A recorded program is still",
+    "expanded and still judged, and three things are findings: it passes (the record has",
+    "expired), it fails with a different code (a second defect was hiding behind the first),",
+    "or it fails with one more. A plain skip would be satisfied by the very defect it",
+    "excuses, which is the vacuity mode this project has shipped six times.",
+    "",
+    "An entry belongs here only while a CAPABILITY the zone needs is missing from the",
+    "engine, and it names that capability in words a later session can act on. A defect a",
+    "session could fix today is fixed today; it does not become a record.",
+    "",
+    "The list is empty: every zone program of every campaign expands and judges green."
+  ],
+  "exclusion": []
+}

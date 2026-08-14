@@ -32,8 +32,8 @@ use delvewright_grammar::geom::{Axis, Mirror};
 use delvewright_grammar::ir::{Alternative, Cond, Node, Program, ProgramError, Reorient};
 use delvewright_grammar::library;
 use delvewright_grammar::version::{
-    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, MIRROR_SINCE, SUPPORTED_PROGRAM_VERSIONS,
-    has_mirror,
+    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE,
+    SUPPORTED_PROGRAM_VERSIONS, has_mirror,
 };
 
 /// A one-rule program whose body carries the frame request it is given.
@@ -138,7 +138,7 @@ fn the_fence_is_on_the_reflection_and_not_on_the_frame() {
 /// level up.
 #[test]
 fn an_unknown_version_is_refused_rather_than_parsed_best_effort() {
-    for unknown in ["0.9.0", "1.4.0", "2.0.0", "", "latest"] {
+    for unknown in ["0.9.0", "1.5.0", "2.0.0", "", "latest"] {
         let program = with_body(Node::fill("stone")).at_version(unknown);
         match program.validate() {
             Err(ProgramError::UnsupportedVersion { version }) => assert_eq!(version, unknown),
@@ -200,7 +200,7 @@ fn an_unknown_field_is_refused_by_name_not_dropped() {
 /// accepts and validates under it; and every program that writes a construct a
 /// fence guards is refused when its version is lowered below every fence.
 ///
-/// One sweep, three fences. Lowering to `1.0.0` is "the surface the format had
+/// One sweep, four fences. Lowering to `1.0.0` is "the surface the format had
 /// before any of this", so a refusal names whichever fenced construct the
 /// program reached first, and the tally is per fence. Every count is printed and
 /// every count is asserted non-zero: a fence with no library program behind it
@@ -210,7 +210,8 @@ fn an_unknown_field_is_refused_by_name_not_dropped() {
 fn the_fence_binds_to_the_corpus_and_not_only_to_a_fixture() {
     let mut declared = 0usize;
     let mut refused: BTreeMap<&str, usize> = BTreeMap::new();
-    for (id, build) in library::PROGRAMS {
+    for entry in library::PROGRAMS {
+        let (id, build) = (entry.id, entry.build);
         let program = build();
         assert!(
             SUPPORTED_PROGRAM_VERSIONS.contains(&program.version.as_str()),
@@ -224,7 +225,7 @@ fn the_fence_binds_to_the_corpus_and_not_only_to_a_fixture() {
         match lowered.validate() {
             Err(ProgramError::FencedConstruct { since, .. }) => {
                 assert!(
-                    [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE].contains(&since),
+                    [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE, LOCAL_FRAME_SINCE].contains(&since),
                     "{id} was refused at a fence this sweep does not know: {since}"
                 );
                 *refused.entry(since).or_default() += 1;
@@ -238,7 +239,7 @@ fn the_fence_binds_to_the_corpus_and_not_only_to_a_fixture() {
          refused at 1.0.0 by fence: {refused:?}"
     );
     assert!(declared > 0, "the corpus sweep examined zero programs");
-    for fence in [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE] {
+    for fence in [MIRROR_SINCE, CONTRACT_SINCE, BIND_SINCE, LOCAL_FRAME_SINCE] {
         assert!(
             refused.get(fence).copied().unwrap_or(0) > 0,
             "binding count 0 for the fence at {fence}: ZERO library programs write its \

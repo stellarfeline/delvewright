@@ -244,7 +244,7 @@ pub fn bell_tower() -> Program {
         .param("strip_depth", 22)
         .param("climb", CLIMB)
         .role("plinth", BlockState::simple("deepslate_bricks"))
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "tower",

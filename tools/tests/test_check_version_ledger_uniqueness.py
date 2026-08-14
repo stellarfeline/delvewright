@@ -89,6 +89,17 @@ def commit_base(root: Path, files: dict[str, str]) -> str:
     return run(["git", "commit-tree", tree, "-m", "origin/main fixture"], cwd=root).strip()
 
 
+def make_shallow(root: Path) -> None:
+    """Give the fixture a real shallow boundary — the same `.git/shallow` file a
+    `git fetch --depth=1` writes, carrying a real commit rather than a placeholder."""
+    tree = run(["git", "hash-object", "-w", "-t", "tree", "--stdin"], cwd=root, input="").strip()
+    boundary = run(["git", "commit-tree", tree, "-m", "shallow boundary"], cwd=root).strip()
+    (root / ".git" / "shallow").write_text(boundary + "\n", encoding="utf-8")
+    assert (
+        run(["git", "rev-parse", "--is-shallow-repository"], cwd=root).strip() == "true"
+    ), "fixture did not actually become shallow"
+
+
 def set_origin_main(root: Path, sha: str) -> None:
     run(["git", "update-ref", "refs/remotes/origin/main", sha], cwd=root)
 
@@ -376,12 +387,32 @@ def test_anchors_that_stop_matching_exit_two(checker, tmp_path, capsys, monkeypa
 
 
 def test_an_unfetched_base_refuses_to_run(checker, tmp_path, capsys, monkeypatch):
+    """Refusing, loudly, with a remedy that does not damage the repository it is
+    printed into. A full clone must never be told to `--depth=1`: that converts
+    it to a shallow one, after which ancestry answers are wrong numbers rather
+    than errors."""
     init_repo(tmp_path)
     write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK})
     assert go(checker, tmp_path, monkeypatch) == 1
     err = capsys.readouterr().err
     assert "does not resolve to a commit" in err
-    assert "git fetch --no-tags --depth=1 origin main" in err
+    assert "git fetch --no-tags origin main:refs/remotes/origin/main" in err
+    assert "--depth" not in err.split("Do NOT add")[0]
+
+
+def test_an_already_shallow_checkout_is_told_to_fetch_shallowly(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The other half of the same rule. There is no full history left to
+    truncate here, so the cheap fetch is the right one — this is CI's case, and
+    it is decided by looking at the repository rather than by assuming it."""
+    init_repo(tmp_path)
+    write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK})
+    make_shallow(tmp_path)
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "ALREADY\n    SHALLOW" in err
+    assert "git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main" in err
 
 
 def test_a_clean_tree_is_green_and_prints_both_bindings(checker, tmp_path, capsys, monkeypatch):
