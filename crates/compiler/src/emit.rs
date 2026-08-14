@@ -574,8 +574,15 @@ pub fn build_with_warnings(
                 // the route proof's name (`DW0374`, "opening it must pay") would
                 // send the author looking at their level layout instead.
                 check_shortcut_sides(plan)?;
-                // …and every click trigger must land on something (DW0426).
-                check_trigger_bodies(plan)?;
+                // …and every click trigger must land on something (DW0426). The
+                // ledger it returns is emitted below: "how many clicks did this
+                // proof resolve a body for" is the one fact that distinguishes a
+                // campaign whose presses all land from one that arms none.
+                put_json(
+                    &mut out,
+                    "validation/press-bodies.json",
+                    &check_trigger_bodies(plan)?.to_json(),
+                );
                 crate::nav::check_shortcuts(plan, &world, campaign_spawn(plan))?;
                 // spec-0016 §3 ambush counterplay (DW0376): 初见杀 is legitimate,
                 // a pocket with no retreat is not.
@@ -767,8 +774,14 @@ pub fn build_with_warnings(
             // needs the SEATED spawn cells (the exact cells the datapack will
             // summon on) as well as the campaign's declarations — a hostile the
             // party cannot reach is a property of where it actually lands, not
-            // of where its anchor is. No-op for a campaign with no `kill` step.
-            if crate::combat::has_encounters(plan) {
+            // of where its anchor is.
+            //
+            // Gated on EVERY fight, wave-shaped or actor-shaped
+            // (`combat::mandatory_fights`). It used to be gated on `kill`-a-wave
+            // alone, which meant a delve whose combat is entirely actors ran none
+            // of spec-0023 at all — the whole pass silently inapplicable, with
+            // every board green.
+            if crate::combat::mandatory_fights(plan).any() {
                 warnings.extend(
                     crate::combat::check_winnability(plan, &world, &waves).map_err(|e| {
                         BuildFailure::Diagnostic {
@@ -813,13 +826,22 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
-            // spec-0016 §1 (owner ruling 2026-08-04): the bonfire SAFE ZONE
+            // spec-0016 §1 (owner ruling 2026-08-04): the RESPAWN-POINT safe zone
             // (DW0478). Runs here because it needs both halves of where the
             // hostiles actually are — the seated spawn cells above and the lane
             // polylines just resolved — measured against every rest point. A
-            // bonfire inside a hostile's aggro range is a soft-lock: rest and
-            // death both deliver the party into contact on arrival.
-            crate::nav::check_bonfire_safe_zone(plan, &world, &waves, &lanes)?;
+            // respawn point inside a hostile's aggro range is a soft-lock: rest
+            // and death both deliver the party into contact on arrival.
+            //
+            // "Every rest point" is every `CheckpointPlan`, bonfire or plain
+            // `set-checkpoint`. The ledger states how many pairs were compared,
+            // because a proof that examined nothing must not read as a pass.
+            let respawn_safety = crate::nav::check_respawn_safe_zone(plan, &world, &waves, &lanes)?;
+            put_json(
+                &mut out,
+                "validation/respawn-safety.json",
+                &respawn_safety.to_json(),
+            );
             // spec-0022: resolve and prove every `volley` / `collapse`. Volley
             // coverage is proven by construction (one shot per standable
             // kill-zone cell, or DW0442 naming the cell it cannot reach), and a
@@ -9356,8 +9378,9 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
 /// declares an anchor, a click and a full effect bundle, and the press lands on
 /// nothing — the beat never happens and every board stays green, which is the
 /// unbound-vacuity class this whole task came out of.
-fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
+fn check_trigger_bodies(plan: &Plan) -> Result<crate::pressable::PressLedger, BuildFailure> {
     use delvewright_dsl::TriggerOn;
+    let mut ledger = crate::pressable::PressLedger::default();
     for t in &plan.campaign.quests.content.triggers {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
@@ -9366,9 +9389,22 @@ fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
             continue;
         };
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
+            ledger.push(
+                t.id.as_str(),
+                t.on.kind(),
+                at,
+                "rides the NPC's dialogue hitbox",
+            );
             continue;
         }
-        if crate::pressable::body_at(plan, at) != crate::pressable::Body::Nothing {
+        let body = crate::pressable::body_at(plan, at);
+        if body != crate::pressable::Body::Nothing {
+            ledger.push(
+                t.id.as_str(),
+                t.on.kind(),
+                at,
+                &crate::pressable::describe(&body),
+            );
             continue;
         }
         return Err(BuildFailure::Diagnostic {
@@ -9386,7 +9422,7 @@ fn check_trigger_bodies(plan: &Plan) -> Result<(), BuildFailure> {
             ),
         });
     }
-    Ok(())
+    Ok(ledger)
 }
 
 /// Environment-trigger per-tick checks for the `tick` function. Empty for a
@@ -17436,6 +17472,54 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     }
 }
 
+/// Shipped `view-distance`, in chunks — **10** = a 160-block render radius.
+///
+/// What it answers to, in the order the number was established:
+///
+/// * **The scenes.** Measured from the `forceload` AABBs the compiler emits for
+///   the shipped campaigns, the largest delve built to date spans 114 × 165
+///   blocks and the next 35 × 115. A 160-block radius therefore reaches the far
+///   side of either from any standpoint inside it, and on an `ocean` horizon it
+///   puts the fog line 160 blocks of open sea past the shore — already all
+///   backdrop. Going up to 12 buys 32 more blocks of empty water or void on
+///   every delve that exists; going down to 8 (128 blocks) would clip the long
+///   axis of the largest scene from a standpoint at either end.
+/// * **The existing record.** `docs/notes/horizon-library-dossier.md` §3–4 and
+///   `docs/specs/spec-0026-horizon-library.md` §6 already do their vista
+///   arithmetic against a shipped `view-distance` of 10 (→ 160 blocks), with 12
+///   reserved as the summit horizon's floor. Writing the key makes that
+///   arithmetic bind to a fact rather than to an assumption about the host.
+/// * **Prod.** Perf is non-gating on the Raspberry Pi (owner ruling 2026-08-04),
+///   so the Pi does not push the number DOWN; it is the absence of any delve
+///   content past 160 blocks that stops it going up.
+///
+/// It is also what both boot paths land on today, so pinning it changes no
+/// player-visible behaviour — this is a determinism fix, not a retune.
+pub const DELVE_VIEW_DISTANCE: u32 = 10;
+
+/// Shipped `simulation-distance`, in chunks — **10**, and the same number as
+/// [`DELVE_VIEW_DISTANCE`] for an unrelated reason. The two answer different
+/// questions and are deliberately separate constants.
+///
+/// This value is **not** what makes a delve tick. `setup` force-loads every
+/// placed piece and never releases it, so scene chunks are entity-ticking
+/// wherever the party is standing; simulation distance governs only the chunks
+/// around a player that are *not* scene — backdrop ocean or void, which is inert
+/// by construction (`spawn-monsters=false` + the `spawn_mobs` seal, and traps are
+/// command-driven, never redstone).
+///
+/// Its job is to make the ticking rim a **known radius**. With both distances
+/// pinned, the set of chunks that can tick or be seen is bounded by the
+/// force-loaded scene ∪ a Chebyshev radius of 10 (+1 for the loading margin)
+/// chunks around any player — one number a whole-plane proof can be written
+/// against. Unpinned, that set has no upper bound the compiler can state.
+///
+/// 10 is vanilla's own default and what every delve boots with today. Lowering it
+/// below the view distance would be a live change to what the party experiences,
+/// gated on the owner's playtest, for no measured gain; raising it would tick
+/// backdrop nobody can see.
+pub const DELVE_SIMULATION_DISTANCE: u32 = 10;
+
 fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Difficulty. Declared (`world.difficulty`, v0.6) wins; absent falls back to
     // the historical derivation, which is what keeps every pre-0.6 campaign
@@ -17470,6 +17554,21 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         "{\"biome\":\"minecraft:the_void\",\"layers\":[]}"
     };
     // server.properties (keys sorted for determinism).
+    //
+    // Every key a delve's CONTENT depends on is written here, because an unwritten
+    // key is decided by whichever host boots the build, and two hosts that decide
+    // it differently are two different worlds (ADR-0006). The two boot paths a
+    // delve actually has do not share a default source: the shipped image
+    // (`validation/Dockerfile.delve`) starts from the itzg base's own
+    // `/image/server.properties` template, while the owner's playtest server
+    // (`tools/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies THIS
+    // file in and lets the vanilla jar fill in the rest. Where the two default
+    // sources happen to agree it is a coincidence of an upstream file we do not
+    // own, not an invariant — so a key that matters is pinned, never inherited.
+    //
+    // [`DELVE_VIEW_DISTANCE`] / [`DELVE_SIMULATION_DISTANCE`] carry the reasoning
+    // for the two chunk-distance values; `validation/world-settings-entrypoint.sh`
+    // derives both from this file, so the image cannot boot a different pair.
     let props: BTreeMap<&str, String> = BTreeMap::from([
         ("allow-nether", "false".to_string()),
         ("difficulty", difficulty.to_string()),
@@ -17482,8 +17581,10 @@ fn emit_server(plan: &Plan, out: &mut BuildOutput) {
         ("level-type", "minecraft:flat".to_string()),
         ("online-mode", "false".to_string()),
         ("pvp", "false".to_string()),
+        ("simulation-distance", DELVE_SIMULATION_DISTANCE.to_string()),
         ("spawn-monsters", "false".to_string()),
         ("spawn-protection", "0".to_string()),
+        ("view-distance", DELVE_VIEW_DISTANCE.to_string()),
     ]);
     let mut text = String::new();
     text.push_str(&format!(
@@ -17524,11 +17625,17 @@ The server jar is NOT shipped (ADR-0010); it is fetched by version at run time.\
 Level config for campaign `{}`. The world is generated on first server boot\n\
 from `server.properties` (no region files shipped, spec-0002):\n\n\
 {}- `level-seed={}` pins world generation (ADR-0006); v0 uses no other randomness.\n\
-- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\n\
+- `gamemode=adventure`, `difficulty=peaceful`, no structures/monsters.\n\
+- `view-distance={}` / `simulation-distance={}` (chunks) are pinned here rather\n\
+  than left to the host: the delve renders and ticks the same everywhere.\n\n\
 The compiler-emitted `#minecraft:load` bootstrap (`datapack/`) places each area's\n\
 prefab with `/place template` and summons NPCs; nothing is baked into region\n\
 bytes, so byte-identity (ADR-0006) covers the whole `<out>/` tree.\n",
-            plan.namespace, horizon_bullet, plan.seed
+            plan.namespace,
+            horizon_bullet,
+            plan.seed,
+            DELVE_VIEW_DISTANCE,
+            DELVE_SIMULATION_DISTANCE
         )
         .into_bytes(),
     );
