@@ -281,7 +281,7 @@ fn an_eye_shot_on_a_tiled_zone_stands_in_the_zone_and_sees_across_the_cut() {
 
     let (piece, meta_path) = load_piece(&manifest).unwrap();
     let meta = PrefabMeta::at_path(&meta_path).unwrap().unwrap();
-    let plan = shots::plan_piece(piece.structure(), Some(&meta));
+    let plan = shots::plan_piece(piece.structure(), Some(&meta), &[]).unwrap();
 
     assert_eq!(plan.binding.declared, 1);
     assert_eq!(plan.binding.eligible, 1);
@@ -348,6 +348,95 @@ fn a_single_prefabs_metadata_is_not_a_manifest() {
 
     let err = load_piece(&meta).unwrap_err();
     assert!(err.0.contains("not a tile-set manifest"), "{}", err.0);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The pair that belonged to neither branch: an **author-declared view** whose
+/// subject is an anchor of a **tiled zone**.
+///
+/// Tiling reassembles the blocks; the manifest — not any `.nbt`'s sidecar — is
+/// where that zone's anchors live, and it is read through the projection over
+/// the prefab document rather than through a reader of its own. A view resolves
+/// its subject box out of exactly that map. So the two features meet at one
+/// point and only here: neither the tiling tests nor the view tests could
+/// exercise it, because on either branch alone one half did not exist.
+///
+/// Both halves are load-bearing and each fails differently:
+///
+/// * `of=anchor/far` must resolve to the anchor's **zone** cell (z=55). A
+///   tile-local reading puts it at z=7, in the wrong tile, and the picture is of
+///   somewhere else — the same defect the eye-shot test above pins, one camera
+///   kind along.
+/// * `face=north,of=model` must frame the **assembled** box. A camera fitted to
+///   one tile would stand off a 48- or 12-deep fragment; the zone is 60 deep,
+///   and the framed box of a north face is the face itself.
+#[test]
+fn a_declared_view_on_a_tiled_zone_aims_at_the_zone_not_at_a_tile() {
+    use delvewright_render::view::View;
+
+    let (dir, manifest) = stage_hollow("view");
+
+    let (piece, meta_path) = load_piece(&manifest).unwrap();
+    let meta = PrefabMeta::at_path(&meta_path).unwrap().unwrap();
+    let st = piece.structure();
+    assert_eq!(st.size, HOLLOW, "the manifest must load as the whole zone");
+
+    let at_anchor = View::parse("name=far-face,face=north,of=anchor/far").unwrap();
+    let at_model = View::parse("name=zone-front,face=north").unwrap();
+
+    // The anchor's box is its zone cell, not its tile-local one.
+    assert_eq!(
+        at_anchor.subject.centre(st, Some(&meta)).unwrap(),
+        [3.5, 1.5, 55.5],
+        "a view's subject must be the anchor's ZONE cell; a tile-local reading gives z=7.5"
+    );
+
+    // The model's north face spans the whole assembled zone, at z=0.
+    let (fmin, fmax) = at_model.framed_box(st, Some(&meta)).unwrap();
+    assert_eq!(fmin, [0.0, 0.0, 0.0]);
+    assert_eq!(
+        fmax,
+        [HOLLOW[0] as f32, HOLLOW[1] as f32, 0.0],
+        "a north face view frames the face of the assembled zone"
+    );
+
+    let plan = shots::plan_piece(st, Some(&meta), &[at_anchor, at_model]).unwrap();
+    assert_eq!(plan.views.declared, 2);
+    assert_eq!(
+        plan.views.planned, 2,
+        "a tiled zone plans views like any piece"
+    );
+
+    // The planned set is untouched by declaring views — the eye shot the test
+    // above pins is still there and still the zone's.
+    let eye = plan
+        .shots
+        .iter()
+        .find(|s| s.name == "eye-far")
+        .expect("the anchor's eye shot survives a declared view");
+    assert_eq!(eye.eye.as_ref().unwrap().cell, [3, 1, 55]);
+
+    let far = plan
+        .shots
+        .iter()
+        .find(|s| s.name == "far-face")
+        .expect("the declared view");
+    let shots::Framing::Orbit { target, .. } = far.framing else {
+        panic!("a declared view is an orbit camera: {:?}", far.framing);
+    };
+    // The camera aims at the centre of the box it FRAMED, and a `face=` view
+    // frames the face — so z collapses onto the anchor cell's north side, 55.0,
+    // rather than onto the cell's own centre 55.5. What this test is here to
+    // catch is the 48 between zone and tile coordinates, not that half block: a
+    // tile-local reading would put the aim at z=7.
+    assert_eq!(target, Some([3.5, 1.5, 55.0]));
+
+    // A subject the ZONE does not declare is refused, and the message lists the
+    // zone's own anchors rather than any tile's.
+    let bad = View::parse("name=x,face=north,of=anchor/nope").unwrap();
+    let err = shots::plan_piece(st, Some(&meta), &[bad]).unwrap_err();
+    assert!(err.message.contains("anchor/far"), "{}", err.message);
 
     std::fs::remove_dir_all(&dir).unwrap();
 }
