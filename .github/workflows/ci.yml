@@ -416,6 +416,22 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # The same merge class one level up from a duplicated row: a NUMBER stated
+      # in prose whose subject the tree enumerates. One branch adds a tenth
+      # teaching technique and moves the count in four places; another, which
+      # never touches the library, adds a paragraph three lines above the index
+      # table opening "Not a tenth technique … the nine below". `git merge-tree`
+      # resolves them with no conflict — different regions of one file — and the
+      # merged page says nine over its own table of ten. Measured on that tree:
+      # `check-doc-dupes`, `check-dw-codes`, `check-reference-versions` and
+      # `check-grammar-ir-compat` are all green, and so is this gate on either
+      # branch ALONE. Bound as a registry of oracles rather than as an idiom
+      # counter, so the next stated count is a row and not a second script
+      # (CLAUDE.md: a capability belongs to the object class it acts on). States
+      # its binding count; a page that has stopped stating its count is a red,
+      # not a pass. Deterministic, offline, stdlib-only python3.
+      - name: every count stated in the reference matches what decides it
+        run: python3 tools/check-stated-counts.py
       # task #111: `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
       # picked by listing the directory and writing the next integer. Two new
       # files never produce a git conflict, so a per-branch "no duplicate number
@@ -545,6 +561,19 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: the /new-delve skill's declared delvec range is true
         run: python3 tools/check-skill-version.py
+      # A trial's rubric answer is a judgement, and a judgement is bounded by the
+      # instrument that took the picture. Trial 0001 answered R1 `partial` for
+      # run 1 and, three paragraphs later, recorded that the renderer had no
+      # camera an author could aim and that this "alone is the whole of R1's
+      # partial". The verdict is what later rounds cite; the disclaimer is not.
+      # Re-photographed square-on from the same delivered bytes, the answer was
+      # `yes` — the record understated its own result for as long as it existed.
+      # So every judged verdict declares `artifact-bound`, or `instrument-bound`
+      # with the blocker NAMED so it can be fixed and the verdict re-taken. It
+      # rides in this job because a new job needs a new required context, and an
+      # advisory gate does not gate. Deterministic, offline, stdlib-only python3.
+      - name: every judged trial verdict declares what bounded it
+        run: python3 tools/check-trial-verdicts.py
       # --offline: check only local/internal links — the ones this repo can
       # actually keep true. This used to be justified by the repo being private;
       # it is PUBLIC, so that premise was false, but the flag is still right for

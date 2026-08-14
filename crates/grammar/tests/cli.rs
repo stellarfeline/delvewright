@@ -366,12 +366,22 @@ fn every_expansion_prints_and_records_the_reachability_measurement() {
     );
     assert!(reach["entry_cells"].as_u64().unwrap() > 0, "{reach}");
     assert!(reach["reachable"].as_u64().unwrap() > 0, "{reach}");
-    // No gate was asked for, so the two opt-in ones must not have appeared.
+    // No gate was asked for, so the two opt-in ones must not have appeared —
+    // only the always-on spelling/shape/orientation/non-empty ones.
     let ids: Vec<&str> = report["gates"]
         .as_array()
         .unwrap()
         .iter()
         .map(|g| g["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["blocks-exist", "non-empty"], "{ids:?}");
+    assert_eq!(
+        ids,
+        [
+            "blocks-exist",
+            "shape-complete",
+            "oriented-fills",
+            "non-empty"
+        ],
+        "{ids:?}"
+    );
 }

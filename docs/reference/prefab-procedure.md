@@ -1,9 +1,9 @@
 # Making a prefab — the procedure
 
 The one way a prefab is produced in this project, written as steps an agent
-executes. Every command below was run end to end, start to finish, on
-2026-08-11 — one scene description to an admitted, rendered `.nbt`. Nothing here
-is a plan, and no step names a tool that cannot be run today.
+executes: one scene description to an admitted, rendered `.nbt`. Nothing here is
+a plan; every step names a tool that runs today, and where one reaches less than
+the whole step the step says so.
 
 Behaviour references: [`grammar.md`](grammar.md) (what the back end does),
 [`tools.md`](tools.md) (every binary and flag), [`compiler.md`](compiler.md)
@@ -24,7 +24,7 @@ that matches no row is **escalated, not improvised**.
 | a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers (owner, 2026-08-04). T2 is an input-modality property — the program is authored *against the referent* from the library corpus; the 2026-08-04 probe proved named referents recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
 | a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The five Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
-| genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). Both were mistaken for this row. |
+| genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
 | terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
 | an atmosphere-tier set-piece whose power is composition — scale contrast, approach framing, lighting (T3) | **no current route — escalate to the owner** | Measured, not assumed: the landmark probe showed T3's missing layer is presentation (lighting/fog/camera), not geometry. Composition is art direction (owner ruling) and is M4 design work. Attempting it through any row above produces the geometry and loses the scene. |
 
@@ -65,30 +65,90 @@ chosen region and seed beside the program — in the campaign's `GENERATION.md`,
 since the program JSON does not yet carry its own region (queued engine
 surface).
 
-## 2. Choose the palette by MEASUREMENT
+## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 
 **Never name a block from memory.** Block names are not descriptions of block
 appearance and repeatedly are not close: `packed_mud` is orange (142, 107, 80),
 `lightning_rod` is signal orange (197, 111, 83), `dried_kelp_block` is a woven
 olive-green (46, 55, 36).
 
+Three steps, in this order. Do not stop after the first.
+
+**2a. Screen the shelf.** State the fiction as constraints on measured axes, not
+as a guessed hex. Constraints eliminate; they never score.
+
 ```sh
-python3 tools/block-appearance.py --near '#3a4038' -n 10 --full-cube-only
-python3 tools/block-appearance.py --id minecraft:packed_mud     # check one
+python3 tools/block-appearance.py --screen \
+    --where full_cube --where 'L>=0.75' --where 'L<=0.95' \
+    --where 'C_mean<0.02' --where 'texture_range<=0.30'
 ```
 
-Rules:
+`L` is Oklab lightness, `C_mean` is how coloured the block is (0.03 is the
+shelf's own 30th percentile — below it a block reads as a neutral), and
+`texture_range` is how loud its pattern is (`white_concrete` 0.006,
+`stone_bricks` 0.221, `dried_kelp_block` 0.419). `form=slab`,
+`family=minecraft:sandstone`, `not tinted` and `not gravity` are facets too. The
+example above takes 1146 blocks to 14.
 
-- Pick the target colour from the fiction, then take candidates from the ranked
-  list. Record the measured hex beside each role in the program.
-- `--full-cube-only` for anything structural: a wall made of a block whose model
-  is mostly air is not a wall.
-- The tool ranks; it cannot choose. A mean colour cannot see pattern or scale,
-  and it has no idea what a block *is* — it will rank `structure_block` next to
-  deepslate. Technical blocks are excluded by default; everything else you
-  **see** at step 5 before believing.
+`--near '#rrggbb'` still ranks by colour when you genuinely have a target hex,
+and `--id` still answers "what colour IS this".
+
+**2b. Measure the mix, and never trust its mean.** A weighted paint is reported
+by four numbers:
+
+```sh
+python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
+```
+
+`chroma_mass`, `chromatic_area` (what fraction of the wall is coloured rather
+than neutral), `loudest_member` **named with its area share**, `dominant_hue`,
+and `void_area` — `minecraft:air` is a member like any other, so a role that is
+45% holes says so instead of reporting a solid wall's numbers. The mean is printed and is never the verdict: swapping half a
+sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units —
+nothing — while the chromatic area falls 60% → 30%, which is a different
+building. The craft rule the numbers serve is 60/30/10: **the loud member gets
+10%, not 60%.** Every report states its binding count, and a zero binding is a
+finding, not a pass.
+
+**2c. Look at it.** A shortlist is not a choice.
+
+```sh
+python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+    --mix 'calcite=6,diorite=3,white_concrete=1' --sheet --seed 7
+```
+
+writes `.sheets/palette/swatches.png` — every survivor tiled and labelled, and
+every candidate mix as its seeded weighted tiling, which is the wall at distance
+zero. No GPU, no world, under a second. **Then read the PNG.** Measurement can
+prove a mix is not warm; only a look decides it is right.
+
+What the numbers cannot decide, stated so you do not wait for them to:
+
+- **Whether the palette reads as the referent.** "Île-de-France limestone" vs
+  "Egyptian sandstone" is cultural reference; no statistic contains it.
+- **Role fitness.** The screen above returns a light source, a gravity block,
+  wool and a metal — all right on every measured axis, all wrong for a wall.
+  Light emission lives in game code and is in no vanilla data branch at all.
+- **Pattern at distance.** Whether `stone_bricks` still reads as masonry twenty
+  blocks away is a render question — step 5's contact sheet.
 - Biome-tinted blocks (`*_leaves`, grass, water) are flagged: their number is
-  the untinted texture and the world will not look like it.
+  the untinted texture and the world will not look like it. `--exclude-tinted`
+  drops them.
+
+**When the tool cannot run.** It needs two things that are not always there: the
+pinned block registry at `crates/compiler/data/blocks-1.21.11.json`, and a
+1.21.11 client jar (`--jar`, `$DELVEWRIGHT_CLIENT_JAR`, or
+`~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
+says which. **The step does not become optional** — it becomes a different
+source of measured names: the library corpus is a palette somebody already
+measured, so take roles from it (`delve-grammar list`, then `delve-grammar show
+--program <nearest>`) and bind by editing a role that already exists rather than
+by recalling a block. Record where each name came from beside the role, as you
+would record a hex. The one thing you still may not do is invent a name: an id
+that is not in 1.21.11 is refused at export by `blocks-exist` (`grammar.md` §4b),
+and an id that exists but looks nothing like its name will pass every gate and be
+caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
@@ -138,7 +198,18 @@ delve-grammar check --file my-piece.json          # structure only; fast
 ```
 
 `check` finds unknown rules, unknown roles, split/child mismatches and
-unmatchable guards without a region or a seed. Run it after every edit.
+unmatchable guards without a region or a seed. Run it after every edit — it
+costs nothing.
+
+**It is a typo check, not a design review, and it will not once tell you the
+piece is wrong.** Every defect it can see is a name or an arity: a role that is
+not bound, a rule that is not defined, a split with the wrong number of
+children. It has no region and no seed, so it never sees geometry. Call the
+mirrored rule on both sides of a symmetric split and the aperture chamfers the
+wrong way for half its height — `ok`. Move a sconce course five courses up the
+wall — `ok`. Build a parapet two courses high so the anchor behind it looks
+into stone — `ok`. Those are found at §4 by the gates, and at §5 by looking.
+Budget `check` as insurance against a slipped keystroke and nothing else.
 
 ## 4. Expand, and let the machine judge
 
@@ -147,9 +218,13 @@ delve-grammar expand --file my-piece.json --region 9x6x21 --seed 1 \
     --traversable --id my-piece -o out/
 ```
 
-Writes `<id>.nbt`, `<id>.json` (prefab metadata) and `<id>.report.json`.
+Writes `<id>.json` (prefab metadata), `<id>.report.json`, and the blocks: one
+`<id>.nbt` for a region within 48 on every axis, or a set of `<id>.x<i>y<j>z<k>.nbt`
+tiles for a region past it, in which case `<id>.json` is the manifest (§6). Which
+one you got is a fact about the region, and the rest of the loop asks for
+whichever file is there.
 
-**What `<id>` is.** It is the prefab's identity: it names all three files and
+**What `<id>` is.** It is the prefab's identity: it names every file above and
 becomes the datapack structure path, so it may contain only lowercase letters,
 digits and hyphens. `--id` sets it. Without `--id` it defaults to the library
 program id (`--program`) or **to the input file's stem** (`--file`) — so
@@ -186,6 +261,19 @@ so a green `traversable` says nothing about the storeys above: a cathedral has
 passed it with 45% of its floor reachable and nothing at all reachable above the
 nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant
 to walk around** — it is the gate that catches the upper level with no stair.
+
+**The one piece to leave it off: a one-way descent.** A level a body drops into
+and does not climb back out of is unreachable on foot *by design*, and the engine
+has no way to be told — the predicate that would answer it is library-internal,
+so no flag, no report field and no metadata carries the claim. So
+`--reachable-floor` is not a gate such a piece can satisfy: `drop-shaft` at
+9×12×9 seed 1 fails it with 28 of 63 roofed cells unreached, and a red gate
+writes **no** `.nbt`, so passing the flag anyway does not ship a piece with a
+known red — it ships nothing. Expand without it and read the always-on
+reachability line instead, where the lower level appears as an
+`unreachable_sheltered` pocket with its bounding box. That pocket is the design,
+and nothing here can tell it from a room with no way in, so say which it is in
+the §1 scene description and the report has a reader who knows.
 
 Every gate reports a **binding count**. A gate that examined zero objects is
 printed as a finding, not folded into the pass; so is a program that declared no
@@ -236,6 +324,21 @@ the orbit shots and the eye shots alike — frames the whole zone and a body can
 look straight across a cut. A single tile is refused: reviewing one would show a
 building sliced at a packaging plane.
 
+**Know what the set can and cannot show you before you judge anything by it.**
+The cameras are fixed: yaw, pitch and field of view are properties of the shot
+kind, and no flag aims one — `--size` and `--textures` change the pixels, not
+the viewpoint. So the set gives you four corner three-quarters, a plan from
+straight overhead, one view down at each socket and each anchor, and one level
+view out of each anchor — and **no square-on elevation of any face**. Every
+exterior camera sits on a corner bearing, and the only level camera stands
+inside the piece. A west front, a gable end, a facade with a rose window in it:
+nothing in this set photographs one flat-on, and a facade judged from a
+three-quarter is judged at a slant.
+
+The authority on what each camera did is `<id>-shots.json`, not this page: it
+names every shot with its kind, yaw, pitch and field of view, and it is written
+on every run.
+
 Two kinds of camera, and only one of them answers this step's question.
 
 **Orbit cameras** — four exterior three-quarters, a plan cutaway, one per socket,
@@ -262,7 +365,7 @@ and for each eye shot the cell the body is standing in, how it was chosen, and
 how many open cells lie ahead of it before something stops the view. A nudged
 camera is invisible in its own frame, so it is written down instead.
 
-Two shapes worth knowing when you read the set:
+Four shapes worth knowing when you read the set:
 
 - A **flat grey rectangle** is outside the piece. A per-piece render has no
   neighbours, so a view that leaves the template shows background. An eye shot
@@ -271,6 +374,16 @@ Two shapes worth knowing when you read the set:
 - Anchors are declared with a cardinal facing only, so an eye shot is level.
   A shot that is mostly near wall is telling you the anchor stands against one —
   the manifest's clearance count says how far ahead the first block is.
+- **An anchor close to a tall front photographs the doorway, not the front.**
+  The camera is level with a 70° field, so it reaches roughly `0.7 × distance`
+  above the eye: three blocks out, the frame stops about two blocks up, and a
+  twenty-block west front needs some twenty-six to fit. Stand the anchor that
+  far back or the shot looks straight through the opening at eye height and
+  returns background. Every other camera in the set points down; none tilts up.
+- **A parapet is one course.** An eye stands 1.62 above the cell a body occupies,
+  so one course tops out below it and the body looks over; a second course spans
+  the eye line and stands across the view — the manifest reports zero clearance,
+  stopped by the parapet itself.
 
 Compare against the description from §1. The gates prove the piece is buildable
 and walkable; they say nothing about whether it is the scene that was asked for.
@@ -309,10 +422,16 @@ Each of these was established by running it, except the two marked otherwise:
   - **any shape with a mirror plane.** An orientation is a permutation without
     reflection, so `reorient` cannot mirror a piece — but a rule *body* can be
     written mirrored, and a size list reversed is exactly that. Two such rules
-    give a chamfered octagon that re-centres itself at any width (idiom 7).
+    give a chamfered octagon that re-centres itself at any width (idiom 7);
+  - **two roofs meeting in a valley.** Two prisms crossing union to a
+    plus-shaped course, and a plus is a partition: the recursion peels the ring
+    of its box instead of insetting it, and the two pairs of ring slabs are the
+    same taper entered one step apart. Four rules give a cross-gable with a true
+    valley at every re-entrant corner and both ridges at one height, at any
+    size (idiom 3).
 
-  *Read from `crates/grammar/src/orient.rs`, and the two exceptions are
-  demonstrated by `idiom-shape` and `idiom-mirror`.*
+  *Read from `crates/grammar/src/orient.rs`, and the exceptions are demonstrated
+  by `idiom-shape` and `idiom-mirror`.*
 - **No terrain** — no noise, no heightfield; height variation comes from splits
   and recursion. *Same source.*
 - **No craft gate.** spec-0027 §4's palette-role budget, gradient and depth rules
@@ -324,12 +443,17 @@ Each of these was established by running it, except the two marked otherwise:
 ## 7. Admit it
 
 ```sh
-delve-admit audit    out/<id>.nbt
+delve-admit audit    out/<id>.json         # or out/<id>.nbt — audit takes either
 delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
                      --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
 delve-admit lighting out/<id>.nbt --write
-delve-admit audit    out/<id>.nbt          # again, after the edits
+delve-admit audit    out/<id>.json         # again, after the edits
 ```
+
+A tiled zone has no `out/<id>.nbt` at all — its blocks are the
+`out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
+a zone the first and last lines are the whole of this step, for the reason spelled
+out three paragraphs down.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
@@ -341,6 +465,17 @@ everything else.
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
+
+**`audit` takes a tile set; `socket`, `anchor` and `lighting` take one structure
+template.** Handed the manifest of a zone past the axis cap (§6) they refuse it
+as unreadable bytes (`DW0732`, exit 2), so a zone that shipped as tiles has no
+lighting step and carries `"profile": "unmeasured"` into the campaign. Its own
+tiles are not a way round that: `lighting` on one **succeeds**, and `--write`
+puts an anchorless `spdx: UNKNOWN` metadata document beside the zone's correctly
+provenanced one — a second file claiming to describe a prefab that is one slice
+of a building. Leave the tiles alone; the manifest is the only file that
+describes the zone, and a lighting number for a slice of it would be a number
+about nothing.
 
 Each of these steps owns one block of the metadata — `socket` the connectors,
 `anchor` the anchors, `lighting` the lighting — and leaves the rest of the
