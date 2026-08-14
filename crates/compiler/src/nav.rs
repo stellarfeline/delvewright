@@ -75,9 +75,10 @@ pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
 /// needs is opened" — so a gate's state in the static model was a function of what
 /// *sealed* it and never of what *opened* it. That default can only ever fail to
 /// notice an obstruction, never invent one, and the mistake an author actually
-/// makes is forgetting to open a door: the `die-retry` fixture (PR #371)
-/// with its one `open-gate` deleted compiled clean, and the runtime bot then said
-/// *"No path to the goal!"* — a symptom, naming nothing.
+/// makes is forgetting to open a door. A campaign whose one `open-gate` is
+/// missing then compiles clean and the runtime bot says *"No path to the goal!"*
+/// — a symptom, naming nothing. `tests/gate_world_load_seal.rs` holds that
+/// red→green pair on the in-repo `hello-world` fixture.
 ///
 /// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for exactly
 /// the reason `DW0510` is one: the geometry is right, the prefab is right, and the

@@ -6,12 +6,11 @@
 //! *opened* it. That default can only fail to notice an obstruction, never invent
 //! one — and the mistake an author actually makes is forgetting to open a door.
 //!
-//! Measured on the `die-retry` fixture (PR #371, not on this branch) with its single
-//! `open-gate` deleted: `delvec build` exited **0** with the `kill` objective
-//! physically behind six cells of `iron_bars`, and the runtime bot then said
-//! *"No path to the goal!"* — a symptom that names nothing. The pair below is that
-//! red→green, on the in-repo `hello-world` fixture (same prefab, same
-//! `anchor/door`).
+//! Under that default a campaign missing its one `open-gate` builds with exit
+//! **0** while its objective stands physically behind six cells of `iron_bars`,
+//! and the runtime bot says *"No path to the goal!"* — a symptom that names
+//! nothing. The pair below is that red→green, on the in-repo `hello-world`
+//! fixture: `hello-room`'s `anchor/door` bars all six cells of its doorway.
 
 mod common;
 

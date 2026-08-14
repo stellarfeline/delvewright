@@ -2425,9 +2425,9 @@ model as a `Fill` at step 0 — the identical shape a shortcut gate's world-load
 already used. Before that measurement, a gate's state in the static model was a
 function of what *sealed* it and never of what *opened* it: "passable unless a
 `close-gate` seals it" can only fail to notice an obstruction, never invent one,
-and the mistake an author makes is forgetting to open a door. Measured: the
-`die-retry` fixture (PR #371) with its single `open-gate` deleted compiled clean and the
-runtime bot said *"No path to the goal!"*.
+and the mistake an author makes is forgetting to open a door. A campaign missing
+its one `open-gate` compiles clean under that default and the runtime bot then
+says *"No path to the goal!"* — a symptom that names nothing.
 
 The base occupancy model still clears every gate cell, and that is now a statement
 about the **base** world only. It has to pick one state, and "open" is the one that
