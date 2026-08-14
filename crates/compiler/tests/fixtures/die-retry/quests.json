@@ -1,0 +1,130 @@
+{
+  "campaign_id": "die-retry",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/greeting",
+              "doing": "standing on the marked stone, one hand raised to hold the party back"
+            }
+          ]
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The party comes in out of the moor and finds the Keeper at his post.",
+          "verb": "arrives"
+        },
+        "id": "quest/greet",
+        "objectives": [
+          {
+            "happening": {
+              "subject": "npc/keeper",
+              "text": "The Keeper names the trial and marks the stone he stands on.",
+              "verb": "learns"
+            },
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "on_objective_complete": {
+          "obj/talk": [
+            {
+              "anchor": "anchor/door",
+              "happening": {
+                "subject": "anchor/door",
+                "text": "The bar comes off the inner gate and it swings wide.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/keeper-stand",
+              "type": "set-checkpoint"
+            },
+            {
+              "happening": {
+                "text": "The guard rises at the hall's end, between the party and the way out.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/guards"
+            },
+            {
+              "flag": "flag/summoned",
+              "type": "set-flag"
+            }
+          ]
+        },
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/greeting",
+              "doing": "watching from the marked stone, saying nothing while the trial runs"
+            }
+          ]
+        },
+        "happening": {
+          "subject": "npc/keeper",
+          "text": "The guard rises at the far end of the hall and the party has to come through it.",
+          "verb": "survives"
+        },
+        "id": "quest/trial",
+        "objectives": [
+          {
+            "happening": {
+              "text": "The last guard goes down and the hall is quiet again.",
+              "verb": "survives"
+            },
+            "hint": "The guard rises at the hall's end — cut every one of them down.",
+            "id": "obj/slay",
+            "requires_flags": [
+              "flag/summoned"
+            ],
+            "title": "Clear the Guard",
+            "type": "kill",
+            "wave": "wave/guards"
+          }
+        ],
+        "on_complete": [
+          {
+            "happening": {
+              "text": "The trial is over and the keep is theirs to leave.",
+              "verb": "gains"
+            },
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "waves": [
+      {
+        "anchor": "anchor/exit",
+        "id": "wave/guards",
+        "mobs": [
+          {
+            "count": 2,
+            "entity": "minecraft:zombie",
+            "name": "Keep Guard"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.10.0",
+  "stage": "quests"
+}
