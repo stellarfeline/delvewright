@@ -10,9 +10,9 @@
 //! need a copy — which is what it had.
 
 pub use delvewright_dsl::prefab::{
-    Anchor, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody, ContractSpace,
-    ContractVolume, GeneratedBy, License, PrefabMeta, Region, SpatialContract, StructureMeta,
-    UNMEASURED,
+    Anchor, AnchorEdit, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
+    ContractSpace, ContractVolume, GeneratedBy, License, PrefabMeta, Region, SpatialContract,
+    StructureMeta, UNMEASURED,
 };
 
 /// The `lighting` block, which the DSL owns outright: it is the same type the
