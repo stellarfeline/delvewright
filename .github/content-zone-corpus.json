@@ -34,7 +34,7 @@
     "reviewer has the number to check. Nothing in this repo can verify a content",
     "branch; the content repo's own `zone-audit.yml` runs the same sweep there."
   ],
-  "content_sha": "046d1868582c876ca4ec56b135f0fb4927a9fc37",
+  "content_sha": "f0dd59669f784d64a67bb6ff5223a25879875f72",
   "on_pin": [
     {
       "campaign": "hollow-vigil",

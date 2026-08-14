@@ -563,7 +563,11 @@ jobs:
       # instead — by the ingredient (fastnbt::to_bytes), with non-emitters named
       # one by one and printed, so a NEW emitter is red on arrival rather than
       # silently outside somebody's list.
-      - name: every site that writes a prefab .nbt judges its block states
+      # It also asks the second question a validated palette does not answer:
+      # whether the connection properties were DERIVED from the blocks beside
+      # each cell, or completed from the block default that means disconnected —
+      # which passes validation, ships an isolated post, and empties DW0735.
+      - name: every site that writes a prefab .nbt judges and connects its blocks
         run: python3 tools/check-structure-emitters.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.

@@ -12,7 +12,7 @@ non-production code — did not, and so nothing judged the states it wrote. A
 seventh would have arrived the same way, because nothing anywhere asked what
 the set was.
 
-So the set is discovered, not listed. Two checks:
+So the set is discovered, not listed. Three checks:
 
 1. **Every site that turns a value into NBT bytes is accounted for.** The
    discriminator is the ingredient, not a name: `fastnbt::to_bytes` is the only
@@ -30,14 +30,25 @@ So the set is discovered, not listed. Two checks:
    hand-written list of *inclusions* fails silently when it misses a site, a
    hand-written list of *exclusions* fails loudly.
 
-2. **Every prefab generator workspace is a workspace CI runs.** The other way a
+2. **Every emitter derives its connection states.** Judging the palette proves
+   the ids and values exist; it says nothing about whether a `multipart`
+   property was written at all, or written at the block's default. Both spellings
+   validate, and the default of every connection property is *disconnected* — so
+   completing a state from `BlockRegistry::default_state` ships the isolated post
+   the author never meant AND empties the `DW0735` predicate, which is the check
+   going green by ceasing to bind. The obligation is therefore the derivation
+   (`prefabs/connections.rs`, computing each property from the blocks beside the
+   cell), and an emitter whose palette carries no connection class says so in
+   [`NOT_CONNECTION_EMITTERS`] with its reason.
+
+3. **Every prefab generator workspace is a workspace CI runs.** The other way a
    new emitter arrives is a new `prefabs/<name>-generator/`. The
    `prefab-generators` job's lists are held equal to what is on disk, in both
    directions, so adding a generator without wiring it up is an ordinary red
    rather than a tileset nothing ever runs twice.
 
-Exit 0 clean, 1 with findings. Both checks print their binding count: a check
-that matched nothing is a finding, not a pass (CLAUDE.md).
+Exit 0 clean, 1 with findings. All three checks print their binding count: a
+check that matched nothing is a finding, not a pass (CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -62,6 +73,22 @@ BLOCK_RULE_MARKERS = (
     "registry.validate(",
     "BlockRegistry::validate",
 )
+
+# How a file shows it derived its connection states rather than leaving them to
+# the default that means disconnected: the piece goes through the one authority
+# that computes each `multipart` property from the blocks beside the cell.
+CONNECTION_RULE_MARKERS = ("connections::resolve(",)
+
+# Emitters whose palette carries no connection class, and so owe no derivation.
+# Named individually and printed on every run, for the same reason NOT_EMITTERS
+# is: a class exemption is what hid the sixth emitter.
+NOT_CONNECTION_EMITTERS = {
+    "crates/compiler/tests/edit.rs": (
+        "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
+        "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "
+        "and the box it frames is never admitted into the library."
+    ),
+}
 
 # Sites that serialise NBT and are NOT prefab emitters. Each is named
 # individually, with the reason it is not obliged to judge a palette — and
@@ -114,7 +141,69 @@ def tracked(suffix: str) -> list[str]:
     return [f for f in out if f.endswith(suffix)]
 
 
-def check_emitters() -> tuple[list[str], int]:
+def check_connections(emitters: list[str]) -> tuple[list[str], int]:
+    """Every emitter derives its connection states, or says why it need not.
+
+    Judging the palette is not enough. A `multipart` property is legal to omit
+    and legal to write at the block's default, and both spellings pass
+    `BlockRegistry::validate` — but the default of every connection property is
+    *disconnected*, so an emitter that fills one from
+    `BlockRegistry::default_state` ships the isolated post the author never meant
+    and silences `DW0735` at the same time. The rule and its defeater sit in one
+    impl block, seventy lines apart, and the defeater is the shorter call.
+
+    So the obligation is the derivation, not the completion: a connection comes
+    from the blocks beside the cell (`prefabs/connections.rs`, vanilla's own
+    `connectsTo` / `attachsTo` / `canAttachTo`). This binds it to the event.
+    Same polarity as the check above — an emitter is presumed to owe it, and an
+    exception is named individually and printed on every run.
+    """
+    findings: list[str] = []
+    derived: list[str] = []
+    honoured: list[str] = []
+
+    for rel in emitters:
+        scope = emitter_scope(rel, (ROOT / rel).read_text(errors="replace"))
+        if any(m in s for m in CONNECTION_RULE_MARKERS for s in scope):
+            derived.append(rel)
+        elif rel in NOT_CONNECTION_EMITTERS:
+            honoured.append(rel)
+        else:
+            findings.append(
+                f"{rel} authors a prefab palette and never derives a connection state.\n"
+                f"    Route the piece through `connections::resolve` before it is serialised, "
+                f"so every `multipart` property comes from the blocks beside the cell. Do NOT "
+                f"fill them from `BlockRegistry::default_state` / `unwritten`: that writes the "
+                f"disconnection nobody meant AND makes DW0735 bind to nothing, so the sweep "
+                f"goes green over a library whose walls are isolated posts.\n"
+                f"    If the palette genuinely has no connection class, add the file to "
+                f"NOT_CONNECTION_EMITTERS in tools/check-structure-emitters.py with the reason."
+            )
+
+    print(f"prefab emitters examined: {len(emitters)}")
+    print(f"  derive their connection states: {len(derived)}")
+    for f in sorted(derived):
+        print(f"    {f}")
+    print(f"  declared exceptions: {len(honoured)}")
+    for f in sorted(honoured):
+        print(f"    {f} — {NOT_CONNECTION_EMITTERS[f]}")
+
+    for f in sorted(set(NOT_CONNECTION_EMITTERS) - set(honoured)):
+        findings.append(
+            f"{f} is listed in NOT_CONNECTION_EMITTERS but is no longer an emitter that skips "
+            f"the connection rule. Drop the entry — an exemption that binds to nothing hides "
+            f"the next one."
+        )
+    if not emitters:
+        findings.append(
+            "binding count is zero: no emitter reached this check, so nothing was asked to "
+            "derive a connection. The check above found the emitters; if it found none, that "
+            "is the finding."
+        )
+    return findings, len(emitters)
+
+
+def check_emitters() -> tuple[list[str], int, list[str]]:
     """Every NBT-serialising file judges its palette, or says why it need not."""
     findings: list[str] = []
     candidates = 0
@@ -162,7 +251,7 @@ def check_emitters() -> tuple[list[str], int]:
             f"binding count is zero: no tracked .rs file names {INGREDIENT}. Either the repo "
             f"stopped writing NBT or the ingredient changed name; this check is inert either way."
         )
-    return findings, candidates
+    return findings, candidates, emitters
 
 
 MOD_DECL = re.compile(r'^\s*(?:#\[path\s*=\s*"([^"]+)"\]\s*)?(?:pub\s+)?mod\s+(\w+)\s*;', re.M)
@@ -239,7 +328,11 @@ def check_generators_are_wired() -> tuple[list[str], int]:
 def main() -> int:
     findings: list[str] = []
     print("== every site that serialises NBT judges its block states ==")
-    f, _ = check_emitters()
+    f, _, emitters = check_emitters()
+    findings += f
+    print()
+    print("== every emitter derives its connection states ==")
+    f, _ = check_connections(emitters)
     findings += f
     print()
     print("== every prefab generator workspace is wired into CI ==")

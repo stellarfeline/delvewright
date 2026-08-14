@@ -211,16 +211,19 @@ targets = [
 # reds on a count instead of sweeping as a silent zero. Moving this `sha` without
 # it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip after the island's respawn-seat fix (content #42) and the
-# bell remake's design leaving main for its own branch (content #41).
+# Content `main` tip after the re-export that gives seven pieces the connection
+# states their fences, walls, bars and lichen were never written with.
 #
-# #42 is the re-pin that matters: DW0478 quantified over bonfires only, the
-# island declares three `set-checkpoint` and no bonfire, so the check examined
-# nothing while reporting green. Widening it (engine #373) surfaced six live
-# violations in a SHIPPED campaign — one of them a permanent soft-lock, a seat
-# 14.8 blocks from an elite standing across the only exit. Until this pin moves,
-# every CI job that builds the island builds the version with those seats.
-sha = "046d1868582c876ca4ec56b135f0fb4927a9fc37"
+# This is the pin the shape rule needs. `DW0735` says a state that omits a
+# shape-carrying property drops the geometry the property assembles, and the
+# library sweep (`crates/admit/tests/library.rs`) asks it of every piece already
+# admitted. At the previous pin that sweep is RED: 16 of 366 used palette
+# entries over 32 pieces at the pin — a portcullis that is fifteen isolated iron
+# posts, a meadow boundary that is ten separate cobblestone stubs, cave decals
+# hanging off the face pointing away from the rock. At this pin it is 0 red over
+# 390, and the count moved because writing a connection splits one omitted entry
+# into the several fully-specified ones the piece actually places.
+sha = "f0dd59669f784d64a67bb6ff5223a25879875f72"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

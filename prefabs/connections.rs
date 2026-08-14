@@ -7,7 +7,8 @@
 //! the default of every connection property is *disconnected*. A bare
 //! `minecraft:iron_bars` is two isolated posts where a barred gate was meant; a
 //! bare `minecraft:oak_fence` is a lone post where a run of fencing was meant.
-//! That is what `DW0735` reports, and it is what six shipped pieces were doing.
+//! That is what `DW0735` reports, and it is what seven shipped pieces were
+//! doing until every generator derived these states instead.
 //!
 //! Filling those properties with the block's **defaults** would be worse than
 //! leaving them out — it turns a state that says nothing into a state that

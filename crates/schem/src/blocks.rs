@@ -322,6 +322,20 @@ impl BlockRegistry {
     /// The block's default state — what the game resolves each unwritten
     /// property to. `None` for an id the pinned version does not have; an empty
     /// map for a block that has no properties at all.
+    ///
+    /// **This table says what a reader must ASSUME, never what an emitter may
+    /// WRITE.** A reader that is not a running server — the review page, a
+    /// diff, a walk — has to fill an omitted property from somewhere, and this
+    /// is where. An emitter filling one from here is a different act: it turns
+    /// a state that said nothing into a state that explicitly asserts the
+    /// default, and for every connection property the default is
+    /// *disconnected*. So a completion pass over a library would answer
+    /// [`Self::omitted_shape_carrying`] with the empty set for every block,
+    /// forever — the shape rule (`DW0735`) and its whole library sweep would go
+    /// green by ceasing to bind, over a library whose walls are still isolated
+    /// posts. What an emitter owes instead is the connection derived from the
+    /// blocks beside the cell (`prefabs/connections.rs`), and
+    /// `tools/check-structure-emitters.py` is what holds every emitter to it.
     pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
         self.defaults.get(namespace(name).as_ref())
     }
@@ -335,7 +349,8 @@ impl BlockRegistry {
     /// answer different questions: that one asks whether the block's *model* is
     /// assembled from parts the property selects, this one asks what a reader
     /// that is not a running server would have to fill in to know what the file
-    /// means at all.
+    /// means at all. Being broader is exactly why it is not the repair for the
+    /// narrower one — see [`Self::default_state`], whose table this reads.
     pub fn unwritten(
         &self,
         name: &str,

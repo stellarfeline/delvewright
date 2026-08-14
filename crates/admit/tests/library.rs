@@ -9,8 +9,11 @@
 //!
 //! It is not hypothetical here. The shape rule (`DW0735`) landed after most of
 //! the library was admitted, so it had never been asked of those pieces; this
-//! sweep asks, and 16 used palette entries over 32 pinned prefabs answer that
-//! they omit a property carrying the block's shape.
+//! sweep asked, and it named seven pieces whose fences, walls, iron bars, vines
+//! and glow lichen omitted a property carrying the block's shape — a portcullis
+//! that was fifteen isolated posts, a meadow boundary that was ten separate
+//! stubs. Those pieces are re-exported at the pinned content SHA, so what the
+//! sweep protects now is that no eighth arrives.
 //!
 //! So this is the sweep, bound to `cargo test` (the required `rust` job) rather
 //! than to a doc line. It states its binding count: a run that examined zero
