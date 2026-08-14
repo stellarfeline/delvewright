@@ -344,6 +344,48 @@ fn a_pre_0_11_seal_keeps_its_default() {
     );
 }
 
+/// `validation/press-bodies.json` counts the presses the COMPILER makes, not only
+/// the ones the campaign wrote.
+///
+/// The interaction belonged to neither side of the merge that created it:
+/// `DW0426`'s binding ledger was written against `quests.content.triggers`, and
+/// the press-answer synthesis was written after it, so a campaign whose only
+/// pressable thing is a compiler-supplied seal answer would have shipped a
+/// ledger reading `examined: 0, unbound: true` — the ledger stating a zero on a
+/// build that resolved a body, which is the one thing it exists not to do.
+///
+/// This is the fixture with no authored trigger at all, so the count is the
+/// synthesis's alone: one press, riding the seal's own hitboxes.
+#[test]
+fn the_press_ledger_counts_the_compilers_own_press() {
+    let c = parse_hw(&quests_doc("0.6.0", SEAL_IT));
+    assert!(
+        c.quests.content.triggers.is_empty(),
+        "this fixture must author no trigger, or the count below is not the \
+         synthesis's own"
+    );
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let out = build(&c, &prefabs);
+    let l: serde_json::Value =
+        serde_json::from_slice(out.get("validation/press-bodies.json").expect(
+            "every build that assembles a world states this proof's binding count",
+        ))
+        .unwrap();
+    assert_eq!(l["code"], "DW0426");
+    assert_eq!(
+        l["examined"], 1,
+        "the compiler's own press is examined and counted: {l}"
+    );
+    assert_eq!(l["unbound"], false, "a resolved body is never a zero: {l}");
+    let p = &l["presses"][0];
+    assert_eq!(p["anchor"], "anchor/door");
+    assert_eq!(p["click"], "use");
+    assert!(
+        p["body"].as_str().unwrap().contains("rides"),
+        "the seal's answer rides the seal rather than building a second body: {p}"
+    );
+}
+
 /// **The engine does not talk over the campaign.** Once the author answers the
 /// press at that anchor themselves, the compiler supplies nothing — one press,
 /// one answer. (For a `close-gate` the compiler still *may* speak; the owner's
