@@ -177,6 +177,14 @@ there are, and the bounding box of the five worth walking to. `--reachable-floor
 turns the roofed half of that into a verdict, for a piece that claims a body can
 get everywhere indoors.
 
+**A one-way descent cannot make that claim and cannot be excused from it.** The
+predicate that would say "a body gets down there and not back up"
+(`nav::reachable_with_fall`) is library-internal and no CLI surface reaches it,
+so a piece whose design is a one-way drop simply fails `--reachable-floor`
+(`drop-shaft` 9×12×9 seed 1: 28 of 63 roofed cells unreached) and takes exit 4
+with nothing written. Leave the flag off on such a piece and read the always-on
+measurement, where the lower level is an `unreachable_sheltered` pocket.
+
 Measurements — fill ratio, standable cells, footprint area/perimeter, silhouette
 complexity, per-block shares, reachability — are reported with no threshold and
 are deliberately not called gates: spec-0027 §4's craft gates are not built, and
@@ -489,7 +497,7 @@ Never shipped inside a delve.
 
 | Tool | Class | Invocation |
 |---|---|---|
-| `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Stdlib only — no packages to install |
+| `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Both inputs — that registry and a jar — are hard prerequisites, and a missing one is a named refusal naming the fallback (take role names from the corpus via `delve-grammar show`), never a traceback. Stdlib only — no packages to install |
 | `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/extract-shape-properties.py` | agent (rare) | `python3 tools/extract-shape-properties.py <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json` — regenerate the shape-carrying (multipart) property table behind `DW0735` from the client jar's blockstate definitions. Pins the jar's `version.json` to 1.21.11 / DataVersion 4671 and cross-checks every derived property against the block registry; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
