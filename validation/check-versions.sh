@@ -45,6 +45,11 @@ emit("CONTENT_SHA",       d["content"]["sha"])
 emit("NUCLEATION_REV",    d["render"]["nucleation_rev"])   # spec-0007 render layer
 emit("NUCLEATION_REPO",   d["render"]["nucleation_repo"])
 emit("CHUNKY_CORE",       d["render"]["chunky_core"])
+emit("DEEPSLATE_VERSION", d["render"]["deepslate_version"])
+emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
+emit("ESBUILD_VERSION",   d["render"]["esbuild_version"])
+emit("DEEPSLATE_BUNDLE",  d["render"]["deepslate_bundle"])
+emit("DEEPSLATE_SHA256",  d["render"]["deepslate_bundle_sha256"])
 PY
 )"
 
@@ -154,6 +159,37 @@ if [ -f "$RENDER_CARGO" ]; then
 else
   fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
 fi
+# deepslate is BUNDLED, unlike every other renderer here, so the pin has to bind
+# to the bytes rather than to a version string: the page carries the renderer
+# inline, and a hand-edited or silently-rebuilt bundle would ship a different
+# renderer under the same declared version. Every consumer of the three npm pins
+# is the build script, and the fourth check is the digest of what it produced.
+DEEPSLATE_BUILDER="$ROOT/tools/build-deepslate-bundle.sh"
+if [ -f "$DEEPSLATE_BUILDER" ]; then
+  want_in "deepslate version -> tools/build-deepslate-bundle.sh" "\"$DEEPSLATE_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "gl-matrix version -> tools/build-deepslate-bundle.sh" "\"$GL_MATRIX_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "esbuild version -> tools/build-deepslate-bundle.sh"   "\"$ESBUILD_VERSION\"" "$DEEPSLATE_BUILDER"
+else
+  fail "tools/build-deepslate-bundle.sh missing (cannot verify the bundled renderer pins)"
+fi
+if [ -f "$ROOT/$DEEPSLATE_BUNDLE" ]; then
+  got="$(shasum -a 256 < "$ROOT/$DEEPSLATE_BUNDLE" | cut -d' ' -f1)"
+  if [ "$got" = "$DEEPSLATE_SHA256" ]; then
+    pass "deepslate bundle digest matches the manifest ($DEEPSLATE_SHA256)"
+  else
+    fail "deepslate bundle digest is $got but the manifest pins $DEEPSLATE_SHA256 — rebuild with tools/build-deepslate-bundle.sh and update versions.toml in the same commit"
+  fi
+  # The local patch, asserted on the shipped bytes. Unpatched, every banner and
+  # shield in every page renders as the missing-texture checker and says nothing.
+  if grep -qF 'entity/banner/banner_base' "$ROOT/$DEEPSLATE_BUNDLE"; then
+    fail "the vendored deepslate bundle still asks for entity/banner/banner_base, a path no Minecraft version ships"
+  else
+    pass "the vendored deepslate bundle carries the banner/shield texture-id patch"
+  fi
+else
+  fail "$DEEPSLATE_BUNDLE missing (the review page has no renderer to embed)"
+fi
+
 # Chunky is a snapshot core (1.21.x needs it); assert the pin looks like one.
 if [[ $CHUNKY_CORE =~ ^chunky-core-.*SNAPSHOT ]]; then
   pass "render.chunky_core is a snapshot build ($CHUNKY_CORE)"

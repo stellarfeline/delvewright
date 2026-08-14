@@ -271,7 +271,7 @@ fn piece_double_render_is_stable() {
     }
     let st = nbt::parse_structure(&p).expect("parse");
     let meta = delvewright_render::meta::PrefabMeta::beside_nbt(&p).expect("meta");
-    let plan = shots::plan_piece(&st, meta.as_ref());
+    let plan = shots::plan_piece(&st, meta.as_ref(), &[]).unwrap();
     for shot in &plan.shots {
         let params = RenderParams {
             yaw_deg: shot.yaw_deg,
@@ -297,5 +297,204 @@ fn piece_double_render_is_stable() {
             "shot {} unstable: max channel delta {worst}",
             shot.name
         );
+    }
+}
+
+/// A long box of deepslate whose −Z face alone is gold: the only warm material
+/// in the model, so "am I looking at the north face" is decidable from the
+/// pixels. Deep on Z, so a camera fitted to the whole box sits far back and the
+/// near face would be a thumbnail — the trial's actual complaint.
+fn one_gold_face(size: [i32; 3]) -> nbt::Structure {
+    let mut blocks = Vec::new();
+    for x in 0..size[0] {
+        for y in 0..size[1] {
+            for z in 0..size[2] {
+                let shell = x == 0
+                    || x == size[0] - 1
+                    || z == 0
+                    || z == size[2] - 1
+                    || y == 0
+                    || y == size[1] - 1;
+                let idx = if z == 0 {
+                    2
+                } else if shell {
+                    1
+                } else {
+                    0
+                };
+                blocks.push(([x, y, z], idx));
+            }
+        }
+    }
+    nbt::Structure {
+        size,
+        palette: vec![
+            "minecraft:air".into(),
+            "minecraft:deepslate".into(),
+            "minecraft:gold_block".into(),
+        ],
+        blocks,
+    }
+}
+
+/// Share of frame pixels that are strongly warm — gold, and nothing else here.
+fn warm_share(f: &render::Frame) -> f64 {
+    let warm = f
+        .rgba
+        .chunks_exact(4)
+        .filter(|p| p[0] as i32 - p[2] as i32 > 40)
+        .count();
+    warm as f64 / (f.width * f.height) as f64
+}
+
+/// Share of frame pixels that are not the renderer's fixed background. Sampled
+/// from the frame's own corner rather than hardcoded, so it cannot drift with a
+/// colour-space change in the renderer.
+fn covered_share(f: &render::Frame) -> f64 {
+    let bg = [f.rgba[0], f.rgba[1], f.rgba[2]];
+    let hit = f
+        .rgba
+        .chunks_exact(4)
+        .filter(|p| (0..3).any(|c| (p[c] as i32 - bg[c] as i32).abs() > 6))
+        .count();
+    hit as f64 / (f.width * f.height) as f64
+}
+
+fn render_shot(
+    st: &nbt::Structure,
+    pack: &nucleation::meshing::ResourcePackSource,
+    shot: &shots::PieceShot,
+    dim: u32,
+) -> render::Frame {
+    render::render_structure(
+        st,
+        pack,
+        shot.cutaway,
+        &RenderParams {
+            yaw_deg: shot.yaw_deg,
+            pitch_deg: shot.pitch_deg,
+            fov_deg: shot.fov_deg,
+            framing: shot.framing,
+            dim,
+        },
+    )
+    .expect("render")
+}
+
+fn plan_view(st: &nbt::Structure, spec: &str) -> shots::PieceShot {
+    let v = delvewright_render::view::View::parse(spec).expect("parse view");
+    shots::plan_piece(st, None, std::slice::from_ref(&v))
+        .expect("plan")
+        .shots
+        .pop()
+        .expect("the view is the last shot")
+}
+
+/// The pixel-level half of the claim the whole surface exists for: `face=<f>`
+/// photographs THAT face. A planner that dropped the face on the way to the
+/// camera would produce four copies of one picture and pass every unit test
+/// while failing here. The fixed set cannot answer this at all — it contains no
+/// level camera, which is the defect.
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn a_face_view_photographs_that_face() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    let st = one_gold_face([9, 9, 31]);
+
+    let north = warm_share(&render_shot(&st, &pack, &plan_view(&st, "face=north"), 256));
+    assert!(
+        north > 0.4,
+        "the gold −Z face must dominate its own elevation — got {north:.3}"
+    );
+    for face in ["south", "east", "west"] {
+        let shot = plan_view(&st, &format!("face={face}"));
+        let f = render_shot(&st, &pack, &shot, 256);
+        assert!(
+            detect::is_featureless(&f.rgba, f.width, f.height).is_none(),
+            "face={face} rendered an empty frame"
+        );
+        let share = warm_share(&f);
+        assert!(
+            share < 0.02,
+            "face={face} shows the north face's gold ({share:.3}) — the face is not reaching \
+             the camera"
+        );
+    }
+}
+
+/// …and it frames it. A face view of a 31-deep box fills far more of the frame
+/// than the same box's corner-isometric, which is the whole reason the framed
+/// box is the face and not the model: fitting the model from the front backs the
+/// camera off past the far end and leaves the face a thumbnail.
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn a_face_view_fills_the_frame_where_the_planned_set_cannot() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    let st = one_gold_face([9, 9, 31]);
+    let plan = shots::plan_piece(&st, None, &[]).expect("plan");
+    let ext = plan.shots.iter().find(|s| s.name == "ext-ne").unwrap();
+    let ext_cover = covered_share(&render_shot(&st, &pack, ext, 256));
+    let view_cover = covered_share(&render_shot(&st, &pack, &plan_view(&st, "face=north"), 256));
+    assert!(
+        view_cover > ext_cover * 1.5,
+        "a declared elevation covers {view_cover:.3} of the frame against the corner \
+         isometric's {ext_cover:.3} — it is not framing the face"
+    );
+}
+
+/// A view CAN be aimed at nothing, and when it is, the run says so on the pixels
+/// rather than writing a blank file that reads as one more shot of the piece.
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn a_view_aimed_at_nothing_is_reported_as_dw0727() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    let st = one_gold_face([9, 9, 31]);
+    let shot = plan_view(&st, "name=blind,face=north,zoom=400");
+    let f = render_shot(&st, &pack, &shot, 256);
+    let empty = detect::is_featureless(&f.rgba, f.width, f.height)
+        .expect("a camera 400x past the fit is inside the model and sees nothing");
+    let d = shots::empty_frame_diagnostic("piece", &shot, &empty);
+    assert_eq!(d.code, "DW0727");
+    assert!(d.message.contains("blind"), "{}", d.message);
+    assert!(d.message.contains("is NOT in this set"), "{}", d.message);
+}
+
+/// Determinism on the surface this added: the same view spec twice, the same
+/// bytes. (The portable guarantee is pixel-equality within tolerance — see the
+/// module docs — but a declared camera is solved arithmetically, so any drift in
+/// that arithmetic shows up here first.)
+#[test]
+#[ignore = "needs a GPU adapter + the 1.21.11 client jar"]
+fn a_declared_view_renders_identically_twice() {
+    let Some(tex) = textures() else {
+        eprintln!("skip: no client jar");
+        return;
+    };
+    let pack = render::load_pack(&tex).expect("load pack");
+    let st = one_gold_face([9, 9, 31]);
+    for spec in ["face=north", "face=east,zoom=2", "yaw=25,pitch=15,fov=60"] {
+        let shot = plan_view(&st, spec);
+        let a = render_shot(&st, &pack, &shot, 256);
+        let b = render_shot(&st, &pack, &shot, 256);
+        let worst = a
+            .rgba
+            .iter()
+            .zip(&b.rgba)
+            .map(|(x, y)| (*x as i32 - *y as i32).abs())
+            .max()
+            .unwrap_or(0);
+        assert!(worst <= 2, "`{spec}` unstable: max channel delta {worst}");
     }
 }
