@@ -218,6 +218,23 @@ fn fill(role: &str) -> Node {
     Node::fill(role)
 }
 
+/// Fill with an inline block state — for states whose properties depend on the
+/// scope's orientation, which a palette role (one state per name) cannot
+/// carry. Pair it with [`oriented`] guards, one alternative per orientation,
+/// each writing the facing/connections that match: that is the mechanism the
+/// `oriented-fills` gate (`DW0736`) checks for.
+fn fill_block(block: crate::block::BlockState) -> Node {
+    Node::Fill {
+        material: crate::ir::Material::block(block),
+    }
+}
+
+/// The scope's orientation is exactly this local-to-world mapping — the guard
+/// that picks the correctly oriented block-state variant.
+fn oriented(x: Axis, y: Axis, z: Axis) -> Cond {
+    Cond::Orientation { x, y, z }
+}
+
 /// Write air.
 fn void() -> Node {
     Node::Void
