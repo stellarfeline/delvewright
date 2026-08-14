@@ -167,6 +167,87 @@ fn an_audit_with_no_corpus_named_refuses() {
 }
 
 // ---------------------------------------------------------------------------
+// The two corpora are counted apart
+// ---------------------------------------------------------------------------
+
+/// **A full library must not carry an empty campaign root to a silent green.**
+///
+/// This is how the pinned content stood: `--library --campaign-root campaigns`
+/// swept 35 library programs and 0 campaign programs, and the word *campaign*
+/// appeared nowhere in the output. The two corpora have different owners — the
+/// library is this repo's, a campaign's zone programs are the content repo's and
+/// live on a development branch until the owner accepts them — so a zero means a
+/// different thing in each and a summed total means neither.
+///
+/// The run stays green: at a pin that carries no zone program, an empty campaign
+/// corpus is a fact about that checkout, and whether it is the RIGHT fact is
+/// judged by the enumeration in `.github/content-zone-corpus.json`
+/// (`tests/campaign_zones.rs`), not here. What must not happen is that it goes
+/// unsaid.
+#[test]
+fn an_empty_campaign_root_beside_the_library_is_named_not_absorbed() {
+    let dir = scratch("empty-beside-library");
+    fs::create_dir_all(dir.join("campaigns")).unwrap();
+    let out = audit(&["--library", "--campaign-root", dir.to_str().unwrap()]);
+    let text = combined(&out);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("corpus: campaign 0 program(s) over 1 root(s)"),
+        "the campaign corpus binding count is not stated:\n{text}"
+    );
+    assert!(
+        text.contains("FINDING: zero binding, no campaign zone program was examined"),
+        "a zero campaign binding is not named as a finding:\n{text}"
+    );
+    assert!(
+        text.contains("content-zone-corpus.json"),
+        "the finding does not say where the zero is judged:\n{text}"
+    );
+    // The library's own count is stated separately, and is not zero.
+    assert!(
+        text.contains("corpus: library "),
+        "the library binding count is not stated:\n{text}"
+    );
+    assert!(
+        !text.contains("corpus: library 0 program(s)"),
+        "the rule library swept nothing:\n{text}"
+    );
+}
+
+/// The counts are the real ones: one campaign program is one campaign program,
+/// and it is not added to the library's total.
+#[test]
+fn each_corpus_states_its_own_binding_count() {
+    let dir = scratch("both-corpora");
+    let root = content_root(&dir, GREEN_PROGRAM, Some(MANIFEST));
+    let out = audit(&["--library", "--campaign-root", root.to_str().unwrap()]);
+    let text = combined(&out);
+    assert!(out.status.success(), "{text}");
+    assert!(
+        text.contains("corpus: campaign 1 program(s) over 1 root(s)"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("FINDING: zero binding, no campaign zone program"),
+        "a non-empty campaign corpus was reported as zero:\n{text}"
+    );
+}
+
+/// **Without `--campaign-root` there is no campaign line at all**, so an empty
+/// campaign corpus can never be confused with one that was never asked for.
+#[test]
+fn a_library_only_audit_claims_nothing_about_campaigns() {
+    let out = audit(&["--library"]);
+    let text = combined(&out);
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("corpus: library "), "{text}");
+    assert!(
+        !text.contains("corpus: campaign"),
+        "a library-only audit reported a campaign corpus it was never pointed at:\n{text}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The verdict, and the binding counts it must state
 // ---------------------------------------------------------------------------
 
