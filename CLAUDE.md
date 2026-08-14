@@ -225,6 +225,25 @@ validation/          # docker compose: headless server + bot, same image as CI &
   change broke nothing, not that it fixed the target.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
+- **A decision put to the owner leads with the PROBLEM, never with the options**
+  (owner, 2026-08-14). She is the scarcest resource in the project and she is
+  deciding about things she has never seen. So a decision request states, in this
+  order: **(1) what was observed to be wrong** — concretely, in the game or in the
+  output, and how it was noticed; **(2) what the thing under discussion IS**, in
+  one sentence, and why it exists at all; **(3) only then the choice**, each
+  option with what it costs. Options-first is the failure: *"three doors — build
+  the DFU capability, drop the piece, or exempt pre-pin third-party assets"* named
+  a file she had never heard of, a capability she had no reason to know we lacked,
+  and a threshold whose purpose was never stated. Nobody can choose between doors
+  into a building they cannot see.
+  **The test before sending, and it is answerable**: could she answer *"what goes
+  wrong if we do nothing"* from the message alone? If not, it is not a decision
+  request — it is a status line with a question mark on the end. Two corollaries.
+  An internal identifier (`#430`, a `DW` code, a path) is a **reference, never the
+  subject** — a sentence whose subject is a PR number has not said anything. And
+  where one option is plainly right, it is a **recommendation with its reason**,
+  not a menu: presenting a settled thing as a choice spends her attention to buy
+  the planner cover.
 - **Audience separation in docs** (owner, 2026-08-02): every document has ONE
   target reader. Agent-facing docs (CLAUDE.md, ADRs, specs, `docs/reference/`,
   skills) may be arbitrarily technical. User/player-facing docs (READMEs,
