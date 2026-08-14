@@ -25,7 +25,9 @@
 //! storeroom's tell is placed by a recursion, and a rewrite that missed it would
 //! be a loud `UnknownRule` from [`crate::ir::Program::validate`], never a quiet
 //! wrong model), parameter names and the [`Expr::Param`] reads of them, palette
-//! roles and the `fill`s that name them.
+//! roles and the `fill`s that name them, and **both halves of a `bind`** — a
+//! frame's keys are the source's own parameter and role names, so they take the
+//! prefix exactly as the declarations they override do.
 //!
 //! **Not** renamed by the prefix: anchors. An anchor name is the contract with
 //! the campaign DSL — `anchor/watch` is the id a `timed-gate` binds — so an
@@ -308,7 +310,9 @@ pub fn declared_anchors(program: &Program) -> BTreeSet<String> {
                 into.insert(mark.anchor.clone());
                 walk(body, into);
             }
-            Node::Reorient { body, .. } | Node::Claim { body, .. } => walk(body, into),
+            Node::Reorient { body, .. } | Node::Claim { body, .. } | Node::Bind { body, .. } => {
+                walk(body, into)
+            }
             Node::Split(split) => split.children.iter().for_each(|c| walk(c, into)),
             Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
         }
@@ -385,12 +389,7 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
         Node::Void => Node::Void,
         Node::Skip => Node::Skip,
         Node::Fill { material } => Node::Fill {
-            material: match material {
-                Material::Role { role } => Material::Role {
-                    role: qualify(prefix, role),
-                },
-                inline @ Material::Inline(_) => inline.clone(),
-            },
+            material: self::material(prefix, material),
         },
         Node::Call { symbol } => Node::Call {
             symbol: qualify(prefix, symbol),
@@ -425,6 +424,26 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
         // does, `validate` refuses with the region named.
         Node::Claim { region, body } => Node::Claim {
             region: qualify(prefix, region),
+            body: Box::new(self::node(prefix, renames, body)),
+        },
+        // A binding's KEYS are the source's own parameter and role names, so
+        // they take the prefix exactly as the declarations they override do. A
+        // walk that rewrote only the values would produce a program binding a
+        // name the composition does not have — `UnknownBinding`, loudly, which
+        // is the reason the key rewrite is here and not left to be discovered.
+        Node::Bind {
+            params,
+            palette,
+            body,
+        } => Node::Bind {
+            params: params
+                .iter()
+                .map(|(name, value)| (qualify(prefix, name), expr(prefix, value)))
+                .collect(),
+            palette: palette
+                .iter()
+                .map(|(role, m)| (qualify(prefix, role), self::material(prefix, m)))
+                .collect(),
             body: Box::new(self::node(prefix, renames, body)),
         },
         Node::Mark { mark, body } => Node::Mark {
@@ -470,6 +489,15 @@ fn at(prefix: &str, at: &MarkAt) -> MarkAt {
     }
 }
 
+fn material(prefix: &str, material: &Material) -> Material {
+    match material {
+        Material::Role { role } => Material::Role {
+            role: qualify(prefix, role),
+        },
+        inline @ Material::Inline(_) => inline.clone(),
+    }
+}
+
 fn size(prefix: &str, size: &Size) -> Size {
     match size {
         Size::Absolute { blocks } => Size::Absolute {
@@ -499,7 +527,9 @@ fn cond(prefix: &str, cond: &Cond) -> Cond {
         Cond::NoneOf { of } => Cond::NoneOf {
             of: of.iter().map(|c| self::cond(prefix, c)).collect(),
         },
-        orientation @ Cond::Orientation { .. } => orientation.clone(),
+        // A frame guard names axes and directions, never a program name, so
+        // there is nothing in it for a prefix to qualify.
+        frame @ Cond::Orientation { .. } => frame.clone(),
     }
 }
 

@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
-use crate::eval::{EvalError, Scope};
+use crate::eval::{Env, EvalError, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
     Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
@@ -469,11 +469,15 @@ pub fn expand(
         limits: options.limits,
         stats: Stats::default(),
     };
+    // The root binding frame is the program's own declarations, which are its
+    // defaults; every `bind` pushes a frame over this one.
+    let root = Env::root(&program.params, &program.palette);
     expander.run_rule(
         &program.start,
         &ScopeState {
             region,
             orient: options.orientation,
+            env: root,
         },
         0,
     )?;
@@ -569,11 +573,27 @@ fn resolve_contract(
     })
 }
 
-/// The box a node is expanding into, and what it calls its axes.
+/// The box a node is expanding into, what it calls its axes, and what its names
+/// mean.
+///
+/// All three are inherited by every child scope, and each has one construct that
+/// changes it: `split` the box, `reorient` the axes, `bind` the names.
 #[derive(Debug, Clone, Copy)]
-struct ScopeState {
+struct ScopeState<'e> {
     region: Box3,
     orient: Orientation,
+    env: Env<'e>,
+}
+
+impl ScopeState<'_> {
+    /// What a guard or size expression is measured against here.
+    fn scope(&self) -> Scope<'_> {
+        Scope {
+            region: &self.region,
+            orient: self.orient,
+            env: self.env,
+        }
+    }
 }
 
 struct Expander<'a> {
@@ -591,17 +611,6 @@ struct Expander<'a> {
 }
 
 impl<'a> Expander<'a> {
-    fn scope<'s>(&self, state: &'s ScopeState) -> Scope<'s>
-    where
-        'a: 's,
-    {
-        Scope {
-            region: &state.region,
-            orient: state.orient,
-            params: &self.program.params,
-        }
-    }
-
     fn enter(&mut self, depth: u32) -> Result<(), ExpandError> {
         if depth > self.limits.max_depth {
             return Err(ExpandError::DepthLimit {
@@ -621,7 +630,7 @@ impl<'a> Expander<'a> {
     fn run_rule(
         &mut self,
         symbol: &'a str,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -638,8 +647,8 @@ impl<'a> Expander<'a> {
             if matches!(alt.when, Cond::Otherwise) {
                 continue;
             }
-            let ok = self
-                .scope(state)
+            let ok = state
+                .scope()
                 .test(&alt.when)
                 .map_err(|error| ExpandError::Eval {
                     symbol: symbol.to_string(),
@@ -676,7 +685,7 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &'a str,
         node: &'a Node,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -696,10 +705,9 @@ impl<'a> Expander<'a> {
             }
             Node::Fill { material } => {
                 let paint = match material {
-                    Material::Role { role } => self
-                        .program
-                        .palette
-                        .get(role)
+                    Material::Role { role } => state
+                        .env
+                        .paint(role)
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
@@ -741,6 +749,47 @@ impl<'a> Expander<'a> {
                 let child = ScopeState {
                     region: state.region,
                     orient,
+                    env: state.env,
+                };
+                self.run_node(symbol, body, &child, depth + 1)
+            }
+            Node::Bind {
+                params,
+                palette,
+                body,
+            } => {
+                // Every binding is evaluated in the ENCLOSING scope, before the
+                // frame is pushed, and all of them at once: a frame is a
+                // simultaneous rebinding, so `{a: param b, b: param a}` swaps
+                // the two rather than chaining them. Nothing here draws from the
+                // RNG, so a `bind` cannot move a cell of the model on its own.
+                let mut bound_params = BTreeMap::new();
+                for (name, value) in params {
+                    let value = state
+                        .scope()
+                        .eval(value)
+                        .map_err(|error| ExpandError::Eval {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
+                    bound_params.insert(name.clone(), value);
+                }
+                let mut bound_palette = BTreeMap::new();
+                for (name, material) in palette {
+                    let paint = match material {
+                        Material::Role { role } => state
+                            .env
+                            .paint(role)
+                            .expect("validate() proved every role is bound")
+                            .clone(),
+                        Material::Inline(paint) => paint.clone(),
+                    };
+                    bound_palette.insert(name.clone(), paint);
+                }
+                let child = ScopeState {
+                    region: state.region,
+                    orient: state.orient,
+                    env: Env::child(&state.env, &bound_params, &bound_palette),
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -806,17 +855,21 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<(), ExpandError> {
         let cell = self.mark_cell(symbol, mark, state)?;
         let facing = match mark.facing {
             Some(f) => f,
-            // A permutation cannot mirror, so a derived facing is always the
-            // negative direction of the world axis the scope calls local Z.
-            None => match state.orient.get(Axis::Z) {
-                Axis::Z => Facing::North,
-                Axis::X => Facing::West,
-                Axis::Y => {
+            // A derived facing is the direction of *decreasing local Z* — the
+            // way the rule library's frame says travel runs. Which world
+            // direction that is depends on both halves of the frame: the world
+            // axis local Z names, and whether local Z runs down it.
+            None => match (state.orient.axis(Axis::Z), state.orient.reversed(Axis::Z)) {
+                (Axis::Z, false) => Facing::North,
+                (Axis::Z, true) => Facing::South,
+                (Axis::X, false) => Facing::West,
+                (Axis::X, true) => Facing::East,
+                (Axis::Y, _) => {
                     return Err(ExpandError::MarkFacingNotCardinal {
                         symbol: symbol.to_string(),
                         anchor: mark.anchor.clone(),
@@ -855,44 +908,59 @@ impl<'a> Expander<'a> {
         &self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<[i32; 3], ExpandError> {
         let size = state.region.size;
+        // Extent along the world axis a local axis names.
+        let extent = |local: Axis| size[state.orient.axis(local).index()] as i64;
         // Centre of an extent, rounding down; 0 for a degenerate axis, which the
         // bounds check below then reports.
-        let mid = |axis: Axis| (size[axis.index()].saturating_sub(1) / 2) as i64;
+        let mid = |n: i64| (n - 1).max(0) / 2;
 
-        // Offsets from the scope's minimum corner, per WORLD axis.
+        // Offsets from the scope's minimum **world** corner, per world axis.
+        //
+        // Every `at` but `floor_center` names a cell in LOCAL terms, so it is
+        // computed in local coordinates and put through the frame once, at the
+        // end: a reflected axis counts from the far end of the box, which is
+        // exactly what makes the mirror image of a rule land on the mirror image
+        // of its anchor.
         let mut delta = [0i64; 3];
+        let mut local = [Option::<i64>::None; 3];
         match &mark.at {
-            MarkAt::CornerMin => {}
+            MarkAt::CornerMin => local = [Some(0), Some(0), Some(0)],
             MarkAt::FloorCenter => {
-                delta[Axis::X.index()] = mid(Axis::X);
+                // Gravity is a world fact, so this one position ignores the
+                // frame entirely — both halves of it.
+                delta[Axis::X.index()] = mid(size[Axis::X.index()] as i64);
                 delta[Axis::Y.index()] = 0;
-                delta[Axis::Z.index()] = mid(Axis::Z);
+                delta[Axis::Z.index()] = mid(size[Axis::Z.index()] as i64);
             }
             MarkAt::FaceCenter { axis, side } => {
-                let pinned = state.orient.get(*axis);
-                for world in Axis::ALL {
-                    delta[world.index()] = if world == pinned {
+                for l in Axis::ALL {
+                    local[l.index()] = Some(if l == *axis {
                         match side {
                             Side::Min => 0,
-                            Side::Max => (size[world.index()].saturating_sub(1)) as i64,
+                            Side::Max => (extent(l) - 1).max(0),
                         }
                     } else {
-                        mid(world)
-                    };
+                        mid(extent(l))
+                    });
                 }
             }
             MarkAt::Offset { x, y, z } => {
-                let scope = self.scope(state);
-                for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
+                let scope = state.scope();
+                for (l, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
                     let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
                     })?;
-                    delta[state.orient.get(local).index()] = value;
+                    local[l.index()] = Some(value);
                 }
+            }
+        }
+        for l in Axis::ALL {
+            if let Some(coord) = local[l.index()] {
+                delta[state.orient.axis(l).index()] = state.orient.offset(l, coord, size);
             }
         }
 
@@ -918,13 +986,13 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &'a str,
         split: &'a Split,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
-        let world_axis = state.orient.get(split.axis);
+        let world_axis = state.orient.axis(split.axis);
         let extent = state.region.extent(world_axis);
 
-        let scope = self.scope(state);
+        let scope = state.scope();
         let mut sizes = Vec::with_capacity(split.sizes.len());
         for size in &split.sizes {
             let (expr, absolute) = match size {
@@ -969,17 +1037,34 @@ impl<'a> Expander<'a> {
             error,
         })?;
 
+        // The pattern is laid out along the LOCAL axis, from its low end. In an
+        // unreflected frame that is the world low end; in a reflected one the
+        // first piece is the world-highest, so the same rule puts its end wall
+        // on the outside of both arms of a transept. The pieces are also
+        // *visited* in pattern order either way, so expansion order stays
+        // reading order — which is what `mark`'s auto-numbering counts in.
         let axis = world_axis.index();
-        let mut cursor = state.region.origin[axis];
+        let reversed = state.orient.reversed(split.axis);
+        let mut cursor = if reversed {
+            state.region.origin[axis] + state.region.size[axis] as i32
+        } else {
+            state.region.origin[axis]
+        };
         for (i, piece) in pieces.iter().enumerate() {
             let mut origin = state.region.origin;
             let mut size = state.region.size;
-            origin[axis] = cursor;
+            if reversed {
+                cursor -= *piece as i32;
+                origin[axis] = cursor;
+            } else {
+                origin[axis] = cursor;
+                cursor += *piece as i32;
+            }
             size[axis] = *piece;
-            cursor += *piece as i32;
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,
+                env: state.env,
             };
             let child = &split.children[i % split.children.len()];
             self.run_node(symbol, child, &child_state, depth + 1)?;

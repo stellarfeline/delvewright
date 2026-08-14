@@ -33,6 +33,7 @@ use serde::Serialize;
 use crate::contract;
 use crate::expand::Expansion;
 use crate::export;
+use crate::geom::Axis;
 use crate::model::VoxelModel;
 use crate::nav;
 
@@ -289,6 +290,17 @@ pub struct Options {
     pub traversable: bool,
     /// Allow a fall edge when walking (a piece entered by stepping off a ledge).
     pub allow_falls: bool,
+    /// Assert the piece is bilaterally symmetric about the mid-plane of this
+    /// **world** axis.
+    ///
+    /// Opt-in, and for the reason `traversable` is: it is a claim about a *kind*
+    /// of piece, and only the author knows whether this one makes it. What makes
+    /// it worth having is that the claim is otherwise unenforceable by anything.
+    /// A shape with a mirror plane is normally built by expanding one rule at
+    /// both sites — and if the two sites are instead two hand-kept copies, or
+    /// one site is missing its reflection, every other gate stays green while
+    /// the building has a hole in one flank. This is the gate that reads it.
+    pub symmetric: Option<Axis>,
     /// Assert that **every sheltered standable cell** — every piece of floor
     /// with a roof over it — can be walked to from the grade entrance.
     ///
@@ -478,6 +490,30 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         );
     }
 
+    // --- Gate (opt-in): the piece is its own mirror image. -----------------
+    if let Some(axis) = options.symmetric {
+        let (pairs, broken) = asymmetry(model, axis);
+        gates.push(Gate {
+            id: "symmetric",
+            pass: broken.is_empty() && pairs > 0,
+            bound: pairs,
+            detail: if broken.is_empty() {
+                format!(
+                    "{pairs} cell pair(s) across the {axis:?} mid-plane, every one matched \
+                     (presence, not block state)"
+                )
+            } else {
+                let [x, y, z] = broken[0];
+                format!(
+                    "{} of {pairs} cell pair(s) across the {axis:?} mid-plane differ; the first \
+                     is {x},{y},{z} — one side is solid and the other is not, so the two halves \
+                     were not built from the same rule",
+                    broken.len()
+                )
+            },
+        });
+    }
+
     // --- Gate (opt-in): every roofed cell of floor can be walked to. --------
     if options.reachable_floor {
         let bound = reach.sheltered;
@@ -632,6 +668,41 @@ fn mouth(
     }
     let _ = model;
     near
+}
+
+/// Cell pairs across the mid-plane of `axis`, and the ones whose two halves
+/// disagree — lowest-first, so the first entry is stable (ADR-0006).
+///
+/// **Presence, not block state.** A stair or a door placed correctly in one half
+/// is a *different* state in the other, since nothing reflects a block's
+/// `facing`; comparing states would red every symmetric building that contains
+/// one. Solid-versus-not is the property a mirror plane really asserts, and it
+/// is the property the defect this gate exists for breaks: an interior face left
+/// open where its mirror image is walled.
+///
+/// An odd extent leaves the centre plane paired with itself, which is trivially
+/// equal and is not counted.
+fn asymmetry(model: &VoxelModel, axis: Axis) -> (usize, Vec<[i32; 3]>) {
+    let region = model.region();
+    let a = axis.index();
+    let lo = region.origin[a];
+    let hi = lo + region.size[a] as i32 - 1;
+    let solid = |p: [i32; 3]| model.get(p).is_some_and(|b| !b.is_air());
+
+    let mut pairs = 0;
+    let mut broken = Vec::new();
+    for pos in region.positions() {
+        if pos[a] * 2 >= lo + hi {
+            continue; // the far half, and the self-paired centre plane
+        }
+        let mut partner = pos;
+        partner[a] = lo + hi - pos[a];
+        pairs += 1;
+        if solid(pos) != solid(partner) {
+            broken.push(pos);
+        }
+    }
+    (pairs, broken)
 }
 
 /// The plan view: how many columns carry a block, and how long the outline of
@@ -884,6 +955,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: false,
         };
         let stair = crate::expand(
@@ -918,6 +990,7 @@ mod tests {
             Options {
                 traversable: true,
                 allow_falls: true,
+                symmetric: None,
                 reachable_floor: false,
             },
         );
@@ -943,6 +1016,7 @@ mod tests {
             Options {
                 traversable: true,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: false,
             },
         );
@@ -990,6 +1064,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: true,
         };
 
@@ -1036,6 +1111,7 @@ mod tests {
             Options {
                 traversable: false,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: true,
             },
         );
@@ -1051,6 +1127,7 @@ mod tests {
             Options {
                 traversable: false,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: true,
             },
         );
@@ -1153,6 +1230,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: false,
         };
         let a = judge_two_storey(false, opts);

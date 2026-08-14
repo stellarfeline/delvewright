@@ -168,9 +168,8 @@
 //!    tower_rise`, with the post's floor an island the berm cannot reach
 //!    (deliberately: "not a landing"). The piece was a *terminus*, so any chain
 //!    through it was severed at that face, whichever end of the zone it was
-//!    placed at, and no orientation helped: a grammar orientation is a
-//!    permutation without reflection, so the post cannot be turned to the entry
-//!    end either.
+//!    placed at, and no frame helped: turning or reflecting a terminus gives a
+//!    terminus.
 //!
 //!    The rule now carries `berm_gate`, off by default: it runs the berm's own
 //!    column through the guard station at berm height, so the post becomes a
@@ -197,17 +196,13 @@
 //!    chain.
 //!
 //! **Z1 is a single run, not a switchback**, and that is a finding rather than a
-//! shortcut. A switchback alternates which side the drop is on, and a grammar
-//! orientation is a permutation *without reflection* — so no `reorient` can
-//! mirror a cliff run, and the two legs of a switchback cannot be the same rule
-//! turned round. Building it needs either a mirroring orientation or a
-//! `cliff_turn` landing rule that joins two runs at a corner; neither exists,
-//! and inventing the landing inline is exactly the geometry this module does not
-//! write. A third option was overlooked and is now **open rather than
-//! answered**: what an orientation cannot do a *rule body* can, and
-//! [`crate::library::stair_flight`] records the construction. Whether it reaches
-//! `cliff_path`, whose lane and recesses are placed by `reorient` rather than by
-//! split order, has not been checked. What is programmed is the owner-mandated set piece itself: the
+//! shortcut. A switchback alternates which side the drop is on, which is a
+//! reflection of the run, and `reorient`'s `mirror` expresses one. What is not
+//! settled is whether `cliff_path` in particular survives it — its lane and
+//! recesses are placed by `reorient` rather than by split order — and the corner
+//! still wants a `cliff_turn` landing rule joining two runs, which does not
+//! exist; inventing that landing inline is exactly the geometry this module does
+//! not write. What is programmed is the owner-mandated set piece itself: the
 //! one-wide ledge, the niches, and the drop beside them.
 
 pub mod barrow_shore;
