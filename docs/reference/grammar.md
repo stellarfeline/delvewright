@@ -26,7 +26,11 @@ Two library modules exist for the tool and are public for it:
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
-  `non-empty`, and opt-in `traversable` and `reachable-floor`. Measurements:
+  `shape-complete` (every placed state writes its shape-carrying `multipart`
+  properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
+  is filled only under identity orientation or a passed `orientation` guard —
+  `DW0736`, §4b), `non-empty`, and opt-in `traversable` and `reachable-floor`.
+  Measurements:
   fill, distinct states, standable cells, footprint area/perimeter, silhouette
   complexity, per-block shares, and **reachability** (§4c) — how much of the
   floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no anchors, are reported
@@ -598,6 +602,37 @@ curtain — the entire point of that rule — had been 14 cells of air.
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
 
+Two more members of the same spelling rule ride the same sites, gate and
+export refusal both:
+
+- **Shape completeness (`DW0735`).** A placed state must write every property
+  named by a `multipart` selector in its block's own blockstate definition
+  (`crates/compiler/data/blockstate-shape-props-1.21.11.json`, derived from the
+  client jar). A `variants` property the state omits renders the complete
+  default model — benign; a `multipart` property it omits drops assembled
+  geometry, so a bare `iron_bars`/`oak_fence`/`cobblestone_wall` places as a
+  row of isolated posts. When this gate was first run over the corpus it found
+  `broken_grate` and `far_side_bar` both painting bare `iron_bars` — every
+  grate and every sealed doorway they had ever built.
+- **Oriented fills (`DW0736`).** A reorientation permutes geometry and never
+  rewrites block-state properties, so a literal `facing`/`axis`/connection/
+  `rotation` state inside a reoriented scope lands however the scope was
+  turned. The mechanism is `Cond::Orientation` — one alternative per
+  orientation, each carrying the matching state — and the expander records
+  every fill that skips it (sensitivity derived from the registry's value
+  vocabulary, `BlockRegistry::oriented_mismatch`). A passed guard licenses a
+  fill only while the orientation it asserted still holds. First run over the
+  corpus, it found `cliff_path`'s skull yaw literal under the recess's own
+  reorientation: the same program at a box longer in world X shipped skulls
+  facing along the path instead of out of the niche. Because a role binds ONE
+  state per name, an orientation-dependent block cannot be a palette role;
+  `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as guarded
+  inline states (an oriented-role surface is a named gap, §7).
+
+`tests/shape_orient.rs` demonstrates both red→green on `broken_grate`'s bars;
+`tests/library.rs` and `tests/zones.rs` sweep both gates over every library
+program and every bell zone with summed binding counts.
+
 ## 4c. Reachability — how much of the floor a body can get to
 
 `traversable` proves one thing: a walk joins the approach face to the exit face.
@@ -721,7 +756,7 @@ over whichever of the four spacings the remaining path has room for).
 
 | | |
 |---|---|
-| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock`, `corpse` |
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-orientation guarded inline states, `corpse_prop` — its yaw follows the recess's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
 | Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
 | Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
@@ -963,7 +998,7 @@ breaks exactly one grate cell, applied to a wall band instead of a floor row.
 
 | | |
 |---|---|
-| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate`, `grate_broken` |
+| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate_broken` (the plain bars are per-orientation guarded inline states, `grate_bars` — their connections follow the row's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head` + 2) × `MIN_LINE` (3) — the same "three is the shortest row the odd one always has a neighbour in" proof `store_room` makes |
 | Anchors | `anchor/grate-secret` — the broken cell, facing out into the room across the row |
 
@@ -1045,12 +1080,12 @@ position depends on how the margins split at expansion time.
 ### `far_side_bar` — the sealed shortcut door
 
 The grammar half of a souls shortcut (spec-0016 §2): `ambush_door`'s own
-wall-across-the-box shape, but the one opening is filled solid with a `bar`
-role material instead of left open — not a narrower door, a **barred** one.
+wall-across-the-box shape, but the one opening is filled with bars instead of
+left open — not a narrower door, a **barred** one.
 
 | | |
 |---|---|
-| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock`, `bar` |
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` (the bars are per-orientation guarded inline states, `bar_cell` — their connections follow the wall's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
 | Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
@@ -2032,6 +2067,17 @@ today.
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
 treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
 yet by a rule — each needs its own declaration, not a widened `mark`.
+
+**An oriented palette role.** A role binds ONE block state per name, so a
+state whose properties depend on the scope's orientation — a bar's
+connections, a skull's yaw, a stair's facing — cannot be a role at all: the
+pieces that carry one (`broken_grate`, `far_side_bar`, `cliff_path`,
+`church`) write per-orientation guarded inline states instead (`DW0736`'s
+mechanism), and each such piece gives up the role's restyle surface to do it.
+The general form is a role that binds a state per orientation, so a campaign
+can restyle the material while the guard machinery keeps choosing the variant.
+Named here so the surface is designed once, at the object (the role), rather
+than re-invented per rule.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the

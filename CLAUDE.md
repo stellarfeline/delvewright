@@ -223,8 +223,57 @@ validation/          # docker compose: headless server + bot, same image as CI &
     by this.
   Until its gate is passed a PR stays open. Unit/CI tests alone prove the
   change broke nothing, not that it fixed the target.
+- **Every validation authoring needs must be runnable on the creator's own
+  machine, and this is not negotiable** (owner, 2026-08-14). The toolchain is
+  *for creators*, so a check that only we can run is not a check the product
+  has. The floor is deliberately low and always available: **clone the repo and
+  build from source**. Completeness is guaranteed there, never by the
+  convenience layer.
+  The consequence, and it is what makes the rule cheap to hold: **binary
+  distribution is an optimisation, not the guarantee.** Where a platform's
+  prebuilt binary cannot carry a capability, that is not a reason to contort the
+  binary, drop the capability, or ship a creator a diminished tool — the
+  **skill** states how to build locally, and the first run builds from source. A
+  skill is a prompt: state it clearly and the agent does it. So every skill owns
+  an explicit **`Init` section that establishes a complete toolchain before any
+  work begins**, and a tool that cannot be bundled is acquired at the step that
+  needs it rather than assumed present.
+  This is why a distribution question is never allowed to decide a capability
+  question. The two are separate, and only the second is about what the engine
+  can do.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
+- **A decision put to the owner leads with the PROBLEM, never with the options**
+  (owner, 2026-08-14). She is the scarcest resource in the project and she is
+  deciding about things she has never seen. So a decision request states, in this
+  order: **(1) what was observed to be wrong** — concretely, in the game or in the
+  output, and how it was noticed; **(2) what the thing under discussion IS**, in
+  one sentence, and why it exists at all; **(3) only then the choice**, each
+  option with what it costs. Options-first is the failure: *"three doors — build
+  the DFU capability, drop the piece, or exempt pre-pin third-party assets"* named
+  a file she had never heard of, a capability she had no reason to know we lacked,
+  and a threshold whose purpose was never stated. Nobody can choose between doors
+  into a building they cannot see.
+  **The test before sending, and it is answerable**: could she answer *"what goes
+  wrong if we do nothing"* from the message alone? If not, it is not a decision
+  request — it is a status line with a question mark on the end. Two corollaries.
+  An internal identifier (`#430`, a `DW` code, a path) is a **reference, never the
+  subject** — a sentence whose subject is a PR number has not said anything. And
+  where one option is plainly right, it is a **recommendation with its reason**,
+  not a menu: presenting a settled thing as a choice spends her attention to buy
+  the planner cover.
+- **A decision session is ONE question at a time, and no work starts inside it**
+  (owner, 2026-08-14). The owner's time is the project's scarcest resource, so
+  when she sits down to decide, the planner's entire job is **helping her
+  understand and recording what she rules** — nothing else. The loop: present one
+  decision at the detail the rule above demands; she answers; **record the ruling
+  immediately and present the next one as fast as possible**. Her waiting time is
+  the thing being minimised, so the gap between her answer and the next question
+  is the number to keep small — never fill it by starting the work she just
+  authorised. Execution begins **after the whole pending set is decided**, in one
+  batch, unless she says to do a specific thing now. A batch of decisions costs
+  her one context-load; the same decisions interleaved with implementation cost
+  her one per item, and the implementation blocks the next question behind it.
 - **Audience separation in docs** (owner, 2026-08-02): every document has ONE
   target reader. Agent-facing docs (CLAUDE.md, ADRs, specs, `docs/reference/`,
   skills) may be arbitrarily technical. User/player-facing docs (READMEs,
@@ -394,6 +443,33 @@ validation/          # docker compose: headless server + bot, same image as CI &
   detail cannot**. The review question is therefore always "does this read as
   the thing, and does the inside belong to it", never "is the detail right" —
   and a piece is not rejected for lacking detail it was never going to have.
+- **Grandeur is playable content, not volume** (owner, 2026-08-13). Buildings
+  should be built grand — but a structure is grand because there is a lot in it
+  to play, not because it encloses a lot of air. **A big empty room is not a big
+  building; it is a small building that costs more to walk across.** The two
+  rules compose: the silhouette earns the recognition from outside, and the
+  density earns it from inside. So the question asked of an oversized space is
+  always *what does the player do in here*, and a space with no answer is cut or
+  filled — never kept because it looks impressive in an elevation.
+  The same rule applied to objects, as design guidance: **when the vanilla block
+  that names a thing is too small to carry the weight the story gives it, the
+  thing is built out of blocks instead.** A vanilla bell is a fitting on a fence
+  post; a bell a campaign is named after is a structure a player stands under.
+  Placing the block that shares the name is not depicting the object — it is
+  labelling it.
+- **Work is routed to a tier by its CLASS, and the planner authors none of it**
+  (owner, 2026-08-13). Architecture and system design — **including writing specs
+  and ADRs** — go to a **Fable** worker; content design (story, beats, campaign
+  authoring) goes to an **Opus** worker; implementation, tests and validators are
+  unchanged. What stays with the planner is scheduling, dispatch briefs, review
+  of every diff, integration, bookkeeping, and the chat summaries the owner rules
+  on. The rule is structural because the failure it replaces was a judgement
+  call: the planner had been labelling design tasks *planner-personal*, which
+  caps the design at the planner's own tier and blocks the queue behind one
+  context. So the question at dispatch is **what class of work is this**, never
+  how confident the planner feels about it — *"I could do this myself"* is not a
+  reason to keep it. Retires the *planner-personal* label wherever it appears on
+  a design task.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
