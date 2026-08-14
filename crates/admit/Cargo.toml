@@ -41,6 +41,14 @@ flate2 = "1"
 # `dw.note` server-log harvester (the gallery emits a compatible layout so its
 # notes round-trip through the same parser).
 delvewright-schem = { path = "../schem" }
+
+# The spatial contract has ONE checker (spec-0036 §1c) and this is its second
+# door. A prefab nobody generated carries the same resolved contract block in its
+# metadata that a grammar expansion writes, and it is judged by the same code
+# over the same two inputs — otherwise "one checker, two doors" is two checkers
+# that agree until they do not. Generation-time tooling only; nothing here ships
+# in a delve (ADR-0003).
+delvewright-grammar = { path = "../grammar" }
 delvewright-orchestrator = { path = "../orchestrator" }
 
 # The pinned 1.21.11 Brigadier command tree and its validator (`delvewright_

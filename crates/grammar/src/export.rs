@@ -128,8 +128,10 @@ pub fn program_hash(program: &Program) -> String {
 // how `license.generated_by` — the ADR-0006 row this whole module exists to emit
 // — got dropped by the next documented step in the procedure.
 pub use delvewright_schem::prefab::{
-    Anchor as AnchorMetadata, Connector, GeneratedBy, License as LicenseMetadata,
-    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, StructureMeta as StructureMetadata,
+    Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
+    ContractSpace, ContractVolume, GeneratedBy, License as LicenseMetadata,
+    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, Region as RegionMetadata,
+    SpatialContract, StructureMeta as StructureMetadata,
 };
 
 /// The manifest of a zone too big for one structure template.
@@ -169,6 +171,10 @@ pub struct TileSetMetadata {
     pub lighting: LightingMetadata,
     /// Licence and provenance.
     pub license: LicenseMetadata,
+    /// The zone's spatial contract, in **zone** coordinates, for the reason
+    /// `anchors` are: a cut is not part of the building.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_contract: Option<SpatialContract>,
 }
 
 // ---------------------------------------------------------------------------
@@ -348,15 +354,27 @@ pub enum ExportError {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
+    /// The expansion's blocks disagree with the spatial contract it declares.
+    ///
+    /// Refused **here**, at the writer, and not only in `gates::judge`. The
+    /// event this guards is "a `.nbt` whose metadata claims something untrue of
+    /// its own bytes exists on disk", and freezing is that event; a check that
+    /// lived only in the CLI's judging step would be skipped by every other
+    /// caller of this function, which is the shape of a gate that protects
+    /// nothing (CLAUDE.md).
+    Contract {
+        /// One line per failed obligation, with its binding count.
+        gates: Vec<String>,
+    },
     /// The model contains block states omitting shape-carrying (multipart)
     /// properties (`DW0735`, `delvewright_schem::blocks::DW_SHAPE_OMITTED`).
     ShapeOmissions {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
-    /// The expansion filled orientation-sensitive block states into reoriented
-    /// scopes with no `orientation` guard (`DW0736`,
-    /// `delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+    /// The expansion filled orientation-sensitive block states into scopes
+    /// whose frame turns or reflects them, with no `orientation` guard
+    /// (`DW0736`, `delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
     UnguardedOrientedFills {
         /// One line per finding.
         reasons: Vec<String>,
@@ -397,6 +415,13 @@ impl fmt::Display for ExportError {
                 delvewright_schem::blocks::MC_VERSION,
                 reasons.join("; ")
             ),
+            ExportError::Contract { gates } => write!(
+                f,
+                "the expanded model disagrees with the spatial contract this program declares, so \
+                 freezing it would put a  on disk whose metadata describes a building it is \
+                 not true of: {}",
+                gates.join("; ")
+            ),
             ExportError::ShapeOmissions { reasons } => write!(
                 f,
                 "{}: the expanded model paints block states that omit shape-carrying \
@@ -408,10 +433,10 @@ impl fmt::Display for ExportError {
             ExportError::UnguardedOrientedFills { reasons } => write!(
                 f,
                 "{}: the expansion filled orientation-sensitive block states into \
-                 reoriented scopes with no `orientation` guard, so their literal \
-                 facing/axis/connections land however the scope was turned: {}. Write one \
-                 alternative per orientation, each guarded with the `orientation` cond \
-                 and carrying the matching state",
+                 turned or reflected scopes with no `orientation` guard, so their \
+                 literal facing/axis/connections land however the scope was framed: {}. \
+                 Write one alternative per frame, each guarded with the `orientation` \
+                 cond and carrying the matching state",
                 delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
                 reasons.join("; ")
             ),
@@ -478,7 +503,12 @@ pub fn export_prefab(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    // The block-spelling family first, the contract second, and the order is
+    // load-bearing: a state that omits its connections or lands the wrong way
+    // round changes what the bytes MEAN, so the contract check would otherwise
+    // read a building whose walls are isolated posts and answer about that one.
     refuse_unguarded_oriented_fills(&expansion)?;
+    refuse_broken_contract(&expansion)?;
     let nbt = part_nbt(&expansion.model, &palette, region)?;
 
     let size = [
@@ -507,6 +537,7 @@ pub fn export_prefab(
             ..LightingMetadata::unmeasured()
         },
         license: license_metadata(program, &hash, options.seed, size, None),
+        spatial_contract: contract_metadata(&expansion),
     };
     let metadata_json = metadata.to_json();
 
@@ -562,7 +593,12 @@ pub fn export_zone(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    // The block-spelling family first, the contract second, and the order is
+    // load-bearing: a state that omits its connections or lands the wrong way
+    // round changes what the bytes MEAN, so the contract check would otherwise
+    // read a building whose walls are isolated posts and answer about that one.
     refuse_unguarded_oriented_fills(&expansion)?;
+    refuse_broken_contract(&expansion)?;
 
     let mut tiles = Vec::with_capacity(plan.parts.len());
     let mut parts = Vec::with_capacity(plan.parts.len());
@@ -621,6 +657,7 @@ pub fn export_zone(
             size,
             Some((plan.grid, tiles.len())),
         ),
+        spatial_contract: contract_metadata(&expansion),
     };
     let metadata_json =
         serde_json::to_string_pretty(&metadata).expect("tile-set manifest serialises") + "\n";
@@ -638,17 +675,137 @@ pub fn export_zone(
 /// The anchors an expansion declared, in the metadata shape. Zone-relative in
 /// both export shapes, because a mark is a fact about the building and a tile
 /// boundary is not part of the building.
+/// Each anchor also carries **which contract element it lands in**
+/// (spec-0036 §1b/§2.7): a campaign binds content to an anchor, and the thing
+/// that says whether that place is play space, a door or dressing is the
+/// contract. Resolved here, from the resolved contract alone, so the metadata a
+/// reader gets and the element the checker's anchor obligation reads are the
+/// same string.
 fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
+    let contract = contract_metadata(expansion);
     expansion
         .anchors
         .iter()
         .map(|(name, anchor)| {
-            (
-                name.clone(),
-                AnchorMetadata::point(anchor.pos, anchor.facing.to_string()),
-            )
+            let mut meta = AnchorMetadata::point(anchor.pos, anchor.facing.to_string());
+            meta.resolves_to = contract
+                .as_ref()
+                .and_then(|c| crate::contract::resolves_to(c, anchor.pos));
+            (name.clone(), meta)
         })
         .collect()
+}
+
+/// The spatial contract an expansion resolved, in the metadata shape.
+///
+/// Zone-relative in both export shapes, for the reason the anchors are: a
+/// declaration is a fact about the building, and a tile boundary is not part of
+/// the building.
+///
+/// Nothing here is inferred and nothing is checked. The declarations went in as
+/// the program's intent and come out as the boxes that intent resolved to; a
+/// space with no boxes is written with none, because a zero binding is a finding
+/// for whatever reads the contract and deleting it would hide the finding.
+pub fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
+    let mut out = contract_without_faces(expansion)?;
+    // The face contract is derived once, here, and written down — so assembly
+    // asks the metadata rather than reopening the `.nbt`, and so the faces a
+    // reviewer reads are the faces the checker judged.
+    out.faces = crate::contract::exterior_faces(&expansion.model, &out)
+        .into_iter()
+        .map(|f| ContractFace {
+            space: f.space,
+            class: f.class,
+            dir: f.dir.as_str().to_string(),
+            opening: RegionMetadata {
+                from: [
+                    f.cells.iter().map(|c| c[0]).min().unwrap_or(0),
+                    f.cells.iter().map(|c| c[1]).min().unwrap_or(0),
+                    f.cells.iter().map(|c| c[2]).min().unwrap_or(0),
+                ],
+                to: [
+                    f.cells.iter().map(|c| c[0]).max().unwrap_or(0),
+                    f.cells.iter().map(|c| c[1]).max().unwrap_or(0),
+                    f.cells.iter().map(|c| c[2]).max().unwrap_or(0),
+                ],
+            },
+        })
+        .collect();
+    Some(out)
+}
+
+/// The resolved contract without its derived face contract — what
+/// [`crate::contract::exterior_faces`] reads, so the derivation cannot depend on
+/// its own output.
+fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
+    let contract = expansion.contract.as_ref()?;
+    let ranges = |boxes: &[Box3]| -> Vec<RegionMetadata> { boxes.iter().map(range).collect() };
+    Some(SpatialContract {
+        entry: contract.entry.clone(),
+        spaces: contract
+            .spaces
+            .iter()
+            .map(|(name, space)| {
+                (
+                    name.clone(),
+                    ContractSpace {
+                        envelope: space.envelope.as_str().to_string(),
+                        boxes: ranges(&space.region.boxes),
+                    },
+                )
+            })
+            .collect(),
+        no_body: contract
+            .no_body
+            .iter()
+            .map(|(name, region)| {
+                (
+                    name.clone(),
+                    ContractNoBody {
+                        reason: region.reason.clone(),
+                        boxes: ranges(&region.region.boxes),
+                    },
+                )
+            })
+            .collect(),
+        edges: contract
+            .edges
+            .iter()
+            .map(|edge| ContractEdge {
+                a: edge.a.clone(),
+                b: edge.b.clone(),
+                class: edge.class.to_string(),
+                rise: edge.rise,
+                via: edge.via.as_ref().map(|v| ContractVolume {
+                    region: v.region.clone(),
+                    boxes: ranges(&v.boxes),
+                }),
+                bar: edge.bar.as_ref().map(|b| ContractBar {
+                    region: b.region.clone(),
+                    boxes: ranges(&b.boxes),
+                    block: b.block.to_string(),
+                }),
+            })
+            .collect(),
+        faces: Vec::new(),
+        no_body_majority_ack: contract.no_body_majority_ack.clone(),
+    })
+}
+
+/// A half-open box as the metadata's inclusive `from`/`to` range.
+///
+/// The document has exactly one way to name a range of cells — the one a gate
+/// anchor already uses — so a contract box is that same type rather than a
+/// second spelling of it.
+fn range(b: &Box3) -> RegionMetadata {
+    RegionMetadata {
+        from: b.origin,
+        to: [
+            b.origin[0] + b.size[0] as i32 - 1,
+            b.origin[1] + b.size[1] as i32 - 1,
+            b.origin[2] + b.size[2] as i32 - 1,
+        ],
+    }
 }
 
 /// The `license` block, shared by both export shapes so the provenance sentence
@@ -733,6 +890,36 @@ fn zone_palette(model: &VoxelModel) -> ZonePalette {
 /// It runs over the **whole model**, once, before any tiling: the cell counts it
 /// reports are the zone's, so a set's refusal reads identically to a single
 /// prefab's and never depends on which tile a bad block landed in.
+/// Refuse to freeze an expansion whose blocks disagree with the contract it
+/// declares.
+///
+/// Every writer goes through here, so the guarded event — a prefab on disk whose
+/// metadata describes a building it is not true of — cannot happen without the
+/// obligations having run. The CLI judges first and prints a report; a library
+/// caller that never judges is refused here instead of shipping the artifact.
+fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
+    let Some(contract) = contract_metadata(expansion) else {
+        return Ok(());
+    };
+    let anchors: std::collections::BTreeMap<String, [i32; 3]> = expansion
+        .anchors
+        .iter()
+        .map(|(name, a)| (name.clone(), a.pos))
+        .collect();
+    let verdict = crate::contract::check(&expansion.model, &contract, &anchors);
+    let failed: Vec<String> = verdict
+        .gates
+        .iter()
+        .filter(|g| !g.pass)
+        .map(|g| format!("{} (examined {}): {}", g.id, g.bound, g.detail))
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(ExportError::Contract { gates: failed })
+    }
+}
+
 fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<(), ExportError> {
     let mut cells_per_state = vec![0usize; palette.states.len()];
     for pos in model.region().positions() {

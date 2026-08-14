@@ -152,11 +152,18 @@ caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
-**Read the idiom index first** (`grammar.md` §2c). It is nine techniques with a
+**Read the idiom index first** (`grammar.md` §2c). It is ten techniques with a
 runnable program each, and it is the part of the language that no type signature
 shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
-aperture and a sconce are actually written. A scene that looks impossible is
-usually one of the nine.
+aperture, a sconce and one rule called with different content are actually
+written. A scene that looks impossible is usually one of the ten.
+
+**A second instance of a shape is never a second copy of its rules.** Three
+things a caller can hand a callee, cheapest first: nothing, because an
+`absolute` size takes an expression over the scope's own extents; a turned frame
+via `reorient`; and a paint, a size or a role via `bind` (idiom 10). Copying a
+rule to change one of those is how a program grows a family that nothing keeps in
+step.
 
 ```sh
 delve-grammar list                                # what exists — incl. `idiom-*`
@@ -197,14 +204,17 @@ you write:
 delve-grammar check --file my-piece.json          # structure only; fast
 ```
 
-`check` finds unknown rules, unknown roles, split/child mismatches and
-unmatchable guards without a region or a seed. Run it after every edit — it
-costs nothing.
+`check` finds unknown rules, unknown roles, split/child mismatches, unmatchable
+guards, an unknown document `version`, and a construct newer than the version the
+program declares — all without a region or a seed. Run it after every edit — it
+costs nothing. A program started from `show` already declares the current
+version, so the version refusals only fire on one hand-edited by someone who
+lowered it.
 
 **It is a typo check, not a design review, and it will not once tell you the
-piece is wrong.** Every defect it can see is a name or an arity: a role that is
-not bound, a rule that is not defined, a split with the wrong number of
-children. It has no region and no seed, so it never sees geometry. Call the
+piece is wrong.** Every defect it can see is a name, an arity or a version: a
+role that is not bound, a rule that is not defined, a split with the wrong number
+of children. It has no region and no seed, so it never sees geometry. Call the
 mirrored rule on both sides of a symmetric split and the aperture chamfers the
 wrong way for half its height — `ok`. Move a sconce course five courses up the
 wall — `ok`. Build a parapet two courses high so the anchor behind it looks
@@ -249,6 +259,7 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `blocks-exist` | every block state the model paints exists in 1.21.11, properties and values included |
 | `non-empty` | the expansion built something |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
+| `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
 `--traversable` is opt-in because it is a claim about a *kind* of piece: a room
@@ -419,10 +430,10 @@ Each of these was established by running it, except the two marked otherwise:
     wall are one recursion whose per-step extent is arithmetic on the remaining
     dimension — `grammar.md` §2c idiom 3 — and with the paint inverted the same
     program is the opening rather than the mass;
-  - **any shape with a mirror plane.** An orientation is a permutation without
-    reflection, so `reorient` cannot mirror a piece — but a rule *body* can be
-    written mirrored, and a size list reversed is exactly that. Two such rules
-    give a chamfered octagon that re-centres itself at any width (idiom 7);
+  - **any shape with a mirror plane.** A frame carries a direction as well as a
+    mapping, so `reorient`'s `mirror` hands a body its own reflection: one rule
+    and a reflection of it give a chamfered octagon that re-centres itself at any
+    width (idiom 7), and `--symmetric <axis>` gates the claim;
   - **two roofs meeting in a valley.** Two prisms crossing union to a
     plus-shaped course, and a plus is a partition: the recursion peels the ring
     of its box instead of insetting it, and the two pairs of ring slabs are the

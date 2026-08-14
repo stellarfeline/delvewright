@@ -39,7 +39,7 @@ use delvewright_grammar::block::BlockState;
 use delvewright_grammar::coverage;
 use delvewright_grammar::gates;
 use delvewright_grammar::ir::{Paint, Program};
-use delvewright_grammar::{Box3, ExpandOptions, expand, export, library};
+use delvewright_grammar::{Axis, Box3, ExpandOptions, expand, export, library};
 
 const EXIT_INPUT: u8 = 2;
 const EXIT_OUTPUT: u8 = 3;
@@ -130,6 +130,11 @@ enum Command {
         /// stepping off a ledge.
         #[arg(long)]
         allow_falls: bool,
+        /// Also gate on the piece being its own mirror image across this world
+        /// axis (`x`, `y` or `z`) — the claim a shape with a mirror plane makes,
+        /// and the one nothing else in the report reads.
+        #[arg(long, value_name = "AXIS")]
+        symmetric: Option<String>,
         /// Also gate on every piece of floor **under a roof** being walkable to
         /// from the grade entrance.
         ///
@@ -224,6 +229,15 @@ fn parse_region(s: &str) -> Result<[u32; 3], String> {
         return Err(format!("region {s:?} has a zero axis"));
     }
     Ok(out)
+}
+
+fn parse_axis(s: &str) -> Result<Axis, String> {
+    match s.trim() {
+        "x" | "X" => Ok(Axis::X),
+        "y" | "Y" => Ok(Axis::Y),
+        "z" | "Z" => Ok(Axis::Z),
+        other => Err(format!("{other:?} is not a world axis; give x, y or z")),
+    }
 }
 
 fn split_once_eq<'a>(s: &'a str, what: &str) -> Result<(&'a str, &'a str), String> {
@@ -598,6 +612,13 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
     for pocket in &r.largest_pockets {
         eprintln!("      pocket  {}", pocket.describe());
     }
+    // Every opt-out the contract used, by name and one per line. A count of
+    // out-of-walk regions is a number a blind script can satisfy; a list saying
+    // which shelf is `posted` on which anchors, and which bar the walk had to
+    // open, is a thing a reviewer reads and can disagree with.
+    for line in &report.enumeration {
+        eprintln!("  contract: {line}");
+    }
     for finding in &report.findings {
         eprintln!("  finding: {finding}");
     }
@@ -619,12 +640,17 @@ fn main() -> ExitCode {
             id,
             traversable,
             allow_falls,
+            symmetric,
             reachable_floor,
             out,
         } => {
             if allow_falls && !traversable {
                 return bad_input("--allow-falls only means something with --traversable");
             }
+            let symmetric = match symmetric.as_deref().map(parse_axis).transpose() {
+                Ok(a) => a,
+                Err(e) => return bad_input(e),
+            };
             run_expand(
                 &source,
                 &region,
@@ -635,6 +661,7 @@ fn main() -> ExitCode {
                 gates::Options {
                     traversable,
                     allow_falls,
+                    symmetric,
                     reachable_floor,
                 },
                 &out,
