@@ -58,14 +58,44 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 
 | Element | Form | Notes |
 |---|---|---|
+| `version` | version string | **required**; the document's own version, not the crate's |
 | `name` | string | provenance label |
 | `start` | rule name | expanded into the whole region |
 | `params` | name → i64 | size/kind controls; read by `{"expr":"param"}` |
 | `palette` | role → paint | style controls; a paint is a block-state string or a weighted list |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
+| `contract` | `{entry, spaces, no_body, edges}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
-(leave as-is), `call`, `split`, `reorient`, `mark`.
+(leave as-is), `call`, `split`, `reorient`, `mark`, `claim`.
+
+**`version`** is the document's compatibility surface. A version this engine does
+not accept is refused outright rather than parsed for the parts that look
+familiar, because a document whose newer half was skipped compiles green and
+builds the wrong world. A construct a version does not have is refused where it
+is written, naming the construct and both versions — which is what lets a
+document at `1.0.0` keep compiling to the same bytes forever.
+
+The ledger is every number the format has and the one surface each names
+(`crates/grammar/src/version.rs`):
+
+| version | surface | accepted |
+|---|---|---|
+| `1.0.0` | rules, splits, reorientations, marks | yes |
+| `1.1.0` | the frame's direction — `mirror` on a `reorient` request and on an `orientation` guard | no — reserved |
+| `1.2.0` | the spatial contract — the program-level `contract` block and the scope-bound `claim` node | yes |
+
+A number names exactly one surface, in every engine build that knows the number;
+otherwise two engines both call themselves `1.1.0`, disagree about what a
+`1.1.0` document means, and each silently drops the other's half.
+`tools/check-version-ledger-uniqueness.py` holds that against `origin/main`, for
+this ledger and for `dsl_version`.
+
+A **reserved** number is one the ledger names and this engine does not implement.
+It is reserved rather than skipped, because a skipped number is a free number and
+a free number is one two changes can take. A document declaring a reserved
+version is refused, and the refusal names the surface that owns the number —
+building it would mean deserialising that surface into nothing.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
 count, `relative` pieces share what is left. `rounding` (`truncate` — the
@@ -481,12 +511,114 @@ cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
 the recursion does not already centre for itself — and neither is idiom 8, since
 the bays are meant to be empty, which is what `void` says.
 
+## 2d. The spatial contract — `claim`, and what a program says about a body
+
+A program can state where a body goes. The statement has two halves, and they
+are separate because they answer different questions.
+
+**The rules say where.** `claim` wraps a body the way `mark` does, writes no
+blocks, draws nothing from the seeded stream, and gives the scope's box a name:
+
+```json
+{ "op": "claim", "region": "nave", "body": { "op": "void" } }
+```
+
+**The `contract` block says what.** A name is a space with an envelope, an
+out-of-walk region with a kind, or an edge's own volume — stated once, however
+many rules claim boxes for it:
+
+```json
+"contract": {
+  "entry": "near",
+  "spaces": { "near": { "envelope": "enclosed" },
+              "far":  { "envelope": "enclosed" } },
+  "no_body": { "shelf": { "reason": "where a watcher stands" } },
+  "edges": [
+    { "a": "exterior", "b": "near", "class": "walk" },
+    { "a": "near", "b": "far", "class": "barred",
+      "bar": { "region": "gate", "block": "bar" } },
+    { "a": "far", "b": "exterior", "class": "walk" }
+  ]
+}
+```
+
+**An out-of-walk region carries no kind.** Which exemption a region qualifies
+for — walled off, anchored, exterior dressing — is a fact about the blocks, so it
+is read off them rather than chosen here. An author who could pick would be
+picking which demand has to be met, and a choice between demands is only ever as
+strong as the weakest one on offer. What the author supplies is the `reason`,
+because no measurement recovers that.
+
+Splitting the two halves is what lets **one** declaration node serve a space, a
+stair's transit volume and a bar region. Building a second kind of node per use is how
+the third use ends up with no surface at all — and it is also what makes the
+`envelope` one statement rather than one per claiming rule.
+
+| Field | Meaning |
+|---|---|
+| `entry` | the declared space a body enters at |
+| `spaces` | name → `{envelope}`; `enclosed`, `open_top` or `open` |
+| `no_body` | name → `{reason}`; standable cells deliberately outside the walk, with the author's reason in their own words |
+| `edges` | `{a, b, class, …}` in declaration order; an endpoint is a declared space or the reserved name `exterior` |
+| `no_body_majority_ack` | the author's acknowledgement that the piece is mostly out-of-walk |
+
+**Edge classes carry exactly the fields they mean**, so a bar on a walk or a rise
+on a sightline is not writable in the first place:
+
+| `class` | Fields |
+|---|---|
+| `walk` | `rise` (default 0), optional `via` |
+| `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end |
+| `drop` | `rise`, optional `via`; directed `a` → `b` |
+| `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
+| `vision` | **required** `via`; no traversal claim, so no rise |
+
+`via` and `bar.region` name regions some rule claims, exactly as `spaces` and
+`no_body` do. `bar.block` is a palette role, and a role bound to a weighted mix
+is refused: a bar is one material, and a gate that is mostly a bar is not a state
+anything can be in.
+
+**Several claims of one name union.** A room whose cross-section is not a box is
+described by the boxes it is actually built from, rather than by a shape
+recomputed at the top of the program. The boxes are recorded sorted and
+de-duplicated, so the record is the set of cells rather than a trace of the
+derivation. A claim on a scope with no cells contributes nothing — the same thing
+`fill` and `void` do there — and a region no expansion claimed resolves to no
+boxes rather than disappearing, so the zero stays visible.
+
+**A region name is the program's vocabulary**, not the campaign's. It is one or
+more kebab-case segments joined by `/`, and `compose::include` prefixes it as it
+prefixes a rule, a parameter and a palette role — the opposite of an anchor stem,
+which is the campaign's id for a place and is never qualified. Left unqualified,
+a piece included twice would union its two rooms into one region and describe a
+room that is not there. The destination classifies the regions it takes on in its
+own contract, and until it does, `validate` refuses and names the region.
+
+**What is checked, and what is not.** Every name resolves, in both directions: a
+claim the contract does not classify is refused, and a contract region no rule
+claims is refused. `entry` and every edge endpoint name a declared space or
+`exterior`; one name is one thing, so a space cannot also be an out-of-walk
+region or an edge's own volume. That is reference integrity and nothing more.
+Whether the *blocks* agree with the statement — whether a space is closed, an
+edge holds, a cell is reachable — is a question about an expanded model, and
+nothing here asks it.
+
+Claims collect into `Expansion::contract`, **not** into the `VoxelModel`, for the
+reason marks do: a claim writes no blocks, and folding it into the block grid
+would change what `canonical_bytes` means and make "declaring a space changed
+nothing about the building" untestable. `tests/contract.rs` asserts exactly that,
+over every program in the library, by wrapping every rule of each in a claim.
+
+`spatial-contract` is the corpus example: two rooms, a barred door and a corbel.
+
 ## 3. Determinism (ADR-0006)
 
 Same program + same region + same seed → byte-identical `VoxelModel`, asserted by
 a double-expand test over every library program at five seeds, plus a
-seed-sensitivity test over a probabilistic program, and over the declared
-anchors (names, cells and per-stem numbering alike). All randomness is one
+seed-sensitivity test over a probabilistic program, over the declared
+anchors (names, cells and per-stem numbering alike), and over the resolved
+spatial contract — in two processes as well as twice in one, since a process
+warmed by the first run can hide an address-order dependency. All randomness is one
 splitmix64 stream from the caller's seed; all maps are `BTreeMap`; cells iterate
 `x`, then `y`, then `z`; nothing reads the clock, the environment or a path.
 `VoxelModel::canonical_bytes` is the comparison/hash form.
@@ -1873,6 +2005,17 @@ does not itself model:
   indexes normally. The castle, which marks, exports
   `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
   over its 41×14×25 region.
+- **`spatial_contract`** is the program's contract (§2d) **as resolved for this
+  expansion**: every box is a local cell range of these exact bytes, in the
+  `{from, to}` shape a gate anchor already uses. Resolved rather than parametric,
+  because a program re-expanded at other parameters means other boxes, and a
+  contract carrying the boxes it was authored against would describe one
+  expansion and quietly mis-describe every other. The key is absent — not empty
+  — for a program that declares no contract: "this piece makes no spatial claim"
+  and "this metadata predates contracts" are the same claim here, and neither is
+  a contract with nothing in it. A tiled zone carries the same block on its
+  manifest, in zone coordinates, because a tile boundary is not part of the
+  building.
 - **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
   tileset conventions; a guessed socket is worse than none. The key is present
   and empty rather than absent, because "this piece has no sockets" and "this
@@ -1970,17 +2113,21 @@ that page is the automatic part: nothing yet drives "expand N seed-varied
 candidates → `batch`-render them → sheet", so the sweep is assembled by hand
 today.
 
-`mark` declares point anchors only. Gate-region anchors (`region` + `block`),
-trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
-treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
-yet by a rule — each needs its own declaration, not a widened `mark`.
+`mark` declares point anchors only. Trap anchors (`dispenser`,
+`trigger_block`) and the entry names the engine treats specially (`spawn`,
+`entry`) are expressible in prefab metadata but not yet by a rule — each needs
+its own declaration, not a widened `mark`. A rule can name a *region* (§2d), and
+a `barred` edge's bar region is the cells a campaign's `shortcut` / `close-gate`
+/ `lift` addresses; what is missing is the export half, since a claimed region
+reaches the metadata's `spatial_contract` block and not its `anchors` map.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the
 first worked example of a piece opening a face onto a sibling box. What is still
 **convention rather than contract** is the promise those two pieces are keeping
-to each other: nothing in the IR states "my local `X`-min face carries a doorway
-at `door_height`" or "my local `Z` faces are open ends", so a zone that mates two
+to each other. An `exterior` edge (§2d) states that a piece opens onto the
+outside, and its `via` names the cells; what neither states is *which face* — a
+mating pair still has nothing to check itself against, so a zone that mates two
 pieces is trusting module prose, and a rule that changed which face it opened
 would break its callers silently.
 

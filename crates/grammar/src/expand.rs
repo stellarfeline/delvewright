@@ -27,8 +27,8 @@ use crate::block::BlockState;
 use crate::eval::{EvalError, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
-    Alternative, Cond, Facing, Mark, MarkAt, Material, Node, Paint, Program, ProgramError, Side,
-    Size, Split,
+    Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
+    ProgramError, Side, Size, Split,
 };
 use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{OrientError, reorient};
@@ -124,6 +124,114 @@ pub struct Anchor {
     pub declared_by: String,
 }
 
+/// One region a rule claimed, resolved for this expansion.
+///
+/// The boxes are **local to the expansion region**, rebased off its origin, for
+/// the reason [`Anchor::pos`] is: a structure template is local-coordinate, so
+/// moving the box must move nothing in the output (ADR-0006).
+///
+/// They are sorted and de-duplicated rather than kept in derivation order.
+/// Sorting is what makes the record a *set of cells* rather than a trace of how
+/// the rules got there, so two programs that claim the same boxes in different
+/// orders resolve to the same bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedRegion {
+    /// The boxes, canonically ordered. A claim on a scope with no cells
+    /// contributes nothing, exactly as `fill` writes nothing there.
+    pub boxes: Vec<Box3>,
+    /// The rules that claimed it. Provenance for review.
+    pub declared_by: Vec<String>,
+}
+
+impl ResolvedRegion {
+    /// Cells covered, over every box. The binding count a later gate reports.
+    pub fn cells(&self) -> u64 {
+        self.boxes.iter().map(Box3::volume).sum()
+    }
+}
+
+/// A declared space, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSpace {
+    /// The envelope claim, as declared.
+    pub envelope: Envelope,
+    /// Where it is.
+    pub region: ResolvedRegion,
+}
+
+/// A declared out-of-walk region, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedNoBody {
+    /// Why, as declared.
+    pub reason: String,
+    /// Where it is.
+    pub region: ResolvedRegion,
+}
+
+/// An edge's own volume — an opening, a stair's treads, a fall column — resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedVolume {
+    /// The region name, kept so the campaign-side binding has something to
+    /// address after the boxes have been consumed.
+    pub region: String,
+    /// Where it is.
+    pub boxes: Vec<Box3>,
+}
+
+/// A `barred` edge's bar, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedBar {
+    /// The region name.
+    pub region: String,
+    /// Where it is.
+    pub boxes: Vec<Box3>,
+    /// The palette role it is built from.
+    pub role: String,
+    /// The block state that role resolves to.
+    pub block: BlockState,
+}
+
+/// A declared edge, resolved: the class as declared, with every region name it
+/// used replaced by the boxes it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedEdge {
+    /// A declared space name, or [`crate::ir::EXTERIOR`].
+    pub a: String,
+    /// A declared space name, or [`crate::ir::EXTERIOR`].
+    pub b: String,
+    /// The class keyword.
+    pub class: &'static str,
+    /// The declared level change, where the class has one.
+    pub rise: Option<i64>,
+    /// The opening or transit volume, where one is declared.
+    pub via: Option<ResolvedVolume>,
+    /// The bar, on a `barred` edge.
+    pub bar: Option<ResolvedBar>,
+}
+
+/// The program's spatial contract, **as resolved for this expansion**.
+///
+/// This — not the program's declaration — is what an export writes, and it is
+/// the whole reason the declarations are scope-bound. A program re-expanded at
+/// other parameters produces other boxes; a contract that carried literal
+/// coordinates would describe the expansion it was written against and quietly
+/// mis-describe every other one, which is exactly the disagreement between
+/// "what the program says" and "what the bytes are" the contract exists to
+/// close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedContract {
+    /// The space a body enters at.
+    pub entry: String,
+    /// Spaces, by name.
+    pub spaces: BTreeMap<String, ResolvedSpace>,
+    /// Out-of-walk regions, by name.
+    pub no_body: BTreeMap<String, ResolvedNoBody>,
+    /// Edges, in declaration order.
+    pub edges: Vec<ResolvedEdge>,
+    /// The author's acknowledgement, carried through unchanged.
+    pub no_body_majority_ack: Option<String>,
+}
+
 /// The result of expanding a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expansion {
@@ -138,6 +246,16 @@ pub struct Expansion {
     /// building" untestable. [`Expansion`] is already the record of what an
     /// expansion did beyond the blocks it wrote.
     pub anchors: BTreeMap<String, Anchor>,
+    /// The spatial contract the program declared, resolved against this
+    /// expansion's boxes. `None` when the program declares none — which is a
+    /// different statement from an empty one, exactly as an absent `lighting`
+    /// block differs from `unmeasured`.
+    ///
+    /// It lives here rather than on the [`VoxelModel`] for the reason
+    /// [`Expansion::anchors`] does: a claim writes no blocks, and folding it
+    /// into the block grid would change what `canonical_bytes` means and make
+    /// "declaring a space changed nothing about the building" untestable.
+    pub contract: Option<ResolvedContract>,
     /// The derivation's shape.
     pub stats: Stats,
 }
@@ -346,6 +464,7 @@ pub fn expand(
         model: VoxelModel::new(region),
         anchors: BTreeMap::new(),
         marks_seen: BTreeMap::new(),
+        regions: BTreeMap::new(),
         rng: Rng::new(options.seed),
         limits: options.limits,
         stats: Stats::default(),
@@ -358,10 +477,95 @@ pub fn expand(
         },
         0,
     )?;
+    expander.canonicalise_regions();
+    let contract = resolve_contract(program, &mut expander.regions);
     Ok(Expansion {
         model: expander.model,
         anchors: expander.anchors,
+        contract,
         stats: expander.stats,
+    })
+}
+
+/// Turn the program's declared contract into the resolved one, using the boxes
+/// the claims produced.
+///
+/// Every name resolves — `Program::validate` proved that before a single rule
+/// ran — but a name may resolve to *no* boxes, when every rule that claims it
+/// sat under a guard this seed did not take. That is recorded as an empty
+/// region rather than refused: a zero binding is a finding for whatever reads
+/// the contract, and losing the declaration would hide it.
+fn resolve_contract(
+    program: &Program,
+    regions: &mut BTreeMap<String, ResolvedRegion>,
+) -> Option<ResolvedContract> {
+    let declared = program.contract.as_ref()?;
+    let take = |regions: &mut BTreeMap<String, ResolvedRegion>, name: &str| -> ResolvedRegion {
+        regions.remove(name).unwrap_or_default()
+    };
+    let spaces = declared
+        .spaces
+        .iter()
+        .map(|(name, decl)| {
+            (
+                name.clone(),
+                ResolvedSpace {
+                    envelope: decl.envelope,
+                    region: take(regions, name),
+                },
+            )
+        })
+        .collect();
+    let no_body = declared
+        .no_body
+        .iter()
+        .map(|(name, decl)| {
+            (
+                name.clone(),
+                ResolvedNoBody {
+                    reason: decl.reason.clone(),
+                    region: take(regions, name),
+                },
+            )
+        })
+        .collect();
+    // An edge's volumes are read rather than taken: two edges may legitimately
+    // name one opening, and the second must see the same boxes as the first.
+    let left: &BTreeMap<String, ResolvedRegion> = regions;
+    let boxes_of = |name: &str| left.get(name).map(|r| r.boxes.clone()).unwrap_or_default();
+    let volume = |name: &str| ResolvedVolume {
+        region: name.to_string(),
+        boxes: boxes_of(name),
+    };
+    let bar = |b: &Bar| ResolvedBar {
+        region: b.region.clone(),
+        boxes: boxes_of(&b.region),
+        role: b.block.clone(),
+        block: match program.palette.get(&b.block) {
+            Some(Paint::Block(state)) => state.clone(),
+            // `validate` refuses a mix and an unbound role, so neither reaches
+            // here; air is the inert stand-in a panic would otherwise be.
+            _ => BlockState::air(),
+        },
+    };
+    let edges = declared
+        .edges
+        .iter()
+        .map(|e| ResolvedEdge {
+            a: e.a.clone(),
+            b: e.b.clone(),
+            class: e.class.as_str(),
+            rise: e.class.rise(),
+            via: e.class.via().map(volume),
+            bar: e.class.bar().map(bar),
+        })
+        .collect();
+    Some(ResolvedContract {
+        entry: declared.entry.clone(),
+        spaces,
+        no_body,
+        edges,
+        no_body_majority_ack: declared.no_body_majority_ack.clone(),
     })
 }
 
@@ -379,6 +583,8 @@ struct Expander<'a> {
     /// Per-stem occurrence counter, so [`crate::ir::MarkIndex::Auto`] numbers in
     /// expansion order.
     marks_seen: BTreeMap<String, u32>,
+    /// Boxes claimed per contract region name, before they are canonicalised.
+    regions: BTreeMap<String, ResolvedRegion>,
     rng: Rng,
     limits: Limits,
     stats: Stats,
@@ -544,7 +750,54 @@ impl<'a> Expander<'a> {
                 self.declare(symbol, mark, state)?;
                 self.run_node(symbol, body, state, depth + 1)
             }
+            Node::Claim { region, body } => {
+                self.claim(symbol, region, state);
+                self.run_node(symbol, body, state, depth + 1)
+            }
             Node::Split(split) => self.run_split(symbol, split, state, depth),
+        }
+    }
+
+    /// Record one [`Node::Claim`]: the scope's box, rebased local, under the
+    /// region's name.
+    ///
+    /// Infallible on purpose. A claim needs a *box*, and every scope has one; a
+    /// mark needs a *cell*, which is why a mark on a degenerate scope is an
+    /// error and a claim on one simply contributes nothing — the same thing
+    /// `fill` and `void` do there. Whether a region ends up covering the cells
+    /// its author meant is a question about the model, and this is not the
+    /// layer that answers it.
+    fn claim(&mut self, symbol: &str, region: &str, state: &ScopeState) {
+        let entry = self.regions.entry(region.to_string()).or_default();
+        if !entry.declared_by.iter().any(|s| s == symbol) {
+            entry.declared_by.push(symbol.to_string());
+        }
+        if state.region.is_empty() {
+            return;
+        }
+        let origin = self.model.region().origin;
+        let local = Box3::new(
+            [
+                state.region.origin[0] - origin[0],
+                state.region.origin[1] - origin[1],
+                state.region.origin[2] - origin[2],
+            ],
+            state.region.size,
+        );
+        entry.boxes.push(local);
+    }
+
+    /// Sort every claimed region's boxes into the canonical order and drop
+    /// duplicates, so the record is the set of cells rather than a trace of the
+    /// derivation.
+    fn canonicalise_regions(&mut self) {
+        for region in self.regions.values_mut() {
+            region
+                .boxes
+                .sort_by_key(|b| (b.origin, [b.size[0], b.size[1], b.size[2]]));
+            region.boxes.dedup();
+            region.declared_by.sort();
+            region.declared_by.dedup();
         }
     }
 

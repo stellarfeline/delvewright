@@ -78,6 +78,7 @@ pub mod idioms;
 pub mod lift_shaft;
 pub mod negated_guard;
 pub mod rafter_hall;
+pub mod spatial_contract;
 pub mod stair_flight;
 pub mod store_room;
 pub mod tee_passage;
@@ -105,6 +106,7 @@ pub use far_side_bar::far_side_bar;
 pub use hearth_ward::hearth_ward;
 pub use lift_shaft::lift_shaft;
 pub use rafter_hall::rafter_hall;
+pub use spatial_contract::spatial_contract;
 pub use stair_flight::stair_flight;
 pub use store_room::store_room;
 pub use tee_passage::tee_passage;
@@ -221,6 +223,14 @@ fn fill(role: &str) -> Node {
 /// Write air.
 fn void() -> Node {
     Node::Void
+}
+
+/// Claim this scope's box for a named contract region, then expand `body`.
+fn claimed(region: &str, body: Node) -> Node {
+    Node::Claim {
+        region: region.to_string(),
+        body: Box::new(body),
+    }
 }
 
 /// Declare an anchor on this scope, then expand `body`.
@@ -363,6 +373,9 @@ pub const PROGRAMS: &[LibraryProgram] = &[
     // is a language feature rather than a technique.
     ("negated-guard", negated_guard::negated_guard),
     ("rafter-hall", rafter_hall),
+    // A corpus example rather than an idiom-index entry (spec-0033 §4.8): the
+    // one program that writes `claim` and a `contract` block.
+    ("spatial-contract", spatial_contract),
     ("stair-flight", stair_flight),
     ("store-room", store_room),
     ("tee-passage", tee_passage),

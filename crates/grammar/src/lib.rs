@@ -102,14 +102,25 @@ pub mod nav;
 pub mod orient;
 pub mod rng;
 pub mod split;
+pub mod version;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
-pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
+pub use expand::{
+    Anchor, ExpandError, ExpandOptions, Expansion, Limits, ResolvedBar, ResolvedContract,
+    ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume, Stats, expand,
+};
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
 };
 pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
-pub use ir::{Facing, Mark, MarkAt, MarkIndex, Program, ProgramError, Side};
+pub use ir::{
+    Bar, Contract, Edge, EdgeClass, Envelope, Facing, Mark, MarkAt, MarkIndex, NoBodyDecl, Program,
+    ProgramError, Side, SpaceDecl,
+};
 pub use model::VoxelModel;
+pub use version::{
+    LATEST_PROGRAM_VERSION, RESERVED_VERSIONS, SUPPORTED_PROGRAM_VERSIONS, accepted_versions,
+    is_supported_version, minor_ordinal, reserved_for,
+};

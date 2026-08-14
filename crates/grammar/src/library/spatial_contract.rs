@@ -1,0 +1,161 @@
+//! **A corpus example, not an idiom-index entry** (spec-0033 §4.8): the one
+//! program in the library that writes `claim` and a `contract` block.
+//!
+//! An author reads the corpus rather than the schema, so every IR construct owes
+//! the corpus one example. Declaring where a body can go is a language feature
+//! rather than a way of building anything, so it earns an example here and no
+//! entry in the idiom index.
+//!
+//! # What a contract is, in two halves
+//!
+//! **The rules say where.** `claim` wraps a body the way `mark` does, writes no
+//! blocks, and gives the scope's box a name. Several claims of one name union,
+//! which is how a room whose cross-section is not a box is described by the
+//! boxes it is actually built from rather than by a shape recomputed at the top.
+//!
+//! **The `contract` block says what.** A name is a space with an envelope, an
+//! out-of-walk region with a kind, or an edge's own volume — stated once,
+//! however many rules claim boxes for it. Splitting the two is what lets one
+//! declaration serve a space, a stair's treads and a bar region without a second
+//! kind of declaration node for each.
+//!
+//! Neither half judges anything here. The claims are the author's statement of
+//! intent, and they are recorded — resolved to this expansion's boxes — in the
+//! exported metadata. Whether the blocks agree with the statement is a question
+//! about a model, and it is asked elsewhere.
+//!
+//! # The piece
+//!
+//! Two rooms with one barred door between them, and a corbel down the near
+//! room's west wall:
+//!
+//! ```text
+//!   ╶──────────┬─┬──────────╴   near ── barred ──▶ far
+//!    │  near    │▓│   far    │     │                 │
+//!    │ ▄ shelf  │▓│          │   exterior        exterior
+//!   ╶──────────┴─┴──────────╴
+//! ```
+//!
+//! * `near` / `far` — enclosed spaces, claimed on the hollow each room is
+//!   carved to.
+//! * `gate` — the bar region, claimed on the cells the iron bars fill. One
+//!   declaration serves the machine claim ("these cells are what stands in the
+//!   way") and the campaign binding ("these cells are what a shortcut opens").
+//! * `shelf` — a `posted` out-of-walk region: the air over the corbel is
+//!   standable by construction and is where a watcher is placed, not part of the
+//!   walk. It nests inside `near`, which is the one overlap a contract licenses.
+//!
+//! Smallest region that expands: 7 × 4 × 5 (each room needs a hollow, and the
+//! partition needs a door). Documented at **11 × 6 × 15, seed 1**.
+
+use crate::block::BlockState;
+use crate::geom::Axis;
+use crate::ir::{Bar, Contract, EXTERIOR, EdgeClass, Envelope, Node, Program};
+
+use super::{abs, call, claimed, fill, rel, split, void};
+
+/// Two rooms, a barred door and a corbel — the program that demonstrates the
+/// spatial contract.
+///
+/// Controls: none. Roles: `shell`, `floor`, `bar`.
+pub fn spatial_contract() -> Program {
+    Program::new("spatial_contract", "piece")
+        .role("shell", BlockState::simple("stone_bricks"))
+        .role("floor", BlockState::simple("stone"))
+        .role("bar", BlockState::simple("iron_bars"))
+        .contract(
+            Contract::new("near")
+                .space("near", Envelope::Enclosed)
+                .space("far", Envelope::Enclosed)
+                .no_body(
+                    "shelf",
+                    "the air over the west corbel: standable by construction, and where a \
+                     watcher is placed rather than somewhere the player walks",
+                )
+                .edge(EXTERIOR, "near", EdgeClass::Walk { rise: 0, via: None })
+                .edge(
+                    "near",
+                    "far",
+                    EdgeClass::Barred {
+                        rise: 0,
+                        bar: Bar {
+                            region: "gate".to_string(),
+                            block: "bar".to_string(),
+                        },
+                        via: None,
+                    },
+                )
+                .edge("far", EXTERIOR, EdgeClass::Walk { rise: 0, via: None }),
+        )
+        // The partition is one course thick and sits between two equal halves.
+        .rule(
+            "piece",
+            split(
+                Axis::Z,
+                vec![rel(1), abs(1), rel(1)],
+                vec![call("near_room"), call("partition"), call("far_room")],
+            ),
+        )
+        .rule("near_room", shelled(call("near_hollow")))
+        .rule("far_room", shelled(call("far_hollow")))
+        // The claim sits on the hollow, not on the room: a space is the cells a
+        // body occupies, and the shell is what encloses them.
+        .rule(
+            "near_hollow",
+            claimed(
+                "near",
+                split(Axis::X, vec![abs(1), rel(1)], vec![call("corbel"), void()]),
+            ),
+        )
+        .rule("far_hollow", claimed("far", void()))
+        // A one-cell ledge with air over it. The air is what a body could stand
+        // in, so the air is what the region names.
+        .rule(
+            "corbel",
+            split(
+                Axis::Y,
+                vec![abs(1), abs(1), rel(1)],
+                vec![void(), fill("shell"), claimed("shelf", void())],
+            ),
+        )
+        // Floor, doorway, lintel — and the bars are their own claimed region.
+        .rule(
+            "partition",
+            split(
+                Axis::X,
+                vec![rel(1), abs(3), rel(1)],
+                vec![fill("shell"), call("doorway"), fill("shell")],
+            ),
+        )
+        .rule(
+            "doorway",
+            split(
+                Axis::Y,
+                vec![abs(1), abs(3), rel(1)],
+                vec![fill("floor"), claimed("gate", fill("bar")), fill("shell")],
+            ),
+        )
+}
+
+/// Wrap `inner` in a shell: walls on both `X` faces, a floor under it and a
+/// ceiling over it.
+///
+/// The `Z` faces are left open on purpose. They are where a body enters and
+/// leaves, which is exactly what the two `exterior` edges declare — an
+/// `enclosed` envelope is a claim about the boundary *except* at declared
+/// openings, not a claim that the piece is a sealed box.
+fn shelled(inner: Node) -> Node {
+    split(
+        Axis::X,
+        vec![abs(1), rel(1), abs(1)],
+        vec![
+            fill("shell"),
+            split(
+                Axis::Y,
+                vec![abs(1), rel(1), abs(1)],
+                vec![fill("floor"), inner, fill("shell")],
+            ),
+            fill("shell"),
+        ],
+    )
+}

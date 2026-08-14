@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::BlockState;
 use crate::geom::{Axis, Orientation};
+use crate::version::{CONTRACT_SINCE, LATEST_PROGRAM_VERSION, has_contract, is_supported_version};
 
 // ---------------------------------------------------------------------------
 // Expressions and constraints
@@ -596,6 +597,20 @@ impl Mark {
 /// either way, but it would name the rule that carries the mark — a rule inside
 /// an included piece, which the caller never wrote — instead of the rename entry
 /// the caller did write.
+/// True for a contract region name: one or more kebab segments joined by `/`.
+///
+/// A region name is the *program's* private vocabulary, exactly like a rule
+/// name, a parameter or a palette role — and like those three it takes an
+/// include prefix, because a piece composed twice must not union its two rooms
+/// into one region. So the grammar is a rule name's, not an anchor stem's: an
+/// anchor is the campaign's id for a place and is therefore never qualified.
+pub(crate) fn is_region_name(s: &str) -> bool {
+    s != EXTERIOR && !s.is_empty() && s.split(SEGMENT).all(is_kebab)
+}
+
+/// What separates an include prefix from the name it qualifies.
+const SEGMENT: char = '/';
+
 pub(crate) fn is_kebab(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
@@ -603,6 +618,272 @@ pub(crate) fn is_kebab(s: &str) -> bool {
         && !s.starts_with('-')
         && !s.ends_with('-')
         && !s.contains("--")
+}
+
+// ---------------------------------------------------------------------------
+// The spatial contract
+// ---------------------------------------------------------------------------
+
+/// The endpoint name that means "outside the piece".
+///
+/// Reserved: a space may not be called this, because an edge endpoint is one
+/// string and a space that took the name would make an exterior edge
+/// unwritable.
+pub const EXTERIOR: &str = "exterior";
+
+/// How much of a space's boundary the author claims is solid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Envelope {
+    /// Boundary solid on every face except a declared opening.
+    Enclosed,
+    /// Side faces solid; the top is deliberately open.
+    OpenTop,
+    /// No boundary claim.
+    Open,
+}
+
+impl Envelope {
+    /// The metadata keyword.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Envelope::Enclosed => "enclosed",
+            Envelope::OpenTop => "open_top",
+            Envelope::Open => "open",
+        }
+    }
+}
+
+/// A space: one named region of the contract, with its envelope claim.
+///
+/// *Which cells* it covers is not here — that is the rules' business, stated at
+/// the scope with [`Node::Claim`] and resolved per expansion. This says what the
+/// named region **is**, once, however many rules claim boxes for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceDecl {
+    /// The envelope claim.
+    pub envelope: Envelope,
+}
+
+/// A `no_body` region: standable cells deliberately outside the walk.
+///
+/// **There is no kind field.** Which exemption a region qualifies for is a fact
+/// about the blocks — walled off, anchored, exterior dressing — so it is
+/// determined from them rather than chosen here. An author who could pick would
+/// be picking which demand has to be met, and a choice between demands is only
+/// ever as strong as the weakest one on offer. What the author does supply is
+/// the reason, because no measurement recovers that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NoBodyDecl {
+    /// Why these cells are out of play, in the author's words.
+    pub reason: String,
+}
+
+/// The bar of a `barred` edge: the region that stands in the way, and what
+/// fills it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bar {
+    /// A region name some rule claims.
+    pub region: String,
+    /// The palette role the bar is built from. A role bound to a mix is refused
+    /// — a bar is one material, and "mostly a bar" is not a state a gate can be
+    /// in.
+    pub block: String,
+}
+
+/// How a body moves across an edge.
+///
+/// Each class carries exactly the fields it means, so a `bar` on a walk or a
+/// `rise` on a sightline is not a thing an author can write and a check has to
+/// catch afterwards.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "class", rename_all = "snake_case")]
+pub enum EdgeClass {
+    /// Level passage.
+    Walk {
+        /// Declared level change; 0 unless said otherwise.
+        #[serde(default, skip_serializing_if = "is_default")]
+        rise: i64,
+        /// The opening, as a region name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        via: Option<String>,
+    },
+    /// A climb, over a transit volume of its own.
+    Stair {
+        /// Declared level change.
+        rise: i64,
+        /// The transit volume — the treads belong to the edge, not to either
+        /// end, which is why it is not optional here.
+        via: String,
+    },
+    /// A one-way fall, `a` to `b`.
+    Drop {
+        /// Declared level change.
+        rise: i64,
+        /// The fall column, when the author names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        via: Option<String>,
+    },
+    /// A passage something stands in.
+    Barred {
+        /// Declared level change; 0 unless said otherwise.
+        #[serde(default, skip_serializing_if = "is_default")]
+        rise: i64,
+        /// What stands in it.
+        bar: Bar,
+        /// The opening, when it is not the bar's own region.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        via: Option<String>,
+    },
+    /// A hole a body cannot use — a window. No traversal claim, so no rise; the
+    /// opening is the whole point of the declaration and is required.
+    Vision {
+        /// The opening.
+        via: String,
+    },
+}
+
+impl EdgeClass {
+    /// The class keyword.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EdgeClass::Walk { .. } => "walk",
+            EdgeClass::Stair { .. } => "stair",
+            EdgeClass::Drop { .. } => "drop",
+            EdgeClass::Barred { .. } => "barred",
+            EdgeClass::Vision { .. } => "vision",
+        }
+    }
+
+    /// The declared level change, where the class has one.
+    pub fn rise(&self) -> Option<i64> {
+        match self {
+            EdgeClass::Walk { rise, .. }
+            | EdgeClass::Stair { rise, .. }
+            | EdgeClass::Drop { rise, .. }
+            | EdgeClass::Barred { rise, .. } => Some(*rise),
+            EdgeClass::Vision { .. } => None,
+        }
+    }
+
+    /// The opening's region name, where one is declared.
+    pub fn via(&self) -> Option<&str> {
+        match self {
+            EdgeClass::Walk { via, .. }
+            | EdgeClass::Drop { via, .. }
+            | EdgeClass::Barred { via, .. } => via.as_deref(),
+            EdgeClass::Stair { via, .. } | EdgeClass::Vision { via } => Some(via),
+        }
+    }
+
+    /// The bar, on the one class that has one.
+    pub fn bar(&self) -> Option<&Bar> {
+        match self {
+            EdgeClass::Barred { bar, .. } => Some(bar),
+            _ => None,
+        }
+    }
+}
+
+/// One declared way between two spaces, or between a space and the exterior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edge {
+    /// A declared space name, or [`EXTERIOR`].
+    pub a: String,
+    /// A declared space name, or [`EXTERIOR`].
+    pub b: String,
+    /// The class, flattened so an edge reads as one object.
+    #[serde(flatten)]
+    pub class: EdgeClass,
+}
+
+/// The program's **spatial contract**: what its spaces are and how a body moves
+/// between them.
+///
+/// The contract says *what*; [`Node::Claim`] says *where*. They are separated
+/// because a name's meaning is one statement — an author writing a space out of
+/// three rules states its envelope once, not three times that must agree — and
+/// because a parametric program's boxes are not knowable until it is expanded,
+/// while its intent is knowable from the document alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contract {
+    /// The space a body enters at.
+    pub entry: String,
+    /// Named spaces.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub spaces: BTreeMap<String, SpaceDecl>,
+    /// Named out-of-walk regions.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub no_body: BTreeMap<String, NoBodyDecl>,
+    /// The graph, in declaration order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<Edge>,
+    /// The author's acknowledgement that this piece is mostly out-of-walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_body_majority_ack: Option<String>,
+}
+
+impl Contract {
+    /// A contract entered at `entry`, with nothing else declared yet.
+    pub fn new(entry: &str) -> Contract {
+        Contract {
+            entry: entry.to_string(),
+            spaces: BTreeMap::new(),
+            no_body: BTreeMap::new(),
+            edges: Vec::new(),
+            no_body_majority_ack: None,
+        }
+    }
+
+    /// Declare a space (builder form).
+    pub fn space(mut self, name: &str, envelope: Envelope) -> Contract {
+        self.spaces.insert(name.to_string(), SpaceDecl { envelope });
+        self
+    }
+
+    /// Declare an out-of-walk region (builder form).
+    pub fn no_body(mut self, name: &str, reason: &str) -> Contract {
+        self.no_body.insert(
+            name.to_string(),
+            NoBodyDecl {
+                reason: reason.to_string(),
+            },
+        );
+        self
+    }
+
+    /// Declare an edge (builder form).
+    pub fn edge(mut self, a: &str, b: &str, class: EdgeClass) -> Contract {
+        self.edges.push(Edge {
+            a: a.to_string(),
+            b: b.to_string(),
+            class,
+        });
+        self
+    }
+
+    /// Every region name the contract refers to, and what refers to it.
+    fn referenced_regions(&self) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        for name in self.spaces.keys() {
+            out.entry(name.clone())
+                .or_insert_with(|| "space".to_string());
+        }
+        for name in self.no_body.keys() {
+            out.entry(name.clone())
+                .or_insert_with(|| "no_body".to_string());
+        }
+        for edge in &self.edges {
+            let site = format!("edge {:?}->{:?}", edge.a, edge.b);
+            if let Some(via) = edge.class.via() {
+                out.entry(via.to_string()).or_insert_with(|| site.clone());
+            }
+            if let Some(bar) = edge.class.bar() {
+                out.entry(bar.region.clone()).or_insert(site);
+            }
+        }
+        out
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +927,30 @@ pub enum Node {
     Mark {
         /// The declaration.
         mark: Mark,
+        /// What to expand in the same scope.
+        body: Box<Node>,
+    },
+    /// Claim this scope's box for a named contract region, then expand `body`.
+    ///
+    /// A wrapper for the reason [`Node::Mark`] is one: a rule body is one node,
+    /// so this way a claim sits on any piece of any split and names exactly the
+    /// box that piece owns. `body` is [`Node::Skip`] when the claim is all that
+    /// is wanted.
+    ///
+    /// It writes no blocks and draws nothing from the seeded stream. Several
+    /// claims of one name **union**: a room whose cross-section is not a box is
+    /// described by the boxes it is actually built from, which is the only
+    /// description a rule can give without recomputing the shape by hand.
+    ///
+    /// What the region *is* — a space and its envelope, an out-of-walk region
+    /// and its kind, an edge's opening — is [`Contract`]'s statement, made once
+    /// per name. This node carries no meaning of its own on purpose: the same
+    /// mechanism has to serve a space, a transit volume and a bar region, and a
+    /// second declaration node per use is how the third one ends up with no
+    /// surface at all.
+    Claim {
+        /// The region name, kebab-case; [`Contract`] must classify it.
+        region: String,
         /// What to expand in the same scope.
         body: Box<Node>,
     },
@@ -717,6 +1022,15 @@ impl Alternative {
 /// order determinism requires (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Program {
+    /// **The document's own version** (ADR-0018 §7), not the crate's.
+    ///
+    /// Required, and an unrecognised one is refused rather than parsed
+    /// best-effort: an engine that quietly ignored the parts of a newer document
+    /// it did not understand would emit a world that is wrong in silence. A
+    /// construct introduced later than this version is refused at
+    /// [`Program::validate`], which is what lets an older document keep
+    /// compiling to the same bytes forever.
+    pub version: String,
     /// Human-readable program name; part of the provenance record.
     pub name: String,
     /// The rule expanded into the whole region.
@@ -729,6 +1043,11 @@ pub struct Program {
     pub palette: BTreeMap<String, Paint>,
     /// Rules, each a non-empty list of alternatives in declaration order.
     pub rules: BTreeMap<String, Vec<Alternative>>,
+    /// The spatial contract, when the program declares one. Absent means the
+    /// program makes no spatial claim at all, which is a different statement
+    /// from an empty contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<Contract>,
 }
 
 /// A program that cannot be expanded, found before any work is done.
@@ -807,6 +1126,73 @@ pub enum ProgramError {
         /// The mapping as written, local `X`/`Y`/`Z` to world axis.
         axes: [Axis; 3],
     },
+    /// The document declares a version this engine does not accept — one the
+    /// ledger does not name at all, or one it reserves for a surface this engine
+    /// does not implement (`crates/grammar/src/version.rs`).
+    UnsupportedVersion {
+        /// The version as written.
+        version: String,
+    },
+    /// The document writes a construct newer than the version it declares.
+    FencedConstruct {
+        /// What was written.
+        construct: &'static str,
+        /// The version that introduced it.
+        since: &'static str,
+        /// The version the document declares.
+        declared: String,
+        /// Where it was written — a rule name, or `"contract"`.
+        written_by: String,
+    },
+    /// A region name is not kebab-case, or is the reserved exterior name.
+    BadRegionName {
+        /// Where it was written — a rule name, or `"contract"`.
+        written_by: String,
+        /// The name as written.
+        region: String,
+    },
+    /// The contract names a region no rule ever claims, so nothing can resolve
+    /// it to a box.
+    UnclaimedRegion {
+        /// The region.
+        region: String,
+        /// What refers to it.
+        referenced_by: String,
+    },
+    /// A rule claims a region the contract never classifies, so the boxes it
+    /// resolves would belong to nothing.
+    UnclassifiedRegion {
+        /// The region.
+        region: String,
+        /// The rule that claims it.
+        declared_by: String,
+    },
+    /// One region name is classified twice — a space cannot also be an
+    /// out-of-walk region or an edge's own volume.
+    RegionClassifiedTwice {
+        /// The region.
+        region: String,
+        /// The first classification.
+        first: String,
+        /// The second.
+        second: String,
+    },
+    /// `entry`, or an edge endpoint, names something that is not a declared
+    /// space.
+    UnknownSpace {
+        /// The name as written.
+        space: String,
+        /// What named it.
+        referenced_by: String,
+    },
+    /// A bar names a palette role bound to a weighted mix. A bar is one
+    /// material: "mostly a bar" is not a state a gate can be in.
+    BarBlockIsAMix {
+        /// The role.
+        role: String,
+        /// The bar's region.
+        region: String,
+    },
 }
 
 impl fmt::Display for ProgramError {
@@ -874,6 +1260,86 @@ impl fmt::Display for ProgramError {
                  of the three world axes — no scope can ever match it, so the alternative is \
                  dead code"
             ),
+            ProgramError::UnsupportedVersion { version } => {
+                let accepted: Vec<&str> = crate::version::accepted_versions().collect();
+                match crate::version::reserved_for(version) {
+                    Some(anchor) => write!(
+                        f,
+                        "this program declares version {version:?}, a version the document \
+                         format has but this engine does not implement — the ledger reserves \
+                         it for the surface `{anchor}` introduces. It is refused rather than \
+                         built with that surface silently dropped. This engine accepts \
+                         {accepted:?}"
+                    ),
+                    None => write!(
+                        f,
+                        "this program declares version {version:?}, which this engine does not \
+                         know; it accepts {accepted:?}. An unknown version is refused rather \
+                         than parsed for the parts that look familiar, because a document whose \
+                         newer half was skipped compiles green and builds the wrong world"
+                    ),
+                }
+            }
+            ProgramError::FencedConstruct {
+                construct,
+                since,
+                declared,
+                written_by,
+            } => write!(
+                f,
+                "{written_by} writes {construct}, which version {since} introduced, but this \
+                 program declares version {declared}. Raise the program's `version` to write it; \
+                 leaving it where it is keeps this document compiling exactly as it always has"
+            ),
+            ProgramError::BadRegionName { written_by, region } => write!(
+                f,
+                "{written_by} names the contract region {region:?}, which is not a usable name: a \
+                 region name is one or more kebab-case segments joined by {SEGMENT:?} (a \
+                 composed piece's regions take their include prefix, as its rules do), and \
+                 {EXTERIOR:?} is reserved for the endpoint that means outside the piece"
+            ),
+            ProgramError::UnclaimedRegion {
+                region,
+                referenced_by,
+            } => write!(
+                f,
+                "the contract's {referenced_by} names the region {region:?}, which no rule claims; \
+                 a region with no `claim` can never resolve to a box, so the declaration would \
+                 describe nothing"
+            ),
+            ProgramError::UnclassifiedRegion {
+                region,
+                declared_by,
+            } => write!(
+                f,
+                "rule {declared_by:?} claims the region {region:?}, which the contract never \
+                 classifies as a space, an out-of-walk region or an edge's own volume. A claim \
+                 the contract does not name resolves boxes that belong to nothing"
+            ),
+            ProgramError::RegionClassifiedTwice {
+                region,
+                first,
+                second,
+            } => write!(
+                f,
+                "the region {region:?} is classified both as {first} and as {second}; one name is \
+                 one thing, and a region that is two would satisfy each obligation under the \
+                 other's rules"
+            ),
+            ProgramError::UnknownSpace {
+                space,
+                referenced_by,
+            } => write!(
+                f,
+                "the contract's {referenced_by} names {space:?}, which is not a declared space \
+                 (an endpoint is a declared space or {EXTERIOR:?})"
+            ),
+            ProgramError::BarBlockIsAMix { role, region } => write!(
+                f,
+                "the bar over region {region:?} is built from the palette role {role:?}, which is \
+                 bound to a weighted mix; a bar is one material, and a gate that is mostly a bar \
+                 is not a state anything can be in"
+            ),
         }
     }
 }
@@ -881,15 +1347,60 @@ impl fmt::Display for ProgramError {
 impl std::error::Error for ProgramError {}
 
 impl Program {
-    /// An empty program with the given name and start rule.
+    /// An empty program with the given name and start rule, at the latest
+    /// document version.
     pub fn new(name: &str, start: &str) -> Program {
         Program {
+            version: LATEST_PROGRAM_VERSION.to_string(),
             name: name.to_string(),
             start: start.to_string(),
             params: BTreeMap::new(),
             palette: BTreeMap::new(),
             rules: BTreeMap::new(),
+            contract: None,
         }
+    }
+
+    /// Declare the document version (builder form) — what a program written
+    /// against an older surface says, and the only way to write one here.
+    pub fn at_version(mut self, version: &str) -> Program {
+        self.version = version.to_string();
+        self
+    }
+
+    /// Declare the spatial contract (builder form).
+    pub fn contract(mut self, contract: Contract) -> Program {
+        self.contract = Some(contract);
+        self
+    }
+
+    /// Every contract region name the rules claim, and the first rule that
+    /// claims each.
+    ///
+    /// Deliberately syntactic, like [`crate::compose::declared_anchors`]: a
+    /// claim under a guard that never holds in some box is still a claim the
+    /// document makes, and the over-approximation only ever makes the
+    /// reference checks below more permissive.
+    pub fn claimed_regions(&self) -> BTreeMap<String, String> {
+        fn walk(symbol: &str, node: &Node, into: &mut BTreeMap<String, String>) {
+            match node {
+                Node::Claim { region, body } => {
+                    into.entry(region.clone())
+                        .or_insert_with(|| symbol.to_string());
+                    walk(symbol, body, into);
+                }
+                Node::Mark { body, .. } | Node::Reorient { body, .. } => walk(symbol, body, into),
+                Node::Split(split) => split.children.iter().for_each(|c| walk(symbol, c, into)),
+                Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
+            }
+        }
+        let mut found = BTreeMap::new();
+        for (symbol, alts) in &self.rules {
+            for alt in alts {
+                walk(symbol, &alt.body, &mut found);
+            }
+        }
+        found
     }
 
     /// Declare a parameter (builder form).
@@ -950,6 +1461,11 @@ impl Program {
     /// Check every reference the program makes, and every structural rule that
     /// can be decided without expanding. [`crate::expand`] runs this first.
     pub fn validate(&self) -> Result<(), ProgramError> {
+        if !is_supported_version(&self.version) {
+            return Err(ProgramError::UnsupportedVersion {
+                version: self.version.clone(),
+            });
+        }
         if !self.rules.contains_key(&self.start) {
             return Err(ProgramError::UnknownRule {
                 symbol: self.start.clone(),
@@ -978,6 +1494,162 @@ impl Program {
             {
                 return Err(ProgramError::ZeroWeight {
                     symbol: format!("palette:{role}"),
+                });
+            }
+        }
+        self.check_contract()?;
+        Ok(())
+    }
+
+    /// The contract's own references: every name resolves, in both directions,
+    /// and one name is one thing.
+    ///
+    /// Reference integrity only. Nothing here looks at a box, a cell or a
+    /// block — whether the declared geometry is *true* is a question about the
+    /// expanded model, and it belongs to the checker that reads one.
+    fn check_contract(&self) -> Result<(), ProgramError> {
+        let claimed = self.claimed_regions();
+        if !has_contract(&self.version) {
+            if let Some((region, symbol)) = claimed.iter().next() {
+                return Err(ProgramError::FencedConstruct {
+                    construct: "a `claim` node",
+                    since: CONTRACT_SINCE,
+                    declared: self.version.clone(),
+                    written_by: format!("rule {symbol:?} (region {region:?})"),
+                });
+            }
+            if self.contract.is_some() {
+                return Err(ProgramError::FencedConstruct {
+                    construct: "a `contract` block",
+                    since: CONTRACT_SINCE,
+                    declared: self.version.clone(),
+                    written_by: "the program".to_string(),
+                });
+            }
+            return Ok(());
+        }
+        for (region, symbol) in &claimed {
+            if !is_region_name(region) {
+                return Err(ProgramError::BadRegionName {
+                    written_by: format!("rule {symbol:?}"),
+                    region: region.clone(),
+                });
+            }
+        }
+        let Some(contract) = &self.contract else {
+            if let Some((region, symbol)) = claimed.iter().next() {
+                return Err(ProgramError::UnclassifiedRegion {
+                    region: region.clone(),
+                    declared_by: symbol.clone(),
+                });
+            }
+            return Ok(());
+        };
+
+        // One name, one thing — checked before anything else reads the maps, so
+        // a doubly-classified region cannot resolve under whichever reading
+        // happens to be consulted first.
+        for name in contract.no_body.keys() {
+            if contract.spaces.contains_key(name) {
+                return Err(ProgramError::RegionClassifiedTwice {
+                    region: name.clone(),
+                    first: "a space".to_string(),
+                    second: "an out-of-walk region".to_string(),
+                });
+            }
+        }
+
+        for name in contract.spaces.keys().chain(contract.no_body.keys()) {
+            if !is_region_name(name) {
+                return Err(ProgramError::BadRegionName {
+                    written_by: "the contract".to_string(),
+                    region: name.clone(),
+                });
+            }
+        }
+
+        // An edge's own volumes are regions in their own right: a name that is
+        // also a space would let a transit volume answer a space's obligations.
+        for edge in &contract.edges {
+            let site = format!("edge {:?}->{:?}", edge.a, edge.b);
+            for endpoint in [&edge.a, &edge.b] {
+                if endpoint != EXTERIOR && !contract.spaces.contains_key(endpoint) {
+                    return Err(ProgramError::UnknownSpace {
+                        space: endpoint.clone(),
+                        referenced_by: site.clone(),
+                    });
+                }
+            }
+            let mut own = Vec::new();
+            if let Some(via) = edge.class.via() {
+                own.push(via.to_string());
+            }
+            if let Some(bar) = edge.class.bar() {
+                own.push(bar.region.clone());
+                match self.palette.get(&bar.block) {
+                    None => {
+                        return Err(ProgramError::UnknownRole {
+                            role: bar.block.clone(),
+                            referenced_by: site.clone(),
+                        });
+                    }
+                    Some(Paint::Mix(_)) => {
+                        return Err(ProgramError::BarBlockIsAMix {
+                            role: bar.block.clone(),
+                            region: bar.region.clone(),
+                        });
+                    }
+                    Some(Paint::Block(_)) => {}
+                }
+            }
+            for name in own {
+                if !is_region_name(&name) {
+                    return Err(ProgramError::BadRegionName {
+                        written_by: format!("the contract's {site}"),
+                        region: name,
+                    });
+                }
+                if contract.spaces.contains_key(&name) {
+                    return Err(ProgramError::RegionClassifiedTwice {
+                        region: name,
+                        first: "a space".to_string(),
+                        second: format!("{site}'s own volume"),
+                    });
+                }
+                if contract.no_body.contains_key(&name) {
+                    return Err(ProgramError::RegionClassifiedTwice {
+                        region: name,
+                        first: "an out-of-walk region".to_string(),
+                        second: format!("{site}'s own volume"),
+                    });
+                }
+            }
+        }
+
+        if !contract.spaces.contains_key(&contract.entry) {
+            return Err(ProgramError::UnknownSpace {
+                space: contract.entry.clone(),
+                referenced_by: "`entry`".to_string(),
+            });
+        }
+
+        // Both directions: a name the contract uses that no rule claims cannot
+        // resolve to a box, and a name a rule claims that the contract never
+        // classifies resolves to boxes that belong to nothing.
+        let referenced = contract.referenced_regions();
+        for (region, referenced_by) in &referenced {
+            if !claimed.contains_key(region) {
+                return Err(ProgramError::UnclaimedRegion {
+                    region: region.clone(),
+                    referenced_by: referenced_by.clone(),
+                });
+            }
+        }
+        for (region, declared_by) in &claimed {
+            if !referenced.contains_key(region) {
+                return Err(ProgramError::UnclassifiedRegion {
+                    region: region.clone(),
+                    declared_by: declared_by.clone(),
                 });
             }
         }
@@ -1036,6 +1708,10 @@ impl Program {
                 }
                 self.check_node(symbol, body, in_split)
             }
+            // The claim's own name, and its place in the contract, are checked
+            // once over the whole program in `check_contract`: a claim is a
+            // reference to a contract this walk has not read yet.
+            Node::Claim { body, .. } => self.check_node(symbol, body, in_split),
             Node::Split(split) => {
                 if split.sizes.is_empty() || split.children.is_empty() {
                     return Err(ProgramError::EmptySplit {
