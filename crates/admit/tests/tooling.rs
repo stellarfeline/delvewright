@@ -3,8 +3,8 @@
 
 use delvewright_admit::fixtures;
 use delvewright_admit::jigsaw;
-use delvewright_admit::light;
-use delvewright_admit::meta::{self, License, LightingProfile, PrefabMeta};
+use delvewright_admit::light::{self, Zone};
+use delvewright_admit::meta::{self, License, LightingProfile, PrefabDoc, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::{Structure, roundtrip};
 
@@ -125,16 +125,22 @@ fn socket_out_of_bounds_errors() {
 
 #[test]
 fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
-    let lit = light::probe(&fixtures::clean_room(), light::DEFAULT_DARK_THRESHOLD);
+    let room = fixtures::clean_room();
+    let lit = light::probe(&Zone::single(&room), light::DEFAULT_DARK_THRESHOLD);
     assert_eq!(
         lit.profile, "lit",
         "ceiling glowstone -> lit ({:?})",
         lit.measured_min_light
     );
-    assert!(lit.floor_cells > 0);
+    assert!(
+        lit.measured_cells > 0,
+        "the probe states what it bound to, and a zero binding is a finding"
+    );
+    assert!(lit.entry_cells > 0, "the doorway is the way in");
     assert!(lit.measured_min_light.unwrap() >= light::DEFAULT_DARK_THRESHOLD);
 
-    let dark = light::probe(&fixtures::dark_room(), light::DEFAULT_DARK_THRESHOLD);
+    let unlit = fixtures::dark_room();
+    let dark = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
     assert_eq!(dark.profile, "dark", "no light source -> dark");
     assert!(dark.is_dark());
     assert_eq!(dark.measured_min_light, Some(0));
@@ -143,10 +149,19 @@ fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
 #[test]
 fn light_probe_writes_estimate_method_into_metadata() {
     let s = fixtures::clean_room();
-    let probe = light::probe(&s, light::DEFAULT_DARK_THRESHOLD);
-    let mut meta = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
-    meta::set_lighting_from_probe(&mut meta, &probe);
-    let lighting = meta.lighting.expect("a probe writes a lighting block");
+    let probe = light::probe(&Zone::single(&s), light::DEFAULT_DARK_THRESHOLD);
+    let mut doc = PrefabDoc::Single(PrefabMeta::skeleton(
+        "clean",
+        s.size,
+        s.data_version,
+        "test",
+        license(),
+    ));
+    meta::set_lighting_from_probe(&mut doc, &probe);
+    let lighting = doc
+        .lighting()
+        .expect("a probe writes a lighting block")
+        .clone();
     assert_eq!(lighting.profile, LightingProfile::Lit);
     // honest: the method string marks this as a static estimate, not a live probe.
     assert!(lighting.method.as_deref().unwrap().contains("static"));
@@ -203,7 +218,7 @@ fn an_unmeasured_lighting_block_parses_the_way_the_generators_write_it() {
 /// widening of what can be READ, never of what a measured claim must say.
 #[test]
 fn a_probed_profile_still_carries_its_measurement() {
-    let mut meta = PrefabMeta::skeleton(
+    let meta = PrefabMeta::skeleton(
         "probed",
         [5, 5, 5],
         4671,
@@ -221,9 +236,11 @@ fn a_probed_profile_still_carries_its_measurement() {
         Some(LightingProfile::Unmeasured),
         "a skeleton has not been probed and must say so in a profile the DSL has"
     );
-    let probe = light::probe(&fixtures::dark_room(), light::DEFAULT_DARK_THRESHOLD);
-    meta::set_lighting_from_probe(&mut meta, &probe);
-    let lighting = meta.lighting.expect("a probe writes a lighting block");
+    let unlit = fixtures::dark_room();
+    let probe = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
+    let mut doc = PrefabDoc::Single(meta);
+    meta::set_lighting_from_probe(&mut doc, &probe);
+    let lighting = doc.lighting().expect("a probe writes a lighting block");
     assert!(lighting.measured_min_light.is_some());
     assert!(lighting.measured.is_some());
 }
