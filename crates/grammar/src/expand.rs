@@ -25,6 +25,7 @@ use std::fmt;
 
 use crate::block::BlockState;
 use crate::eval::{Env, EvalError, Scope};
+use crate::explain::{self, GuardLeaf, axis_name, render_cond, render_expr};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
     Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
@@ -311,6 +312,87 @@ pub struct Expansion {
     pub oriented: OrientedFillAudit,
 }
 
+/// The scope at a refusal site, in the terms guards read it.
+///
+/// The dimensions here are **not** the region the author typed: the scope
+/// reaching a deep rule has been through reorientations and splits, and losing
+/// that fact is what once cost a campaign zone a brute-force region sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScopeAt {
+    /// Extents as the rule's local `dim:x` / `dim:y` / `dim:z` read them,
+    /// through the orientation.
+    pub local: [u32; 3],
+    /// The world box's minimum corner.
+    pub origin: [i32; 3],
+    /// The world box's extents, in world-axis order.
+    pub size: [u32; 3],
+    /// Which world axis each local axis names.
+    pub orient: Orientation,
+}
+
+impl fmt::Display for ScopeAt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The frame's SIGN is part of the record: two scopes can share an axis
+        // mapping and still read their box from opposite ends, and a rule that
+        // refuses in one and passes in the other is exactly the confusion this
+        // record exists to end.
+        let reversed = match explain::render_reversed_axes(&self.orient) {
+            Some(clause) => format!(", {clause}"),
+            None => String::new(),
+        };
+        write!(
+            f,
+            "local {}x{}x{} (x\u{2192}world {}, y\u{2192}world {}, z\u{2192}world {}{reversed}; \
+             world box corner {},{},{} size {}x{}x{})",
+            self.local[0],
+            self.local[1],
+            self.local[2],
+            axis_name(self.orient.x),
+            axis_name(self.orient.y),
+            axis_name(self.orient.z),
+            self.origin[0],
+            self.origin[1],
+            self.origin[2],
+            self.size[0],
+            self.size[1],
+            self.size[2]
+        )
+    }
+}
+
+/// Why one alternative of an exhausted rule was rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedAlternative {
+    /// 1-based position in the rule's declaration order.
+    pub index: usize,
+    /// Every guard leaf that decided the rejection — all of them, not the
+    /// first: an author handed one constraint at a time re-runs into the next,
+    /// which is exactly the sweep this report exists to end.
+    pub failed: Vec<GuardLeaf>,
+}
+
+/// Render a derivation path as one `at:` line, eliding the middle of a very
+/// deep one (a recursion's path repeats its own name once per step).
+fn write_path(f: &mut fmt::Formatter<'_>, path: &[String]) -> fmt::Result {
+    if path.is_empty() {
+        return Ok(());
+    }
+    write!(f, "\n  at: ")?;
+    const HEAD: usize = 6;
+    const TAIL: usize = 5;
+    if path.len() <= HEAD + TAIL + 1 {
+        write!(f, "{}", path.join(" \u{203a} "))
+    } else {
+        write!(
+            f,
+            "{} \u{203a} \u{2026} ({} more) \u{203a} {}",
+            path[..HEAD].join(" \u{203a} "),
+            path.len() - HEAD - TAIL,
+            path[path.len() - TAIL..].join(" \u{203a} ")
+        )
+    }
+}
+
 /// Why an expansion stopped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpandError {
@@ -320,6 +402,14 @@ pub enum ExpandError {
     NoApplicableRule {
         /// The rule.
         symbol: String,
+        /// The scope the rule was asked to expand into.
+        scope: Box<ScopeAt>,
+        /// Every non-`otherwise` alternative, with the guard leaves that
+        /// rejected it.
+        rejected: Vec<RejectedAlternative>,
+        /// The derivation path that reached the scope: rule names and split
+        /// pieces, outermost first.
+        path: Vec<String>,
     },
     /// A size or guard expression could not be evaluated.
     Eval {
@@ -327,6 +417,12 @@ pub enum ExpandError {
         symbol: String,
         /// The failure.
         error: EvalError,
+        /// The expression (or guard leaf) that failed, as authored.
+        expr: String,
+        /// The scope it was evaluated against.
+        scope: Box<ScopeAt>,
+        /// The derivation path that reached the scope.
+        path: Vec<String>,
     },
     /// A size pattern could not be laid out.
     Split {
@@ -334,6 +430,17 @@ pub enum ExpandError {
         symbol: String,
         /// The failure.
         error: SplitError,
+        /// The local axis being cut, e.g. `z`.
+        axis: Axis,
+        /// The world axis that local axis names here.
+        world_axis: Axis,
+        /// The size pattern with each expression evaluated, e.g.
+        /// `abs param:approach = 8, abs 4, rel 1`.
+        pattern: String,
+        /// The scope being split.
+        scope: Box<ScopeAt>,
+        /// The derivation path that reached the scope.
+        path: Vec<String>,
     },
     /// A reorientation request was contradictory.
     Orient {
@@ -341,6 +448,10 @@ pub enum ExpandError {
         symbol: String,
         /// The failure.
         error: OrientError,
+        /// The scope being reoriented.
+        scope: Box<ScopeAt>,
+        /// The derivation path that reached the scope.
+        path: Vec<String>,
     },
     /// An absolute size evaluated negative, or a relative weight non-positive.
     BadSize {
@@ -348,6 +459,12 @@ pub enum ExpandError {
         symbol: String,
         /// The offending value.
         value: i64,
+        /// The size expression that produced it, as authored.
+        expr: String,
+        /// The scope it was evaluated against.
+        scope: Box<ScopeAt>,
+        /// The derivation path that reached the scope.
+        path: Vec<String>,
     },
     /// The depth budget ran out — usually an unguarded recursive rule.
     DepthLimit {
@@ -423,25 +540,100 @@ impl fmt::Display for ExpandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExpandError::Program(e) => write!(f, "invalid program: {e}"),
-            ExpandError::NoApplicableRule { symbol } => write!(
-                f,
-                "no alternative of rule {symbol:?} applies to this scope, and none is `otherwise`"
-            ),
-            ExpandError::Eval { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
-            ExpandError::Split { symbol, error } => match error {
-                SplitError::Overflow { absolute, extent } => write!(
+            ExpandError::NoApplicableRule {
+                symbol,
+                scope,
+                rejected,
+                path,
+            } => {
+                write!(
                     f,
-                    "rule {symbol:?}: split needs {absolute} blocks but the scope is {extent} \
-                     across — the region is too small for this rule"
-                ),
-                SplitError::ZeroStride => write!(
+                    "no alternative of rule {symbol:?} applies to this scope, and none is \
+                     `otherwise`"
+                )?;
+                write_path(f, path)?;
+                write!(
                     f,
-                    "rule {symbol:?}: a repeating split whose pattern consumes nothing"
-                ),
-            },
-            ExpandError::Orient { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
-            ExpandError::BadSize { symbol, value } => {
-                write!(f, "rule {symbol:?}: {value} is not a usable split size")
+                    "\n  scope: {scope} — these are the dimensions at the failure site, not the \
+                     region as given"
+                )?;
+                for alt in rejected {
+                    write!(
+                        f,
+                        "\n  alternative {} of {} rejected — {} condition(s) decided it:",
+                        alt.index,
+                        rejected.len(),
+                        alt.failed.len()
+                    )?;
+                    for leaf in &alt.failed {
+                        write!(f, "\n    {leaf}")?;
+                    }
+                }
+                Ok(())
+            }
+            ExpandError::Eval {
+                symbol,
+                error,
+                expr,
+                scope,
+                path,
+            } => {
+                write!(f, "rule {symbol:?}: {error}, evaluating {expr}")?;
+                write_path(f, path)?;
+                write!(f, "\n  scope: {scope}")
+            }
+            ExpandError::Split {
+                symbol,
+                error,
+                axis,
+                world_axis,
+                pattern,
+                scope,
+                path,
+            } => {
+                match error {
+                    SplitError::Overflow { absolute, extent } => write!(
+                        f,
+                        "rule {symbol:?}: split needs {absolute} blocks along local {} (world {}) \
+                         but the scope is {extent} across — the region is too small for this rule",
+                        axis_name(*axis),
+                        axis_name(*world_axis)
+                    )?,
+                    SplitError::ZeroStride => write!(
+                        f,
+                        "rule {symbol:?}: a repeating split along local {} (world {}) whose \
+                         pattern consumes nothing",
+                        axis_name(*axis),
+                        axis_name(*world_axis)
+                    )?,
+                }
+                write!(f, "\n  sizes: {pattern}")?;
+                write_path(f, path)?;
+                write!(f, "\n  scope: {scope}")
+            }
+            ExpandError::Orient {
+                symbol,
+                error,
+                scope,
+                path,
+            } => {
+                write!(f, "rule {symbol:?}: {error}")?;
+                write_path(f, path)?;
+                write!(f, "\n  scope: {scope}")
+            }
+            ExpandError::BadSize {
+                symbol,
+                value,
+                expr,
+                scope,
+                path,
+            } => {
+                write!(
+                    f,
+                    "rule {symbol:?}: {value} is not a usable split size — from {expr}"
+                )?;
+                write_path(f, path)?;
+                write!(f, "\n  scope: {scope}")
             }
             ExpandError::DepthLimit { limit } => {
                 write!(f, "expansion exceeded the depth limit of {limit}")
@@ -512,6 +704,25 @@ impl fmt::Display for ExpandError {
             ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
+    }
+}
+
+impl ExpandError {
+    /// Prepend a derivation-path segment onto errors that carry a path.
+    ///
+    /// The path is built during unwinding — each frame prepends its own
+    /// segment as the error passes through — so the happy path allocates
+    /// nothing for it.
+    fn pushed(mut self, segment: impl FnOnce() -> String) -> Self {
+        match &mut self {
+            ExpandError::NoApplicableRule { path, .. }
+            | ExpandError::Eval { path, .. }
+            | ExpandError::Split { path, .. }
+            | ExpandError::Orient { path, .. }
+            | ExpandError::BadSize { path, .. } => path.insert(0, segment()),
+            _ => {}
+        }
+        self
     }
 }
 
@@ -731,6 +942,20 @@ impl ScopeState<'_> {
             env: self.env,
         }
     }
+
+    /// The refusal-site record of this scope.
+    fn at(&self) -> ScopeAt {
+        ScopeAt {
+            local: [
+                self.region.extent(self.orient.x),
+                self.region.extent(self.orient.y),
+                self.region.extent(self.orient.z),
+            ],
+            origin: self.region.origin,
+            size: self.region.size,
+            orient: self.orient,
+        }
+    }
 }
 
 struct Expander<'a> {
@@ -779,6 +1004,16 @@ impl<'a> Expander<'a> {
         state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
+        self.run_rule_inner(symbol, state, depth)
+            .map_err(|e| e.pushed(|| symbol.to_string()))
+    }
+
+    fn run_rule_inner(
+        &mut self,
+        symbol: &'a str,
+        state: &ScopeState,
+        depth: u32,
+    ) -> Result<(), ExpandError> {
         self.enter(depth)?;
         let alts: &'a [Alternative] = self
             .program
@@ -793,13 +1028,29 @@ impl<'a> Expander<'a> {
             if matches!(alt.when, Cond::Otherwise) {
                 continue;
             }
-            let ok = state
-                .scope()
-                .test(&alt.when)
-                .map_err(|error| ExpandError::Eval {
-                    symbol: symbol.to_string(),
-                    error,
-                })?;
+            let ok = match state.scope().test(&alt.when) {
+                Ok(ok) => ok,
+                Err(error) => {
+                    // Name the leaf that failed, not just the rule: `explain`
+                    // walks the same guard and reports the unevaluable leaf.
+                    let mut leaves = Vec::new();
+                    explain::explain(&state.scope(), &alt.when, true, &mut leaves);
+                    let expr = leaves
+                        .iter()
+                        .find_map(|l| match l {
+                            GuardLeaf::Unevaluable { rendered, .. } => Some(rendered.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| render_cond(&alt.when));
+                    return Err(ExpandError::Eval {
+                        symbol: symbol.to_string(),
+                        error,
+                        expr,
+                        scope: Box::new(state.at()),
+                        path: Vec::new(),
+                    });
+                }
+            };
             if ok {
                 candidates.push(i);
             }
@@ -813,8 +1064,28 @@ impl<'a> Expander<'a> {
                 .collect();
         }
         if candidates.is_empty() {
+            // Guard exhaustion. Say, for every alternative, which comparisons
+            // rejected it and what the operands were — the refusal an author
+            // can act on without a brute-force region sweep.
+            let scope = state.scope();
+            let rejected = alts
+                .iter()
+                .enumerate()
+                .filter(|(_, alt)| !matches!(alt.when, Cond::Otherwise))
+                .map(|(i, alt)| {
+                    let mut failed = Vec::new();
+                    explain::explain(&scope, &alt.when, true, &mut failed);
+                    RejectedAlternative {
+                        index: i + 1,
+                        failed,
+                    }
+                })
+                .collect();
             return Err(ExpandError::NoApplicableRule {
                 symbol: symbol.to_string(),
+                scope: Box::new(state.at()),
+                rejected,
+                path: Vec::new(),
             });
         }
 
@@ -913,6 +1184,8 @@ impl<'a> Expander<'a> {
                         ExpandError::Orient {
                             symbol: symbol.to_string(),
                             error,
+                            scope: Box::new(state.at()),
+                            path: Vec::new(),
                         }
                     })?;
                 let child = ScopeState {
@@ -940,14 +1213,18 @@ impl<'a> Expander<'a> {
                 // RNG, so a `bind` cannot move a cell of the model on its own.
                 let mut bound_params = BTreeMap::new();
                 for (name, value) in params {
-                    let value = state
-                        .scope()
-                        .eval(value)
-                        .map_err(|error| ExpandError::Eval {
-                            symbol: symbol.to_string(),
-                            error,
-                        })?;
-                    bound_params.insert(name.clone(), value);
+                    let evaluated =
+                        state
+                            .scope()
+                            .eval(value)
+                            .map_err(|error| ExpandError::Eval {
+                                symbol: symbol.to_string(),
+                                error,
+                                expr: render_expr(value),
+                                scope: Box::new(state.at()),
+                                path: Vec::new(),
+                            })?;
+                    bound_params.insert(name.clone(), evaluated);
                 }
                 let mut bound_palette = BTreeMap::new();
                 for (name, material) in palette {
@@ -1224,6 +1501,9 @@ impl<'a> Expander<'a> {
                     let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
+                        expr: render_expr(expr),
+                        scope: Box::new(state.at()),
+                        path: Vec::new(),
                     })?;
                     local[l.index()] = Some(value);
                 }
@@ -1265,6 +1545,9 @@ impl<'a> Expander<'a> {
 
         let scope = state.scope();
         let mut sizes = Vec::with_capacity(split.sizes.len());
+        // The evaluated pattern, kept beside the resolved sizes so a refusal
+        // can show which size expression contributed what.
+        let mut resolved: Vec<(String, bool, i64)> = Vec::with_capacity(split.sizes.len());
         for size in &split.sizes {
             let (expr, absolute) = match size {
                 Size::Absolute { blocks } => (blocks, true),
@@ -1273,14 +1556,21 @@ impl<'a> Expander<'a> {
             let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                 symbol: symbol.to_string(),
                 error,
+                expr: render_expr(expr),
+                scope: Box::new(state.at()),
+                path: Vec::new(),
             })?;
             let bad = if absolute { value < 0 } else { value <= 0 };
             if bad || value > u32::MAX as i64 {
                 return Err(ExpandError::BadSize {
                     symbol: symbol.to_string(),
                     value,
+                    expr: render_expr(expr),
+                    scope: Box::new(state.at()),
+                    path: Vec::new(),
                 });
             }
+            resolved.push((render_expr(expr), absolute, value));
             sizes.push(if absolute {
                 ResolvedSize::Absolute(value as u32)
             } else {
@@ -1292,6 +1582,24 @@ impl<'a> Expander<'a> {
             ExpandError::Split {
                 symbol: symbol.to_string(),
                 error,
+                axis: split.axis,
+                world_axis,
+                pattern: resolved
+                    .iter()
+                    .map(|(expr, absolute, value)| {
+                        let kind = if *absolute { "abs" } else { "rel" };
+                        // A literal already shows its own value; an expression
+                        // shows both the authored form and what it came to.
+                        if *expr == value.to_string() {
+                            format!("{kind} {value}")
+                        } else {
+                            format!("{kind} {expr} = {value}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                scope: Box::new(state.at()),
+                path: Vec::new(),
             }
         })?;
 
@@ -1306,6 +1614,8 @@ impl<'a> Expander<'a> {
         .map_err(|error| ExpandError::Orient {
             symbol: symbol.to_string(),
             error,
+            scope: Box::new(state.at()),
+            path: Vec::new(),
         })?;
 
         // The pattern is laid out along the LOCAL axis, from its low end. In an
@@ -1315,6 +1625,7 @@ impl<'a> Expander<'a> {
         // *visited* in pattern order either way, so expansion order stays
         // reading order — which is what `mark`'s auto-numbering counts in.
         let axis = world_axis.index();
+        let piece_count = pieces.len();
         let reversed = state.orient.reversed(split.axis);
         let mut cursor = if reversed {
             state.region.origin[axis] + state.region.size[axis] as i32
@@ -1339,7 +1650,17 @@ impl<'a> Expander<'a> {
                 pinned: state.pinned,
             };
             let child = &split.children[i % split.children.len()];
-            self.run_node(symbol, child, &child_state, depth + 1)?;
+            self.run_node(symbol, child, &child_state, depth + 1)
+                .map_err(|e| {
+                    e.pushed(|| {
+                        format!(
+                            "split {}\u{2192}{} piece {}/{piece_count}",
+                            axis_name(split.axis),
+                            axis_name(world_axis),
+                            i + 1
+                        )
+                    })
+                })?;
         }
         Ok(())
     }
