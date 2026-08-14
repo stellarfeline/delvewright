@@ -228,7 +228,7 @@ jobs:
       # oldest generator (`prefabs/generator`) carries two pre-existing style
       # lints, and silencing them belongs in its own PR rather than riding along
       # with a stair fix. Tracked as a follow-up; the correctness gate below is
-      # the one that matters and it covers all five.
+      # the one that matters and it covers every generator workspace.
       - name: cargo fmt --check each generator workspace
         run: |
           set -euo pipefail
@@ -236,7 +236,7 @@ jobs:
                    island-terrain-generator tidal-keep-generator; do
             cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
           done
-      # `prefabs/invariants.rs` is source-included by all five generators, so one
+      # `prefabs/invariants.rs` is source-included by every generator, so one
       # workspace's `cargo test` compiles and runs the shared gate's own unit
       # tests once — including the cases that prove it FAILS (a rock stacked on a
       # stair tread), which running the generators can only prove by not firing.
