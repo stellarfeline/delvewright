@@ -58,7 +58,9 @@ TECHNIQUES = [
 
 
 def library(ids: list[str]) -> str:
-    entries = "\n".join(f'    ("{i}", {i.replace("-", "_")}),' for i in ids)
+    entries = "\n".join(
+        f'    entry("{i}", {i.replace("-", "_")}, [5, 5, 5], 1, PIECE),' for i in ids
+    )
     return (
         "pub const PROGRAMS: &[LibraryProgram] = &[\n" + entries + "\n];\n"
     )
@@ -330,6 +332,29 @@ def test_an_unparseable_index_table_is_a_finding_not_a_count_of_nought(
     checker.ROOT = root
     assert checker.main() == 1
     assert "did not parse" in capsys.readouterr().err
+
+
+def test_a_programs_table_that_yields_no_entries_is_a_finding(
+    checker, tmp_path, capsys
+):
+    """A `PROGRAMS` block whose entries are written in a shape the parser does
+    not know reads as a library of nought, and a library of nought makes every
+    stated count wrong by N rather than reporting that nothing was measured.
+
+    This is the live shape: the table's entries changed from `("id", build)`
+    to `entry("id", build, region, seed, gates)` when the registry took on the
+    expansion each program is judged at. Without this guard that change was a
+    green parser reporting 33 programs as 0.
+    """
+    root = build_tree(tmp_path)
+    p = root / "crates/grammar/src/library/mod.rs"
+    p.write_text(
+        p.read_text(encoding="utf-8").replace("    entry(", "    ("),
+        encoding="utf-8",
+    )
+    checker.ROOT = root
+    assert checker.main() == 1
+    assert "ZERO programs" in capsys.readouterr().err
 
 
 def test_numbers_inside_a_code_fence_are_not_claims(checker, tmp_path, capsys):

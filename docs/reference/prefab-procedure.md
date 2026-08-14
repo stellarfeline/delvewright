@@ -257,6 +257,9 @@ once the prefab exists, so a `pass` never sits above a failure.
 | Gate | Claim |
 |---|---|
 | `blocks-exist` | every block state the model paints exists in 1.21.11, properties and values included |
+| `shape-complete` | every placed state writes its shape-carrying (`multipart`) properties, so no wall, fence or pane places as an isolated post (`DW0735`) |
+| `states-complete` | every placed state writes **every** property its block has (`DW0737`). An omitted property means whatever a running server decides, and nothing that reads the piece before it runs — the render you check it against, the walk, the diff — can know which |
+| `oriented-fills` | an orientation-sensitive state was filled only under the identity frame, a passed `orientation` guard, or the scope's own axis frame — `{"local": …}` on the paint, which resolves its directions through the scope at fill time (`DW0736`; an image the pinned vocabulary cannot determine is refused as `DW0738`) |
 | `non-empty` | the expansion built something |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
@@ -289,6 +292,15 @@ the §1 scene description and the report has a reader who knows.
 Every gate reports a **binding count**. A gate that examined zero objects is
 printed as a finding, not folded into the pass; so is a program that declared no
 anchors. Read the findings.
+
+**A zone belongs to its campaign, and its campaign runs the same gates over it.**
+A program that becomes one of a campaign's zones goes to
+`campaigns/<campaign>/design/programs/`, and is named in `zones.json` beside it
+with the region, the seed and the optional gates it claims. `delve-grammar audit
+--campaign-root <content repo>` then expands and judges every zone there, and
+both repos' CI run it. A program file that directory carries and the manifest
+does not name is a finding — without that, a zone nothing checks and a zone
+nobody wrote look the same.
 
 **Measurements** (numbers, no verdict — deliberately not dressed as gates): fill
 ratio, distinct states, standable cells, footprint area and perimeter,

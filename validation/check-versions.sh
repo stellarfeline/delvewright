@@ -118,6 +118,27 @@ if [[ $CONTENT_SHA =~ ^[0-9a-f]{40}$ ]]; then
 else
   fail "content.sha '$CONTENT_SHA' is not a full 40-hex commit SHA"
 fi
+# The pin's ZONE INVENTORY is a consumer of this value like any other.
+# `.github/content-zone-corpus.json` names the campaigns the pin carries and how
+# many zone programs each declares; every number in it is checked against the
+# content checkout by crates/grammar/tests/campaign_zones.rs. That check is only
+# about the right corpus while the record and the pin agree, so a re-pin that
+# leaves the inventory behind is caught here, in tier 1, with no content checkout
+# needed — rather than measuring the new tree against the old pin's expectations.
+ZONE_CORPUS="$ROOT/.github/content-zone-corpus.json"
+if [ -f "$ZONE_CORPUS" ]; then
+  # `sys.stdout.reconfigure(newline="\n")` before the print, or a Windows runner
+  # would append a `\r` that survives command substitution and makes the SHA
+  # compare unequal to itself (tools/check-python-shell-newlines.py).
+  corpus_sha="$(python3 -c 'import json,sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1]))["content_sha"])' "$ZONE_CORPUS")"
+  if [ "$corpus_sha" = "$CONTENT_SHA" ]; then
+    pass "content.sha -> .github/content-zone-corpus.json ($CONTENT_SHA)"
+  else
+    fail ".github/content-zone-corpus.json enumerates content $corpus_sha but versions.toml pins $CONTENT_SHA — restate the zone inventory at the new pin: every campaign it carries, with the number of zone programs each declares"
+  fi
+else
+  fail ".github/content-zone-corpus.json missing — the campaign zone corpus is judged against that enumeration, and without it a pin carrying no zone program cannot be told from one that lost them"
+fi
 
 echo "== Render layer ([render], spec-0007) =="
 # Nucleation is pinned by git REV; the compiler-independent render crate must pin

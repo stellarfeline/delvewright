@@ -46,7 +46,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::ir::{Cond, Material, Node, Paint, Program, Reorient};
+use crate::ir::{Cond, Material, Node, Paint, Program, Reorient, States};
 use crate::library::LibraryProgram;
 
 // ---------------------------------------------------------------------------
@@ -202,23 +202,55 @@ impl FrameKind {
 }
 
 constructs! {
-    /// One kind of [`Paint`] — what a palette role or an inline material
-    /// resolves to.
+    /// One kind of [`States`] — how many block states a paint draws from.
     pub enum PaintKind {
-        /// [`Paint::Block`].
+        /// [`States::One`].
         Block = "paint:block",
-        /// [`Paint::Mix`] — the only per-cell material variation the language
+        /// [`States::Mix`] — the only per-cell material variation the language
         /// has.
         Mix = "paint:mix",
     }
 }
 
 impl PaintKind {
-    /// Classify one paint. Exhaustive, for the reason [`NodeKind::of`] is.
+    /// Classify one paint's states. Exhaustive, for the reason
+    /// [`NodeKind::of`] is.
     pub fn of(paint: &Paint) -> PaintKind {
+        match paint.states() {
+            States::One(_) => PaintKind::Block,
+            States::Mix(_) => PaintKind::Mix,
+        }
+    }
+}
+
+constructs! {
+    /// Which axes a paint's block-state properties are named in.
+    ///
+    /// Its own axis rather than a pair of extra [`PaintKind`] variants: the
+    /// frame and the draw are independent, so folding them together would
+    /// report four kinds where the language has two questions, and a corpus
+    /// demonstrating three of the four would read as a gap that is not one.
+    ///
+    /// Named for the object it classifies rather than for "frame" alone, since
+    /// [`FrameKind`] above already classifies what a [`Reorient`] asks of a
+    /// SCOPE's frame. Two different questions about two different objects, and
+    /// the ids say so.
+    pub enum PaintFrameKind {
+        /// [`Paint::World`].
+        World = "paint:world",
+        /// [`Paint::Local`] — properties in the scope's own axis names,
+        /// resolved through its frame at fill time.
+        Local = "paint:local",
+    }
+}
+
+impl PaintFrameKind {
+    /// Classify one paint's frame. Exhaustive, for the reason [`NodeKind::of`]
+    /// is.
+    pub fn of(paint: &Paint) -> PaintFrameKind {
         match paint {
-            Paint::Block(_) => PaintKind::Block,
-            Paint::Mix(_) => PaintKind::Mix,
+            Paint::World(_) => PaintFrameKind::World,
+            Paint::Local { .. } => PaintFrameKind::Local,
         }
     }
 }
@@ -425,11 +457,12 @@ impl Tally {
 
     fn paint(&mut self, paint: &Paint) {
         self.hit(PaintKind::of(paint).id());
-        match paint {
-            Paint::Block(b) => {
+        self.hit(PaintFrameKind::of(paint).id());
+        match paint.states() {
+            States::One(b) => {
                 self.m.blocks.insert(b.to_string());
             }
-            Paint::Mix(mix) => {
+            States::Mix(mix) => {
                 if mix.iter().any(|w| w.block.is_air()) {
                     self.m.mixes_containing_air += 1;
                 }
@@ -477,9 +510,9 @@ pub fn measure(corpus: &[LibraryProgram]) -> Report {
 fn measure_with(corpus: &[LibraryProgram], allowlist: &[(&'static str, &'static str)]) -> Report {
     let mut tally = Tally::default();
     let mut ids = Vec::new();
-    for (id, build) in corpus {
-        ids.push((*id).to_string());
-        tally.program(id, &build());
+    for program in corpus {
+        ids.push(program.id.to_string());
+        tally.program(program.id, &(program.build)());
     }
 
     let exempt: BTreeMap<&str, &str> = allowlist.iter().copied().collect();
@@ -489,6 +522,7 @@ fn measure_with(corpus: &[LibraryProgram], allowlist: &[(&'static str, &'static 
         .chain(CondKind::ALL.iter().map(|k| k.id()))
         .chain(FrameKind::ALL.iter().map(|k| k.id()))
         .chain(PaintKind::ALL.iter().map(|k| k.id()))
+        .chain(PaintFrameKind::ALL.iter().map(|k| k.id()))
         .collect();
 
     let mut findings = Vec::new();
@@ -610,15 +644,38 @@ mod tests {
         Program::new("nothing", "all").rule("all", Node::Void)
     }
 
+    /// A corpus entry for a program written by a test. The region and seed
+    /// are the registry's obligation, not this measurement's: coverage reads
+    /// a program's TEXT and never expands it.
+    fn test_entry(id: &'static str, build: fn() -> Program) -> crate::library::LibraryProgram {
+        crate::library::LibraryProgram {
+            id,
+            build,
+            region: [1, 1, 1],
+            seed: 0,
+            gates: crate::gates::Options {
+                traversable: false,
+                allow_falls: false,
+                symmetric: None,
+                reachable_floor: false,
+            },
+            kind: crate::library::Kind::Example,
+        }
+    }
+
     /// Every kind reaches the report, and the ids are the ones a reader greps
     /// for. This is the list that would otherwise be hand-kept.
     #[test]
     fn every_construct_kind_appears_in_the_report() {
-        let report = measure(&[("empty", empty)]);
+        let report = measure(&[test_entry("empty", empty)]);
         let ids: Vec<&str> = report.constructs.iter().map(|c| c.id).collect();
         assert_eq!(
             ids.len(),
-            NodeKind::ALL.len() + CondKind::ALL.len() + FrameKind::ALL.len() + PaintKind::ALL.len()
+            NodeKind::ALL.len()
+                + CondKind::ALL.len()
+                + FrameKind::ALL.len()
+                + PaintKind::ALL.len()
+                + PaintFrameKind::ALL.len()
         );
         for wanted in [
             "node:skip",
@@ -636,7 +693,7 @@ mod tests {
     /// corpus small enough to reason about.
     #[test]
     fn a_construct_no_example_writes_is_a_finding_and_a_red() {
-        let report = measure(&[("empty", empty)]);
+        let report = measure(&[test_entry("empty", empty)]);
         assert!(!report.is_pass());
         let skip = report
             .constructs
@@ -695,7 +752,7 @@ mod tests {
                 })],
             )
         }
-        let report = measure(&[("nested", nested)]);
+        let report = measure(&[test_entry("nested", nested)]);
         let bound = |id: &str| report.constructs.iter().find(|c| c.id == id).unwrap().bound;
         assert_eq!(bound("node:skip"), 1, "under mark/reorient/split");
         assert_eq!(bound("cond:cmp"), 1, "under none_of/any");
@@ -734,14 +791,14 @@ mod tests {
                 }),
             )
         }
-        let report = measure(&[("framed", framed)]);
+        let report = measure(&[test_entry("framed", framed)]);
         let bound = |id: &str| report.constructs.iter().find(|c| c.id == id).unwrap().bound;
         assert_eq!(bound("frame:rename"), 2, "the split's, and the node's");
         assert_eq!(bound("frame:mirror"), 1);
 
         // A `KEEP` request asks for nothing and is counted as nothing, so a
         // corpus of unturned rules reports the gap it really has.
-        let report = measure(&[("empty", empty)]);
+        let report = measure(&[test_entry("empty", empty)]);
         assert_eq!(
             report
                 .constructs
@@ -776,7 +833,7 @@ mod tests {
                 .rule("all", Node::fill("wall"))
                 .rule("again", Node::fill("wall"))
         }
-        let report = measure(&[("eroded", eroded)]);
+        let report = measure(&[test_entry("eroded", eroded)]);
         let mix = report
             .constructs
             .iter()
@@ -800,7 +857,7 @@ mod tests {
                 },
             )
         }
-        let report = measure(&[("inline", inline)]);
+        let report = measure(&[test_entry("inline", inline)]);
         assert_eq!(
             report
                 .constructs
@@ -816,7 +873,7 @@ mod tests {
     #[test]
     fn an_exemption_excuses_a_zero() {
         let why = "no example writes it yet, and here is why that is acceptable";
-        let report = measure_with(&[("empty", empty)], &[("node:skip", why)]);
+        let report = measure_with(&[test_entry("empty", empty)], &[("node:skip", why)]);
         let skip = report
             .constructs
             .iter()
@@ -844,7 +901,10 @@ mod tests {
     /// corpus demonstrates is a red, not a silent pass.
     #[test]
     fn an_exemption_that_has_been_paid_off_is_a_red() {
-        let report = measure_with(&[("empty", empty)], &[("node:void", "stale reason")]);
+        let report = measure_with(
+            &[test_entry("empty", empty)],
+            &[("node:void", "stale reason")],
+        );
         let void = report
             .constructs
             .iter()
@@ -869,7 +929,10 @@ mod tests {
     /// it behind — is a red on its own, so the allowlist cannot outlive the IR.
     #[test]
     fn an_exemption_for_a_construct_that_does_not_exist_is_a_red() {
-        let report = measure_with(&[("empty", empty)], &[("node:teleport", "invented")]);
+        let report = measure_with(
+            &[test_entry("empty", empty)],
+            &[("node:teleport", "invented")],
+        );
         assert!(!report.is_pass());
         let ghost = report
             .constructs

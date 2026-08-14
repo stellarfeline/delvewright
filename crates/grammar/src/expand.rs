@@ -28,7 +28,7 @@ use crate::eval::{Env, EvalError, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
     Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
-    ProgramError, Side, Size, Split,
+    ProgramError, Side, Size, Split, States,
 };
 use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{OrientError, reorient};
@@ -270,6 +270,13 @@ pub struct OrientedFillAudit {
     /// Of those, the fills whose paint carries any block-state properties —
     /// the population the mismatch test can bite on.
     pub carrying: u64,
+    /// Of THOSE, the fills whose states were read in the scope's own axis names
+    /// and resolved into the world's ([`Paint::Local`]) — the binding count of
+    /// the local frame. A literal cannot land wrong when there is no literal,
+    /// so these leave the mismatch test with nothing to say; reporting how many
+    /// went that way is what keeps the remaining population visible instead of
+    /// letting the gate quietly stop binding.
+    pub resolved: u64,
     /// The unguarded oriented fills, deduplicated and sorted.
     pub unguarded: Vec<OrientedFinding>,
 }
@@ -389,6 +396,20 @@ pub enum ExpandError {
         /// The rule that declared it again.
         second: String,
     },
+    /// A local-frame paint carried a property the pinned vocabulary cannot map
+    /// onto the world frame the scope was given
+    /// (`delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE`).
+    LocalFrameUnresolvable {
+        /// The rule being expanded.
+        symbol: String,
+        /// The state, vanilla string form, as authored in the local frame.
+        state: String,
+        /// The property with no image, as `key=value`.
+        property: String,
+        /// The scope's frame, as `x->X,y->Y,z->Z` with a `-` on a reflected
+        /// axis.
+        orientation: String,
+    },
     /// A fill needed a 65537th distinct block state.
     PaletteFull {
         /// The rule being expanded.
@@ -472,6 +493,23 @@ impl fmt::Display for ExpandError {
                  happen to share a stem — give one of them a name of its own with \
                  `compose::include_renaming`"
             ),
+            ExpandError::LocalFrameUnresolvable {
+                symbol,
+                state,
+                property,
+                orientation,
+            } => write!(
+                f,
+                "{}: rule {symbol:?} fills {state}, written in the scope's own axis names, into a \
+                 scope framed {orientation} — and {property} has no image there. A yaw and a \
+                 handedness are stated against a fixed vertical AND a fixed handedness, so any \
+                 frame but a pure turn about the vertical leaves them nothing to mean; a \
+                 `top`/`bottom` half needs the vertical kept and running forward; and a \
+                 direction whose image is not a legal value of the block has nowhere to land. \
+                 Write the state in the world frame under an `orientation` guard for the frames \
+                 it must cover, or keep the scope's vertical on the world's and unreflected",
+                delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE
+            ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
     }
@@ -514,6 +552,7 @@ pub fn expand(
         stats: Stats::default(),
         oriented_fills: 0,
         oriented_carrying: 0,
+        oriented_resolved: 0,
         oriented_unguarded: std::collections::BTreeSet::new(),
     };
     // The root binding frame is the program's own declarations, which are its
@@ -539,6 +578,7 @@ pub fn expand(
         oriented: OrientedFillAudit {
             fills: expander.oriented_fills,
             carrying: expander.oriented_carrying,
+            resolved: expander.oriented_resolved,
             unguarded: expander.oriented_unguarded.into_iter().collect(),
         },
     })
@@ -598,8 +638,8 @@ fn resolve_contract(
         region: b.region.clone(),
         boxes: boxes_of(&b.region),
         role: b.block.clone(),
-        block: match program.palette.get(&b.block) {
-            Some(Paint::Block(state)) => state.clone(),
+        block: match program.palette.get(&b.block).map(Paint::states) {
+            Some(States::One(state)) => state.clone(),
             // `validate` refuses a mix and an unbound role, so neither reaches
             // here; air is the inert stand-in a panic would otherwise be.
             _ => BlockState::air(),
@@ -709,6 +749,8 @@ struct Expander<'a> {
     oriented_fills: u64,
     /// Fill applications whose paint carries any properties.
     oriented_carrying: u64,
+    /// Of those, the ones resolved out of the local frame.
+    oriented_resolved: u64,
     /// `DW0736` findings, deduplicated (a rule in a repeat split would
     /// otherwise report once per piece).
     oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
@@ -828,19 +870,28 @@ impl<'a> Expander<'a> {
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
+                // A local-frame paint is read in the scope's own axis names and
+                // resolved here, where the frame exists; a world-frame one is
+                // written as authored and audited for `DW0736`.
+                let resolved: Option<States> = if paint.is_local() {
+                    Some(self.resolve_local(symbol, paint.states(), state)?)
+                } else {
+                    None
+                };
                 self.audit_oriented_fill(symbol, paint, state);
+                let states = resolved.as_ref().unwrap_or(paint.states());
                 let full = |error| ExpandError::PaletteFull {
                     symbol: symbol.to_string(),
                     error,
                 };
-                match paint {
-                    Paint::Block(block) => {
+                match states {
+                    States::One(block) => {
                         let block = block.clone();
                         for pos in state.region.positions() {
                             self.model.set(pos, &block).map_err(full)?;
                         }
                     }
-                    Paint::Mix(mix) => {
+                    States::Mix(mix) => {
                         let weights: Vec<u32> = mix.iter().map(|w| w.weight).collect();
                         let blocks: Vec<BlockState> = mix.iter().map(|w| w.block.clone()).collect();
                         let positions: Vec<[i32; 3]> = state.region.positions().collect();
@@ -977,6 +1028,51 @@ impl<'a> Expander<'a> {
         }
     }
 
+    /// Read a local-frame paint's states in the scope's own axis names and
+    /// return them in the world's.
+    ///
+    /// The transform is the registry's
+    /// (`BlockRegistry::permuted_properties`) — the same one the `DW0736`
+    /// predicate runs to decide that an unframed literal landed wrong. It is
+    /// handed **both halves of the frame**: the axis permutation and the
+    /// reflection. Handing it the permutation alone would be the same short
+    /// circuit the `DW0736` judge once had, except that here it does not miss a
+    /// defect, it writes one — a pure reflection has the identity permutation,
+    /// so every mirrored body would silently take the unmirrored state.
+    ///
+    /// A property whose image the pinned vocabulary does not determine is
+    /// refused here rather than guessed: there is no correct block to write,
+    /// and writing a plausible one is how a wrong facing gets frozen into a
+    /// `.nbt`.
+    fn resolve_local(
+        &self,
+        symbol: &str,
+        states: &States,
+        state: &ScopeState<'_>,
+    ) -> Result<States, ExpandError> {
+        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let perm = [
+            state.orient.axis(Axis::X).index(),
+            state.orient.axis(Axis::Y).index(),
+            state.orient.axis(Axis::Z).index(),
+        ];
+        let reflected = state.orient.mirror.axes();
+        states.map(|block| {
+            match registry.permuted_properties(&block.name, &block.properties, perm, reflected) {
+                Ok(properties) => Ok(BlockState {
+                    name: block.name.clone(),
+                    properties,
+                }),
+                Err(property) => Err(ExpandError::LocalFrameUnresolvable {
+                    symbol: symbol.to_string(),
+                    state: block.to_string(),
+                    property,
+                    orientation: frame_label(state.orient),
+                }),
+            }
+        })
+    }
+
     /// Record what one fill means for the `DW0736` audit.
     ///
     /// The predicate itself —
@@ -988,15 +1084,19 @@ impl<'a> Expander<'a> {
     /// pinned it. The paint is the one the scope's own bindings resolved, so a
     /// role a `bind` rebound is audited as what it now paints.
     fn audit_oriented_fill(&mut self, symbol: &str, paint: &Paint, state: &ScopeState) {
-        let states: Vec<&BlockState> = match paint {
-            Paint::Block(b) => vec![b],
-            Paint::Mix(mix) => mix.iter().map(|w| &w.block).collect(),
-        };
+        let states: Vec<&BlockState> = paint.states().each();
         self.oriented_fills += 1;
         if states.iter().all(|b| b.properties.is_empty()) {
             return;
         }
         self.oriented_carrying += 1;
+        if paint.is_local() {
+            // Resolved through this very frame a moment ago, so there is no
+            // literal left to land wrong. Counted, never skipped: the gate has
+            // to be able to say how much of its population went this way.
+            self.oriented_resolved += 1;
+            return;
+        }
         if state.pinned == Some(state.orient) {
             return; // the guard proved the author wrote these for this frame
         }

@@ -236,7 +236,7 @@ fn every_zone_passes_the_shape_and_orientation_gates() {
         let out = expand_at(&program, region, seed);
         carrying += out.oriented.carrying;
         let report = gates::judge(&out, gates::Options::default());
-        for id in ["shape-complete", "oriented-fills"] {
+        for id in ["shape-complete", "states-complete", "oriented-fills"] {
             let gate = report
                 .gates
                 .iter()
@@ -327,7 +327,7 @@ fn every_zone_restyles_without_moving_a_block() {
             restyled
                 .set_role(
                     role,
-                    Paint::Block(BlockState::simple(SWATCH[i % SWATCH.len()])),
+                    Paint::block(BlockState::simple(SWATCH[i % SWATCH.len()])),
                 )
                 .unwrap();
         }
@@ -398,11 +398,11 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    // Six of the eight counts dropped by one when orientation-dependent
-    // states stopped being roles: `broken_grate`'s bars, `far_side_bar`'s bar
-    // and `cliff_path`'s corpse are per-orientation guarded inline states now
-    // (DW0735/DW0736), which no single role name can carry.
-    for (want, ZoneFixture { program, .. }) in [1, 2, 12, 6, 6, 13, 8, 12].into_iter().zip(zones())
+    // `far_side_bar`'s bar is a role again — one binding written in the
+    // scope's own axis frame, resolved at fill time — so the zone that
+    // includes it carries one more role than it did while the bar had to be
+    // per-orientation inline states.
+    for (want, ZoneFixture { program, .. }) in [1, 2, 13, 7, 7, 13, 9, 12].into_iter().zip(zones())
     {
         assert_eq!(
             program.palette.len(),

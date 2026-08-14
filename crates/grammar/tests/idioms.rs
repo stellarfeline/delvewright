@@ -33,9 +33,15 @@ use delvewright_grammar::{Box3, ExpandError, ExpandOptions, Expansion, expand};
 // The documented table
 // ---------------------------------------------------------------------------
 
-/// One documented example: the id `delve-grammar list` prints, the program, the
-/// region and seed the reference states, and whether the entry claims the piece
-/// is a route.
+/// One documented example, **read off the registry** rather than restated.
+///
+/// This table used to carry its own region, seed and route claim for ten of the
+/// library's programs, and `tests/library.rs` carried a second one
+/// for twenty-two others. Two hand-written subsets of one registry is how
+/// `negated-guard` ended up in neither, and how nothing ever swept the whole
+/// corpus. `library::PROGRAMS` carries the expansion now, so this is a view of
+/// it: an idiom added to the registry appears here without an edit, and there
+/// is no second place to forget.
 struct Case {
     id: &'static str,
     program: fn() -> Program,
@@ -46,99 +52,33 @@ struct Case {
     symmetric: Option<Axis>,
 }
 
-const CASES: &[Case] = &[
-    Case {
-        id: "idiom-repetition",
-        program: idioms::repetition,
-        region: [3, 5, 17],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-priority",
-        program: idioms::priority,
-        region: [13, 6, 2],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-shape",
-        program: idioms::shape,
-        region: [15, 9, 3],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-erosion",
-        program: idioms::erosion,
-        region: [9, 5, 3],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-erosion-graded",
-        program: idioms::graded_erosion,
-        region: [9, 13, 3],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-surface-detail",
-        program: idioms::surface_detail,
-        region: [9, 12, 9],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-mirror",
-        program: idioms::mirror,
-        region: [15, 11, 2],
-        seed: 1,
-        traversable: false,
-        // The rose window IS the mirror plane, so the entry makes the claim and
-        // the gate reads it — the technique is proved by the same run that
-        // documents it, not only by a test that builds its own fixture.
-        symmetric: Some(Axis::Y),
-    },
-    Case {
-        id: "idiom-skip",
-        program: idioms::skip,
-        region: [7, 5, 5],
-        seed: 1,
-        traversable: true,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-light",
-        program: idioms::light,
-        region: [5, 6, 13],
-        seed: 1,
-        traversable: true,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-arguments",
-        program: idioms::arguments,
-        region: [15, 7, 15],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-    Case {
-        id: "idiom-composition-arcade",
-        program: idioms::composition_arcade,
-        region: [3, 14, 20],
-        seed: 1,
-        traversable: false,
-        symmetric: None,
-    },
-];
+fn cases() -> Vec<Case> {
+    library::PROGRAMS
+        .iter()
+        .filter(|p| p.id.starts_with("idiom-"))
+        .map(|p| Case {
+            id: p.id,
+            program: p.build,
+            region: p.region,
+            seed: p.seed,
+            traversable: p.gates.traversable,
+            // The rose window IS the mirror plane, and the registry is where
+            // that claim lives, so the gate reads it here AND in `audit` —
+            // rather than only in a table this file keeps by hand.
+            symmetric: p.gates.symmetric,
+        })
+        .collect()
+}
+
+/// One documented example by its id — never by index. The registry is sorted by
+/// id, the teaching order is not, so an index would silently name a different
+/// technique the day either order moves.
+fn case_by_id(id: &str) -> Case {
+    cases()
+        .into_iter()
+        .find(|c| c.id == id)
+        .unwrap_or_else(|| panic!("no library entry {id:?}"))
+}
 
 fn expand_case(case: &Case) -> Expansion {
     expand(
@@ -194,7 +134,7 @@ fn cells(size: [u32; 3]) -> impl Iterator<Item = [i32; 3]> {
 #[test]
 fn every_documented_example_expands_green_at_its_documented_region() {
     let mut judged = 0usize;
-    for case in CASES {
+    for case in &cases() {
         let out = expand_case(case);
         let report = gates::judge(
             &out,
@@ -213,7 +153,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            4 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
+            5 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
             "{}",
             case.id
         );
@@ -229,8 +169,8 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         }
     }
     assert_eq!(
-        judged, 47,
-        "11 examples, 4 always-on gates each, 2 walk gates, 1 mirror-plane gate"
+        judged, 58,
+        "11 examples, 5 always-on gates each, 2 walk gates, 1 mirror-plane gate"
     );
 }
 
@@ -238,19 +178,19 @@ fn every_documented_example_expands_green_at_its_documented_region() {
 /// registers is documented here**.
 ///
 /// The second direction is the one that rots: an idiom added to `PROGRAMS`
-/// without a row in `CASES` would be a teaching program nothing expands, which
+/// without an entry in `library::PROGRAMS` would be a teaching program nothing expands, which
 /// is how a corpus entry stops being true in silence.
 #[test]
 fn the_registry_and_the_documented_table_agree_in_both_directions() {
-    let documented: BTreeSet<&str> = CASES.iter().map(|c| c.id).collect();
+    let documented: BTreeSet<&str> = cases().iter().map(|c| c.id).collect();
     let registered: BTreeSet<&str> = library::PROGRAMS
         .iter()
-        .map(|(id, _)| *id)
+        .map(|p| p.id)
         .filter(|id| id.starts_with("idiom-"))
         .collect();
     assert_eq!(documented, registered);
     assert_eq!(documented.len(), 11);
-    for case in CASES {
+    for case in &cases() {
         let listed = library::by_id(case.id).unwrap_or_else(|| panic!("{} not listed", case.id));
         assert_eq!(listed, (case.program)(), "{}", case.id);
     }
@@ -261,7 +201,7 @@ fn the_registry_and_the_documented_table_agree_in_both_directions() {
 /// the same model as the Rust it came from.
 #[test]
 fn every_documented_example_is_deterministic_and_survives_json() {
-    for case in CASES {
+    for case in &cases() {
         let program = (case.program)();
         for seed in [0u64, case.seed, 7] {
             let a = run(&program, case.region, seed);
@@ -300,7 +240,7 @@ fn every_documented_example_is_deterministic_and_survives_json() {
 /// right form whenever no step needs to know how far along it is.
 #[test]
 fn repetition_the_tiling_and_the_recursion_lay_the_same_rhythm() {
-    let case = &CASES[0];
+    let case = &case_by_id("idiom-repetition");
     let size = case.region;
     let out = expand_case(case);
 
@@ -337,7 +277,7 @@ fn repetition_without_its_otherwise_arm_is_a_refusal() {
     strip_otherwise(&mut program, "recursed_row");
     let err = expand(
         &program,
-        Box3::at_origin(CASES[0].region),
+        Box3::at_origin(case_by_id("idiom-repetition").region),
         &ExpandOptions::seeded(1),
     )
     .unwrap_err();
@@ -354,7 +294,7 @@ fn repetition_without_its_otherwise_arm_is_a_refusal() {
 /// **Three bays, three arms, one each — and the third is the `otherwise`.**
 #[test]
 fn priority_each_arm_fires_on_the_bay_its_guard_describes() {
-    let case = &CASES[1];
+    let case = &case_by_id("idiom-priority");
     let out = expand_case(case);
 
     // Bay 0 (7 wide): jambs, a 5-wide opening, a lintel course over all of it.
@@ -395,7 +335,7 @@ fn priority_overlapping_guards_are_a_weighted_draw() {
     let alts = overlapping.rules.get_mut("bay").unwrap();
     alts[1].when = Cond::cmp(Expr::dim(DimRef::X), CmpOp::Ge, Expr::param("slot_min"));
 
-    let region = CASES[1].region;
+    let region = case_by_id("idiom-priority").region;
     let sound_shapes: BTreeSet<Vec<u8>> = (0..12)
         .map(|s| run(&sound, region, s).model.canonical_bytes())
         .collect();
@@ -427,7 +367,7 @@ fn priority_overlapping_guards_are_a_weighted_draw() {
 /// available profile.
 #[test]
 fn shape_the_taper_step_follows_the_remaining_width() {
-    let case = &CASES[2];
+    let case = &case_by_id("idiom-shape");
     let out = expand_case(case);
     let widths: Vec<usize> = (0..case.region[1] as i32)
         .map(|y| course_width(&out, case.region, y, 0))
@@ -443,15 +383,15 @@ fn shape_the_taper_step_follows_the_remaining_width() {
 /// inverted** — measured as an exact complement over every cell of the region.
 #[test]
 fn shape_inverting_the_palette_turns_the_roof_into_the_opening() {
-    let case = &CASES[2];
+    let case = &case_by_id("idiom-shape");
     let roof = expand_case(case);
 
     let mut arch_program = idioms::shape();
     arch_program
-        .set_role("mass", Paint::Block(BlockState::air()))
+        .set_role("mass", Paint::block(BlockState::air()))
         .unwrap();
     arch_program
-        .set_role("cut", Paint::Block(BlockState::simple("stone_bricks")))
+        .set_role("cut", Paint::block(BlockState::simple("stone_bricks")))
         .unwrap();
     let arch = run(&arch_program, case.region, case.seed);
 
@@ -481,7 +421,7 @@ fn shape_inverting_the_palette_turns_the_roof_into_the_opening() {
 /// solid, and nothing else about it moves.
 #[test]
 fn erosion_air_in_a_mix_is_what_voids_the_cells() {
-    let case = &CASES[3];
+    let case = &case_by_id("idiom-erosion");
     let out = expand_case(case);
     let volume = 9 * 5 * 3;
     let voided = volume - out.model.filled_cells();
@@ -502,7 +442,7 @@ fn erosion_air_in_a_mix_is_what_voids_the_cells() {
     sound
         .set_role(
             "ruin",
-            Paint::Mix(vec![
+            Paint::mix(vec![
                 WeightedBlock {
                     weight: 9,
                     block: BlockState::simple("stone_bricks"),
@@ -533,7 +473,7 @@ fn erosion_air_in_a_mix_is_what_voids_the_cells() {
 /// climbs band by band.
 #[test]
 fn graded_erosion_each_band_is_more_ruined_than_the_one_below() {
-    let case = &CASES[4];
+    let case = &case_by_id("idiom-erosion-graded");
     let out = expand_case(case);
     let bands = [(0..4, "sound"), (4..8, "weathered"), (8..13, "ruined")];
     let mut shares = Vec::new();
@@ -570,7 +510,7 @@ fn graded_erosion_each_band_is_more_ruined_than_the_one_below() {
 /// it, because `non-empty` and `blocks-exist` are both perfectly happy.
 #[test]
 fn graded_erosion_a_truncating_band_split_leaves_a_course_unwritten() {
-    let case = &CASES[4];
+    let case = &case_by_id("idiom-erosion-graded");
     let top = case.region[1] as i32 - 1;
 
     let covered = expand_case(case);
@@ -607,7 +547,7 @@ fn graded_erosion_a_truncating_band_split_leaves_a_course_unwritten() {
 /// the litter course standing on the crust, and the air above.
 #[test]
 fn surface_detail_the_crust_and_the_litter_are_pieces_of_the_ground_rule() {
-    let case = &CASES[5];
+    let case = &case_by_id("idiom-surface-detail");
     let out = expand_case(case);
     let (w, d) = (case.region[0] as i32, case.region[2] as i32);
     let course = |y: i32| -> Vec<String> {
@@ -671,7 +611,7 @@ fn glazing_cells(out: &Expansion, size: [u32; 3]) -> BTreeSet<[i32; 3]> {
 /// cell.
 #[test]
 fn mirror_one_rule_reflected_gives_a_symmetric_aperture() {
-    let case = &CASES[6];
+    let case = &case_by_id("idiom-mirror");
     let size = case.region;
     let out = expand_case(case);
     let glazing = glazing_cells(&out, size);
@@ -705,7 +645,7 @@ fn mirror_one_rule_reflected_gives_a_symmetric_aperture() {
 /// arithmetic, one node.
 #[test]
 fn mirror_without_the_reflection_the_aperture_is_lopsided() {
-    let case = &CASES[6];
+    let case = &case_by_id("idiom-mirror");
     let mut lopsided = idioms::mirror();
     match &mut lopsided.rules.get_mut("window").expect("rule exists")[0].body {
         Node::Split(split) => split.children[2] = Node::call("half"),
@@ -727,7 +667,7 @@ fn mirror_without_the_reflection_the_aperture_is_lopsided() {
 /// programs are compared where it counts: byte for byte.
 #[test]
 fn mirror_the_reflection_is_the_two_copies_it_replaces() {
-    let case = &CASES[6];
+    let case = &case_by_id("idiom-mirror");
     // The upper half, written out: the same splits with their size lists
     // reversed and their children swapped, one rule per recursion level.
     let two_copies = idioms::mirror()
@@ -817,7 +757,7 @@ fn mirror_the_aperture_re_centres_in_a_wider_wall() {
 /// the claim `grammar.md` §2c makes.
 #[test]
 fn skip_and_void_are_the_same_model_because_nothing_writes_a_cell_twice() {
-    let case = &CASES[7];
+    let case = &case_by_id("idiom-skip");
     let out = expand_case(case);
 
     let mut bore = 0usize;
@@ -857,7 +797,7 @@ fn skip_and_void_are_the_same_model_because_nothing_writes_a_cell_twice() {
 /// control: widen it and there are fewer sconces, in the same gallery.
 #[test]
 fn light_the_sconce_period_is_a_control_over_a_real_rhythm() {
-    let case = &CASES[8];
+    let case = &case_by_id("idiom-light");
     let program = idioms::light();
     let lamps = |p: &Program| -> Vec<[i32; 3]> {
         let out = run(p, case.region, case.seed);
@@ -895,7 +835,7 @@ fn light_the_sconce_period_is_a_control_over_a_real_rhythm() {
 /// can drift with every gate green.
 #[test]
 fn arguments_states_one_recursion_and_calls_it_four_ways() {
-    let case = &CASES[9];
+    let case = &case_by_id("idiom-arguments");
     let program = idioms::arguments();
     assert_eq!(
         program.rules.len(),
@@ -933,7 +873,7 @@ fn arguments_states_one_recursion_and_calls_it_four_ways() {
 /// claim below is one of the nine, read off one model.
 #[test]
 fn the_composition_demonstration_carries_the_idioms_it_names() {
-    let case = &CASES[10];
+    let case = &case_by_id("idiom-composition-arcade");
     let size = case.region;
     let out = expand_case(case);
 
