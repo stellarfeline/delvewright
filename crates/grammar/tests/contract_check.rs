@@ -135,6 +135,7 @@ fn contract(entry: &str) -> SpatialContract {
         spaces: BTreeMap::new(),
         no_body: BTreeMap::new(),
         edges: Vec::new(),
+        faces: Vec::new(),
         no_body_majority_ack: None,
     }
 }
