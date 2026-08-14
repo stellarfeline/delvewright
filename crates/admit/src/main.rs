@@ -15,12 +15,12 @@ use delvewright_admit::allowlist::Allowlist;
 use delvewright_admit::audit::{self, audit};
 use delvewright_admit::catalog::CatalogCard;
 use delvewright_admit::diag::{
-    DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING, DW_UNBOUND,
-    Diagnostic,
+    DW_CONTRACT, DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING,
+    DW_UNBOUND, Diagnostic,
 };
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
-use delvewright_admit::meta::{self, Anchor, License, PrefabDoc, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, License, PrefabDoc, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
 use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
@@ -229,6 +229,40 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         None => Allowlist::default_building(),
     };
 
+    // The spatial contract's second door (spec-0036 §1c), run before the palette
+    // audit's verdict is printed so that a piece whose blocks disagree with its
+    // own declared spaces cannot be admitted. Bound to `audit` and not to a flag
+    // of its own: `audit` is what CI runs over the prefab library and what the
+    // admission procedure runs on every piece, so a contract that is declared is
+    // a contract that is checked.
+    let mut contract_failed = false;
+    if nbt.extension().and_then(|s| s.to_str()) != Some("json")
+        && let Ok(bytes) = std::fs::read(nbt)
+        && let Ok(structure) = Structure::read(&bytes)
+        && let Ok(Some(meta)) = PrefabMeta::beside_nbt(nbt)
+        && let Some(verdict) = delvewright_admit::spatial::audit(&structure, &meta)
+    {
+        for line in &verdict.enumeration {
+            Diagnostic::warning(DW_CONTRACT, format!("contract: {line}")).print(json);
+        }
+        for finding in &verdict.findings {
+            Diagnostic::warning(DW_CONTRACT, finding.clone()).print(json);
+        }
+        for gate in &verdict.gates {
+            if !gate.pass {
+                contract_failed = true;
+                Diagnostic::error(
+                    DW_CONTRACT,
+                    format!(
+                        "{} FAILED (examined {} object(s)): {}",
+                        gate.id, gate.bound, gate.detail
+                    ),
+                )
+                .print(json);
+            }
+        }
+    }
+
     // A tile-set manifest audits the whole zone. Handing this command one tile
     // of a set would audit a fragment and print `"verdict": "pass"` over it,
     // which is the failure mode this command exists to prevent one layer up.
@@ -271,7 +305,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     } else {
         print!("{out_json}");
     }
-    if rep.is_pass() {
+    if rep.is_pass() && !contract_failed {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(EXIT_FAIL)
@@ -471,9 +505,15 @@ fn run_anchor(
     if pos.is_none() && region.is_none() {
         return input_err("anchor needs --pos or --region", json);
     }
-    meta.set_anchor(
+    // This command declares one thing: where the anchor is. Which contract
+    // element it lands in is resolved by the exporter from the piece's own
+    // contract, and the dispenser cell and trigger block are hardware the prefab
+    // wired — none of that is something the operator types, so none of it is
+    // this edit's to write, and re-annotating an anchor that already exists
+    // keeps all of it (`PrefabMeta::edit_anchor`).
+    meta.edit_anchor(
         name,
-        Anchor {
+        AnchorEdit {
             pos,
             facing,
             region: region.map(|(from, to)| Region { from, to }),

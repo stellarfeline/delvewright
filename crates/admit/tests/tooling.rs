@@ -4,7 +4,7 @@
 use delvewright_admit::fixtures;
 use delvewright_admit::jigsaw;
 use delvewright_admit::light::{self, Zone};
-use delvewright_admit::meta::{self, License, PrefabDoc, PrefabMeta};
+use delvewright_admit::meta::{self, License, LightingProfile, PrefabDoc, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::{Structure, roundtrip};
 
@@ -158,14 +158,15 @@ fn light_probe_writes_estimate_method_into_metadata() {
         license(),
     ));
     meta::set_lighting_from_probe(&mut doc, &probe);
-    let PrefabDoc::Single(meta) = &doc else {
-        unreachable!()
-    };
-    assert_eq!(meta.lighting.profile, "lit");
+    let lighting = doc
+        .lighting()
+        .expect("a probe writes a lighting block")
+        .clone();
+    assert_eq!(lighting.profile, LightingProfile::Lit);
     // honest: the method string marks this as a static estimate, not a live probe.
-    assert!(meta.lighting.method.as_deref().unwrap().contains("static"));
+    assert!(lighting.method.as_deref().unwrap().contains("static"));
     assert!(
-        meta.lighting
+        lighting
             .method
             .as_deref()
             .unwrap()
@@ -205,9 +206,10 @@ fn an_unmeasured_lighting_block_parses_the_way_the_generators_write_it() {
       }
     }"#;
     let meta = PrefabMeta::from_json(json).expect("a grammar prefab's metadata must parse");
-    assert_eq!(meta.lighting.profile, "unmeasured");
-    assert_eq!(meta.lighting.measured_min_light, None);
-    assert_eq!(meta.lighting.measured, None);
+    let lighting = meta.lighting.clone().expect("the block is declared");
+    assert_eq!(lighting.profile, LightingProfile::Unmeasured);
+    assert_eq!(lighting.measured_min_light, None);
+    assert_eq!(lighting.measured, None);
     assert!(meta.connectors.is_empty(), "the export emits no connectors");
 }
 
@@ -230,16 +232,15 @@ fn a_probed_profile_still_carries_its_measurement() {
         },
     );
     assert_eq!(
-        meta.lighting.profile, "unmeasured",
+        meta.lighting.as_ref().map(|l| l.profile),
+        Some(LightingProfile::Unmeasured),
         "a skeleton has not been probed and must say so in a profile the DSL has"
     );
     let unlit = fixtures::dark_room();
     let probe = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
     let mut doc = PrefabDoc::Single(meta);
     meta::set_lighting_from_probe(&mut doc, &probe);
-    let PrefabDoc::Single(meta) = &doc else {
-        unreachable!()
-    };
-    assert!(meta.lighting.measured_min_light.is_some());
-    assert!(meta.lighting.measured.is_some());
+    let lighting = doc.lighting().expect("a probe writes a lighting block");
+    assert!(lighting.measured_min_light.is_some());
+    assert!(lighting.measured.is_some());
 }

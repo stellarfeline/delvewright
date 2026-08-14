@@ -30,7 +30,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use crate::contract;
 use crate::expand::Expansion;
+use crate::export;
+use crate::geom::Axis;
 use crate::model::VoxelModel;
 use crate::nav;
 
@@ -73,6 +76,14 @@ pub struct Measurements {
     pub silhouette_complexity: f64,
     /// The five commonest non-air block states, with their share of filled cells.
     pub top_blocks: Vec<(String, f64)>,
+    /// Fills whose block states were written in the scope's own axis names and
+    /// resolved into the world's — **the binding count of the local frame**.
+    ///
+    /// A number, not a verdict: a piece that needs no oriented block writes
+    /// zero of them and is not thereby worse. It is reported because the
+    /// `oriented-fills` gate's population shrinks by exactly this much, and a
+    /// gate whose binding falls has to be able to say where it went.
+    pub local_frame_fills: usize,
     /// How much of the floor a body can actually get to, and where the rest is.
     pub reachability: Reachability,
 }
@@ -252,6 +263,13 @@ pub struct Report {
     /// Things a reader must be told even though no gate went red — a gate that
     /// examined nothing, an expansion that declared no anchors.
     pub findings: Vec<String>,
+    /// **Every spatial-contract opt-out instance, by name** (spec-0036 §2.9):
+    /// each open envelope, each sightline, each out-of-walk region with its
+    /// computed kind, each bar the reachability walk had to open, each exterior
+    /// face. Enumerated rather than counted, because a count is a thing a blind
+    /// script can satisfy and a list is a thing a reviewer reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enumeration: Vec<String>,
 }
 
 impl Report {
@@ -280,6 +298,17 @@ pub struct Options {
     pub traversable: bool,
     /// Allow a fall edge when walking (a piece entered by stepping off a ledge).
     pub allow_falls: bool,
+    /// Assert the piece is bilaterally symmetric about the mid-plane of this
+    /// **world** axis.
+    ///
+    /// Opt-in, and for the reason `traversable` is: it is a claim about a *kind*
+    /// of piece, and only the author knows whether this one makes it. What makes
+    /// it worth having is that the claim is otherwise unenforceable by anything.
+    /// A shape with a mirror plane is normally built by expanding one rule at
+    /// both sites — and if the two sites are instead two hand-kept copies, or
+    /// one site is missing its reflection, every other gate stays green while
+    /// the building has a hole in one flank. This is the gate that reads it.
+    pub symmetric: Option<Axis>,
     /// Assert that **every sheltered standable cell** — every piece of floor
     /// with a roof over it — can be walked to from the grade entrance.
     ///
@@ -321,6 +350,134 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         },
     });
 
+    // --- Gate: every placed state writes its shape-carrying properties. -----
+    //
+    // A `multipart` property the state omits removes assembled geometry — a
+    // wall with none written places as an isolated post — and no downstream
+    // reader can tell the omission from a choice (`DW0735`). Judged over the
+    // states CELLS actually use: an entry an earlier fill created and a later
+    // fill fully overwrote ships in no cell and is not this gate's business.
+    let mut used: std::collections::BTreeSet<&crate::block::BlockState> = Default::default();
+    for pos in model.region().positions() {
+        if let Some(state) = model.get(pos) {
+            used.insert(state);
+        }
+    }
+    let omissions: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    gates.push(Gate {
+        id: "shape-complete",
+        pass: omissions.is_empty(),
+        bound: used.len(),
+        detail: if omissions.is_empty() {
+            format!(
+                "{} placed block state(s), every shape-carrying (multipart) property written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — these properties assemble the block's model, so the omitted \
+                 default drops geometry (a wall reads as an isolated post). Write the \
+                 connection state the design means",
+                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                omissions.join("; ")
+            )
+        },
+    });
+
+    // --- Gate: every placed state writes EVERY property it has. -------------
+    //
+    // The whole class `shape-complete` is the hard half of (`DW0737`). Vanilla
+    // fills an omitted property from the block's default state, so a partial
+    // state is legal and the SERVER resolves it correctly; nothing upstream of
+    // the server can. The review image, the navigation walk, the diff a
+    // reviewer reads and the machine gates themselves each have to guess, and
+    // the guesses disagree — which is the whole reason this project renders a
+    // build before believing it. An `oak_stairs[facing=east]` with no `half`
+    // and no `shape` is not "the author meant the default"; it is a stair whose
+    // geometry no document states.
+    //
+    // Same binding as `shape-complete` — the states cells actually use — so a
+    // palette entry a later fill fully overwrote is not held against the piece.
+    let under: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_properties(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    gates.push(Gate {
+        id: "states-complete",
+        pass: under.is_empty(),
+        bound: used.len(),
+        detail: if under.is_empty() {
+            format!(
+                "{} placed block state(s), every property of every block written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — a state that omits a property means whatever a 1.21.11 server \
+                 decides, and no reader upstream of the server can know which. Write the \
+                 property the design means, including when it is the block's default",
+                delvewright_schem::blocks::DW_STATE_UNDER_SPECIFIED,
+                under.join("; ")
+            )
+        },
+    });
+
+    // --- Gate: oriented block states were guarded where the scope turns. ----
+    //
+    // A reorientation permutes geometry and never rewrites properties
+    // (`crate::orient`), so a literal `facing`/`axis`/connection state inside
+    // a reoriented scope lands however the scope was turned — silently —
+    // unless a `Cond::Orientation` guard pinned the orientation the author
+    // wrote it for (`DW0736`). The predicate ran during expansion, where the
+    // scope orientations exist; this gate reports what it saw.
+    let audit = &expansion.oriented;
+    gates.push(Gate {
+        id: "oriented-fills",
+        pass: audit.unguarded.is_empty(),
+        bound: audit.fills as usize,
+        detail: if audit.unguarded.is_empty() {
+            format!(
+                "{} fill(s) examined, {} carrying block-state properties, {} of those resolved \
+                 out of the scope's own axis frame; every remaining orientation-sensitive one \
+                 was under the identity frame or an `orientation` guard",
+                audit.fills, audit.carrying, audit.resolved
+            )
+        } else {
+            format!(
+                "{}: {} — write one alternative per orientation, each guarded with the \
+                 `orientation` cond and carrying the facing that matches it (the guard \
+                 mechanism `Cond::Orientation` exists for exactly this)",
+                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
+                audit
+                    .unguarded
+                    .iter()
+                    .map(|f| format!(
+                        "rule {:?} fills {} whose {} lands wrong under {}",
+                        f.rule, f.state, f.property, f.orientation
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        },
+    });
+
     // --- Gate: the expansion built something. ------------------------------
     let filled = model.filled_cells();
     let region_cells = model.region().positions().count();
@@ -334,41 +491,162 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // --- Gate (opt-in): a body can walk the piece end to end. --------------
     let standable = nav::standable_cells(model);
     let reach = reachability(model, &standable);
+    // The declared face contract, when the piece has one. It is what
+    // `traversable` re-derives its claim from (spec-0036 §2.8): a door is a
+    // thing the author declared, and counting standable cells on a face counts
+    // louvres, parapets and window sills — 47 "approaches" where 3 were doors.
+    let resolved = export::contract_metadata(expansion);
+    let faces: Option<Vec<contract::ExteriorFace>> = resolved.as_ref().map(|c| {
+        contract::exterior_faces(model, c)
+            .into_iter()
+            .filter(|f| f.class != "vision")
+            .collect()
+    });
     if options.traversable {
-        let (entry, exit) = nav::ends(model);
-        let bound = entry.len() + exit.len();
-        let walked = if options.allow_falls {
-            nav::reachable_with_fall(model, &standable, &entry, &exit)
-        } else {
-            nav::connected(&standable, &entry, &exit)
-        };
-        gates.push(Gate {
-            id: "traversable",
-            pass: walked && bound > 0,
-            bound,
-            // The piece's total standable count used to be quoted here, beside
-            // the word `pass`, and it read as coverage: a Notre-Dame zone said
-            // "4982 standable in all; walking connects them" while 58% of that
-            // floor had no route to anything. This gate is about the ROUTE and
-            // says so; how much floor the route reaches is the reachability
-            // measurement, which runs on every expansion.
-            detail: format!(
-                "{} standable cell(s) at the approach end, {} at the exit end; walking{} {}. A \
-                 claim about the route only — see the reachability measurement for how much of \
-                 the piece's floor a body reaches",
-                entry.len(),
-                exit.len(),
-                if options.allow_falls {
-                    " (with falls)"
-                } else {
-                    ""
-                },
-                if walked {
-                    "connects them"
-                } else {
-                    "does NOT connect them"
+        match &faces {
+            Some(faces) => {
+                let mouths: Vec<BTreeSet<[i32; 3]>> =
+                    faces.iter().map(|f| mouth(model, &standable, f)).collect();
+                let bound = faces.len();
+                let mut severed: Vec<String> = Vec::new();
+                for (i, a) in mouths.iter().enumerate() {
+                    for (j, b) in mouths.iter().enumerate().skip(i + 1) {
+                        let walked = if options.allow_falls {
+                            nav::reachable_with_fall(model, &standable, a, b)
+                                || nav::reachable_with_fall(model, &standable, b, a)
+                        } else {
+                            nav::connected(&standable, a, b)
+                        };
+                        if !walked {
+                            severed.push(format!(
+                                "{} {} <-> {} {}",
+                                faces[i].dir.as_str(),
+                                faces[i].class,
+                                faces[j].dir.as_str(),
+                                faces[j].class
+                            ));
+                        }
+                    }
                 }
-            ),
+                gates.push(Gate {
+                    id: "traversable",
+                    pass: bound >= 2 && severed.is_empty(),
+                    bound,
+                    detail: if bound < 2 {
+                        format!(
+                            "the contract declares {bound} exterior traversal edge(s). A \
+                             traversability claim is a claim that a body walks THROUGH the piece, \
+                             which needs two ways out"
+                        )
+                    } else if severed.is_empty() {
+                        format!(
+                            "{bound} declared way(s) in or out — {} — and a walk{} connects every \
+                             pair of them",
+                            faces
+                                .iter()
+                                .map(|f| format!("{} {}", f.dir.as_str(), f.class))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            if options.allow_falls {
+                                " (with falls)"
+                            } else {
+                                ""
+                            }
+                        )
+                    } else {
+                        format!(
+                            "{bound} declared way(s) in or out; no walk connects {}",
+                            severed.join(", ")
+                        )
+                    },
+                });
+            }
+            None => {
+                // Legacy: a piece that declares no contract has no doors to
+                // count, so the old face heuristic is all there is — and the
+                // detail says so rather than letting the number read as doors.
+                let (entry, exit) = nav::ends(model);
+                let bound = entry.len() + exit.len();
+                let walked = if options.allow_falls {
+                    nav::reachable_with_fall(model, &standable, &entry, &exit)
+                } else {
+                    nav::connected(&standable, &entry, &exit)
+                };
+                gates.push(Gate {
+                    id: "traversable",
+                    pass: walked && bound > 0,
+                    bound,
+                    detail: format!(
+                        "{} standable cell(s) at the approach end, {} at the exit end; walking{} \
+                         {}. This piece declares no spatial contract, so the binding count is \
+                         standable CELLS on two faces of the region, not declared ways in — \
+                         declare exterior edges and it counts doors",
+                        entry.len(),
+                        exit.len(),
+                        if options.allow_falls {
+                            " (with falls)"
+                        } else {
+                            ""
+                        },
+                        if walked {
+                            "connects them"
+                        } else {
+                            "does NOT connect them"
+                        }
+                    ),
+                });
+            }
+        }
+    }
+    // --- Gates: the spatial contract, whenever the piece declares one. ------
+    //
+    // Not opt-in, and that is the binding. An author who declares spaces has
+    // made a claim about the building; the obligations are the claim's own
+    // proof, and there is no flag that expands the piece without asking whether
+    // the claim is true. A red here writes no `.nbt` (`main.rs` judges before it
+    // freezes), so a piece whose blocks disagree with its contract cannot become
+    // an artifact anyone picks up later.
+    let mut enumeration = Vec::new();
+    if let Some(resolved) = &resolved {
+        let anchor_positions: BTreeMap<String, [i32; 3]> = expansion
+            .anchors
+            .iter()
+            .map(|(name, a)| (name.clone(), a.pos))
+            .collect();
+        let checked = contract::check(model, resolved, &anchor_positions);
+        gates.extend(checked.gates);
+        findings.extend(checked.findings);
+        enumeration = checked.enumeration;
+    } else {
+        findings.push(
+            "this piece declares no spatial contract: no space, edge or envelope is claimed, so \
+             every contract obligation examined nothing. What the building IS remains unstated, \
+             and nothing downstream can check that a placed piece fits its neighbours"
+                .to_string(),
+        );
+    }
+
+    // --- Gate (opt-in): the piece is its own mirror image. -----------------
+    if let Some(axis) = options.symmetric {
+        let (pairs, broken) = asymmetry(model, axis);
+        gates.push(Gate {
+            id: "symmetric",
+            pass: broken.is_empty() && pairs > 0,
+            bound: pairs,
+            detail: if broken.is_empty() {
+                format!(
+                    "{pairs} cell pair(s) across the {axis:?} mid-plane, every one matched \
+                     (presence, not block state)"
+                )
+            } else {
+                let [x, y, z] = broken[0];
+                format!(
+                    "{} of {pairs} cell pair(s) across the {axis:?} mid-plane differ; the first \
+                     is {x},{y},{z} — one side is solid and the other is not, so the two halves \
+                     were not built from the same rule",
+                    broken.len()
+                )
+            },
         });
     }
 
@@ -402,7 +680,10 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     }
 
     for gate in &gates {
-        if gate.bound == 0 {
+        // The contract's own gates raise their zero bindings by name inside
+        // `contract::check`, which is where the second door reads them from too;
+        // repeating them here would print each twice.
+        if gate.bound == 0 && !gate.id.starts_with("contract-") {
             findings.push(format!(
                 "gate `{}` examined ZERO objects — its verdict binds to nothing",
                 gate.id
@@ -471,6 +752,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             footprint_perimeter,
             silhouette_complexity: complexity(footprint_area, footprint_perimeter),
             top_blocks: top_blocks(model, filled),
+            local_frame_fills: expansion.oriented.resolved as usize,
             reachability: reach,
         },
         gates,
@@ -480,7 +762,84 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .map(|(name, a)| (name.clone(), a.pos))
             .collect(),
         findings,
+        enumeration,
     }
+}
+
+/// Where a body actually stands at a declared way in or out.
+///
+/// The face's own cells when a body can stand in them (a doorway at grade), and
+/// otherwise the standable cells one step inside it (a doorway whose floor
+/// course belongs to the wall). Empty only when the declared opening has no
+/// footing at all, which the traversability verdict then reports as a severed
+/// pair rather than as a pass.
+fn mouth(
+    model: &VoxelModel,
+    standable: &BTreeSet<[i32; 3]>,
+    face: &contract::ExteriorFace,
+) -> BTreeSet<[i32; 3]> {
+    let direct: BTreeSet<[i32; 3]> = face
+        .cells
+        .iter()
+        .filter(|c| standable.contains(*c))
+        .copied()
+        .collect();
+    if !direct.is_empty() {
+        return direct;
+    }
+    let mut near = BTreeSet::new();
+    for cell in &face.cells {
+        for d in [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ] {
+            let n = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
+            if standable.contains(&n) {
+                near.insert(n);
+            }
+        }
+    }
+    let _ = model;
+    near
+}
+
+/// Cell pairs across the mid-plane of `axis`, and the ones whose two halves
+/// disagree — lowest-first, so the first entry is stable (ADR-0006).
+///
+/// **Presence, not block state.** A stair or a door placed correctly in one half
+/// is a *different* state in the other, since nothing reflects a block's
+/// `facing`; comparing states would red every symmetric building that contains
+/// one. Solid-versus-not is the property a mirror plane really asserts, and it
+/// is the property the defect this gate exists for breaks: an interior face left
+/// open where its mirror image is walled.
+///
+/// An odd extent leaves the centre plane paired with itself, which is trivially
+/// equal and is not counted.
+fn asymmetry(model: &VoxelModel, axis: Axis) -> (usize, Vec<[i32; 3]>) {
+    let region = model.region();
+    let a = axis.index();
+    let lo = region.origin[a];
+    let hi = lo + region.size[a] as i32 - 1;
+    let solid = |p: [i32; 3]| model.get(p).is_some_and(|b| !b.is_air());
+
+    let mut pairs = 0;
+    let mut broken = Vec::new();
+    for pos in region.positions() {
+        if pos[a] * 2 >= lo + hi {
+            continue; // the far half, and the self-paired centre plane
+        }
+        let mut partner = pos;
+        partner[a] = lo + hi - pos[a];
+        pairs += 1;
+        if solid(pos) != solid(partner) {
+            broken.push(pos);
+        }
+    }
+    (pairs, broken)
 }
 
 /// The plan view: how many columns carry a block, and how long the outline of
@@ -698,10 +1057,18 @@ mod tests {
         .unwrap();
         let report = judge(&out, Options::default());
         assert!(report.is_pass());
-        // Two of them, and a solid cube earns both: nothing names a place in it,
-        // and there is nowhere in it to stand, so the reachability measurement
-        // examined nothing either.
-        assert_eq!(report.findings.len(), 2, "{:?}", report.findings);
+        // Three of them, and a solid cube earns all three: nothing names a place
+        // in it, there is nowhere in it to stand so the reachability measurement
+        // examined nothing either, and it makes no spatial claim at all.
+        assert_eq!(report.findings.len(), 3, "{:?}", report.findings);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.contains("no spatial contract")),
+            "{:?}",
+            report.findings
+        );
         assert!(
             report.findings.iter().any(|f| f.contains("no anchors")),
             "{:?}",
@@ -725,6 +1092,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: false,
         };
         let stair = crate::expand(
@@ -759,6 +1127,7 @@ mod tests {
             Options {
                 traversable: true,
                 allow_falls: true,
+                symmetric: None,
                 reachable_floor: false,
             },
         );
@@ -784,6 +1153,7 @@ mod tests {
             Options {
                 traversable: true,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: false,
             },
         );
@@ -831,6 +1201,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: true,
         };
 
@@ -877,6 +1248,7 @@ mod tests {
             Options {
                 traversable: false,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: true,
             },
         );
@@ -892,6 +1264,7 @@ mod tests {
             Options {
                 traversable: false,
                 allow_falls: false,
+                symmetric: None,
                 reachable_floor: true,
             },
         );
@@ -994,6 +1367,7 @@ mod tests {
         let opts = Options {
             traversable: true,
             allow_falls: false,
+            symmetric: None,
             reachable_floor: false,
         };
         let a = judge_two_storey(false, opts);

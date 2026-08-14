@@ -16,8 +16,8 @@
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
-    Anchor, Connector, GeneratedBy, License, Lighting, PrefabDoc, PrefabMeta, Region,
-    StructureMeta, TileSetMeta,
+    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabDoc,
+    PrefabMeta, Region, StructureMeta, TileSetMeta,
 };
 
 use crate::light::LightProbe;
@@ -25,7 +25,7 @@ use crate::light::LightProbe;
 /// Write a probe result into a document's `lighting` block, marked as a static
 /// estimate.
 ///
-/// `measured` is present and empty: `delvewright_dsl`'s `Lighting` refuses a
+/// `measured` is present and empty on a measured profile: `Lighting` refuses a
 /// `lit`/`dim`/`dark` profile that does not carry both `measured_min_light` and
 /// `measured`, so omitting it would produce metadata the compiler then rejects.
 /// The value is empty because a static estimate has no measurement date to
@@ -44,17 +44,34 @@ pub fn set_lighting_from_probe(doc: &mut PrefabDoc, p: &LightProbe) {
         !p.is_unbound(),
         "an unbound probe is a finding, not a profile"
     );
-    *doc.lighting_mut() = Lighting {
-        profile: p.profile.to_string(),
-        measured_min_light: p.measured_min_light,
-        measured: Some(String::new()),
-        rationale: None,
-        method: Some(format!(
-            "static block-light BFS estimate (delve-admit): min over {} roofed floor cell(s) \
-             reachable on foot from {} ground-level entry cell(s), of {} standable in the region \
-             box; openings treated as sealed edge (sky-light=0). NOT a live-server probe; \
-             dark_threshold={}. Re-probe live for borderline pieces.",
-            p.measured_cells, p.entry_cells, p.standable_cells, p.dark_threshold
-        )),
-    };
+    let method = Some(format!(
+        "static block-light BFS estimate (delve-admit): min over {} roofed floor cell(s) \
+         reachable on foot from {} ground-level entry cell(s), of {} standable in the region \
+         box; openings treated as sealed edge (sky-light=0). NOT a live-server probe; \
+         dark_threshold={}. Re-probe live for borderline pieces.",
+        p.measured_cells, p.entry_cells, p.standable_cells, p.dark_threshold
+    ));
+    doc.set_lighting(match (p.profile, p.measured_min_light) {
+        ("dark", Some(m)) => Lighting {
+            profile: LightingProfile::Dark,
+            measured_min_light: Some(m as i64),
+            measured: Some(String::new()),
+            rationale: None,
+            method,
+        },
+        ("lit", Some(m)) => Lighting {
+            profile: LightingProfile::Lit,
+            measured_min_light: Some(m as i64),
+            measured: Some(String::new()),
+            rationale: None,
+            method,
+        },
+        // Unreachable behind the caller's `DW0752` refusal, and stated rather
+        // than assumed: with no binding there is no minimum, and a profile
+        // without its measurement is the claim this type refuses.
+        _ => Lighting {
+            method,
+            ..Lighting::unmeasured()
+        },
+    });
 }

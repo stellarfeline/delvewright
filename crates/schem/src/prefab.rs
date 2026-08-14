@@ -1,31 +1,24 @@
-//! The prefab metadata document (`<id>.json`, beside the structure `.nbt`) — the
-//! **one** definition of its shape.
+//! The prefab metadata document, as this crate's tools see it.
 //!
-//! A prefab is a *pair* of files: the gzip-framed structure template that
-//! [`crate::convert::build_region`] writes, and this sibling JSON that says what
-//! the template is, where its anchors and sockets are, how lit it is, and what
-//! regenerates it. Both halves are produced by more than one tool — the grammar
-//! back end and the five hand-written generators write the pair from scratch,
-//! `delve-admit` reads it and writes it back after every admission step — so the
-//! document's shape lives here, in the crate both sides already depend on for the
-//! `.nbt` half, and neither owns a copy of it.
+//! The shape is **not** defined here. It is [`delvewright_dsl::prefab`], and
+//! this module is a re-export so that the crate that writes the `.nbt` half of a
+//! prefab names the `.json` half by the same path it always did.
 //!
-//! **That is the invariant, not a tidiness preference.** A private copy of a
-//! document shape is a lossy filter the moment the two copies disagree: a writer
-//! that models fewer fields than the document has silently deletes the rest on
-//! read-modify-write, and it does so while every test it has passes. The field
-//! this cost was `license.generated_by` — the four inputs ADR-0006 promises
-//! regenerate the `.nbt` byte for byte — dropped by the admission step that runs
-//! immediately after export.
-//!
-//! # Reading is total, writing preserves
-//!
-//! Every field a producer may legitimately omit is `Option`/`default` and is
-//! omitted (never `null`) on write, so a legacy prefab that predates a field
-//! still loads and a piece that has never been probed does not have to invent a
-//! measurement. Field order is the emission order, and it is the order the
-//! library's checked-in prefabs already use, so a reviewer diffing a generated
-//! piece against a hand-built one sees only values change.
+//! The definition sits in the DSL crate for one reason: `delvec` is published to
+//! crates.io and may only depend on published crates, so that is the only crate
+//! every reader of this document can reach. Anywhere else, the compiler would
+//! need a copy — which is what it had.
+
+pub use delvewright_dsl::prefab::{
+    Anchor, AnchorEdit, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
+    ContractSpace, ContractVolume, GeneratedBy, License, PrefabMeta, Region, SpatialContract,
+    StructureMeta, UNMEASURED,
+};
+
+/// The `lighting` block, which the DSL owns outright: it is the same type the
+/// compiler validates a campaign's lighting claims with, so a probe result that
+/// this crate's tools write is refused here rather than three tools later.
+pub use delvewright_dsl::registry::{Lighting, LightingProfile};
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -33,27 +26,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::split::TileSet;
-
-/// A prefab's sibling metadata file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PrefabMeta {
-    /// The DSL prefab id, `prefab/<id>`.
-    pub prefab_id: String,
-    /// The structure-template reference.
-    pub structure: StructureMeta,
-    /// Named anchors, keyed by DSL anchor name. `{}` for a piece that declares
-    /// none.
-    #[serde(default)]
-    pub anchors: BTreeMap<String, Anchor>,
-    /// Jigsaw sockets. `[]` for a piece that is placed directly rather than
-    /// drawn from a pool.
-    #[serde(default)]
-    pub connectors: Vec<Connector>,
-    /// The lighting declaration.
-    pub lighting: Lighting,
-    /// Licence, provenance prose, and the machine-readable provenance row.
-    pub license: License,
-}
 
 /// A zone whose blocks did not fit in one structure template.
 ///
@@ -68,11 +40,18 @@ pub struct PrefabMeta {
 /// field: a tool that has not learned about tile sets fails to parse this
 /// document instead of reading it as a prefab with no blocks in it.
 ///
-/// It is `Deserialize` as well as `Serialize` for the reason the module header
-/// gives. Written-only, it is a document nothing can edit: every admission step
-/// is a read-modify-write, so a tiled zone had no reachable `lighting` block,
-/// no reachable `anchors` map, and no way to be corrected — and the tools that
-/// were handed one answered about a single tile instead, which is how a
+/// It lives here rather than beside [`PrefabMeta`] in the DSL crate for one
+/// mechanical reason: `structure_set` is a [`TileSet`], which is this crate's
+/// type, and `delvec` may only depend on published crates. Every other property
+/// of the document — the totality rules below, the field order, the omit-never-
+/// null discipline — is the same, and is the same because it is copied from a
+/// definition that is one `use` away rather than from memory.
+///
+/// It is `Deserialize` as well as `Serialize`, which is the fix this type
+/// carries. Written-only, it was a document nothing could edit: every admission
+/// step is a read-modify-write, so a tiled zone had no reachable `lighting`
+/// block, no reachable `anchors` map, and no way to be corrected — and the tools
+/// handed one answered about a single tile instead, which is how a
 /// `spdx: UNKNOWN` skeleton came to be written beside a correctly provenanced
 /// zone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,10 +69,22 @@ pub struct TileSetMeta {
     /// predates sockets" are different claims, and only the first is true.
     #[serde(default)]
     pub connectors: Vec<Connector>,
-    /// The lighting declaration.
-    pub lighting: Lighting,
+    /// The lighting declaration, `Option` for the reason [`PrefabMeta`]'s is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<Lighting>,
     /// Licence and provenance.
-    pub license: License,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<License>,
+    /// The zone's spatial contract, in **zone** coordinates, for the reason
+    /// `anchors` are: a cut is not part of the building.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spatial_contract: Option<SpatialContract>,
+    /// Every top-level key this version does not model, kept verbatim — the
+    /// same rule [`PrefabMeta::extra`] states, for the same reason: a tool that
+    /// reads a document, edits one block and writes it back must not delete
+    /// what it does not model.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
 }
 
 impl TileSetMeta {
@@ -159,19 +150,27 @@ impl PrefabDoc {
         PrefabDoc::from_json(&text).map(Some)
     }
 
-    /// The `lighting` block, for the one step that owns it.
-    pub fn lighting_mut(&mut self) -> &mut Lighting {
+    /// The `lighting` block, when the document carries one.
+    pub fn lighting(&self) -> Option<&Lighting> {
         match self {
-            PrefabDoc::Single(m) => &mut m.lighting,
-            PrefabDoc::Zone(m) => &mut m.lighting,
+            PrefabDoc::Single(m) => m.lighting.as_ref(),
+            PrefabDoc::Zone(m) => m.lighting.as_ref(),
+        }
+    }
+
+    /// Declare the piece's lighting — the one block an admission step owns.
+    pub fn set_lighting(&mut self, lighting: Lighting) {
+        match self {
+            PrefabDoc::Single(m) => m.lighting = Some(lighting),
+            PrefabDoc::Zone(m) => m.lighting = Some(lighting),
         }
     }
 
     /// The licence block — what this document can say about where it came from.
-    pub fn license(&self) -> &License {
+    pub fn license(&self) -> Option<&License> {
         match self {
-            PrefabDoc::Single(m) => &m.license,
-            PrefabDoc::Zone(m) => &m.license,
+            PrefabDoc::Single(m) => m.license.as_ref(),
+            PrefabDoc::Zone(m) => m.license.as_ref(),
         }
     }
 
@@ -184,276 +183,9 @@ impl PrefabDoc {
     }
 }
 
-/// The `structure` block: which file, how big, for which MC version.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StructureMeta {
-    /// The `.nbt` filename, relative to this metadata file.
-    pub file: String,
-    /// The datapack structure id (a path segment).
-    pub id: String,
-    /// Structure extent `[x, y, z]`.
-    pub size: [i32; 3],
-    /// The MC data version the structure targets (ADR-0009).
-    pub data_version: i32,
-    /// Provenance breadcrumb: what wrote the `.nbt`.
-    pub generator: String,
-}
-
-/// One entry of the `anchors` map.
-///
-/// A point anchor carries `pos` (+ optionally `facing`); a gate anchor carries a
-/// `region` (+ optionally `block`). Both shapes are the same object class, so
-/// both live in one type and each writes only the keys it means.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Anchor {
-    /// Local cell `[x, y, z]`, relative to the structure origin.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pos: Option<[i32; 3]>,
-    /// Cardinal facing keyword.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub facing: Option<String>,
-    /// Local cell range, for a gate anchor.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub region: Option<Region>,
-    /// Block id, for a gate anchor.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub block: Option<String>,
-}
-
-impl Anchor {
-    /// The point-anchor shape: a cell and a facing.
-    pub fn point(pos: [i32; 3], facing: impl Into<String>) -> Anchor {
-        Anchor {
-            pos: Some(pos),
-            facing: Some(facing.into()),
-            region: None,
-            block: None,
-        }
-    }
-}
-
-/// An inclusive local cell range.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Region {
-    /// Low corner `[x, y, z]`.
-    pub from: [i32; 3],
-    /// High corner `[x, y, z]`.
-    pub to: [i32; 3],
-}
-
-/// One jigsaw socket declared by a prefab.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Connector {
-    /// Jigsaw `name`.
-    pub name: String,
-    /// Jigsaw `target`.
-    pub target: String,
-    /// The socket's wall cell, local coords `[x, y, z]`.
-    pub local_pos: [i32; 3],
-    /// Cardinal direction the opening faces outward.
-    pub facing: String,
-    /// Opening extent `[width, height]`.
-    pub opening: [i32; 2],
-    /// Jigsaw joint.
-    pub joint: String,
-}
-
-/// The `lighting` block.
-///
-/// Only `profile` is mandatory. A prefab that has never been probed declares
-/// `{"profile": "unmeasured"}` and carries no measurement, because a claim and
-/// its absence cannot both be true — which is what the engine's own `Lighting`
-/// requires and what the grammar back end emits. A `lit`/`dim`/`dark` profile
-/// does carry both `measured_min_light` and `measured`; the engine refuses one
-/// that does not.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Lighting {
-    /// `unmeasured` | `lit` | `dim` | `dark`.
-    pub profile: String,
-    /// Minimum block light over the walkable floor.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub measured_min_light: Option<i32>,
-    /// When the measurement was taken.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub measured: Option<String>,
-    /// Why the profile is what it is, when that needs saying.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rationale: Option<String>,
-    /// How the measurement was taken.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub method: Option<String>,
-}
-
-impl Lighting {
-    /// The declaration of a piece nothing has probed.
-    pub fn unmeasured() -> Lighting {
-        Lighting {
-            profile: UNMEASURED.to_string(),
-            measured_min_light: None,
-            measured: None,
-            rationale: None,
-            method: None,
-        }
-    }
-}
-
-/// The profile of a prefab whose light nothing has measured.
-pub const UNMEASURED: &str = "unmeasured";
-
-/// The `license` block: the human half and the machine half of provenance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct License {
-    /// Where the asset came from (`original`, or a named upstream).
-    pub source: String,
-    /// SPDX id (ADR-0013).
-    pub spdx: String,
-    /// Human note.
-    pub note: String,
-    /// Human-readable provenance sentence.
-    pub provenance: String,
-    /// The machine-readable provenance row: what regenerates these exact bytes.
-    ///
-    /// Absent for a piece nothing can regenerate — an ingested community build,
-    /// or a hand-edited one. Present, it is the ADR-0006 claim in a form a tool
-    /// can act on rather than a sentence a human can read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub generated_by: Option<GeneratedBy>,
-}
-
-/// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GeneratedBy {
-    /// The back end that produced the bytes.
-    pub generator: String,
-    /// The source program's name.
-    pub program: String,
-    /// `sha256:<64 hex>` over the program's canonical JSON.
-    pub program_hash: String,
-    /// The expansion seed.
-    pub seed: u64,
-}
-
-impl PrefabMeta {
-    /// Parse metadata from JSON text.
-    pub fn from_json(text: &str) -> Result<PrefabMeta, String> {
-        serde_json::from_str(text).map_err(|e| format!("invalid prefab metadata: {e}"))
-    }
-
-    /// Load `<nbt_path>.json` (the sibling metadata), or `Ok(None)` when absent.
-    pub fn beside_nbt(nbt_path: &Path) -> Result<Option<PrefabMeta>, String> {
-        let json_path = nbt_path.with_extension("json");
-        if !json_path.exists() {
-            return Ok(None);
-        }
-        let text = std::fs::read_to_string(&json_path)
-            .map_err(|e| format!("read {}: {e}", json_path.display()))?;
-        Ok(Some(PrefabMeta::from_json(&text)?))
-    }
-
-    /// Serialize as canonical pretty JSON with a trailing newline.
-    pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("prefab metadata serializes") + "\n"
-    }
-
-    /// A minimal skeleton for a freshly admitted external piece.
-    pub fn skeleton(
-        id: &str,
-        size: [i32; 3],
-        data_version: i32,
-        generator: &str,
-        license: License,
-    ) -> PrefabMeta {
-        PrefabMeta {
-            prefab_id: format!("prefab/{id}"),
-            structure: StructureMeta {
-                file: format!("{id}.nbt"),
-                id: id.to_string(),
-                size,
-                data_version,
-                generator: generator.to_string(),
-            },
-            anchors: BTreeMap::new(),
-            connectors: Vec::new(),
-            lighting: Lighting {
-                method: Some("not yet probed".to_string()),
-                ..Lighting::unmeasured()
-            },
-            license,
-        }
-    }
-
-    /// Add or replace a named anchor.
-    pub fn set_anchor(&mut self, name: &str, anchor: Anchor) {
-        self.anchors.insert(name.to_string(), anchor);
-    }
-
-    /// Append a socket connector (idempotent by `local_pos` + `facing`).
-    pub fn add_connector(&mut self, c: Connector) {
-        if !self
-            .connectors
-            .iter()
-            .any(|x| x.local_pos == c.local_pos && x.facing == c.facing)
-        {
-            self.connectors.push(c);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The whole reason this type is not two types: an editing tool reads a
-    /// document, changes one block of it, and writes it back. Anything it does
-    /// not model is deleted, and nothing says so.
-    #[test]
-    fn a_read_modify_write_round_trip_keeps_every_field() {
-        let text = r#"{
-  "prefab_id": "prefab/chapel-ward",
-  "structure": {
-    "file": "chapel-ward.nbt",
-    "id": "chapel-ward",
-    "size": [16, 9, 26],
-    "data_version": 4671,
-    "generator": "crates/grammar"
-  },
-  "anchors": {
-    "anchor/bell": { "pos": [3, 1, 4], "facing": "north" },
-    "anchor/ward": { "region": { "from": [0, 0, 0], "to": [2, 2, 2] }, "block": "minecraft:stone" }
-  },
-  "connectors": [],
-  "lighting": { "profile": "unmeasured" },
-  "license": {
-    "source": "original",
-    "spdx": "GPL-3.0-or-later",
-    "note": "n",
-    "provenance": "p",
-    "generated_by": {
-      "generator": "grammar",
-      "program": "bell_chapel_ward",
-      "program_hash": "sha256:00",
-      "seed": 1
-    }
-  }
-}
-"#;
-        let mut meta = PrefabMeta::from_json(text).unwrap();
-        meta.lighting = Lighting {
-            profile: "dark".to_string(),
-            measured_min_light: Some(0),
-            measured: Some("2026-08-11".to_string()),
-            rationale: None,
-            method: Some("static estimate".to_string()),
-        };
-        let after: serde_json::Value = serde_json::from_str(&meta.to_json()).unwrap();
-        let before: serde_json::Value = serde_json::from_str(text).unwrap();
-        assert_eq!(
-            after["license"]["generated_by"], before["license"]["generated_by"],
-            "the provenance row must survive an edit to an unrelated block"
-        );
-        assert_eq!(after["anchors"], before["anchors"]);
-        assert_eq!(after["structure"], before["structure"]);
-    }
 
     /// A tiled zone's manifest is a prefab document like any other: it is read,
     /// one block of it is edited, and it is written back whole.
@@ -487,73 +219,40 @@ mod tests {
     "note": "n",
     "provenance": "p",
     "generated_by": { "generator": "grammar", "program": "nd", "program_hash": "sha256:00", "seed": 1 }
-  }
+  },
+  "a_key_no_engine_models": { "kept": true }
 }
 "#;
         let mut doc = PrefabDoc::from_json(text).unwrap();
         assert!(matches!(doc, PrefabDoc::Zone(_)));
-        assert_eq!(doc.license().spdx, "GPL-3.0-or-later");
-        *doc.lighting_mut() = Lighting {
-            profile: "lit".to_string(),
+        assert_eq!(doc.license().unwrap().spdx, "GPL-3.0-or-later");
+        doc.set_lighting(Lighting {
+            profile: LightingProfile::Lit,
             measured_min_light: Some(6),
             measured: Some(String::new()),
             rationale: None,
             method: Some("static estimate".to_string()),
-        };
+        });
         let after: serde_json::Value = serde_json::from_str(&doc.to_json()).unwrap();
         let before: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(after["license"], before["license"]);
         assert_eq!(after["structure_set"], before["structure_set"]);
         assert_eq!(after["anchors"], before["anchors"]);
         assert_eq!(after["lighting"]["profile"], "lit");
-
-        // The two shapes are told apart by which structure key is present, and
-        // a document with neither is refused rather than half-read.
-        assert!(matches!(
-            PrefabDoc::from_json(
-                &PrefabMeta::skeleton(
-                    "x",
-                    [1, 1, 1],
-                    4671,
-                    "t",
-                    License {
-                        source: "original".into(),
-                        spdx: "CC0-1.0".into(),
-                        note: String::new(),
-                        provenance: String::new(),
-                        generated_by: None,
-                    },
-                )
-                .to_json()
-            )
-            .unwrap(),
-            PrefabDoc::Single(_)
-        ));
-        let err = PrefabDoc::from_json(r#"{"prefab_id":"prefab/x"}"#).unwrap_err();
-        assert!(err.contains("structure_set"), "{err}");
+        // Reading is total here too: a key this version has never heard of
+        // survives an edit rather than being deleted by the tool that made it.
+        assert_eq!(
+            after["a_key_no_engine_models"], before["a_key_no_engine_models"],
+            "an unmodelled key must survive a read-modify-write"
+        );
     }
 
-    /// A piece nothing has regenerated has no row, and the key is absent rather
-    /// than `null` — `null` reads as "measured, and the answer is nothing".
+    /// The two shapes are told apart by which structure key is present, and a
+    /// document with neither is refused rather than half-read.
     #[test]
-    fn absent_optional_fields_are_omitted_not_nulled() {
-        let meta = PrefabMeta::skeleton(
-            "ingested",
-            [3, 3, 3],
-            4671,
-            "delve-admit (external admission)",
-            License {
-                source: "unknown".to_string(),
-                spdx: "UNKNOWN".to_string(),
-                note: String::new(),
-                provenance: String::new(),
-                generated_by: None,
-            },
-        );
-        let json = meta.to_json();
-        assert!(!json.contains("generated_by"), "{json}");
-        assert!(!json.contains("null"), "{json}");
-        assert!(json.contains("\"connectors\": []"), "{json}");
-        assert_eq!(PrefabMeta::from_json(&json).unwrap(), meta);
+    fn a_document_that_names_no_blocks_is_refused_naming_both_keys() {
+        let err = PrefabDoc::from_json(r#"{"prefab_id":"prefab/x"}"#).unwrap_err();
+        assert!(err.contains("structure_set"), "{err}");
+        assert!(err.contains("structure"), "{err}");
     }
 }

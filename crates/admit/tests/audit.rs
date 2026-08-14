@@ -190,11 +190,13 @@ fn report_json_is_machine_readable() {
     assert!(json.ends_with("}\n"));
 }
 
-/// `DW0733`: a block the pinned game does not have.
+/// `DW0733`: a block the pinned game does not have, in a template at the pin.
 ///
-/// The allowlist cannot catch this and the test says why: `minecraft:chain` is
-/// in the built-in allowlist to this day, because an allowlist is a list of
-/// names somebody once approved and nothing re-checks a name against the game.
+/// The allowlist cannot catch this class and the test says why: an allowlist
+/// is a list of names somebody once approved, and nothing re-checks a name
+/// against the game — `minecraft:chain` sat in the built-in allowlist long
+/// after 1.21.11 renamed it (the entry is `iron_chain` now, but that was a
+/// hand edit, which is exactly what cannot be relied on).
 #[test]
 fn a_block_the_pinned_version_does_not_have_fails_the_audit() {
     let s = fixtures::renamed_block_piece();
@@ -226,5 +228,92 @@ fn the_rename_passes_the_audit() {
     );
     let (rep, _) = audit("ropes", &s, &Allowlist::default_building());
     assert_eq!(rep.unknown_blocks, 0);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+}
+
+/// `DW0734`: the same unknown id in a template that PRE-DATES the pin is not a
+/// defect — the game datafixes every structure it loads against the file's
+/// `DataVersion`, and `chain` → `iron_chain` is registered at schema 4541.
+/// The shipped proof is `prefabs/hero-temple-ruin-arch.nbt` (DataVersion 2975,
+/// carries `minecraft:chain`, loads fine); refusing it under `DW0733` was a
+/// measured false positive. The audit warns — loud enough to catch a typo no
+/// fixer will ever map — and passes.
+#[test]
+fn a_pre_pin_template_with_a_datafixable_id_warns_instead_of_failing() {
+    let mut s = fixtures::renamed_block_piece();
+    s.data_version = 2975; // hero-temple-ruin-arch's actual DataVersion
+    // The allowlist is a separate question; permit the piece's palette so the
+    // test isolates the DataVersion rule.
+    let allow = Allowlist::from_file(
+        r#"{ "allow": ["minecraft:air", "minecraft:stone_bricks", "minecraft:glowstone",
+                       "minecraft:chain"] }"#,
+    )
+    .unwrap();
+    let (rep, _) = audit("arch", &s, &allow);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    assert_eq!(rep.unknown_blocks, 0);
+    assert_eq!(rep.pre_pin_unknown, 1);
+    let f = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0734")
+        .expect("DW0734 must fire");
+    assert_eq!(f.severity, "warning");
+    assert!(f.message.contains("2975"), "{}", f.message);
+}
+
+/// `DW0735`: a shape-carrying (multipart) property omitted is an error — the
+/// block places disconnected — while a variant-picking omission (a lantern's
+/// `hanging`, `waterlogged` anywhere) is the author's default and stays
+/// silent. The line is the block class's own blockstate definition, not a
+/// hand-kept list.
+#[test]
+fn an_omitted_connection_property_fails_and_a_variant_omission_does_not() {
+    let mut s = fixtures::clean_room();
+    // The real defect: bars with nothing written — an isolated post.
+    s.set_cell(
+        [2, 1, 2],
+        delvewright_admit::structure::PaletteEntry::simple("minecraft:iron_bars"),
+        None,
+    );
+    // The benign omission: a lantern with neither `hanging` nor `waterlogged`.
+    s.set_cell(
+        [1, 2, 1],
+        delvewright_admit::structure::PaletteEntry::simple("minecraft:lantern"),
+        None,
+    );
+    let (rep, _) = audit("grate", &s, &Allowlist::default_building());
+    assert!(!rep.is_pass());
+    assert_eq!(rep.underspecified, 1, "the lantern must not be flagged");
+    let f = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0735")
+        .expect("DW0735 must fire");
+    assert_eq!(f.severity, "error");
+    assert!(f.message.contains("minecraft:iron_bars"), "{}", f.message);
+    assert!(
+        f.message.contains("east, north, south, west"),
+        "{}",
+        f.message
+    );
+
+    // ...and the same bars with their connections written audit clean.
+    let mut s = fixtures::clean_room();
+    s.set_cell(
+        [2, 1, 2],
+        delvewright_admit::structure::PaletteEntry::with_props(
+            "minecraft:iron_bars",
+            &[
+                ("east", "false"),
+                ("north", "true"),
+                ("south", "true"),
+                ("west", "false"),
+            ],
+        ),
+        None,
+    );
+    let (rep, _) = audit("grate", &s, &Allowlist::default_building());
+    assert_eq!(rep.underspecified, 0);
     assert!(rep.is_pass(), "{:?}", rep.findings);
 }

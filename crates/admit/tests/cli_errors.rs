@@ -240,7 +240,7 @@ fn lighting_write_on_a_manifest_keeps_the_zones_provenance() {
     assert!(!dir.join("zone.x0y0z0.json").exists());
 }
 
-/// `DW0734`: a whole-piece command handed ONE TILE is refused — and the refusal
+/// `DW0739`: a whole-piece command handed ONE TILE is refused — and the refusal
 /// survives the tile being copied away from its manifest.
 ///
 /// This is the general form. The old guard asked "is there a manifest beside
@@ -273,7 +273,7 @@ fn a_detached_tile_is_still_refused_at_every_door() {
             .unwrap();
         assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains("DW0734"), "{args:?}: {stderr}");
+        assert!(stderr.contains("DW0739"), "{args:?}: {stderr}");
         assert!(stderr.contains("separated from its set"), "{stderr}");
     }
 
@@ -286,7 +286,7 @@ fn a_detached_tile_is_still_refused_at_every_door() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2), "{out:?}");
-    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0734"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0739"));
 
     // ...and the door nobody points at deliberately: a gallery over a directory
     // that holds tiles would put slices of one building on five plinths.
@@ -298,7 +298,7 @@ fn a_detached_tile_is_still_refused_at_every_door() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2), "{out:?}");
-    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0734"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0739"));
 }
 
 /// `DW0753`: `--write` with no metadata to write into REFUSES, and writes

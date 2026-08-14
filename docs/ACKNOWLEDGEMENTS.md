@@ -106,6 +106,35 @@ Eger's, the church grammar is Janista Gitbumrungsin's.
 |---|---|---|
 | [skinview3d](https://github.com/bs-community/skinview3d) | MIT | **Not adopted.** spec-0009 anticipated a "skinview3d-lineage, Node" preview renderer, but skinview3d is browser-only (three.js/WebGL); a headless build needs a fragile native-GL stack whose output varies across GPU drivers — contradicting the "produced deterministically" acceptance criterion. `skinpy-extended`'s pure-Python isometric renderer serves the verify loop deterministically, so no WebGL dependency was added. |
 
+## Block palette selection (spec-0035)
+
+The palette layer's measurement is this repo's own, over its own pinned data.
+One published transform is used, and the closest prior art is surveyed here with
+its verdict, because "we looked and took nothing" is a different ledger status
+from "we took nothing because we did not look".
+
+### Adopted — a published transform
+
+| Source | License (verified) | What we use |
+|---|---|---|
+| [Oklab](https://bottosson.github.io/posts/oklab/) — Björn Ottosson, 23 Dec 2020 | **Public domain**, with MIT offered as an alternative: "The code is available in public domain, feel free to use it any way you please. It is also available under an MIT licensee if you for some reason can't or don't want to use public domain software." (verified 2026-08-13 from the post itself) | The sRGB → Oklab transform in `tools/block-appearance.py`, written from the published LMS matrices and cube-root pipeline. It is the whole reason a block's "how coloured is it" is ONE number comparable across 1146 blocks: Oklab's lightness axis is perceptually uniform and its chroma is a plain Euclidean radius in (a, b), which sRGB and HSL do not give. No implementation is reproduced — the constants are the published ones and the surrounding code is ours. |
+
+### Surveyed, nothing ported — and why
+
+| Source | License (verified) | Disposition |
+|---|---|---|
+| [Blockpedia](https://github.com/Nano112/blockpedia) (Rust, crates.io `blockpedia` 0.1.9) | **MIT** — "Copyright (c) 2024 Harrison Nano112", verified 2026-08-13 from the upstream `LICENSE` file and cross-checked against `Cargo.toml` (`license = "MIT"`); the two agree | **Ideas-only, and the reason is the source rather than the licence.** MIT would have permitted a port outright. spec-0035 §2 names it as the closest real prior art on the strength of its advertised k-means and edge-weighted colour extraction, block families and shape variants; reading the implementation, none of those three is what the name says. `extract_clustered_color(&self, img, _k)` ignores `k` and returns a plain arithmetic mean over pixels with alpha > 128 — its own comment reads "Simple k-means (just return average for now, can be improved)". `extract_edge_weighted_color` applies no edge operator at all: it crops a border margin of `(width.min(height) / 8).max(1)` and averages the centre. And `rgb_to_oklab_simple` is not Oklab — it is a Rec.709 luma plus two hand-rolled opponent terms, so its `oklab_distance` and `GradientMethod::LinearOklab` measure something else under Oklab's name. Families and shape variants are ID-suffix morphology (`get_block_families`, `detect_block_family`, `extract_block_shape`), which is precisely the derivation spec-0035 §3.4 rules out — `packed_mud`/`mud_bricks` and `end_stone`/`stone` mis-merge in opposite directions under stem matching. Its data is also 1.20.4, where this project is pinned to 1.21.11 (ADR-0009). So: our extraction is the real Ottosson transform over the pinned jar's own pixels, families come from vanilla's recipe graph and forms from vanilla's own tags. The one idea genuinely taken is architectural and was already spec-0035 §4.1's — precompute a per-block derived colour table once and cache it (Blockpedia's `data/color_cache.json`) — which is a shape, not code. Recorded so no future session re-does this reading. |
+| [mc_block_color_mapper](https://github.com/RandomGamingDev/mc_block_color_mapper) | MIT | **Ideas-only.** Cited in spec-0035 §2 as precedent that a derived per-block colour table is publishable. Nothing taken; our numbers are measured from the pinned 1.21.11 jar. |
+| [MCPalette](https://github.com/LordKnish/MCPalette) | **No licence declared** | **Ideas-only by rule** (ADR-0013: an unlicensed source is never ported), and in fact no idea from it is used either. |
+| mctoolbox · BlockBlend · Palettinator · deltacalculator · [blockpalettes.com](https://www.blockpalettes.com/) · minecraft-pixel-art.com/collections | Site ToS, no data licence disclosed | **Nothing taken, including taxonomies.** minecraft-pixel-art's 15 overlapping collections are the only faceted prior art found, and the taxonomy is not obtainable under a licence — our facets are computed from vanilla data instead. |
+| [Ashby material-selection charts](https://www.sciencedirect.com/topics/materials-science/material-selection-chart) · CMF (colour–material–finish) practice | Published method | **Cited as method, not ported.** The screen → shortlist → **look** shape is theirs: turn an impossible decision space into a small one by eliminating on computed properties, then let the eye finish. CMF is where the leaf is named explicitly — a shortlist ends at samples, never at a number, which is why `--sheet` exists. |
+| Builder-community craft rules (60/30/10; "share two of three: colour temperature, brightness, material logic") | Unattributable folk practice | Cited, not ported. spec-0027 §4 already adopts 60/30/10; spec-0035 supplies the measurement that makes "loud" computable. |
+
+**No texture is redistributed.** The jar is read from the creator's own
+installation (the Chunky row's rule), the swatch sheet is generation-time working
+material in a gitignored directory, and nothing it touches can move a delve's
+bytes (ADR-0006) or carry a licence into one (ADR-0013).
+
 ## Writing craft & translation (generation-time prompts)
 
 Prose is authored by an LLM at generation time, so the craft rules live in the
