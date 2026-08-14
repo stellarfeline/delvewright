@@ -1,19 +1,19 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "lethal-volume",
-  "stage": "world",
   "content": {
-    "title": "The Drop",
-    "theme": "A keep whose floor is not to be trusted.",
-    "premise": "A lethal volume fixture (spec-0031): one declared box that kills whatever enters it, so the generated PackTest template runs against a live server.",
-    "seed": 20260729,
-    "target_minutes": 5,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Keep",
         "prefab": "prefab/hello-room"
       }
-    ]
-  }
+    ],
+    "premise": "A lethal volume fixture (spec-0031): one declared box that kills whatever enters it, so the generated PackTest template runs against a live server.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "theme": "A keep whose floor is not to be trusted.",
+    "title": "The Drop"
+  },
+  "dsl_version": "0.2.0",
+  "stage": "world"
 }

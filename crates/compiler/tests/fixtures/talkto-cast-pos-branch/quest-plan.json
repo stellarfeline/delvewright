@@ -1,60 +1,60 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "talkto-cast-branch",
-  "stage": "quest-plan",
   "content": {
-    "quests": [
-      {
-        "id": "quest/decide",
-        "goal": "Choose whether to hold the gate with the Keeper or bolt for the moor road.",
-        "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
-        "depends_on": [],
-        "mandatory": true,
-        "act": 1
-      },
-      {
-        "id": "quest/parley",
-        "goal": "Take the Keeper's last word — wherever the choice left him standing.",
-        "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
-        "depends_on": [
-          "quest/decide"
-        ],
-        "mandatory": true,
-        "act": 2
-      }
-    ],
-    "finale": "quest/parley",
     "branch_points": [
       {
-        "id": "branch-point/gate",
-        "opens_at": "quest/decide",
+        "branches": [
+          {
+            "flags": [
+              "flag/wait"
+            ],
+            "id": "branch/hold",
+            "leads_to": "quest/parley"
+          },
+          {
+            "flags": [
+              "flag/flee"
+            ],
+            "id": "branch/bolt",
+            "leads_to": "quest/parley"
+          }
+        ],
         "forks_on": [
           "flag/wait",
           "flag/flee"
         ],
-        "branches": [
-          {
-            "id": "branch/hold",
-            "flags": [
-              "flag/wait"
-            ],
-            "leads_to": "quest/parley"
-          },
-          {
-            "id": "branch/bolt",
-            "flags": [
-              "flag/flee"
-            ],
-            "leads_to": "quest/parley"
-          }
+        "id": "branch-point/gate",
+        "opens_at": "quest/decide"
+      }
+    ],
+    "finale": "quest/parley",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Choose whether to hold the gate with the Keeper or bolt for the moor road.",
+        "id": "quest/decide",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/decide"
+        ],
+        "goal": "Take the Keeper's last word — wherever the choice left him standing.",
+        "id": "quest/parley",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "quest-plan"
 }

@@ -102,7 +102,7 @@ pub fn rafter_hall() -> Program {
         .param("bracket", 2)
         .param("span_beams", 0)
         .role("stone", BlockState::simple("stone_bricks"))
-        .role("timber", BlockState::simple("dark_oak_wood"))
+        .role("timber", BlockState::with("dark_oak_wood", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         // Length onto the longer horizontal axis, up stays up: the W1 frame, so
         // every derived facing points down the hall along travel.

@@ -1,0 +1,20 @@
+{
+  "campaign_id": "water-deck",
+  "content": {
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Keep",
+        "prefab": "prefab/hello-room"
+      }
+    ],
+    "difficulty": "normal",
+    "premise": "spec-0038 probe 1: the lift fixture with both car-floor fill-region blocks changed to minecraft:water. If this builds green, the completability model accepts a water surface as standable ground the party is teleported onto - the model does not know a fluid from a floor.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "theme": "A keep whose two landings are joined by one cage on a chain.",
+    "title": "Probe: a deck of water"
+  },
+  "dsl_version": "0.10.0",
+  "stage": "world"
+}

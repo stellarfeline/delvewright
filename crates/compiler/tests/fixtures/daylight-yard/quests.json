@@ -1,29 +1,29 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "daylight-yard",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/hold-the-yard",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/muster",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           },
           {
-            "type": "kill",
-            "id": "obj/purge",
-            "title": "Hold the Yard",
-            "hint": "Put the hollow garrison down where it stands.",
-            "wave": "wave/garrison",
             "after": [
               "obj/muster"
-            ]
+            ],
+            "hint": "Put the hollow garrison down where it stands.",
+            "id": "obj/purge",
+            "title": "Hold the Yard",
+            "type": "kill",
+            "wave": "wave/garrison"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
           }
         ],
         "on_objective_complete": {
@@ -38,25 +38,25 @@
             }
           ]
         },
-        "on_complete": [
-          {
-            "type": "campaign-complete"
-          }
-        ]
+        "trigger": {
+          "type": "campaign-start"
+        }
       }
     ],
     "waves": [
       {
-        "id": "wave/garrison",
         "anchor": "anchor/exit",
+        "id": "wave/garrison",
         "mobs": [
           {
-            "entity": "minecraft:zombie",
             "count": 2,
+            "entity": "minecraft:zombie",
             "name": "Hollow Footman"
           }
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "quests"
 }

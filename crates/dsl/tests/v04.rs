@@ -98,11 +98,16 @@ fn malformed_skin_texture_id_is_dw0190() {
 fn all_completing_options_flag_gated_is_dw0191() {
     // Gate the only completing option on a flag nothing ever sets: every
     // completing option for `obj/talk` becomes requires_flags-gated.
-    let dialogue = valid_dialogue_v04().replacen(
-        "\"label\": \"Open the door, please.\",",
-        "\"label\": \"Open the door, please.\", \"requires_flags\": [\"flag/never-set\"],",
-        1,
-    );
+    let dialogue = common::patch_doc(&valid_dialogue_v04(), |d| {
+        let opts = d["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .expect("the greeting node has options");
+        let completing = opts
+            .iter_mut()
+            .find(|o| o["effects"][0]["type"] == "complete-objective")
+            .expect("the greeting node still holds the only completing option");
+        completing["requires_flags"] = serde_json::json!(["flag/never-set"]);
+    });
     let diags = check_campaign(&campaign_with(&valid_npcs_v04(), QUESTS_BASE, &dialogue));
     assert!(
         diags.iter().any(|d| d.code == "DW0191"),

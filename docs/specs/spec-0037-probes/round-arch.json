@@ -1,0 +1,1638 @@
+{
+ "name": "probe-round-arch",
+ "start": "arch",
+ "params": {
+  "r": 8
+ },
+ "palette": {
+  "mass": "minecraft:stone_bricks"
+ },
+ "rules": {
+  "arch": [
+   {
+    "weight": 1,
+    "body": {
+     "op": "call",
+     "symbol": "round_profile"
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "x"
+       },
+       "op": "eq",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "int",
+         "value": 2
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "eq",
+       "rhs": {
+        "expr": "param",
+        "name": "r"
+       }
+      }
+     ]
+    }
+   }
+  ],
+  "round_profile": [
+   {
+    "weight": 1,
+    "body": {
+     "op": "split",
+     "axis": "y",
+     "sizes": [
+      {
+       "size": "absolute",
+       "blocks": {
+        "expr": "int",
+        "value": 1
+       }
+      },
+      {
+       "size": "relative",
+       "weight": {
+        "expr": "int",
+        "value": 1
+       }
+      }
+     ],
+     "children": [
+      {
+       "op": "void"
+      },
+      {
+       "op": "call",
+       "symbol": "round_profile"
+      }
+     ]
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "ge",
+       "rhs": {
+        "expr": "int",
+        "value": 2
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 0
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 0
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "le",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 0
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 0
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "gt",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "weight": 1,
+    "body": {
+     "op": "split",
+     "axis": "y",
+     "sizes": [
+      {
+       "size": "absolute",
+       "blocks": {
+        "expr": "int",
+        "value": 1
+       }
+      },
+      {
+       "size": "relative",
+       "weight": {
+        "expr": "int",
+        "value": 1
+       }
+      }
+     ],
+     "children": [
+      {
+       "op": "void"
+      },
+      {
+       "op": "split",
+       "axis": "x",
+       "sizes": [
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 1
+         }
+        },
+        {
+         "size": "relative",
+         "weight": {
+          "expr": "int",
+          "value": 1
+         }
+        },
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 1
+         }
+        }
+       ],
+       "children": [
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        },
+        {
+         "op": "call",
+         "symbol": "round_profile"
+        },
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "ge",
+       "rhs": {
+        "expr": "int",
+        "value": 2
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "le",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 1
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 1
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "gt",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "weight": 1,
+    "body": {
+     "op": "split",
+     "axis": "y",
+     "sizes": [
+      {
+       "size": "absolute",
+       "blocks": {
+        "expr": "int",
+        "value": 1
+       }
+      },
+      {
+       "size": "relative",
+       "weight": {
+        "expr": "int",
+        "value": 1
+       }
+      }
+     ],
+     "children": [
+      {
+       "op": "void"
+      },
+      {
+       "op": "split",
+       "axis": "x",
+       "sizes": [
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 2
+         }
+        },
+        {
+         "size": "relative",
+         "weight": {
+          "expr": "int",
+          "value": 1
+         }
+        },
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 2
+         }
+        }
+       ],
+       "children": [
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        },
+        {
+         "op": "call",
+         "symbol": "round_profile"
+        },
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "ge",
+       "rhs": {
+        "expr": "int",
+        "value": 2
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 2
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 2
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "le",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "gt",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "weight": 1,
+    "body": {
+     "op": "split",
+     "axis": "y",
+     "sizes": [
+      {
+       "size": "absolute",
+       "blocks": {
+        "expr": "int",
+        "value": 1
+       }
+      },
+      {
+       "size": "relative",
+       "weight": {
+        "expr": "int",
+        "value": 1
+       }
+      }
+     ],
+     "children": [
+      {
+       "op": "void"
+      },
+      {
+       "op": "split",
+       "axis": "x",
+       "sizes": [
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 3
+         }
+        },
+        {
+         "size": "relative",
+         "weight": {
+          "expr": "int",
+          "value": 1
+         }
+        },
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 3
+         }
+        }
+       ],
+       "children": [
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        },
+        {
+         "op": "call",
+         "symbol": "round_profile"
+        },
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "ge",
+       "rhs": {
+        "expr": "int",
+        "value": 2
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 3
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 3
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "le",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 3
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 3
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "gt",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "weight": 1,
+    "body": {
+     "op": "split",
+     "axis": "y",
+     "sizes": [
+      {
+       "size": "absolute",
+       "blocks": {
+        "expr": "int",
+        "value": 1
+       }
+      },
+      {
+       "size": "relative",
+       "weight": {
+        "expr": "int",
+        "value": 1
+       }
+      }
+     ],
+     "children": [
+      {
+       "op": "void"
+      },
+      {
+       "op": "split",
+       "axis": "x",
+       "sizes": [
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 4
+         }
+        },
+        {
+         "size": "relative",
+         "weight": {
+          "expr": "int",
+          "value": 1
+         }
+        },
+        {
+         "size": "absolute",
+         "blocks": {
+          "expr": "int",
+          "value": 4
+         }
+        }
+       ],
+       "children": [
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        },
+        {
+         "op": "call",
+         "symbol": "round_profile"
+        },
+        {
+         "op": "fill",
+         "material": {
+          "role": "mass"
+         }
+        }
+       ]
+      }
+     ]
+    },
+    "when": {
+     "cond": "all",
+     "of": [
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "dim",
+        "dim": "y"
+       },
+       "op": "ge",
+       "rhs": {
+        "expr": "int",
+        "value": 2
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 4
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "dim",
+            "dim": "x"
+           },
+           "op": "div",
+           "rhs": {
+            "expr": "int",
+            "value": 2
+           }
+          },
+          "op": "sub",
+          "rhs": {
+           "expr": "int",
+           "value": 4
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "le",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      },
+      {
+       "cond": "cmp",
+       "lhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 4
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "arith",
+            "lhs": {
+             "expr": "dim",
+             "dim": "x"
+            },
+            "op": "div",
+            "rhs": {
+             "expr": "int",
+             "value": 2
+            }
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "int",
+            "value": 4
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        },
+        "op": "add",
+        "rhs": {
+         "expr": "arith",
+         "lhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         },
+         "op": "mul",
+         "rhs": {
+          "expr": "arith",
+          "lhs": {
+           "expr": "arith",
+           "lhs": {
+            "expr": "param",
+            "name": "r"
+           },
+           "op": "sub",
+           "rhs": {
+            "expr": "dim",
+            "dim": "y"
+           }
+          },
+          "op": "add",
+          "rhs": {
+           "expr": "int",
+           "value": 1
+          }
+         }
+        }
+       },
+       "op": "gt",
+       "rhs": {
+        "expr": "arith",
+        "lhs": {
+         "expr": "param",
+         "name": "r"
+        },
+        "op": "mul",
+        "rhs": {
+         "expr": "param",
+         "name": "r"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "weight": 1,
+    "body": {
+     "op": "void"
+    },
+    "when": {
+     "cond": "otherwise"
+    }
+   }
+  ]
+ }
+}

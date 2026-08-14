@@ -1,57 +1,57 @@
 {
   "description": "quest effect uses the reserved v0.6 per-effect `requires_flags` gate under a 0.5.0 quests stage",
-  "expect": "DW0141",
   "documents": {
     "quests": {
-      "dsl_version": "0.5.0",
       "campaign_id": "hello-world",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/open-the-door",
-            "trigger": {
-              "type": "campaign-start"
-            },
             "objectives": [
               {
-                "type": "talk-to",
                 "id": "obj/talk",
-                "npc": "npc/keeper"
+                "npc": "npc/keeper",
+                "type": "talk-to"
               },
               {
-                "type": "reach-anchor",
-                "id": "obj/exit",
-                "anchor": "anchor/exit",
-                "radius": 2,
                 "after": [
                   "obj/talk"
-                ]
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
               }
             ],
             "on_objective_complete": {
               "obj/talk": [
                 {
-                  "type": "set-flag",
-                  "flag": "flag/opened"
+                  "flag": "flag/opened",
+                  "type": "set-flag"
                 },
                 {
-                  "type": "open-gate",
                   "anchor": "anchor/door",
                   "requires_flags": [
                     "flag/opened"
-                  ]
+                  ],
+                  "type": "open-gate"
                 }
               ]
             },
-            "on_complete": [
-              {
-                "type": "campaign-complete"
-              }
-            ]
+            "trigger": {
+              "type": "campaign-start"
+            }
           }
         ]
-      }
+      },
+      "dsl_version": "0.5.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0141"
 }

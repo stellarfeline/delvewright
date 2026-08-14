@@ -1,25 +1,25 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "and-join",
-  "stage": "npcs",
   "content": {
     "npcs": [
       {
+        "anchor": "anchor/keeper-stand",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
         "id": "npc/warden",
         "name": "The Ward-Keeper",
-        "role": "quest-giver",
-        "area": "area/keep",
-        "anchor": "anchor/keeper-stand",
-        "base_entity": "minecraft:villager",
         "persona": {
           "archetype": "weary custodian",
-          "speech_style": "Plain, unhurried, fond of pairs and halves.",
+          "backstory": "He has kept the keep since the order that built the wards dissolved, waiting for two hands to arrive at the same hour.",
           "demeanor": "Patient with company, curt with anyone who came alone.",
           "motivation": "See the twin wards drawn together, the way they were meant to be.",
           "secret": "He drew them alone once, and the shrine has never forgiven him.",
-          "backstory": "He has kept the keep since the order that built the wards dissolved, waiting for two hands to arrive at the same hour."
-        }
+          "speech_style": "Plain, unhurried, fond of pairs and halves."
+        },
+        "role": "quest-giver"
       }
     ]
-  }
+  },
+  "dsl_version": "0.2.0",
+  "stage": "npcs"
 }

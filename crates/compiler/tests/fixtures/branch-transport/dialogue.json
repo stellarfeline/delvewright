@@ -1,73 +1,93 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "hello-world",
-  "stage": "dialogue",
   "content": {
     "dialogues": [
       {
-        "npc": "npc/keeper",
-        "root": "dlg/greeting",
         "nodes": [
           {
             "id": "dlg/greeting",
-            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?",
             "options": [
               {
                 "label": "Who are you?",
                 "next": "dlg/lore"
               },
               {
-                "label": "We hold.",
                 "effects": [
-                  { "type": "set-flag", "flag": "flag/wait" },
-                  { "type": "complete-objective", "objective": "obj/decide" }
+                  {
+                    "flag": "flag/wait",
+                    "type": "set-flag"
+                  },
+                  {
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
+                  }
                 ],
                 "happening": {
-                  "verb": "believes",
+                  "subject": "npc/keeper",
                   "text": "The party promises the Keeper they will stand the watch — the hold branch opens.",
-                  "subject": "npc/keeper"
-                }
+                  "verb": "believes"
+                },
+                "label": "We hold."
               },
               {
-                "label": "I run.",
                 "effects": [
-                  { "type": "set-flag", "flag": "flag/flee" },
-                  { "type": "complete-objective", "objective": "obj/decide" }
+                  {
+                    "flag": "flag/flee",
+                    "type": "set-flag"
+                  },
+                  {
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
+                  }
                 ],
                 "happening": {
-                  "verb": "believes",
+                  "subject": "npc/keeper",
                   "text": "The party refuses the watch — the bolt branch opens.",
-                  "subject": "npc/keeper"
-                }
+                  "verb": "believes"
+                },
+                "label": "I run."
               },
               {
                 "label": "The watch is stood.",
-                "requires_flags": ["flag/wait"],
-                "next": "dlg/watch"
+                "next": "dlg/watch",
+                "requires_flags": [
+                  "flag/wait"
+                ]
               }
-            ]
+            ],
+            "text": "Halt, traveler. The moor road is drowned and the gate stays shut. Well? Do we hold, or do you run?"
           },
           {
             "id": "dlg/lore",
-            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road.",
             "options": [
-              { "label": "Back.", "next": "dlg/greeting" }
-            ]
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "I am the Keeper. I have watched this gate since the moor swallowed the old road."
           },
           {
             "id": "dlg/watch",
-            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours.",
             "options": [
               {
-                "label": "Open it.",
                 "effects": [
-                  { "type": "complete-objective", "objective": "obj/watch" }
-                ]
+                  {
+                    "objective": "obj/watch",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Open it."
               }
-            ]
+            ],
+            "text": "So it is. Dawn, and the moor kept its distance. The gate is yours."
           }
-        ]
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "dialogue"
 }

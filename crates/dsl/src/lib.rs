@@ -5,7 +5,11 @@
 //! - [`parse_campaign`] / [`check_campaign`]: parse the six raw stage documents.
 //! - [`validate_campaign`]: run all spec-0001 v0.2 rule groups on a parsed
 //!   [`Campaign`], returning [`Diagnostic`]s (spec-0002 `--json` shape).
-//! - [`to_canonical_string`]: the single canonical writer.
+//! - [`to_canonical_string`]: the single canonical writer — pretty JSON put
+//!   through [`fmt`], so what the compiler WRITES is what `delvec fmt --check`
+//!   accepts. One canonical form, one implementation.
+//! - [`fmt`]: that canonical form as a grammar-level formatter over any
+//!   authored JSON (stage documents, l10n sidecars, prefab metadata).
 //! - [`stage_schema`]: export a stage's JSON Schema.
 //!
 //! Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
@@ -17,10 +21,12 @@ pub mod diagnostic;
 pub mod effects;
 pub mod envelope;
 pub mod fence;
+pub mod fmt;
 pub mod gate;
 pub mod ids;
 pub mod l10n;
 pub mod mclang;
+pub mod prefab;
 pub mod registry;
 pub mod schema;
 pub mod stages;
@@ -54,6 +60,7 @@ pub use l10n::{
     validate_marker_channel, validate_tr_sigil,
 };
 pub use mclang::mc_lang_code;
+pub use prefab::PrefabMeta;
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,

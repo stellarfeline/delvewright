@@ -1,8 +1,8 @@
 {
-  "dsl_version": "0.10.0",
   "campaign_id": "lift",
-  "stage": "dialogue",
   "content": {
     "dialogues": []
-  }
+  },
+  "dsl_version": "0.10.0",
+  "stage": "dialogue"
 }
