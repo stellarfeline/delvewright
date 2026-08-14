@@ -16,8 +16,8 @@
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
-    Anchor, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabMeta, Region,
-    StructureMeta,
+    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabMeta,
+    Region, StructureMeta,
 };
 
 use crate::light::LightProbe;

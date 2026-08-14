@@ -531,7 +531,7 @@ use.
 | `connectors` | no (`[]`) | Jigsaw sockets `{name, target, local_pos[3], facing, opening[2], joint}`. |
 | `lighting` | no | `{profile, measured_min_light?, measured?, rationale?, method?}`. |
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
-| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`. |
+| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one raises `DW0364` rather than passing on an empty check. |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 
 An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
@@ -554,10 +554,20 @@ order of the table above, which is the order the checked-in library already uses
 
 A key the reading version does not model is **kept** and written back out. That
 matters because these files are read-modify-written: `delve-admit socket` edits
-`connectors`, `anchor` edits `anchors`, `lighting` edits `lighting`, and each
-leaves the rest of the document as it found it. A type that models fewer fields
-than the document has deletes the rest on the way out, silently, while every test
-it has passes.
+`connectors`, `lighting` edits `lighting`, `anchor` edits the four place fields
+(`pos`, `facing`, `region`, `block`) of the one anchor it names, and each leaves
+the rest of the document as it found it. A type that models fewer fields than the
+document has deletes the rest on the way out, silently, while every test it has
+passes.
+
+The depth matters as much as the breadth. A step that owned "`anchors`" would be
+licensed to replace an anchor whole, which deletes the `dispenser` cell and
+`trigger_block` a trap's hardware lives on, the `resolves_to` the exporter
+derived from the piece's own contract, and any anchor key the tool does not
+model — none of which the operator typed and all of which is the anchor's.
+`crates/admit/tests/metadata_preservation.rs` holds every step to the paths it
+declares, on a real export carrying each field at risk, and refuses to classify
+a subcommand it has never been told about.
 
 ### `deny_unknown_fields`: where it belongs and where it does not
 

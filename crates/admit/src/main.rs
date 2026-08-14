@@ -17,7 +17,7 @@ use delvewright_admit::catalog::CatalogCard;
 use delvewright_admit::diag::{DW_CONTRACT, DW_GALLERY, DW_INPUT, DW_TOOLING, Diagnostic};
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD};
-use delvewright_admit::meta::{self, Anchor, License, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
 
@@ -469,19 +469,19 @@ fn run_anchor(
     if pos.is_none() && region.is_none() {
         return input_err("anchor needs --pos or --region", json);
     }
-    meta.set_anchor(
+    // This command declares one thing: where the anchor is. Which contract
+    // element it lands in is resolved by the exporter from the piece's own
+    // contract, and the dispenser cell and trigger block are hardware the prefab
+    // wired — none of that is something the operator types, so none of it is
+    // this edit's to write, and re-annotating an anchor that already exists
+    // keeps all of it (`PrefabMeta::edit_anchor`).
+    meta.edit_anchor(
         name,
-        Anchor {
+        AnchorEdit {
             pos,
             facing,
             region: region.map(|(from, to)| Region { from, to }),
             block,
-            // Which contract element the anchor lands in is a fact about the
-            // piece's contract, not something the operator types: `audit`
-            // resolves it against the declared contract and writes it back.
-            // Everything else an anchor can carry is prefab hardware this
-            // command does not declare.
-            ..Anchor::default()
         },
     );
     if let Err(e) = write_meta(nbt, &meta) {

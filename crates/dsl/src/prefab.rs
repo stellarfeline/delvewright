@@ -328,6 +328,24 @@ impl Anchor {
     }
 }
 
+/// Where an anchor is — the only part of an anchor an editing tool declares.
+///
+/// Deliberately a different type from [`Anchor`]: the whole anchor is what a
+/// caller must not be able to hand an editing step, because constructing one
+/// means filling in — and therefore erasing — the hardware, provenance and
+/// unknown keys the caller knows nothing about. See [`PrefabMeta::edit_anchor`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AnchorEdit {
+    /// Local cell `[x, y, z]`, for a point anchor.
+    pub pos: Option<[i32; 3]>,
+    /// Cardinal facing keyword.
+    pub facing: Option<String>,
+    /// Local cell range, for a gate anchor.
+    pub region: Option<Region>,
+    /// Block id filling a gate region.
+    pub block: Option<String>,
+}
+
 /// An inclusive local cell range.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Region {
@@ -467,9 +485,27 @@ impl PrefabMeta {
         }
     }
 
-    /// Add or replace a named anchor.
-    pub fn set_anchor(&mut self, name: &str, anchor: Anchor) {
-        self.anchors.insert(name.to_string(), anchor);
+    /// Annotate a named anchor's **place**, creating the anchor when it is not
+    /// there yet.
+    ///
+    /// An anchor is an object, not a value. A tool that names where the anchor
+    /// is has said nothing about the hardware the prefab wired at it
+    /// ([`Anchor::dispenser`], [`Anchor::trigger_block`]), about which contract
+    /// element an exporter resolved it into ([`Anchor::resolves_to`]), or about
+    /// any key this version has never heard of ([`Anchor::extra`]) — so none of
+    /// those is touched. Replacing the whole anchor instead is the same silent
+    /// deletion this type exists to prevent at the top level, one level down,
+    /// and on the block of the document that has grown most often.
+    ///
+    /// The place itself is one property expressed two ways — a cell or a region
+    /// — so an edit redeclares all four of its fields together and a `pos` does
+    /// supersede a stale `region`.
+    pub fn edit_anchor(&mut self, name: &str, edit: AnchorEdit) {
+        let anchor = self.anchors.entry(name.to_string()).or_default();
+        anchor.pos = edit.pos;
+        anchor.facing = edit.facing;
+        anchor.region = edit.region;
+        anchor.block = edit.block;
     }
 
     /// Append a socket connector (idempotent by `local_pos` + `facing`).
@@ -580,6 +616,95 @@ mod tests {
             after["anchors"]["anchor/a"]["acoustics"],
             before["anchors"]["anchor/a"]["acoustics"]
         );
+    }
+
+    /// The same guarantee **inside** an anchor, which is where the document's
+    /// round trip is finest-grained and where the top-level guarantee above says
+    /// nothing at all.
+    ///
+    /// An editing step that re-annotates an anchor already on the piece names
+    /// only where it is. The dispenser cell the prefab wired, the trigger block
+    /// it must put back, the contract element the exporter resolved, and a key
+    /// no version has heard of are all properties of the anchor and not of the
+    /// edit — so all four survive, and only the place changes.
+    #[test]
+    fn re_annotating_an_anchor_keeps_the_hardware_the_piece_carries() {
+        let text = r#"{
+  "prefab_id": "prefab/trap-room",
+  "structure": { "file": "trap-room.nbt", "id": "trap-room", "size": [7, 5, 7], "data_version": 4671 },
+  "anchors": {
+    "anchor/trap": {
+      "pos": [3, 1, 3],
+      "facing": "north",
+      "resolves_to": "space:hall",
+      "dispenser": [3, 2, 4],
+      "trigger_block": "minecraft:oak_pressure_plate[powered=false]",
+      "acoustics": "reverberant"
+    }
+  },
+  "connectors": [],
+  "lighting": { "profile": "unmeasured" }
+}
+"#;
+        let mut meta = PrefabMeta::from_json(text).unwrap();
+        meta.edit_anchor(
+            "anchor/trap",
+            AnchorEdit {
+                pos: Some([4, 1, 3]),
+                facing: Some("south".to_string()),
+                ..AnchorEdit::default()
+            },
+        );
+        let after: serde_json::Value = serde_json::from_str(&meta.to_json()).unwrap();
+        let a = &after["anchors"]["anchor/trap"];
+        assert_eq!(
+            a["pos"],
+            serde_json::json!([4, 1, 3]),
+            "the place is edited"
+        );
+        assert_eq!(a["facing"], serde_json::json!("south"));
+        assert_eq!(
+            a["dispenser"],
+            serde_json::json!([3, 2, 4]),
+            "the pre-wired dispenser cell is the piece's hardware, not the edit's"
+        );
+        assert_eq!(
+            a["trigger_block"],
+            serde_json::json!("minecraft:oak_pressure_plate[powered=false]"),
+            "flag-gating a trap has to put this exact block back"
+        );
+        assert_eq!(a["resolves_to"], serde_json::json!("space:hall"));
+        assert_eq!(
+            a["acoustics"],
+            serde_json::json!("reverberant"),
+            "a key this version does not model is the anchor's too"
+        );
+
+        // A gate anchor's region and a point anchor's cell are one property, so
+        // naming the cell supersedes the region rather than leaving both.
+        meta.edit_anchor(
+            "anchor/gate",
+            AnchorEdit {
+                region: Some(Region {
+                    from: [0, 0, 0],
+                    to: [1, 2, 0],
+                }),
+                block: Some("minecraft:iron_bars".to_string()),
+                ..AnchorEdit::default()
+            },
+        );
+        meta.edit_anchor(
+            "anchor/gate",
+            AnchorEdit {
+                pos: Some([0, 1, 0]),
+                ..AnchorEdit::default()
+            },
+        );
+        let after: serde_json::Value = serde_json::from_str(&meta.to_json()).unwrap();
+        let g = &after["anchors"]["anchor/gate"];
+        assert_eq!(g["pos"], serde_json::json!([0, 1, 0]));
+        assert!(g.get("region").is_none(), "{g}");
+        assert!(g.get("block").is_none(), "{g}");
     }
 
     /// A piece nothing has regenerated has no row, and the key is absent rather
