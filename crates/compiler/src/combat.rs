@@ -164,13 +164,93 @@ pub struct Encounter {
     pub checkpoint: Option<[i32; 3]>,
 }
 
-/// Cheap gate: does this campaign have any mandatory combat at all? A campaign
-/// with no `kill` step never enters the winnability pass and is byte-identical
-/// to before spec-0023.
+/// Cheap gate: does this campaign have any mandatory **wave** fight? Used where
+/// the question is genuinely about a `kill` step — the die-retry stage, the
+/// checkpoint a death at a wave returns to.
+///
+/// **Not the test for "does this campaign have combat".** That is
+/// [`mandatory_fights`]; see its doc comment for why the distinction cost the
+/// island its whole spec-0023 pass.
 pub fn has_encounters(plan: &Plan) -> bool {
     plan.critical_path
         .iter()
         .any(|s| matches!(s, Step::Kill { .. }))
+}
+
+/// Every fight the party cannot walk away from, of either shape.
+///
+/// ## The defect this replaces
+///
+/// The spec-0023 winnability pass — `DW0470` (a required hostile that cannot be
+/// damaged), `DW0471` (nowhere to fight it from), `DW0472`/`DW0475` (time to
+/// kill), `DW0473` (an unavoidable scripted one-shot), `DW0474` (the party
+/// carries some sustain) — was gated on [`has_encounters`], which is
+/// **`kill`-a-wave, the verb**. A campaign whose combat is *actors* therefore ran
+/// none of it: `nobodys-cave-island` turns five bodies loose on the party, bills
+/// one of them `elite`, ships zero `kill` objectives — and every one of those six
+/// diagnostics was structurally unreachable on it for twenty-two owner rounds,
+/// with `combat-plan.json` reporting `encounters: 0` and nothing anywhere saying
+/// that was a coverage fact rather than a content fact (the staging gate's
+/// `UNBOUND` verdict, row `bell-05`).
+///
+/// Hostility is [`hostile_actors`]'s predicate, not a second opinion: an
+/// `unleash-actor` beat is the campaign's own statement that the party fights
+/// this body, and nothing short of it can swing back.
+#[derive(Clone, Debug, Default)]
+pub struct Fights {
+    /// Mandatory wave fights — one per critical-path `kill` step.
+    pub waves: Vec<String>,
+    /// Actors the campaign turns loose on the party.
+    pub actors: Vec<String>,
+}
+
+impl Fights {
+    /// The binding count: how many fights any combat proof has to reason about.
+    pub fn total(&self) -> usize {
+        self.waves.len() + self.actors.len()
+    }
+
+    /// Whether this campaign has combat at all.
+    pub fn any(&self) -> bool {
+        self.total() > 0
+    }
+
+    /// Why the count is zero, when it is — so a combat pass that examined nothing
+    /// says so instead of returning a silent green.
+    pub fn reason(&self) -> Option<&'static str> {
+        (!self.any()).then_some(
+            "this campaign declares no mandatory combat of either shape: no critical-path `kill` \
+             objective names a wave, and no `unleash-actor` beat turns an actor loose on the \
+             party. Every spec-0023 winnability proof is therefore inapplicable here rather than \
+             passed — a delve with no fights is a legitimate state, and this is the line that \
+             keeps it from reading as one that was checked",
+        )
+    }
+
+    /// The `fights` block of `combat-plan.json`.
+    pub fn to_json(&self) -> Value {
+        let mut o = json!({
+            "waves": self.waves,
+            "actors": self.actors,
+            "total": self.total(),
+            "unbound": !self.any(),
+        });
+        if let Some(why) = self.reason() {
+            o["reason"] = json!(why);
+        }
+        o
+    }
+}
+
+/// Collect [`Fights`] for a compiled plan, in deterministic content order.
+pub fn mandatory_fights(plan: &Plan) -> Fights {
+    Fights {
+        waves: encounters(plan).into_iter().map(|e| e.wave_id).collect(),
+        actors: hostile_actors(plan.campaign)
+            .into_iter()
+            .map(|a| a.id.as_str().to_string())
+            .collect(),
+    }
 }
 
 /// The effective world difficulty: what the campaign declared, else the
@@ -1145,22 +1225,31 @@ pub fn check_winnability(
     }
 
     // ---- DW0474: the party carries some sustain ----------------------------
-    if !encounters.is_empty() && !has_any_sustain(c, &items) {
+    //
+    // Over EVERY fight, not just the wave-shaped ones. "Does the party need food"
+    // is a question about how much fighting they have to do, and an actor the
+    // campaign unleashes on them is a fight by the campaign's own declaration —
+    // keying this to `encounters` alone made a delve whose combat is entirely
+    // actors structurally unable to raise it. See [`mandatory_fights`].
+    let fights = mandatory_fights(plan);
+    if fights.any() && !has_any_sustain(c, &items) {
         warnings.push(Diagnostic::warning(
             DW_NO_SUSTAIN,
             "classes",
             "/content/classes",
             format!(
-                "this campaign has {} mandatory combat encounter(s) and hands the party no \
-                 sustain at all: no class kit, `give-item` effect or `loot` container anywhere \
-                 carries an item with a `minecraft:food` component. Natural regeneration stops \
-                 the moment the hunger bar drops below 18, so after the first fight the party's \
-                 health only ever goes down. Fix: put food in the kits, or stock a container on \
-                 the route. Warning tier because the fight budget a party actually needs \
-                 depends on play the compiler is forbidden to model (spec-0023 \"Out of \
-                 scope\") — the finding here is the literal zero, which is a design fact rather \
-                 than a balance opinion.",
-                encounters.len()
+                "this campaign has {total} mandatory fight(s) — {waves} wave encounter(s) and \
+                 {actors} actor(s) it turns loose on the party — and hands them no sustain at \
+                 all: no class kit, `give-item` effect or `loot` container anywhere carries an \
+                 item with a `minecraft:food` component. Natural regeneration stops the moment \
+                 the hunger bar drops below 18, so after the first fight the party's health only \
+                 ever goes down. Fix: put food in the kits, or stock a container on the route. \
+                 Warning tier because the fight budget a party actually needs depends on play \
+                 the compiler is forbidden to model (spec-0023 \"Out of scope\") — the finding \
+                 here is the literal zero, which is a design fact rather than a balance opinion.",
+                total = fights.total(),
+                waves = fights.waves.len(),
+                actors = fights.actors.len(),
             ),
         ));
     }
@@ -1453,6 +1542,11 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
         "version": plan.campaign.world.dsl_version,
         "campaign_id": plan.namespace,
         "difficulty": difficulty.token(),
+        // The binding count for the whole spec-0023 pass: how many fights the
+        // winnability proofs had to reason about, of BOTH shapes. `encounters`
+        // below is the wave half only, and reading it as "how much combat is in
+        // this delve" is what let a five-hostile campaign look combat-free.
+        "fights": mandatory_fights(plan).to_json(),
         "encounters": entries,
         "actors": actors.iter().map(actor_json).collect::<Vec<_>>(),
         // Sibling of `actors[]`, not a rename of anything: how many actors this
