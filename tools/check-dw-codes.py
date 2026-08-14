@@ -4,8 +4,8 @@
 Keeps `docs/reference/compiler.md` honest against the Rust source (CLAUDE.md
 Methodology): the diagnostics catalog in the reference must list exactly the DW
 codes that exist in `crates/**/*.rs` — no more, no less. It also enforces the
-CLAUDE.md Conventions rule (owner, 2026-07-31): every DW diagnostic must be
-covered by at least one test asserting its code.
+CLAUDE.md Conventions rule: every DW diagnostic must be covered by at least one
+test asserting its code.
 
 ## Consistency (bidirectional)
 
@@ -27,9 +27,9 @@ This is the parallel-branch collision class: two branches each pick "the next
 free code" against the main they branched from, and the merge silently ships one
 number for two rules. Every OTHER gate here passes on a colliding pair — both
 rules are in source, both are documented, both are tested — so consistency and
-coverage cannot see it. Landed after PR #157 shipped `DW0352` for stealth-onset
+coverage cannot see it. It has happened: `DW0352` shipped for stealth-onset
 survivability into a main that had just given `DW0352` to the map editor's
-trap-hardware integrity check (#155).
+trap-hardware integrity check.
 
 ## Test-coverage gate
 
@@ -105,7 +105,7 @@ CRATES_DIR = REPO_ROOT / "crates"
 
 # Codes approved and documented in the reference as "approved, landing" but NOT
 # yet present in the source. Remove a code from here the moment it lands in
-# crates/**/*.rs (the check below forces this). spec-0010 (#35) has landed:
+# crates/**/*.rs (the check below forces this). spec-0010 has landed:
 # DW0211 graduated to a normal catalog row.
 PENDING: set[str] = set()
 

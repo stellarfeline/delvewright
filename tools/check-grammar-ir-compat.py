@@ -88,9 +88,9 @@ def object_types() -> list[tuple[str, str, bool, bool, bool]]:
     `#[serde(flatten)]` field CANNOT carry `deny_unknown_fields`: the attribute
     compiles and then reads every flattened key as unknown, so the engine refuses
     its own documents. Telling an author to add it there is advice that breaks the
-    build in a way `cargo build` cannot see — which is how `ir::Edge` got it
-    during the #413+#417 integration and shipped an engine that could not parse an
-    edge until one CLI round-trip test caught it.
+    build in a way `cargo build` cannot see — which is how `ir::Edge` once got it
+    and shipped an engine that could not parse an edge until one CLI round-trip
+    test caught it.
     """
     out: list[tuple[str, str, bool, bool, bool]] = []
     for module, path in SOURCES.items():

@@ -9,10 +9,9 @@ documents in this repository whose reader has never seen this repository. Both
 were written as crate-local development notes and served to that reader for
 months: the `delvec` page opened with "The deterministic compiler (spec-0002,
 ADR-0001/0006/0011)" — a citation a stranger cannot resolve and gains nothing
-from — and the `delvewright-dsl` page opened on `spec-0001`. They were rewritten
-(#388) and nothing stopped that regressing, because the rule behind it
-(CLAUDE.md **Audience separation in docs**, owner 2026-08-02) was held by memory
-alone.
+from — and the `delvewright-dsl` page opened on `spec-0001`. Nothing but memory
+held the rule behind it (CLAUDE.md **Audience separation in docs**), so nothing
+stopped that regressing.
 
 WHAT IS CHECKED, AND WHY ONLY THESE PATTERNS
 
@@ -39,8 +38,8 @@ how these pages point at the deep documentation.
 WHAT IS DELIBERATELY **NOT** CHECKED
 
 The other half of the rule — CLAUDE.md **A reader-facing document is written in
-the present tense of the current version** (owner, 2026-08-11) — is NOT checked
-here, and that is a decision, not an omission.
+the present tense of the current version** — is NOT checked here, and that is a
+decision, not an omission.
 
 Its tells are "now", "still", "since", "originally", "as of vN", "used to". Four
 of those five are ordinary English that honest present-tense prose uses

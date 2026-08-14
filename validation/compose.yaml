@@ -17,7 +17,7 @@
 #   EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
 #       --profile play up
 #
-# ## Isolation by construction (task #185)
+# ## Isolation by construction
 #
 # NOTHING in this file is Docker-GLOBAL: no service pins a `container_name` and no
 # service publishes a host port. Container names and host ports are the only two
@@ -95,7 +95,7 @@ services:
       # with ONLINE_MODE=FALSE, and the bot's offline-only name aborts the boot
       # ("Could not resolve user from Playerdb"). The shared world-settings
       # entrypoint seeds /data/ops.json itself with the deterministic offline
-      # UUID, so the name never reaches the network (task #101).
+      # UUID, so the name never reaches the network.
       DELVE_OPS_OFFLINE: ${DELVEWRIGHT_BOT_USERNAME:-delve-bot}
     volumes:
       # Name the itzg `/data` world volume so `docker compose down -v` actually
@@ -179,8 +179,8 @@ services:
       # stage adds a respawn, a re-arm and a walk back to every fight, so a souls
       # delve routinely needs more than the harness default — and without this line
       # `DELVEWRIGHT_RUN_TIMEOUT_MS=… docker compose …` was silently dropped at the
-      # container boundary, leaving no way to raise it short of editing this file
-      # (task #102). The default here is src/run.ts's own default (20 min),
+      # container boundary, leaving no way to raise it short of editing this
+      # file. The default here is src/run.ts's own default (20 min),
       # unchanged; compose only makes it overridable.
       DELVEWRIGHT_RUN_TIMEOUT_MS: ${DELVEWRIGHT_RUN_TIMEOUT_MS:-1200000}
       # spec-0025 branch tier. `DELVEWRIGHT_BRANCHES` is which branches this run is
@@ -194,17 +194,17 @@ services:
       # ordinary single-path run, unchanged.
       DELVEWRIGHT_BRANCHES: ${DELVEWRIGHT_BRANCHES:-all}
       DELVEWRIGHT_BRANCH: ${DELVEWRIGHT_BRANCH:-}
-      # task #68 — the death-loop stage: walk into every declared lethal volume,
+      # The death-loop stage: walk into every declared lethal volume,
       # die there, and assert the wording, the `on_death` forfeit, the recovery
       # stake's placement, its collection and the respawn seat. ON whenever the
       # build ships `validation/death-plan.json`; `0` skips it for local iteration
       # and the report records that it was skipped, never that it passed.
       DELVEWRIGHT_DEATH_LOOP: ${DELVEWRIGHT_DEATH_LOOP:-1}
-      # task #64 — the four `src/` reads this file used to DROP, so a ladder could
-      # not set them at all: `bot-run.sh`'s header promises that "every environment
-      # variable src/run.ts reads is forwarded by the compose file", and for these
-      # four it was not true. Each keeps its own default from the module that reads
-      # it, so naming them here changes no run that does not set them.
+      # The four `src/` reads a ladder must be able to set: `bot-run.sh`'s header
+      # promises that "every environment variable src/run.ts reads is forwarded by
+      # the compose file", and these four are part of that promise. Each keeps its
+      # own default from the module that reads it, so naming them here changes no
+      # run that does not set them.
       #
       #   * DELVEWRIGHT_ACTOR_FLOOR   — skip the tiered-actor engagements (run.ts)
       #   * DELVEWRIGHT_RETRY_ON_DEATH — resume once after an UNSCRIPTED death (run.ts)
@@ -222,7 +222,7 @@ services:
       DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
     volumes:
       - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
-      # task #38: the compiler-proven per-leg waypoint artifact
+      # The compiler-proven per-leg waypoint artifact
       # (validation/critical-path-waypoints.json). The harness discovers it at
       # `<dir-of-critical-path.json>/validation/…` and navigates leg-by-leg so no
       # single distant A* solve strands the bot on a large open cave. Validation
@@ -260,7 +260,7 @@ services:
   # bumping it to dsl 0.7.0 would churn a fixture many determinism tests pin — CI
   # runs this profile a second time over a second build tree, in its own compose
   # project. There is no `container_name` and so no `PACKTEST_CONTAINER` to keep in
-  # step with it any more (task #185): the project name is the only name there is,
+  # step with it any more: the project name is the only name there is,
   # and `validation/packtest-run.sh --project <id> --output <tree>` demands both in
   # one place.
   packtest:
@@ -279,12 +279,12 @@ services:
       # the entrypoint below — the same script the shipped delve image bakes — so
       # PackTest always runs the world the delve ships (void superflat for a normal
       # delve, ocean superflat for a `horizon: ocean` campaign). Hardcoding them here
-      # made ocean campaigns test a world that never ships (task #84; same defect
-      # class as #103). The non-varying ones mirror Dockerfile.delve's ENV so the rest
+      # made ocean campaigns test a world that never ships. The non-varying ones
+      # mirror Dockerfile.delve's ENV so the rest
       # of the world matches too — notably spawn-monsters=false, which matters now
       # that a wave campaign's derived difficulty is `easy`, not `peaceful`.
       DELVE_SERVER_PROPERTIES: "/packs/server/server.properties"
-      # Pin the Fabric LAUNCHER (installer) version, not just the loader (task #41).
+      # Pin the Fabric LAUNCHER (installer) version, not just the loader.
       # itzg defaults FABRIC_LAUNCHER_VERSION to `LATEST`, and resolving "latest"
       # means asking meta.fabricmc.net — on EVERY boot, even though the toolserver
       # image already bakes that exact launcher. Naming the baked version turns the
@@ -318,7 +318,7 @@ services:
       # The compiler's world declaration + the shared derivation script (read-only).
       - ${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro
       - ./world-settings-entrypoint.sh:/packs/world-settings-entrypoint.sh:ro
-      # The server-bootstrap overlay (task #41): the pinned Mojang jar plus the
+      # The server-bootstrap overlay: the pinned Mojang jar plus the
       # Fabric launch jar and its Class-Path, fetched and sha256-verified ONCE per
       # job by validation/server-bootstrap-cache.sh. `packtest-run.sh` COPIES this
       # into the world volume before the server starts — a copy, never a mount of

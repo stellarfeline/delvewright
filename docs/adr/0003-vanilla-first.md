@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: kickoff handoff (2026-07-29), owner decision
+- **Source**: kickoff handoff (2026-07-29)
 
 ## Context
 
@@ -29,7 +29,7 @@ tooling) and are never required to *play* a delve.
 
 A delve concept that fails specifically on the vanilla presentation ceiling
 (documented in `docs/notes/vanilla-capability-ceiling.md`: cutscene camera, custom
-entity models, scripted NPC movement). Agreed fallback path (owner, 2026-07-29): not
-a general mod loadout, but pinning a **small, fixed set of specific low-level
+entity models, scripted NPC movement). The fallback path is not a general mod
+loadout, but pinning a **small, fixed set of specific low-level
 engine-extension mods**, adopted via a superseding ADR — weighing that it breaks
 zero-setup vanilla joins. Until that ADR exists, mod-free stands.

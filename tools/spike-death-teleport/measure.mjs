@@ -94,7 +94,7 @@ const rcon = async (cmd) => (await batch([cmd]))[0];
 
 // The rejection shapes now live in `tools/lib/rcon.mjs`, keyed to the object
 // class they are about — "a command issued to a live server" — rather than to
-// this one spike (task #70). They were written here first and correctly, and
+// this one spike. They were written here first and correctly, and
 // that is precisely why the jump-arc rig and the gallery had nothing to reuse:
 // a general mechanism re-implemented privately inside one verb leaves the next
 // caller writing the unchecked version. `ERR` is kept as a local alias because

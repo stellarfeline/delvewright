@@ -8,8 +8,8 @@ versions that exist and writes the next one. Two branches that each add "the nex
 version" for a DIFFERENT surface therefore both write the same number, and — like
 two new spec files — the collision exists only in the UNION of the two trees.
 
-It happened. PR #413 introduced `crates/grammar/src/version.rs` with
-`MIRROR_SINCE = "1.1.0"` (a frame's direction); PR #417 independently introduced
+It happened. One branch introduced `crates/grammar/src/version.rs` with
+`MIRROR_SINCE = "1.1.0"` (a frame's direction); another independently introduced
 the same file with `CONTRACT_SINCE = "1.1.0"` (the spatial contract). Both were
 green. The two files conflict textually, so a merge WOULD have raised a marker —
 and the tempting resolution is to union the two `*_SINCE` constants under one
@@ -37,8 +37,9 @@ therefore does not drift with wording:
 - `grammar-program`: the `*_SINCE` constants in `crates/grammar/src/version.rs`,
   plus each row of `RESERVED_VERSIONS`, which names the anchor a sibling change
   will define. A reservation is the forward declaration made checkable: reserve
-  `1.1.0` for `MIRROR_SINCE`, and the day #413 merges the union for `1.1.0` is
-  `{MIRROR_SINCE}` and stays green — while a reservation for a DIFFERENT anchor
+  `1.1.0` for `MIRROR_SINCE`, and the day that change merges the union for
+  `1.1.0` is `{MIRROR_SINCE}` and stays green — while a reservation for a
+  DIFFERENT anchor
   than the one that landed is a union of two and reds.
 - `dsl-campaign`: the `is_vNN` predicates in `crates/dsl/src/envelope.rs`,
   resolved through `ordinal()`'s match arms.
@@ -63,7 +64,7 @@ Five rules, run over the union of the checkout and `--base`:
 ## Ledgers covered, and why
 
 One row per ledger in `LEDGERS`. The object class is *a version ledger*, not one
-crate: `dsl_version` has per-stage fences and the identical exposure (task #51),
+crate: `dsl_version` has per-stage fences and the identical exposure,
 so a gate that only knew about the grammar crate would be the bespoke-field
 defect one layer out. Adding a third ledger is one row here, not a new script.
 
@@ -77,8 +78,8 @@ Two limits, and the second is specific to one ledger.
   the GitHub API would, and this repo's CI token deliberately stays
   `contents: read` (the stance `check-required-contexts.py` and
   `check-numbered-doc-uniqueness.py` both take, for the same reason — a gate that
-  needs a privileged token is a gate that quietly stops running). So the #413 /
-  #417 collision itself is invisible to both their CI runs while both are open.
+  needs a privileged token is a gate that quietly stops running). So a
+  collision like the one above is invisible to both CI runs while both are open.
   **What this gate guarantees is the half that is catchable: once the first of
   them merges, the second goes RED against `origin/main`** — the resolution that
   unions two surfaces under one number cannot reach `main` past a re-run. That

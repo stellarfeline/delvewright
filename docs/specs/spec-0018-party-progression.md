@@ -1,10 +1,8 @@
 # spec-0018 — Party-shared progression (co-op division of labor)
 
-- **Status**: Draft (owner ruling 2026-08-02: a multiplayer quest must always
-  be completable through division of labor among the party;
-  triggered by the 2026-08-02 audit finding that per-player progression
-  state + globally-consumed affordances soft-lock any party that splits
-  objectives)
+- **Status**: Draft (a multiplayer quest must always be completable through
+  division of labor among the party; per-player progression state plus
+  globally-consumed affordances soft-lock any party that splits objectives)
 - **Vision**: a delve is played by ONE party of 1–4. Progress is a fact
   about the party, not about a player. Two players completing two
   different objectives in two different rooms must advance everyone —
@@ -49,8 +47,8 @@ window). Nothing here blocks it.
 
 `world.json` gains **`min_players`** (default 1, max 4). A campaign
 designed to REQUIRE n players declares it; the lobby refuses to start
-below the declared size (owner amendment 2026-08-02: mandatory-n designs
-are first-class, not merely tolerated).
+below the declared size — mandatory-n designs are first-class, not merely
+tolerated.
 
 ## Validation (two-layer, extended)
 

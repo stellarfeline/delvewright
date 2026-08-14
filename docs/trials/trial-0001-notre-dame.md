@@ -1,6 +1,6 @@
 # Trial 0001 — Notre-Dame de Paris
 
-The spec-0033 §4.5 authoring trial. Owner set the subject, 2026-08-12: a
+The spec-0033 §4.5 authoring trial. The subject is a
 building whose fine structure is so much of its identity that the usual
 Minecraft answer is to build it at several blocks per real metre. That is the
 answer this project does not take (DEC-0071), which is what makes it the right
@@ -122,7 +122,7 @@ Determinism re-verified.
   glazed twin had to be remembered, and every gate would have stayed green if it
   had not been. The workaround — a Python generator emitting the JSON — is worse
   than the duplication, because the artifact of record stops being the artifact
-  the tool consumes. Task #107.
+  the tool consumes.
 - **No overlay.** Siblings partition, so nothing runs *around* a building: the
   aisle lean-to spans three siblings of one split and was built in three pieces
   at three hand-computed heights, where a one-course error opens a slot of
@@ -145,7 +145,7 @@ Determinism re-verified.
   is two rules that are each other's size-list reversed, producing a chamfered
   octagon at any odd size that re-centres itself. The true statement: **a
   grammar orientation cannot mirror, but a rule body can be written mirrored,
-  and that is enough for any shape with a mirror plane.** Task #94.
+  and that is enough for any shape with a mirror plane.**
 - **The taper recursion is the general shape, not a fact about stairs.** One
   three-rule recursion is the nave roof, every apse roof, both gables — and with
   `void` in place of `fill`, every opening in the building. `church` already
@@ -163,15 +163,14 @@ Determinism re-verified.
   found a **real** defect the tool could never surface (48 interior floor cells
   unlit on the nave centre line, between candles), fixed the program, and
   remeasured to min 4 with none below threshold. The tool still says `dark`.
-  Task #106.
 - **`lighting` is the third door.** `audit` and `render` refuse a lone tile by
   name; `lighting` dies on a manifest with a gzip error — so procedure §7 is not
   completable for any building past the cap — and on a fragment it *succeeds*,
   manufacturing an anchorless `spdx: UNKNOWN` document beside a correctly
-  provenanced zone. Task #105.
+  provenanced zone.
 - **`traversable`'s approach binding counts any standable cell in the face**:
   47 reported, 3 real doors, the rest window sills and belfry louvres. True
-  claim, misleading count. Task #108.
+  claim, misleading count.
 - `check` cannot see a recursion exhausting its axis, which is region-dependent;
   and `rounding: start` is owed by every surface, not only floors, because an
   unwritten wall cell is a slot of daylight and no gate reads it either.
@@ -250,10 +249,10 @@ owner rather than decided here.
 ### Confirmed twice, independently
 
 Four findings reproduced by a second agent that could not see the first's work:
-`call` takes no arguments (#107), `lighting` dies on a manifest and manufactures
-an `UNKNOWN`-licence document from a fragment (#105), the lighting probe binds
-to the box rather than player space (#106), and `traversable`'s approach count
-is standable cells rather than ways in (#108). None is a matter of taste.
+`call` takes no arguments, `lighting` dies on a manifest and manufactures
+an `UNKNOWN`-licence document from a fragment, the lighting probe binds
+to the box rather than player space, and `traversable`'s approach count
+is standable cells rather than ways in. None is a matter of taste.
 
 `call`'s cost **grew with scale**: 29 of 113 rules were duplicates in run 0
 (26%), 44 of 145 in run 1 (30%), 27 shape-groups. The worst case is one pointed
@@ -333,7 +332,7 @@ west rose and both transept roses. Neither can pass a paint, a size or a role.
   world Z, never the longest axis, and **approach = Z-max, exit = Z-min** — so the
   west portals are the "exit" and the apse is the "approach". This drove a real
   design decision (an axial chevet door, without which the gate would have
-  refused correctly and confusingly). Extends #108, which was about the count.
+  refused correctly and confusingly).
 
 ### Withdrawn from run 0's list
 

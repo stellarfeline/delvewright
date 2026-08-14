@@ -1,9 +1,8 @@
 # spec-0027: Box-split grammar prefab back end
 
-- **Status**: Proposed (task #163; owner strategy approval in chat 2026-08-04
-  — adopt Box-Split Grammars as the prefab back end, drop the Tome-rebuild
-  option (B1); craft rules enter as machine diagnostics, not prompt text,
-  per the sandbox probe finding same day)
+- **Status**: Proposed (strategy approved — adopt Box-Split Grammars as the
+  prefab back end, drop the Tome-rebuild option (B1); craft rules enter as
+  machine diagnostics, not prompt text, per the sandbox probe finding)
 - **ADRs**: 0003 (vanilla-first — this is generation-time tooling, nothing
   ships in delves), 0004 (prefabs+jigsaw — this spec produces the `.nbt`
   library those pools draw from), 0006 (determinism), 0013 (licensing)
@@ -12,10 +11,10 @@
   DOI 10.1145/3555858.3555865). Same-PR `docs/ACKNOWLEDGEMENTS.md` entry
   required when the port lands.
 - **Research**: `scratchpad` dossier + 2026-08-04 delta (live-verified); the
-  Tier-2 sandbox probe (task #162) — its craft-rule self-check violations
+  Tier-2 sandbox probe — its craft-rule self-check violations
   motivate §4.
-- **Non-goals**: Tier-3 atmosphere composition (M4 design work, task #161
-  follow-ups); replacing WFC for corridor tiling (WFC stays for tiling only);
+- **Non-goals**: Tier-3 atmosphere composition (M4 design work);
+  replacing WFC for corridor tiling (WFC stays for tiling only);
   any runtime/shipped component.
 
 ## 1. What and why
@@ -90,7 +89,7 @@ the compiler layer (prefab quality, not correctness).
 6. Owner viewing of a first contact sheet (temple typology sweep) — the
    merge gate for the spec's claims, per the sandbox-first ruling.
 
-## 6. §3 phase 3 — the contact sheet, as built (2026-08-09)
+## 6. §3 phase 3 — the contact sheet, as built
 
 `Status:` above records **approval**, not existence. Measured state of the §3
 authoring loop:

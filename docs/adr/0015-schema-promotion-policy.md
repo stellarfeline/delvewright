@@ -1,6 +1,6 @@
 # ADR-0015: Schema promotion policy — composition first, two gates to native
 
-Status: Accepted (owner decision, 2026-08-04)
+Status: Accepted
 
 ## Context
 
@@ -17,9 +17,6 @@ motivating campaign (N=1). Two failure modes compete:
    composition can be invisible to the compiler's static proofs (e.g.
    `branch_points` exists for branch-completeness verification, `crush` for
    DW0378 window fairness — neither is expressiveness-motivated).
-
-External-reviewer analysis (2026-08-04, owner-forwarded) surfaced risk 1;
-the proof exemption is the project's own amendment.
 
 ## Decision
 

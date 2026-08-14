@@ -1,6 +1,6 @@
 // Parser + lookup for the compiler's critical-path waypoints validation artifact
 // (`validation/critical-path-waypoints.json`, emitted by the compiler's `waypoints`
-// module — task #38).
+// module).
 //
 // The artifact is COMPILER-PROVEN navigation data: for each walked critical-path
 // leg, the ordered waypoint polyline the compile-time DW0311 A* guard proved
@@ -145,7 +145,7 @@ function requireTicks(obj: Record<string, unknown>, key: string, pointer: string
 }
 
 /** Parse the optional top-level `timed_gates` table (spec-0016 §4). Absent → `[]`
- * (a campaign with no gate clock, and every pre-task-#81 artifact). */
+ * (a campaign with no gate clock, and every artifact that predates the table). */
 function parseTimedGates(raw: Record<string, unknown>): TimedGate[] {
   const value = raw["timed_gates"];
   if (value === undefined) return [];
@@ -294,8 +294,8 @@ export async function loadWaypointsForCriticalPath(
 }
 
 /**
- * The per-branch waypoint artifact that accompanies a branch's executable path
- * (task #117): `branch-path-<slug>.json` → `branch-waypoints-<slug>.json`, same
+ * The per-branch waypoint artifact that accompanies a branch's executable path:
+ * `branch-path-<slug>.json` → `branch-waypoints-<slug>.json`, same
  * directory. A derivation, not a search — the compiler emits both names from one
  * slug, so the two files are one contract. Throws on a path file that is not in
  * the `branch-path-<slug>.json` shape (that would be a branch-plan contract
@@ -317,8 +317,8 @@ export function branchWaypointsFileFor(branchPathFile: string): string {
 }
 
 /**
- * Load the per-branch waypoint artifact beside a branch's executable path
- * (task #117). Returns `undefined` when absent — the CALLER must then fall back
+ * Load the per-branch waypoint artifact beside a branch's executable path.
+ * Returns `undefined` when absent — the CALLER must then fall back
  * LOUDLY (stderr + a run-report finding), never silently: an un-waypointed branch
  * walk is terrain-flaky where the waypointed one is deterministic, and a reader
  * comparing runs needs to know which kind this was. Present-but-malformed throws

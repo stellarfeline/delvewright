@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: kickoff handoff (2026-07-29), owner decision
+- **Source**: kickoff handoff (2026-07-29)
 
 ## Context
 
@@ -41,8 +41,8 @@ fallback below remains documented but is not needed.
 
 ## Amendment (2026-07-30): the compiler is the jigsaw
 
-M2 task #9 makes the **compiler** solve the layout and emit per-piece `/place
-template <piece> <pos> <rotation>` calls, rather than `/place jigsaw` at runtime.
+The **compiler** solves the layout and emits per-piece
+`/place template <piece> <pos> <rotation>` calls, rather than `/place jigsaw` at runtime.
 Runtime jigsaw is verified reproducible (above), but predicting its layout means
 replicating Mojang's algorithm; solving it in-compiler is simpler and keeps the
 shipped delve plain vanilla (ADR-0003), determinism trivial (campaign-seeded

@@ -1,7 +1,7 @@
 # spec-0036: The spatial contract — spaces, edges, levels, closure, and coverage
 
-- **Status**: Proposed (ADR-0020-map-design-pipeline; owner ruling
-  2026-08-12; trial-0001 both runs are the motivating red; amended three
+- **Status**: Proposed (ADR-0020-map-design-pipeline; trial-0001 both runs are
+  the motivating red; amended three
   times against the `tools/spike-spatial-contract` prototype — build
   `d3ce851`, its adversary scripts, and the round-3 cost measurement are the
   fixture seed; step 1, the declaration surface, is dispatched)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fresh-volume guard (task #45). Tear ONE compose project down and PROVE its world
+# Fresh-volume guard. Tear ONE compose project down and PROVE its world
 # volumes are actually gone before a clean run.
 #
 #   validation/fresh-volumes.sh --project dw-worker-<id>
@@ -20,7 +20,7 @@
 # reports a false CONTENT failure. Three red runs were misattributed to the campaign
 # before the volume was found. Here the removal is forced and then PROVEN.
 #
-# ## --project is REQUIRED (task #185)
+# ## --project is REQUIRED
 #
 # There is no default and no daemon-wide mode. The old `--all` swept `server-data$`
 # across EVERY compose project and `docker rm -f`'d the pinned `delvewright-*`

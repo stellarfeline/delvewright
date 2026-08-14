@@ -113,6 +113,6 @@ piece of before/after evidence, not just the ones in a shared directory.
 
 ## Status
 
-Documented stopgap. The sanctioned ladder runner (task #150) is expected to
+Documented stopgap. The sanctioned ladder runner is expected to
 automate the first two checks with a hard preflight; until then, treat this file
 as the checklist for any worker dispatched into a fresh worktree.

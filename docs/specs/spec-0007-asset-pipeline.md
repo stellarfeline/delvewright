@@ -1,6 +1,6 @@
 # spec-0007: External asset pipeline (two-track)
 
-- **Status**: Approved (owner, 2026-07-30, via chat) — implementation M3
+- **Status**: Approved — implementation M3
 - **ADRs**: 0004 (prefab library), 0007 (licensing), 0010 (what ships)
 
 External building assets raise demo quality; demo quality attracts players;
@@ -9,7 +9,7 @@ players become contributors. Two tracks with a hard mechanical boundary:
 ## Track 1 — distributable (repo library, official delves)
 
 - **CC0 / CC BY / original, plus MIT / Apache-2.0 / GPL-3.0-compatible**
-  (ADR-0013, owner 2026-07-31), license verified per item with recorded evidence
+  (ADR-0013), license verified per item with recorded evidence
   (URL + archived proof). "Free download" ≠ licensed. NC/ND/unknown → reject
   (Track 2 at best). Images containing GPL prefabs ship under GPL terms with the
   public content repo as corresponding source.
@@ -31,7 +31,7 @@ players become contributors. Two tracks with a hard mechanical boundary:
   anti-bot or login-gated sites get the launcher pattern — the pipeline prints
   the URL + target path, the user downloads manually, the pipeline resumes.
 
-## Step 0 — prefabs move into the content repo (owner-revised 2026-07-30)
+## Step 0 — prefabs move into the content repo
 
 `prefabs/` moves into **`delvewright-campaigns`** beside `campaigns/` — one
 content repo is the complete authoring environment: clone it, work in it, reuse
@@ -44,9 +44,9 @@ pins the content-repo git SHA; CI checks out that SHA; the build manifest
 records it — same DSL + same seed + same content SHA → byte-identical. Local
 dev via the existing `campaigns/` symlink. First M3 task (deferred past M2).
 
-## Ingestion workflow (owner-refined 2026-07-31): demand → scout → verify → download → walk
+## Ingestion workflow: demand → scout → verify → download → walk
 
-**Quality verification is the centerpiece** (owner directive). The whole run is
+**Quality verification is the centerpiece.** The whole run is
 **demand-driven**: quotas are fixed before any acquisition, and verification's
 job is to fill them. The vision model is the generation-time agent
 (multimodal), never a runtime component.
@@ -61,10 +61,10 @@ job is to fill them. The vision model is the generation-time agent
    galleries are fetchable. Known sources: Modrinth (open API, license metadata
    AND gallery image URLs — best on both axes), Planet Minecraft, CurseForge
    Worlds (API), Minecraft-Schematics, Abfielder, klpbbs / Minebbs (CN).
-   (OpenGameArt ruled out 2026-07-31: no MC schematics.) Finds stream into
+   (OpenGameArt ruled out: no MC schematics.) Finds stream into
    verification with their license classification.
-2. **Verify (two branches — agent-ruled in both; owner-refined 2026-07-31:
-   humans only ever click download links, never judge)** — both branches end
+2. **Verify (two branches — agent-ruled in both; humans only ever click
+   download links, never judge)** — both branches end
    with the agent writing the asset's **catalog card**; selection continues
    until the demand sheet's minimums are met:
    - **Gallery-fetchable sites**: the agent fetches the listing renders and
@@ -87,10 +87,10 @@ job is to fill them. The vision model is the generation-time agent
    palette audit.
 4. **In-game gallery walk (owner spot-check, optional)**: the ingested batch
    can be placed in a browse world for the owner to walk with `dw.note`
-   (spec-0006 reuse). Owner-refined 2026-07-31: this is no longer a mandatory
-   human gate — the rendered-image verdicts are the primary record; the walk
-   exists for spot-checks and taste calibration, and its verdicts still
-   override and round-trip into the cards. A rejection that drops a category
+   (spec-0006 reuse). This is not a mandatory human gate — the rendered-image
+   verdicts are the primary record; the walk exists for spot-checks and taste
+   calibration, and its verdicts override and round-trip into the cards. A
+   rejection that drops a category
    below its minimum sends the run back to step 1 for that category.
 5. Adaptation of approved pieces: socket carving, anchor annotation, lighting
    probe → admission. Admitted prefab metadata links its catalog card; card
@@ -153,13 +153,13 @@ Campaign sharing = **sources only**: the separate `delvewright-campaigns` repo
 JSON, closed schema, deterministic rebuild; canonical images are built only by
 trusted CI. **No OCI-image or arbitrary-binary submissions** — with exactly one
 narrow carve-out: storybook media (JPEG/PNG under `campaigns/<id>/media/`,
-mechanically sanitized in CI — see Campaign storybook below; owner decision
-2026-07-31). Community prefabs enter only through the admission pipeline with a
+mechanically sanitized in CI — see Campaign storybook
+below). Community prefabs enter only through the admission pipeline with a
 mechanical NBT audit (block-palette allowlist; command blocks / structure
 blocks / NBT-bearing spawners forbidden — structure-embedded command blocks are
 a code-injection vector).
 
-## Campaign storybook (owner-directed 2026-07-31)
+## Campaign storybook
 
 Every campaign ships a reader-facing **storybook** at
 `campaigns/<id>/README.md` in the content repo (GitHub renders it on directory
@@ -172,7 +172,7 @@ browse; `GENERATION.md` stays the behind-the-scenes record).
   interiors, no late-game locations, nothing that reveals layout.
 - **Images live in-repo** at `campaigns/<id>/media/` (relative links; small
   budget per campaign) and are **author-provided, submitted with the campaign
-  PR** (owner-refined 2026-07-31): `/new-delve` default-fills `media/` from the
+  PR**: `/new-delve` default-fills `media/` from the
   render set, and authors may replace those with hand-crafted shots (shaders,
   staged compositions) for a more attractive storybook. This is the **one
   permitted binary class** in campaign PRs — a deliberate, narrow carve-out
@@ -191,7 +191,7 @@ browse; `GENERATION.md` stays the behind-the-scenes record).
 ## Acceptance criteria (M3)
 
 - [x] Converter round-trips reference .schem fixtures; oversize split works
-      (`crates/schem`, PR #32).
+      (`crates/schem`).
 - [ ] Ingestion runs start from a demand sheet; the run report shows per-category
       minimums met (or explicit shortfalls) before download begins.
 - [ ] Verification: every candidate has a catalog card (description + structured

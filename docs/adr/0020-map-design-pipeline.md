@@ -3,9 +3,9 @@
 - **Status**: Proposed
 - **Date**: 2026-08-12 (amended three times same day against the prototype's
   evidence rounds; step 1 — the declaration surface — dispatched after round 3)
-- **Source**: owner ruling 2026-08-12 ("the map-design pipeline needs restructuring,
-  or our gameplay and our scenery cannot be unified"); trial-0001 (Notre-Dame),
-  both runs; the planner's tree/graph analysis, amended below; the
+- **Source**: the map-design pipeline needs restructuring, or gameplay and scenery
+  cannot be unified; trial-0001 (Notre-Dame), both runs; the tree/graph analysis,
+  amended below; the
   `tools/spike-spatial-contract` prototype (branch
   `feat/spatial-contract-prototype`, re-validated at `d3ce851`,
   `./run-evidence.sh` reproduces)

@@ -2,8 +2,6 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-02
-- **Source**: owner question 2026-08-01, owner decision 2026-08-02 (transcribed
-  2026-08-11 from a retired planning snapshot; no new decision is made here)
 - **Refines**: ADR-0009 (pinned Minecraft **Java** 1.21.11), ADR-0003 (vanilla-first)
 
 ## Context
@@ -48,10 +46,9 @@ Java's staging ceiling is **well-lit puppet theater plus radio drama** — sound
 timing, light, geometry and text, all first-class. Investment goes exactly there,
 not into chasing animation.
 
-**A Bedrock backend is SHELVED, not scheduled** (owner, 2026-08-02): no Bedrock
-client exists for macOS, the project's only dev and playtest platform, so Bedrock
-output cannot be owner-verified. Independently, Bedrock Dedicated Server is
-x86_64-only, so prod (the Raspberry Pi, ADR-0010) could not host it.
+**A Bedrock backend is SHELVED, not scheduled**: no Bedrock client exists for
+macOS, the project's only dev and playtest platform, so Bedrock output cannot be
+verified. Independently, Bedrock Dedicated Server is x86_64-only, so prod (the Raspberry Pi, ADR-0010) could not host it.
 
 ## Consequences
 

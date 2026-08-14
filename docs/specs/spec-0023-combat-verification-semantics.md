@@ -1,10 +1,10 @@
 # spec-0023: Combat verification semantics — the machine proves the loop, not the win
 
-- **Status**: Accepted (owner approval in conversation, 2026-08-03)
+- **Status**: Accepted
 - **ADRs**: 0005 (two-layer validation — refines the bot layer's contract at
   combat encounters), 0006 (determinism)
-- **Depends on**: declarable `world.difficulty` (owner ruling 2026-08-03, impl
-  in flight); spec-0012 (checkpoints), spec-0016 (souls mode)
+- **Depends on**: declarable `world.difficulty` (implementation in flight);
+  spec-0012 (checkpoints), spec-0016 (souls mode)
 
 ## Problem
 
@@ -77,8 +77,8 @@ teeth-bearing rule reversed: for encounters the content marks as elite/boss
 (spec-0016 vocabulary), if the UNASSISTED bot wins on its first attempt, the
 ladder emits a **warning** — a fight this bot beats cold is too easy to be
 called an elite in a souls delve. Advisory tier; content decides. Ordinary
-encounters carry no such expectation. (#85 bot melee competence is hereby
-downgraded from gate-critical to telemetry quality.)
+encounters carry no such expectation. (Bot melee competence is telemetry
+quality, not a gate.)
 
 ## Out of scope
 

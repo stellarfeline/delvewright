@@ -31,7 +31,7 @@ const BRANCH_PLAN_SUBPATH = ["validation", "branch-plan.json"] as const;
  * button itself runs, and chatting that line is the player-legal primitive the
  * button stands for — the same substitution the exported critical path has made
  * for `talk-to` steps since spec-0002 was amended (2026-07-30), and the same shape
- * as the bonfire `rest` step's "rest and save" line (compiler #220). Scripting a
+ * as the bonfire `rest` step's "rest and save" line. Scripting a
  * branch choice is therefore not a new mechanism at all: it is the compiler
  * choosing a different option for the same step.
  */
