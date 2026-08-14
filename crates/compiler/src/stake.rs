@@ -82,9 +82,11 @@
 //!   select?* — and the answer is that a marker is a **place**, which is a
 //!   property of the marker and not of any verb. So the class is declared where
 //!   the marker is summoned and every box-narrowed selector reads it
-//!   ([`crate::affordance`], `DW0544`). **Nothing in this module changed**, which
-//!   is the point: a capability keyed to the object needs no cooperation from the
-//!   objects around it.
+//!   ([`crate::affordance`], `DW0544`). **This module holds no part of that
+//!   rule** — no exemption, no roster, no compensating ledger logic — which is
+//!   the point: a capability keyed to the object needs no cooperation from the
+//!   objects around it. The marker's own class rides on its summon, in
+//!   [`crate::emit`]'s `stk_fill_<s>`, where the marker is made.
 //!
 //! Both are boxes, so both are a selector the corpse can be tested against at
 //! runtime (`@s[x=…,dx=…]`), which is what makes the lookup a comparison rather
