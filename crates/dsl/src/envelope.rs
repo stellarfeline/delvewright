@@ -34,7 +34,9 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
 /// comparison on every gate consumer — the campaign-wide `on_death` effect
 /// root, the bundle that runs at the moment a player dies, and the stage-5
-/// `lethal_volumes` declaration.
+/// `lethal_volumes` declaration; v0.11 adds the **press-answer lift** — a
+/// `narrate` `actionbar` style and a trigger `audience: presser` — and with it
+/// the one obligation of the version, `DW0429`.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
@@ -205,10 +207,13 @@ pub fn is_v10(version: &str) -> bool {
 /// campaign that declares neither is byte-identical, and any use of either below
 /// 0.11.0 is `DW0141`.
 ///
-/// There is **no requirement half**. Nothing obliges a campaign to author a press
-/// answer; the compiler supplies one for every sealed body the campaign leaves
-/// silent, at every version, which is why a 0.6 campaign's sealed gate answers
-/// exactly as it did before.
+/// The surface is additive; the version also carries **one requirement**, and it
+/// is fenced rather than reserved. At 0.11.0 and above a sealed body nothing
+/// answers is `DW0429` — a `shortcut` door and a `close-gate` wall alike, one
+/// rule over the class. That obligation declares itself on its own code
+/// ([`crate::Binds::Since`] 11) and is carried by [`crate::fence`], so a campaign
+/// below 0.11.0 is grandfathered: its sealed gate answers exactly as it did
+/// before, and its silent door stays silent.
 pub fn is_v11(version: &str) -> bool {
     ordinal(version) >= 11
 }
