@@ -117,6 +117,16 @@ s=$(prop level-seed);   if [ -n "$s" ];  then export SEED="$s";              fi
 # exercise a world the delve never ships.
 lt=$(prop level-type);        if [ -n "$lt" ]; then export LEVEL_TYPE="$lt";        fi
 gs=$(prop generator-settings); if [ -n "$gs" ]; then export GENERATOR_SETTINGS="$gs"; fi
+# Chunk distances. Left underived, the two boot paths take their values from two
+# different sources - the itzg base's own /image/server.properties template, and
+# the vanilla jar's built-in defaults - neither of which is ours, so the delve
+# renders and ticks at whatever radius the host happens to choose. Pinned in the
+# compiler and read here, every server that boots this build sees the same chunks
+# and ticks the same chunks (ADR-0006). itzg maps both to properties via
+# /image/property-definitions.json (view-distance -> VIEW_DISTANCE,
+# simulation-distance -> SIMULATION_DISTANCE).
+vd=$(prop view-distance);       if [ -n "$vd" ]; then export VIEW_DISTANCE="$vd";       fi
+sd=$(prop simulation-distance); if [ -n "$sd" ]; then export SIMULATION_DISTANCE="$sd"; fi
 # Offline op seeding. itzg's OPS env resolves EVERY name through Mojang's
 # PlayerDB - even with ONLINE_MODE=FALSE - so an offline-only name (the
 # validation bot) aborts the boot: "Could not resolve user from Playerdb".

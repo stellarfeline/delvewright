@@ -44,8 +44,16 @@ fi
 #     that declares `world.difficulty: "hard"` (v0.6) and boots peaceful is not
 #     merely mistuned: peaceful discards every hostile mob, so the whole cast of
 #     threats disappears. One assertion per derived key.
+#
+#     The two chunk distances are here for the same reason one layer out: they
+#     have no image ENV fallback at all, so a deleted line does not fall back to
+#     a value we chose - it falls back to the itzg base's own
+#     /image/server.properties template (view-distance) and the vanilla jar's
+#     built-in default (simulation-distance), two files nobody in this repo owns.
+#     What renders and what ticks would then be a property of the host.
 for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
-           generator-settings:GENERATOR_SETTINGS; do
+           generator-settings:GENERATOR_SETTINGS view-distance:VIEW_DISTANCE \
+           simulation-distance:SIMULATION_DISTANCE; do
   prop="${key%%:*}"; env_var="${key##*:}"
   if grep -q "prop $prop" "$SCRIPT" && grep -q "export $env_var=" "$SCRIPT"; then
     pass "entrypoint derives $env_var from the build's \`$prop\`"
