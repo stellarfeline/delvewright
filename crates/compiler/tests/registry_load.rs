@@ -122,6 +122,94 @@ fn the_pinned_library_carries_no_key_this_delvec_does_not_model() {
     assert!(unknown.is_empty(), "{unknown:#?}");
 }
 
+/// **Reading is total, on the real library.** Every prefab document the pinned
+/// content repo carries survives a parse-and-write round trip through the one
+/// definition with no key lost and no value changed.
+///
+/// The unit tests prove this for documents this repo wrote; this proves it for
+/// the ones a campaign actually ships, which is where the loss was live —
+/// `waterline_y` sits on five of these files and the previous owner type did not
+/// model it, so every admission step deleted it and `DW0344` quietly stopped
+/// binding on that piece.
+///
+/// A written document may add a key it never drops one of: `connectors` has a
+/// default and is always emitted, so a legacy piece that omitted it gains
+/// `"connectors": []`. The invariant is therefore superset, not equality — and
+/// it is asserted per key rather than per file so a failure names what was lost.
+#[test]
+fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
+    use delvewright_dsl::prefab::PrefabMeta;
+
+    let dir = common::prefabs_dir();
+    let mut checked = 0usize;
+    let mut skipped: Vec<String> = Vec::new();
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
+        .collect();
+    paths.sort();
+
+    for path in paths {
+        let name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let before: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // `pools.json` is a different document, and a tile-set manifest names
+        // `structure_set` instead of `structure`. Neither is this shape; both
+        // are named rather than silently passed over.
+        if name == "pools.json" || before.get("structure_set").is_some() {
+            skipped.push(name);
+            continue;
+        }
+        let meta = PrefabMeta::from_json(&text)
+            .unwrap_or_else(|e| panic!("{name} must parse as prefab metadata: {e}"));
+        let after: serde_json::Value = serde_json::from_str(&meta.to_json()).unwrap();
+
+        for (key, value) in before.as_object().unwrap() {
+            assert_eq!(
+                after.get(key),
+                Some(value),
+                "{name}: top-level key `{key}` did not survive the round trip"
+            );
+        }
+        if let Some(anchors) = before.get("anchors").and_then(|a| a.as_object()) {
+            for (anchor, body) in anchors {
+                for (key, value) in body.as_object().unwrap() {
+                    assert_eq!(
+                        after["anchors"][anchor].get(key),
+                        Some(value),
+                        "{name}: anchor `{anchor}` key `{key}` did not survive the round trip"
+                    );
+                }
+            }
+        }
+        checked += 1;
+    }
+
+    // Binding count: a green here over zero documents would prove nothing.
+    assert!(
+        checked >= 30,
+        "only {checked} prefab document(s) were round-tripped (skipped: {skipped:?}) — the \
+         pinned library carries 36, so this gate is examining almost nothing"
+    );
+    // And the field the loss was live on is really present to be checked.
+    let with_waterline = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| std::fs::read_to_string(e.unwrap().path()).ok())
+        .filter(|t| t.contains("\"waterline_y\""))
+        .count();
+    assert!(
+        with_waterline > 0,
+        "no shipped prefab declares `waterline_y`, so the round trip is not exercising the \
+         field this gate exists for"
+    );
+    eprintln!(
+        "round-tripped {checked} prefab document(s), {with_waterline} of them declaring \
+         `waterline_y`; skipped {} non-prefab document(s): {skipped:?}",
+        skipped.len()
+    );
+}
+
 /// Outright JSON syntax garbage is reported the same way, and a broken
 /// `pools.json` is covered too (pools silently vanishing strands every
 /// `prefab_pool` area).
