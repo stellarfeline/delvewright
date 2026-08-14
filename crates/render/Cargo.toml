@@ -55,9 +55,20 @@ flate2 = "1"
 # dependency: schem's are a subset of the ones above.
 delvewright-schem = { path = "../schem" }
 
-# Save/compare rendered frames (fidelity color-key scan, double-render stability).
-# MIT/Apache-2.0.
+# Save/compare rendered frames (fidelity color-key scan, double-render stability),
+# and decode block textures for the derived colour table. MIT/Apache-2.0.
 image = "0.24"
+
+# Read the client jar / resource-pack zip directly. The viewer's colour
+# derivation needs `data/.../worldgen/biome/*.json` for grass, foliage and water
+# tint, which Nucleation's pack loader does not expose, and it needs perhaps a
+# hundred entries rather than all 28,000 — so it reads by name, lazily. Already
+# in the tree via Nucleation, so this adds no new transitive dependency.
+# `default-features = false` + `deflate` matches how Nucleation already declares
+# it, so the lock gains nothing: the defaults would add 29 crates of AES, bzip2,
+# lzma and zstd codecs — plus three `-sys` C builds — for an archive that is
+# plain deflate. MIT.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Nucleation (MIT) — headless mesher + wgpu GPU renderer. Pinned by git REV
 # because crates.io tops out at 0.8.0 which lacks the `rendering` feature; the

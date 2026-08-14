@@ -3,6 +3,10 @@
 //! spike.
 //!
 //! - [`nbt`] — vanilla-structure `.nbt` → Nucleation adapter.
+//! - [`assets`] — lazy read access to the client jar / resource pack.
+//! - [`blockcolor`] — blockstate → colour and shape, derived from that source.
+//! - [`viewer`] — prefabs → one self-contained interactive HTML page
+//!   (`delve-render viewer`), the camera a reviewer drives.
 //! - [`shots`] — per-piece shot planner (`delve-render piece`).
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
@@ -20,8 +24,11 @@
 //!   by a similarity score that RANKS and never gates (spec-0027 §3 curation,
 //!   spec-0028 §3).
 //! - [`font`] — the built-in 5×7 bitmap font the sheet labels cells with.
-//! - [`diag`] — diagnostics + exit codes (`DW072x`).
+//! - [`diag`] — diagnostics + exit codes (`DW072x`, plus the review page's
+//!   `DW079x` block).
 
+pub mod assets;
+pub mod blockcolor;
 pub mod cache;
 pub mod detect;
 pub mod diag;
@@ -37,3 +44,4 @@ pub mod scene;
 pub mod sheet;
 pub mod shots;
 pub mod tileset;
+pub mod viewer;
