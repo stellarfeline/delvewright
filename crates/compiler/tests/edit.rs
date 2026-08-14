@@ -1323,14 +1323,19 @@ fn fragment_stamps_preserve_blockstate() {
 ///
 /// It is a **collision test, not a blanket ban**: a prefab whose every state is
 /// yaw-invariant rotates correctly and stays allowed. Rejecting that too would
-/// be a check asserting something false. That half is proved against
-/// [`prefabs_with_a_yaw_invariant_piece`], a piece built to have the property
-/// rather than a shipped one observed to — see its own note for why no shipped
-/// piece can serve.
+/// be a check asserting something false.
+///
+/// Every piece it judges is built by [`rotation_fixture_prefabs`], and that is
+/// the finding this test carries. A statement about how rotation treats a
+/// direction-bearing block is a statement about the COMPILER; borrowing a
+/// shipped prefab to stand for one makes the verdict depend on bytes this repo
+/// does not own, and the library moves. Both directions of the guard are
+/// therefore proved against pieces built to have — and to lack — the property,
+/// so the demonstration is the same whatever content SHA is checked out.
 #[test]
 fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
     let dir = edits_copy("edits-rotation");
-    let prefabs = prefabs_with_a_yaw_invariant_piece();
+    let prefabs = rotation_fixture_prefabs();
     let stamp = |prefab: &str, rotation: Option<&str>| {
         let mut edit = serde_json::json!({
             "verb": "fragment", "prefab": prefab,
@@ -1354,15 +1359,17 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
         ])
     };
 
-    // `keep-stair` carries `facing`/`shape` stair state: a quarter-turn would
-    // leave every stair pointing the way it did before it moved.
-    let r = stamp("prefab/keep-stair", Some("clockwise90"));
+    // The `facing`/`shape` arm. A quarter-turn would leave every stair pointing
+    // the way it did before it moved.
+    let r = stamp("prefab/yaw-facing-stair", Some("clockwise90"));
     assert_eq!(r.status.code(), Some(3), "build-tier refusal");
     let stdout = combined(&r);
     assert!(stdout.contains("DW0323"), "expected DW0323:\n{stdout}");
     assert!(
-        stdout.contains("prefab/keep-stair") && stdout.contains("facing="),
-        "names the prefab and the offending property:\n{stdout}"
+        stdout.contains("prefab/yaw-facing-stair")
+            && stdout.contains("minecraft:stone_brick_stairs")
+            && stdout.contains("facing=north"),
+        "names the prefab, the block and the offending property:\n{stdout}"
     );
     assert!(
         stdout.contains("rotate-aware stamping is NOT implemented"),
@@ -1371,7 +1378,31 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
 
     // The same prefab stamped unrotated is fine — the refusal is about the
     // rotation, not about the prefab.
-    let r = stamp("prefab/keep-stair", None);
+    let r = stamp("prefab/yaw-facing-stair", None);
+    assert!(r.status.success(), "unrotated is fine:\n{}", combined(&r));
+
+    // The CONNECTION arm, which is the half a piece can silently stop
+    // exercising. A grille whose bars say what they join is an east–west run and
+    // a quarter-turn deforms it; a grille that writes no connection property at
+    // all measures as yaw-invariant while placing the same deformable geometry.
+    // This fixture writes them, so the arm is bound.
+    let r = stamp("prefab/yaw-connected-grille", Some("clockwise90"));
+    assert_eq!(
+        r.status.code(),
+        Some(3),
+        "a connected grille is not yaw-invariant:\n{}",
+        combined(&r)
+    );
+    let stdout = combined(&r);
+    assert!(stdout.contains("DW0323"), "expected DW0323:\n{stdout}");
+    assert!(
+        stdout.contains("prefab/yaw-connected-grille")
+            && stdout.contains("minecraft:iron_bars")
+            && stdout.contains("east=true"),
+        "names the grille and the connection it would deform:\n{stdout}"
+    );
+
+    let r = stamp("prefab/yaw-connected-grille", None);
     assert!(r.status.success(), "unrotated is fine:\n{}", combined(&r));
 
     // And a prefab with no yaw-dependent state rotates correctly, in every
@@ -1384,40 +1415,125 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
             combined(&r)
         );
     }
-
-    // The shipped gate room is the other side of the same coin: its grille is
-    // an east–west run of bars, so a quarter-turn deforms it and the check says
-    // so. This is the case the fixture above used to stand in for.
-    let r = stamp("prefab/hello-room", Some("clockwise90"));
-    assert_eq!(
-        r.status.code(),
-        Some(3),
-        "a barred gate is not yaw-invariant"
-    );
-    assert!(
-        combined(&r).contains("minecraft:iron_bars"),
-        "names the grille:\n{}",
-        combined(&r)
-    );
 }
 
-/// The shipped library, plus one piece that is yaw-invariant **by
-/// construction**: a stone box, a hanging lantern and an upright log — states
-/// that carry properties (`hanging`, `waterlogged`, `axis=y`) and not one of
-/// them a direction a quarter-turn can move.
+/// The shipped library, plus the three pieces
+/// [`rotated_fragment_of_a_directional_prefab_is_dw0323`] judges, each built to
+/// carry exactly the property that decides its verdict:
 ///
-/// It has to be built rather than borrowed, and the reason is the finding. This
-/// half of the test used to stamp `hello-room`, which measured as yaw-invariant
-/// only because its iron-bars gate wrote **no connection properties at all**.
-/// The grille has always run east–west, so a quarter-turn had always deformed
-/// it; `DW0323` could not see that because the file did not say. Now that every
-/// emitted state names what it joins, no shipped piece is yaw-invariant — and a
-/// check whose "provably-correct output is accepted" half has no case left is a
-/// blanket ban that nobody can tell apart from a rule.
-fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
-    use fastnbt::Value;
+/// * `prefab/yaw-invariant-box` — a stone box, a hanging lantern and an upright
+///   log. Every state carries properties (`hanging`, `waterlogged`, `axis=y`)
+///   and not one of them a direction a quarter-turn can move.
+/// * `prefab/yaw-facing-stair` — the same box with one stair, whose `facing` and
+///   `shape` a quarter-turn moves.
+/// * `prefab/yaw-connected-grille` — the same box with an east–west run of iron
+///   bars that says what it joins (`east`/`west` true, `north`/`south` false).
+///
+/// They are built rather than borrowed, and that is the point. This test used to
+/// stamp shipped pieces: `hello-room` for the connection arm, `keep-stair` for
+/// the `facing` arm. `hello-room` measured as yaw-invariant only because its
+/// iron-bars gate wrote **no connection properties at all** — the grille has
+/// always run east–west, so a quarter-turn had always deformed it, and `DW0323`
+/// could not see that because the file did not say. The library is a separate
+/// repo on its own pin, so either verdict could flip under this test without a
+/// line of the compiler changing, in either direction: a piece regenerated to
+/// state its connections turns the "a yaw-invariant piece is accepted" half into
+/// a blanket ban nobody can tell apart from a rule, and a piece that stops
+/// writing `facing` empties the refusal half. Owning the fixtures is what makes
+/// the verdict a statement about the compiler.
+///
+/// Whether the SHIPPED library states the properties its shapes carry is a
+/// separate question with its own gate — the `DW0735` sweep over every pinned
+/// prefab in `crates/admit/tests/library.rs`, which states its binding count and
+/// runs in the same `cargo test --workspace`.
+fn rotation_fixture_prefabs() -> PathBuf {
     let dir = tmp("edits-rotation-prefabs");
     common::copy_dir_all(&common::prefabs_dir(), &dir);
+
+    write_fixture_prefab(
+        &dir,
+        "yaw-invariant-box",
+        &[
+            ("minecraft:air", &[]),
+            ("minecraft:stone", &[]),
+            (
+                "minecraft:lantern",
+                &[("hanging", "true"), ("waterlogged", "false")],
+            ),
+            ("minecraft:oak_log", &[("axis", "y")]),
+        ],
+        // The lantern hangs from the middle of the ceiling; the log stands in a
+        // corner, `axis=y` being the excluded-by-name case.
+        &[(2, [2, 2, 2]), (3, [1, 1, 1])],
+    );
+    write_fixture_prefab(
+        &dir,
+        "yaw-facing-stair",
+        &[
+            ("minecraft:air", &[]),
+            ("minecraft:stone", &[]),
+            (
+                "minecraft:stone_brick_stairs",
+                &[
+                    ("facing", "north"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
+        ],
+        &[(2, [2, 1, 2])],
+    );
+    write_fixture_prefab(
+        &dir,
+        "yaw-connected-grille",
+        &[
+            ("minecraft:air", &[]),
+            ("minecraft:stone", &[]),
+            (
+                "minecraft:iron_bars",
+                &[
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("south", "false"),
+                    ("waterlogged", "false"),
+                    ("west", "true"),
+                ],
+            ),
+        ],
+        // An east–west run across the interior: the shape a portcullis has, and
+        // the one a quarter-turn turns into a north–south one.
+        &[(2, [1, 1, 2]), (2, [2, 1, 2]), (2, [3, 1, 2])],
+    );
+    dir
+}
+
+/// Write one test-owned 5x4x5 prefab (`.nbt` + metadata `.json`) into `dir`: a
+/// hollow shell of `states[1]`, air inside, with each `(palette index, cell)` in
+/// `fixtures` overriding one interior cell. `states[0]` is air by convention.
+///
+/// Every state the caller names is judged against the pinned registry before the
+/// bytes exist. A palette nobody judges can name a block 1.21.11 does not have,
+/// and a structure template loads an unknown block as AIR — so the piece would
+/// be a hole and a test asserting against it would still be green.
+fn write_fixture_prefab(
+    dir: &Path,
+    id: &str,
+    states: &[(&str, &[(&str, &str)])],
+    fixtures: &[(i32, [i32; 3])],
+) {
+    use fastnbt::Value;
+
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    for (name, props) in states {
+        let props: BTreeMap<String, String> = props
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        registry
+            .validate(name, &props)
+            .unwrap_or_else(|e| panic!("the `{id}` fixture names an impossible state: {e}"));
+    }
 
     let (sx, sy, sz) = (5i32, 4i32, 5i32);
     let mut blocks: Vec<Value> = Vec::new();
@@ -1425,14 +1541,10 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
         for y in 0..sy {
             for z in 0..sz {
                 let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
-                let state = if [x, y, z] == [2, sy - 2, 2] {
-                    2 // the lantern, hung from the middle of the ceiling
-                } else if [x, y, z] == [1, 1, 1] {
-                    3 // an upright log: `axis=y` is the excluded-by-name case
-                } else if shell {
-                    1
-                } else {
-                    0
+                let state = match fixtures.iter().find(|(_, cell)| *cell == [x, y, z]) {
+                    Some((i, _)) => *i,
+                    None if shell => 1,
+                    None => 0,
                 };
                 let mut c = std::collections::HashMap::new();
                 c.insert(
@@ -1456,29 +1568,6 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
         }
         Value::Compound(c)
     };
-    // Every state this fixture authors, judged against the pinned registry
-    // before the bytes exist. A palette nobody judges can name a block 1.21.11
-    // does not have, and a structure template loads an unknown block as AIR —
-    // so the piece would be a hole and the test would still be green.
-    let states: &[(&str, &[(&str, &str)])] = &[
-        ("minecraft:air", &[]),
-        ("minecraft:stone", &[]),
-        (
-            "minecraft:lantern",
-            &[("hanging", "true"), ("waterlogged", "false")],
-        ),
-        ("minecraft:oak_log", &[("axis", "y")]),
-    ];
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
-    for (name, props) in states {
-        let props: BTreeMap<String, String> = props
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        let verdict = registry.validate(name, &props);
-        verdict
-            .unwrap_or_else(|e| panic!("the yaw-invariant fixture names an impossible state: {e}"));
-    }
 
     let mut root = std::collections::HashMap::new();
     root.insert("DataVersion".to_string(), Value::Int(4671));
@@ -1495,19 +1584,15 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
     let raw = fastnbt::to_bytes(&Value::Compound(root)).expect("nbt");
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     std::io::Write::write_all(&mut gz, &raw).expect("gzip");
-    std::fs::write(
-        dir.join("yaw-invariant-box.nbt"),
-        gz.finish().expect("gzip"),
-    )
-    .expect("write");
+    std::fs::write(dir.join(format!("{id}.nbt")), gz.finish().expect("gzip")).expect("write");
 
     std::fs::write(
-        dir.join("yaw-invariant-box.json"),
+        dir.join(format!("{id}.json")),
         serde_json::to_string_pretty(&serde_json::json!({
-            "prefab_id": "prefab/yaw-invariant-box",
+            "prefab_id": format!("prefab/{id}"),
             "structure": {
-                "file": "yaw-invariant-box.nbt",
-                "id": "yaw-invariant-box",
+                "file": format!("{id}.nbt"),
+                "id": id,
                 "size": [sx, sy, sz],
                 "data_version": 4671,
                 "generator": "crates/compiler/tests/edit.rs (test fixture)"
@@ -1518,5 +1603,4 @@ fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
         .expect("json"),
     )
     .expect("write");
-    dir
 }
