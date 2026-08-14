@@ -121,6 +121,20 @@ jobs:
             --all-targets -- -D warnings
       - name: cargo test (render workspace)
         run: cargo test --locked --offline --manifest-path crates/render/Cargo.toml
+      # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
+      # it — and for as long as that was the whole story the camera had NO
+      # executable coverage at all. A and D shipped swapped; the mapping was
+      # reported wrong a second time by the owner, from her own hands, because
+      # every check this repo had could still be green with the page unwalkable.
+      # These tests press keys and check where the body ends up. Stdlib `node
+      # --test`, no dependencies and no browser, so it is a step in the job that
+      # already builds this crate rather than a new required context (renaming or
+      # adding one is a three-part change — see required-status-checks.txt).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: the viewer's key and mouse mapping does what it says (node --test)
+        run: node --test crates/render/tests/controls.test.mjs
       # task #52 (owner directive 2026-08-07): authored JSON has ONE canonical
       # form, so an insertion is a one-line diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced

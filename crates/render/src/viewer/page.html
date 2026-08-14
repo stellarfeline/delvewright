@@ -1,0 +1,68 @@
+<div id="app">
+  <header>
+    <div class="brand">
+      <label class="field">
+        <span>Prefab</span>
+        <select id="model-select"></select>
+      </label>
+      <p id="model-stats" class="stats"></p>
+    </div>
+    <button id="panel-toggle" type="button" aria-expanded="true">Controls</button>
+  </header>
+
+  <div id="stage">
+    <canvas id="view" tabindex="0" aria-label="Interactive 3D view of the prefab. W A S D walks, drag to look."></canvas>
+    <div id="labels" aria-hidden="true"></div>
+    <p id="first-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk &middot; drag to look</p>
+    <p id="readout"></p>
+    <p id="fallback" hidden></p>
+  </div>
+
+  <aside id="panel">
+    <section>
+      <h2>Getting around</h2>
+      <ul id="controls-help" class="controls-help"></ul>
+      <button id="orbit-toggle" type="button" class="toggle" aria-pressed="false">Orbit the whole piece</button>
+      <p class="hint" id="camera-hint"></p>
+    </section>
+
+    <section>
+      <h2>Stand here</h2>
+      <div id="presets" class="chips"></div>
+    </section>
+
+    <section>
+      <h2>Cutaway</h2>
+      <label class="field">
+        <span>Hide above Y <output id="cut-value"></output></span>
+        <input type="range" id="cut" min="0" max="1" step="1" />
+      </label>
+      <p class="hint">Slice the roof off to read the interior. Full height shows the prefab as built.</p>
+    </section>
+
+    <section>
+      <h2>Show</h2>
+      <label class="check"><input type="checkbox" id="opt-anchors" checked /> <span>Anchors &amp; sockets</span></label>
+      <label class="check"><input type="checkbox" id="opt-labels" checked /> <span>Anchor labels</span></label>
+      <label class="check"><input type="checkbox" id="opt-bounds" /> <span>Bounding box</span></label>
+      <label class="check"><input type="checkbox" id="opt-ground" checked /> <span>Ground grid</span></label>
+    </section>
+
+    <section id="anchor-section">
+      <h2>Anchors <span id="anchor-count" class="badge"></span></h2>
+      <ul id="anchor-list" class="anchors"></ul>
+    </section>
+
+    <section>
+      <h2>Blocks <span id="legend-count" class="badge"></span></h2>
+      <ul id="legend" class="legend"></ul>
+    </section>
+
+    <section id="findings-section">
+      <h2>Fidelity <span id="findings-count" class="badge"></span></h2>
+      <p class="hint">Where the picture and the file disagree: a block the pinned version does not have, a palette entry that leaves properties unwritten so the shape comes from the default state, or a block the renderer draws as nothing.</p>
+      <ul id="findings" class="findings"></ul>
+      <p class="stats" id="fidelity"></p>
+    </section>
+  </aside>
+</div>

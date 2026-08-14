@@ -91,6 +91,27 @@ not third-party reconstructions.
   `prefabs/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
+- **`block-defaults-1.21.11.json`** — every 1.21.11 block's **default state**: the
+  value the game resolves each unwritten property to. Same source and same pinned
+  SHA-256 as `blocks-1.21.11.json`; that file keeps the source entry's first
+  element (legal values), this one keeps the second. 1166 blocks, 777 of them with
+  at least one property, namespaced and sorted.
+  **Why it exists**: a structure template's palette may leave properties out.
+  Vanilla fills them from the default state on load, so the file is legal and the
+  running server places the right block — and every reader that is not a running
+  server has to work it out. Guessing is not close: a bare
+  `minecraft:cobblestone_wall` is a wall POST (`up=true`, every side `none`),
+  while "the first legal value" gives `up=false` and `east=low`, which is a
+  different block, and a review page that guessed drew a solid cube where a wall
+  post stands. Distinct from `blockstate-shape-props-1.21.11.json`, which says
+  WHICH properties the model is assembled from: this says what each of them means
+  when it is not written. Consumed by `delvewright_schem::blocks`
+  (`default_state` / `unwritten`) and through it by the prefab review page.
+  **Reproduce it**: `python3 tools/extract-block-defaults.py
+  <blocks/data.min.json> crates/compiler/data/block-defaults-1.21.11.json`. The
+  script pins and checks the source SHA-256 and the block count, and refuses a
+  default that is not one of its own property's legal values.
+
 - **`items-1.21.11.json`** — the `item` registry array from `registries/data.min.json`,
   each id namespaced (`minecraft:<id>`) to match DSL usage, de-duplicated and sorted.
   1505 items. Deterministic transform: `sorted(set("minecraft:"+i for i in item))`,
@@ -266,6 +287,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `item-combat-1.21.11.json` | `362288eae4c77d9c53d91547b5735c00d739cafc95e1ab2ef57cd1343b9d29ff` |
 | `damage-types-1.21.11.json` | `c3daed77f2557dc7fd784d373e74c1d67b45157bb812c8e4dee761db4696b6fd` |
 | `blocks-1.21.11.json` | `e38653d774e3e837dbb74f8baa05d2687741e56eb7e702c03218c31bd2481087` |
+| `block-defaults-1.21.11.json` | `98ba9886b8bdf648e8ff74ffe8c817932e987037111427343613eefa1c37da3d` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 
 ## Not committed
