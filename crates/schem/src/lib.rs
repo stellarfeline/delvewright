@@ -19,10 +19,12 @@ pub mod blocks;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;
+pub mod fluid;
 pub mod nbt;
 pub mod prefab;
 pub mod schematic;
 pub mod split;
+pub mod stairs;
 
 use diag::{DW_DATAVERSION, DW_SPLIT, Diagnostic};
 use schematic::ParseError;
