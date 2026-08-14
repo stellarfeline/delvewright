@@ -33,16 +33,17 @@
 //! > toward local `Z`-min.**
 //!
 //! That is not a coin flip. A [`Mark`]'s facing, when it is not spelled out as a
-//! world direction, is *always* the negative direction of the world axis the
-//! scope calls local `Z` — so a rule can only hand an anchor a facing that
-//! points down-axis. Choosing travel to run that way is what makes every anchor
-//! these rules declare look at the thing it is about. The cost is that anchors
-//! number *against* travel (a split visits its pieces low to high); see
-//! [`cliff_path`].
+//! world direction, is *always* the direction of decreasing local `Z` — so a
+//! rule can only hand an anchor a facing that points down-axis. Choosing travel
+//! to run that way is what makes every anchor these rules declare look at the
+//! thing it is about. The cost is that anchors number *against* travel (a split
+//! visits its pieces from the low end of the axis); see [`cliff_path`]. A
+//! reflection reverses both together, so the trade-off is the same in a mirrored
+//! frame.
 //!
 //! **The idiom index.** [`idioms`] is a third kind again: one minimal program
 //! per *technique* of the IR — repetition, priority, shape, erosion, graded
-//! erosion, surface detail, symmetry without reflection, `skip`, light — plus
+//! erosion, surface detail, symmetry, `skip`, light — plus
 //! one composition demonstration. They build nothing anyone wants, and they are
 //! in the library because `delve-grammar list` / `show` is the only way an
 //! author reaches the corpus, and the corpus is where technique is learned.
@@ -78,6 +79,7 @@ pub mod idioms;
 pub mod lift_shaft;
 pub mod negated_guard;
 pub mod rafter_hall;
+pub mod spatial_contract;
 pub mod stair_flight;
 pub mod store_room;
 pub mod tee_passage;
@@ -105,6 +107,7 @@ pub use far_side_bar::far_side_bar;
 pub use hearth_ward::hearth_ward;
 pub use lift_shaft::lift_shaft;
 pub use rafter_hall::rafter_hall;
+pub use spatial_contract::spatial_contract;
 pub use stair_flight::stair_flight;
 pub use store_room::store_room;
 pub use tee_passage::tee_passage;
@@ -208,6 +211,12 @@ fn reoriented(orient: Reorient, body: Node) -> Node {
     }
 }
 
+/// Expand `body` reflected across one local axis — the same rule, standing at
+/// the other site of a mirror pair.
+fn mirrored(axis: Axis, body: Node) -> Node {
+    reoriented(Reorient::KEEP.flip(axis), body)
+}
+
 /// Expand another rule.
 fn call(symbol: &str) -> Node {
     Node::call(symbol)
@@ -229,15 +238,28 @@ fn fill_block(block: crate::block::BlockState) -> Node {
     }
 }
 
-/// The scope's orientation is exactly this local-to-world mapping — the guard
-/// that picks the correctly oriented block-state variant.
+/// The scope's frame is exactly this local-to-world mapping, **unreflected** —
+/// the guard that picks the correctly oriented block-state variant.
+///
+/// Unreflected because a reflection lands a different facing, so a guard that
+/// matched both arms of a mirror pair would license one arm's state on the
+/// other. A rule that wants to stand at both sites writes the reflected
+/// alternative too, with [`Cond::frame`].
 fn oriented(x: Axis, y: Axis, z: Axis) -> Cond {
-    Cond::Orientation { x, y, z }
+    Cond::orientation(x, y, z)
 }
 
 /// Write air.
 fn void() -> Node {
     Node::Void
+}
+
+/// Claim this scope's box for a named contract region, then expand `body`.
+fn claimed(region: &str, body: Node) -> Node {
+    Node::Claim {
+        region: region.to_string(),
+        body: Box::new(body),
+    }
 }
 
 /// Declare an anchor on this scope, then expand `body`.
@@ -381,10 +403,12 @@ pub enum Kind {
     Example,
 }
 
-/// The entry claims no optional gate: not a route, roofs nothing. Commonest.
+/// The entry claims no optional gate: not a route, roofs nothing, has no
+/// mirror plane. Commonest.
 const NO_CLAIM: crate::gates::Options = crate::gates::Options {
     traversable: false,
     allow_falls: false,
+    symmetric: None,
     reachable_floor: false,
 };
 
@@ -392,6 +416,22 @@ const NO_CLAIM: crate::gates::Options = crate::gates::Options {
 const ROUTE: crate::gates::Options = crate::gates::Options {
     traversable: true,
     allow_falls: false,
+    symmetric: None,
+    reachable_floor: false,
+};
+
+/// A piece built as one rule standing at both sites of a mirror plane on the
+/// world `Y`.
+///
+/// Claimed by the entry rather than left to a `--symmetric` a person remembers
+/// to pass: the registry is what the corpus sweep and `audit` read, so a claim
+/// that lives only on a command line is a gate the corpus never runs. The
+/// bilateral-symmetry gate would otherwise bind ZERO over the whole library —
+/// green because nothing asked it anything.
+const MIRRORED_Y: crate::gates::Options = crate::gates::Options {
+    traversable: false,
+    allow_falls: false,
+    symmetric: Some(Axis::Y),
     reachable_floor: false,
 };
 
@@ -523,6 +563,14 @@ pub const PROGRAMS: &[LibraryProgram] = &[
     // `show` are the only way an author reaches the corpus at all. Their
     // regions, seeds and route claims are the ones `grammar.md` §2c documents.
     entry(
+        "idiom-arguments",
+        idioms::arguments,
+        [15, 7, 15],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
         "idiom-composition-arcade",
         idioms::composition_arcade,
         [3, 14, 20],
@@ -560,7 +608,7 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         [15, 11, 2],
         1,
         Kind::Example,
-        NO_CLAIM,
+        MIRRORED_Y,
     ),
     entry(
         "idiom-priority",
@@ -628,6 +676,17 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         [13, 6, 25],
         1,
         Kind::Piece,
+        NO_CLAIM,
+    ),
+    // A corpus example rather than an idiom-index entry (spec-0033 §4.8): the
+    // one program that writes `claim` and a `contract` block. Its region and
+    // seed are the ones its own module documents it at.
+    entry(
+        "spatial-contract",
+        spatial_contract::spatial_contract,
+        [11, 6, 15],
+        1,
+        Kind::Example,
         NO_CLAIM,
     ),
     entry(

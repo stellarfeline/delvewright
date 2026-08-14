@@ -116,7 +116,7 @@ fn every_library_program_passes_every_gate_at_its_declared_expansion() {
     }
     // Binding counts, so a corpus that quietly stopped reaching these gates is
     // a red rather than a shorter green list (CLAUDE.md's first vacuity mode).
-    assert_eq!(library::PROGRAMS.len(), 33, "the corpus this swept");
+    assert_eq!(library::PROGRAMS.len(), 35, "the corpus this swept");
     for (id, floor) in [
         ("blocks-exist", 100usize),
         ("shape-complete", 100),

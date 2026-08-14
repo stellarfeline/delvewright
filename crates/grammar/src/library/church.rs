@@ -261,11 +261,7 @@ pub fn church() -> Program {
             "doors",
             vec![
                 alt_when(
-                    Cond::Orientation {
-                        x: WX,
-                        y: WY,
-                        z: WZ,
-                    },
+                    Cond::orientation(WX, WY, WZ),
                     split(
                         Axis::Y,
                         vec![abs(1), abs(1)],
@@ -429,11 +425,7 @@ pub fn church() -> Program {
                 alt_when(
                     Cond::All {
                         of: vec![
-                            Cond::Orientation {
-                                x: WX,
-                                y: WY,
-                                z: WZ,
-                            },
+                            Cond::orientation(WX, WY, WZ),
                             cmp(dim(DimRef::X), CmpOp::Ge, int(2)),
                         ],
                     },

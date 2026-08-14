@@ -1,0 +1,20 @@
+{
+  "campaign_id": "region-offset",
+  "content": {
+    "areas": [
+      {
+        "id": "area/keep",
+        "name": "The Keep",
+        "prefab": "prefab/hello-room"
+      }
+    ],
+    "difficulty": "normal",
+    "premise": "spec-0038 probe 2: the recorded spec-0031 finding, demonstrated - a stage-5 runtime region is a box CENTRED on a prefab anchor with unsigned half-extents, so the cell one below an anchor (a deck under riders, a tide slab over a walk plane, a basin behind a wall) cannot be named. The general region language (box min/max in a frame, union/intersect/subtract) exists one stage away in stage 7 and stage 5 cannot see it.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "theme": "A keep whose two landings are joined by one cage on a chain.",
+    "title": "Probe: a region one block below its anchor"
+  },
+  "dsl_version": "0.10.0",
+  "stage": "world"
+}

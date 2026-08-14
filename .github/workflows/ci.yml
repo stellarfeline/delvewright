@@ -156,6 +156,26 @@ jobs:
       # A STEP, not a job: every job name here is a required status context.
       - name: the published crates would build standing alone
         run: bash tools/check-publishable.sh
+      # The same crates ship a FRONT PAGE, and it is the only document in this
+      # repo whose reader has never seen this repo. `crates/compiler/README.md`
+      # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
+      # `delvec` page used to open with "The deterministic compiler (spec-0002,
+      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. #388 rewrote
+      # them and nothing stopped that regressing — the rule behind it (CLAUDE.md
+      # *Audience separation in docs*) was held by memory alone. Six unambiguous
+      # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
+      # repo-relative markdown link (crates.io serves the markdown with no
+      # repository around it). It deliberately does NOT check the present-tense
+      # half of the rule — "now"/"still"/"since" are ordinary English and a
+      # checker for them would red on honest prose, which is worse than no
+      # checker. The file set is DERIVED from the manifests (every crate whose
+      # `publish` is not false, through its `readme` key), so a crate that
+      # becomes publishable inherits this with no edit; examining zero pages is
+      # a red. It rides HERE because this is the job that already owns what
+      # crates.io receives. A STEP, not a job: every job name here is a required
+      # status context. Deterministic, offline, stdlib-only python3.
+      - name: no internal reference reaches a crates.io front page
+        run: python3 tools/check-crates-io-readmes.py
 
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for musl,
@@ -350,7 +370,16 @@ jobs:
       # the build moves), and a gate that only rejects "newer than the build" is
       # exactly what let a storybook ship a v1.0 marker through the whole v1.1
       # release green (engine #342). Deterministic, offline, stdlib-only python3.
-      - name: compiler reference version header matches the build (both directions)
+      #
+      # The same script now binds the same constants on the crates.io FRONT
+      # PAGES, over the same derived publishable-crate set the README gate uses
+      # (`tools/lib/publishable.py`). Those pages state the Minecraft version,
+      # the `dsl_version` window and the minimum Rust — the facts a stranger acts
+      # on — and they were bound to nothing, so the next `dsl_version` bump would
+      # have made a published page wrong. Extending the checker that already owns
+      # the question, rather than adding a second one, is deliberate: a parallel
+      # mechanism is the privately-re-implemented-general-mechanism defect.
+      - name: documented versions match the build (reference + crates.io pages)
         run: python3 tools/check-reference-versions.py
       # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
       # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
@@ -419,10 +448,26 @@ jobs:
       # given that fetch; the script itself takes no further network action.
       # What it cannot see — another open PR that has not yet merged into
       # `origin/main` — is stated in the script's own docstring, not buried.
-      - name: fetch origin/main for the spec/ADR numbering-uniqueness gate
+      - name: fetch origin/main for the numbering-uniqueness gates
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
         run: python3 tools/check-numbered-doc-uniqueness.py
+      # The same defect one layer down, on a different kind of number. A version
+      # ledger is picked exactly the way a spec number is — list what exists,
+      # write the next one — so two branches take the same number for different
+      # surfaces and both are green. PR #413 wrote `MIRROR_SINCE = "1.1.0"` and
+      # PR #417 wrote `CONTRACT_SINCE = "1.1.0"` into the same new file. Those
+      # two DO conflict textually; the hazard is the resolution, because
+      # unioning both constants under one `1.1.0` compiles, passes clippy, and
+      # ships an engine that accepts a `1.1.0` document written against the
+      # construct it does not implement and silently drops it — ADR-0018 §7's
+      # failure, reintroduced by the fence's own numbering. Covers every version
+      # ledger in the repo (grammar `Program` version, campaign `dsl_version`),
+      # not one crate. Uses the fetch above; no further network action. What it
+      # cannot see, and where `dsl_version`'s anchors are self-naming so its
+      # first rule cannot bind, are both in the script's own docstring.
+      - name: no version number names two surfaces after this merges
+        run: python3 tools/check-version-ledger-uniqueness.py
       # A required status check answers for the uptime of every host it reaches,
       # and a git dependency is the reach nothing in cargo's surface lets a job
       # decline: it is cloned during RESOLUTION of the workspace that declares it,
@@ -497,6 +542,23 @@ jobs:
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
         run: python3 tools/check-shell-redirect-dirs.py
+      # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
+      # the two ways it grows new surface are not equally safe. A new variant of a
+      # tagged enum is safe — an older engine meets an `"op"` it does not know and
+      # fails loud at serde, and every exhaustive match forces an arm. A
+      # `#[serde(default)]` STRUCT FIELD is not: it rides through every walk
+      # untouched in both directions, so an engine that predates the field
+      # deserialises the document with the field's default, expands, passes every
+      # gate, and writes different geometry with nothing to say about it. That is
+      # what `reorient.mirror` would have done. ADR-0018 §7 answers it with closed
+      # schemas plus a version fence, and neither is worth anything as a
+      # convention: this is what makes "someone added an optional field and did
+      # not fence it" an ordinary red instead of a silently different world two
+      # engines apart. Bidirectional against `grammar.md` §2e, and a version above
+      # the floor must be REFUSED by name in `ir.rs` — a constant nothing enforces
+      # is not a fence. Deterministic, offline, stdlib-only python3.
+      - name: every optional field of the grammar IR is closed or fenced
+        run: python3 tools/check-grammar-ir-compat.py
       # EVERY job here is a required status check (owner decision 2026-08-05; it was
       # three, so `tier 2` — datapack load plus the whole PackTest suite — never
       # blocked a merge). Branch protection matches a required context by its NAME

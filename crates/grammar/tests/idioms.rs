@@ -1,6 +1,6 @@
 //! **The idiom index is held to what it teaches.**
 //!
-//! `docs/reference/grammar.md` §2c documents nine techniques of the IR, each
+//! `docs/reference/grammar.md` §2c documents ten techniques of the IR, each
 //! with a minimal program at a stated region and seed. A documented example that
 //! stopped being true is worse than no example: an author starts from the corpus
 //! (`prefab-procedure.md` §3), so the corpus is what they learn from.
@@ -36,7 +36,7 @@ use delvewright_grammar::{Box3, ExpandError, ExpandOptions, Expansion, expand};
 /// One documented example, **read off the registry** rather than restated.
 ///
 /// This table used to carry its own region, seed and route claim for ten of the
-/// library's thirty-three programs, and `tests/library.rs` carried a second one
+/// library's programs, and `tests/library.rs` carried a second one
 /// for twenty-two others. Two hand-written subsets of one registry is how
 /// `negated-guard` ended up in neither, and how nothing ever swept the whole
 /// corpus. `library::PROGRAMS` carries the expansion now, so this is a view of
@@ -48,6 +48,8 @@ struct Case {
     region: [u32; 3],
     seed: u64,
     traversable: bool,
+    /// The world axis this entry claims a mirror plane on, when it claims one.
+    symmetric: Option<Axis>,
 }
 
 fn cases() -> Vec<Case> {
@@ -60,6 +62,10 @@ fn cases() -> Vec<Case> {
             region: p.region,
             seed: p.seed,
             traversable: p.gates.traversable,
+            // The rose window IS the mirror plane, and the registry is where
+            // that claim lives, so the gate reads it here AND in `audit` —
+            // rather than only in a table this file keeps by hand.
+            symmetric: p.gates.symmetric,
         })
         .collect()
 }
@@ -135,6 +141,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
             gates::Options {
                 traversable: case.traversable,
                 allow_falls: false,
+                symmetric: case.symmetric,
                 reachable_floor: false,
             },
         );
@@ -146,7 +153,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            if case.traversable { 6 } else { 5 },
+            5 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
             "{}",
             case.id
         );
@@ -161,7 +168,10 @@ fn every_documented_example_expands_green_at_its_documented_region() {
             judged += 1;
         }
     }
-    assert_eq!(judged, 52, "10 examples, 5 always-on gates, 2 walk gates");
+    assert_eq!(
+        judged, 58,
+        "11 examples, 5 always-on gates each, 2 walk gates, 1 mirror-plane gate"
+    );
 }
 
 /// The documented ids are the ids the tool lists, and **every idiom the library
@@ -179,7 +189,7 @@ fn the_registry_and_the_documented_table_agree_in_both_directions() {
         .filter(|id| id.starts_with("idiom-"))
         .collect();
     assert_eq!(documented, registered);
-    assert_eq!(documented.len(), 10);
+    assert_eq!(documented.len(), 11);
     for case in &cases() {
         let listed = library::by_id(case.id).unwrap_or_else(|| panic!("{} not listed", case.id));
         assert_eq!(listed, (case.program)(), "{}", case.id);
@@ -584,7 +594,7 @@ fn surface_detail_the_crust_and_the_litter_are_pieces_of_the_ground_rule() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Symmetry without reflection
+// 7. Symmetry
 // ---------------------------------------------------------------------------
 
 fn glazing_cells(out: &Expansion, size: [u32; 3]) -> BTreeSet<[i32; 3]> {
@@ -593,14 +603,14 @@ fn glazing_cells(out: &Expansion, size: [u32; 3]) -> BTreeSet<[i32; 3]> {
         .collect()
 }
 
-/// **A rule body written mirrored gives a shape with a mirror plane, though the
-/// orientation machinery cannot mirror anything.**
+/// **One rule and its reflection give a shape with a mirror plane.**
 ///
-/// The two halves differ only in that one peels its courses off the low end and
-/// the other off the high end. The aperture that results is symmetric about both
-/// centre lines of the wall, asserted cell by cell.
+/// The two halves of the aperture are the same rule; the upper one runs under
+/// `mirror: {y}`, so it peels its courses off the other end. The aperture that
+/// results is symmetric about both centre lines of the wall, asserted cell by
+/// cell.
 #[test]
-fn mirror_the_reversed_rule_body_gives_a_symmetric_aperture() {
+fn mirror_one_rule_reflected_gives_a_symmetric_aperture() {
     let case = &case_by_id("idiom-mirror");
     let size = case.region;
     let out = expand_case(case);
@@ -630,15 +640,17 @@ fn mirror_the_reversed_rule_body_gives_a_symmetric_aperture() {
     assert_eq!(widths, vec![0, 3, 5, 7, 9, 9, 9, 7, 5, 3, 0]);
 }
 
-/// **Not mirroring it is visible.** Give both halves the rule that peels off the
-/// low end and the aperture stops being symmetric — the same box, the same
-/// arithmetic, one body not reversed.
+/// **Not reflecting it is visible.** Drop the `mirror` and give both halves the
+/// rule as written; the aperture stops being symmetric — the same box, the same
+/// arithmetic, one node.
 #[test]
-fn mirror_without_the_reversal_the_aperture_is_lopsided() {
+fn mirror_without_the_reflection_the_aperture_is_lopsided() {
     let case = &case_by_id("idiom-mirror");
     let mut lopsided = idioms::mirror();
-    let upper = lopsided.rules["upper_half"].clone();
-    lopsided.rules.insert("lower_half".to_string(), upper);
+    match &mut lopsided.rules.get_mut("window").expect("rule exists")[0].body {
+        Node::Split(split) => split.children[2] = Node::call("half"),
+        other => panic!("`window` is not a bare split: {other:?}"),
+    }
     let out = run(&lopsided, case.region, case.seed);
     let glazing = glazing_cells(&out, case.region);
     let h = case.region[1] as i32 - 1;
@@ -646,7 +658,68 @@ fn mirror_without_the_reversal_the_aperture_is_lopsided() {
         glazing
             .iter()
             .any(|&[x, y, z]| !glazing.contains(&[x, h - y, z])),
-        "an unreversed body must not still be symmetric"
+        "an unreflected body must not still be symmetric"
+    );
+}
+
+/// **The reflection expresses exactly what two hand-kept copies did**, and the
+/// point of preferring it is that nothing has to keep them in step. The two
+/// programs are compared where it counts: byte for byte.
+#[test]
+fn mirror_the_reflection_is_the_two_copies_it_replaces() {
+    let case = &case_by_id("idiom-mirror");
+    // The upper half, written out: the same splits with their size lists
+    // reversed and their children swapped, one rule per recursion level.
+    let two_copies = idioms::mirror()
+        .rule_alts(
+            "upper_half",
+            vec![
+                Alternative::new(Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::rel(1)],
+                    rounding: Rounding::Start,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![Node::call("slot"), Node::call("upper_inset")],
+                }))
+                .when(Cond::All {
+                    of: vec![
+                        Cond::cmp(Expr::dim(DimRef::X), CmpOp::Ge, Expr::int(3)),
+                        Cond::cmp(Expr::dim(DimRef::Y), CmpOp::Ge, Expr::int(2)),
+                    ],
+                }),
+                Alternative::new(Node::call("slot")).when(Cond::Otherwise),
+            ],
+        )
+        .rule(
+            "upper_inset",
+            Node::Split(Split {
+                axis: Axis::X,
+                sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
+                rounding: Rounding::Start,
+                repeat: false,
+                orient: Reorient::KEEP,
+                children: vec![
+                    Node::fill("mass"),
+                    Node::call("upper_half"),
+                    Node::fill("mass"),
+                ],
+            }),
+        );
+    let mut two_copies = two_copies;
+    match &mut two_copies.rules.get_mut("window").expect("rule exists")[0].body {
+        Node::Split(split) => split.children[2] = Node::call("upper_half"),
+        other => panic!("`window` is not a bare split: {other:?}"),
+    }
+
+    assert_eq!(
+        run(&idioms::mirror(), case.region, case.seed)
+            .model
+            .canonical_bytes(),
+        run(&two_copies, case.region, case.seed)
+            .model
+            .canonical_bytes(),
+        "the reflection and the hand-written copies are the same building"
     );
 }
 
@@ -747,6 +820,49 @@ fn light_the_sconce_period_is_a_control_over_a_real_rhythm() {
     let mut sparse = idioms::light();
     sparse.set_param("sconce_period", 6).unwrap();
     assert_eq!(lamps(&sparse).len(), 6, "a longer period is fewer sconces");
+}
+
+// ---------------------------------------------------------------------------
+// 10. Arguments
+// ---------------------------------------------------------------------------
+
+/// **One rule, four contents.** The row's claim, at the documented region.
+///
+/// Three rules build four heads that differ in paint and in axis, and the four
+/// are congruent: the glazing occupies exactly the cells the air does in the
+/// head beside it. What `tests/arguments.rs` adds is the other half — that the
+/// nine-rule program this replaces is byte-identical, and that one of its copies
+/// can drift with every gate green.
+#[test]
+fn arguments_states_one_recursion_and_calls_it_four_ways() {
+    let case = &case_by_id("idiom-arguments");
+    let program = idioms::arguments();
+    assert_eq!(
+        program.rules.len(),
+        3,
+        "a plan rule and one two-rule recursion"
+    );
+    let out = expand_case(case);
+    let count = |name: &str| {
+        cells(case.region)
+            .filter(|&c| block_at(&out, c) == name)
+            .count()
+    };
+    let glass = count("minecraft:light_blue_stained_glass");
+    let air = count("minecraft:air");
+    assert!(glass > 0, "the bound paint reached the blocks");
+    assert_eq!(
+        glass, air,
+        "the two glazed heads occupy the cells the two open heads leave empty"
+    );
+
+    // The frame is read three rules below the call that pushed it: `head` fills
+    // `opening`, `shoulders` calls `head`, and neither names the glazing.
+    assert_eq!(
+        block_at(&out, [3, 6, 11]),
+        "minecraft:light_blue_stained_glass"
+    );
+    assert!(is_air(&out, [3, 6, 3]), "its sibling is under no frame");
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,11 +1240,11 @@ fn fact_a_world_cardinal_state_does_not_turn_with_the_scope() {
         .rule_alts(
             "piece",
             vec![
-                Alternative::new(Node::fill("tread_x")).when(Cond::Orientation {
-                    x: Axis::X,
-                    y: Axis::Y,
-                    z: Axis::Z,
-                }),
+                Alternative::new(Node::fill("tread_x")).when(Cond::orientation(
+                    Axis::X,
+                    Axis::Y,
+                    Axis::Z,
+                )),
                 Alternative::new(Node::fill("tread_z")).when(Cond::Otherwise),
             ],
         );
@@ -1144,11 +1260,11 @@ fn fact_a_world_cardinal_state_does_not_turn_with_the_scope() {
         &ExpandOptions {
             seed: 1,
             limits: Default::default(),
-            orientation: delvewright_grammar::geom::Orientation {
-                x: Axis::Z,
-                y: Axis::Y,
-                z: Axis::X,
-            },
+            orientation: delvewright_grammar::geom::Orientation::from_axes([
+                Axis::Z,
+                Axis::Y,
+                Axis::X,
+            ]),
         },
     )
     .unwrap();

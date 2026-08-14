@@ -31,6 +31,10 @@ pub const DW_LICENSE: &str = "DW0741";
 pub const DW_TOOLING: &str = "DW0750";
 pub const DW_DARK: &str = "DW0751";
 pub const DW_GALLERY: &str = "DW0760";
+/// A piece's declared spatial contract disagrees with its own blocks
+/// (spec-0036 §2). The second door onto the one checker; the first is
+/// `delve-grammar expand`.
+pub const DW_CONTRACT: &str = "DW0782";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

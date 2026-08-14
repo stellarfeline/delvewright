@@ -55,6 +55,7 @@ fn content_root(dir: &Path, program_json: &str, manifest: Option<&str>) -> PathB
 
 /// A minimal program that fills a box with a fully specified state.
 const GREEN_PROGRAM: &str = r#"{
+  "version": "1.0.0",
   "name": "demo",
   "start": "all",
   "rules": { "all": [ { "weight": 1, "body": {
@@ -67,6 +68,7 @@ const GREEN_PROGRAM: &str = r#"{
 /// The same program painting a wall with no connections written — `DW0735` and
 /// `DW0737` both, and the shape a bare palette role takes in a real campaign.
 const RED_PROGRAM: &str = r#"{
+  "version": "1.0.0",
   "name": "demo",
   "start": "all",
   "rules": { "all": [ { "weight": 1, "body": {
@@ -218,7 +220,7 @@ fn a_recorded_red_is_held_with_its_codes() {
     let ex = write_exclusions(
         &dir,
         r#"{ "exclusion": [ { "id": "demo/zone-a",
-             "capability_gap": "an oriented state cannot be a palette role",
+             "capability_gap": "the engine cannot yet express this zone's bar geometry",
              "expect_codes": ["DW0735", "DW0737"] } ] }"#,
     );
     let out = audit(&[
@@ -243,7 +245,7 @@ fn a_recorded_red_that_now_passes_is_a_finding() {
     let ex = write_exclusions(
         &dir,
         r#"{ "exclusion": [ { "id": "demo/zone-a",
-             "capability_gap": "an oriented state cannot be a palette role",
+             "capability_gap": "the engine cannot yet express this zone's bar geometry",
              "expect_codes": ["DW0735"] } ] }"#,
     );
     let out = audit(&[
@@ -270,7 +272,7 @@ fn a_recorded_red_that_fails_with_another_code_is_a_finding() {
     let ex = write_exclusions(
         &dir,
         r#"{ "exclusion": [ { "id": "demo/zone-a",
-             "capability_gap": "an oriented state cannot be a palette role",
+             "capability_gap": "the engine cannot yet express this zone's bar geometry",
              "expect_codes": ["DW0735"] } ] }"#,
     );
     let out = audit(&[
@@ -296,7 +298,7 @@ fn a_stale_record_naming_nothing_is_a_finding() {
     let ex = write_exclusions(
         &dir,
         r#"{ "exclusion": [ { "id": "demo/zone-gone",
-             "capability_gap": "an oriented state cannot be a palette role",
+             "capability_gap": "the engine cannot yet express this zone's bar geometry",
              "expect_codes": ["DW0735"] } ] }"#,
     );
     let out = audit(&[
@@ -368,13 +370,19 @@ fn an_exclusion_with_no_capability_gap_is_refused() {
 // ---------------------------------------------------------------------------
 
 /// **The rule library passes its own audit**, and the run states a binding count
-/// per gate over all thirty-three programs.
+/// per gate over every program in it.
 #[test]
 fn the_rule_library_passes_its_own_audit() {
     let out = audit(&["--library"]);
     assert!(out.status.success(), "{}", combined(&out));
     let text = combined(&out);
-    assert!(text.contains("audited 33 program(s)"), "{text}");
+    assert!(
+        text.contains(&format!(
+            "audited {} program(s)",
+            delvewright_grammar::library::PROGRAMS.len()
+        )),
+        "{text}"
+    );
     // No gate may report a zero binding over the whole corpus.
     for line in text.lines() {
         assert!(

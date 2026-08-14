@@ -26,6 +26,7 @@ pub mod jigsaw;
 pub mod light;
 pub mod meta;
 pub mod socket;
+pub mod spatial;
 pub mod structure;
 
 /// The deterministic NBT value type (re-exported from `delve-schem`) for callers

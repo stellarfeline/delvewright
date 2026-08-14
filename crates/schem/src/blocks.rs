@@ -61,7 +61,7 @@ pub const MC_VERSION: &str = "1.21.11";
 pub const PIN_DATA_VERSION: i32 = 4671;
 
 // ---------------------------------------------------------------------------
-// The blockstate diagnostic family (one model, four rules). Codes are defined
+// The blockstate diagnostic family (one model, five rules). Codes are defined
 // here — the crate every emitter and auditor of a block state already depends
 // on — so the next consumer reuses the rule instead of rewriting the unchecked
 // version (CLAUDE.md, task #70: the rule lived, correct, inside ONE spike).
@@ -80,7 +80,7 @@ pub const DW_ORIENTED_FILL_UNGUARDED: &str = "DW0736";
 /// whatever a 1.21.11 server derives and no other reader can know it (error).
 pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
 /// A block state written in a scope's own axis names carries a property the
-/// pinned vocabulary cannot map onto the world axes the scope was given
+/// pinned vocabulary cannot map onto the world frame the scope was given
 /// (error).
 pub const DW_LOCAL_FRAME_UNRESOLVABLE: &str = "DW0738";
 
@@ -347,35 +347,46 @@ impl BlockRegistry {
     }
 
     /// The first property of a state that lands wrong when the state is written
-    /// under the axis permutation `local_to_world` without being rewritten —
+    /// under the frame `local_to_world` / `reflected` without being rewritten —
     /// the `DW0736` predicate.
     ///
-    /// `local_to_world[i]` is the world axis index (0 = X, 1 = Y, 2 = Z) that a
-    /// scope's local axis `i` names. A grammar reorientation permutes the
-    /// *geometry* a rule describes and never touches block-state properties
+    /// A frame has two halves and the check needs both. `local_to_world[i]` is
+    /// the world axis index (0 = X, 1 = Y, 2 = Z) that a scope's local axis `i`
+    /// names; `reflected[i]` says local axis `i` runs *backwards* along it. A
+    /// grammar frame permutes and reflects the *geometry* a rule describes and
+    /// never touches block-state properties
     /// (`crates/grammar/src/orient.rs`), so a literal `facing`/`axis`/
-    /// connection property is correct only if the permutation fixes the axes it
-    /// names. The check transforms the state through the permutation — mapping
+    /// connection property is correct only if the frame fixes the direction it
+    /// names. The check transforms the state through the frame — mapping
     /// direction-valued properties, axis-valued properties, direction-*named*
     /// connection flags and two-direction `orientation` values, all derived
     /// from the registry's own value vocabulary — and reports the first
     /// property whose transform differs from its literal, in key order
-    /// (deterministic, ADR-0006). `rotation` (the 16-step yaw of signs, skulls
-    /// and banners), `hinge` and a non-`straight` stair `shape` are
-    /// facing-relative or sub-cardinal and cannot be transformed by axis
-    /// vocabulary; they are the minimal, documented residue and count as
-    /// mismatched whenever the permutation moves a horizontal axis.
+    /// (deterministic, ADR-0006).
     ///
-    /// `None` for the identity permutation (nothing moves), for a foreign
-    /// namespace, and for an id or property the pin does not know (the
-    /// unknown-state diagnostics own those).
+    /// A reflection is a *sign* on the axis, so it is exactly what the existing
+    /// `(axis, sign)` vocabulary already speaks: local `north` under a
+    /// reflected local Z is world `south`. An axis-valued property carries no
+    /// sign and is therefore untouched by a reflection — `axis=x` means the
+    /// same pillar either way. `rotation` (the 16-step yaw of signs, skulls and
+    /// banners), `hinge` and a non-`straight` stair `shape` are facing-relative
+    /// or sub-cardinal and cannot be transformed by axis vocabulary; they are
+    /// the minimal, documented residue and count as mismatched whenever the
+    /// frame moves **or reflects** a horizontal axis. A reflection is the case
+    /// that matters most for `hinge` and a corner `shape`: those are chiral,
+    /// and a mirror is what a rotation cannot reproduce.
+    ///
+    /// `None` for the identity frame (nothing moves and nothing reflects), for
+    /// a foreign namespace, and for an id or property the pin does not know
+    /// (the unknown-state diagnostics own those).
     pub fn oriented_mismatch(
         &self,
         name: &str,
         properties: &BTreeMap<String, String>,
         local_to_world: [usize; 3],
+        reflected: [bool; 3],
     ) -> Option<String> {
-        if local_to_world == [0, 1, 2] {
+        if local_to_world == [0, 1, 2] && reflected == [false; 3] {
             return None;
         }
         let namespaced = namespace(name);
@@ -385,12 +396,12 @@ impl BlockRegistry {
             if known.get(k).is_none() {
                 continue; // unknown property: `validate` owns it
             }
-            match property_image(known, k, v, local_to_world) {
-                // The permutation provably leaves this property alone.
+            match property_image(known, k, v, local_to_world, reflected) {
+                // The frame provably leaves this property alone.
                 PropertyImage::Fixed => {}
                 // It moves. A moved KEY is still satisfied when the state
                 // already gives the destination key the same value (a
-                // symmetric run of bars): the permutation maps the state onto
+                // symmetric run of bars): the frame maps the state onto
                 // itself.
                 PropertyImage::Moved { key, value } => {
                     if key != *k {
@@ -409,31 +420,35 @@ impl BlockRegistry {
 
     /// **The same transform, applied instead of judged**: the image of
     /// `properties` when the state was written in a scope's own axis names and
-    /// the scope calls its local axes `local_to_world`.
+    /// the scope's frame is `local_to_world` / `reflected`.
     ///
-    /// [`Self::oriented_mismatch`] asks whether a state written for the
-    /// identity survives a permutation; it computes the intended state to
-    /// answer, and throws it away. This returns it. Both go through one
-    /// classifier, so a property either has an image both of them agree on or
-    /// has none, and there is no state the judge calls wrong that the
-    /// resolver quietly writes anyway.
+    /// [`Self::oriented_mismatch`] asks whether a state written for the world
+    /// frame survives this one; it computes the intended state to answer, and
+    /// throws it away. This returns it. Both go through one classifier, so a
+    /// property either has an image both of them agree on or has none, and
+    /// there is no state the judge calls wrong that the resolver quietly writes
+    /// anyway. That is the whole reason the classifier is a single function:
+    /// a judge and a rewriter derived from two tables would disagree exactly
+    /// where it matters, and the disagreement would be invisible.
     ///
     /// `Err` names the first property (as `key=value`, in key order) whose
     /// image the pinned vocabulary does not determine — a yaw or a chirality
-    /// under a permutation that moves the vertical, a direction whose image is
-    /// not a legal value of the block, a rail's direction-composed shape.
-    /// **A refusal, never a best guess**: a local-frame state that cannot be
-    /// resolved has no correct block to write.
+    /// under any frame but a pure turn about the vertical, a `top`/`bottom`
+    /// half under a frame that moves or reverses the vertical, a direction
+    /// whose image is not a legal value of the block, a rail's
+    /// direction-composed shape. **A refusal, never a best guess**: a
+    /// local-frame state that cannot be resolved has no correct block to write.
     ///
-    /// Unchanged for the identity permutation, for a foreign namespace and for
-    /// an id the pin does not know (the unknown-block diagnostics own that).
+    /// Unchanged for the identity frame, for a foreign namespace and for an id
+    /// the pin does not know (the unknown-block diagnostics own that).
     pub fn permuted_properties(
         &self,
         name: &str,
         properties: &BTreeMap<String, String>,
         local_to_world: [usize; 3],
+        reflected: [bool; 3],
     ) -> Result<BTreeMap<String, String>, String> {
-        if local_to_world == [0, 1, 2] {
+        if local_to_world == [0, 1, 2] && reflected == [false; 3] {
             return Ok(properties.clone());
         }
         let namespaced = namespace(name);
@@ -446,7 +461,7 @@ impl BlockRegistry {
                 out.insert(k.clone(), v.clone()); // `validate` owns it
                 continue;
             }
-            match property_image(known, k, v, local_to_world) {
+            match property_image(known, k, v, local_to_world, reflected) {
                 PropertyImage::Fixed => {
                     out.insert(k.clone(), v.clone());
                 }
@@ -507,7 +522,7 @@ impl BlockRegistry {
     }
 }
 
-/// What an axis permutation does to one block-state property.
+/// What a frame does to one block-state property.
 ///
 /// The one classifier behind both [`BlockRegistry::oriented_mismatch`] and
 /// [`BlockRegistry::permuted_properties`]. Keeping it single is the point: a
@@ -515,7 +530,7 @@ impl BlockRegistry {
 /// where it matters, and the disagreement would be invisible — the judge would
 /// pass a state the rewriter mangled, or refuse one it wrote correctly.
 enum PropertyImage {
-    /// The permutation provably leaves this property where it is.
+    /// The frame provably leaves this property where it is.
     Fixed,
     /// It becomes this key and this value.
     Moved {
@@ -528,37 +543,60 @@ enum PropertyImage {
     Undetermined,
 }
 
-/// The image of `key=value` on `known` under `local_to_world`, which is never
-/// the identity here (both callers short-circuit it).
+/// The image of `key=value` on `known` under the frame `local_to_world` /
+/// `reflected`, which is never the identity here (both callers short-circuit
+/// it).
 ///
-/// The classes below are tried in order and each is decided from the block's
-/// **own** legal-value vocabulary rather than from a list of block ids, so a
-/// block the pin adds is classified without touching this function.
+/// A frame has two halves. `local_to_world[i]` is the world axis a scope's
+/// local axis `i` names; `reflected[i]` says local axis `i` runs *backwards*
+/// along it. A reflection is a **sign**, which is what the `(axis, sign)`
+/// direction vocabulary already speaks, so the first four classes below carry
+/// it exactly: local `north` under a reflected local Z is world `south`. An
+/// axis carries no sign, so the reflection half cannot disturb it.
+///
+/// The classes are tried in order and each is decided from the block's **own**
+/// legal-value vocabulary rather than from a list of block ids, so a block the
+/// pin adds is classified without touching this function.
 ///
 /// The last three classes are *frame-relative*: a 16-step yaw, a chirality
 /// (`left`/`right`) and a vertical position (`top`/`bottom`, `upper`/`lower`)
-/// are stated against a fixed up-axis, so they have an image only while the
-/// permutation keeps the vertical where it is. A permutation of three axes that
-/// fixes the local `Y` on the world `Y` is either the identity or the
-/// horizontal transposition `x↔z`, and the transposition is a **reflection** of
-/// the horizontal plane: a yaw θ becomes 270° − θ, and left becomes right.
-/// When the vertical moves there is no image at all — `half=top` cannot mean
-/// "the top half" of a horizontal axis — and the answer is
-/// [`PropertyImage::Undetermined`] rather than a guess.
+/// are stated against a fixed up-axis and, for the first two, a fixed
+/// handedness. A yaw and a chirality therefore have an image only under a
+/// **pure turn about the vertical** — a frame that reflects nothing and keeps
+/// the local `Y` on the world `Y`, which is the identity (short-circuited by
+/// both callers) or the horizontal transposition `x↔z`. That transposition is
+/// itself a reflection of the horizontal plane: a yaw θ becomes 270° − θ, and
+/// left becomes right. Reflect any axis and the frame leaves that vocabulary,
+/// which is exactly the residue `DW0736` counts as mismatched whenever the
+/// frame moves *or reflects* a horizontal axis — so the answer is
+/// [`PropertyImage::Undetermined`], a refusal in the resolver and a mismatch in
+/// the judge, rather than a guess that would make the two disagree.
+///
+/// A vertical position survives any purely horizontal frame untouched, and has
+/// no image at all once the vertical moves or runs backwards: `half=top` cannot
+/// mean "the top half" of a horizontal axis, and a frame whose local `Y` counts
+/// down the world's has no `top` to name.
 fn property_image(
     known: &BTreeMap<String, Vec<String>>,
     key: &str,
     value: &str,
     local_to_world: [usize; 3],
+    reflected: [bool; 3],
 ) -> PropertyImage {
     let legal = match known.get(key) {
         Some(l) => l,
         None => return PropertyImage::Fixed,
     };
+    // The frame's image of one local direction: the world axis the local one
+    // names, with the sign flipped when that axis runs backwards.
+    let image = |axis: usize, sign: i8| {
+        let sign = if reflected[axis] { -sign } else { sign };
+        axis_sign_direction(local_to_world[axis], sign)
+    };
     // A direction-*named* property: the connection flags of fences, walls,
-    // panes and vines. The permutation moves the KEY.
+    // panes and vines. The frame moves the KEY.
     if let Some((axis, sign)) = direction_axis_sign(key) {
-        let moved = axis_sign_direction(local_to_world[axis], sign);
+        let moved = image(axis, sign);
         if moved == key {
             return PropertyImage::Fixed;
         }
@@ -577,10 +615,10 @@ fn property_image(
         let Some((axis, sign)) = direction_axis_sign(value) else {
             return PropertyImage::Undetermined;
         };
-        let moved = axis_sign_direction(local_to_world[axis], sign);
-        return image_of_value(key, value, moved, legal);
+        return image_of_value(key, value, image(axis, sign), legal);
     }
-    // An axis-valued property (`axis` of logs, pillars, chains).
+    // An axis-valued property (`axis` of logs, pillars, chains). An axis has no
+    // sign, so only the permutation half can disturb it.
     if !legal.is_empty() && legal.iter().all(|l| axis_index(l).is_some()) {
         let Some(axis) = axis_index(value) else {
             return PropertyImage::Undetermined;
@@ -597,35 +635,34 @@ fn property_image(
         else {
             return PropertyImage::Undetermined;
         };
-        let moved = format!(
-            "{}_{}",
-            axis_sign_direction(local_to_world[aa], asig),
-            axis_sign_direction(local_to_world[ba], bsig)
-        );
+        let moved = format!("{}_{}", image(aa, asig), image(ba, bsig));
         return image_of_value(key, value, &moved, legal);
     }
 
-    // Everything below is stated against a fixed vertical.
-    let vertical_fixed = local_to_world[1] == 1;
+    // Everything below is stated against a fixed vertical; the first two are
+    // stated against a fixed handedness as well.
+    let turn_about_the_vertical = local_to_world[1] == 1 && reflected == [false; 3];
+    let vertical_kept = local_to_world[1] == 1 && !reflected[1];
 
     // A 16-step yaw (signs, banners, skulls): `rotation` 0 is south and the
     // segments run with the yaw, so a reflection sends r to (12 - r) mod 16.
     if key == "rotation" && legal.iter().all(|l| l.parse::<u8>().is_ok()) {
-        let (true, Ok(r)) = (vertical_fixed, value.parse::<u32>()) else {
+        let (true, Ok(r)) = (turn_about_the_vertical, value.parse::<u32>()) else {
             return PropertyImage::Undetermined;
         };
         let moved = ((28 - r % 16) % 16).to_string();
         return image_of_value(key, value, &moved, legal);
     }
     // A chirality: a door's `hinge`, a stair's `shape`, a double chest's
-    // `type`. Handedness is what a reflection swaps.
+    // `type`. Handedness is what a reflection swaps — but a value that names
+    // no handedness (`straight`, `single`) is its own image under EVERY frame,
+    // and that case is settled before the frame is consulted at all. Deciding
+    // it the other way round would refuse every straight stair in a mirrored
+    // body.
     if legal
         .iter()
         .any(|l| l.split('_').any(|w| w == "left" || w == "right"))
     {
-        if !vertical_fixed {
-            return PropertyImage::Undetermined;
-        }
         let moved: String = value
             .split('_')
             .map(|w| match w {
@@ -635,15 +672,23 @@ fn property_image(
             })
             .collect::<Vec<_>>()
             .join("_");
+        if moved == value {
+            return PropertyImage::Fixed;
+        }
+        if !turn_about_the_vertical {
+            return PropertyImage::Undetermined;
+        }
         return image_of_value(key, value, &moved, legal);
     }
-    // A vertical position: a slab's `type`, a stair's or a door's `half`.
+    // A vertical position: a slab's `type`, a stair's or a door's `half`. A
+    // `double` slab has no vertical half to lose, so it too is settled before
+    // the frame is consulted.
     if !legal.is_empty()
         && legal
             .iter()
             .all(|l| matches!(l.as_str(), "top" | "bottom" | "double" | "upper" | "lower"))
     {
-        return if vertical_fixed {
+        return if value == "double" || vertical_kept {
             PropertyImage::Fixed
         } else {
             PropertyImage::Undetermined
@@ -662,7 +707,7 @@ fn property_image(
     PropertyImage::Fixed
 }
 
-/// A moved value, or `Fixed` when the permutation sent it to itself, or
+/// A moved value, or `Fixed` when the frame sent it to itself, or
 /// `Undetermined` when the destination is not a legal value of the property.
 fn image_of_value(key: &str, value: &str, moved: &str, legal: &[String]) -> PropertyImage {
     if moved == value {
@@ -952,11 +997,15 @@ mod tests {
         );
     }
 
-    /// The `DW0736` predicate: a state is safe under a permutation exactly when
-    /// transforming it through the permutation changes nothing.
+    /// Nothing reflected — the frame's second half at rest.
+    const STRAIGHT: [bool; 3] = [false, false, false];
+
+    /// The `DW0736` predicate: a state is safe under a frame exactly when
+    /// transforming it through the frame changes nothing.
     #[test]
     fn oriented_mismatch_transforms_through_the_registry_vocabulary() {
         let reg = BlockRegistry::v1_21_11();
+        let keep = [0, 1, 2];
         let swap_xz = [2, 1, 0]; // local X is world Z, local Z is world X
         let move_y = [0, 2, 1]; // local Y is world Z
 
@@ -965,7 +1014,8 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:oak_stairs",
                 &props(&[("facing", "north")]),
-                [0, 1, 2]
+                keep,
+                STRAIGHT
             ),
             None
         );
@@ -974,26 +1024,47 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:oak_stairs",
                 &props(&[("facing", "north")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Some("facing=north".to_string())
         );
         // A vertical facing survives a horizontal swap but not a moved Y.
         assert_eq!(
-            reg.oriented_mismatch("minecraft:barrel", &props(&[("facing", "up")]), swap_xz),
+            reg.oriented_mismatch(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                swap_xz,
+                STRAIGHT
+            ),
             None
         );
         assert_eq!(
-            reg.oriented_mismatch("minecraft:barrel", &props(&[("facing", "up")]), move_y),
+            reg.oriented_mismatch(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                move_y,
+                STRAIGHT
+            ),
             Some("facing=up".to_string())
         );
         // `axis=y` is invariant under the swap; `axis=x` is not.
         assert_eq!(
-            reg.oriented_mismatch("minecraft:spruce_log", &props(&[("axis", "y")]), swap_xz),
+            reg.oriented_mismatch(
+                "minecraft:spruce_log",
+                &props(&[("axis", "y")]),
+                swap_xz,
+                STRAIGHT
+            ),
             None
         );
         assert_eq!(
-            reg.oriented_mismatch("minecraft:spruce_log", &props(&[("axis", "x")]), swap_xz),
+            reg.oriented_mismatch(
+                "minecraft:spruce_log",
+                &props(&[("axis", "x")]),
+                swap_xz,
+                STRAIGHT
+            ),
             Some("axis=x".to_string())
         );
         // Connection flags: an asymmetric run turns; a symmetric one does not.
@@ -1006,7 +1077,8 @@ mod tests {
                     ("south", "true"),
                     ("west", "false")
                 ]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Some("east=false".to_string())
         );
@@ -1019,7 +1091,8 @@ mod tests {
                     ("south", "true"),
                     ("west", "true")
                 ]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             None
         );
@@ -1029,7 +1102,8 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "8")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Some("rotation=8".to_string())
         );
@@ -1037,7 +1111,8 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "8")]),
-                move_y
+                move_y,
+                STRAIGHT
             ),
             Some("rotation=8".to_string()),
             "a moved Z scrambles a yaw too — the residue is conservative on purpose"
@@ -1047,7 +1122,185 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:oak_slab",
                 &props(&[("type", "top"), ("waterlogged", "false")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
+            ),
+            None
+        );
+    }
+
+    /// The reflection half of the frame. A mirror is not a permutation — no
+    /// rotation reproduces it — so a predicate that reads only the permutation
+    /// answers `None` for every mirrored scope, which is the answer that says
+    /// "safe".
+    #[test]
+    fn oriented_mismatch_reads_the_reflection_half_of_the_frame() {
+        let reg = BlockRegistry::v1_21_11();
+        let keep = [0, 1, 2];
+        let flip_z = [false, false, true];
+        let flip_x = [true, false, false];
+        let flip_y = [false, true, false];
+
+        // A reflected identity frame is NOT the identity frame: local north
+        // now runs the other way, so a literal `north` lands south.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_stairs",
+                &props(&[("facing", "north")]),
+                keep,
+                flip_z
+            ),
+            Some("facing=north".to_string())
+        );
+        // ...and the axis the mirror does not touch is untouched: the mirror
+        // image of a north-facing stair across the east-west axis still faces
+        // north. This is the assertion that keeps the check from degenerating
+        // into "any mirror is wrong".
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_stairs",
+                &props(&[("facing", "north")]),
+                keep,
+                flip_x
+            ),
+            None
+        );
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_stairs",
+                &props(&[("facing", "east")]),
+                keep,
+                flip_x
+            ),
+            Some("facing=east".to_string())
+        );
+        // A vertical reflection is the one that moves `up`.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                keep,
+                flip_y
+            ),
+            Some("facing=up".to_string())
+        );
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                keep,
+                flip_x
+            ),
+            None
+        );
+        // An axis carries no sign, so a reflection cannot disturb it: a pillar
+        // reflected along its own axis is the same pillar.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:spruce_log",
+                &props(&[("axis", "x")]),
+                keep,
+                flip_x
+            ),
+            None
+        );
+        // Connection flags: the mirror image of a run that ends at the north
+        // is a run that ends at the south.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:iron_bars",
+                &props(&[
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("south", "true"),
+                    ("west", "true")
+                ]),
+                keep,
+                flip_z
+            ),
+            Some("north=false".to_string())
+        );
+        // ...and a run symmetric about the mirror is not disturbed by it.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:iron_bars",
+                &props(&[
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("south", "false"),
+                    ("west", "true")
+                ]),
+                keep,
+                flip_z
+            ),
+            None
+        );
+        // The chiral residue. A reflection is exactly what flips a door's
+        // hinge and a stair's corner, and exactly what a permutation cannot
+        // express — so the residue counts a reflected horizontal axis as a
+        // move, as it counts a permuted one.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_door",
+                &props(&[("hinge", "left")]),
+                keep,
+                flip_x
+            ),
+            Some("hinge=left".to_string())
+        );
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "8")]),
+                keep,
+                flip_z
+            ),
+            Some("rotation=8".to_string())
+        );
+        // A two-direction value transforms component-wise through the sign.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:jigsaw",
+                &props(&[("orientation", "north_up")]),
+                keep,
+                flip_z
+            ),
+            Some("orientation=north_up".to_string())
+        );
+        // Reflecting an axis nothing in the state names changes nothing —
+        // the check is not a blanket refusal of mirrored scopes.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_slab",
+                &props(&[("type", "top"), ("waterlogged", "false")]),
+                keep,
+                flip_x
+            ),
+            None
+        );
+        // A permutation and a reflection compose, and the composite is a
+        // different map from either half: swapping X and Z is itself a mirror
+        // of the horizontal plane, and adding a Z reflection turns it into a
+        // quarter turn. Local north lands east here where the bare swap lands
+        // it west — a different wrong answer from the same literal, which is
+        // why the sign cannot be dropped on the way in.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:oak_stairs",
+                &props(&[("facing", "north")]),
+                [2, 1, 0],
+                [false, false, true]
+            ),
+            Some("facing=north".to_string())
+        );
+        // The vertical rides through both halves of a composite frame
+        // untouched, so a composite is not a blanket refusal either.
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                [2, 1, 0],
+                [false, false, true]
             ),
             None
         );
@@ -1071,12 +1324,12 @@ mod tests {
             ("west", "false"),
         ]);
         assert_eq!(
-            reg.oriented_mismatch("minecraft:iron_bars", &bars, swap_xz),
+            reg.oriented_mismatch("minecraft:iron_bars", &bars, swap_xz, STRAIGHT),
             Some("east=false".to_string()),
             "the literal is wrong under the swap…"
         );
         assert_eq!(
-            reg.permuted_properties("minecraft:iron_bars", &bars, swap_xz),
+            reg.permuted_properties("minecraft:iron_bars", &bars, swap_xz, STRAIGHT),
             Ok(props(&[
                 ("east", "true"),
                 ("north", "false"),
@@ -1097,7 +1350,8 @@ mod tests {
                     ("shape", "straight"),
                     ("waterlogged", "false"),
                 ]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Ok(props(&[
                 ("facing", "west"),
@@ -1107,7 +1361,12 @@ mod tests {
             ]))
         );
         assert_eq!(
-            reg.permuted_properties("minecraft:barrel", &props(&[("facing", "up")]), swap_xz),
+            reg.permuted_properties(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                swap_xz,
+                STRAIGHT
+            ),
             Ok(props(&[("facing", "up")]))
         );
 
@@ -1118,7 +1377,8 @@ mod tests {
             reg.permuted_properties(
                 "minecraft:skeleton_skull",
                 &props(&[("powered", "false"), ("rotation", "8")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Ok(props(&[("powered", "false"), ("rotation", "4")]))
         );
@@ -1128,7 +1388,8 @@ mod tests {
             reg.permuted_properties(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "6")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Ok(props(&[("rotation", "6")]))
         );
@@ -1136,7 +1397,8 @@ mod tests {
             reg.oriented_mismatch(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "6")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             None
         );
@@ -1146,16 +1408,17 @@ mod tests {
             reg.permuted_properties(
                 "minecraft:oak_door",
                 &props(&[("facing", "north"), ("hinge", "left")]),
-                swap_xz
+                swap_xz,
+                STRAIGHT
             ),
             Ok(props(&[("facing", "west"), ("hinge", "right")]))
         );
     }
 
-    /// **The refusal, and what secures it.** A permutation that moves the
-    /// vertical leaves a yaw, a handedness and a `top`/`bottom` half with
-    /// nothing to mean, and a horizontal connection with nowhere to land. The
-    /// answer is `DW0738` — no image — and never a plausible substitute.
+    /// **The refusal, and what secures it.** A frame that moves the vertical
+    /// leaves a yaw, a handedness and a `top`/`bottom` half with nothing to
+    /// mean, and a horizontal connection with nowhere to land. The answer is
+    /// `DW0738` — no image — and never a plausible substitute.
     #[test]
     fn a_property_with_no_image_is_refused_rather_than_guessed() {
         let reg = BlockRegistry::v1_21_11();
@@ -1166,18 +1429,29 @@ mod tests {
             reg.permuted_properties(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "8")]),
-                move_y
+                move_y,
+                STRAIGHT
             ),
             Err("rotation=8".to_string())
         );
         assert_eq!(
-            reg.permuted_properties("minecraft:oak_slab", &props(&[("type", "top")]), move_y),
+            reg.permuted_properties(
+                "minecraft:oak_slab",
+                &props(&[("type", "top")]),
+                move_y,
+                STRAIGHT
+            ),
             Err("type=top".to_string())
         );
         // A pane has no `up` flag, so a connection turned onto the vertical
         // has no key to land on.
         assert_eq!(
-            reg.permuted_properties("minecraft:iron_bars", &props(&[("north", "true")]), move_y),
+            reg.permuted_properties(
+                "minecraft:iron_bars",
+                &props(&[("north", "true")]),
+                move_y,
+                STRAIGHT
+            ),
             Err("north=true".to_string())
         );
         // A rail's shape spells its directions inside a compound word. The
@@ -1187,18 +1461,304 @@ mod tests {
             reg.permuted_properties(
                 "minecraft:rail",
                 &props(&[("shape", "ascending_north")]),
-                [2, 1, 0]
+                [2, 1, 0],
+                STRAIGHT
             ),
             Err("shape=ascending_north".to_string())
         );
-        // The identity moves nothing, so nothing is ever refused under it.
+        // The identity frame moves nothing, so nothing is ever refused under
+        // it.
         assert_eq!(
             reg.permuted_properties(
                 "minecraft:skeleton_skull",
                 &props(&[("rotation", "8")]),
-                [0, 1, 2]
+                [0, 1, 2],
+                STRAIGHT
             ),
             Ok(props(&[("rotation", "8")]))
+        );
+    }
+
+    /// **A local frame inside a MIRRORED body** — the case that exists only
+    /// where the resolver and the reflected frame meet, and that neither the
+    /// reflection work nor the local-frame work could have had.
+    ///
+    /// The trap is the short circuit. A pure reflection has the identity axis
+    /// permutation, so a resolver keyed on the permutation alone answers "the
+    /// identity moves nothing" and writes the state through unchanged — the
+    /// same short circuit to "safe" that the `DW0736` judge had before it grew
+    /// its reflection half, and here it does not merely miss a defect, it
+    /// WRITES one.
+    #[test]
+    fn a_local_frame_resolves_through_the_reflection_half_too() {
+        let reg = BlockRegistry::v1_21_11();
+        let keep = [0, 1, 2];
+        let flip_x = [true, false, false];
+        let flip_z = [false, false, true];
+
+        // The identity permutation is NOT the identity frame once an axis runs
+        // backwards: a bar spanning the scope's local X spans it the other way
+        // round, so `east`/`west` swap. They carry the same value here, so the
+        // resolved state is equal to the literal — and the interesting one is
+        // the ASYMMETRIC run below.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_stairs",
+                &props(&[
+                    ("facing", "east"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ]),
+                keep,
+                flip_x
+            ),
+            Ok(props(&[
+                ("facing", "west"),
+                ("half", "bottom"),
+                ("shape", "straight"),
+                ("waterlogged", "false"),
+            ])),
+            "a reflected local X sends the scope's east to the world's west"
+        );
+        // An asymmetric run of bars: the local run ends at the scope's north,
+        // and under a reflected local Z that end is the world's south.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:iron_bars",
+                &props(&[
+                    ("east", "true"),
+                    ("north", "true"),
+                    ("south", "false"),
+                    ("waterlogged", "false"),
+                    ("west", "true"),
+                ]),
+                keep,
+                flip_z
+            ),
+            Ok(props(&[
+                ("east", "true"),
+                ("north", "false"),
+                ("south", "true"),
+                ("waterlogged", "false"),
+                ("west", "true"),
+            ]))
+        );
+        // The axis half is sign-free, so a pillar is the same pillar in a
+        // mirrored body — a reflection is not a blanket rewrite.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:spruce_log",
+                &props(&[("axis", "x")]),
+                keep,
+                flip_x
+            ),
+            Ok(props(&[("axis", "x")]))
+        );
+        // And a vertical facing rides a horizontal reflection untouched.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:barrel",
+                &props(&[("facing", "up")]),
+                keep,
+                flip_x
+            ),
+            Ok(props(&[("facing", "up")]))
+        );
+
+        // A frame that both reflects AND permutes composes the two halves:
+        // local north is world east here, where the bare swap would send it
+        // west.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_stairs",
+                &props(&[
+                    ("facing", "north"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ]),
+                [2, 1, 0],
+                flip_z
+            ),
+            Ok(props(&[
+                ("facing", "east"),
+                ("half", "bottom"),
+                ("shape", "straight"),
+                ("waterlogged", "false"),
+            ]))
+        );
+    }
+
+    /// The yaw and the handedness are the residue, and a reflected frame is
+    /// **outside** the vocabulary that determines them — so the resolver
+    /// refuses rather than writing a plausible skull, and refuses exactly where
+    /// the judge calls the same state wrong.
+    ///
+    /// One verdict read from two ends is the invariant that makes the refusal
+    /// safe: were the resolver to guess here, it would write states the
+    /// `DW0736` gate reports as mismatched, and the build would be red about a
+    /// block the build itself had chosen.
+    #[test]
+    fn the_frame_relative_residue_refuses_under_a_reflection_and_the_judge_agrees() {
+        let reg = BlockRegistry::v1_21_11();
+        let keep = [0, 1, 2];
+        let flip_x = [true, false, false];
+        let swap_xz = [2, 1, 0];
+
+        for (perm, refl, state, prop) in [
+            (keep, flip_x, "minecraft:skeleton_skull", "rotation=8"),
+            (swap_xz, flip_x, "minecraft:skeleton_skull", "rotation=8"),
+            (keep, flip_x, "minecraft:oak_door", "hinge=left"),
+            (swap_xz, flip_x, "minecraft:oak_door", "hinge=left"),
+        ] {
+            let (k, v) = prop.split_once('=').unwrap();
+            let p = props(&[(k, v)]);
+            assert_eq!(
+                reg.permuted_properties(state, &p, perm, refl),
+                Err(prop.to_string()),
+                "{state} {prop} under {perm:?}/{refl:?} must be refused, not guessed"
+            );
+            assert_eq!(
+                reg.oriented_mismatch(state, &p, perm, refl),
+                Some(prop.to_string()),
+                "…and the judge must call the same state wrong"
+            );
+        }
+
+        // A vertical position has no image once the vertical itself runs
+        // backwards, and it is untouched by a horizontal reflection.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_slab",
+                &props(&[("type", "top")]),
+                keep,
+                [false, true, false]
+            ),
+            Err("type=top".to_string())
+        );
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_slab",
+                &props(&[("type", "top")]),
+                keep,
+                flip_x
+            ),
+            Ok(props(&[("type", "top")]))
+        );
+    }
+
+    /// The two entry points cannot drift apart: over a corpus of real states
+    /// and every frame the grammar can produce, `permuted_properties` succeeds
+    /// exactly when `oriented_mismatch` is silent, and its output is a state
+    /// the pin accepts.
+    ///
+    /// Binding count is asserted, so a corpus or a frame list that quietly
+    /// stopped being enumerated is a red rather than a green over nothing.
+    #[test]
+    fn the_judge_and_the_resolver_agree_over_every_frame_the_grammar_can_make() {
+        let reg = BlockRegistry::v1_21_11();
+        let states: [(&str, &[(&str, &str)]); 8] = [
+            (
+                "minecraft:oak_stairs",
+                &[
+                    ("facing", "east"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
+            (
+                "minecraft:iron_bars",
+                &[
+                    ("east", "true"),
+                    ("north", "true"),
+                    ("south", "false"),
+                    ("waterlogged", "false"),
+                    ("west", "false"),
+                ],
+            ),
+            ("minecraft:spruce_log", &[("axis", "x")]),
+            ("minecraft:barrel", &[("facing", "up"), ("open", "false")]),
+            (
+                "minecraft:skeleton_skull",
+                &[("powered", "false"), ("rotation", "3")],
+            ),
+            (
+                "minecraft:oak_door",
+                &[
+                    ("facing", "north"),
+                    ("half", "lower"),
+                    ("hinge", "left"),
+                    ("open", "false"),
+                    ("powered", "false"),
+                ],
+            ),
+            (
+                "minecraft:oak_slab",
+                &[("type", "top"), ("waterlogged", "false")],
+            ),
+            ("minecraft:jigsaw", &[("orientation", "north_up")]),
+        ];
+        let perms = [
+            [0usize, 1, 2],
+            [2, 1, 0],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+        ];
+        let mut checked = 0usize;
+        let mut resolved = 0usize;
+        for (name, pairs) in states {
+            let properties = props(pairs);
+            for perm in perms {
+                for bits in 0..8u8 {
+                    let refl = [bits & 1 != 0, bits & 2 != 0, bits & 4 != 0];
+                    checked += 1;
+                    let judged = reg.oriented_mismatch(name, &properties, perm, refl);
+                    match reg.permuted_properties(name, &properties, perm, refl) {
+                        Ok(out) => {
+                            resolved += 1;
+                            // The resolver produced a state the pin accepts —
+                            // a rewrite that invented an illegal value would
+                            // pass every gate above this one and fail on a
+                            // server.
+                            assert!(
+                                reg.validate(name, &out).is_ok(),
+                                "{name} under {perm:?}/{refl:?} resolved to {out:?}, which \
+                                 the pin does not accept"
+                            );
+                            // One transform, read from two ends: the judge is
+                            // silent exactly when the transform is the
+                            // identity on this state. Either direction failing
+                            // means a state one end calls wrong is one the
+                            // other quietly writes.
+                            assert_eq!(
+                                judged.is_none(),
+                                out == properties,
+                                "{name} under {perm:?}/{refl:?}: judge said {judged:?} while \
+                                 the resolver wrote {out:?} for {properties:?}"
+                            );
+                        }
+                        Err(refused) => assert!(
+                            judged.is_some(),
+                            "{name} under {perm:?}/{refl:?} was refused as {refused} while \
+                             the judge called the state safe — the two ends disagree"
+                        ),
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            checked,
+            8 * 6 * 8,
+            "binding count: states x perms x mirrors"
+        );
+        assert!(
+            resolved > 0 && resolved < checked,
+            "binding count {resolved} of {checked}: the sweep must contain both \
+             resolutions and refusals, or it discriminates nothing"
         );
     }
 }

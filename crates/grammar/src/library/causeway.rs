@@ -58,9 +58,8 @@
 //!
 //! By default the post's plinth is solid from the ward floor to its own floor,
 //! and the piece is a **terminus**: its far face carries nothing standable, so
-//! nothing can be chained past it (a grammar orientation is a permutation
-//! without reflection, so turning the piece round does not move the post to the
-//! other end either).
+//! nothing can be chained past it (no frame helps — turning or reflecting a
+//! terminus gives a terminus).
 //!
 //! `berm_gate = 1` carries the spine's own column *through* the station at berm
 //! height: the berm continues under the cantilever and tunnels through the

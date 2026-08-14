@@ -95,7 +95,8 @@ const SLOT: i64 = 2;
 /// recess is), `watch_back` (how far up-path the watch cell sits). Palette
 /// roles: `rock` (the cliff). The teaching variant's corpse prop is not a
 /// role: its yaw depends on the scope's orientation, so it is per-orientation
-/// guarded inline states (`corpse_prop` below), which one role name cannot
+/// guarded inline states (`corpse_prop` below) rather than a role in the
+/// scope's own axes, which is the shorter way to say the same thing and cannot
 /// express.
 ///
 /// `watch_back` must leave room in the lead — `watch_back + 1 < spacing_min` —
