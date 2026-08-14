@@ -16,13 +16,13 @@
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
-    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabMeta,
-    Region, StructureMeta,
+    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabDoc,
+    PrefabMeta, Region, StructureMeta, TileSetMeta,
 };
 
 use crate::light::LightProbe;
 
-/// Write a probe result into `meta`'s `lighting` block, marked as a static
+/// Write a probe result into a document's `lighting` block, marked as a static
 /// estimate.
 ///
 /// `measured` is present and empty on a measured profile: `Lighting` refuses a
@@ -31,17 +31,27 @@ use crate::light::LightProbe;
 /// The value is empty because a static estimate has no measurement date to
 /// state, and `method` says in full that it is not a live probe.
 ///
-/// A piece with no walkable floor has nothing to measure, and that is
-/// `unmeasured` — a positive statement that the measurement is owed — carrying
-/// no measurement fields, because a claim and its absence cannot both be true.
-pub fn set_lighting_from_probe(meta: &mut PrefabMeta, p: &LightProbe) {
+/// The `method` sentence states the **binding**: how many cells the minimum was
+/// taken over, and out of what. A measurement whose binding is not written down
+/// beside it cannot be read afterwards — a `lit` taken over four cells and a
+/// `lit` taken over four thousand are the same word.
+///
+/// A probe that bound to nothing is never written; the caller refuses first
+/// (`DW0752`), because "unbound" is a finding about the piece and not a
+/// lighting profile.
+pub fn set_lighting_from_probe(doc: &mut PrefabDoc, p: &LightProbe) {
+    debug_assert!(
+        !p.is_unbound(),
+        "an unbound probe is a finding, not a profile"
+    );
     let method = Some(format!(
-        "static block-light BFS estimate (delve-admit): min over {} walkable floor cells; \
-         doorways treated as sealed edge (sky-light=0). NOT a live-server probe; \
+        "static block-light BFS estimate (delve-admit): min over {} roofed floor cell(s) \
+         reachable on foot from {} ground-level entry cell(s), of {} standable in the region \
+         box; openings treated as sealed edge (sky-light=0). NOT a live-server probe; \
          dark_threshold={}. Re-probe live for borderline pieces.",
-        p.floor_cells, p.dark_threshold
+        p.measured_cells, p.entry_cells, p.standable_cells, p.dark_threshold
     ));
-    meta.lighting = Some(match (p.profile, p.measured_min_light) {
+    doc.set_lighting(match (p.profile, p.measured_min_light) {
         ("dark", Some(m)) => Lighting {
             profile: LightingProfile::Dark,
             measured_min_light: Some(m as i64),
@@ -56,7 +66,9 @@ pub fn set_lighting_from_probe(meta: &mut PrefabMeta, p: &LightProbe) {
             rationale: None,
             method,
         },
-        // No floor to stand on, so no minimum to report.
+        // Unreachable behind the caller's `DW0752` refusal, and stated rather
+        // than assumed: with no binding there is no minimum, and a profile
+        // without its measurement is the claim this type refuses.
         _ => Lighting {
             method,
             ..Lighting::unmeasured()
