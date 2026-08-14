@@ -80,7 +80,7 @@ fi
 #     file exists to catch: point `datapack` at one build and `server` at another, and
 #     the runner tests a world the delve never shipped — with nothing else to notice.
 #
-#     Six sites now, not three (task #68): `DELVE_OUTPUT` used to select the tree for
+#     Six sites now, not three: `DELVE_OUTPUT` used to select the tree for
 #     the `packtest` profile ONLY, so `bot-run.sh --output <tree>` set a variable
 #     nothing on the bot path read and the bot ladder silently booted `./delve-output`
 #     whatever it was asked for — a flag that does nothing is worse than a missing one,

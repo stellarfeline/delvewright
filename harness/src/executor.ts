@@ -147,13 +147,13 @@ const UNSTICK_ATTEMPTS = 3;
 
 /**
  * How far (squared horizontal blocks) the bot may sit from its gate staging cell
- * before the station-keep drives it back (task #140). 0.4 blocks: tight enough
+ * before the station-keep drives it back. 0.4 blocks: tight enough
  * that a window always opens with the bot ON the compiler-pinned mouth, loose
  * enough that the per-poll correction is not a permanent jitter.
  */
 const GATE_HOLD_SLACK_SQ = 0.4 * 0.4;
 
-/** Re-aim cadence of the raw crush-gate crossing dash (task #140). Faster than
+/** Re-aim cadence of the raw crush-gate crossing dash. Faster than
  * the physics would meaningfully change; slow enough not to spam look packets. */
 const GATE_DASH_TICK_MS = 50;
 
@@ -174,7 +174,7 @@ const GATE_DASH_RETREAT_MS = 1_500;
 export type Unstick = (target: GoalSpec) => Promise<number>;
 
 /**
- * Authoritative "this leg's purpose is already fulfilled" oracle (task #134),
+ * Authoritative "this leg's purpose is already fulfilled" oracle,
  * consulted ONLY on a walk's failure path — never to shortcut a healthy hop.
  * Returns a human-readable reason when the step the walk serves is already
  * settled (its objective's anchored completion marker arrived, or its exported
@@ -205,7 +205,7 @@ function legSettledReason(settled: LegSettled | undefined, glabel: string): stri
 }
 
 /**
- * Replay a leg's ordered goals with **stall-recovery** (task #45). Each `goto`
+ * Replay a leg's ordered goals with **stall-recovery**. Each `goto`
  * performs one verified hop (rejecting on stall / death). Extracted from `walkTo`
  * as a pure control-flow function — injecting `goto` (and an optional physics
  * `unstick`) — so the recovery logic is unit-testable without a live pathfinder.
@@ -241,7 +241,7 @@ export async function replayLegWithRecovery(
     const spec = goalsList[g]!;
     const last = g === goalsList.length - 1;
     const glabel = last ? label : `${label} waypoint ${g + 1}/${goalsList.length}`;
-    // task #140: a `crush: true` gate must never be entered blind. The reactive flow
+    // A `crush: true` gate must never be entered blind. The reactive flow
     // below waits for a window only AFTER a hop fails — and on a crush gate the
     // first failure is the closing edge killing the bot inside the fill (an instant,
     // gear-independent kill the compiler emits at close). So a hop whose straight
@@ -276,7 +276,7 @@ export async function replayLegWithRecovery(
       await goto(spec, glabel);
     } catch (err) {
       if (err instanceof BotDeathError) throw err;
-      // task #134: before judging the hop failed, consult the completion oracle.
+      // Before judging the hop failed, consult the completion oracle.
       // A step whose objective is already complete (or whose completion transport
       // has landed) has nothing left for this leg to prove — the "failure" is the
       // position discontinuity of a teleport the leg itself triggered. Failure
@@ -321,7 +321,7 @@ export interface GateAssist {
    * crossing begins at the top of a window rather than its tail. Returns `true`
    * when the fresh edge was actually OBSERVED and `false` when the wait gave up
    * (region blocks unreadable). On `false` a non-crush caller may still try the
-   * hop; a crush-gate caller must NOT — blind entry is the lethal defect (#140).
+   * hop; a crush-gate caller must NOT — blind entry is the lethal defect.
    *
    * `hold`, when given, is a feet cell the bot must actively KEEP during the wait
    * (a passive idle is not a stance: the tide-mill gate corridor is flowing water,
@@ -345,14 +345,14 @@ export interface GateAssist {
   /** The bot's current feet cell, or `undefined` when it cannot be read. */
   readonly feetCell: () => Vec3Tuple | undefined;
   /**
-   * Raw-control crossing burst for a `crush: true` entry (task #140): drive
+   * Raw-control crossing burst for a `crush: true` entry: drive
    * straight from the near mouth `from` toward the far mouth `to`, through
    * `through`'s regions, within `budgetMs`; if the budget runs out while still
    * inside a region, retreat raw toward `from` rather than lingering. Returns
    * `true` iff the bot cleared the region on the far side. The pathfinder is the
    * wrong tool for this span (measured live: its start latency plus mid-water
    * replans lost a 1.8 s window and the closing edge killed the bot mid-crossing);
-   * a raw look-and-walk is the same mechanism task #45's unstick and the
+   * a raw look-and-walk is the same mechanism the unstick path and the
    * drowned-bell crossing burst already trust.
    */
   readonly dash?: (
@@ -378,8 +378,8 @@ export interface GateAssist {
  * {@link needsStandoff}); every retreated block has to be re-walked inside the open
  * window, and DW0378's proof covers the gate SPAN, not an arbitrary run-up to it, so
  * a bot already clear waits exactly where it stands — then **wait** for the
- * closed→open edge, then re-run the hop, escalating to the ordinary task-#45
- * stall recovery inside the same window (the pathfinder loses a path whose blocks
+ * closed→open edge, then re-run the hop, escalating to the ordinary stall
+ * recovery inside the same window (the pathfinder loses a path whose blocks
  * are rewritten under it; a walk does not). The loop is bounded by
  * {@link gateRetryBudgetMs} (two full cycles + margin) and {@link GATE_MIN_ATTEMPTS};
  * once the budget is spent it makes one final full physical recovery (in case the
@@ -390,7 +390,7 @@ export interface GateAssist {
  * unmarked leg is untouched, and a marked leg that is genuinely unwalkable still
  * fails — the check is not weakened, only told what a gate is.
  *
- * task #134: every retry decision consults the {@link LegSettled} oracle first. A
+ * Every retry decision consults the {@link LegSettled} oracle first. A
  * step can complete AT the gate crossing (the tide-mill wheelpit: the objective's
  * distance check fires as the bot lands the crossing, and its emission transports
  * the bot to the next area) — the interrupted hop then looks blocked forever from
@@ -401,7 +401,7 @@ export interface GateAssist {
  * the oracle ended it — the caller must then stop replaying the WHOLE leg, since
  * its remaining hops belong to the area the transport carried the bot out of.
  *
- * task #140 (`crush: true` — the portcullis judgement): a crush gate's closing edge
+ * `crush: true` (the portcullis judgement): a crush gate's closing edge
  * KILLS a player caught inside the region, so the discipline above gains three hard
  * rules whenever any staged gate crushes:
  *   1. **no blind entry** — an attempt is made only after the closed→open edge was
@@ -477,7 +477,7 @@ async function crossTimedGate(
       await reached(() => goto({ ...proven, range: 1 }, `${glabel} gate re-stage`));
     }
     // Hold the pre-wait stance (post-standoff/re-stage) through the wait: waiting
-    // where you stand is the rule (task #204 — never retreat needlessly), and in a
+    // where you stand is the rule (never retreat needlessly), and in a
     // current "where you stand" requires actively standing there. Never hold a
     // cell inside the fill (a range-1 arrival can land one cell into the region;
     // holding there through a crush close is the death itself) — fall back to the
@@ -576,7 +576,7 @@ async function crossTimedGate(
     // physics burst walks the very same span in a fraction of a second. A path whose
     // blocks are rewritten under it twice per cycle is not something A* can hold on
     // to; the last blocks of a clocked span have to be crossed by walking. That is
-    // the ordinary task-#45 stall escalation (pathfind → look-and-walk burst →
+    // the ordinary stall escalation (pathfind → look-and-walk burst →
     // re-path), reused verbatim — plain movement a human player makes, still
     // bounded, and it still has to physically get through an open gate.
     //
@@ -642,7 +642,7 @@ async function crossTimedGate(
 }
 
 /**
- * The completion facts of the step a walk serves (task #134): the `obj/<id>` the
+ * The completion facts of the step a walk serves: the `obj/<id>` the
  * step proves and, when the compiler exported one, the absolute destination its
  * completion teleports the player to (gap 8). `walkTo` turns these into the
  * {@link LegSettled} oracle its failure paths consult — pure step-contract data
@@ -654,8 +654,8 @@ interface StepCompletion {
 }
 
 /**
- * A `/trigger …` a step sent, and every chat line the server answered it with
- * (task #144). The bot is opped, so vanilla's command feedback — the success
+ * A `/trigger …` a step sent, and every chat line the server answered it with.
+ * The bot is opped, so vanilla's command feedback — the success
  * `Triggered [obj] (set value to n)` and every refusal — arrives on the same chat
  * stream the completion markers do; capturing it is what lets a timed-out step say
  * whether its trigger reached the delve at all.
@@ -673,7 +673,7 @@ export interface TriggerEcho {
  * step's objective-timeout message. Diagnostics only — it decides nothing and
  * relaxes nothing; a step that times out still fails.
  *
- * Why it exists (task #144, and round 13's `requires_item` defect before it): a
+ * Why it exists (and round 13's `requires_item` defect before it): a
  * swallowed trigger and an undelivered one produce the identical bare 30s timeout,
  * and telling them apart cost a full round of misattributed red runs each time. The
  * server answers every `/trigger` — `Triggered [obj] (set value to n)` on success, a
@@ -744,13 +744,13 @@ async function reached(fn: () => Promise<void>): Promise<boolean> {
 }
 
 /**
- * Recover from a stalled hop and retry it (task #45). Level 1: re-path to the last
+ * Recover from a stalled hop and retry it. Level 1: re-path to the last
  * proven cell (range 0) to re-centre on the polyline, then retry the hop. Level 2
  * (the wedge defeats the pathfinder too): a bounded physics {@link Unstick} to break
  * the bot free, retrying the ACTUAL hop at its own range after each burst. A hop
  * still unwalkable after the budget fails loudly.
  *
- * Level-2 aim is **adaptive** (trace-derived, task #45): drive toward the GOAL for
+ * Level-2 aim is **adaptive** (trace-derived): drive toward the GOAL for
  * forward progress, but if a burst measured no progress the bot is wall-blocked (the
  * goal lies through the concave-corner wall) — the next burst aims at the PROVEN cell
  * instead, the open away-from-wall direction that escapes the pocket. Neither fixed
@@ -852,7 +852,7 @@ const ATTACK_INTERVAL_MS = 400;
 
 /**
  * How far from its anchor cell an actor's unleashed body may be and still be
- * recognised as that actor (#114). Generous but local: `unleash-actor` replaces
+ * recognised as that actor. Generous but local: `unleash-actor` replaces
  * the puppet with a real-AI twin at the same cell, and the twin then MOVES — it
  * charges the bot — so a radius tight enough to be an identity check would lose
  * the fight it just started. Nothing else of that entity type exists nearby: the
@@ -902,7 +902,7 @@ const SCORE_SETTLE_MS = 15_000;
 const SCORE_POLL_MS = 250;
 /**
  * Margin (ms) added on top of a path's exported `ending_tail_ticks` when sizing
- * the completion window (task #125): the compiler schedules the ending's finale
+ * the completion window: the compiler schedules the ending's finale
  * — the-wake fires `campaign-complete` 250t into its closing `sequence` — and
  * exports that tail on the terminal step; the window must outlive the tail plus
  * server slack. See {@link completionWindowMs}.
@@ -942,7 +942,7 @@ const EFFECT_SETTLE_MS = 1_000;
 /** Settle time (ms) after class selection (teleport + kit give) before moving on. */
 const CLASS_SETTLE_MS = 3_000;
 /**
- * Physics-unstick (task #45): a SHORT forward tap per burst (~a cell, not a launch —
+ * Physics-unstick: a SHORT forward tap per burst (~a cell, not a launch —
  * a long burst overshoots a tight 2-wide corridor and oscillates wall-to-wall), a
  * jump only when a gentle burst moved less than `UNSTICK_MIN_PROGRESS` blocks (truly
  * wedged against a lip), and a brief settle before re-pathing.
@@ -959,7 +959,7 @@ const TRANSPORT_TIMEOUT_MS = 15_000;
 const TRANSPORT_NEAR = 4;
 const TRANSPORT_SETTLE_MS = 1_500;
 /**
- * gap 8 (task #32): a server-forced position jump of at least this many blocks
+ * gap 8: a server-forced position jump of at least this many blocks
  * (horizontal) is treated as a cross-area teleport rather than knockback or a
  * within-area nudge. Areas sit ~256 blocks apart across void (an unambiguous jump);
  * in-area relocations (spawn, class teleport) stay well under this, so the threshold
@@ -969,7 +969,7 @@ const TRANSPORT_SETTLE_MS = 1_500;
  */
 const TRANSPORT_JUMP_BLOCKS = 64;
 /**
- * gap 8 (task #32): after the jump lands, how long (ms) to wait for the destination
+ * gap 8: after the jump lands, how long (ms) to wait for the destination
  * chunk to load and the bot to come to rest on solid ground before the next step
  * starts pathfinding, and the poll cadence. The pathfinder's A* fails immediately
  * ("No path to the goal!") if it starts while the block under the bot is still
@@ -1007,14 +1007,14 @@ const SPAWN_POLL_MS = 50;
  * there to fight" and reddened both trials of a healthy encounter.
  *
  * Generous on purpose, and it costs nothing on a healthy run: the probe returns
- * the instant the declared wave is standing. Since task #123 the probe asks the
- * SERVER, by tag, so what it settles on is the wave itself — client tracking range
- * no longer bounds the answer, and nothing standing nearby can enter it.
+ * the instant the declared wave is standing. The probe asks the SERVER, by tag,
+ * so what it settles on is the wave itself — client tracking range does not bound
+ * the answer, and nothing standing nearby can enter it.
  */
 const REENGAGE_SETTLE_MS = 6_000;
 
 /**
- * How long one census may take to come back (task #123).
+ * How long one census may take to come back.
  *
  * A census is a `/function` call whose answer arrives on the chat channel within
  * a tick or two; this is the "the command was refused" deadline, not a settle.
@@ -1067,7 +1067,7 @@ const REST_OPEN_SETTLE_MS = 500;
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 16;
 
-// --- the death loop (task #68) ---------------------------------------------
+// --- the death loop ---------------------------------------------
 /**
  * How long to wait, after stepping into a declared lethal volume, for the player
  * to actually die. A volume's driver runs in the campaign `tick`, so the kill is
@@ -1237,7 +1237,7 @@ export class MineflayerExecutor implements StepExecutor {
   /** Ring buffer of recent chat lines, mined for the death-cause message. */
   private readonly recentChat: string[] = [];
   /**
-   * task #68: one exact line the run is currently watching for, and whether it has
+   * One exact line the run is currently watching for, and whether it has
    * arrived. Armed around a single act (walking into a lethal volume) rather than
    * mined out of {@link recentChat}, because that ring holds sixteen lines and a
    * death broadcasts several — a wording assertion that can be pushed out of a ring
@@ -1245,7 +1245,7 @@ export class MineflayerExecutor implements StepExecutor {
    */
   private wordWatch: { readonly needle: string; seen: boolean } | undefined;
   /**
-   * task #68: the scoreboard ledgers this run is observing, `objective → entry →
+   * The scoreboard ledgers this run is observing, `objective → entry →
    * value`, fed straight off the wire.
    *
    * **Why the raw packet and not `bot.scoreboards`.** mineflayer 4.37's scoreboard
@@ -1260,7 +1260,7 @@ export class MineflayerExecutor implements StepExecutor {
   /** The objective currently occupying the harness's display slot, if any. */
   private trackedObjective: string | undefined;
   /**
-   * task #68: the lethal volumes the build declares, as impassable boxes for the
+   * The lethal volumes the build declares, as impassable boxes for the
    * PATHFINDER. The compiler already treats them as impassable in every route
    * proof; without the same fact here the bot walks its way back from a death
    * straight through the hazard it just died in, and a run intermittently dies
@@ -1274,16 +1274,16 @@ export class MineflayerExecutor implements StepExecutor {
   /** Why the death-loop stage did not run, when it did not. */
   private deathLoopSkip: string | undefined;
   /**
-   * task #68: the build's death contract — what the campaign PROMISES a death
-   * does. Absent → the pre-task-#68 run, in which nothing about dying is asserted
-   * at all (which is the gap this stage exists to close).
+   * The build's death contract — what the campaign PROMISES a death does.
+   * Absent → a run in which nothing about dying is asserted at all (which is
+   * the gap this stage exists to close).
    */
   private deathPlan: DeathPlan | undefined;
-  /** The `/trigger` the current step sent, and the server's answer to it (task
-   * #144). Replaced by each new trigger; see {@link swallowedTriggerVerdict}. */
+  /** The `/trigger` the current step sent, and the server's answer to it.
+   * Replaced by each new trigger; see {@link swallowedTriggerVerdict}. */
   private trigger: TriggerEcho | undefined;
   /**
-   * gap 8 (task #32): the bot position captured at the previous server-forced move
+   * gap 8: the bot position captured at the previous server-forced move
    * (`forcedMove`). A forced move whose horizontal delta from this reaches
    * {@link TRANSPORT_JUMP_BLOCKS} is a cross-area teleport; used to reset the
    * pathfinder so a path computed in the old area cannot survive the jump.
@@ -1296,7 +1296,7 @@ export class MineflayerExecutor implements StepExecutor {
    * path without waiting out the production default. */
   private readonly entitySettleTimeoutMs: number;
   /**
-   * task #38: the compiler's proven per-leg critical-path waypoints (keyed by
+   * The compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
    * replays it as successive nearby goals so each mineflayer A* solve is trivial —
    * instead of one distant goal that strands the bot on a large open winding cave.
@@ -1317,13 +1317,13 @@ export class MineflayerExecutor implements StepExecutor {
   private readonly assists = new AssistLedger();
   /** Every scripted death and what it proved about the retry loop. Entries are
    * appended when the death is TAKEN and mutated as the loop yields facts, so an
-   * aborted run still carries the death it took (task #102). */
+   * aborted run still carries the death it took. */
   private readonly trials: DeathTrialRecord[] = [];
   /** Waves the die-retry stage entered, whether or not it finished with them.
    * Engagement without records is the silence the run report must not keep. */
   private readonly dieRetryEngaged = new Set<string>();
   /** Every `rest` step the PATH declares, and which of them the bot performed —
-   * the die-retry precondition reads both (compiler #220). Declared up front
+   * the die-retry precondition reads both. Declared up front
    * rather than accumulated as they run, so "the route passed this fire without
    * resting" is a statement the check can actually make. */
   private restSteps: readonly PerformedRest[] = [];
@@ -1332,12 +1332,12 @@ export class MineflayerExecutor implements StepExecutor {
    * stage would measure against was never armed — the RUN's own gap, and red. */
   private readonly preconditionFindings: string[] = [];
   /** Encounters whose scripted deaths were skipped because the campaign fires NO
-   * checkpoint before them — a content fact, reported and not graded (#223). */
+   * checkpoint before them — a content fact, reported and not graded. */
   private readonly preconditionAdvisories: string[] = [];
   private readonly preconditionWaves = new Set<string>();
   /** The newest census summary the chat channel has delivered, and the mob lines
-   * that closed each census, keyed by the server's own sequence number (task
-   * #123). `censusSeq` is how a fresh answer is told from a stale one without the
+   * that closed each census, keyed by the server's own sequence number.
+   * `censusSeq` is how a fresh answer is told from a stale one without the
    * harness ever writing a delve score to ask its question. */
   private censusSummary: CensusSummary | undefined;
   private censusSeq = 0;
@@ -1354,7 +1354,7 @@ export class MineflayerExecutor implements StepExecutor {
    * report — the 2026-08-06 island triage found that a scripted `despawn-actor`
    * vanish broadcasts the same "<name> died" line a real combat loss does. */
   private readonly namedEntityDeathLog: NamedEntityDeath[] = [];
-  /** Actor fights this run attempted (#114) — one entry per engagement, won or lost. */
+  /** Actor fights this run attempted — one entry per engagement, won or lost. */
   private readonly actorTrials: ActorTrial[] = [];
   /** Actors already engaged, so an objective marker re-broadcast cannot re-fight one. */
   private readonly actorsEngaged = new Set<string>();
@@ -1366,7 +1366,7 @@ export class MineflayerExecutor implements StepExecutor {
    * and kitted. The baseline `keep_inventory` is judged against after a death. */
   private itemsBeforeDeath = 0;
   /**
-   * task #38: how many walked legs have been consumed. Legs are matched in lockstep
+   * How many walked legs have been consumed. Legs are matched in lockstep
    * path order (not by destination coordinate), so an anchor visited more than once
    * — e.g. the cave entry the player returns to — never grabs the wrong leg's route.
    */
@@ -1415,7 +1415,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * task #38: supply the compiler's proven critical-path waypoints. Optional —
+   * Supply the compiler's proven critical-path waypoints. Optional —
    * without it, `walkTo` uses the original single distant-goal behavior. Called by
    * the entrypoint when the `validation/critical-path-waypoints.json` artifact
    * accompanies the critical path.
@@ -1432,11 +1432,11 @@ export class MineflayerExecutor implements StepExecutor {
       username: this.config.username,
       version: this.config.version,
       auth: this.config.auth,
-      // task #68: mineflayer's auto-respawn answers the death packet in the SAME
+      // mineflayer's auto-respawn answers the death packet in the SAME
       // event-loop turn it arrives in, so the bot is alive again on the very next
       // server tick. No human is: the death screen requires a click, and the
-      // engine's death edge is specified ON THE CORPSE (spec-0031/#349 measured
-      // the `deathCount` edge armed pre-respawn, and `cp_respawn_check` reads it
+      // engine's death edge is specified ON THE CORPSE (spec-0031: the
+      // `deathCount` edge is armed pre-respawn, and `cp_respawn_check` reads it
       // with `if data entity @s {Health:0.0f}`). A corpse that never exists for a
       // whole tick makes the whole `on_death` branch unreachable — and a validator
       // that cannot observe a mechanism because of its own client library is a
@@ -1519,7 +1519,7 @@ export class MineflayerExecutor implements StepExecutor {
         this.recentChat.shift();
       }
     });
-    // task #68: the scoreboard ledgers, straight off the wire. Both packets are
+    // The scoreboard ledgers, straight off the wire. Both packets are
     // read because 1.21.11 split "set a score" and "clear a score" into two — a
     // reader that watches only the first reports a cleared purse as its last known
     // value, which is the one direction a currency assertion must never drift in.
@@ -1551,7 +1551,7 @@ export class MineflayerExecutor implements StepExecutor {
     // nearest hostile in melee reach — and on nothing at all if none is close, so a
     // trap or a fall never makes the bot swing at a bystander.
     bot.on("health", () => this.onHealthUpdate());
-    // gap 8 (task #32): mineflayer applies a server position packet to
+    // gap 8: mineflayer applies a server position packet to
     // `bot.entity.position` and THEN emits `forcedMove` (lib/plugins/physics.js).
     // A large horizontal jump is the compiler's cross-area `teleport` landing; stop
     // the pathfinder so any path/goal computed in the old area is dropped rather than
@@ -2020,7 +2020,7 @@ export class MineflayerExecutor implements StepExecutor {
    */
   async requireObjective(objectiveId: string, label: string): Promise<void> {
     await this.awaitObjectiveMarker(objectiveId, label);
-    // spec-0023's floor gate, on the OTHER shape an elite takes (#222/#114): an
+    // spec-0023's floor gate, on the OTHER shape an elite takes: an
     // actor fight has no `kill` step, so the only moment the harness can know it
     // starts is the completion of the objective that unleashes it. Runs here, once
     // per actor, after the objective it hangs off is proven — never before.
@@ -2232,7 +2232,7 @@ export class MineflayerExecutor implements StepExecutor {
     // `once("spawn")` — so the old listener routinely missed the respawn it was
     // waiting for and burned the whole 15s timeout before "resuming anyway". Free
     // before spec-0023; on the die-retry stage it is 15s per scripted death, two
-    // per encounter, straight out of the run budget (task #102, observed live on
+    // per encounter, straight out of the run budget (observed live on
     // the keep-trial fixture). A counter cannot miss an event that already fired.
     const deadline = Date.now() + RESPAWN_TIMEOUT_MS;
     let respawned = false;
@@ -2259,7 +2259,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   // -------------------------------------------------------------------------
-  // The death loop (task #68): a real player dies, and every consequence the
+  // The death loop: a real player dies, and every consequence the
   // engine promised is asserted from the observation.
   // -------------------------------------------------------------------------
 
@@ -2714,8 +2714,8 @@ export class MineflayerExecutor implements StepExecutor {
     const bot = this.requireBot();
     // Deliberately NOT remembered for replay. `class_apply_<class>` ends in
     // `teleport @s <campaign entry point>`, so re-running this after a death moves
-    // the bot off the very respawn point the die-retry stage exists to measure
-    // (task #120). The post-death re-arm is `rearmAfterRespawn`, which only puts
+    // the bot off the very respawn point the die-retry stage exists to measure.
+    // The post-death re-arm is `rearmAfterRespawn`, which only puts
     // the kept kit back on.
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
@@ -2761,7 +2761,7 @@ export class MineflayerExecutor implements StepExecutor {
     // chat the dialog-option `/trigger` command the button would have run. The
     // trigger is sent HOWEVER the walk ended — arriving is the means, the trigger is
     // the step — and `chatTrigger` records the server's answer so a step that then
-    // times out can name which side swallowed it (task #144).
+    // times out can name which side swallowed it.
     await this.walkTo(step.pos, TALK_RANGE, `npc ${step.npc}`, step.sneak, {
       objective: step.objective,
       transport: step.transport,
@@ -2806,7 +2806,7 @@ export class MineflayerExecutor implements StepExecutor {
    * restored to off afterwards so a later plain leg is not left sneaking. The long
    * `goto` wait races the death latch so a death aborts it fast, not after ~60s.
    *
-   * `completion` (task #134) names the step this walk serves: its objective id and
+   * `completion` names the step this walk serves: its objective id and
    * exported transport destination, consulted on the walk's FAILURE paths only. A
    * step can complete mid-walk — a `reach` distance check fires as the bot crosses
    * a timed gate, and the completion emission teleports it to the next area — and
@@ -2825,13 +2825,13 @@ export class MineflayerExecutor implements StepExecutor {
     const r = Math.max(1, Math.floor(range));
     const movements = new Movements(bot);
     const restoreControls = configureLeg(bot, movements, sneak);
-    // task #38: no cave-specific Movements override is needed — the compiler-proven
+    // No cave-specific Movements override is needed — the compiler-proven
     // waypoints keep the bot on clear standable ground (the DW0311 A* treats water
     // and fences as impassable, so the route never crosses them, and gravity blocks
     // and stairs are ordinary floor). Entity detection is left ON (the pathfinder
     // default) so the bot routes AROUND a transient mob on a hop rather than ramming
     // it — disabling it made the bot wedge against a leaked mob and time out.
-    // task #45: but the pathfinder's default treats EVERY non-passable entity as an
+    // But the pathfinder's default treats EVERY non-passable entity as an
     // obstacle, including non-colliding display/interaction/marker entities that
     // block nothing in-world. Those (a completed interact objective's leaked
     // `interaction` hitbox, an NPC's co-located hitbox, floating item/text displays)
@@ -2839,7 +2839,7 @@ export class MineflayerExecutor implements StepExecutor {
     // passable so the bot paths through them — physics-honest, and solid entities
     // (mobs, the mannequin NPC itself) are still avoided.
     allowNonCollidingEntities(movements);
-    // task #68: a declared lethal volume is impassable in every route proof the
+    // A declared lethal volume is impassable in every route proof the
     // compiler runs, and it has to be impassable here too. Without this the walk
     // BACK from a death routes through the hazard that caused it — the bot dies a
     // second time on a leg that has nothing to do with the delve's content, and the
@@ -2852,14 +2852,14 @@ export class MineflayerExecutor implements StepExecutor {
     // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
     try {
-      // task #38: when the compiler proved a waypoint polyline for this leg, replay
+      // When the compiler proved a waypoint polyline for this leg, replay
       // it as short hops so each A* solve is trivial (avoids the single giant solve
       // that strands the bot on a large open winding cave); the final goal is always
       // the true destination. Legs are matched in lockstep path order and consumed
       // as walked; a non-matching walk (a sub-walk, or a post-transport step) does
       // not consume and falls back to the single destination goal.
       let legWaypoints: readonly Vec3Tuple[] | undefined;
-      // spec-0016 §4 (task #81): the timed gates this leg's proven route walks
+      // spec-0016 §4: the timed gates this leg's proven route walks
       // THROUGH. Only a marked leg is allowed the window wait below.
       let legGates: readonly TimedGate[] = [];
       if (this.waypoints) {
@@ -2913,7 +2913,7 @@ export class MineflayerExecutor implements StepExecutor {
         legGates.length > 0
           ? {
               gates: legGates,
-              // Both raw phases race the death signal (task #140 round 5): a bot
+              // Both raw phases race the death signal: a bot
               // that dies mid-wait or mid-dash respawns at world spawn, and an
               // un-raced loop reads that as "clear of the fill" and marches the
               // machinery on from the wrong end of the map. Death is terminal for
@@ -2933,7 +2933,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * The {@link LegSettled} oracle for the step a walk serves (task #134): the
+   * The {@link LegSettled} oracle for the step a walk serves: the
    * authoritative completion signals the harness already consumes, read without
    * asserting anything new.
    *   - The objective's own anchored `[dw:complete …]` marker has arrived
@@ -3027,7 +3027,7 @@ export class MineflayerExecutor implements StepExecutor {
 
   /**
    * Wait for `gates` to swing from closed to OPEN, so a crossing starts at the top of
-   * the window rather than its tail (spec-0016 §4, task #81).
+   * the window rather than its tail (spec-0016 §4).
    *
    * Two bounded phases: first watch until the gates read CLOSED (so an already-open
    * window whose remaining ticks are unknown is not mistaken for a fresh one), then
@@ -3038,9 +3038,9 @@ export class MineflayerExecutor implements StepExecutor {
    *
    * Returns `true` iff the fresh closed→open edge was actually OBSERVED (both
    * phases succeeded). `false` means the caller knows nothing about the clock —
-   * safe to try on a gate that merely blocks, forbidden on one that crushes (#140).
+   * safe to try on a gate that merely blocks, forbidden on one that crushes.
    *
-   * `hold` (task #140): a feet cell to actively KEEP while watching. The tide-mill
+   * `hold`: a feet cell to actively KEEP while watching. The tide-mill
    * gate corridor is flowing water; a bot that merely idles is carried off the
    * staging mouth by the current (observed: 8 blocks back to the pool during one
    * 4-second wait), and every drifted block must be re-walked inside the open
@@ -3071,7 +3071,7 @@ export class MineflayerExecutor implements StepExecutor {
     // was tried first and lost ~4 blocks per wait: the pathfinder "arrives", clears
     // its controls, the current takes the idle bot, and the re-solve lags the
     // drift. Raw look-and-walk is the mechanism this file already trusts against
-    // clocked geometry (task #45's unstick, the-drowned-bell's crossing burst):
+    // clocked geometry (the unstick path, the-drowned-bell's crossing burst):
     // face the station, hold forward while off it, release on it. Drift downstream
     // is corrected against the current the same way the proven approach hops walk
     // it; an overshoot past the mouth is carried back by the very current that
@@ -3140,7 +3140,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Raw-control crossing dash for a `crush: true` gate entry (task #140, see
+   * Raw-control crossing dash for a `crush: true` gate entry (see
    * {@link GateAssist.dash}). Face the far mouth and drive forward (sprinting)
    * from the near mouth until the far mouth is reached, re-aiming every
    * {@link GATE_DASH_TICK_MS}. No pathfinder anywhere: the tide-mill corridor
@@ -3220,8 +3220,8 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Raw, pathfinder-free nudge toward `target` to dislodge a physically wedged bot
-   * (task #45). When the stall-recovery pathfind itself can't escape a concave corner
+   * Raw, pathfinder-free nudge toward `target` to dislodge a physically wedged
+   * bot. When the stall-recovery pathfind itself can't escape a concave corner
    * beside a wall, this bypasses the A* pathfinder: clear controls, face the target
    * cell, and drive forward for a SHORT burst — a gentle tap, not a launch, so on a
    * tight 2-wide corridor the bot edges toward the corridor axis instead of
@@ -3278,7 +3278,7 @@ export class MineflayerExecutor implements StepExecutor {
     const { x, y, z, range } = spec;
     // Already within the goal? Return without pathfinding. mineflayer-pathfinder
     // rejects a `goto` issued when the bot already sits at the target with "Path was
-    // stopped before it could be completed" (task #45: after a physics-unstick lands
+    // stopped before it could be completed" (after a physics-unstick lands
     // the bot inside a hop's range, the retry `goto` would otherwise fail spuriously
     // on a goal that is in fact already satisfied).
     if (this.withinGoal(spec)) {
@@ -3370,7 +3370,7 @@ export class MineflayerExecutor implements StepExecutor {
     // Confirmed kills: a mob the bot has attacked that then vanishes near the wave
     // anchor (see wave.ts). Counting these (rather than "no mob-shaped entity remains")
     // is what lets the step end at `step.count` without walking to a far Invulnerable
-    // actor. Armed BEFORE the approach walk: self-defense (#173) can kill a wave mob
+    // actor. Armed BEFORE the approach walk: self-defense can kill a wave mob
     // that ambushes the bot on the way in, and that kill is wave progress like any other
     // — crediting it only from the kill loop deadlocked the objective (ladder run 13).
     const engagement = beginWave(step.wave, step.pos);
@@ -3412,7 +3412,7 @@ export class MineflayerExecutor implements StepExecutor {
       let clearedStreak = 0;
       let engagedId: number | undefined;
       let engagedSince = 0;
-      // The wave's own census (task #124): every "the fight is over" test below is
+      // The wave's own census: every "the fight is over" test below is
       // a guess made from SHAPES, and the server can simply be asked. See
       // `waveStillStands`.
       const enc = this.encounterFor(step.wave);
@@ -3536,12 +3536,12 @@ export class MineflayerExecutor implements StepExecutor {
             engagedSince = Date.now();
           }
           // Every mob the bot melees during this step is recorded, retaliation target or
-          // not. #173 excluded retaliation targets to stop a non-wave stalker inflating
-          // the count; that was over-broad — a WAVE mob that attacks the bot is picked by
-          // the retaliation rule too, and refusing to credit it makes the objective
-          // impossible to finish (ladder run 13). The proximity rule in
-          // {@link creditsWaveKill} is the arbiter, exactly as it was before self-defense
-          // existed.
+          // not. Excluding retaliation targets would keep a non-wave stalker from
+          // inflating the count, but it is over-broad — a WAVE mob that attacks the bot
+          // is picked by the retaliation rule too, and refusing to credit it makes the
+          // objective impossible to finish (ladder run 13). The proximity rule in
+          // {@link creditsWaveKill} is the arbiter, for a self-defense kill exactly as
+          // for one the kill loop targeted.
           engagement.engaged.add(mob.id);
           await bot.lookAt(mob.position.offset(0, (mob.height ?? 1) * 0.5, 0), true);
           bot.attack(mob);
@@ -3682,7 +3682,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * The actor floor gate (#114), fired once per actor after the objective that
+   * The actor floor gate, fired once per actor after the objective that
    * unleashes it completes.
    *
    * Telemetry, never a gate: nothing on the critical path depends on the outcome,
@@ -3896,8 +3896,8 @@ export class MineflayerExecutor implements StepExecutor {
     // Recorded BEFORE the approach walk: from here on, silence about this
     // encounter is a finding. `dieRetryCoverageFailures` turns an engagement with
     // no completed trial into a red stage, so a run that dies on the way in can
-    // never report a passed die-retry (task #102).
-    // PRECONDITION (compiler #220, refined by #223): the loop this stage proves is
+    // never report a passed die-retry.
+    // PRECONDITION: the loop this stage proves is
     // "death → respawn at the governing checkpoint → walk back". Two ways that
     // premise can be false, and they are different kinds of fact:
     //   * the checkpoint exists but was never ARMED (a bonfire the route walked
@@ -3923,7 +3923,7 @@ export class MineflayerExecutor implements StepExecutor {
       return;
     }
     this.dieRetryEngaged.add(enc.wave);
-    // ASSISTED (task #121). The approach walks the bot to within 3 blocks of a
+    // ASSISTED. The approach walks the bot to within 3 blocks of a
     // LIVE encounter — melee range — and until now it did so with nothing on. That
     // made bot fencing skill the gate on whether this stage could run at all,
     // which is exactly what spec-0023 downgraded to telemetry: the die-retry stage
@@ -3967,7 +3967,7 @@ export class MineflayerExecutor implements StepExecutor {
         // than script a second one on top of it. Without this the `deathSeq` read
         // below already carries the accidental death, so the trial would wait for
         // a death that has to happen AGAIN — crediting the loop to a life the
-        // harness never opened (the first-contact/mid-fight race, task #121).
+        // harness never opened (the first-contact/mid-fight race).
         if (this.death) {
           process.stderr.write(
             `[die-retry] the wave killed the bot during the trade — recovering before ` +
@@ -3980,12 +3980,12 @@ export class MineflayerExecutor implements StepExecutor {
         }
       }
       const before = new Set(this.completedObjectives.keys());
-      // BRAND the mobs this life fought (task #123). A re-seat must replace every
+      // BRAND the mobs this life fought. A re-seat must replace every
       // one of them; a mob still wearing the brand in the next life IS the chipped
-      // survivor the owner ruling forbids (2026-08-03). The stamp rides the wave's
+      // survivor a faithful re-seat forbids. The stamp rides the wave's
       // own tag, so it can only ever land on this wave — the mistake the previous
       // id-based baseline made, which branded whatever the client happened to be
-      // tracking (#230).
+      // tracking.
       this.brandWave(enc);
       process.stderr.write(
         `[die-retry] ${step.wave} death ${attempt}/${phases.length} (${phase})\n`,
@@ -4024,7 +4024,7 @@ export class MineflayerExecutor implements StepExecutor {
         // there for the whole settle — so both are assisted, for the same reason
         // the approach is. Whether the ROUTE is walkable is the measurement; a bot
         // cut down on the last block would answer "no" for a reason that has
-        // nothing to do with the route (task #121).
+        // nothing to do with the route.
         await this.withAssist(enc, "die-retry: walk back and re-engage probe", async () => {
           try {
             await this.walkTo(step.pos, 3, `die-retry return ${step.wave}`, step.sneak);
@@ -4043,7 +4043,7 @@ export class MineflayerExecutor implements StepExecutor {
           // party can neither complete it nor re-fight it, which is a soft lock.
           // A wave already beaten before the death is a won fight staying won.
           //
-          // Observed ONLY when the bot got back (task #120). The probe reads the
+          // Observed ONLY when the bot got back. The probe reads the
           // entities the CLIENT tracks, so a bot standing 150 blocks from the fight
           // is not observing the encounter at all — it is observing wherever it is
           // stuck. Reporting that as `re_engaged` produced the run-five artifact in
@@ -4099,7 +4099,7 @@ export class MineflayerExecutor implements StepExecutor {
    * here, where the death IS the step: `waitFor(() => this.death !== undefined)`
    * threw on the very condition it was asked to wait for, so no die-retry trial
    * could ever complete and the harness's own scripted death was reported as the
-   * content killing the bot (task #102, the-drowned-bell round 3).
+   * content killing the bot (the-drowned-bell round 3).
    */
   private async awaitDeathAfter(seq: number, timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
@@ -4111,7 +4111,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Ask the server what is standing at this encounter — BY TAG (task #123).
+   * Ask the server what is standing at this encounter — BY TAG.
    *
    * The old probe answered by silhouette: every entity the client tracked, no
    * distance filter, anything taller than half a block. That set is not the wave.
@@ -4119,7 +4119,7 @@ export class MineflayerExecutor implements StepExecutor {
    * and whichever neighbouring wave had just been re-seated, so a 2-mob wave read
    * as 4 standing — and because those bystanders were alive on both sides of a
    * scripted death, they were reported as survivors the re-seat had failed to
-   * remove. The re-seat was innocent; the ruler was wrong (#230).
+   * remove. The re-seat was innocent; the ruler was wrong.
    *
    * Only the server can see the wave tag, so the compiler emits the census and
    * this reads it: counts of standing / branded / damaged, plus one line per mob
@@ -4146,7 +4146,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Does the wave still stand? Asks the SERVER, by tag (task #124).
+   * Does the wave still stand? Asks the SERVER, by tag.
    *
    * Every terminal condition in `fightWave` is a guess made from shapes — "a mob
    * the bot hit winked out near the anchor", "everything it engaged is down and
@@ -4279,9 +4279,9 @@ export class MineflayerExecutor implements StepExecutor {
    * Wait out a death, note WHERE the bot came back, and ready it to fight again
    * **without moving it**.
    *
-   * The re-arm used to replay `select-class`, on the premise that "a respawn drops
-   * class state". That premise is false and the replay was destructive (task #120,
-   * the-drowned-bell run five):
+   * The re-arm does NOT replay `select-class`. The premise that "a respawn drops
+   * class state" is false, and the replay is destructive (the-drowned-bell run
+   * five):
    *
    *   * false, because the compiler seals `gamerule keep_inventory true` in every
    *     build — the kit survives the death — and class state lives in scoreboard
@@ -4295,7 +4295,7 @@ export class MineflayerExecutor implements StepExecutor {
    *     walks. Every trial recorded a truthful `respawn_pos` at the bonfire and then
    *     immediately made it a lie.
    *
-   * The compiler now seals that warp shut (#122): the class trigger is armed only
+   * The compiler now seals that warp shut: the class trigger is armed only
    * for a player who has not classed, so a replay would fail rather than teleport.
    * The rule here is unchanged and does not lean on it — a harness that re-classes
    * is stating something false about the run whether or not the pack lets it.
@@ -4352,7 +4352,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /**
-   * Rest at a bonfire (compiler #220) — the player loop every later proof depends on.
+   * Rest at a bonfire — the player loop every later proof depends on.
    *
    * Two acts, in this order, and the order is the whole thing:
    *
@@ -4598,7 +4598,7 @@ export class MineflayerExecutor implements StepExecutor {
     return best;
   }
 
-  /** Adopt the rest steps the exported critical path carries (compiler #220), with
+  /** Adopt the rest steps the exported critical path carries, with
    * their EXPORTED indices — the coordinate system the precondition compares in. */
   useRestSteps(rests: readonly PerformedRest[]): void {
     this.restSteps = rests;
@@ -4636,7 +4636,7 @@ export class MineflayerExecutor implements StepExecutor {
   }
 
   /** Encounters whose scripted deaths were skipped because the campaign fires no
-   * governing checkpoint before them (#223). Advisory: the retry loop there went
+   * governing checkpoint before them. Advisory: the retry loop there went
    * unproven, and whether that staging is acceptable is the compiler's call, not
    * this stage's. Reported, never graded — and never silent. */
   dieRetryPreconditionAdvisories(): readonly string[] {
@@ -4701,7 +4701,7 @@ export class MineflayerExecutor implements StepExecutor {
    *
    * The interaction advancement and that chat command both feed the same per-tick
    * handler, and the datapack applies the `requires_item` + flag guards there —
-   * `requires_item` against the MAINHAND (compiler PR #205), which is why the hand
+   * `requires_item` against the MAINHAND, which is why the hand
    * is loaded first. See {@link presentAndTrigger}.
    */
   async interact(step: InteractStep): Promise<void> {
@@ -4725,7 +4725,7 @@ export class MineflayerExecutor implements StepExecutor {
    * ~256 blocks apart across void, so the destination is far from the pre-teleport
    * position and the arrival is unambiguous. Navigation plumbing only — no game logic.
    *
-   * Three deterministic phases (task #32), each bounded and death-aware so nothing
+   * Three deterministic phases, each bounded and death-aware so nothing
    * can hang the run and a mid-transport death still fails fast:
    *   1. Wait for the position to jump to near `dest` — the teleport landing. The
    *      `forcedMove` handler resets the pathfinder as the jump arrives, so a path
@@ -4891,9 +4891,9 @@ export class MineflayerExecutor implements StepExecutor {
     // The campaign completes during the LAST objective step; the sequencer has
     // already failed the run if the marker arrived any earlier than that
     // (assertEndgameNotReached), so reaching here means it is either due now or —
-    // when the path exports a scheduled-ending tail (`ending_tail_ticks`, task
-    // #125: the-wake fires `campaign-complete` 250t into its closing `sequence`)
-    // — due within that tail. The window covers whichever is longer.
+    // when the path exports a scheduled-ending tail (`ending_tail_ticks`: the-wake
+    // fires `campaign-complete` 250t into its closing `sequence`) — due within
+    // that tail. The window covers whichever is longer.
     const windowMs = completionWindowMs(step.endingTailTicks);
     const deadline = Date.now() + windowMs;
     while (Date.now() < deadline) {
@@ -4929,7 +4929,7 @@ function fmt(p: { x: number; y: number; z: number }): string {
  * mineflayer surfaces a custom name in several shapes across versions — a plain
  * string, a chat component with `toString`, or `{ text }` — so this reads all of
  * them and gives up quietly rather than throwing. Used only to PREFER the right
- * body among candidates of the same entity type (#114); identity never rests on
+ * body among candidates of the same entity type; identity never rests on
  * it, because a client cannot read the entity tag the compiler actually uses.
  *
  * **i18n v2 (spec-0029).** An authored name now ships as
@@ -4959,7 +4959,7 @@ export function displayNameOf(e: unknown): string | undefined {
 }
 
 /**
- * How often the same-type candidate preference (#114) actually had a name to
+ * How often the same-type candidate preference actually had a name to
  * prefer by — the binding count spec-0029 requires the bot run to state rather
  * than assume.
  *
@@ -5023,11 +5023,11 @@ const NON_WAVE_ENTITIES = new Set<string>([
  * Classified by name (reliable across mineflayer versions) rather than
  * `type`/`kind`, which vary.
  *
- * **This is a TARGETING predicate, never a measurement one** (task #123). The bot
+ * **This is a TARGETING predicate, never a measurement one**. The bot
  * can only attack what its client can see, so picking a swing target by shape is
  * the only thing it could do — but ANSWERING a question about the wave that way
  * is how the drowned bell's ambush husks were reported as wave mobs a re-seat had
- * failed to remove (#230). Every count that reaches a verdict or the run report
+ * failed to remove. Every count that reaches a verdict or the run report
  * now comes from the compiler's tag census instead; nothing here may be used to
  * decide what is standing at an encounter.
  */

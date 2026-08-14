@@ -248,6 +248,12 @@ jobs:
         run: |
           python3 tools/check-crates-io-readmes.py
           python3 tools/check-reference-versions.py
+      # The same enumeration one layer out. The gate above judges the two pages
+      # a stranger lands on; this judges the whole tagged tree, which `ci.yml`
+      # has not necessarily seen, for the identifiers a reader cannot resolve —
+      # a task id, a pull-request number, a dated attribution.
+      - name: the tagged tree carries no identifier a reader cannot resolve
+        run: python3 tools/check-unsanctioned-identifiers.py
       # Prints, for the human about to approve `publish-crates`, exactly which
       # crate versions would be uploaded and which are already on the registry.
       - name: the publish plan
@@ -263,11 +269,12 @@ jobs:
     # declares an environment, so no other job can obtain it. The run pauses here
     # until a reviewer approves.
     #
-    # That last sentence was FALSE for the whole of v1.1.0 (2026-08-08): the
-    # environment existed and held the token, but had `protection_rules: []`, so
-    # nothing ever paused and two crates published unreviewed. Only the first
-    # half of the design — that the token is reachable from exactly one job —
-    # actually held. A comment cannot make a gate bind; the step below checks.
+    # That last sentence is a claim about GitHub settings this file cannot see.
+    # An environment can exist, hold the token, and carry `protection_rules: []`
+    # — nothing pauses, and a tag push publishes unreviewed while every comment
+    # here still reads correct. Only the half the workflow itself decides — that
+    # the token is reachable from exactly one job — holds by construction. A
+    # comment cannot make a gate bind; the step below checks.
     environment: crates-io
     permissions:
       contents: read

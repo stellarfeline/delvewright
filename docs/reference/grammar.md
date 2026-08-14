@@ -2127,8 +2127,8 @@ export strips command blocks on principle (§6) — so the vocabulary waits on a
 prefab pair or a redstone mechanism this crate could target.
 
 Every clause of that is still true. The conclusion is not, because the motion
-moved layers. **A lift shipped as a first-class DSL construct** (spec-0031, PR
-#356): runtime state, region fill / clear, and teleport-by-region, composed into
+moved layers. **A lift is a first-class DSL construct** (spec-0031):
+runtime state, region fill / clear, and teleport-by-region, composed into
 one `sequence` in campaign JSON — deliberately *not* a `lift` verb. Nothing
 moves; the car is filled at the destination, its occupants teleported, and the
 old car cleared. So this crate never has to express motion, and a

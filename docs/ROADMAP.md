@@ -3,8 +3,7 @@
 Everything before content quality is about **proving the loop**. Milestones are
 sequential; each has a machine-verifiable exit criterion. Dates are omitted on
 purpose — the goal is on-demand generation (a new delve whenever the group wants
-one; owner decision 2026-07-30, superseding the handoff's monthly cadence), and it
-matures at M4, not before.
+one), and it matures at M4, not before.
 
 ## M0 — Repo scaffolding *(first PR)*
 
@@ -38,9 +37,9 @@ stage end-to-end:
 the hello-world delve from Minecraft via the one-command playtest path. This is the
 project's heartbeat; everything later just makes the delve bigger.
 
-**Status: COMPLETE (2026-07-30).** All machine steps green in CI; owner played the
-hello-world delve end-to-end. Owner QA findings feeding M2: (1) the hello-room
-shipped **unlit** — the bot navigates by protocol data, not vision, so darkness is
+**Status: COMPLETE (2026-07-30).** All machine steps green in CI, and the
+hello-world delve was played end-to-end. QA findings feeding M2: (1) the
+hello-room shipped **unlit** — the bot navigates by protocol data, not vision, so darkness is
 invisible to machine validation; lighting is now a prefab authoring requirement
 (spec-0001). (2) Natural hostile spawns are currently uncontrolled — environment
 sealing (spec-0002) added as an M2 emission requirement.
@@ -58,7 +57,7 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Creator playtest loop core (spec-0006): `playtest` compose profile, in-game
   `/trigger dw.note` marks, harvester → DSL-addressable `playtest-report.json`.
 
-**Exit** (owner-defined 2026-07-30, two gates in order):
+**Exit** (two gates in order):
 
 1. **Dress rehearsal**: the planning agent itself generates a *relatively complex*
    delve via `/new-delve` (multiple areas/quests/NPCs), takes it through the full
@@ -81,8 +80,7 @@ sealing (spec-0002) added as an M2 emission requirement.
 - Skills mature into **the product itself** (ADR-0012): `/new-delve` takes a prompt —
   a bare theme or a detailed level-and-plot brief — and delivers a validated,
   playable delve end-to-end; `/validate` and `/release` complete the set.
-- **Creator distribution** (ADR-0014, owner 2026-07-31): creators clone only the
-  content repo; the skill installs as a Claude Code plugin (marketplace +
+- **Creator distribution** (ADR-0014): creators clone only the content repo; the skill installs as a Claude Code plugin (marketplace +
   content-repo recommendation), bootstraps pinned multi-platform binaries from
   Releases + GHCR images, and runs dual-mode (dev = pipeline repo, creator =
   content repo).
@@ -96,11 +94,10 @@ non-QA effort.
 
 ## M5 — Genre breadth & polish
 
-- **Demo levels** (`docs/demo-levels.md`, owner directive 2026-08-03): every
-  mechanic gets a small first-party level that verifies it and shows it off. That
-  file is the queue and the planning agent's standing idle work.
-- **M5 theme suite** (owner-approved 2026-08-03, five levels — mystery, horror,
-  tower defense, heist, pastoral): genre-diverse levels beyond the Greek-myth and
+- **Demo levels** (`docs/demo-levels.md`): every mechanic gets a small
+  first-party level that verifies it and shows it off. That file is the queue and the planning agent's standing idle work.
+- **M5 theme suite** (five levels — mystery, horror, tower defense, heist,
+  pastoral): genre-diverse levels beyond the Greek-myth and
   souls lines, each exercising a distinct authoring register. Listed in
   `docs/demo-levels.md`.
 - **Map editor layers 2+3** (spec-0017): declarative massing of the jigsaw layout,
@@ -110,8 +107,8 @@ non-QA effort.
 
 ## M6 — Modpack production line *(recorded, not committed)*
 
-Owner thesis (2026-08-01), planner-endorsed: an LLM-driven production line for
-**[curated modpack + adventure-designed open world]** — the survival-challenge
+The thesis: an LLM-driven production line for **[curated modpack +
+adventure-designed open world]** — the survival-challenge
 genre where designed story pockets are 大号箱庭 embedded in free natural terrain,
 so no effort is spent where no story lives. Market gap: the industry's "dungeons"
 are chest+spawner+boss structures; nobody can produce directed adventure-mode
@@ -129,7 +126,7 @@ rule enforcement.
   tooling-whitelisted); (3) a packwiz-as-code pipeline with ADR-0013 license
   vetting.
 
-**Macro-terrain is composed, not searched** (owner, 2026-08-01). No filler
+**Macro-terrain is composed, not searched.** No filler
 between story areas — the macro-journey is authored (village tutorial → river
 ride → colossi strait → grassland → lone mountain, white city at its foot).
 Architecture is the delve pipeline one scale up: landform-scale terrain prefabs,

@@ -13,9 +13,9 @@ command against that workspace must complete first, whether or not it builds the
 crate that declared it — and every CI job that runs cargo then answers for that
 host's uptime. `delvewright-render`'s Nucleation pin put five required status
 checks behind two repositories they never build, and a transient TLS failure on
-that reach reddened `tier 2` on a docs-only PR (#388). This repo refuses the same
-shape at two other sites: the `docs` job's `lychee --offline`, and task #41's
-single Mojang fetch for the whole tier-2 job.
+that reach reddened `tier 2` on a docs-only PR. This repo refuses the same
+shape at two other sites: the `docs` job's `lychee --offline`, and the
+server-bootstrap overlay's single Mojang fetch for the whole tier-2 job.
 
 WHAT THIS CHECKS. Every `Cargo.lock` in the repo, which is exactly the resolved
 dependency graph of the workspace that owns it. A package with a `source` of
@@ -120,7 +120,7 @@ def main() -> int:
                 + "  Every cargo command against this workspace must clone those\n"
                 "  before it does anything, including commands that never build\n"
                 "  the crate that declared them — which puts every CI job that\n"
-                "  runs cargo here behind that host's uptime (#388). Move the\n"
+                "  runs cargo here behind that host's uptime. Move the\n"
                 "  crate that needs it into its own workspace (`exclude` in the\n"
                 "  root Cargo.toml + a `[workspace]` table of its own), or add\n"
                 "  this lock to ALLOWED in tools/check-workspace-git-deps.py\n"

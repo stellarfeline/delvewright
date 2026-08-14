@@ -424,7 +424,7 @@ fn a_pos(pos: [i32; 3], facing: Option<&str>) -> AnchorJson {
 }
 
 // ---------------------------------------------------------------------------
-// Gravity-floor invariant (task #42): no falling block over air. Both island
+// Gravity-floor invariant: no falling block over air. Both island
 // pieces author a solid base under every sand cell, so this is belt-and-braces
 // (the compiler's DW0313 is the authoritative gate).
 // ---------------------------------------------------------------------------

@@ -1,12 +1,11 @@
 # spec-0033: The grammar's idioms are what an author is missing
 
-- **Status**: Proposed (owner ruling 2026-08-12 — when an approved concept and
-  the back end disagree, grow the back end; do not cut the concept down to
-  what the tooling happens to say. Re-scoped twice the same day: first by
-  measurement, when most of what looked like engine work turned out to be
-  authoring material; then by the owner's question — *how would you ever know
-  which structures the library needs?* — which is the right question and the
-  reason §3 buys techniques instead of buildings.)
+- **Status**: Proposed (when an approved concept and the back end disagree,
+  grow the back end; do not cut the concept down to what the tooling happens
+  to say. Re-scoped twice: first by measurement, when most of what looked like
+  engine work turned out to be authoring material; then by the question — *how
+  would you ever know which structures the library needs?* — which is the
+  right question and the reason §3 buys techniques instead of buildings.)
 - **Specs**: 0027 (the back end this is the authoring material for)
 - **ADRs**: 0004 (prefabs+jigsaw), 0006 (determinism), 0013 (licensing)
 - **Non-goals**: curve primitives (integer arithmetic has no root, so arches
@@ -21,7 +20,7 @@ gate passed with non-zero bindings, the bytes reproduce, and the piece is a
 solid rectangular block of stone that shares nothing with the concept it was
 authored from — a roofless ruined cloister of pointed arches. The gates bind
 to buildability. Nothing binds to fidelity, and the one step that judges it
-(§5) could not see inside a piece at all until PR #403.
+(§5) could not see inside a piece at all.
 
 The reflex is to call the missing arch an engine gap. It is not. A ruined
 Gothic arcade — repeated bays, piers, stepped pointed heads, a ragged mossy
@@ -88,9 +87,9 @@ one minimal runnable program that exists to teach the technique and says so.
    with the same arithmetic, because `reorient` permutes and never mirrors.
 8. **Show-through** — `skip`, so an earlier fill survives under later structure.
 9. **Light** — any role may be a light-emitting block; a one-cell split is a
-   sconce. (Closes task #96: every bell zone currently probes `dark` because no
-   rule in the library exposes a lit role, and binding a floor to a lamp would
-   be the downstream hack the doctrine forbids.)
+   sconce. (Every bell zone currently probes `dark` because no rule in the
+   library exposes a lit role, and binding a floor to a lamp would be the
+   downstream hack the doctrine forbids.)
 
 Plus **one composite** program that uses several idioms at once, labelled a
 composition demonstration rather than a catalogue entry — the ruined arcade,

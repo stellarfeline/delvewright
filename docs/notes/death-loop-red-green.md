@@ -1,4 +1,4 @@
-# The death loop's red→green demonstrations (task #68)
+# The death loop's red→green demonstrations
 
 Audience: agents. This note exists so the bot tier's `death-loop` stage can be
 **disbelieved and re-checked**, not taken on trust. Every red below was produced

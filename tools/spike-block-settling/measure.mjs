@@ -3,8 +3,8 @@
 // into CI. Run by `tools/spike-block-settling/run.sh`.
 //
 // Every mutation's response is checked (`ok()`); a census that legitimately
-// counts zero goes through `raw()` and parses the reply instead (task #70: a
-// command whose response nobody reads cannot fail).
+// counts zero goes through `raw()` and parses the reply instead: a command
+// whose response nobody reads cannot fail.
 //
 // The world is a DRY superflat — bedrock 1 + stone 3 — so everything above
 // y=5 is air and no ambient water can reach a rig.

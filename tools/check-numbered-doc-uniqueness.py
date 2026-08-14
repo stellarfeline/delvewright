@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""No two numbered docs claim the same number once this branch merges (#111).
+"""No two numbered docs claim the same number once this branch merges.
 
 ## The defect this exists to end
 
 Specs are numbered `spec-NNNN-<slug>.md` in `docs/specs/`; an authoring agent
 picks the next number by LISTING that directory and writing the next integer.
-PR #361 created `docs/specs/spec-0033-declared-body-traversal.md` on
-2026-08-09 and stayed open. On 2026-08-12 a different agent listed
-`docs/specs/` on `main` — where #361's file did not exist yet, because #361
-had not merged — got the SAME next number, and merged
-`spec-0033-grammar-corpus.md` straight to `main`. Two specs held number 0033
-for three days. A human reading PR titles during an unrelated queue audit
-caught it; that is not a mechanism.
+One branch created `docs/specs/spec-0033-declared-body-traversal.md` and stayed
+open; three days later a different agent listed `docs/specs/` on `main` — where
+that file did not exist yet, because the branch had not merged — got the SAME
+next number, and merged `spec-0033-grammar-corpus.md` straight to `main`. Two
+specs held number 0033 for three days. A human reading PR titles during an
+unrelated queue audit caught it; that is not a mechanism.
 
 ## What "uniqueness" means here, precisely
 
@@ -29,7 +28,7 @@ them apart up front:
 
 - **cross-branch** — this branch adds a file `--base` does not have, and
   `--base` independently carries a different file under the same number (the
-  #361 / grammar-corpus incident, exactly).
+  spec-0033 collision above, exactly).
 - **local self-collision** — this branch alone adds two differently-named
   files under one number.
 - **`--base` self-collision** — a number is already claimed twice at `--base`
@@ -65,8 +64,8 @@ series later is one entry here, not a new script.
 - **`DW-NNNN`** diagnostic codes (`crates/**/*.rs`, picked the identical
   "list and pick next" way). Already has ITS OWN dedicated uniqueness gate —
   `tools/check-dw-codes.py`'s "Uniqueness (one code, one rule)" section,
-  added after PR #157 shipped `DW0352` into a main that had just given the
-  same code to an unrelated rule (#155). That gate operates over the
+  added after `DW0352` shipped into a main that had just given the
+  same code to an unrelated rule. That gate operates over the
   CHECKED-OUT tree only; it does not do the explicit `--base` diff this
   script does, so on a PR run it relies on the checked-out tree already BEING
   GitHub's merge-preview commit (head merged onto the base at dispatch time).

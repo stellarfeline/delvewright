@@ -70,7 +70,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Checked by default (tools/lib/rcon.sh, task #70): a staging command the server
+# Checked by default (tools/lib/rcon.sh): a staging command the server
 # refused must not pass for one that worked. `rcon_raw` is the unjudged form, for
 # the one call whose failure is genuinely uninteresting.
 # shellcheck source=tools/lib/rcon.sh
@@ -109,7 +109,7 @@ if [[ $BOUND_PORTS == *":25565->"* ]]; then die "host 25565 already bound by ano
 dw_mutex_acquire "owner-play-session" || die "another 25565 session holds the mutex"
 # Hold it only while a session actually exists: a build or boot failure must give
 # the port back, or the next `up` waits on a lock nothing is behind (the failure
-# mode task #185 removed everywhere else).
+# mode compose-project isolation removed everywhere else).
 UP_OK=0
 trap '[ "$UP_OK" = 1 ] || dw_mutex_release' EXIT
 

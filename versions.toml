@@ -18,12 +18,11 @@ version = "1.21.11"
 # baked into any image (ADR-0010 EULA).
 # sha1 is the checksum piston-meta publishes; sha256 is computed from the jar bytes.
 #
-# Consumed by: validation/server-bootstrap-cache.sh (task #41), which fetches this
+# Consumed by: validation/server-bootstrap-cache.sh, which fetches this
 # URL ONCE per job and refuses anything whose sha256 is not the pin below, then
-# hands the bytes to every server boot as a /data overlay. Before it, each of the
-# seven servers a `tier 2` run boots bootstrapped the jar live and any one blip
-# reddened a required check (PR #312). These three values are live inputs now, not
-# the provenance record they were between 2026-07-30 and 2026-08-05.
+# hands the bytes to every server boot as a /data overlay. Without it, each of the
+# seven servers a `tier 2` run boots would bootstrap the jar live, and any one blip
+# reds a required check. These three values are live inputs, not a record.
 server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar"
 server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
 server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
@@ -70,9 +69,8 @@ mirror_of = "itzg/minecraft-server@sha256:3e7db2562b492dbf442568a327d361547628c9
 # validation/Dockerfile.toolserver.
 # Consumed by: validation/compose.yaml (packtest service `image:`).
 #
-# Published 2026-07-30 from the owner's workstation (buildx docker-container
-# builder, linux/amd64+linux/arm64) after the gh token gained write:packages.
-# Future republishes go through infra-images.yml (workflow_dispatch).
+# Multi-arch (linux/amd64+linux/arm64). Republishes go through infra-images.yml
+# (workflow_dispatch); a gh token needs write:packages to push here.
 repo = "ghcr.io/stellarfeline/delvewright-toolserver"
 tag = "1.21.11-packtest2.4.0"
 digest = "sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b"
@@ -86,7 +84,7 @@ loader_version = "0.19.3"
 # Consumed by: validation/compose.yaml (FABRIC_LAUNCHER_VERSION on the packtest
 # service). itzg defaults that variable to `LATEST`, and resolving "latest" is a
 # request to meta.fabricmc.net on EVERY boot of an already-provisioned image — one
-# more live host per PackTest suite, six per `tier 2` run (task #41). Naming the
+# more live host per PackTest suite, six per `tier 2` run. Naming the
 # baked version makes the check a local manifest match instead. The toolserver
 # Dockerfile does not pass it (the build resolved LATEST to this), so
 # validation/server-bootstrap-cache.sh asserts this value against the pinned
@@ -240,7 +238,7 @@ nucleation_license = "MIT"
 
 # Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
 # OFFICIAL renderer for review frames, storybook art and the release panorama
-# (owner decision 2026-08-06); invoked as a separate program, never linked.
+# invoked as a separate program, never linked.
 # 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
 # spike verified. `java -jar ChunkyLauncher.jar --update snapshot` self-installs
 # it into ~/.chunky/lib.

@@ -1,8 +1,8 @@
 # First-party demo levels — the mechanic showcase backlog
 
-Owner directive (2026-08-03): **every new mechanic gets a small first-party
-level that verifies and shows it off.** Not necessarily right when the
-mechanic lands — but it must be queued here, and this queue is the planning
+**Every new mechanic gets a small first-party level that verifies and shows it
+off.** Not necessarily right when the mechanic lands — but it must be queued
+here, and this queue is the planning
 agent's **standing idle work**: no urgent development task + owner not
 responding → build the next level in this list (full ladder green, content-repo
 PR, playable via the play profile).
@@ -15,8 +15,8 @@ Rules of the queue:
 - "Covered by" means a shipped full campaign already showcases the mechanic
   prominently; no separate demo needed unless the coverage rots.
 - Levels are authored via /new-delve like any campaign (dogfooding — friction
-  found here is toolchain work, which is the point; owner principle 2026-08-03:
-  polishing levels is the driver for toolchain/prompt improvement).
+  found here is toolchain work, which is the point; polishing levels is the
+  driver for toolchain/prompt improvement).
 - New mechanics: the PR that lands a mechanic adds a row here (same-PR rule,
   like docs/reference sync).
 
@@ -48,7 +48,7 @@ Rules of the queue:
 | Block palette selection — screened shelf + mix report (0035) | **Two Naves** — one grammar program, one region, one seed, expanded twice under two palettes whose mean colours sit 13.5 RGB units apart and whose chromatic areas are 60% and 30%. The player walks from one into the other; the point is that a number said they were the same room and the eye says they are different buildings. Ships with its swatch sheet and both mix reports beside it, so the level IS the argument for measuring area share instead of a mean | pending |
 | Local axis frame on a paint (grammar) | **The Turning Gate** — one grammar program, one barred doorway, built four times into boxes turned against each other; the same palette role gives the right bars, stair and skull yaw in every one, and the level's own signage is the before/after. Its second half is the refusal: a scope tipped onto its side, where the yaw has no image and the build says so instead of guessing | pending |
 
-## M5 theme suite (owner-approved 2026-08-03, all five)
+## M5 theme suite (all five)
 
 Genre-diverse levels beyond the Greek-myth and souls lines; each exercises a
 distinct authoring register:

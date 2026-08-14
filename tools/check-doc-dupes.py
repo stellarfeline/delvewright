@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Merge-artifact gate for the documentation tree.
 
-The failure this exists to kill (owner finding, 2026-08-03): `shortcuts[]` and
+The failure this exists to kill: `shortcuts[]` and
 `waves[].respawns_on_rest` each appeared **twice** in the stage-5 DSL table of
 `docs/reference/compiler.md`. Nothing was wrong with either copy — they were the
 same rows, appended at the same anchor by two branches that were merged in a
-catch-up burst (#192/#193/#194). Git merged both hunks cleanly because they were
+catch-up burst. Git merged both hunks cleanly because they were
 additions at the same place, and no check looked at documentation *shape*, so the
 reference — the one authoritative record of compiler behavior (CLAUDE.md
 Methodology) — silently started documenting one key twice.

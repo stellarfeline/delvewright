@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The repo's ONE definition of "the server refused that command", for shell tools
-# that drive a live Minecraft server (task #70). The Node half is
+# that drive a live Minecraft server. The Node half is
 # `tools/lib/rcon.mjs`; the two agree on the reply shapes, which are measured on
 # the pinned 1.21.11 server, not guessed.
 #

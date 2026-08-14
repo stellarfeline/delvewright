@@ -91,7 +91,7 @@ test("a death event records position + likely cause and stops the pathfinder", (
   assert.deepEqual(bot.pathfinderCalls, ["stop", "setGoal(null)"]);
 });
 
-test("the completion window covers an exported scheduled-ending tail (task #125)", () => {
+test("the completion window covers an exported scheduled-ending tail", () => {
   // No tail (synchronous ending): the historical 15s settle window.
   assert.equal(completionWindowMs(undefined), 15_000);
   // A short tail stays inside the default window — never narrowed.
@@ -124,7 +124,7 @@ test("a respawn that lands before the wait is armed is still observed", async ()
   // recoverFromDeath after polling the death latch. The old `once("spawn")` was
   // therefore armed AFTER the event it waited for and burned the full 15s
   // timeout — free before spec-0023, 15s per scripted death once the die-retry
-  // stage runs (task #102, observed live on the keep-trial fixture).
+  // stage runs (observed live on the keep-trial fixture).
   const bot = new FakeBot();
   const executor = attach(bot);
   bot.emit("death");
@@ -294,7 +294,7 @@ test("awaitCutscene aborts fast if the bot dies during the cutscene", async () =
   );
 });
 
-// --- gap 8 (task #32): cross-area transport hardening ------------------------
+// --- gap 8: cross-area transport hardening ------------------------
 
 test("awaitTransport waits for the position jump before returning", async () => {
   const bot = new FakeBot();
@@ -373,7 +373,7 @@ test("forcedMove resets the pathfinder only on a large cross-area jump", () => {
   assert.equal(bot.pathfinderStops, 1);
 });
 
-// --- stall-recovery (task #45) ---------------------------------------------
+// --- stall-recovery ---------------------------------------------
 
 import { isWaveMob, replayLegWithRecovery, type Unstick } from "../src/executor.ts";
 import type { GoalSpec } from "../src/waypoints.ts";
@@ -665,7 +665,7 @@ test("requireObjective accepts a marker that arrived before the step started", a
   await executor.requireObjective("obj/exit", "reach anchor/exit");
 });
 
-// --- timed-gate crossings (spec-0016 §4, task #81) --------------------------
+// --- timed-gate crossings (spec-0016 §4) --------------------------
 
 import type { GateAssist } from "../src/executor.ts";
 import type { TimedGate } from "../src/waypoints.ts";
@@ -839,7 +839,7 @@ test("a genuinely unwalkable gate leg still fails, naming the gate and its cycle
 
 test("an UNMARKED leg gets no gate retries — a real navigation regression still fails fast", async () => {
   // The licence to retry comes from the compiler's crossing mark, never from the
-  // harness. A leg with no gate keeps the pre-task-#81 behaviour exactly.
+  // harness. A leg with no gate gets no gate handling at all.
   let attempts = 0;
   const goto = async (_spec: GoalSpec, label: string): Promise<void> => {
     if (label.includes("waypoint 2/3") && !label.includes("recovery")) {
@@ -865,7 +865,7 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   // mouth and aborts every window ("Path was stopped…"), while a raw physics burst
   // crosses the same span at once — a path whose blocks are rewritten under it twice
   // per cycle is not something A* holds on to. The attempt must escalate to the
-  // ordinary task-#45 recovery WITHIN the window, not only after the budget is spent.
+  // ordinary stall recovery WITHIN the window, not only after the budget is spent.
   const gate = fakeGate();
   let freed = false;
   const bursts: GoalSpec[] = [];
@@ -889,7 +889,7 @@ test("a gate crossing the pathfinder cannot hold is finished by walking, inside 
   assert.equal(gate.waits, 1, "and it happened inside the FIRST window, not after the budget");
 });
 
-// --- task #140: `crush: true` gates are staged, never entered blind -----------
+// --- `crush: true` gates are staged, never entered blind ----------------------
 //
 // The tide-mill death: `timed-gate/tide` (36t open / 84t closed, phase 55, crush)
 // killed the bot on the FIRST live crush-gate encounter, at [261, 62, 13] inside
@@ -1137,7 +1137,7 @@ test("a failed crush entry does not escalate into a stale window — it takes th
   assert.ok(labels.some((l) => l.includes("gate attempt 2")), labels.join(" | "));
 });
 
-// --- task #134: completion signals outrank position ---------------------------
+// --- completion signals outrank position --------------------------------------
 //
 // The tide-mill wheelpit defect: `obj/wheelpit` sits right past a timed-gate
 // crossing and its completion emission teleports the player to the next area (a
@@ -1266,7 +1266,7 @@ test("a settle oracle that never fires leaves the gate failure verdict untouched
   assert.ok(gate.waits >= GATE_MIN_ATTEMPTS, "the full retry discipline still ran");
 });
 
-// --- interact: the mainhand contract (compiler PR #205) ----------------------
+// --- interact: the mainhand contract -----------------------------------------
 
 import type { InteractStep } from "../src/critical-path.ts";
 import registryFor from "prismarine-registry";
@@ -1324,10 +1324,10 @@ function interactStep(requiresItem: string | null): InteractStep {
 }
 
 test("interact equips the required item BEFORE chatting the trigger", async () => {
-  // The PR #205 regression: `requires_item` became MAINHAND-held, and the bot — which
-  // only ever carried the item — had every trigger swallowed by the datapack guard,
-  // then died on its own objective timeout. Order is the whole assertion: the guard
-  // reads the hand on the tick it consumes the trigger.
+  // `requires_item` is MAINHAND-held: a bot that only carries the item has every
+  // trigger swallowed by the datapack guard, and then dies on its own objective
+  // timeout. Order is the whole assertion: the guard reads the hand on the tick it
+  // consumes the trigger.
   const bot = new InteractFakeBot();
   bot.carried = [
     { name: "stone_sword", type: 1 },
@@ -1357,7 +1357,7 @@ test("interact leaves the hand alone when the step requires no item", async () =
   assert.deepEqual(bot.calls, ["chat(/trigger dw.i.unbar)"]);
 });
 
-// --- task #134, executor tier: reach + timed gate + completion transport ------
+// --- executor tier: reach + timed gate + completion transport -----------------
 
 import type { ReachStep } from "../src/critical-path.ts";
 import { parseWaypoints } from "../src/waypoints.ts";
@@ -1452,7 +1452,7 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
   );
 });
 
-// --- the die-retry stage: the run artifact must never lose a death (task #102) ---
+// --- the die-retry stage: the run artifact must never lose a death ---
 
 import type { KillStep, SelectClassStep } from "../src/critical-path.ts";
 import {
@@ -1485,7 +1485,7 @@ interface FakeMob {
   attributes: Record<string, { value: number }>;
   /** Stands in for the compiler's `dw_wave_<id>` tag: only a mob the wave itself
    * summoned carries it, so the census can never count a bonfire affordance, an
-   * ambush actor or a neighbouring wave (task #123). */
+   * ambush actor or a neighbouring wave. */
   waveTagged: true;
 }
 
@@ -1524,7 +1524,7 @@ class CombatFakeBot extends InteractFakeBot {
    * `gamerule keep_inventory true` seal). */
   loseKitOnDeath = false;
   /** The wave kills the bot the first time it swings, mid-trade — before the
-   * harness gets to script the death this trial asked for (task #121). */
+   * harness gets to script the death this trial asked for. */
   killBotOnTrade = false;
   /** How the respawn re-seats the wave. `undefined` = do not re-seat at all. */
   reSeat: ReseatSpec | undefined = { count: 1 };
@@ -1600,9 +1600,9 @@ class CombatFakeBot extends InteractFakeBot {
 
   override chat(message: string): void {
     this.calls.push(`chat(${message})`);
-    // The fake server answers the census the way a real one does: by TAG (task
-    // #123). Only mobs in `entities` carry the wave tag here, so anything a test
-    // parks beside the encounter is invisible to it — which is the whole point.
+    // The fake server answers the census the way a real one does: by TAG. Only
+    // mobs in `entities` carry the wave tag here, so anything a test parks beside
+    // the encounter is invisible to it — which is the whole point.
     if (message.startsWith("/function ")) {
       const fn = message.slice("/function ".length);
       if (fn.includes(":wave_brand_")) {
@@ -1668,7 +1668,7 @@ class CombatFakeBot extends InteractFakeBot {
 
   /** Park a mob-shaped entity that is NOT part of the wave: an ambush actor, a
    * neighbouring wave's straggler. Visible to `nearestEntity`, invisible to the
-   * census — exactly the drowned bell's belfry (task #124). */
+   * census — exactly the drowned bell's belfry. */
   addBystander(id: number, distance = 1): void {
     const self = this;
     this.entities[id] = {
@@ -1715,7 +1715,7 @@ class CombatFakeBot extends InteractFakeBot {
   attack(mob: { id: number }): void {
     this.calls.push("attack");
     // The wave wins the exchange: the bot dies mid-trade, before it ever reaches
-    // the line that scripts its own death (task #121). Armed once.
+    // the line that scripts its own death. Armed once.
     if (this.killBotOnTrade) {
       this.killBotOnTrade = false;
       this.killBot();
@@ -1803,7 +1803,7 @@ const ASSIST_OFF = "chat(/effect clear @s minecraft:resistance)";
 const SCRIPTED_DEATH = "chat(/damage @s 1000 minecraft:generic)";
 
 test("the die-retry stage is assisted into melee range, and takes its death bare", async () => {
-  // the-drowned-bell run six (task #121). The die-retry stage walked to within 3
+  // the-drowned-bell run six. The die-retry stage walked to within 3
   // blocks of a LIVE encounter with nothing on, so two vindicators killed the bot
   // before it could script death 1: `dieRetryAt` threw, `kill` never reached its
   // own assisted phase, and the artifact showed 0/2 trials beside
@@ -1871,7 +1871,7 @@ test("die-retry assist windows are named in the ledger, not taken silently", asy
 });
 
 test("a wave that kills the bot mid-trade does not get credited as the scripted death", async () => {
-  // The first-contact/mid-fight race (task #121). `tradeBlows` deliberately stands
+  // The first-contact/mid-fight race. `tradeBlows` deliberately stands
   // in melee; if the wave wins that exchange the bot is already dead when the
   // harness reads `deathSeq` and chats `/damage`, so the trial would wait for a
   // death that has to happen a SECOND time and credit its loop to a life the
@@ -1939,8 +1939,8 @@ const SELECT_CLASS_STEP: SelectClassStep = {
 };
 
 test("a scripted death re-arms the bot WITHOUT re-selecting the class", async () => {
-  // task #120, the-drowned-bell run five. The re-arm used to replay `select-class`.
-  // The `dw.class` trigger was then re-enabled for every player on every tick and
+  // The-drowned-bell run five. A re-arm that replays `select-class` is destructive:
+  // the `dw.class` trigger is re-enabled for every player on every tick and
   // `class_apply_<class>` ENDS IN `teleport @s <campaign entry point>`, so every
   // post-death re-arm silently warped the bot from the checkpoint it had just
   // respawned on back to the start of the delve — 150 blocks and eight levels away
@@ -2026,7 +2026,7 @@ test("a loop abandoned after the death still carries the death in the artifact",
   // after the whole loop succeeded, so an abort discarded it — and the stage, with
   // nothing recorded and therefore no findings, read `passed: true`.
   //
-  // The fault is now a census that never answers (task #123) — the shape a refused
+  // The fault is now a census that never answers — the shape a refused
   // `/function` takes on an unopped bot. It must abort the trial, never return an
   // empty count: a silent zero would read as `stranded` and blame the delve for
   // the harness's own broken probe.
@@ -2081,7 +2081,7 @@ test("an encounter the stage entered but never died at is engaged, not silent", 
   assert.match(failures[0]!, /ENGAGED this encounter but proved only 0\/2/);
 });
 
-// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+// --- what was waiting at the end of the loop ----------------------------------
 
 test("a wave already beaten before the death records cleared-before-retry, and passes", async () => {
   // `respawns_on_rest: false` is a legitimate design — a won fight stays won —
@@ -2144,7 +2144,7 @@ test("a wave that vanishes with its objective UNFINISHED is a soft lock, loudly"
   assert.match(findings[0]!, /obj\/hold-the-gate/);
 });
 
-// --- re-seat fidelity + the wandered-mob false negative (task #108) ----------
+// --- re-seat fidelity + the wandered-mob false negative ----------
 
 async function dieRetryAgainst(bot: CombatFakeBot, count: number): Promise<MineflayerExecutor> {
   const executor = attach(bot);
@@ -2259,7 +2259,7 @@ test("the re-engage probe SETTLES instead of sampling the instant it arrives", a
   assert.equal(trials[0]!.reengage!.present, 2);
 });
 
-// --- bonfire rest steps + the die-retry precondition (compiler #220) ---------
+// --- bonfire rest steps + the die-retry precondition -------------------------
 
 import type { RestStep } from "../src/critical-path.ts";
 
@@ -2400,7 +2400,7 @@ test("an unrested bonfire skips the scripted death and reports the gap", async (
 });
 
 // ---------------------------------------------------------------------------
-// The actor floor gate (#114): the other shape an elite takes
+// The actor floor gate: the other shape an elite takes
 // ---------------------------------------------------------------------------
 
 import type { ActorEncounter, CombatPlan as CP } from "../src/combat.ts";
@@ -2588,7 +2588,7 @@ test("i18n v2: a translate-component name is read through its fallback", () => {
 });
 
 test("an encounter with NO governing checkpoint skips the death as an ADVISORY, not a red", async () => {
-  // Post-#223 (`fire_step < i`) souls-bonfire's encounter truthfully reports no
+  // With `fire_step < i`, souls-bonfire's encounter truthfully reports no
   // governing checkpoint: the only fire is armed by the very kill this encounter
   // IS, so nothing is armed when a mid-fight death would land. A death here
   // respawns at world spawn and the retry loop is a full restart of the delve.
@@ -2630,7 +2630,7 @@ test("an encounter with NO governing checkpoint skips the death as an ADVISORY, 
   assert.equal(executor.encounterPhase(KILL_STEP.wave), "cleared");
 });
 
-// --- the kill loop ends on the CENSUS, never on a lookalike (task #124) ------
+// --- the kill loop ends on the CENSUS, never on a lookalike ------
 
 test("killing a bystander beside the fight does not clear the wave", async () => {
   // The drowned bell's belfry, reduced: `ambush/the-rafters` puts two husks where
@@ -2659,7 +2659,7 @@ test("killing a bystander beside the fight does not clear the wave", async () =>
   assert.equal(bot.entities[900], undefined, "the bystander died on the way, which is fine");
 });
 
-// --- talk-to: the walk-then-trigger contract (task #144) ----------------------
+// --- talk-to: the walk-then-trigger contract ----------------------
 
 import type { TalkToStep } from "../src/critical-path.ts";
 
@@ -2744,7 +2744,7 @@ test("talk-to walks to the NPC, THEN chats the dialog trigger", async () => {
 });
 
 test("a talk-to fires its dialog trigger however the walk ended", async () => {
-  // task #134's completion oracle (LegSettled) ends a walk as SUCCEEDED on a failure
+  // The completion oracle (LegSettled) ends a walk as SUCCEEDED on a failure
   // path when the step's exported transport has already landed the bot. That must
   // never cost the step its dialog trigger: the walk is the means, the `/trigger` IS
   // the step. The island's obj/muster read as "no marker arrived" for a whole batch
@@ -2794,7 +2794,7 @@ test("a talk-to fires its dialog trigger however the walk ended", async () => {
   );
 });
 
-// --- a swallowed trigger names itself (task #144) -----------------------------
+// --- a swallowed trigger names itself -----------------------------
 
 import { answersTrigger, swallowedTriggerVerdict, triggerObjective } from "../src/executor.ts";
 

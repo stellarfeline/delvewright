@@ -1,10 +1,10 @@
 # spec-0037: Named partitions — what the citadel concept actually asks of the grammar
 
 - **Status**: Proposed
-- **Basis**: DEC-0070, owner, 2026-08-12 — when an approved concept
-  and the back end disagree, grow the back end, never cut the concept down;
-  DEC-0071, owner, 2026-08-12 — a building is judged at playable scale, the
-  silhouette carries the recognition. Every claim below is measured against the
+- **Basis**: DEC-0070 — when an approved concept and the back end disagree,
+  grow the back end, never cut the concept down; DEC-0071 — a building is
+  judged at playable scale, the silhouette carries the recognition. Every
+  claim below is measured against the
   eight approved *Drowned Bell* concept images
   (`campaigns/the-drowned-bell-r2/design/concept/`, branch `campaign/bell-r2`)
   and against runs of `delve-grammar`; probe programs and commands in §5.
@@ -16,7 +16,7 @@
   version fence this rides)
 - **Non-goals**: curve primitives (§3.1 — disproved by probe), overlay (§3.2),
   a positional index (§3.3), reflection (§3.4), parameterised `call`
-  (task #107, own concern, §3.5), any building-shaped vocabulary entry (§3.6),
+  (own concern, §3.5), any building-shaped vocabulary entry (§3.6),
   local-direction `mark` facing and region/trap anchors (`grammar.md` §7,
   already recorded, not image-driven).
 
@@ -39,7 +39,7 @@ why?** The answer, measured by probe rather than argued:
 
 - almost everything above is *already expressible* — including the two
   elements that looked most like missing engine surface, the round arch and
-  the woven portcullis (§3.1, §3.2). The precedent held again: like PR #419's
+  the woven portcullis (§3.1, §3.2). The precedent held again: like the
   roof valley, the "missing generator" was a composition of existing
   constructs nobody had written down.
 - exactly one thing cannot be **said**: that two splits in two rules are *one
@@ -112,10 +112,10 @@ first site; the trials were the first site, the citadel is the second).
   the band identity through `orient` and dispatching on an `orientation`
   guard — is a covert argument channel, the downstream-folklore shape the
   no-hack rule forbids.
-- **Parameterised `call`** (task #107) would reach it and much more; it is a
+- **Parameterised `call`** would reach it and much more; it is a
   strictly larger surface with its own open design, and nothing in the eight
   images is unstatable while it waits. Named partitions do not preempt it:
-  if #107 lands later, a partition stays data, not control.
+  if parameterised `call` lands later, a partition stays data, not control.
 
 ### 2.4 Refusals and mechanics
 
@@ -155,7 +155,7 @@ added. Probes are in §5.
 2. **Overlay / a second write pass** (the woven portcullis, two vaults
    crossing, "carve a doorway through a wall"). Refused: the portcullis is
    partition refinement — bar columns own the crossings, gap columns carry
-   the horizontal runs (probe P4, one rule); crossing prisms are PR #419's
+   the horizontal runs (probe P4, one rule); crossing prisms are the
    four-rule ring-peel result, which the round profile of P1 enters
    unchanged; the doorway case is settled vocabulary (`grammar.md` §5c,
    `tee_passage`, and the two recorded rejections beside it).
@@ -168,7 +168,7 @@ added. Probes are in §5.
    switchback). Refused: a rule body written mirrored is recorded and
    sufficient (`grammar.md` §2c idiom 7, `stair_flight`'s dogleg note); the
    open `cliff_path` question stays open in §5c where it is recorded.
-5. **Parameterised `call`** (#107). Not proposed here: a reuse and
+5. **Parameterised `call`**. Not proposed here: a reuse and
    maintainability gap, not an inexpressibility — nothing in the eight images
    is unstatable for its lack (§2.3).
 6. **Any building-shaped vocabulary** — `arch`, `arcade`, `belfry`, `vault`,

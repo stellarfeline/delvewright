@@ -1507,7 +1507,7 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
 }
 
 // ---------------------------------------------------------------------------
-// Gravity-floor substrate (task #42)
+// Gravity-floor substrate
 // ---------------------------------------------------------------------------
 
 /// Vanilla `FallingBlock`s — mirrors `crate::assembled::is_falling_block` in the
@@ -1528,8 +1528,8 @@ fn is_falling(name: &str) -> bool {
 const SUBSTRATE: &str = "minecraft:stone";
 
 /// Lift a built enclosed piece one block and fill a non-falling [`SUBSTRATE`] cell
-/// directly beneath every gravity block that would otherwise sit over air (task
-/// #42): the visible sand/gravel surface is preserved, but now supported. Applied
+/// directly beneath every gravity block that would otherwise sit over air: the
+/// visible sand/gravel surface is preserved, and supported. Applied
 /// uniformly to every enclosed piece, so all socket/anchor Ys shift by the same +1
 /// and pieces still mate; the solver's socket mating absorbs the placement offset,
 /// keeping assembled world coordinates stable. Deterministic (a pure grid map).
@@ -1556,7 +1556,7 @@ fn with_substrate(g: &Grid) -> Grid {
     out
 }
 
-/// Generator invariant (belt-and-braces, task #42): every gravity block in a
+/// Generator invariant (belt-and-braces): every gravity block in a
 /// finished piece must rest on a solid cell — a placement over air despawns in the
 /// void world. Fails generation if any remain, automating the pitfall out of
 /// existence at the tooling layer (the compiler's `DW0313` is the authoritative
@@ -1644,7 +1644,7 @@ fn write_piece(out: &Path, spec: &Spec) {
     };
     // Enclosed pieces get a non-falling substrate under every gravity floor cell,
     // which lifts their local geometry (floor/walls/ceiling/doorways/anchors) by 1
-    // (task #42). The open-air shore already builds a solid seabed under its beach,
+    // The open-air shore already builds a solid seabed under its beach,
     // so it is left as-authored. `yoff` is applied to the emitted metadata Ys so
     // sockets/anchors track the shifted grid; the solver's socket mating keeps the
     // assembled world coordinates stable across the uniform shift.
@@ -1880,10 +1880,10 @@ fn specs() -> Vec<Spec> {
             // door-to-door critical corridor (both N and S sockets open on the same
             // x=3..5 columns). It carries NO herd/wave anchor: any wave seated here
             // has no footing ≥3 Chebyshev off the proven path, so the flock would
-            // wall the 1-wide return corridor (task #42). The flock is hosted by
+            // wall the 1-wide return corridor. The flock is hosted by
             // cave-cavern, which has a genuine side alcove for it. Removing the
             // `anchor/wave` entirely makes that mistake unrepresentable — a
-            // corridor-only piece exposes no wave seat (owner decision, task #42).
+            // corridor-only piece exposes no wave seat (owner decision).
             modules: vec![],
             stair: false,
             anchors: vec![("anchor/npc-stand", a_pos([3, 1, 4], Some("north")))],
@@ -1950,14 +1950,14 @@ fn specs() -> Vec<Spec> {
             // from the north door (z0) to the boss/objective at z10..12 — and clear
             // of the door span (x5..7). The round-2 placement (x9..11, z3..5) hugged
             // that centreline and put a fence line on the wall (x11), flanking the
-            // path and inflating the bot's A* search (task #37). Pen is dressing, not
+            // path and inflating the bot's A* search. Pen is dressing, not
             // stock; keeping it here preserves the good greeble off the corridor.
             modules: vec![Module::Hearth(6, 11), Module::Pen(2, 2, 3, 6)],
             stair: false,
             anchors: vec![
                 ("anchor/boss", a_pos([6, 1, 10], Some("north"))),
                 ("anchor/objective", a_pos([6, 1, 12], Some("north"))),
-                // The flock's spawn-wave home (task #42, owner decision): a genuine
+                // The flock's spawn-wave home (owner decision): a genuine
                 // side alcove in the east of the 13×6×15 cavern. The proven path runs
                 // down the x=6 centreline (north door z0 → boss z10..12); every cell
                 // of the x≥9 strip is ≥3 Chebyshev from that line, and the open cavern

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Visual-tier shot-set producer (spec-0003, #18: player-POV shots).
+# Visual-tier shot-set producer (spec-0003; player-POV shots).
 #
 # Turns a `delvec build` output into the two artifacts a scene review consumes:
 #   1. the Chunky scene set  — `delve-render scene`  (one free-camera scene JSON per

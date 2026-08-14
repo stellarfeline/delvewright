@@ -34,8 +34,8 @@ fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> 
 
 /// **A generator may only emit blocks the pinned game actually has.**
 ///
-/// (Task #341 follow-up; the instance was `minecraft:chain`, renamed
-/// `minecraft:iron_chain` in 1.21.11.) A structure template carrying an unknown
+/// (One such block is `minecraft:chain`, renamed `minecraft:iron_chain` in
+/// 1.21.11.) A structure template carrying an unknown
 /// block id loads it as **air**. So this defect costs the whole feature — eight
 /// cells of bell-rope in `tk-bell-tower.nbt` — while the generator exits 0, the
 /// `.nbt` round-trips, the byte-identity check passes, and nothing anywhere

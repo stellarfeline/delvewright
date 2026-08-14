@@ -4,7 +4,7 @@
 #
 #   EULA=TRUE validation/packtest-run.sh --project dw-<id> [--output ./delve-output]
 #
-# ## Why the project id is REQUIRED (task #185)
+# ## Why the project id is REQUIRED
 #
 # The compose project is now the ONLY name a ladder has: `compose.yaml` pins no
 # container name and publishes no port, so `-p <id>` isolates the whole stack.
@@ -23,13 +23,13 @@
 # PROVES it. Never a bare `docker compose down`, never `docker rm` of a container
 # this script did not create.
 #
-# ## Why it seeds the world volume before booting (task #41)
+# ## Why it seeds the world volume before booting
 #
 # The Mojang server jar is never baked into an image (ADR-0010, EULA), so a server
 # on a FRESH volume bootstraps it live. Isolation gives every ladder its own fresh
 # volume — which is right — but it also meant every ladder ran its own live
 # bootstrap, and `tier 2` runs six of them. One Mojang blip in any one reddened a
-# required status check with nothing to do with the datapack under test (PR #312).
+# required status check with nothing to do with the datapack under test.
 #
 # So the bootstrap is fetched and sha256-verified ONCE (`server-bootstrap-cache.sh`,
 # idempotent — a warm cache costs nothing) and COPIED into this project's world

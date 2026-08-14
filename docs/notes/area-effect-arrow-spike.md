@@ -11,7 +11,7 @@ Server: the pinned image digest (`versions.toml [images.base] mirror_of`),
 mods, superflat, difficulty hard, `mob_griefing` deliberately left **true** so
 that no block-preservation result can come from a global gamerule.
 
-**The question** (owner, 2026-08-11): can a datapack alone give the player an
+**The question**: can a datapack alone give the player an
 arrow that on impact produces either (1) an explosion that damages but does not
 break blocks, or (2) a splash-potion-style area effect — as an item that sits in
 a chest as scavenged loot?

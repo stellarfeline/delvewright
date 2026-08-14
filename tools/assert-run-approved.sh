@@ -2,7 +2,7 @@
 # Refuse to take an irreversible action unless this run carries a RECORDED
 # environment approval.
 #
-# WHY THIS EXISTS (incident 2026-08-08, engine v1.1.0)
+# WHY THIS EXISTS
 #
 # `publish-crates` declared `environment: crates-io`, its job name said
 # "(owner approval)", the workflow comment said "an environment with required
@@ -47,7 +47,7 @@ echo "asserting run ${run_id} carries a recorded approval for environment '${env
 
 # Never `curl | jq` here: a pipe hides the producer's exit status, and a
 # readiness probe that SIGPIPEs its producer is how a false negative read as
-# flakiness for months in this repo (task #173). Materialise, then parse.
+# flakiness for months in this repo. Materialise, then parse.
 approvals_json="$(mktemp)"
 trap 'rm -f "$approvals_json"' EXIT
 

@@ -1,6 +1,6 @@
 # spec-0006: Creator playtest loop
 
-- **Status**: Draft (owner approved direction 2026-07-30; details at PR review)
+- **Status**: Draft (direction approved; details at PR review)
 - **ADRs**: 0003 (overlay is a datapack, tooling-side), 0005 (validation layers),
   0012 (the skill consumes the report)
 

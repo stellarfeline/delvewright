@@ -1,8 +1,7 @@
 # spec-0021 — Container loot + actor equipment
 
-- **Status**: Draft (owner-directed 2026-08-03, from the drowned-bell playtest:
-  the delve's chests and barrels were all empty, and the dormant elite stood
-  there in no armour)
+- **Status**: Draft (from the drowned-bell playtest: the delve's chests and
+  barrels were all empty, and the dormant elite stood there in no armour)
 - **Scope**: two stage-5 surfaces, one shared enchantment vocabulary.
 
 ## Problem
@@ -47,15 +46,14 @@ It deliberately does *not* inherit the wave path's armed-mob default table: an
 actor is a directed set piece that wears exactly what was declared, which also
 keeps every campaign written before this field byte-identical.
 
-### Amendment (2026-08-05, owner-approved, task #189) — `equipment.head` is enforced, not merely offered
+### Amendment — `equipment.head` is enforced, not merely offered
 
-`equipment.head` carries an owner ruling recorded on the DSL field itself: it is
-**the** sanctioned answer to daylight-burning undead, and `set-time` never is.
-Until now that ruling was advice — nothing checked it, and `hollow-vigil` shipped
-a wave that burned to death before the party could fight it, with the whole
-machine ladder green (owner playtest, 2026-08-05).
+`equipment.head` is **the** sanctioned answer to daylight-burning undead, and
+`set-time` never is. Left as advice the rule goes unchecked, and `hollow-vigil`
+shipped a wave that burned to death before the party could fight it, with the
+whole machine ladder green.
 
-`DW0496` makes the ruling a compile-time obligation on **both** surfaces this
+`DW0496` makes the rule a compile-time obligation on **both** surfaces this
 spec governs, since they share one type: a wave stack a `kill` objective
 adjudicates, and an actor the party can damage (`vulnerable`, or unleashed).
 The rule fires when the species is in vanilla's own `#minecraft:burn_in_daylight`
@@ -110,7 +108,7 @@ it.
 9. A `loot` item `name` enters the l10n inventory as
    `loot.<id>.item.<i>.name`.
 10. Both surfaces are reserved (`DW0141`) under a pre-0.6 quests version.
-11. (Amendment, task #189) A daylight-burning species staged for a fight whose
+11. (Amendment) A daylight-burning species staged for a fight whose
     walkable ground reaches open sky within one aggro radius, in a delve pinned
     to a clear daytime hour, fails the build with `DW0496` naming the encounter,
     the species and the sunlit cell. Adding `equipment.head` clears it; so does

@@ -1,16 +1,16 @@
-# Horizon library research dossier (task #151)
+# Horizon library research dossier
 
-Research base for spec-0026. Owner directive 2026-08-04: five horizons beyond
+Research base for spec-0026: five horizons beyond
 `ocean` — sky, flatland, valley, cherry-valley, summit. This dossier holds the
 algorithm survey (with licenses), the MC 1.21.11 constraint audit, the perf
 budget math, and the analyses behind the spec's open owner decisions. The spec
 is the contract; this file is the evidence.
 
-Terminology is aligned with task #73 (M6 macro-terrain research: journey-graph
+Terminology is aligned with the M6 macro-terrain research line (journey-graph
 landform layout, seamless heightfield blending, carved waterways, the vanilla
 density-function ceiling). This work is the first concrete slice of that line:
 **single-scene surrounds**, not journey-scale landform graphs. Carved waterways
-and multi-scene blending stay in #73.
+and multi-scene blending stay there.
 
 ## 1. How ocean does it today (the path we generalize)
 
@@ -26,11 +26,11 @@ From `docs/reference/compiler.md` and `crates/compiler/src/plan.rs`:
   every piece that declares no `waterline_y`.
 - The validation/prod images read `level-type` + `generator-settings` from the
   **emitted server.properties** (`validation/Dockerfile.delve`,
-  `check-world-settings.sh`) — the task #84 parity fix. Any new horizon that
-  flows exclusively through this channel inherits PackTest world parity for
+  `check-world-settings.sh`) — the world-settings parity fix. Any new horizon
+  that flows exclusively through this channel inherits PackTest world parity for
   free.
 
-**The #149 bug class** (PR #251 "separate finding"): the single global datum is
+**The datum bug class**: the single global datum is
 an island-tileset constant applied to every tileset. An interior `keep-*` piece
 (walk plane local y=1) placed at base 60 puts its walk plane at world 61 — one
 block under sea level — and the exemption clause means DW0344 never looks. The
@@ -126,10 +126,10 @@ with edge-distance bias — already in ACKNOWLEDGEMENTS, ideas-only):
   pattern at block scale; blue-ish value-noise threshold matches the tileset
   family and looks organic.
 
-### 2.5 Vanilla density functions — evaluated, not adopted (the #73 ceiling)
+### 2.5 Vanilla density functions — evaluated, not adopted (the macro-terrain ceiling)
 
-Task #73 flags MC's density-function worldgen. For single-scene surrounds it is
-the wrong tool, and the spec should record why so it is not relitigated:
+The macro-terrain line flags MC's density-function worldgen. For single-scene
+surrounds it is the wrong tool, and the spec should record why so it is not relitigated:
 
 - **The proofs cannot see it.** Our center of gravity is model soundness: nav,
   DW0322, lighting, stranding all read the assembled voxel model. Density
@@ -140,7 +140,7 @@ the wrong tool, and the spec should record why so it is not relitigated:
 - **Coordinate pinning is a hack.** "A valley exactly here" via density
   functions means baking world coordinates into worldgen JSON — downstream
   folklore of the worst kind.
-- What density functions remain good for (task #73's scope, unresolved there):
+- What density functions remain good for (macro-terrain scope, unresolved there):
   infinite un-modelled backdrop beyond the proof horizon. Out of scope here.
 
 **Verdict**: surround terrain is generated **compiler-side into prefab tiles**
@@ -173,7 +173,7 @@ void). Zero new emission machinery.
   server.properties `view-distance` — an explicit spec parameter, and the
   campaign README should state the client floor (owner decision; player-facing
   docs may carry it per the audience-separation rule).
-- **PackTest parity** (task #84): the toolserver/delve images derive worldgen
+- **PackTest parity**: the toolserver/delve images derive worldgen
   from emitted server.properties. New horizons emit `level-type` +
   `generator-settings` through the same channel and extend
   `check-world-settings.sh` coverage; the packtest world is then the shipped
@@ -205,9 +205,8 @@ is workstation-fine but worth a compile-time RSS check in the spike.
 
 ## 5. Boundary enforcement analysis (per horizon)
 
-Owner ruling 2026-08-04: **every horizon reuses the spec-0013 boundary
-primitive** (derived region + 1 s return-to-checkpoint clock), exactly as the
-island ships it. The spec's job is to generalize that primitive as
+**Every horizon reuses the spec-0013 boundary primitive** (derived region + 1 s
+return-to-checkpoint clock), exactly as the island ships it. The spec's job is to generalize that primitive as
 horizon-agnostic — the region derivation and clock never branch on horizon
 kind; only the region's *vertical extent* does (sky, below). Flatland is not an
 open decision.
@@ -228,13 +227,13 @@ landing survivable and leaves the player alive inside non-interactive scenery.
 The unified rule: crossing below the scene's y-envelope (spec-0013's region
 floor, lowest placed block − 8) is out-of-region like any horizontal exit, and
 the same 1 s clock owns it. The **consequence** is the horizon parameter
-`fall` — `lethal` (default, per the owner's directive: the catch applies
-`damage @s 1000 minecraft:generic`, vanilla death fires, and the PR #251
+`fall` — `lethal` (default: the catch applies
+`damage @s 1000 minecraft:generic`, vanilla death fires, and the checkpoint
 re-seat lands the corpse's respawn on the armed checkpoint — full souls death
 costs, identical over every backdrop) or `return` (plain teleport back, the
 flatland behavior). Fall-time check: from `float_y = 160` a faller crosses the
 region floor within ~1 s and the clock catches ~20–40 blocks below the scene —
-well above any backdrop surface, so the player never lands in scenery. #146's
+well above any backdrop surface, so the player never lands in scenery. The
 environmental-death trials cover representative edges under `fall: lethal`.
 
 **Flatland visual pre-warning (advisory recommendation, not a decision
@@ -254,11 +253,11 @@ the already-modelled seam/cue band and all riding existing machinery
 Recommendation: ship density thinning by default (near-zero cost, pure
 parameterization); the rest is campaign dressing.
 
-## 6. Sky archipelago — rooms as islands, bridges as gameplay (owner ruling 2026-08-04)
+## 6. Sky archipelago — rooms as islands, bridges as gameplay
 
-Ruling: a multi-room sky scene is **independent floating islands connected by
+A multi-room sky scene is **independent floating islands connected by
 narrow paths/bridges**, never one monolithic island. Traversal is intended
-souls-flavored risk terrain: falling off a bridge = death → PR #251 checkpoint
+souls-flavored risk terrain: falling off a bridge = death → checkpoint
 re-seat. This is a spec requirement, not an option.
 
 ### 6.1 What the solver does today (verified, `crates/compiler/src/solver.rs`)
@@ -317,15 +316,15 @@ banned).
   cell must have a void-clear fall column (no mid-air softlock ledges under
   bridges: no island may sit in another bridge's fall shadow unless the
   landing is inside the reachable walk region).
-- **Die-retry fall trials per bridge** (task #146 family): for each placed
+- **Die-retry fall trials per bridge**: for each placed
   connector, one environmental-death trial — step off the deck edge, assert
-  death by void, assert the PR #251 re-seat lands the player on the armed
+  death by void, assert the checkpoint re-seat lands the player on the armed
   checkpoint. Representative-edge sampling per style is acceptable at PR tier;
   every connector at rc tier.
 
-## 7. Sky backdrop layer (owner addition 2026-08-04)
+## 7. Sky backdrop layer
 
-Ruling: the sky horizon parameterizes what lies **below** the islands (the
+The sky horizon parameterizes what lies **below** the islands (the
 backdrop/背景板): (a) void, (b) superflat, (c) ocean, (d) a vanilla-generated
 map from a **specified seed**, (e) an imported pre-built third-party map
 ("sky islands above a giant city"); plus creator-specified placement
@@ -339,8 +338,8 @@ valley | summit | sky) × **backdrop** (sky-only, the five options) ×
 cherry-valley already made the same argument (valley × flora/palette params,
 not a sixth enum). Backdrop stays sky-only in this spec: ocean/flatland ARE
 their backdrop, and valley/summit surrounds would need seamless blending into
-a backdrop terrain — exactly task #73's "seamless heightfield blending",
-deferred there.
+a backdrop terrain — exactly the macro-terrain line's "seamless heightfield
+blending", deferred there.
 
 ### 7.2 Backdrop (d) — vanilla seed: the determinism verdict (honest)
 
@@ -349,7 +348,7 @@ Two delivery routes exist; they differ completely in ADR-0006 exposure.
 **Route 1 — boot-time generation (recommended v1)**: ship no terrain at all;
 the emitted `server.properties` carries `level-type=minecraft:normal` +
 `level-seed=<creator seed>` — the exact channel the ocean superflat already
-uses, consumed by the same image wrapper (task #84 parity intact). The
+uses, consumed by the same image wrapper (world-settings parity intact). The
 **shipped tree stays byte-identical trivially** (one properties line); vanilla
 worldgen is block-deterministic for pinned version + seed, so the booted world
 is block-identical across boots, which is the same guarantee every current

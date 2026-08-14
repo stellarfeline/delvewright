@@ -2,16 +2,14 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-13
-- **Source**: owner request, 2026-08-13 — re-derive the toolchain shape under the
-  dependencies as they are today, not as they were when ADR-0017/0018 were
-  written. Owner rulings it rests on: the client jar is a creator prerequisite
-  and visual validation is indispensable (2026-08-13); a download is never
-  re-split to save the creator disk space (2026-08-13); binary size under
-  100 MB and build time are not concerns (2026-08-13); client-jar download is
-  the default and any disk scan is explicit opt-in (2026-08-13); every
-  validation the pipeline needs must be runnable on the creator's own machine,
-  with a source build as the guarantee and binary distribution only an
-  optimisation of it (2026-08-14)
+- **Source**: the toolchain shape re-derived under the dependencies as they are
+  today, not as they were when ADR-0017/0018 were written. The rules it rests on:
+  the client jar is a creator prerequisite and visual validation is
+  indispensable; a download is never re-split to save the creator disk space;
+  binary size under 100 MB and build time are not concerns; client-jar download
+  is the default and any disk scan is explicit opt-in; every validation the
+  pipeline needs must be runnable on the creator's own machine, with a source
+  build as the guarantee and binary distribution only an optimisation of it
 - **Refines**: ADR-0017 (its §3 revisit trigger has fired), ADR-0018
 - **Constrained by**: ADR-0006 (determinism), ADR-0013 (licence allowlist),
   ADR-0010 (EULA: never redistribute Mojang jars)
@@ -37,7 +35,7 @@ re-checked, and each has moved:
    --ignored`: 5 passed in 1.25 s, real Metal adapter, real 1.21.11 client
    jar) — and its `Cargo.lock` then carries **zero** `git+` sources.
 2. **"It needs the EULA-gated client jar."** The creator must have the client
-   jar — visual validation is indispensable (owner ruling, 2026-08-13).
+   jar — visual validation is indispensable.
    Possession is now a premise, not a blocker; only the *acquisition
    mechanism* was unsettled (§5).
 3. **"It needs a GPU/driver stack."** True of **three subcommands** — `piece`,
@@ -45,7 +43,7 @@ re-checked, and each has moved:
    `nucleation`/`wgpu` (`grep -ln nucleation crates/render/src/*.rs` →
    `main.rs`, `nbt.rs`, `render.rs`; `render.rs` is used by exactly those
    arms). `scene`, `panorama`, `contact-sheet`, `index` — and the interactive
-   `viewer` of PR #392 — are CPU-only (JSON emission, PNG compositing, a
+   `viewer` — are CPU-only (JSON emission, PNG compositing, a
    self-contained HTML page). ADR-0017 §3 attributed a property of three
    subcommands to the whole binary.
 
@@ -96,7 +94,7 @@ Dependency becomes `nucleation = { version = "=0.10.8", features =
 ["rendering"] }` and `versions.toml [render]` pins the registry version
 instead of a git rev. The separate-workspace quarantine existed for exactly
 one reason — a git dependency is cloned during *resolution*, so it taxed every
-cargo command in the repo (`tools/check-workspace-git-deps.py`, PR #388) — and
+cargo command in the repo (`tools/check-workspace-git-deps.py`) — and
 a registry dependency does none of that (content-addressed, cached, no
 per-command reach). The checker's own expiry arm then **forces** the
 `ALLOWED` entry to be dropped: an allowlisted lock with no git dependency is a
@@ -105,7 +103,7 @@ red.
 CI: the render workspace's duplicate `fmt`/`clippy`/`test` steps, its second
 target-dir cache, and the named git-fetch step all collapse into the workspace
 jobs. Workspace builds that touch the render crate then compile the wgpu stack;
-build time is not a concern (owner ruling, 2026-08-13), so this is a note, not
+build time is not a concern, so this is a note, not
 an argument. The root `Cargo.lock` gains the nucleation/wgpu entries, but the
 cross-build shelf gate compiles only `delvec`'s own graph
 (`cargo check -p delvec --bin delvec`, `tools/build-release-binaries.sh`), so
@@ -117,8 +115,8 @@ cross-build shelf gate compiles only `delvec`'s own graph
 `delve-render`) and are not part of the distributed archive. This is a
 statement about *distribution*, not about capability: every validation the
 pipeline needs is runnable on the creator's own machine, and the source build
-is what guarantees that — a prebuilt binary is only an optimisation of it
-(owner ruling, 2026-08-14). The skill's Init section is what makes the
+is what guarantees that — a prebuilt binary is only an optimisation of it. The
+skill's Init section is what makes the
 guarantee real: it establishes a complete toolchain before work begins, and
 where the shelf cannot carry an arm, Init builds it from the checkout at the
 step that needs it rather than leaving the step to degrade.
@@ -172,14 +170,14 @@ rendering — at the price of a binary that no longer starts on a machine withou
 musl's loader, which is the exact property the shelf exists for. **`crt-static`
 stays.** The trade is refused because it pays with the shelf's only reason to
 exist and buys something the creator already has by another route: source build
-is the guarantee of completeness (owner ruling, 2026-08-14), so a Linux creator
+is the guarantee of completeness, so a Linux creator
 who needs the GPU arms builds them, and the archive keeps its
 no-loader-floor property for everyone who does not.
 
 ### 4. The viewer's rendering core is `deepslate` (MIT), not hand-written WebGL
 
-PR #392 carries 1,069 lines of bespoke WebGL (`crates/render/src/viewer/page.js`)
-drawing each blockstate as a mean-colour box. An off-the-shelf core exists:
+The current viewer page carries 1,069 lines of bespoke WebGL
+(`crates/render/src/viewer/page.js`) drawing each blockstate as a mean-colour box. An off-the-shelf core exists:
 
 | | **deepslate** (misode) |
 |---|---|
@@ -201,8 +199,8 @@ a **gate before adoption** — a spike rendering the committed prefab fixtures a
 The rest of this ADR does not depend on §4 either way.
 
 **The spike has run and passed** (2026-08-13), across eleven prefabs plus a
-49-block torture fixture, and the owner has judged the pages and ruled for
-adoption (2026-08-14). Three things it established that change this section
+49-block torture fixture, and its pages are judged good enough to adopt. Three
+things it established that change this section
 rather than merely confirming it:
 
 - **The suspected failure category was the wrong one.** deepslate is not a plain
@@ -213,8 +211,8 @@ rather than merely confirming it:
   shipped. 1.21.11 has `entity/banner_base.png` (cloth plus the pole strip the
   renderer's own UVs address) at the top level, while `entity/banner/` holds
   only the 43 pattern textures. Shields carry the identical edit. Fixed by a
-  local patch of the two texture ids, reported upstream, **not forked** (owner
-  ruling, 2026-08-14): we look after our own build and do not commit to
+  local patch of the two texture ids, reported upstream, **not forked**: we look
+  after our own build and do not commit to
   maintaining theirs.
 - **Two data sources the client jar cannot supply**, and adoption depends on
   both: a `BlockPropertiesProvider` for **multipart** blocks — obtainable from
@@ -226,7 +224,7 @@ rather than merely confirming it:
 - **Two capabilities the swap deletes**, named so they are decided rather than
   discovered: biome tint (deepslate's colour table is fixed, so `--biome` and
   the colormap sampling stop affecting the picture) and `--palette`, the
-  jar-free page. Both are accepted (owner ruling, 2026-08-14): biome tint does
+  jar-free page. Both are accepted: biome tint does
   not carry any judgement this page exists to support, and the jar-free page is
   redundant once the jar is a declared prerequisite.
 
@@ -260,8 +258,7 @@ fetch-once, hash-refusing cache in the exact shape of
 from Mojang's CDN is what every launcher does; the jar is never committed,
 baked, or redistributed (ADR-0010). **Download is the default and scanning the
 creator's disk for launcher-installed jars happens only behind an explicit
-opt-in flag** — this is an owner ruling (2026-08-13), not a proposal of this
-ADR.
+opt-in flag**.
 
 ### 6. What stays non-Rust, and the criterion that decides
 
@@ -310,12 +307,12 @@ else is either a wheel kept in its upstream language or CI-only Python.
   `docs/reference/{tools,distribution-size,compiler}.md` re-measure and
   re-describe in the implementing PRs.
 - `delvec` grows by the CPU render surface — unmeasured until implemented.
-  Binary size under 100 MB and build time are not concerns (owner ruling,
-  2026-08-13), so the number is a record, not a gate: the implementing PR
+  Binary size under 100 MB and build time are not concerns, so the number is a
+  record, not a gate: the implementing PR
   re-measures into `distribution-size.md` per that file's own convention.
 - The shelf archives stay whole per target: a download is never re-split to
-  save the creator disk space (owner ruling, 2026-08-13).
-- PR #392 (viewer) and PR #422 (aimable camera) rebase onto whichever half of
+  save the creator disk space.
+- The in-flight viewer and aimable-camera branches rebase onto whichever half of
   this lands first. **§4 changes the viewer's emitted-page contract and the
   `SCHEMA` id must bump** — an earlier draft of this ADR asserted the opposite,
   and the adoption spike disproved it: the payload goes from
