@@ -238,6 +238,16 @@ jobs:
       # tree the upload will come from.
       - name: the packaged tarballs are publishable
         run: bash tools/check-publishable.sh
+      # The other half of what the upload carries: the front page. This job is a
+      # `needs:` of `publish-crates`, so it is the LAST place these two pages can
+      # be judged before the one-way door — and the tagged tree is not
+      # necessarily the tree CI last saw. Enumerating the entry points is the
+      # point (CLAUDE.md: a gate nothing invokes is UNRUN): `ci.yml`'s `rust` job
+      # covers every push, and this covers the publish itself.
+      - name: the front pages carry no internal reference and no stale version
+        run: |
+          python3 tools/check-crates-io-readmes.py
+          python3 tools/check-reference-versions.py
       # Prints, for the human about to approve `publish-crates`, exactly which
       # crate versions would be uploaded and which are already on the registry.
       - name: the publish plan

@@ -1,3 +1,23 @@
+# Its OWN workspace, excluded from the repo root's (see the note beside
+# `exclude` in /Cargo.toml). This crate is the only one in the repo with a git
+# dependency, a git dependency is cloned during RESOLUTION rather than during the
+# build of whatever uses it, and a workspace resolves all of its members — so as a
+# member of the root workspace this crate's 227 MB Nucleation clone was a
+# precondition for every `cargo` command in the repo, including the `cargo run -p
+# delvec` steps of four required CI jobs that never build it. It is quarantined
+# here so that reach belongs to the one crate that needs it.
+#
+# Nothing about the crate's own build changes: `cargo … --manifest-path
+# crates/render/Cargo.toml` fmt/clippy/tests it exactly as `--workspace` did, and
+# the `rust` CI job runs all three.
+[workspace]
+
+# The root workspace's rationale for this profile applies verbatim (see
+# /Cargo.toml): a separate workspace does not inherit it, and an `opt-level = 0`
+# `delve-render` reads as a hang rather than as a wrong profile.
+[profile.dev]
+opt-level = 1
+
 [package]
 name = "delvewright-render"
 version = "0.0.0"
@@ -26,6 +46,15 @@ serde_json = "1"
 fastnbt = "2"
 flate2 = "1"
 
+# The tile-set manifest contract (`delvewright_schem::split`). A zone past the
+# 48-per-axis structure-template cap ships as several `.nbt` files plus one
+# manifest, and an author must still review ONE scene — so the renderer
+# reassembles from that manifest. It reads the same struct the exporter writes
+# rather than a private copy of the shape, which is the whole reason the
+# definition lives in the crate that owns tiling. Adds no new external
+# dependency: schem's are a subset of the ones above.
+delvewright-schem = { path = "../schem" }
+
 # Save/compare rendered frames (fidelity color-key scan, double-render stability).
 # MIT/Apache-2.0.
 image = "0.24"
@@ -37,3 +66,9 @@ image = "0.24"
 # `pollster` blocks on the renderer's async init. Both MIT/Apache-2.0.
 nucleation = { git = "https://github.com/Schem-at/Nucleation", rev = "dbc8fe02ce4ddac90a58423dd5d441d067e87baf", features = ["rendering"] }
 pollster = "0.4"
+
+[dev-dependencies]
+# The contact-sheet tests build their own candidate renders (no GPU, no client
+# jar) and read the composited page back. Same version the crate already links.
+image = "0.24"
+serde_json = "1"

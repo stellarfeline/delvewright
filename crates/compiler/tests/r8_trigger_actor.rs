@@ -84,34 +84,28 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let tail = format!(
-        r#"    ],
-    "triggers": [
-      {{ "id": "trigger/wake", "on": {{ "on": "strike-npc", "npc": "npc/keeper" }},
-        "once": false, "requires_flags": ["flag/asleep"],
-        "effects": [
-          {{ "type": "narrate", "style": "chat", "text": "He wakes." }},
-          {{ "type": "spawn-actor", "actor": "actor/giant" }},
-          {{ "type": "unleash-actor", "actor": "actor/giant" }}
-        ] }},
-      {{ "id": "trigger/house", "on": {{ "on": "strike-npc", "npc": "npc/keeper" }},
-        "once": false, "requires_flags": ["flag/sealed"], "forbids_flags": ["flag/asleep"],
-        "effects": [ {{ "type": "narrate", "style": "chat", "text": "He swats." }} ] }}
-    ],
-    "actors": [
-      {{ "id": "actor/giant", "entity": "{entity}", "name": "The Sleeper",
-        "anchor": "anchor/keeper-stand", "facing": "east" }}
-    ]
-  }}
-}}"#
-    );
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace("    ]\n  }\n}", &tail);
-    assert!(q.contains("strike-npc"), "quests.json patch applied");
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&dst.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        d["content"]["triggers"] = serde_json::json!([
+            { "id": "trigger/wake", "on": { "on": "strike-npc", "npc": "npc/keeper" },
+              "once": false, "requires_flags": ["flag/asleep"],
+              "effects": [
+                  { "type": "narrate", "style": "chat", "text": "He wakes." },
+                  { "type": "spawn-actor", "actor": "actor/giant" },
+                  { "type": "unleash-actor", "actor": "actor/giant" }
+              ] },
+            { "id": "trigger/house", "on": { "on": "strike-npc", "npc": "npc/keeper" },
+              "once": false, "requires_flags": ["flag/sealed"],
+              "forbids_flags": ["flag/asleep"],
+              "effects": [
+                  { "type": "narrate", "style": "chat", "text": "He swats." }
+              ] }
+        ]);
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/giant", "entity": entity, "name": "The Sleeper",
+              "anchor": "anchor/keeper-stand", "facing": "east" }
+        ]);
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out
@@ -127,46 +121,36 @@ fn build_four_moves() -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let steps: Vec<String> = (1..=4)
+    let steps: Vec<serde_json::Value> = (1..=4)
         .map(|i| {
-            format!(
-                r#"{{ "at_ticks": {}, "effects": [ {{ "type": "move-actor", "actor": "actor/a{i}", "to_anchor": "anchor/exit" }} ] }}"#,
-                (i - 1) * 20
-            )
+            serde_json::json!({
+                "at_ticks": (i - 1) * 20,
+                "effects": [
+                    { "type": "move-actor", "actor": format!("actor/a{i}"),
+                      "to_anchor": "anchor/exit" }
+                ]
+            })
         })
         .collect();
-    let actors: Vec<String> = (1..=4)
-        .map(|i| {
-            format!(
-                r#"{{ "id": "actor/a{i}", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }}"#
-            )
-        })
-        .collect();
-    let search = r#"            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }"#;
-    let replace = format!(
-        r#"            {{ "type": "open-gate", "anchor": "anchor/door" }},
-            {{ "type": "spawn-actor", "actor": "actor/a1" }},
-            {{ "type": "spawn-actor", "actor": "actor/a2" }},
-            {{ "type": "spawn-actor", "actor": "actor/a3" }},
-            {{ "type": "spawn-actor", "actor": "actor/a4" }},
-            {{ "type": "sequence", "steps": [ {} ] }}"#,
-        steps.join(", ")
-    );
-    let tail = format!(
-        "    ],\n    \"actors\": [\n      {}\n    ]\n  }}\n}}",
-        actors.join(",\n      ")
-    );
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(search, &replace)
-        .replace("    ]\n  }\n}", &tail);
-    assert!(q.contains("actor/a4"), "quests.json patch applied");
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&dst.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        let effects = common::objective_effects(d, 0, "obj/talk");
+        for i in 1..=4 {
+            effects
+                .push(serde_json::json!({ "type": "spawn-actor", "actor": format!("actor/a{i}") }));
+        }
+        effects.push(serde_json::json!({ "type": "sequence", "steps": steps }));
+        d["content"]["actors"] = serde_json::Value::Array(
+            (1..=4)
+                .map(|i| {
+                    serde_json::json!({
+                        "id": format!("actor/a{i}"), "entity": "minecraft:sheep",
+                        "anchor": "anchor/keeper-stand"
+                    })
+                })
+                .collect(),
+        );
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out
@@ -440,23 +424,21 @@ fn build_four_moves_with_vanish() -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let search = r#"            {
-              "type": "open-gate",
-              "anchor": "anchor/door"
-            }"#;
-    let replace = r#"            { "type": "open-gate", "anchor": "anchor/door" },
-            { "type": "spawn-actor", "actor": "actor/a1" },
-            { "type": "move-actor", "actor": "actor/a1", "to_anchor": "anchor/exit",
-              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/a1", "style": "vanish" } ] }"#;
-    let tail = "    ],\n    \"actors\": [\n      { \"id\": \"actor/a1\", \"entity\": \"minecraft:sheep\", \"anchor\": \"anchor/keeper-stand\" }\n    ]\n  }\n}";
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace("\"dsl_version\": \"0.2.0\"", "\"dsl_version\": \"0.6.0\"")
-        .replace(search, replace)
-        .replace("    ]\n  }\n}", tail);
-    assert!(q.contains("vanish"), "quests.json patch applied");
-    std::fs::write(&qp, q).unwrap();
+    common::patch_file(&dst.join("quests.json"), |d| {
+        d["dsl_version"] = serde_json::json!("0.6.0");
+        common::objective_effects(d, 0, "obj/talk").extend([
+            serde_json::json!({ "type": "spawn-actor", "actor": "actor/a1" }),
+            serde_json::json!({
+                "type": "move-actor", "actor": "actor/a1", "to_anchor": "anchor/exit",
+                "on_arrive": [
+                    { "type": "despawn-actor", "actor": "actor/a1", "style": "vanish" }
+                ]
+            }),
+        ]);
+        d["content"]["actors"] = serde_json::json!([
+            { "id": "actor/a1", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }
+        ]);
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out

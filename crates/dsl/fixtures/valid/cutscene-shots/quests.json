@@ -1,63 +1,91 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "cutscene-shots",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/open-the-door",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/talk",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           },
           {
-            "type": "reach-anchor",
-            "id": "obj/exit",
-            "anchor": "anchor/exit",
-            "radius": 2,
             "after": [
               "obj/talk"
-            ]
+            ],
+            "anchor": "anchor/exit",
+            "id": "obj/exit",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "shots": [
+              {
+                "look_at": {
+                  "anchor": "anchor/keeper-stand",
+                  "offset": [
+                    0,
+                    2,
+                    0
+                  ]
+                },
+                "path": [
+                  {
+                    "anchor": "anchor/exit",
+                    "offset": [
+                      -2,
+                      2,
+                      0
+                    ]
+                  },
+                  {
+                    "anchor": "anchor/exit",
+                    "offset": [
+                      2,
+                      2,
+                      0
+                    ]
+                  }
+                ],
+                "seconds": 6
+              },
+              {
+                "path": [
+                  {
+                    "anchor": "anchor/keeper-stand",
+                    "offset": [
+                      0,
+                      2,
+                      1
+                    ]
+                  }
+                ],
+                "seconds": 4
+              }
+            ],
+            "type": "cutscene"
+          },
+          {
+            "type": "campaign-complete"
           }
         ],
         "on_objective_complete": {
           "obj/talk": [
             {
-              "type": "open-gate",
-              "anchor": "anchor/door"
+              "anchor": "anchor/door",
+              "type": "open-gate"
             }
           ]
         },
-        "on_complete": [
-          {
-            "type": "cutscene",
-            "shots": [
-              {
-                "path": [
-                  { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
-                  { "anchor": "anchor/exit", "offset": [2, 2, 0] }
-                ],
-                "seconds": 6,
-                "look_at": { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] }
-              },
-              {
-                "path": [
-                  { "anchor": "anchor/keeper-stand", "offset": [0, 2, 1] }
-                ],
-                "seconds": 4
-              }
-            ]
-          },
-          {
-            "type": "campaign-complete"
-          }
-        ]
+        "trigger": {
+          "type": "campaign-start"
+        }
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "quests"
 }

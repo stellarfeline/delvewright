@@ -23,11 +23,20 @@
 //!
 //! # Why this is a palette rule, not a geometry rule
 //!
-//! `docs/reference/grammar.md` §7 already files the gap this vocabulary keeps
-//! meeting: a rule cannot ask a repeated slice to climb a block per iteration
-//! — there is no index the IR exposes to a `Size` or a `Cond` — so a *true*
-//! rising staircase is not composable from today's verbs without inventing a
-//! primitive. The vocabulary doc does not actually ask for that: it asks for a
+//! A rule cannot ask a repeated slice to climb a block per iteration — there is
+//! no index the IR exposes to a `Size` or a `Cond`, and a `split_repeat` hands
+//! every tile the same pattern. That much is still true.
+//!
+//! **What used to follow from it here was wrong, and is corrected rather than
+//! left standing**: this module read on to say a *true* rising staircase was
+//! therefore not composable from today's verbs without inventing a primitive.
+//! It is. The index a stair needs is the box that is left, not a counter, and a
+//! self-call carries it — see [`super::stair_flight`], which climbs with no IR
+//! change at all, and `docs/reference/grammar.md` §5b. `split_repeat` was the
+//! wrong verb, which is a different thing from a missing one.
+//!
+//! None of that changes what *this* rule should be. The vocabulary doc does not
+//! ask for a climb: it asks for a
 //! floor whose **material** changes down the hazard lane, which is squarely a
 //! `fill` decision. "Stair" names the encounter — a rolling boulder down a Sen's
 //! Fortress typology — not a Y-changing shape this rule has to build. A flat

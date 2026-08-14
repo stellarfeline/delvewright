@@ -16,6 +16,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tools/lib/rcon.sh
+. "${REPO_ROOT}/tools/lib/rcon.sh"
 LOCK=/private/tmp/delvewright-validation.lock.d
 CONTAINER=dw-spike-jump-arc
 PORT="${SPIKE_PORT:-25599}"
@@ -55,8 +57,10 @@ docker run -d --name "${CONTAINER}" \
   "${IMAGE}" >/dev/null
 
 echo "[spike] waiting for RCON ..."
+# Liveness poll: the unjudged channel on purpose (tools/lib/rcon.sh) — a refusal
+# here is "not up yet", which is the one time a rejection is the expected answer.
 for _ in $(seq 1 120); do
-  if docker exec "${CONTAINER}" rcon-cli list >/dev/null 2>&1; then
+  if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then
     READY=1
     break
   fi

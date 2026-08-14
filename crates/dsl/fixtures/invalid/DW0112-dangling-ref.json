@@ -1,28 +1,28 @@
 {
   "description": "npc references an unknown area",
-  "expect": "DW0112",
   "documents": {
     "npcs": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "npcs",
       "content": {
         "npcs": [
           {
+            "anchor": "anchor/keeper-stand",
+            "area": "area/nowhere",
+            "base_entity": "minecraft:villager",
             "id": "npc/keeper",
             "name": "The Keeper",
-            "role": "quest-giver",
-            "area": "area/nowhere",
-            "anchor": "anchor/keeper-stand",
-            "base_entity": "minecraft:villager",
             "persona": {
               "archetype": "stoic gatekeeper",
-              "speech_style": "Terse, formal, archaic.",
-              "motivation": "Keep the gate shut until a worthy traveler arrives."
-            }
+              "motivation": "Keep the gate shut until a worthy traveler arrives.",
+              "speech_style": "Terse, formal, archaic."
+            },
+            "role": "quest-giver"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "npcs"
     }
-  }
+  },
+  "expect": "DW0112"
 }

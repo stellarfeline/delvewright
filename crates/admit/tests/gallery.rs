@@ -15,7 +15,8 @@ fn candidates() -> Vec<Candidate> {
 
 #[test]
 fn gallery_emits_a_bootable_tree() {
-    let tree = gallery::emit("demo", &candidates(), 4);
+    let tree =
+        gallery::emit("demo", &candidates(), 4).expect("gallery emits valid 1.21.11 commands");
     for required in [
         "datapack/pack.mcmeta",
         "datapack/data/minecraft/tags/function/load.json",
@@ -32,7 +33,8 @@ fn gallery_emits_a_bootable_tree() {
         assert!(tree.contains_key(required), "missing {required}");
     }
     // deterministic: same inputs -> same bytes.
-    let tree2 = gallery::emit("demo", &candidates(), 4);
+    let tree2 =
+        gallery::emit("demo", &candidates(), 4).expect("gallery emits valid 1.21.11 commands");
     assert_eq!(tree, tree2);
 
     // structure bytes are the verbatim candidate nbt.
@@ -56,7 +58,8 @@ fn gallery_emits_a_bootable_tree() {
 
 #[test]
 fn gallery_layout_is_orchestrator_compatible() {
-    let tree = gallery::emit("demo", &candidates(), 4);
+    let tree =
+        gallery::emit("demo", &candidates(), 4).expect("gallery emits valid 1.21.11 commands");
     let layout_json = String::from_utf8(tree["gallery-layout.json"].clone()).unwrap();
     // the exact orchestrator harvester parser must accept it.
     let layout = Layout::from_json(&layout_json).unwrap();
@@ -66,7 +69,8 @@ fn gallery_layout_is_orchestrator_compatible() {
 
 #[test]
 fn curation_round_trips_dw_notes_into_a_per_asset_report() {
-    let tree = gallery::emit("demo", &candidates(), 4);
+    let tree =
+        gallery::emit("demo", &candidates(), 4).expect("gallery emits valid 1.21.11 commands");
     let layout_json = String::from_utf8(tree["gallery-layout.json"].clone()).unwrap();
 
     // a realistic gallery playtest log: two stamps + notes, one per piece, plus a
@@ -107,4 +111,81 @@ fn merge_into_card_is_idempotent() {
     // merging the same notes again does not duplicate.
     let cur2 = gallery::merge_into_card(&notes, Some(cur));
     assert_eq!(cur2.notes.len(), 1);
+}
+
+/// Every `.mcfunction` the gallery writes parses on the pinned server (task #70).
+///
+/// The gallery emitted four legacy camelCase gamerules and a `text_opacity:255b`
+/// for as long as it has existed. Both are refused by 1.21.11, and a refused line
+/// costs the WHOLE function: measured on a pinned 1.21.11 server (id 1.21.11,
+/// data 4671) booted on the gallery's own datapack, the log carried
+///
+///   Failed to load function admit:load
+///   Failed to load function admit:finish
+///   Couldn't load tag minecraft:load as it is missing following references: admit:load
+///
+/// and the world that came up had no objectives (`There are no objectives`),
+/// `advance_time` still `true`, nothing forceloaded (`That position is not
+/// loaded`), no piece placed and no label summoned. The tool was inert, and every
+/// existing test passed, because no test and no operator ever read what the
+/// server said back.
+///
+/// The gate is stated with its binding count so it cannot pass by matching
+/// nothing (CLAUDE.md: a green gate that binds to nothing is vacuous).
+#[test]
+fn every_emitted_function_parses_on_the_pinned_server() {
+    let tree = gallery::emit("demo", &candidates(), 4).expect("gallery emits valid commands");
+    let functions = tree.keys().filter(|p| p.ends_with(".mcfunction")).count();
+    assert_eq!(
+        functions, 6,
+        "expected the gallery's six functions to be checked, not {functions}"
+    );
+    let lines: usize = tree
+        .iter()
+        .filter(|(p, _)| p.ends_with(".mcfunction"))
+        .map(|(_, b)| String::from_utf8_lossy(b).lines().count())
+        .sum();
+    assert!(lines >= 20, "only {lines} command lines bound the gate");
+    assert!(gallery::validate_functions(&tree).is_empty());
+
+    // The named world state, in the emitted bytes: the four rules 1.21.11
+    // actually has, and an opacity a signed byte can hold.
+    let load =
+        String::from_utf8(tree["datapack/data/admit/function/load.mcfunction"].clone()).unwrap();
+    for rule in [
+        "gamerule advance_time false",
+        "gamerule advance_weather false",
+        "gamerule spawn_mobs false",
+        "gamerule immediate_respawn true",
+    ] {
+        assert!(load.contains(rule), "missing `{rule}`");
+    }
+    let finish =
+        String::from_utf8(tree["datapack/data/admit/function/finish.mcfunction"].clone()).unwrap();
+    assert!(finish.contains("text_opacity:-1b"));
+}
+
+/// The gate fails in the direction the code actually drifted (CLAUDE.md's
+/// one-directional-falsifiability rule): a gate proven only against lines that
+/// were already right proves nothing. These are the EXACT lines this file
+/// shipped before task #70, run through the exact check that now guards
+/// emission.
+#[test]
+fn the_command_gate_rejects_the_lines_that_shipped() {
+    for bad in [
+        "gamerule doDaylightCycle false", // check-live-commands: allow (negative fixture — the exact line that shipped)
+        "gamerule doWeatherCycle false", // check-live-commands: allow (negative fixture — the exact line that shipped)
+        "gamerule doMobSpawning false", // check-live-commands: allow (negative fixture — the exact line that shipped)
+        "gamerule doImmediateRespawn true", // check-live-commands: allow (negative fixture — the exact line that shipped)
+        "summon minecraft:text_display 3 70 3 {Tags:[\"admit_label\"],billboard:\"center\",\
+         text:'{\"text\":\"gatehouse\"}',text_opacity:255b,see_through:1b}",
+    ] {
+        let mut tree = std::collections::BTreeMap::new();
+        tree.insert(
+            "datapack/data/admit/function/load.mcfunction".to_string(),
+            format!("{bad}\n").into_bytes(),
+        );
+        let errors = gallery::validate_functions(&tree);
+        assert_eq!(errors.len(), 1, "the gate must reject `{bad}`");
+    }
 }

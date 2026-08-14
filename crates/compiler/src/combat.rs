@@ -63,32 +63,33 @@ use serde_json::{Value, json};
 use crate::nav::{World, entity_dims};
 use crate::plan::{self, Plan, Step, safe_local};
 use crate::registry::{DamageTypeRegistry, ItemCombatRegistry};
+use delvewright_dsl::DwCode;
 
 /// `DW0470`: a hostile the party is *required* to kill can never be damaged.
-pub const DW_UNDAMAGEABLE: &str = "DW0470";
+pub const DW_UNDAMAGEABLE: DwCode = DwCode::every_version("DW0470");
 
 /// `DW0471`: a hostile the party is required to kill has no cell to be fought
 /// from — its body is walled in.
-pub const DW_UNREACHABLE: &str = "DW0471";
+pub const DW_UNREACHABLE: DwCode = DwCode::every_version("DW0471");
 
 /// `DW0472`: a mandatory encounter's declared health outlasts the best kit the
 /// party can field, by the [`TTK_BUDGET_HITS`] sanity bound.
-pub const DW_TTK_OVER_BUDGET: &str = "DW0472";
+pub const DW_TTK_OVER_BUDGET: DwCode = DwCode::every_version("DW0472");
 
 /// `DW0473`: an unavoidable scripted hit on the critical path kills a
 /// full-health player outright.
-pub const DW_UNAVOIDABLE_LETHAL: &str = "DW0473";
+pub const DW_UNAVOIDABLE_LETHAL: DwCode = DwCode::every_version("DW0473");
 
 /// `DW0474`: a campaign with mandatory combat hands the party no sustain at all.
-pub const DW_NO_SUSTAIN: &str = "DW0474";
+pub const DW_NO_SUSTAIN: DwCode = DwCode::every_version("DW0474");
 
 /// `DW0475`: (warning) the numeric time-to-kill bound could not be computed.
-pub const DW_TTK_UNPROVEN: &str = "DW0475";
+pub const DW_TTK_UNPROVEN: DwCode = DwCode::every_version("DW0475");
 
 /// `DW0477`: (warning) something the content bills `elite`/`boss` is one the
 /// inverted floor gate cannot measure — so its silence in the run report means
 /// "never fought", not "passed".
-pub const DW_FLOOR_UNCOVERED: &str = "DW0477";
+pub const DW_FLOOR_UNCOVERED: DwCode = DwCode::every_version("DW0477");
 
 /// The vanilla player's `minecraft:max_health` base value. The DSL exposes no
 /// player-attribute surface at all, so this is not a default — it is the only
@@ -124,7 +125,7 @@ pub const RESISTANCE_IMMUNE_AMPLIFIER: u32 = 4;
 #[derive(Debug)]
 pub struct CombatError {
     /// The stable diagnostic code.
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation: the arithmetic, the formula it used, and how
     /// to retune without re-deriving any of it.
     pub message: String,

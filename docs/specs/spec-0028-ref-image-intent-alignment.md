@@ -79,3 +79,46 @@ owner-approved amendment backed by accumulated batch data.
    the content-repo side already enforces no-images; this spec adds the
    generation-dir default that keeps them out).
 5. Owner walkthrough of the loop on one real prefab request — merge gate.
+
+## 6. As built, measured (2026-08-09)
+
+`Status:` above records **approval**, and is bound to nothing about existence
+(spec-0029 sat at `Proposed` after shipping). This section records what is
+actually in the tree, measured, and is updated whenever that changes.
+
+**Built — §3 ranking.**
+
+- `tools/refscore.py` scores candidate renders against a reference image and
+  emits one score per candidate, with no verdict surface of any kind. Three
+  backends: `stub` (deterministic, offline, dependency-free — **not** a
+  similarity measure, and every artifact it touches says so), `open-clip` (MIT,
+  image↔image CLIP cosine), `vqascore` (Apache-2.0, text-conditioned against a
+  prompt). Both real backends pull PyTorch and multi-GB weights: they are
+  **absent from CI**, nothing in this repo installs them, and a missing
+  dependency is an error naming the install line — never a silent fall back to
+  the stub. Licenses verified from the upstream `LICENSE` files and recorded in
+  `docs/ACKNOWLEDGEMENTS.md`.
+- `delve-render contact-sheet` lays the candidates out as one page ordered by
+  that score, always writing the manifest that resolves a cell number back to a
+  prefab id, and always stating its binding count.
+- **Rank-only is enforced, not documented.** The ordering is a seam whose result
+  must be a permutation of the candidate set (`DW0725`, exit 10); a score set
+  that bound to zero candidates is an error (`DW0726`, exit 2).
+
+**AC status, honestly.**
+
+- **AC3 — met, and it is the load-bearing one.** `low_scoring_candidate_is_
+  present_and_last` (both as a unit test and end-to-end through the binary) is
+  the fixture this criterion asks for. Its structural partner
+  `a_filtering_ranker_cannot_reach_the_page` is what stays red if the score is
+  ever allowed to filter. Demonstrated in the drift direction: a threshold
+  temporarily added to the real ranker turned six tests red with `DW0725`.
+- **AC2 — met for the ranking half only.** The score→rank→page loop is exercised
+  offline in CI with the stub backend and with `--dry-run` (no network, no key,
+  no model). The *other* half of AC2 — the image-gen alignment loop producing an
+  (image, prompt) acceptance record that conditions the builder — is **not
+  built**: `tools/refimg.py` draws a reference image, and nothing yet records an
+  acceptance or hands the pair to the spec-0027 builder.
+- **AC1 (guided-text fallback, skill-battery check), AC4 (generation-dir default
+  keeping images out of commits — `.sheets/` and `.refimg/` are gitignored, but
+  no check asserts it), AC5 (owner walkthrough) — not built.**

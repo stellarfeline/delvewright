@@ -24,11 +24,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
-use crate::eval::{EvalError, Scope};
+use crate::eval::{Env, EvalError, Scope};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
-    Alternative, Cond, Facing, Mark, MarkAt, Material, Node, Paint, Program, ProgramError, Side,
-    Size, Split,
+    Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
+    ProgramError, Side, Size, Split, States,
 };
 use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{OrientError, reorient};
@@ -124,6 +124,163 @@ pub struct Anchor {
     pub declared_by: String,
 }
 
+/// One region a rule claimed, resolved for this expansion.
+///
+/// The boxes are **local to the expansion region**, rebased off its origin, for
+/// the reason [`Anchor::pos`] is: a structure template is local-coordinate, so
+/// moving the box must move nothing in the output (ADR-0006).
+///
+/// They are sorted and de-duplicated rather than kept in derivation order.
+/// Sorting is what makes the record a *set of cells* rather than a trace of how
+/// the rules got there, so two programs that claim the same boxes in different
+/// orders resolve to the same bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedRegion {
+    /// The boxes, canonically ordered. A claim on a scope with no cells
+    /// contributes nothing, exactly as `fill` writes nothing there.
+    pub boxes: Vec<Box3>,
+    /// The rules that claimed it. Provenance for review.
+    pub declared_by: Vec<String>,
+}
+
+impl ResolvedRegion {
+    /// Cells covered, over every box. The binding count a later gate reports.
+    pub fn cells(&self) -> u64 {
+        self.boxes.iter().map(Box3::volume).sum()
+    }
+}
+
+/// A declared space, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSpace {
+    /// The envelope claim, as declared.
+    pub envelope: Envelope,
+    /// Where it is.
+    pub region: ResolvedRegion,
+}
+
+/// A declared out-of-walk region, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedNoBody {
+    /// Why, as declared.
+    pub reason: String,
+    /// Where it is.
+    pub region: ResolvedRegion,
+}
+
+/// An edge's own volume — an opening, a stair's treads, a fall column — resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedVolume {
+    /// The region name, kept so the campaign-side binding has something to
+    /// address after the boxes have been consumed.
+    pub region: String,
+    /// Where it is.
+    pub boxes: Vec<Box3>,
+}
+
+/// A `barred` edge's bar, resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedBar {
+    /// The region name.
+    pub region: String,
+    /// Where it is.
+    pub boxes: Vec<Box3>,
+    /// The palette role it is built from.
+    pub role: String,
+    /// The block state that role resolves to.
+    pub block: BlockState,
+}
+
+/// A declared edge, resolved: the class as declared, with every region name it
+/// used replaced by the boxes it resolved to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedEdge {
+    /// A declared space name, or [`crate::ir::EXTERIOR`].
+    pub a: String,
+    /// A declared space name, or [`crate::ir::EXTERIOR`].
+    pub b: String,
+    /// The class keyword.
+    pub class: &'static str,
+    /// The declared level change, where the class has one.
+    pub rise: Option<i64>,
+    /// The opening or transit volume, where one is declared.
+    pub via: Option<ResolvedVolume>,
+    /// The bar, on a `barred` edge.
+    pub bar: Option<ResolvedBar>,
+}
+
+/// The program's spatial contract, **as resolved for this expansion**.
+///
+/// This — not the program's declaration — is what an export writes, and it is
+/// the whole reason the declarations are scope-bound. A program re-expanded at
+/// other parameters produces other boxes; a contract that carried literal
+/// coordinates would describe the expansion it was written against and quietly
+/// mis-describe every other one, which is exactly the disagreement between
+/// "what the program says" and "what the bytes are" the contract exists to
+/// close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedContract {
+    /// The space a body enters at.
+    pub entry: String,
+    /// Spaces, by name.
+    pub spaces: BTreeMap<String, ResolvedSpace>,
+    /// Out-of-walk regions, by name.
+    pub no_body: BTreeMap<String, ResolvedNoBody>,
+    /// Edges, in declaration order.
+    pub edges: Vec<ResolvedEdge>,
+    /// The author's acknowledgement, carried through unchanged.
+    pub no_body_majority_ack: Option<String>,
+}
+
+/// One orientation-unguarded fill: the `DW0736` finding
+/// (`delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+///
+/// A frame permutes and reflects the *geometry* a rule describes and never
+/// rewrites block-state properties ([`crate::orient`]); the intended mechanism
+/// for an oriented block is [`Cond::Orientation`] — the author writes one
+/// alternative per frame and the guard selects the matching variant. This
+/// record is a fill that skipped that mechanism: it wrote a state whose
+/// `facing`/`axis`/connection property lands wrong under the scope's actual
+/// frame, with no passed `orientation` guard pinning that frame on the path to
+/// the fill.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OrientedFinding {
+    /// The rule whose fill wrote the state.
+    pub rule: String,
+    /// The state, vanilla string form.
+    pub state: String,
+    /// The property that lands wrong, as `key=value`.
+    pub property: String,
+    /// The scope's frame, as `x->X,y->Y,z->-Z` (local -> world, a leading `-`
+    /// on a reflected axis). The reflection is printed because a reflected
+    /// frame is a *different* frame that lands a different facing, and a
+    /// message that named only the permutation would point a mirrored author
+    /// at a frame that reads as identity.
+    pub orientation: String,
+}
+
+/// What the expander saw of orientation-sensitive fills — the binding record
+/// the `oriented-fills` gate reports (a green gate states what it examined;
+/// zero examined is a fact the report must carry, CLAUDE.md vacuity rule).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OrientedFillAudit {
+    /// Fill applications the predicate examined — every fill, because "carries
+    /// no properties" is itself the predicate's first question.
+    pub fills: u64,
+    /// Of those, the fills whose paint carries any block-state properties —
+    /// the population the mismatch test can bite on.
+    pub carrying: u64,
+    /// Of THOSE, the fills whose states were read in the scope's own axis names
+    /// and resolved into the world's ([`Paint::Local`]) — the binding count of
+    /// the local frame. A literal cannot land wrong when there is no literal,
+    /// so these leave the mismatch test with nothing to say; reporting how many
+    /// went that way is what keeps the remaining population visible instead of
+    /// letting the gate quietly stop binding.
+    pub resolved: u64,
+    /// The unguarded oriented fills, deduplicated and sorted.
+    pub unguarded: Vec<OrientedFinding>,
+}
+
 /// The result of expanding a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expansion {
@@ -138,8 +295,20 @@ pub struct Expansion {
     /// building" untestable. [`Expansion`] is already the record of what an
     /// expansion did beyond the blocks it wrote.
     pub anchors: BTreeMap<String, Anchor>,
+    /// The spatial contract the program declared, resolved against this
+    /// expansion's boxes. `None` when the program declares none — which is a
+    /// different statement from an empty one, exactly as an absent `lighting`
+    /// block differs from `unmeasured`.
+    ///
+    /// It lives here rather than on the [`VoxelModel`] for the reason
+    /// [`Expansion::anchors`] does: a claim writes no blocks, and folding it
+    /// into the block grid would change what `canonical_bytes` means and make
+    /// "declaring a space changed nothing about the building" untestable.
+    pub contract: Option<ResolvedContract>,
     /// The derivation's shape.
     pub stats: Stats,
+    /// The orientation-sensitive fills seen, and which were unguarded.
+    pub oriented: OrientedFillAudit,
 }
 
 /// Why an expansion stopped.
@@ -227,6 +396,20 @@ pub enum ExpandError {
         /// The rule that declared it again.
         second: String,
     },
+    /// A local-frame paint carried a property the pinned vocabulary cannot map
+    /// onto the world frame the scope was given
+    /// (`delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE`).
+    LocalFrameUnresolvable {
+        /// The rule being expanded.
+        symbol: String,
+        /// The state, vanilla string form, as authored in the local frame.
+        state: String,
+        /// The property with no image, as `key=value`.
+        property: String,
+        /// The scope's frame, as `x->X,y->Y,z->Z` with a `-` on a reflected
+        /// axis.
+        orientation: String,
+    },
     /// A fill needed a 65537th distinct block state.
     PaletteFull {
         /// The rule being expanded.
@@ -310,6 +493,23 @@ impl fmt::Display for ExpandError {
                  happen to share a stem — give one of them a name of its own with \
                  `compose::include_renaming`"
             ),
+            ExpandError::LocalFrameUnresolvable {
+                symbol,
+                state,
+                property,
+                orientation,
+            } => write!(
+                f,
+                "{}: rule {symbol:?} fills {state}, written in the scope's own axis names, into a \
+                 scope framed {orientation} — and {property} has no image there. A yaw and a \
+                 handedness are stated against a fixed vertical AND a fixed handedness, so any \
+                 frame but a pure turn about the vertical leaves them nothing to mean; a \
+                 `top`/`bottom` half needs the vertical kept and running forward; and a \
+                 direction whose image is not a legal value of the block has nowhere to land. \
+                 Write the state in the world frame under an `orientation` guard for the frames \
+                 it must cover, or keep the scope's vertical on the world's and unreflected",
+                delvewright_schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE
+            ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
         }
     }
@@ -346,30 +546,191 @@ pub fn expand(
         model: VoxelModel::new(region),
         anchors: BTreeMap::new(),
         marks_seen: BTreeMap::new(),
+        regions: BTreeMap::new(),
         rng: Rng::new(options.seed),
         limits: options.limits,
         stats: Stats::default(),
+        oriented_fills: 0,
+        oriented_carrying: 0,
+        oriented_resolved: 0,
+        oriented_unguarded: std::collections::BTreeSet::new(),
     };
+    // The root binding frame is the program's own declarations, which are its
+    // defaults; every `bind` pushes a frame over this one.
+    let root = Env::root(&program.params, &program.palette);
     expander.run_rule(
         &program.start,
         &ScopeState {
             region,
             orient: options.orientation,
+            env: root,
+            pinned: None,
         },
         0,
     )?;
+    expander.canonicalise_regions();
+    let contract = resolve_contract(program, &mut expander.regions);
     Ok(Expansion {
         model: expander.model,
         anchors: expander.anchors,
+        contract,
         stats: expander.stats,
+        oriented: OrientedFillAudit {
+            fills: expander.oriented_fills,
+            carrying: expander.oriented_carrying,
+            resolved: expander.oriented_resolved,
+            unguarded: expander.oriented_unguarded.into_iter().collect(),
+        },
     })
 }
 
-/// The box a node is expanding into, and what it calls its axes.
+/// Turn the program's declared contract into the resolved one, using the boxes
+/// the claims produced.
+///
+/// Every name resolves — `Program::validate` proved that before a single rule
+/// ran — but a name may resolve to *no* boxes, when every rule that claims it
+/// sat under a guard this seed did not take. That is recorded as an empty
+/// region rather than refused: a zero binding is a finding for whatever reads
+/// the contract, and losing the declaration would hide it.
+fn resolve_contract(
+    program: &Program,
+    regions: &mut BTreeMap<String, ResolvedRegion>,
+) -> Option<ResolvedContract> {
+    let declared = program.contract.as_ref()?;
+    let take = |regions: &mut BTreeMap<String, ResolvedRegion>, name: &str| -> ResolvedRegion {
+        regions.remove(name).unwrap_or_default()
+    };
+    let spaces = declared
+        .spaces
+        .iter()
+        .map(|(name, decl)| {
+            (
+                name.clone(),
+                ResolvedSpace {
+                    envelope: decl.envelope,
+                    region: take(regions, name),
+                },
+            )
+        })
+        .collect();
+    let no_body = declared
+        .no_body
+        .iter()
+        .map(|(name, decl)| {
+            (
+                name.clone(),
+                ResolvedNoBody {
+                    reason: decl.reason.clone(),
+                    region: take(regions, name),
+                },
+            )
+        })
+        .collect();
+    // An edge's volumes are read rather than taken: two edges may legitimately
+    // name one opening, and the second must see the same boxes as the first.
+    let left: &BTreeMap<String, ResolvedRegion> = regions;
+    let boxes_of = |name: &str| left.get(name).map(|r| r.boxes.clone()).unwrap_or_default();
+    let volume = |name: &str| ResolvedVolume {
+        region: name.to_string(),
+        boxes: boxes_of(name),
+    };
+    let bar = |b: &Bar| ResolvedBar {
+        region: b.region.clone(),
+        boxes: boxes_of(&b.region),
+        role: b.block.clone(),
+        block: match program.palette.get(&b.block).map(Paint::states) {
+            Some(States::One(state)) => state.clone(),
+            // `validate` refuses a mix and an unbound role, so neither reaches
+            // here; air is the inert stand-in a panic would otherwise be.
+            _ => BlockState::air(),
+        },
+    };
+    let edges = declared
+        .edges
+        .iter()
+        .map(|e| ResolvedEdge {
+            a: e.a.clone(),
+            b: e.b.clone(),
+            class: e.class.as_str(),
+            rise: e.class.rise(),
+            via: e.class.via().map(volume),
+            bar: e.class.bar().map(bar),
+        })
+        .collect();
+    Some(ResolvedContract {
+        entry: declared.entry.clone(),
+        spaces,
+        no_body,
+        edges,
+        no_body_majority_ack: declared.no_body_majority_ack.clone(),
+    })
+}
+
+/// True when a passed `cond` **entails** a [`Cond::Orientation`]: the guard
+/// itself, or an `all` that contains one (recursively). `any`/`none_of` do not
+/// entail — the alternative may have been selected by a sibling condition, so
+/// the frame was never proved.
+fn cond_pins_orientation(cond: &Cond) -> bool {
+    match cond {
+        Cond::Orientation { .. } => true,
+        Cond::All { of } => of.iter().any(cond_pins_orientation),
+        _ => false,
+    }
+}
+
+/// A frame written for a person to find: `x->X,y->Y,z->-Z`, local to world,
+/// with a leading `-` on an axis that runs backwards.
+///
+/// A diagnostic that named only the permutation would print `x->X,y->Y,z->Z`
+/// for a reflected identity frame — an author reading that would look for a
+/// `reorient` there is none of, and the reflection that actually turned their
+/// block would not appear anywhere in the message.
+fn frame_label(orient: Orientation) -> String {
+    let axis = |local: Axis| {
+        format!(
+            "{}{:?}",
+            if orient.reversed(local) { "-" } else { "" },
+            orient.axis(local)
+        )
+    };
+    format!(
+        "x->{},y->{},z->{}",
+        axis(Axis::X),
+        axis(Axis::Y),
+        axis(Axis::Z)
+    )
+}
+
+/// The box a node is expanding into, what it calls its axes, and what its names
+/// mean.
+///
+/// All three are inherited by every child scope, and each has one construct that
+/// changes it: `split` the box, `reorient` the axes, `bind` the names.
 #[derive(Debug, Clone, Copy)]
-struct ScopeState {
+struct ScopeState<'e> {
     region: Box3,
     orient: Orientation,
+    env: Env<'e>,
+    /// The frame the innermost passed [`Cond::Orientation`] guard asserted, if
+    /// any. A fill of an orientation-sensitive state is guarded exactly when
+    /// this equals the scope's *current* frame: the guard proved the author
+    /// wrote the state for this frame. A later `reorient` — including one that
+    /// only reflects — leaves the pin recording the old value, so the equality
+    /// fails, which is right, because the guard said nothing about the new
+    /// frame. `bind` and `claim` change neither half of the frame and so hand
+    /// the pin on unchanged.
+    pinned: Option<Orientation>,
+}
+
+impl ScopeState<'_> {
+    /// What a guard or size expression is measured against here.
+    fn scope(&self) -> Scope<'_> {
+        Scope {
+            region: &self.region,
+            orient: self.orient,
+            env: self.env,
+        }
+    }
 }
 
 struct Expander<'a> {
@@ -379,23 +740,23 @@ struct Expander<'a> {
     /// Per-stem occurrence counter, so [`crate::ir::MarkIndex::Auto`] numbers in
     /// expansion order.
     marks_seen: BTreeMap<String, u32>,
+    /// Boxes claimed per contract region name, before they are canonicalised.
+    regions: BTreeMap<String, ResolvedRegion>,
     rng: Rng,
     limits: Limits,
     stats: Stats,
+    /// Fill applications examined.
+    oriented_fills: u64,
+    /// Fill applications whose paint carries any properties.
+    oriented_carrying: u64,
+    /// Of those, the ones resolved out of the local frame.
+    oriented_resolved: u64,
+    /// `DW0736` findings, deduplicated (a rule in a repeat split would
+    /// otherwise report once per piece).
+    oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
 }
 
 impl<'a> Expander<'a> {
-    fn scope<'s>(&self, state: &'s ScopeState) -> Scope<'s>
-    where
-        'a: 's,
-    {
-        Scope {
-            region: &state.region,
-            orient: state.orient,
-            params: &self.program.params,
-        }
-    }
-
     fn enter(&mut self, depth: u32) -> Result<(), ExpandError> {
         if depth > self.limits.max_depth {
             return Err(ExpandError::DepthLimit {
@@ -415,7 +776,7 @@ impl<'a> Expander<'a> {
     fn run_rule(
         &mut self,
         symbol: &'a str,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -432,8 +793,8 @@ impl<'a> Expander<'a> {
             if matches!(alt.when, Cond::Otherwise) {
                 continue;
             }
-            let ok = self
-                .scope(state)
+            let ok = state
+                .scope()
                 .test(&alt.when)
                 .map_err(|error| ExpandError::Eval {
                     symbol: symbol.to_string(),
@@ -463,14 +824,27 @@ impl<'a> Expander<'a> {
             .weighted(&weights)
             .expect("validate() proved every weight is positive")];
         self.stats.rules_applied += 1;
-        self.run_node(symbol, &alts[picked].body, state, depth + 1)
+        // A passed guard that *entails* an orientation pins the frame: the
+        // author wrote this alternative for the frame the guard names — the
+        // permutation and the reflection both, since `Cond::Orientation`
+        // matches both exactly — which is what licenses the oriented block
+        // states inside it (`DW0736`).
+        let state = ScopeState {
+            pinned: if cond_pins_orientation(&alts[picked].when) {
+                Some(state.orient)
+            } else {
+                state.pinned
+            },
+            ..*state
+        };
+        self.run_node(symbol, &alts[picked].body, &state, depth + 1)
     }
 
     fn run_node(
         &mut self,
         symbol: &'a str,
         node: &'a Node,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
         self.enter(depth)?;
@@ -490,25 +864,34 @@ impl<'a> Expander<'a> {
             }
             Node::Fill { material } => {
                 let paint = match material {
-                    Material::Role { role } => self
-                        .program
-                        .palette
-                        .get(role)
+                    Material::Role { role } => state
+                        .env
+                        .paint(role)
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
+                // A local-frame paint is read in the scope's own axis names and
+                // resolved here, where the frame exists; a world-frame one is
+                // written as authored and audited for `DW0736`.
+                let resolved: Option<States> = if paint.is_local() {
+                    Some(self.resolve_local(symbol, paint.states(), state)?)
+                } else {
+                    None
+                };
+                self.audit_oriented_fill(symbol, paint, state);
+                let states = resolved.as_ref().unwrap_or(paint.states());
                 let full = |error| ExpandError::PaletteFull {
                     symbol: symbol.to_string(),
                     error,
                 };
-                match paint {
-                    Paint::Block(block) => {
+                match states {
+                    States::One(block) => {
                         let block = block.clone();
                         for pos in state.region.positions() {
                             self.model.set(pos, &block).map_err(full)?;
                         }
                     }
-                    Paint::Mix(mix) => {
+                    States::Mix(mix) => {
                         let weights: Vec<u32> = mix.iter().map(|w| w.weight).collect();
                         let blocks: Vec<BlockState> = mix.iter().map(|w| w.block.clone()).collect();
                         let positions: Vec<[i32; 3]> = state.region.positions().collect();
@@ -535,6 +918,56 @@ impl<'a> Expander<'a> {
                 let child = ScopeState {
                     region: state.region,
                     orient,
+                    env: state.env,
+                    // The pin travels through the reorientation rather than
+                    // being cleared, so it still *equals* the frame when the
+                    // request was a no-op or a second reflection that cancels
+                    // the first — those land the author back in the frame the
+                    // guard proved, and the state is right again there.
+                    pinned: state.pinned,
+                };
+                self.run_node(symbol, body, &child, depth + 1)
+            }
+            Node::Bind {
+                params,
+                palette,
+                body,
+            } => {
+                // Every binding is evaluated in the ENCLOSING scope, before the
+                // frame is pushed, and all of them at once: a frame is a
+                // simultaneous rebinding, so `{a: param b, b: param a}` swaps
+                // the two rather than chaining them. Nothing here draws from the
+                // RNG, so a `bind` cannot move a cell of the model on its own.
+                let mut bound_params = BTreeMap::new();
+                for (name, value) in params {
+                    let value = state
+                        .scope()
+                        .eval(value)
+                        .map_err(|error| ExpandError::Eval {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
+                    bound_params.insert(name.clone(), value);
+                }
+                let mut bound_palette = BTreeMap::new();
+                for (name, material) in palette {
+                    let paint = match material {
+                        Material::Role { role } => state
+                            .env
+                            .paint(role)
+                            .expect("validate() proved every role is bound")
+                            .clone(),
+                        Material::Inline(paint) => paint.clone(),
+                    };
+                    bound_palette.insert(name.clone(), paint);
+                }
+                let child = ScopeState {
+                    region: state.region,
+                    orient: state.orient,
+                    env: Env::child(&state.env, &bound_params, &bound_palette),
+                    // A `bind` renames values; it moves neither half of the
+                    // frame, so what the guard proved is still true here.
+                    pinned: state.pinned,
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -544,7 +977,147 @@ impl<'a> Expander<'a> {
                 self.declare(symbol, mark, state)?;
                 self.run_node(symbol, body, state, depth + 1)
             }
+            Node::Claim { region, body } => {
+                self.claim(symbol, region, state);
+                self.run_node(symbol, body, state, depth + 1)
+            }
             Node::Split(split) => self.run_split(symbol, split, state, depth),
+        }
+    }
+
+    /// Record one [`Node::Claim`]: the scope's box, rebased local, under the
+    /// region's name.
+    ///
+    /// Infallible on purpose. A claim needs a *box*, and every scope has one; a
+    /// mark needs a *cell*, which is why a mark on a degenerate scope is an
+    /// error and a claim on one simply contributes nothing — the same thing
+    /// `fill` and `void` do there. Whether a region ends up covering the cells
+    /// its author meant is a question about the model, and this is not the
+    /// layer that answers it.
+    fn claim(&mut self, symbol: &str, region: &str, state: &ScopeState) {
+        let entry = self.regions.entry(region.to_string()).or_default();
+        if !entry.declared_by.iter().any(|s| s == symbol) {
+            entry.declared_by.push(symbol.to_string());
+        }
+        if state.region.is_empty() {
+            return;
+        }
+        let origin = self.model.region().origin;
+        let local = Box3::new(
+            [
+                state.region.origin[0] - origin[0],
+                state.region.origin[1] - origin[1],
+                state.region.origin[2] - origin[2],
+            ],
+            state.region.size,
+        );
+        entry.boxes.push(local);
+    }
+
+    /// Sort every claimed region's boxes into the canonical order and drop
+    /// duplicates, so the record is the set of cells rather than a trace of the
+    /// derivation.
+    fn canonicalise_regions(&mut self) {
+        for region in self.regions.values_mut() {
+            region
+                .boxes
+                .sort_by_key(|b| (b.origin, [b.size[0], b.size[1], b.size[2]]));
+            region.boxes.dedup();
+            region.declared_by.sort();
+            region.declared_by.dedup();
+        }
+    }
+
+    /// Read a local-frame paint's states in the scope's own axis names and
+    /// return them in the world's.
+    ///
+    /// The transform is the registry's
+    /// (`BlockRegistry::permuted_properties`) — the same one the `DW0736`
+    /// predicate runs to decide that an unframed literal landed wrong. It is
+    /// handed **both halves of the frame**: the axis permutation and the
+    /// reflection. Handing it the permutation alone would be the same short
+    /// circuit the `DW0736` judge once had, except that here it does not miss a
+    /// defect, it writes one — a pure reflection has the identity permutation,
+    /// so every mirrored body would silently take the unmirrored state.
+    ///
+    /// A property whose image the pinned vocabulary does not determine is
+    /// refused here rather than guessed: there is no correct block to write,
+    /// and writing a plausible one is how a wrong facing gets frozen into a
+    /// `.nbt`.
+    fn resolve_local(
+        &self,
+        symbol: &str,
+        states: &States,
+        state: &ScopeState<'_>,
+    ) -> Result<States, ExpandError> {
+        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let perm = [
+            state.orient.axis(Axis::X).index(),
+            state.orient.axis(Axis::Y).index(),
+            state.orient.axis(Axis::Z).index(),
+        ];
+        let reflected = state.orient.mirror.axes();
+        states.map(|block| {
+            match registry.permuted_properties(&block.name, &block.properties, perm, reflected) {
+                Ok(properties) => Ok(BlockState {
+                    name: block.name.clone(),
+                    properties,
+                }),
+                Err(property) => Err(ExpandError::LocalFrameUnresolvable {
+                    symbol: symbol.to_string(),
+                    state: block.to_string(),
+                    property,
+                    orientation: frame_label(state.orient),
+                }),
+            }
+        })
+    }
+
+    /// Record what one fill means for the `DW0736` audit.
+    ///
+    /// The predicate itself —
+    /// [`delvewright_schem::blocks::BlockRegistry::oriented_mismatch`] — lives
+    /// with the block-state model, derived from the registry's own value
+    /// vocabulary, so this method only supplies the two facts the expander
+    /// alone knows: the scope's frame — **both** halves of it, the permutation
+    /// and the reflection — and whether a passed [`Cond::Orientation`] guard
+    /// pinned it. The paint is the one the scope's own bindings resolved, so a
+    /// role a `bind` rebound is audited as what it now paints.
+    fn audit_oriented_fill(&mut self, symbol: &str, paint: &Paint, state: &ScopeState) {
+        let states: Vec<&BlockState> = paint.states().each();
+        self.oriented_fills += 1;
+        if states.iter().all(|b| b.properties.is_empty()) {
+            return;
+        }
+        self.oriented_carrying += 1;
+        if paint.is_local() {
+            // Resolved through this very frame a moment ago, so there is no
+            // literal left to land wrong. Counted, never skipped: the gate has
+            // to be able to say how much of its population went this way.
+            self.oriented_resolved += 1;
+            return;
+        }
+        if state.pinned == Some(state.orient) {
+            return; // the guard proved the author wrote these for this frame
+        }
+        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let perm = [
+            state.orient.axis(Axis::X).index(),
+            state.orient.axis(Axis::Y).index(),
+            state.orient.axis(Axis::Z).index(),
+        ];
+        let reflected = state.orient.mirror.axes();
+        for block in states {
+            if let Some(property) =
+                registry.oriented_mismatch(&block.name, &block.properties, perm, reflected)
+            {
+                self.oriented_unguarded.insert(OrientedFinding {
+                    rule: symbol.to_string(),
+                    state: block.to_string(),
+                    property,
+                    orientation: frame_label(state.orient),
+                });
+            }
         }
     }
 
@@ -553,17 +1126,21 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<(), ExpandError> {
         let cell = self.mark_cell(symbol, mark, state)?;
         let facing = match mark.facing {
             Some(f) => f,
-            // A permutation cannot mirror, so a derived facing is always the
-            // negative direction of the world axis the scope calls local Z.
-            None => match state.orient.get(Axis::Z) {
-                Axis::Z => Facing::North,
-                Axis::X => Facing::West,
-                Axis::Y => {
+            // A derived facing is the direction of *decreasing local Z* — the
+            // way the rule library's frame says travel runs. Which world
+            // direction that is depends on both halves of the frame: the world
+            // axis local Z names, and whether local Z runs down it.
+            None => match (state.orient.axis(Axis::Z), state.orient.reversed(Axis::Z)) {
+                (Axis::Z, false) => Facing::North,
+                (Axis::Z, true) => Facing::South,
+                (Axis::X, false) => Facing::West,
+                (Axis::X, true) => Facing::East,
+                (Axis::Y, _) => {
                     return Err(ExpandError::MarkFacingNotCardinal {
                         symbol: symbol.to_string(),
                         anchor: mark.anchor.clone(),
@@ -602,44 +1179,59 @@ impl<'a> Expander<'a> {
         &self,
         symbol: &str,
         mark: &Mark,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
     ) -> Result<[i32; 3], ExpandError> {
         let size = state.region.size;
+        // Extent along the world axis a local axis names.
+        let extent = |local: Axis| size[state.orient.axis(local).index()] as i64;
         // Centre of an extent, rounding down; 0 for a degenerate axis, which the
         // bounds check below then reports.
-        let mid = |axis: Axis| (size[axis.index()].saturating_sub(1) / 2) as i64;
+        let mid = |n: i64| (n - 1).max(0) / 2;
 
-        // Offsets from the scope's minimum corner, per WORLD axis.
+        // Offsets from the scope's minimum **world** corner, per world axis.
+        //
+        // Every `at` but `floor_center` names a cell in LOCAL terms, so it is
+        // computed in local coordinates and put through the frame once, at the
+        // end: a reflected axis counts from the far end of the box, which is
+        // exactly what makes the mirror image of a rule land on the mirror image
+        // of its anchor.
         let mut delta = [0i64; 3];
+        let mut local = [Option::<i64>::None; 3];
         match &mark.at {
-            MarkAt::CornerMin => {}
+            MarkAt::CornerMin => local = [Some(0), Some(0), Some(0)],
             MarkAt::FloorCenter => {
-                delta[Axis::X.index()] = mid(Axis::X);
+                // Gravity is a world fact, so this one position ignores the
+                // frame entirely — both halves of it.
+                delta[Axis::X.index()] = mid(size[Axis::X.index()] as i64);
                 delta[Axis::Y.index()] = 0;
-                delta[Axis::Z.index()] = mid(Axis::Z);
+                delta[Axis::Z.index()] = mid(size[Axis::Z.index()] as i64);
             }
             MarkAt::FaceCenter { axis, side } => {
-                let pinned = state.orient.get(*axis);
-                for world in Axis::ALL {
-                    delta[world.index()] = if world == pinned {
+                for l in Axis::ALL {
+                    local[l.index()] = Some(if l == *axis {
                         match side {
                             Side::Min => 0,
-                            Side::Max => (size[world.index()].saturating_sub(1)) as i64,
+                            Side::Max => (extent(l) - 1).max(0),
                         }
                     } else {
-                        mid(world)
-                    };
+                        mid(extent(l))
+                    });
                 }
             }
             MarkAt::Offset { x, y, z } => {
-                let scope = self.scope(state);
-                for (local, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
+                let scope = state.scope();
+                for (l, expr) in [(Axis::X, x), (Axis::Y, y), (Axis::Z, z)] {
                     let value = scope.eval(expr).map_err(|error| ExpandError::Eval {
                         symbol: symbol.to_string(),
                         error,
                     })?;
-                    delta[state.orient.get(local).index()] = value;
+                    local[l.index()] = Some(value);
                 }
+            }
+        }
+        for l in Axis::ALL {
+            if let Some(coord) = local[l.index()] {
+                delta[state.orient.axis(l).index()] = state.orient.offset(l, coord, size);
             }
         }
 
@@ -665,13 +1257,13 @@ impl<'a> Expander<'a> {
         &mut self,
         symbol: &'a str,
         split: &'a Split,
-        state: &ScopeState,
+        state: &ScopeState<'_>,
         depth: u32,
     ) -> Result<(), ExpandError> {
-        let world_axis = state.orient.get(split.axis);
+        let world_axis = state.orient.axis(split.axis);
         let extent = state.region.extent(world_axis);
 
-        let scope = self.scope(state);
+        let scope = state.scope();
         let mut sizes = Vec::with_capacity(split.sizes.len());
         for size in &split.sizes {
             let (expr, absolute) = match size {
@@ -716,17 +1308,35 @@ impl<'a> Expander<'a> {
             error,
         })?;
 
+        // The pattern is laid out along the LOCAL axis, from its low end. In an
+        // unreflected frame that is the world low end; in a reflected one the
+        // first piece is the world-highest, so the same rule puts its end wall
+        // on the outside of both arms of a transept. The pieces are also
+        // *visited* in pattern order either way, so expansion order stays
+        // reading order — which is what `mark`'s auto-numbering counts in.
         let axis = world_axis.index();
-        let mut cursor = state.region.origin[axis];
+        let reversed = state.orient.reversed(split.axis);
+        let mut cursor = if reversed {
+            state.region.origin[axis] + state.region.size[axis] as i32
+        } else {
+            state.region.origin[axis]
+        };
         for (i, piece) in pieces.iter().enumerate() {
             let mut origin = state.region.origin;
             let mut size = state.region.size;
-            origin[axis] = cursor;
+            if reversed {
+                cursor -= *piece as i32;
+                origin[axis] = cursor;
+            } else {
+                origin[axis] = cursor;
+                cursor += *piece as i32;
+            }
             size[axis] = *piece;
-            cursor += *piece as i32;
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,
+                env: state.env,
+                pinned: state.pinned,
             };
             let child = &split.children[i % split.children.len()];
             self.run_node(symbol, child, &child_state, depth + 1)?;

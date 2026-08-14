@@ -1,6 +1,22 @@
 # spec-0029 — i18n v2: the client picks the language
 
-Status: Proposed (owner directive in conversation, 2026-08-06)
+Status: **Implemented and shipped** (owner directive in conversation, 2026-08-06;
+built and released in `nobodys-cave-island v1.1.0`).
+
+> The status above is verified by measurement, on the island built from
+> `delvec 1.1.0` with no `--lang`:
+>
+> - the resource pack carries `assets/delvewright/lang/en_us.json` **and**
+>   `assets/delvewright/lang/zh_cn.json`, **447 keys each**;
+> - emission is components, not literals, nested arguments included —
+>   `tellraw @a {"color":"green","fallback":"Objective complete: %s",`
+>   `"translate":"delvewright.ui.objective.complete","with":[{"color":"white",`
+>   `"fallback":"Step Into the Cave","translate":"obj.cave-of-plenty.checkpoint.title"}]}`
+>
+> A spec's `Status` is an approval record and nothing binds it to whether the
+> thing exists, so it drifts in the one direction that matters — a shipped
+> feature still reading as unbuilt, which is then reported to the owner as
+> outstanding work. See the open finding on binding it.
 
 ## Context
 

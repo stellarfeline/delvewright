@@ -36,7 +36,9 @@ render() {
   elif [ -x "$repo/target/debug/delve-render" ]; then
     "$repo/target/debug/delve-render" "$@"
   else
-    ( cd "$repo" && cargo run -q -p delvewright-render --bin delve-render -- "$@" )
+    # `--manifest-path`, not `-p`: this crate is its own workspace (/Cargo.toml).
+    ( cd "$repo" && cargo run -q --manifest-path crates/render/Cargo.toml \
+        --bin delve-render -- "$@" )
   fi
 }
 

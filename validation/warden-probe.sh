@@ -38,29 +38,53 @@ PAD_Z=200
 POLL_SECONDS="${POLL_SECONDS:-10}"
 WATCH_SECONDS="${WATCH_SECONDS:-150}"
 
-rcon() { docker exec -i "$CONTAINER" rcon-cli "$1" 2>&1 | tr '\n' ' '; }
+# Two channels, and which one a command uses is a statement about that command
+# (tools/lib/rcon.sh, task #70). `rcon` is for anything that MUST take effect and
+# dies when the server refuses; `rcon_raw` is for the readbacks and the idempotent
+# cleanups, where "No entity was found" is the answer, not a failure.
+#
+# This probe is why the distinction is not academic: its pad setup asked for
+# `gamerule doMobSpawning false` and `gamerule randomTickSpeed 0`, both rejected
+# outright by 1.21.11 (the registry is snake_case since the pin, and several rules
+# were reworded), both discarded with `>/dev/null`. Every warden reading it has
+# ever taken was taken in a world that was still spawning mobs and still running
+# random ticks — the exact confounds the pad exists to remove.
+# shellcheck source=tools/lib/rcon.sh
+. "$(dirname "$0")/../tools/lib/rcon.sh"
+rcon() { dw_rcon "$CONTAINER" "$1"; }
+rcon_raw() { dw_rcon_probe "$CONTAINER" "$1"; }
 
 # `data get` is the only readback that reaches rcon stdout: it answers with
 # "<Entity> has the following entity data: <value>" or "No entity was found".
 # (`execute if entity … run say` prints to chat, NOT to the rcon reply — that is
 # what made the first run of this probe report every trial dead at t=0.)
-get() { rcon "data get entity @e[type=minecraft:warden,limit=1] $1"; }
+get() { rcon_raw "data get entity @e[type=minecraft:warden,limit=1] $1"; }
 alive() { case "$(get Health)" in *"following entity data"*) echo 1 ;; *) echo 0 ;; esac; }
 
 setup_pad() {
-  rcon "gamerule doMobSpawning false" >/dev/null
-  rcon "gamerule randomTickSpeed 0" >/dev/null
-  rcon "fill $((PAD_X - 10)) $PAD_Y $((PAD_Z - 10)) $((PAD_X + 10)) $PAD_Y $((PAD_Z + 10)) minecraft:stone" >/dev/null
-  # Keep the pad loaded with no player online, or the subject never ticks and the
-  # probe would "prove" the warden persists simply by freezing it.
-  rcon "forceload add $((PAD_X - 16)) $((PAD_Z - 16)) $((PAD_X + 16)) $((PAD_Z + 16))" >/dev/null
+  # 1.21.11 identifiers, measured on the pinned server (2026-08-11): the legacy
+  # `doMobSpawning` / `randomTickSpeed` answer "Incorrect argument for command".
+  rcon "gamerule spawn_mobs false" >/dev/null || exit 1
+  rcon "gamerule random_tick_speed 0" >/dev/null || exit 1
+  # Forceload BEFORE filling, and this order is load-bearing. With no player
+  # online nothing around the pad is loaded, and `fill` into an unloaded chunk
+  # answers "That position is not loaded" and places nothing — so every reading
+  # this probe has taken was taken on a warden standing on whatever the world
+  # generated, not on the stone pad the method describes. Found the first time the
+  # checked channel was used here (task #70): the old `>/dev/null` made the
+  # refusal invisible, which is the same defect as the rejected gamerules one line
+  # above, one layer along.
+  rcon "forceload add $((PAD_X - 16)) $((PAD_Z - 16)) $((PAD_X + 16)) $((PAD_Z + 16))" >/dev/null || exit 1
+  rcon "fill $((PAD_X - 10)) $PAD_Y $((PAD_Z - 10)) $((PAD_X + 10)) $PAD_Y $((PAD_Z + 10)) minecraft:stone" >/dev/null || exit 1
 }
 
 # trial <name> <difficulty> <summon-nbt-or-empty>
 trial() {
   local name="$1" difficulty="$2" nbt="${3:-}"
-  rcon "kill @e[type=minecraft:warden]" >/dev/null
-  rcon "difficulty $difficulty" >/dev/null
+  # Idempotent cleanup: "No entity was found" is the expected answer on the first
+  # trial, so this one is deliberately unjudged.
+  rcon_raw "kill @e[type=minecraft:warden]" >/dev/null
+  rcon "difficulty $difficulty" >/dev/null || exit 1
   local cmd="summon minecraft:warden $PAD_X $((PAD_Y + 1)) $PAD_Z"
   [ -n "$nbt" ] && cmd="$cmd $nbt"
   printf '#TRIAL\t%s\tdifficulty=%s\tnbt=%s\tsummon=%s\n' \
@@ -83,7 +107,7 @@ trial() {
 }
 
 setup_pad
-printf '== warden probe: %s ==\n' "$(rcon 'version' | sed 's/Server version info://')"
+printf '== warden probe: %s ==\n' "$(rcon_raw 'version' | sed 's/Server version info://')"
 
 # 1. Control: bare summon, easy, nobody online. Does it dig out immediately, at
 #    ~60 s, or not at all?
@@ -98,11 +122,11 @@ trial bare-peaceful peaceful ""
 
 # 4. Does a NoAI/Silent staging puppet standing 3 blocks away feed the warden's
 #    vibration listener (i.e. can our own staging keep it awake)?
-rcon "kill @e[tag=probe_puppet]" >/dev/null
-rcon "summon minecraft:zombie $((PAD_X + 3)) $((PAD_Y + 1)) $PAD_Z {NoAI:1b,Silent:1b,NoGravity:1b,PersistenceRequired:1b,Tags:[\"probe_puppet\"]}" >/dev/null
+rcon_raw "kill @e[tag=probe_puppet]" >/dev/null
+rcon "summon minecraft:zombie $((PAD_X + 3)) $((PAD_Y + 1)) $PAD_Z {NoAI:1b,Silent:1b,NoGravity:1b,PersistenceRequired:1b,Tags:[\"probe_puppet\"]}" >/dev/null || exit 1
 trial puppet-neighbour easy '{PersistenceRequired:1b}'
-rcon "kill @e[tag=probe_puppet]" >/dev/null
+rcon_raw "kill @e[tag=probe_puppet]" >/dev/null
 
-rcon "kill @e[type=minecraft:warden]" >/dev/null
-rcon "forceload remove all" >/dev/null
+rcon_raw "kill @e[type=minecraft:warden]" >/dev/null
+rcon_raw "forceload remove all" >/dev/null
 echo "== probe complete =="

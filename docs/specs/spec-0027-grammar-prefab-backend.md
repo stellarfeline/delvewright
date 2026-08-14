@@ -99,3 +99,24 @@ the compiler layer (prefab quality, not correctness).
    from LICENSE, not the GitHub API).
 6. Owner viewing of a first contact sheet (temple typology sweep) — the
    merge gate for the spec's claims, per the sandbox-first ruling.
+
+## 6. §3 phase 3 — the contact sheet, as built (2026-08-09)
+
+`Status:` above records **approval**, not existence. Measured state of the §3
+authoring loop:
+
+| §3 step | State |
+|---|---|
+| LLM authors a grammar program | built (`crates/grammar`, see `docs/reference/grammar.md`) |
+| expander builds N candidates (seed-varied) | built, but nothing **drives** a sweep — the seed variation is assembled by hand |
+| machine gates (§4) filter | **not built** — the craft diagnostics are still a later phase |
+| contact-sheet render | **built**: `delve-render contact-sheet <dir> -o <png>` |
+| owner curates | AC6 unmet — she has not viewed a sheet yet; that remains the merge gate for this spec's claims |
+| chosen output frozen as `.nbt` with provenance | built (§2 export path) |
+
+The sheet consumes renders and needs no GPU or client jar, so it runs in CI. It
+orders the page by the spec-0028 §3 similarity score when one is supplied — and
+that score **RANKS only, never gates** (owner ruling): note that §3's word
+"filter" belongs to the §4 machine gates, which are a *correctness/craft* filter
+on the batch, and not to the similarity score, which may never remove a
+candidate from the owner's page.

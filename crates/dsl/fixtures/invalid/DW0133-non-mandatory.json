@@ -1,27 +1,27 @@
 {
   "description": "a quest is non-mandatory (reserved)",
-  "expect": "DW0133",
   "documents": {
     "quest-plan": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "quest-plan",
       "content": {
+        "finale": "quest/open-the-door",
         "quests": [
           {
-            "id": "quest/open-the-door",
-            "goal": "Get the Keeper to open the door and leave the keep.",
+            "act": 1,
             "area": "area/keep",
+            "depends_on": [],
+            "goal": "Get the Keeper to open the door and leave the keep.",
+            "id": "quest/open-the-door",
+            "mandatory": false,
             "npcs": [
               "npc/keeper"
-            ],
-            "depends_on": [],
-            "mandatory": false,
-            "act": 1
+            ]
           }
-        ],
-        "finale": "quest/open-the-door"
-      }
+        ]
+      },
+      "dsl_version": "0.2.0",
+      "stage": "quest-plan"
     }
-  }
+  },
+  "expect": "DW0133"
 }
