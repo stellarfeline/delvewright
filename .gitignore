@@ -77,3 +77,6 @@ dist/
 # (open_clip_torch, t2v-metrics). Multi-GB with their PyTorch dependency and
 # deliberately absent from CI — see [refscore] in delvewright.toml.
 .refscore-venv/
+
+# Local half of the constitution — operating practice, never committed
+CLAUDE.local.md

@@ -32,17 +32,24 @@
 # CLAUDE.md holds what anyone building Delvewright must obey. How this project
 # is RUN — dispatch, review, merge gates, staging, decision sessions — is about
 # one owner and one deployment, and a repository holds finished results rather
-# than a person's decisions, so that half lives in
-# docs/notes/private/OPERATING-PRACTICE.md and is gitignored.
+# than a person's decisions, so that half lives in CLAUDE.local.md, which is
+# gitignored.
 #
-# Emitting it here is what stops it degrading into a file someone has to
-# remember to read: it rides the same two events as everything else on this
-# page, which is the strongest binding this repo has. And its ABSENCE IS LOUD.
-# A gitignored file is missing on exactly the machine that has never had it — a
-# fresh clone — so a silent no-op there would be the UNRUN vacuity mode wearing
-# the fix's clothes. Missing or EMPTY => a refusal that names the file and says
-# the session is running on half a constitution. That is the ONE thing on this
-# page that is not merely informational.
+# It is NOT printed here, and that is the point. CLAUDE.local.md is loaded by
+# the same memory loader as CLAUDE.md, so the local half carries the same force
+# as the checked-in half: it is instructions, not text an agent is shown and may
+# skim. An earlier design emitted the page from this script, which made it a
+# tool result — the same standing as a doc line, and this project's own doctrine
+# says a doc line is not an invocation.
+#
+# What remains here is the part a loader cannot do: SAY SO WHEN IT IS ABSENT. A
+# gitignored file is missing on exactly the machine that has never had it — a
+# fresh clone — and a missing memory file loads silently, which is the UNRUN
+# vacuity mode wearing the fix's clothes. Missing or EMPTY => a refusal that
+# names the file and says the session is running on half a constitution. Present
+# => one line stating its size, so "loaded" is an observation rather than an
+# assumption. That refusal is the ONE thing on this page that is not merely
+# informational.
 #
 # The refusal is CONTENT, not an exit code, and deliberately so: this script's
 # output is injected into the session, and a `UserPromptSubmit` hook that exits
@@ -129,11 +136,11 @@ open_prs() { # <repo-dir>
 }
 
 LOCAL="$ROOT/docs/notes/private"
-PRACTICE="$LOCAL/OPERATING-PRACTICE.md"
+PRACTICE="$ROOT/CLAUDE.local.md"
 
 section "operating practice — the half of the constitution that is not checked in"
 if [ -s "$PRACTICE" ]; then
-  cat "$PRACTICE"
+  echo "  present ($(wc -c < "$PRACTICE" | tr -d ' ') bytes) — loaded as instructions, not printed here."
 else
   cat <<EOF
   REFUSED — $PRACTICE is missing.
