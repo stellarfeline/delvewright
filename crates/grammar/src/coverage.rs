@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::ir::{Cond, Material, Node, Paint, Program};
+use crate::ir::{Cond, Material, Node, Paint, Program, States};
 use crate::library::LibraryProgram;
 
 // ---------------------------------------------------------------------------
@@ -160,23 +160,50 @@ impl CondKind {
 }
 
 constructs! {
-    /// One kind of [`Paint`] — what a palette role or an inline material
-    /// resolves to.
+    /// One kind of [`States`] — how many block states a paint draws from.
     pub enum PaintKind {
-        /// [`Paint::Block`].
+        /// [`States::One`].
         Block = "paint:block",
-        /// [`Paint::Mix`] — the only per-cell material variation the language
+        /// [`States::Mix`] — the only per-cell material variation the language
         /// has.
         Mix = "paint:mix",
     }
 }
 
 impl PaintKind {
-    /// Classify one paint. Exhaustive, for the reason [`NodeKind::of`] is.
+    /// Classify one paint's states. Exhaustive, for the reason
+    /// [`NodeKind::of`] is.
     pub fn of(paint: &Paint) -> PaintKind {
+        match paint.states() {
+            States::One(_) => PaintKind::Block,
+            States::Mix(_) => PaintKind::Mix,
+        }
+    }
+}
+
+constructs! {
+    /// Which axes a paint's block-state properties are named in.
+    ///
+    /// Its own axis rather than a pair of extra [`PaintKind`] variants: the
+    /// frame and the draw are independent, so folding them together would
+    /// report four kinds where the language has two questions, and a corpus
+    /// demonstrating three of the four would read as a gap that is not one.
+    pub enum FrameKind {
+        /// [`Paint::World`].
+        World = "frame:world",
+        /// [`Paint::Local`] — properties in the scope's own axis names,
+        /// resolved through its orientation at fill time.
+        Local = "frame:local",
+    }
+}
+
+impl FrameKind {
+    /// Classify one paint's frame. Exhaustive, for the reason [`NodeKind::of`]
+    /// is.
+    pub fn of(paint: &Paint) -> FrameKind {
         match paint {
-            Paint::Block(_) => PaintKind::Block,
-            Paint::Mix(_) => PaintKind::Mix,
+            Paint::World(_) => FrameKind::World,
+            Paint::Local { .. } => FrameKind::Local,
         }
     }
 }
@@ -356,11 +383,12 @@ impl Tally {
 
     fn paint(&mut self, paint: &Paint) {
         self.hit(PaintKind::of(paint).id());
-        match paint {
-            Paint::Block(b) => {
+        self.hit(FrameKind::of(paint).id());
+        match paint.states() {
+            States::One(b) => {
                 self.m.blocks.insert(b.to_string());
             }
-            Paint::Mix(mix) => {
+            States::Mix(mix) => {
                 if mix.iter().any(|w| w.block.is_air()) {
                     self.m.mixes_containing_air += 1;
                 }
@@ -419,6 +447,7 @@ fn measure_with(corpus: &[LibraryProgram], allowlist: &[(&'static str, &'static 
         .map(|k| k.id())
         .chain(CondKind::ALL.iter().map(|k| k.id()))
         .chain(PaintKind::ALL.iter().map(|k| k.id()))
+        .chain(FrameKind::ALL.iter().map(|k| k.id()))
         .collect();
 
     let mut findings = Vec::new();
@@ -566,7 +595,7 @@ mod tests {
         let ids: Vec<&str> = report.constructs.iter().map(|c| c.id).collect();
         assert_eq!(
             ids.len(),
-            NodeKind::ALL.len() + CondKind::ALL.len() + PaintKind::ALL.len()
+            NodeKind::ALL.len() + CondKind::ALL.len() + PaintKind::ALL.len() + FrameKind::ALL.len()
         );
         for wanted in ["node:skip", "cond:none_of", "paint:mix", "node:fill"] {
             assert!(ids.contains(&wanted), "{ids:?}");

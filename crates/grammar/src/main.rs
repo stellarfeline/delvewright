@@ -505,7 +505,21 @@ fn run_expand(
             Ok(b) => b,
             Err(e) => return bad_input(format!("--role {spec:?}: {e}")),
         };
-        if let Err(e) = program.set_role(name.trim(), Paint::Block(block)) {
+        // A `--role` override is a RESTYLE: it says which material, and the
+        // syntax has no word for an axis frame. So it inherits the frame of the
+        // binding it replaces — overriding a local-frame role with a
+        // world-frame state would silently re-point every connection in the
+        // piece, which is a different edit than the one being asked for.
+        let paint = if program
+            .palette
+            .get(name.trim())
+            .is_some_and(Paint::is_local)
+        {
+            Paint::local_block(block)
+        } else {
+            Paint::block(block)
+        };
+        if let Err(e) = program.set_role(name.trim(), paint) {
             return bad_input(format!("--role {spec:?}: {e}"));
         }
     }
@@ -1085,6 +1099,28 @@ fn run_audit(
     println!(
         "\naudited {} program(s), {held_red} of them held known-red:",
         audited.len()
+    );
+    // The local frame's own binding count, beside the gate whose population it
+    // takes from. A zero here across a whole corpus is a finding in exactly the
+    // way a zero-bound gate is: the surface exists and nothing exercises it.
+    let local_frame: usize = audited
+        .iter()
+        .map(|a| a.report.measurements.local_frame_fills)
+        .sum();
+    let local_frame_programs = audited
+        .iter()
+        .filter(|a| a.report.measurements.local_frame_fills > 0)
+        .count();
+    println!(
+        "  {:<16} bound {:<8} over {:<3} program(s){}",
+        "local-frame",
+        local_frame,
+        local_frame_programs,
+        if local_frame == 0 {
+            " — FINDING: zero binding, no program writes a state in its own axis frame"
+        } else {
+            ""
+        }
     );
     for id in &order {
         let (total, ran, red) = bound[id];

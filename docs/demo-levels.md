@@ -40,6 +40,7 @@ Rules of the queue:
 | i18n zh-cn sidecar | covered by both shipped campaigns | covered |
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
+| Local axis frame on a paint (grammar) | **The Turning Gate** — one grammar program, one barred doorway, built four times into boxes turned against each other; the same palette role gives the right bars, stair and skull yaw in every one, and the level's own signage is the before/after. Its second half is the refusal: a scope tipped onto its side, where the yaw has no image and the build says so instead of guessing | pending |
 
 ## M5 theme suite (owner-approved 2026-08-03, all five)
 

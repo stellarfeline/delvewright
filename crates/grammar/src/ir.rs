@@ -379,15 +379,119 @@ pub struct WeightedBlock {
     pub block: BlockState,
 }
 
-/// What a palette role resolves to.
+/// The block states a paint writes: one, or a weighted draw.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum Paint {
+pub enum States {
     /// A single block state.
-    Block(BlockState),
+    One(BlockState),
     /// A per-cell weighted draw from the seeded stream (upstream's `dict`
     /// materials, which drew with `random.choices`).
     Mix(Vec<WeightedBlock>),
+}
+
+impl States {
+    /// Every block state this can write, in draw order.
+    pub fn each(&self) -> Vec<&BlockState> {
+        match self {
+            States::One(b) => vec![b],
+            States::Mix(mix) => mix.iter().map(|w| &w.block).collect(),
+        }
+    }
+
+    /// The same states with every block replaced by `f` of it, shape kept.
+    pub(crate) fn map<E>(
+        &self,
+        mut f: impl FnMut(&BlockState) -> Result<BlockState, E>,
+    ) -> Result<States, E> {
+        Ok(match self {
+            States::One(b) => States::One(f(b)?),
+            States::Mix(mix) => States::Mix(
+                mix.iter()
+                    .map(|w| {
+                        Ok(WeightedBlock {
+                            weight: w.weight,
+                            block: f(&w.block)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, E>>()?,
+            ),
+        })
+    }
+}
+
+/// **Which axes a block state's properties are named in.**
+///
+/// `north`, `east`, `axis=x` and a 16-step `rotation` all name a *direction*,
+/// and a direction is only meaningful against a frame. Every other authored
+/// value in this IR already says which frame it is in — [`DimRef::X`] is local
+/// and [`DimRef::WorldX`] is not, [`AxisSpec`] spells both out, a
+/// [`MarkAt::Offset`] is local where [`MarkAt::FloorCenter`] is world. A block
+/// state was the one value with no frame to name, so it meant the world's axes
+/// by default and a reorientation left it pointing the way the author's
+/// keyboard happened to face.
+///
+/// [`Paint::Local`] is that missing declaration, and nothing more: the state is
+/// read in the scope's own axis names and resolved into the world's at fill
+/// time, through the *same* permutation transform the `oriented-fills`
+/// diagnostic uses to decide that an unframed state landed wrong
+/// (`delvewright_schem::blocks::BlockRegistry::permuted_properties`). One rule
+/// therefore works at every orientation, which is what a palette role — one
+/// name, one binding — could not previously carry.
+///
+/// A state whose image the pinned vocabulary does not determine is refused
+/// (`DW0738`), never guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Paint {
+    /// States whose properties name **world** directions: `north` is the
+    /// world's `-Z` however the scope was turned. What an unannotated state
+    /// has always meant, and what the `orientation` guard pins.
+    World(States),
+    /// States whose properties name the **scope's own** directions, resolved
+    /// through its orientation at fill time.
+    Local {
+        /// The states, in the local frame.
+        local: States,
+    },
+}
+
+impl Paint {
+    /// A single world-frame block state.
+    pub fn block(block: BlockState) -> Paint {
+        Paint::World(States::One(block))
+    }
+
+    /// A world-frame weighted draw.
+    pub fn mix(mix: Vec<WeightedBlock>) -> Paint {
+        Paint::World(States::Mix(mix))
+    }
+
+    /// A single block state written in the scope's own axis names.
+    pub fn local_block(block: BlockState) -> Paint {
+        Paint::Local {
+            local: States::One(block),
+        }
+    }
+
+    /// A weighted draw written in the scope's own axis names.
+    pub fn local_mix(mix: Vec<WeightedBlock>) -> Paint {
+        Paint::Local {
+            local: States::Mix(mix),
+        }
+    }
+
+    /// The states, whichever frame they are in.
+    pub fn states(&self) -> &States {
+        match self {
+            Paint::World(s) | Paint::Local { local: s } => s,
+        }
+    }
+
+    /// True when the states are written in the scope's own axis names.
+    pub fn is_local(&self) -> bool {
+        matches!(self, Paint::Local { .. })
+    }
 }
 
 /// What a `fill` writes.
@@ -412,9 +516,19 @@ impl Material {
         }
     }
 
-    /// An inline single block.
+    /// An inline single block, in the world frame.
     pub fn block(block: BlockState) -> Material {
-        Material::Inline(Paint::Block(block))
+        Material::Inline(Paint::block(block))
+    }
+
+    /// An inline single block written in the scope's own axis names.
+    ///
+    /// The frame belongs to the *state*, so it reaches every consumer of one —
+    /// a palette role, an inline fill, and either as a weighted mix. Building
+    /// it onto the palette alone would have left an inline fill with no way to
+    /// say the same thing, which is how a second bespoke field gets written.
+    pub fn local_block(block: BlockState) -> Material {
+        Material::Inline(Paint::local_block(block))
     }
 }
 
@@ -900,13 +1014,28 @@ impl Program {
 
     /// Bind a palette role to a single block (builder form).
     pub fn role(mut self, role: &str, block: BlockState) -> Program {
-        self.palette.insert(role.to_string(), Paint::Block(block));
+        self.palette.insert(role.to_string(), Paint::block(block));
         self
     }
 
     /// Bind a palette role to a weighted mix (builder form).
     pub fn role_mix(mut self, role: &str, mix: Vec<WeightedBlock>) -> Program {
-        self.palette.insert(role.to_string(), Paint::Mix(mix));
+        self.palette.insert(role.to_string(), Paint::mix(mix));
+        self
+    }
+
+    /// Bind a palette role to a single block written in the scope's own axis
+    /// names (builder form) — the role a turning piece can still restyle.
+    pub fn role_local(mut self, role: &str, block: BlockState) -> Program {
+        self.palette
+            .insert(role.to_string(), Paint::local_block(block));
+        self
+    }
+
+    /// Bind a palette role to a weighted mix written in the scope's own axis
+    /// names (builder form).
+    pub fn role_local_mix(mut self, role: &str, mix: Vec<WeightedBlock>) -> Program {
+        self.palette.insert(role.to_string(), Paint::local_mix(mix));
         self
     }
 
@@ -973,7 +1102,7 @@ impl Program {
             }
         }
         for (role, paint) in &self.palette {
-            if let Paint::Mix(mix) = paint
+            if let States::Mix(mix) = paint.states()
                 && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
             {
                 return Err(ProgramError::ZeroWeight {
@@ -999,7 +1128,7 @@ impl Program {
                     }
                     Material::Inline(paint) => paint,
                 };
-                if let Paint::Mix(mix) = paint
+                if let States::Mix(mix) = paint.states()
                     && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
                 {
                     return Err(ProgramError::ZeroWeight {

@@ -120,7 +120,7 @@ delve-grammar list                       # every library program, with its param
 delve-grammar show   --program <id>      # that program as the typed JSON IR (the corpus)
 delve-grammar check  (--program <id> | --file <p.json>)
 delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
-    [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
+    [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...   # a restyle keeps the role's axis frame
     [--id <prefab-id>] [--traversable [--allow-falls]] [--reachable-floor]
 delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
 delve-grammar audit [--library] [--campaign-root <path>]... [--exclusions <path>]
@@ -140,7 +140,8 @@ is the fastest way to see how a taper, an erosion mix or a symmetric aperture is
 actually written. Read that block before starting a piece.
 
 `delve-grammar audit` is the sweep: it expands and judges EVERY program of a
-corpus at the expansion that corpus declares, prints a binding count per gate,
+corpus at the expansion that corpus declares, prints a binding count per gate
+plus the corpus-wide count of fills resolved out of the scope's own axis frame,
 and writes nothing. `--library` walks the rule library, whose registry carries
 each entry's region and seed; `--campaign-root <content repo>` walks every
 `campaigns/<campaign>/design/programs/` there, driven by that campaign's own

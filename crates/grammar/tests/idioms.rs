@@ -378,10 +378,10 @@ fn shape_inverting_the_palette_turns_the_roof_into_the_opening() {
 
     let mut arch_program = idioms::shape();
     arch_program
-        .set_role("mass", Paint::Block(BlockState::air()))
+        .set_role("mass", Paint::block(BlockState::air()))
         .unwrap();
     arch_program
-        .set_role("cut", Paint::Block(BlockState::simple("stone_bricks")))
+        .set_role("cut", Paint::block(BlockState::simple("stone_bricks")))
         .unwrap();
     let arch = run(&arch_program, case.region, case.seed);
 
@@ -432,7 +432,7 @@ fn erosion_air_in_a_mix_is_what_voids_the_cells() {
     sound
         .set_role(
             "ruin",
-            Paint::Mix(vec![
+            Paint::mix(vec![
                 WeightedBlock {
                     weight: 9,
                     block: BlockState::simple("stone_bricks"),

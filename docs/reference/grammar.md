@@ -29,12 +29,12 @@ Two library modules exist for the tool and are public for it:
   `shape-complete` (every placed state writes its shape-carrying `multipart`
   properties — `DW0735`, §4b), `states-complete` (every placed state writes
   EVERY property the block has — `DW0737`, §4b), `oriented-fills` (an
-  orientation-sensitive state is filled only under identity orientation or a
-  passed `orientation` guard — `DW0736`, §4b), `non-empty`, and opt-in
-  `traversable` and `reachable-floor`.
+  orientation-sensitive state is filled only under identity orientation, a
+  passed `orientation` guard, or the scope's own axis frame — `DW0736`, §4b),
+  `non-empty`, and opt-in `traversable` and `reachable-floor`.
   Measurements:
   fill, distinct states, standable cells, footprint area/perimeter, silhouette
-  complexity, per-block shares, and **reachability** (§4c) — how much of the
+  complexity, per-block shares, local-frame fills, and **reachability** (§4c) — how much of the
   floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no anchors, are reported
   as findings rather than folded into a pass.
 
@@ -135,6 +135,36 @@ positive integers and a zero is refused. **A mix moves no geometry** — the sam
 cells are visited whatever the weights say — so a restyle can never change what
 a gate walked, and a sweep over seeds is a sweep over texture alone.
 
+**A paint names the axes its properties are written in.** `north`, `east`,
+`axis=x` and a 16-step `rotation` all name a direction, and a direction is only
+meaningful against a frame. Written bare, a state is in the **world** frame:
+`north` is the world's `−Z` however the scope was turned. Wrapped in `local`, it
+is in the **scope's own** frame and is resolved into the world's at fill time:
+
+```json
+"palette": {
+  "grille": { "local": "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]" },
+  "rubble": { "local": [ { "weight": 3, "block": "minecraft:oak_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]" } ] }
+}
+```
+
+Both forms take either shape — one state or a weighted list — and both are legal
+inline on a `fill`, because the frame belongs to the state and every consumer of
+a state gets it. `"grille"` above says *the bars run along my local X*: expanded
+into a box whose local X is the world X it writes `east`/`west`, and into a box
+turned 90° it writes `north`/`south`, from the one binding. That is what lets an
+orientation-dependent block be a palette **role**, so a campaign restyles it
+without knowing which way the piece was laid; a `--role` override is a restyle
+and keeps the frame of the binding it replaces.
+
+The resolution is exact or it refuses (`DW0738`, §4b). It maps a direction by
+key or by value, an `axis`, a `<dir>_<dir>` pair, a `rotation` and a handedness —
+everything the pinned vocabulary determines — and a permutation that moves the
+**vertical** determines none of them, because `rotation`, `hinge` and
+`half=top` are all stated against a fixed up-axis. The one non-identity
+permutation that keeps the vertical is the horizontal transposition `x↔z`, and
+it is a *reflection*: a yaw `r` becomes `(12 − r) mod 16` and left becomes right.
+
 ### Four things the surface above does not say
 
 1. **`rounding` other than `truncate` is legal on a split with exactly one
@@ -155,15 +185,17 @@ a gate walked, and a sweep over seeds is a sweep over texture alone.
    `skip` all write nothing in it without complaint. What does refuse is
    anything needing a cell of it: an absolute split inside it overflows, and a
    `mark` on it is `MarkOutsideScope`.
-4. **A role bound to a world-cardinal block state does not turn when `largest`
-   turns the scope.** A `fill` writes the state it was given verbatim; nothing
+4. **A role bound to a WORLD-frame block state does not turn when `largest`
+   turns the scope.** A `fill` writes a world-frame state verbatim; nothing
    rotates a `facing=` property to follow the orientation. So a rule whose frame
    opens with `z(largest)` — every §5b rule does — lays its stairs, doors and
-   voussoirs the same way round whatever box it is handed, and every gate stays
-   green while the piece faces the wrong way. The construct that answers it is
-   the `orientation` guard: one alternative per axis mapping, each naming the
-   state that mapping wants, which is how `church` picks its four roof stair
-   facings.
+   voussoirs the same way round whatever box it is handed, and the
+   `oriented-fills` gate is what catches it (`DW0736`, §4b). Two constructs
+   answer it. Write the state in the scope's own frame (`{"local": …}`), and
+   one binding turns with the piece — which is how `far_side_bar`'s bar stays a
+   role. Or pin the orientation with an `orientation` guard and write one
+   alternative per axis mapping, which is what a rule needs when the whole
+   BODY differs by orientation rather than just the state.
 
 All four are asserted in `tests/idioms.rs`.
 
@@ -596,22 +628,31 @@ Three more members of the same spelling rule ride the same sites:
   `DW0735` the omission costs no geometry in the emitted template, so what it
   judges is what was AUTHORED.
 - **Oriented fills (`DW0736`).** A reorientation permutes geometry and never
-  rewrites block-state properties, so a literal `facing`/`axis`/connection/
-  `rotation` state inside a reoriented scope lands however the scope was
-  turned. The mechanism is `Cond::Orientation` — one alternative per
-  orientation, each carrying the matching state — and the expander records
-  every fill that skips it (sensitivity derived from the registry's value
-  vocabulary, `BlockRegistry::oriented_mismatch`). A passed guard licenses a
-  fill only while the orientation it asserted still holds. First run over the
-  corpus, it found `cliff_path`'s skull yaw literal under the recess's own
-  reorientation: the same program at a box longer in world X shipped skulls
-  facing along the path instead of out of the niche. Because a role binds ONE
-  state per name, an orientation-dependent block cannot be a palette role;
-  `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as guarded
-  inline states (an oriented-role surface is a named gap, §7).
+  rewrites block-state properties, so a **world-frame** literal
+  `facing`/`axis`/connection/`rotation` state inside a reoriented scope lands
+  however the scope was turned. Two mechanisms answer it — the local axis frame
+  (§2) and the `orientation` guard — and the expander records every fill that
+  uses neither (sensitivity derived from the registry's value vocabulary,
+  `BlockRegistry::oriented_mismatch`). A passed guard licenses a fill only while
+  the orientation it asserted still holds. First run over the corpus, it found
+  `cliff_path`'s skull yaw literal under the recess's own reorientation: the
+  same program at a box longer in world X shipped skulls facing along the path
+  instead of out of the niche. The gate's detail states three numbers — fills
+  examined, fills carrying properties, and how many of those were resolved out
+  of the local frame — so a population that moves to the frame is visible
+  rather than a binding that quietly fell.
+- **Unresolvable local frame (`DW0738`).** A state written in the scope's own
+  axis frame whose image the pinned vocabulary does not determine: a yaw, a
+  handedness or a `top`/`bottom` half under a permutation that moves the
+  vertical, a horizontal connection turned onto a block with no `up` key, a
+  rail's direction-composed `shape`. Refused at expansion, naming the state,
+  the property and the orientation. It shares its classifier with `DW0736`, so
+  a state one of them calls wrong is never one the other quietly rewrites —
+  the judge and the rewriter are one transform, read from two ends.
 
-`tests/shape_orient.rs` demonstrates all three red→green on `broken_grate`'s
-bars; `tests/library.rs` and `tests/zones.rs` sweep them over every library
+`tests/shape_orient.rs` demonstrates all four red→green on real pieces —
+`broken_grate`'s bars for the first three, `far_side_bar`'s for the frame, in
+both directions; `tests/library.rs` and `tests/zones.rs` sweep them over every library
 program and every bell zone with summed binding counts. `delve-grammar audit`
 (§4d) runs the same sweep over a campaign's own zone programs, which is where a
 zone that has left the engine's copy behind is caught.
@@ -649,7 +690,14 @@ A zone that is known red is recorded in the pipeline repo's
 with and the capability gap that keeps it red. The record INVERTS the assertion
 rather than removing it: the zone is still expanded and still judged, and it is a
 finding if it passes, if it fails with a different code, or if it fails with one
-more.
+more. An entry belongs there only while the engine is missing a capability the
+zone needs; the list is empty, and every zone program of every campaign expands
+and judges green.
+
+The sweep also totals the **local-frame binding count** — how many fills read
+their states in the scope's own axes — beside the gate whose population they
+come out of, so a green `oriented-fills` that got greener by writing fewer
+world literals says so in numbers rather than by silence.
 
 ## 4c. Reachability — how much of the floor a body can get to
 
@@ -1088,7 +1136,7 @@ left open — not a narrower door, a **barred** one.
 
 | | |
 |---|---|
-| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` (the bars are per-orientation guarded inline states, `bar_cell` — their connections follow the wall's orientation, which one role name cannot carry) |
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` and `bar`, the second written in the scope's own axis frame (`{"local": …}`) so its connections span the wall's local `X` whichever way the piece is laid |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
 | Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
@@ -2071,16 +2119,22 @@ trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
 treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
 yet by a rule — each needs its own declaration, not a widened `mark`.
 
-**An oriented palette role.** A role binds ONE block state per name, so a
-state whose properties depend on the scope's orientation — a bar's
-connections, a skull's yaw, a stair's facing — cannot be a role at all: the
-pieces that carry one (`broken_grate`, `far_side_bar`, `cliff_path`,
-`church`) write per-orientation guarded inline states instead (`DW0736`'s
-mechanism), and each such piece gives up the role's restyle surface to do it.
-The general form is a role that binds a state per orientation, so a campaign
-can restyle the material while the guard machinery keeps choosing the variant.
-Named here so the surface is designed once, at the object (the role), rather
-than re-invented per rule.
+**Three pieces still spell out per-orientation variants they no longer need to.**
+An orientation-dependent block is a palette role as of the local axis frame
+(§2), and `far_side_bar`'s bar is one. `broken_grate`'s bars, `cliff_path`'s
+corpse yaw and `church`'s doors are still written as one guarded alternative
+per orientation, which is the longer way to say the same thing — and `church`
+pays twice over, binding `door_lower`/`alt_door_lower` and
+`door_upper`/`alt_door_upper` where one framed role each would do. Converting
+them is mechanical and byte-neutral (the frame resolves to exactly the states
+the guards select), and the corpus is what an author copies from, so the
+variants that remain teach a workaround for a solved problem. What holds the
+first two back is that the `orientation` guard is a real construct with no
+other demonstration in the corpus: `coverage` counts `cond:orientation` over
+the library alone, and converting every site would take it to zero bindings —
+a live surface nothing shows. The general form wanted is a program that
+demonstrates the guard for what only the guard can do (a rule body that
+differs by orientation, not merely a state), after which the three convert.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the

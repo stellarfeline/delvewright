@@ -79,6 +79,10 @@ pub const DW_ORIENTED_FILL_UNGUARDED: &str = "DW0736";
 /// An authored block state omits a property the block has, so its geometry is
 /// whatever a 1.21.11 server derives and no other reader can know it (error).
 pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
+/// A block state written in a scope's own axis names carries a property the
+/// pinned vocabulary cannot map onto the world axes the scope was given
+/// (error).
+pub const DW_LOCAL_FRAME_UNRESOLVABLE: &str = "DW0738";
 
 /// The verdict on one block state, judged against the pin **and** the
 /// `DataVersion` of the file that carries it.
@@ -376,71 +380,83 @@ impl BlockRegistry {
         }
         let namespaced = namespace(name);
         let known = self.blocks.get(namespaced.as_ref())?;
-        let moves_horizontal = local_to_world[0] != 0 || local_to_world[2] != 2;
 
         for (k, v) in properties {
-            let legal = match known.get(k) {
-                Some(l) => l,
-                None => continue, // unknown property: `validate` owns it
-            };
-            // A direction-*named* property (the connection flags of fences,
-            // walls, panes, vines): the key itself is what the permutation
-            // moves. The intended key is the permuted one; if the state does
-            // not give the intended key the same value, the literal is wrong.
-            if let Some((axis, sign)) = direction_axis_sign(k) {
-                let intended_key = axis_sign_direction(local_to_world[axis], sign);
-                if intended_key != k.as_str() && properties.get(intended_key) != Some(v) {
-                    return Some(format!("{k}={v}"));
-                }
-                continue;
+            if known.get(k).is_none() {
+                continue; // unknown property: `validate` owns it
             }
-            // A direction-valued property (`facing`, `vertical_direction`, …),
-            // recognised by the block's own legal-value vocabulary.
-            if !legal.is_empty() && legal.iter().all(|l| direction_axis_sign(l).is_some()) {
-                if let Some((axis, sign)) = direction_axis_sign(v) {
-                    let intended = axis_sign_direction(local_to_world[axis], sign);
-                    if intended != v {
+            match property_image(known, k, v, local_to_world) {
+                // The permutation provably leaves this property alone.
+                PropertyImage::Fixed => {}
+                // It moves. A moved KEY is still satisfied when the state
+                // already gives the destination key the same value (a
+                // symmetric run of bars): the permutation maps the state onto
+                // itself.
+                PropertyImage::Moved { key, value } => {
+                    if key != *k {
+                        if properties.get(&key) != Some(v) {
+                            return Some(format!("{k}={v}"));
+                        }
+                    } else if value != *v {
                         return Some(format!("{k}={v}"));
                     }
                 }
-                continue;
-            }
-            // An axis-valued property (`axis` of logs, pillars, chains).
-            if !legal.is_empty() && legal.iter().all(|l| axis_index(l).is_some()) {
-                if let Some(axis) = axis_index(v)
-                    && local_to_world[axis] != axis
-                {
-                    return Some(format!("{k}={v}"));
-                }
-                continue;
-            }
-            // A two-direction value (`orientation` of jigsaws and crafters):
-            // every legal value is `<dir>_<dir>`.
-            if !legal.is_empty() && legal.iter().all(|l| is_direction_pair(l)) {
-                if let Some((a, b)) = v.split_once('_')
-                    && let (Some((aa, asig)), Some((ba, bsig))) =
-                        (direction_axis_sign(a), direction_axis_sign(b))
-                {
-                    let intended = format!(
-                        "{}_{}",
-                        axis_sign_direction(local_to_world[aa], asig),
-                        axis_sign_direction(local_to_world[ba], bsig)
-                    );
-                    if intended != *v {
-                        return Some(format!("{k}={v}"));
-                    }
-                }
-                continue;
-            }
-            // The documented residue: not transformable by vocabulary.
-            let residual = k == "rotation"
-                || k == "hinge"
-                || (k == "shape" && v != "straight" && legal.contains(&"straight".to_string()));
-            if residual && moves_horizontal {
-                return Some(format!("{k}={v}"));
+                PropertyImage::Undetermined => return Some(format!("{k}={v}")),
             }
         }
         None
+    }
+
+    /// **The same transform, applied instead of judged**: the image of
+    /// `properties` when the state was written in a scope's own axis names and
+    /// the scope calls its local axes `local_to_world`.
+    ///
+    /// [`Self::oriented_mismatch`] asks whether a state written for the
+    /// identity survives a permutation; it computes the intended state to
+    /// answer, and throws it away. This returns it. Both go through one
+    /// classifier, so a property either has an image both of them agree on or
+    /// has none, and there is no state the judge calls wrong that the
+    /// resolver quietly writes anyway.
+    ///
+    /// `Err` names the first property (as `key=value`, in key order) whose
+    /// image the pinned vocabulary does not determine — a yaw or a chirality
+    /// under a permutation that moves the vertical, a direction whose image is
+    /// not a legal value of the block, a rail's direction-composed shape.
+    /// **A refusal, never a best guess**: a local-frame state that cannot be
+    /// resolved has no correct block to write.
+    ///
+    /// Unchanged for the identity permutation, for a foreign namespace and for
+    /// an id the pin does not know (the unknown-block diagnostics own that).
+    pub fn permuted_properties(
+        &self,
+        name: &str,
+        properties: &BTreeMap<String, String>,
+        local_to_world: [usize; 3],
+    ) -> Result<BTreeMap<String, String>, String> {
+        if local_to_world == [0, 1, 2] {
+            return Ok(properties.clone());
+        }
+        let namespaced = namespace(name);
+        let Some(known) = self.blocks.get(namespaced.as_ref()) else {
+            return Ok(properties.clone());
+        };
+        let mut out = BTreeMap::new();
+        for (k, v) in properties {
+            if known.get(k).is_none() {
+                out.insert(k.clone(), v.clone()); // `validate` owns it
+                continue;
+            }
+            match property_image(known, k, v, local_to_world) {
+                PropertyImage::Fixed => {
+                    out.insert(k.clone(), v.clone());
+                }
+                PropertyImage::Moved { key, value } => {
+                    out.insert(key, value);
+                }
+                PropertyImage::Undetermined => return Err(format!("{k}={v}")),
+            }
+        }
+        Ok(out)
     }
 
     /// Registry ids most likely to be what an unknown id meant.
@@ -488,6 +504,176 @@ impl BlockRegistry {
             .take(3)
             .map(|(_, _, id)| id.clone())
             .collect()
+    }
+}
+
+/// What an axis permutation does to one block-state property.
+///
+/// The one classifier behind both [`BlockRegistry::oriented_mismatch`] and
+/// [`BlockRegistry::permuted_properties`]. Keeping it single is the point: a
+/// judge and a rewriter derived from different tables would disagree exactly
+/// where it matters, and the disagreement would be invisible — the judge would
+/// pass a state the rewriter mangled, or refuse one it wrote correctly.
+enum PropertyImage {
+    /// The permutation provably leaves this property where it is.
+    Fixed,
+    /// It becomes this key and this value.
+    Moved {
+        /// The destination key.
+        key: String,
+        /// The destination value.
+        value: String,
+    },
+    /// The pinned vocabulary does not determine an image.
+    Undetermined,
+}
+
+/// The image of `key=value` on `known` under `local_to_world`, which is never
+/// the identity here (both callers short-circuit it).
+///
+/// The classes below are tried in order and each is decided from the block's
+/// **own** legal-value vocabulary rather than from a list of block ids, so a
+/// block the pin adds is classified without touching this function.
+///
+/// The last three classes are *frame-relative*: a 16-step yaw, a chirality
+/// (`left`/`right`) and a vertical position (`top`/`bottom`, `upper`/`lower`)
+/// are stated against a fixed up-axis, so they have an image only while the
+/// permutation keeps the vertical where it is. A permutation of three axes that
+/// fixes the local `Y` on the world `Y` is either the identity or the
+/// horizontal transposition `x↔z`, and the transposition is a **reflection** of
+/// the horizontal plane: a yaw θ becomes 270° − θ, and left becomes right.
+/// When the vertical moves there is no image at all — `half=top` cannot mean
+/// "the top half" of a horizontal axis — and the answer is
+/// [`PropertyImage::Undetermined`] rather than a guess.
+fn property_image(
+    known: &BTreeMap<String, Vec<String>>,
+    key: &str,
+    value: &str,
+    local_to_world: [usize; 3],
+) -> PropertyImage {
+    let legal = match known.get(key) {
+        Some(l) => l,
+        None => return PropertyImage::Fixed,
+    };
+    // A direction-*named* property: the connection flags of fences, walls,
+    // panes and vines. The permutation moves the KEY.
+    if let Some((axis, sign)) = direction_axis_sign(key) {
+        let moved = axis_sign_direction(local_to_world[axis], sign);
+        if moved == key {
+            return PropertyImage::Fixed;
+        }
+        // A pane has no `up`/`down` flag: turning a horizontal connection onto
+        // the vertical has nowhere to land.
+        return match known.get(moved) {
+            Some(l) if l.iter().any(|v| v == value) => PropertyImage::Moved {
+                key: moved.to_string(),
+                value: value.to_string(),
+            },
+            _ => PropertyImage::Undetermined,
+        };
+    }
+    // A direction-valued property (`facing`, `vertical_direction`, …).
+    if !legal.is_empty() && legal.iter().all(|l| direction_axis_sign(l).is_some()) {
+        let Some((axis, sign)) = direction_axis_sign(value) else {
+            return PropertyImage::Undetermined;
+        };
+        let moved = axis_sign_direction(local_to_world[axis], sign);
+        return image_of_value(key, value, moved, legal);
+    }
+    // An axis-valued property (`axis` of logs, pillars, chains).
+    if !legal.is_empty() && legal.iter().all(|l| axis_index(l).is_some()) {
+        let Some(axis) = axis_index(value) else {
+            return PropertyImage::Undetermined;
+        };
+        let moved = ["x", "y", "z"][local_to_world[axis]];
+        return image_of_value(key, value, moved, legal);
+    }
+    // A two-direction value (`orientation` of jigsaws and crafters).
+    if !legal.is_empty() && legal.iter().all(|l| is_direction_pair(l)) {
+        let Some((a, b)) = value.split_once('_') else {
+            return PropertyImage::Undetermined;
+        };
+        let (Some((aa, asig)), Some((ba, bsig))) = (direction_axis_sign(a), direction_axis_sign(b))
+        else {
+            return PropertyImage::Undetermined;
+        };
+        let moved = format!(
+            "{}_{}",
+            axis_sign_direction(local_to_world[aa], asig),
+            axis_sign_direction(local_to_world[ba], bsig)
+        );
+        return image_of_value(key, value, &moved, legal);
+    }
+
+    // Everything below is stated against a fixed vertical.
+    let vertical_fixed = local_to_world[1] == 1;
+
+    // A 16-step yaw (signs, banners, skulls): `rotation` 0 is south and the
+    // segments run with the yaw, so a reflection sends r to (12 - r) mod 16.
+    if key == "rotation" && legal.iter().all(|l| l.parse::<u8>().is_ok()) {
+        let (true, Ok(r)) = (vertical_fixed, value.parse::<u32>()) else {
+            return PropertyImage::Undetermined;
+        };
+        let moved = ((28 - r % 16) % 16).to_string();
+        return image_of_value(key, value, &moved, legal);
+    }
+    // A chirality: a door's `hinge`, a stair's `shape`, a double chest's
+    // `type`. Handedness is what a reflection swaps.
+    if legal
+        .iter()
+        .any(|l| l.split('_').any(|w| w == "left" || w == "right"))
+    {
+        if !vertical_fixed {
+            return PropertyImage::Undetermined;
+        }
+        let moved: String = value
+            .split('_')
+            .map(|w| match w {
+                "left" => "right",
+                "right" => "left",
+                other => other,
+            })
+            .collect::<Vec<_>>()
+            .join("_");
+        return image_of_value(key, value, &moved, legal);
+    }
+    // A vertical position: a slab's `type`, a stair's or a door's `half`.
+    if !legal.is_empty()
+        && legal
+            .iter()
+            .all(|l| matches!(l.as_str(), "top" | "bottom" | "double" | "upper" | "lower"))
+    {
+        return if vertical_fixed {
+            PropertyImage::Fixed
+        } else {
+            PropertyImage::Undetermined
+        };
+    }
+    // A value that spells a direction or an axis inside a compound word — a
+    // rail's `shape=ascending_north`, and anything the pin adds in that shape.
+    // The vocabulary says it carries a direction and does not say how to map
+    // it, which is exactly the case to refuse rather than to pass through.
+    if legal.iter().any(|l| {
+        l.split('_')
+            .any(|w| direction_axis_sign(w).is_some() || axis_index(w).is_some())
+    }) {
+        return PropertyImage::Undetermined;
+    }
+    PropertyImage::Fixed
+}
+
+/// A moved value, or `Fixed` when the permutation sent it to itself, or
+/// `Undetermined` when the destination is not a legal value of the property.
+fn image_of_value(key: &str, value: &str, moved: &str, legal: &[String]) -> PropertyImage {
+    if moved == value {
+        PropertyImage::Fixed
+    } else if legal.iter().any(|l| l == moved) {
+        PropertyImage::Moved {
+            key: key.to_string(),
+            value: moved.to_string(),
+        }
+    } else {
+        PropertyImage::Undetermined
     }
 }
 
@@ -864,6 +1050,155 @@ mod tests {
                 swap_xz
             ),
             None
+        );
+    }
+
+    /// **The judge and the rewriter are one transform, checked from both
+    /// ends**: whatever `oriented_mismatch` calls wrong, `permuted_properties`
+    /// rewrites, and the rewrite is what the state would have had to say.
+    #[test]
+    fn permuted_properties_is_the_state_the_mismatch_predicate_wanted() {
+        let reg = BlockRegistry::v1_21_11();
+        let swap_xz = [2, 1, 0];
+
+        // Connection flags move by KEY: a run along local Z becomes a run
+        // along world X.
+        let bars = props(&[
+            ("east", "false"),
+            ("north", "true"),
+            ("south", "true"),
+            ("waterlogged", "false"),
+            ("west", "false"),
+        ]);
+        assert_eq!(
+            reg.oriented_mismatch("minecraft:iron_bars", &bars, swap_xz),
+            Some("east=false".to_string()),
+            "the literal is wrong under the swap…"
+        );
+        assert_eq!(
+            reg.permuted_properties("minecraft:iron_bars", &bars, swap_xz),
+            Ok(props(&[
+                ("east", "true"),
+                ("north", "false"),
+                ("south", "false"),
+                ("waterlogged", "false"),
+                ("west", "true"),
+            ])),
+            "…and this is what it had to say instead"
+        );
+
+        // A facing moves by VALUE, and a vertical one does not move at all.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_stairs",
+                &props(&[
+                    ("facing", "north"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ]),
+                swap_xz
+            ),
+            Ok(props(&[
+                ("facing", "west"),
+                ("half", "bottom"),
+                ("shape", "straight"),
+                ("waterlogged", "false"),
+            ]))
+        );
+        assert_eq!(
+            reg.permuted_properties("minecraft:barrel", &props(&[("facing", "up")]), swap_xz),
+            Ok(props(&[("facing", "up")]))
+        );
+
+        // A 16-step yaw: the swap is a REFLECTION of the horizontal plane, so
+        // r becomes (12 - r) mod 16. Rotation 8 is north, 4 is west — which is
+        // where the swap sends north.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("powered", "false"), ("rotation", "8")]),
+                swap_xz
+            ),
+            Ok(props(&[("powered", "false"), ("rotation", "4")]))
+        );
+        // A yaw on the reflection's own diagonal is its own image — and the
+        // mismatch predicate agrees, because both read the one transform.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "6")]),
+                swap_xz
+            ),
+            Ok(props(&[("rotation", "6")]))
+        );
+        assert_eq!(
+            reg.oriented_mismatch(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "6")]),
+                swap_xz
+            ),
+            None
+        );
+
+        // Handedness is what a reflection swaps.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:oak_door",
+                &props(&[("facing", "north"), ("hinge", "left")]),
+                swap_xz
+            ),
+            Ok(props(&[("facing", "west"), ("hinge", "right")]))
+        );
+    }
+
+    /// **The refusal, and what secures it.** A permutation that moves the
+    /// vertical leaves a yaw, a handedness and a `top`/`bottom` half with
+    /// nothing to mean, and a horizontal connection with nowhere to land. The
+    /// answer is `DW0738` — no image — and never a plausible substitute.
+    #[test]
+    fn a_property_with_no_image_is_refused_rather_than_guessed() {
+        let reg = BlockRegistry::v1_21_11();
+        let move_y = [0, 2, 1]; // local Y is world Z
+
+        assert_eq!(DW_LOCAL_FRAME_UNRESOLVABLE, "DW0738");
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "8")]),
+                move_y
+            ),
+            Err("rotation=8".to_string())
+        );
+        assert_eq!(
+            reg.permuted_properties("minecraft:oak_slab", &props(&[("type", "top")]), move_y),
+            Err("type=top".to_string())
+        );
+        // A pane has no `up` flag, so a connection turned onto the vertical
+        // has no key to land on.
+        assert_eq!(
+            reg.permuted_properties("minecraft:iron_bars", &props(&[("north", "true")]), move_y),
+            Err("north=true".to_string())
+        );
+        // A rail's shape spells its directions inside a compound word. The
+        // vocabulary says it carries a direction and does not say how to map
+        // it, which is the case to refuse.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:rail",
+                &props(&[("shape", "ascending_north")]),
+                [2, 1, 0]
+            ),
+            Err("shape=ascending_north".to_string())
+        );
+        // The identity moves nothing, so nothing is ever refused under it.
+        assert_eq!(
+            reg.permuted_properties(
+                "minecraft:skeleton_skull",
+                &props(&[("rotation", "8")]),
+                [0, 1, 2]
+            ),
+            Ok(props(&[("rotation", "8")]))
         );
     }
 }

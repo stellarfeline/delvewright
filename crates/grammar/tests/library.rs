@@ -321,7 +321,7 @@ fn a_palette_swap_restyles_without_touching_a_rule() {
     sandstone
         .set_role(
             "marble",
-            Paint::Block(BlockState::simple("smooth_sandstone")),
+            Paint::block(BlockState::simple("smooth_sandstone")),
         )
         .unwrap();
     let marble = expand(&temple(), TEMPLE_REGION, &ExpandOptions::seeded(1)).unwrap();
@@ -346,7 +346,7 @@ fn a_weathered_palette_mixes_per_cell_under_the_seed() {
     weathered
         .set_role(
             "marble",
-            Paint::Mix(vec![
+            Paint::mix(vec![
                 WeightedBlock {
                     weight: 6,
                     block: BlockState::simple("quartz_block"),
@@ -384,7 +384,7 @@ fn unknown_knobs_are_refused_rather_than_ignored() {
     assert!(program.set_param("colum_height", 12).is_err());
     assert!(
         program
-            .set_role("marbel", Paint::Block(BlockState::air()))
+            .set_role("marbel", Paint::block(BlockState::air()))
             .is_err()
     );
     assert_eq!(program, temple(), "a refused override changes nothing");

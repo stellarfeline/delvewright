@@ -186,7 +186,7 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `blocks-exist` | every block state the model paints exists in 1.21.11, properties and values included |
 | `shape-complete` | every placed state writes its shape-carrying (`multipart`) properties, so no wall, fence or pane places as an isolated post (`DW0735`) |
 | `states-complete` | every placed state writes **every** property its block has (`DW0737`). An omitted property means whatever a running server decides, and nothing that reads the piece before it runs — the render you check it against, the walk, the diff — can know which |
-| `oriented-fills` | an orientation-sensitive state was filled only under identity orientation or a passed `orientation` guard (`DW0736`) |
+| `oriented-fills` | an orientation-sensitive state was filled only under identity orientation, a passed `orientation` guard, or the scope's own axis frame — `{"local": …}` on the paint, which resolves its directions through the scope at fill time (`DW0736`; an image the pinned vocabulary cannot determine is refused as `DW0738`) |
 | `non-empty` | the expansion built something |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |

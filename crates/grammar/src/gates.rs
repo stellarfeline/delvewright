@@ -73,6 +73,14 @@ pub struct Measurements {
     pub silhouette_complexity: f64,
     /// The five commonest non-air block states, with their share of filled cells.
     pub top_blocks: Vec<(String, f64)>,
+    /// Fills whose block states were written in the scope's own axis names and
+    /// resolved into the world's — **the binding count of the local frame**.
+    ///
+    /// A number, not a verdict: a piece that needs no oriented block writes
+    /// zero of them and is not thereby worse. It is reported because the
+    /// `oriented-fills` gate's population shrinks by exactly this much, and a
+    /// gate whose binding falls has to be able to say where it went.
+    pub local_frame_fills: usize,
     /// How much of the floor a body can actually get to, and where the rest is.
     pub reachability: Reachability,
 }
@@ -425,10 +433,10 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         bound: audit.fills as usize,
         detail: if audit.unguarded.is_empty() {
             format!(
-                "{} fill(s) examined, {} carrying block-state properties; every \
-                 orientation-sensitive one was under identity orientation or an \
-                 `orientation` guard",
-                audit.fills, audit.carrying
+                "{} fill(s) examined, {} carrying block-state properties, {} of those resolved \
+                 out of the scope's own axis frame; every remaining orientation-sensitive one \
+                 was under identity orientation or an `orientation` guard",
+                audit.fills, audit.carrying, audit.resolved
             )
         } else {
             format!(
@@ -599,6 +607,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             footprint_perimeter,
             silhouette_complexity: complexity(footprint_area, footprint_perimeter),
             top_blocks: top_blocks(model, filled),
+            local_frame_fills: expansion.oriented.resolved as usize,
             reachability: reach,
         },
         gates,

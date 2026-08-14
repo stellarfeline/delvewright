@@ -768,8 +768,11 @@ Symptom → tool:
      floors** — the default truncates and an unwritten cell is air, which no
      gate reads; a palette role may be a **weighted list with `minecraft:air` in
      it**, which is the whole of decay and the cure for a piece that renders as
-     one flat material; and a `facing=` block state **does not turn** when
-     `largest` turns the piece.
+     one flat material; and a block state **does not turn** when `largest` turns
+     the piece **unless you say which axes it is written in** — wrap it as
+     `{"local": "minecraft:iron_bars[east=true,…]"}` and its directions mean
+     the scope's own, so one palette role gives the right state at every
+     orientation.
   4. **Expand and let the machine judge**:
      `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
      --reachable-floor -o out/`. Pass `--traversable` for any passage, stair or
@@ -782,7 +785,10 @@ Symptom → tool:
      `oriented-fills` (`DW0736`). Write every property of every block state you
      paint, including the ones whose default looks obvious: a state that omits
      one means whatever a running server decides, and the render you are about
-     to check the piece against cannot know which.
+     to check the piece against cannot know which. Where a property names a
+     direction — a bar's connections, a stair's facing, a skull's yaw — write
+     the state in the scope's own frame (`{"local": …}`) rather than guessing
+     which way the zone will hand your piece its box.
      **Read the `reachability` line too**, which prints whether you asked or not:
      `traversable` joins two ground-level faces and says nothing about the
      storeys above, so a building can pass every gate with half its floor
