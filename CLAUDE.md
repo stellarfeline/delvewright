@@ -443,6 +443,20 @@ validation/          # docker compose: headless server + bot, same image as CI &
   detail cannot**. The review question is therefore always "does this read as
   the thing, and does the inside belong to it", never "is the detail right" —
   and a piece is not rejected for lacking detail it was never going to have.
+- **Grandeur is playable content, not volume** (owner, 2026-08-13). Buildings
+  should be built grand — but a structure is grand because there is a lot in it
+  to play, not because it encloses a lot of air. **A big empty room is not a big
+  building; it is a small building that costs more to walk across.** The two
+  rules compose: the silhouette earns the recognition from outside, and the
+  density earns it from inside. So the question asked of an oversized space is
+  always *what does the player do in here*, and a space with no answer is cut or
+  filled — never kept because it looks impressive in an elevation.
+  The same rule applied to objects, as design guidance: **when the vanilla block
+  that names a thing is too small to carry the weight the story gives it, the
+  thing is built out of blocks instead.** A vanilla bell is a fitting on a fence
+  post; a bell a campaign is named after is a structure a player stands under.
+  Placing the block that shares the name is not depicting the object — it is
+  labelling it.
 - **Work is routed to a tier by its CLASS, and the planner authors none of it**
   (owner, 2026-08-13). Architecture and system design — **including writing specs
   and ADRs** — go to a **Fable** worker; content design (story, beats, campaign
