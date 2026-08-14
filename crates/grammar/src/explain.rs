@@ -29,6 +29,43 @@ pub fn axis_name(axis: Axis) -> &'static str {
     }
 }
 
+/// A frame as an author reads it: which world axis each local axis names, and
+/// which of them run backwards along it.
+///
+/// The sign is **not** decoration. A frame is a permutation *and* a reflection,
+/// so two frames can share a mapping and still be different frames; printing
+/// only the mapping makes a refusal read `required x→x, y→y, z→z; this scope
+/// has x→x, y→y, z→z`, which tells the author their guard failed against
+/// itself. The reflected axes are named only when there are any, so an
+/// unreflected frame reads exactly as it always has.
+pub fn render_orientation(orient: &Orientation) -> String {
+    let mapping = format!(
+        "x\u{2192}{}, y\u{2192}{}, z\u{2192}{}",
+        axis_name(orient.x),
+        axis_name(orient.y),
+        axis_name(orient.z)
+    );
+    match render_reversed_axes(orient) {
+        Some(reflected) => format!("{mapping}, {reflected}"),
+        None => mapping,
+    }
+}
+
+/// The reflected-axis clause of a frame, or `None` when every local axis runs
+/// forward.
+pub fn render_reversed_axes(orient: &Orientation) -> Option<String> {
+    let named: Vec<&'static str> = [Axis::X, Axis::Y, Axis::Z]
+        .into_iter()
+        .filter(|a| orient.mirror.get(*a))
+        .map(axis_name)
+        .collect();
+    if named.is_empty() {
+        None
+    } else {
+        Some(format!("local {} reversed", named.join("/")))
+    }
+}
+
 fn dim_name(dim: DimRef) -> &'static str {
     match dim {
         DimRef::X => "dim:x",
@@ -89,11 +126,14 @@ pub fn render_cond(cond: &Cond) -> String {
         Cond::All { of } => composite("all of", of),
         Cond::Any { of } => composite("any of", of),
         Cond::NoneOf { of } => composite("none of", of),
-        Cond::Orientation { x, y, z } => format!(
-            "orientation x\u{2192}{}, y\u{2192}{}, z\u{2192}{}",
-            axis_name(*x),
-            axis_name(*y),
-            axis_name(*z)
+        Cond::Orientation { x, y, z, mirror } => format!(
+            "orientation {}",
+            render_orientation(&Orientation {
+                x: *x,
+                y: *y,
+                z: *z,
+                mirror: *mirror,
+            })
         ),
     }
 }
@@ -126,9 +166,9 @@ pub enum GuardLeaf {
     },
     /// An `orientation` guard that decided the rejection.
     Orientation {
-        /// The axis mapping the guard demands.
+        /// The frame the guard demands — axis mapping and reflection both.
         required: Orientation,
-        /// The axis mapping the scope actually has.
+        /// The frame the scope actually has.
         actual: Orientation,
         /// As on [`GuardLeaf::Cmp`]: `true` means it matched under a `none_of`.
         held: bool,
@@ -192,14 +232,7 @@ impl fmt::Display for GuardLeaf {
                 actual,
                 held,
             } => {
-                let map = |o: &Orientation| {
-                    format!(
-                        "x\u{2192}{}, y\u{2192}{}, z\u{2192}{}",
-                        axis_name(o.x),
-                        axis_name(o.y),
-                        axis_name(o.z)
-                    )
-                };
+                let map = render_orientation;
                 if *held {
                     write!(
                         f,
@@ -350,11 +383,12 @@ pub fn explain(scope: &Scope<'_>, cond: &Cond, want: bool, out: &mut Vec<GuardLe
                 explain(scope, c, !want, out);
             }
         }
-        Cond::Orientation { x, y, z } => {
+        Cond::Orientation { x, y, z, mirror } => {
             let required = Orientation {
                 x: *x,
                 y: *y,
                 z: *z,
+                mirror: *mirror,
             };
             let matches = scope.orient == required;
             if matches != want {

@@ -128,7 +128,7 @@ pub fn hall_keep() -> Program {
         .param("gallery_run", 12)
         .param("store_run", 12)
         .param("door_run", 12)
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         .rule(
             "keep",
             reoriented(

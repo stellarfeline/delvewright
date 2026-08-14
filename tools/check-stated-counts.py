@@ -185,7 +185,10 @@ _INDEX_SECTION = r"^## 2c\. "
 _PROGRAMS_RE = re.compile(
     r"pub const PROGRAMS: &\[LibraryProgram\] = &\[(?P<body>.*?)^\];", re.S | re.M
 )
-_ENTRY_RE = re.compile(r'^\s*\("(?P<id>[a-z0-9\-]+)",', re.M)
+#: One `PROGRAMS` entry. `entry("ambush-door", ambush_door, [11, 5, 13], 1, PIECE)`
+#: — the `entry(` prefix is required, so a comment or a nested tuple cannot be
+#: read as a program.
+_ENTRY_RE = re.compile(r'^\s*entry\(\s*"(?P<id>[a-z0-9\-]+)",', re.M)
 #: A row of the §2c index table: `| 7 | Symmetry | `idiom-mirror` | … |`, or the
 #: composition demonstration, whose first cell is an em dash rather than a number.
 _INDEX_ROW_RE = re.compile(
@@ -203,7 +206,19 @@ def library_program_ids(root: pathlib.Path) -> list[str]:
             "oracle behind every library-program count stated in the reference; "
             "if its declaration moved, update _PROGRAMS_RE here."
         )
-    return [e["id"] for e in _ENTRY_RE.finditer(m["body"])]
+    ids = [e["id"] for e in _ENTRY_RE.finditer(m["body"])]
+    if not ids:
+        # A count of nought is not a measurement of an empty library — it is
+        # this parser failing, and it fails green: every stated count would be
+        # compared against zero and every one would read as a stale number.
+        # The entry shape changed once (a tuple became `entry(...)`) and this
+        # is the shape that change takes if nobody looks.
+        raise LookupError(
+            f"{_LIBRARY_MOD}: the `PROGRAMS` table parsed and yielded ZERO "
+            "programs. The library is never empty, so this is _ENTRY_RE no "
+            "longer matching how an entry is written — update it here."
+        )
+    return ids
 
 
 def index_table_rows(root: pathlib.Path) -> list[tuple[str, str]]:
@@ -278,7 +293,11 @@ ORACLES: dict[str, dict] = {
             (rf"\bany of the ({CARD})\b(?![-\w])", 0),
             (rf"\busually one of the ({CARD})\b(?![-\w])", 0),
             (rf"\bof the ({CARD}) at once\b", 0),
-            (rf"\bnot a ({ORD}) technique\b", 1),
+            # `an?`, because the ordinal that follows it decides the article:
+            # "not a tenth technique" and "not an eleventh technique" are the
+            # same claim, and a pattern that only reads `a` stops binding the
+            # sentence at exactly the count where the sentence changed.
+            (rf"\bnot an? ({ORD}) technique\b", 1),
         ],
     },
 }

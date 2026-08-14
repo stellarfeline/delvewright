@@ -4,9 +4,10 @@
 //! A **grammar program** ([`ir::Program`]) is a set of named rules over integer
 //! voxel boxes. Expanding one against a box and a seed subdivides that box —
 //! `split` cuts an axis into absolute and relative pieces, `reorient` renames
-//! the axes, guards select between alternatives by the scope's own dimensions,
-//! and leaves fill with block states — until every leaf is a terminal. The
-//! result is a [`model::VoxelModel`].
+//! the axes, `bind` rebinds the parameters and palette roles a subtree reads,
+//! guards select between alternatives by the scope's own dimensions, and leaves
+//! fill with block states — until every leaf is a terminal. The result is a
+//! [`model::VoxelModel`].
 //!
 //! The point of the shape (spec-0027 §1): frontier models are semantically
 //! right and geometrically weak, so the model authors *rules*, this crate does
@@ -49,6 +50,18 @@
 //! Jigsaw connectors are deliberately not emitted yet, and the lighting profile
 //! is `unmeasured` rather than a fabricated measurement — see that module.
 //!
+//! # Arguments
+//!
+//! A `call` names a rule and expands it in the current scope; what that rule
+//! *reads* — a parameter, a palette role — comes from the frame it is expanded
+//! under. [`ir::Node::Bind`] is what puts a frame there, so one rule builds a
+//! different thing at each call site instead of being copied per content. A
+//! frame is inherited by every child scope, a `call`'s included, which is what
+//! lets an argument survive a recursion whose rules never mention it; it lasts
+//! exactly as long as the body it wraps; and it may only name something
+//! [`ir::Program::params`] or [`ir::Program::palette`] already declares, which
+//! makes those two the outermost frame — a declaration and a default at once.
+//!
 //! # Anchors
 //!
 //! An anchor is metadata, not geometry, so it is **declared**: a rule body wraps
@@ -89,6 +102,7 @@
 
 pub mod block;
 pub mod compose;
+pub mod contract;
 pub mod coverage;
 pub mod eval;
 pub mod expand;
@@ -103,12 +117,15 @@ pub mod nav;
 pub mod orient;
 pub mod rng;
 pub mod split;
+pub mod version;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
+pub use contract::{ContractReport, ExteriorFace, NoBodyKind, exterior_faces};
 pub use expand::{
-    Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ScopeAt, Stats,
-    expand,
+    Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ResolvedBar,
+    ResolvedContract, ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume,
+    ScopeAt, Stats, expand,
 };
 pub use explain::GuardLeaf;
 pub use export::{
@@ -116,5 +133,12 @@ pub use export::{
 };
 pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
-pub use ir::{Facing, Mark, MarkAt, MarkIndex, Program, ProgramError, Side};
+pub use ir::{
+    Bar, Contract, Edge, EdgeClass, Envelope, Facing, Mark, MarkAt, MarkIndex, NoBodyDecl, Program,
+    ProgramError, Side, SpaceDecl,
+};
 pub use model::VoxelModel;
+pub use version::{
+    LATEST_PROGRAM_VERSION, RESERVED_VERSIONS, SUPPORTED_PROGRAM_VERSIONS, accepted_versions,
+    is_supported_version, minor_ordinal, reserved_for,
+};

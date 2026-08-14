@@ -23,7 +23,7 @@ fn program(json: &str) -> Program {
 #[test]
 fn an_absurd_region_is_a_diagnostic_not_an_allocation() {
     let p = program(
-        r#"{ "name": "solid", "start": "all",
+        r#"{ "version": "1.3.0", "name": "solid", "start": "all",
              "rules": { "all": [{ "body": { "op": "fill",
                "material": "minecraft:stone" } }] } }"#,
     );
@@ -62,7 +62,7 @@ fn an_absurd_region_is_a_diagnostic_not_an_allocation() {
 #[test]
 fn an_orientation_guard_that_is_not_a_permutation_is_refused_where_it_is_written() {
     let p = program(
-        r#"{ "name": "impossible", "start": "all",
+        r#"{ "version": "1.3.0", "name": "impossible", "start": "all",
              "rules": { "all": [
                { "when": { "cond": "orientation", "x": "z", "y": "z", "z": "z" },
                  "body": { "op": "fill", "material": "minecraft:stone" } },
@@ -84,7 +84,7 @@ fn an_orientation_guard_that_is_not_a_permutation_is_refused_where_it_is_written
 
     // A real permutation still passes, guard and all.
     let ok = program(
-        r#"{ "name": "possible", "start": "all",
+        r#"{ "version": "1.3.0", "name": "possible", "start": "all",
              "rules": { "all": [
                { "when": { "cond": "orientation", "x": "x", "y": "y", "z": "z" },
                  "body": { "op": "fill", "material": "minecraft:stone" } },
@@ -119,7 +119,7 @@ fn nested_errors_read_as_sentences_not_as_debug_structs() {
 
     // ...and that is what an expansion failure actually prints.
     let p = program(
-        r#"{ "name": "divzero", "start": "all", "params": { "zero": 0 },
+        r#"{ "version": "1.3.0", "name": "divzero", "start": "all", "params": { "zero": 0 },
              "rules": { "all": [{ "body": {
                "op": "split", "axis": "y",
                "sizes": [
@@ -142,7 +142,7 @@ fn nested_errors_read_as_sentences_not_as_debug_structs() {
     );
 
     let p = program(
-        r#"{ "name": "conflict", "start": "all",
+        r#"{ "version": "1.3.0", "name": "conflict", "start": "all",
              "rules": { "all": [{ "body": {
                "op": "reorient", "orient": { "x": "local_z", "y": "local_z" },
                "body": { "op": "fill", "material": "minecraft:stone" } } }] } }"#,
@@ -195,7 +195,7 @@ fn exhaustion(
 #[test]
 fn guard_exhaustion_reports_every_failed_comparison_with_its_operands() {
     let p = program(
-        r#"{ "name": "forensics", "start": "plan",
+        r#"{ "version": "1.0.0", "name": "forensics", "start": "plan",
              "params": { "run": 10, "margin": 4 },
              "rules": { "plan": [
                { "when": { "cond": "all", "of": [
@@ -264,7 +264,7 @@ fn guard_exhaustion_reports_every_failed_comparison_with_its_operands() {
 #[test]
 fn guard_exhaustion_reports_the_scope_after_reorientation_with_its_path() {
     let p = program(
-        r#"{ "name": "turned", "start": "outer",
+        r#"{ "version": "1.0.0", "name": "turned", "start": "outer",
              "rules": {
                "outer": [ { "body": { "op": "reorient",
                  "orient": { "z": "world_x" },
@@ -309,7 +309,7 @@ fn guard_exhaustion_reports_the_scope_after_reorientation_with_its_path() {
 #[test]
 fn guard_exhaustion_path_names_the_split_piece() {
     let p = program(
-        r#"{ "name": "pieces", "start": "lane",
+        r#"{ "version": "1.0.0", "name": "pieces", "start": "lane",
              "rules": {
                "lane": [ { "body": { "op": "split", "axis": "z",
                  "sizes": [ { "size": "absolute", "blocks": { "expr": "int", "value": 3 } },
@@ -344,7 +344,7 @@ fn guard_exhaustion_path_names_the_split_piece() {
 #[test]
 fn guard_exhaustion_explains_none_of_and_orientation_leaves() {
     let p = program(
-        r#"{ "name": "negated", "start": "plan",
+        r#"{ "version": "1.0.0", "name": "negated", "start": "plan",
              "rules": { "plan": [
                { "when": { "cond": "none_of", "of": [
                    { "cond": "cmp", "lhs": { "expr": "dim", "dim": "x" }, "op": "eq",
@@ -389,13 +389,63 @@ fn guard_exhaustion_explains_none_of_and_orientation_leaves() {
     );
 }
 
+/// **A frame is a permutation AND a reflection, and the refusal says both.**
+///
+/// Two frames can share an axis mapping and still be different frames, so a
+/// report that prints only the mapping renders a reflected-frame rejection as
+/// `required x->x, y->y, z->z; this scope has x->x, y->y, z->z` — an author
+/// told their guard failed against itself, which is worse than the bare
+/// `NoApplicableRule` this whole report replaced.
+///
+/// Neither half of this existed alone: the reflection is `1.4.0`'s and the
+/// forensics are this branch's, so the first tree where a reflected guard can
+/// be *explained* is the one that has both.
+#[test]
+fn guard_exhaustion_distinguishes_a_reflected_frame_from_its_mapping() {
+    let p = program(
+        r#"{ "version": "1.4.0", "name": "reflected", "start": "plan",
+             "rules": { "plan": [
+               { "when": { "cond": "orientation", "x": "x", "y": "y", "z": "z",
+                           "mirror": { "z": true } },
+                 "body": { "op": "void" } } ] } }"#,
+    );
+    let err = expand(&p, Box3::at_origin([4, 4, 4]), &ExpandOptions::seeded(0)).unwrap_err();
+    let (_, scope, rejected, _) = exhaustion(&err);
+    assert_eq!(rejected.len(), 1);
+    let GuardLeaf::Orientation {
+        required, actual, ..
+    } = &rejected[0].failed[0]
+    else {
+        panic!("{err}");
+    };
+    // The structural half: same mapping, different frame. This is exactly the
+    // pair a mapping-only rendering collapses into one string.
+    assert_eq!(
+        (required.x, required.y, required.z),
+        (actual.x, actual.y, actual.z)
+    );
+    assert_ne!(required.mirror, actual.mirror);
+
+    let text = err.to_string();
+    assert!(
+        text.contains(
+            "required orientation x\u{2192}x, y\u{2192}y, z\u{2192}z, local z reversed; \
+             this scope has x\u{2192}x, y\u{2192}y, z\u{2192}z"
+        ),
+        "the two frames must not render identically: {text}"
+    );
+    // The scope record states the sign for the same reason: this scope is
+    // unreflected, so it says nothing, and a reflected one would.
+    assert!(!format!("{scope}").contains("reversed"), "{scope}");
+}
+
 /// **A conjunct the short-circuiting test never reached is reported as
 /// unevaluable, not silently dropped** — the exhaustion is still the story,
 /// and the report stays total.
 #[test]
 fn guard_exhaustion_reports_an_unevaluable_conjunct_by_name() {
     let p = program(
-        r#"{ "name": "half_dark", "start": "plan", "params": { "zero": 0 },
+        r#"{ "version": "1.0.0", "name": "half_dark", "start": "plan", "params": { "zero": 0 },
              "rules": { "plan": [
                { "when": { "cond": "all", "of": [
                    { "cond": "cmp", "lhs": { "expr": "dim", "dim": "x" }, "op": "ge",
@@ -424,7 +474,7 @@ fn guard_exhaustion_reports_an_unevaluable_conjunct_by_name() {
 #[test]
 fn split_refusals_name_their_pattern_scope_and_path() {
     let p = program(
-        r#"{ "name": "tight", "start": "outer",
+        r#"{ "version": "1.0.0", "name": "tight", "start": "outer",
              "params": { "need": 10 },
              "rules": {
                "outer": [ { "body": { "op": "call", "symbol": "band" } } ],
@@ -467,7 +517,7 @@ fn split_refusals_name_their_pattern_scope_and_path() {
 
     // A weight that evaluates to zero names the expression that produced it.
     let p = program(
-        r#"{ "name": "flat", "start": "band", "params": { "w": 0 },
+        r#"{ "version": "1.0.0", "name": "flat", "start": "band", "params": { "w": 0 },
              "rules": { "band": [ { "body": { "op": "split", "axis": "x",
                "sizes": [ { "size": "relative",
                             "weight": { "expr": "param", "name": "w" } } ],

@@ -27,6 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use delvewright_schem::blocks::{DW_SHAPE_OMITTED, DW_STATE_PRE_PIN, StateJudgement};
 use delvewright_schem::convert::{forbidden_nbt, strip_ns};
 use delvewright_schem::nbt::Nbt;
 use delvewright_schem::split::TilePart;
@@ -81,8 +82,18 @@ pub struct AuditReport {
     pub forbidden: usize,
     /// Count of not-allowlisted palette blocks.
     pub not_allowlisted: usize,
-    /// Count of palette block states the pinned Minecraft version does not have.
+    /// Count of palette block states the pinned Minecraft version does not
+    /// have **in a template that claims the pin** (no datafix will run, so
+    /// they load as air).
     pub unknown_blocks: usize,
+    /// Count of palette block states the pin does not have in a **pre-pin**
+    /// template: the game's DataFixerUpper is expected to migrate them on
+    /// load (`DW0734`, a warning — see `delvewright_schem::blocks`).
+    pub pre_pin_unknown: usize,
+    /// Count of palette entries omitting a shape-carrying property (`DW0735`):
+    /// a wall/fence/pane/vine whose connection properties are unwritten loads
+    /// as an isolated post, silently.
+    pub underspecified: usize,
     pub findings: Vec<Finding>,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
@@ -142,6 +153,8 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     let mut forbidden = 0usize;
     let mut not_allowlisted = 0usize;
     let mut unknown_blocks = 0usize;
+    let mut pre_pin_unknown = 0usize;
+    let mut underspecified = 0usize;
     let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
 
     // --- Palette allowlist: report each offending palette entry once, at the
@@ -151,6 +164,8 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
     let mut forbid_block_reported = vec![false; s.palette.len()];
     // --- Spelling: a palette entry the pinned game does not have. ---
     let mut unknown_reported = vec![false; s.palette.len()];
+    // --- Shape: a palette entry omitting a multipart property. ---
+    let mut shape_reported = vec![false; s.palette.len()];
 
     for b in &s.blocks {
         let entry = &s.palette[b.state as usize];
@@ -193,7 +208,8 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
             );
         }
 
-        // 3. the block has to EXIST. An allowlist answers "should this block be
+        // 3. the block has to EXIST — judged against the pin AND the file's
+        //    own DataVersion. An allowlist answers "should this block be
         //    here"; it cannot answer "is this a block at all", and the two
         //    questions fail in opposite directions — an allowlist is a curated
         //    list of names, so a name the game dropped stays in it forever and
@@ -201,12 +217,80 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         //    was in this crate's own default allowlist and is in a shipped
         //    prefab; a structure template loads it as AIR, so the piece admits
         //    clean, ships, and is quietly missing whatever the block was for.
-        if !unknown_reported[b.state as usize]
-            && let Err(e) = registry.validate(&entry.name, &entry.properties)
-        {
-            unknown_reported[b.state as usize] = true;
-            unknown_blocks += 1;
-            diags.push(Diagnostic::error(DW_UNKNOWN_BLOCK, format!("{e}")).at(b.pos));
+        //    But the game DATAFIXES every structure it loads against the
+        //    file's DataVersion: the same `minecraft:chain` in a template that
+        //    pre-dates the pin is renamed on load and is NOT a defect —
+        //    `hero-temple-ruin-arch.nbt` (DataVersion 2975) is the shipped
+        //    proof, and refusing it was a measured false positive. The rule
+        //    lives in `BlockRegistry::judge_at`, not here.
+        if !unknown_reported[b.state as usize] {
+            match registry.judge_at(&entry.name, &entry.properties, s.data_version) {
+                StateJudgement::Valid => {}
+                StateJudgement::InvalidAtPin(e) => {
+                    unknown_reported[b.state as usize] = true;
+                    unknown_blocks += 1;
+                    diags.push(
+                        Diagnostic::error(
+                            DW_UNKNOWN_BLOCK,
+                            format!(
+                                "{e} — the template claims DataVersion {}, so no datafix \
+                                 will run on it",
+                                s.data_version
+                            ),
+                        )
+                        .at(b.pos),
+                    );
+                }
+                StateJudgement::PrePin(e) => {
+                    unknown_reported[b.state as usize] = true;
+                    pre_pin_unknown += 1;
+                    diags.push(
+                        Diagnostic::warning(
+                            DW_STATE_PRE_PIN,
+                            format!(
+                                "{e}; the template's DataVersion {} pre-dates the pin \
+                                 ({}), so load-time datafixing is expected to migrate \
+                                 this state — verify in-game that it does, because an \
+                                 id no fixer maps (a typo) still loads as air",
+                                s.data_version,
+                                delvewright_schem::blocks::PIN_DATA_VERSION
+                            ),
+                        )
+                        .at(b.pos),
+                    );
+                }
+            }
+        }
+
+        // 3b. a valid state must WRITE its shape-carrying properties. A
+        //     `variants` property it omits renders the block's complete
+        //     default model — benign, the default is what the author meant.
+        //     A `multipart` property it omits removes assembled geometry:
+        //     `cobblestone_wall` with none written is an isolated post where
+        //     the author drew a wall, and nothing downstream can tell. The
+        //     class is derived from the game's own blockstate definitions
+        //     (`BlockRegistry::shape_carrying`), never a hand-kept id list.
+        if !shape_reported[b.state as usize] && !unknown_reported[b.state as usize] {
+            let omitted = registry.omitted_shape_carrying(&entry.name, &entry.properties);
+            if !omitted.is_empty() {
+                shape_reported[b.state as usize] = true;
+                underspecified += 1;
+                diags.push(
+                    Diagnostic::error(
+                        DW_SHAPE_OMITTED,
+                        format!(
+                            "`{}` omits its shape-carrying propert{} {} — these assemble \
+                             the block's model (multipart), so the omitted default drops \
+                             geometry: the block places as an isolated post/patch instead \
+                             of connecting. Write the connection state the design means",
+                            entry.name,
+                            if omitted.len() == 1 { "y" } else { "ies" },
+                            omitted.join(", "),
+                        ),
+                    )
+                    .at(b.pos),
+                );
+            }
         }
 
         // 4. palette allowlist.
@@ -242,6 +326,8 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         forbidden,
         not_allowlisted,
         unknown_blocks,
+        pre_pin_unknown,
+        underspecified,
         findings: diags.iter().map(to_finding).collect(),
         tiles: None,
     };
@@ -270,6 +356,7 @@ pub fn audit_tile_set(
     let mut audits: Vec<TileAudit> = Vec::with_capacity(tiles.len());
     let mut palette: BTreeSet<String> = BTreeSet::new();
     let (mut block_count, mut forbidden, mut not_allowlisted, mut unknown_blocks) = (0, 0, 0, 0);
+    let (mut pre_pin_unknown, mut underspecified) = (0, 0);
 
     for (part, structure) in tiles {
         let (rep, diags) = audit(&part.file, structure, allow);
@@ -277,6 +364,8 @@ pub fn audit_tile_set(
         forbidden += rep.forbidden;
         not_allowlisted += rep.not_allowlisted;
         unknown_blocks += rep.unknown_blocks;
+        pre_pin_unknown += rep.pre_pin_unknown;
+        underspecified += rep.underspecified;
         palette.extend(rep.palette.iter().cloned());
         audits.push(TileAudit {
             file: part.file.clone(),
@@ -311,6 +400,8 @@ pub fn audit_tile_set(
         forbidden,
         not_allowlisted,
         unknown_blocks,
+        pre_pin_unknown,
+        underspecified,
         findings: all_diags.iter().map(to_finding).collect(),
         tiles: Some(audits),
     };
