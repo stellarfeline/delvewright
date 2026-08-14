@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_schem::split::{TileSet, manifest_claiming, read_tile_set};
+use delvewright_schem::split::{TileSet, fragment_refusal, read_tile_set, tile_evidence};
 
 use crate::nbt::{NbtError, Structure, parse_structure};
 
@@ -72,14 +72,14 @@ pub fn load_piece(input: &Path) -> Result<(PieceInput, PathBuf), NbtError> {
         ));
     }
 
-    if let Some(manifest) = manifest_claiming(input).map_err(NbtError)? {
-        return Err(NbtError(format!(
-            "{} is one tile of the zone described by {} — rendering it would show the building \
-             cut in half at a packaging boundary. Render the whole zone: `delve-render piece {}`",
-            input.display(),
-            manifest.display(),
-            manifest.display()
-        )));
+    let evidence = tile_evidence(input).map_err(NbtError)?;
+    if let Some(message) = fragment_refusal(
+        input,
+        &evidence,
+        "render",
+        "show the building cut in half at a packaging boundary",
+    ) {
+        return Err(NbtError(message));
     }
 
     let structure = parse_structure(input)?;

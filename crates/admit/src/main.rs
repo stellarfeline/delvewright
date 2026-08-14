@@ -14,12 +14,16 @@ use clap::{Parser, Subcommand};
 use delvewright_admit::allowlist::Allowlist;
 use delvewright_admit::audit::{self, audit};
 use delvewright_admit::catalog::CatalogCard;
-use delvewright_admit::diag::{DW_CONTRACT, DW_GALLERY, DW_INPUT, DW_TOOLING, Diagnostic};
+use delvewright_admit::diag::{
+    DW_CONTRACT, DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING,
+    DW_UNBOUND, Diagnostic,
+};
 use delvewright_admit::gallery::{self, Candidate};
-use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD};
-use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
+use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
+use delvewright_admit::meta::{self, AnchorEdit, License, PrefabDoc, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
+use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
 
 const EXIT_FAIL: u8 = 1;
 const EXIT_INPUT: u8 = 2;
@@ -97,10 +101,13 @@ enum Command {
         #[arg(long)]
         block: Option<String>,
     },
-    /// Static block-light probe -> declared lighting profile.
+    /// Static block-light probe over player space -> declared lighting profile.
     Lighting {
+        /// Input structure `.nbt`, or the `.json` manifest of a zone that ships
+        /// as a tile set — which reassembles the zone and probes it as one
+        /// building.
         nbt: PathBuf,
-        /// Persist the measured profile into the sibling metadata.
+        /// Persist the measured profile into the prefab's metadata.
         #[arg(long)]
         write: bool,
         /// Dark threshold (floor block-light below this = dark).
@@ -269,22 +276,13 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         // be correct about that file and would be read as a verdict about the
         // zone — a gate bound to a fifth of what it is believed to cover, which
         // is the shape that stays green for a year.
-        match delvewright_schem::split::manifest_claiming(nbt) {
-            Ok(Some(manifest)) => {
-                return input_err(
-                    &format!(
-                        "{} is one tile of the zone described by {} — auditing it would return a \
-                         verdict over one file and read as a verdict over the zone. Audit the \
-                         whole zone: `delve-admit audit {}`",
-                        nbt.display(),
-                        manifest.display(),
-                        manifest.display()
-                    ),
-                    json,
-                );
-            }
-            Ok(None) => {}
-            Err(e) => return input_err(&e, json),
+        if let Err(code) = refuse_fragment(
+            nbt,
+            "audit",
+            "return a verdict over one file that reads as a verdict over the zone",
+            json,
+        ) {
+            return code;
         }
         let bytes = match std::fs::read(nbt) {
             Ok(b) => b,
@@ -319,9 +317,24 @@ fn audit_zone(
     manifest: &Path,
     allow: &Allowlist,
 ) -> Result<(audit::AuditReport, Vec<Diagnostic>), String> {
+    let (set, tiles) = read_zone(manifest)?;
+    Ok(audit::audit_tile_set(
+        &manifest.display().to_string(),
+        set.size,
+        &tiles,
+        allow,
+    ))
+}
+
+/// Read every tile a manifest names, in manifest order.
+///
+/// One reader for every command that takes a zone: the tiling is packaging, and
+/// a second copy of "open the files the manifest names and check they are the
+/// export it describes" is a second place for the two to disagree.
+fn read_zone(manifest: &Path) -> Result<(TileSet, Vec<(TilePart, Structure)>), String> {
     let Some(set) = delvewright_schem::split::read_tile_set(manifest)? else {
         return Err(format!(
-            "{} is a single-template prefab's metadata, not a tile-set manifest — audit the \
+            "{} is a single-template prefab's metadata, not a tile-set manifest — pass the \
              `.nbt` beside it",
             manifest.display()
         ));
@@ -350,12 +363,27 @@ fn audit_zone(
         }
         tiles.push((part.clone(), structure));
     }
-    Ok(audit::audit_tile_set(
-        &manifest.display().to_string(),
-        set.size,
-        &tiles,
-        allow,
-    ))
+    Ok((set, tiles))
+}
+
+/// Refuse a path that is one tile of a tiled zone.
+///
+/// Bound at every entry point that takes a single `.nbt`, because a fragment
+/// reaching any of them produces a confident answer about a building nobody
+/// has: `verb` says what the command was about to do, `consequence` what the
+/// answer would have been read as.
+fn refuse_fragment(nbt: &Path, verb: &str, consequence: &str, json: bool) -> Result<(), ExitCode> {
+    let evidence = match tile_evidence(nbt) {
+        Ok(e) => e,
+        Err(e) => return Err(input_err(&e, json)),
+    };
+    match fragment_refusal(nbt, &evidence, verb, consequence) {
+        None => Ok(()),
+        Some(message) => {
+            Diagnostic::error(DW_FRAGMENT, message).print(json);
+            Err(ExitCode::from(EXIT_INPUT))
+        }
+    }
 }
 
 struct SocketArgs {
@@ -409,6 +437,14 @@ fn run_socket(nbt: &Path, args: SocketArgs, json: bool) -> ExitCode {
 }
 
 fn run_resolve_jigsaw(nbt: &Path, json: bool) -> ExitCode {
+    if let Err(code) = refuse_fragment(
+        nbt,
+        "edit",
+        "change one tile of a zone in isolation and leave the set inconsistent",
+        json,
+    ) {
+        return code;
+    }
     let bytes = match std::fs::read(nbt) {
         Ok(b) => b,
         Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
@@ -491,49 +527,146 @@ fn run_anchor(
     ExitCode::SUCCESS
 }
 
-fn run_lighting(nbt: &Path, write: bool, dark_threshold: i32, json: bool) -> ExitCode {
-    let bytes = match std::fs::read(nbt) {
-        Ok(b) => b,
-        Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
+fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> ExitCode {
+    // A zone that ships as a tile set is one building, so it is probed as one:
+    // its manifest is a first-class input, and light crosses a packaging plane
+    // exactly as it crosses any other cell. Handing this command one tile is
+    // refused for the reason `audit` refuses it.
+    let (meta_path, size, tiles) = if input.extension().and_then(|s| s.to_str()) == Some("json") {
+        match read_zone(input) {
+            Ok((set, tiles)) => (input.to_path_buf(), set.size, tiles),
+            Err(e) => return input_err(&e, json),
+        }
+    } else {
+        if let Err(code) = refuse_fragment(
+            input,
+            "probe",
+            "measure a fifth of a building and report the answer as the building's",
+            json,
+        ) {
+            return code;
+        }
+        let bytes = match std::fs::read(input) {
+            Ok(b) => b,
+            Err(e) => return input_err(&format!("cannot read {}: {e}", input.display()), json),
+        };
+        let structure = match Structure::read(&bytes) {
+            Ok(s) => s,
+            Err(e) => return input_err(&format!("cannot parse {}: {e}", input.display()), json),
+        };
+        let size = structure.size;
+        let part = TilePart {
+            file: input
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            id: String::new(),
+            grid_index: [0, 0, 0],
+            offset: [0, 0, 0],
+            size,
+        };
+        (input.with_extension("json"), size, vec![(part, structure)])
     };
-    let structure = match Structure::read(&bytes) {
-        Ok(s) => s,
-        Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
-    };
-    let probe = light::probe(&structure, dark_threshold);
-    // machine-readable line to stdout.
+
+    let zone = Zone::from_tiles(size, &tiles);
+    let probe = light::probe(&zone, dark_threshold);
+
+    // The machine-readable line states the BINDING, not only the verdict: a
+    // minimum with no count beside it cannot be read afterwards.
     let report = serde_json::json!({
-        "asset": nbt.display().to_string(),
+        "asset": input.display().to_string(),
+        "files": tiles.len(),
+        "size": size,
         "profile": probe.profile,
         "measured_min_light": probe.measured_min_light,
-        "floor_cells": probe.floor_cells,
+        "darkest_cell": probe.darkest_cell,
         "dark_threshold": probe.dark_threshold,
+        "binding": {
+            "standable_cells": probe.standable_cells,
+            "entry_cells": probe.entry_cells,
+            "reachable_cells": probe.reachable_cells,
+            "measured_cells": probe.measured_cells,
+        },
     });
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
-    if probe.is_dark() {
-        Diagnostic::warning(
-            delvewright_admit::diag::DW_DARK,
+
+    // A binding of zero is a FINDING, never a pass. It is also the one way a
+    // genuinely pitch-black piece could slip past this probe — a sealed crypt
+    // has no entrance, binds nothing, and would otherwise report "not dark".
+    if probe.is_unbound() {
+        Diagnostic::error(
+            DW_UNBOUND,
             format!(
-                "dark interior: min floor light {} < {}",
+                "the light probe bound to ZERO cells, so nothing was measured: {}",
+                probe.unbound_reason()
+            ),
+        )
+        .print(json);
+        return ExitCode::from(EXIT_FAIL);
+    }
+    if probe.is_dark() {
+        let cell = probe
+            .darkest_cell
+            .map(|c| format!(" (darkest at {},{},{})", c[0], c[1], c[2]))
+            .unwrap_or_default();
+        Diagnostic::warning(
+            DW_DARK,
+            format!(
+                "dark interior: min light {} < {} over {} roofed floor cell(s) a player can walk \
+                 to{cell}",
                 probe.measured_min_light.unwrap_or(0),
-                dark_threshold
+                dark_threshold,
+                probe.measured_cells
             ),
         )
         .print(json);
     }
+
     if write {
-        let mut meta = match PrefabMeta::beside_nbt(nbt) {
-            Ok(Some(m)) => m,
-            Ok(None) => skeleton_for(nbt, &structure),
+        // A tool that cannot establish where a piece came from REFUSES; it never
+        // invents. Writing a skeleton here manufactured `source: unknown`,
+        // `spdx: UNKNOWN` and no provenance row — a document asserting that
+        // nothing is known about an asset whose provenance is sitting in the
+        // file next to it, and asserting it silently.
+        let mut doc = match PrefabDoc::read(&meta_path) {
+            Ok(Some(d)) => d,
+            Ok(None) => {
+                return no_provenance_err(input, &meta_path, json);
+            }
             Err(e) => return input_err(&e, json),
         };
-        meta::set_lighting_from_probe(&mut meta, &probe);
-        if let Err(e) = write_meta(nbt, &meta) {
-            return output_err(&format!("cannot write metadata: {e}"), json);
+        meta::set_lighting_from_probe(&mut doc, &probe);
+        if let Err(e) = write_file(&meta_path, doc.to_json().as_bytes()) {
+            return output_err(&format!("cannot write {}: {e}", meta_path.display()), json);
         }
-        eprintln!("wrote lighting profile `{}`", probe.profile);
+        eprintln!(
+            "wrote lighting profile `{}` (bound to {} cell(s)) into {}",
+            probe.profile,
+            probe.measured_cells,
+            meta_path.display()
+        );
     }
     ExitCode::SUCCESS
+}
+
+/// `--write` with nothing to write into: refuse, and say what to do.
+fn no_provenance_err(input: &Path, meta_path: &Path, json: bool) -> ExitCode {
+    Diagnostic::error(
+        DW_NO_PROVENANCE,
+        format!(
+            "there is no prefab metadata at {} to write the measurement into, and this tool will \
+             not invent one: a skeleton it wrote would claim `source: unknown`, `spdx: UNKNOWN` \
+             and no provenance row about a piece whose licence and origin it has not established. \
+             Create the metadata beside {} first (the generators and `delve-grammar export` write \
+             it; for an ingested piece, `delve-admit anchor`/`socket` start one), then re-run with \
+             --write. Without --write the measurement is still printed above.",
+            meta_path.display(),
+            input.display()
+        ),
+    )
+    .print(json);
+    ExitCode::from(EXIT_INPUT)
 }
 
 fn run_catalog_validate(files: &[PathBuf], json: bool) -> ExitCode {
@@ -596,6 +729,18 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
     }
     let mut cands: Vec<Candidate> = Vec::new();
     for p in &nbts {
+        // The door nobody would point at deliberately: walking `*.nbt` in a
+        // directory that holds a tile set puts each tile on a plinth as if it
+        // were a prefab, and a reviewer walks past five slices of one building
+        // believing they reviewed five pieces.
+        if let Err(code) = refuse_fragment(
+            p,
+            "show",
+            "put one slice of a building on a plinth as if it were a piece",
+            json,
+        ) {
+            return code;
+        }
         let bytes = match std::fs::read(p) {
             Ok(b) => b,
             Err(e) => return input_err(&format!("cannot read {}: {e}", p.display()), json),
@@ -726,6 +871,12 @@ fn run_curate_merge(report: &Path, catalog: &Path, json: bool) -> ExitCode {
 /// Load a piece's structure + metadata (creating a skeleton when metadata is
 /// absent, with a warning — admission steps are chainable on a fresh piece).
 fn load_piece(nbt: &Path, json: bool) -> Result<(Structure, PrefabMeta), ExitCode> {
+    refuse_fragment(
+        nbt,
+        "edit",
+        "change one tile of a zone in isolation and leave the set inconsistent",
+        json,
+    )?;
     let bytes = std::fs::read(nbt)
         .map_err(|e| input_err(&format!("cannot read {}: {e}", nbt.display()), json))?;
     let structure = Structure::read(&bytes)

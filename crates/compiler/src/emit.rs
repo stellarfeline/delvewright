@@ -360,6 +360,12 @@ pub fn build_with_warnings(
     // no stake, which is the whole feature's byte-identity guarantee: no table, no
     // objectives, no functions, no artifact.
     let mut stake_table: Option<crate::stake::StakeTable> = None;
+    // The bot tier's contract for DYING (`compiler::deathplan`): the lethal volumes
+    // it may walk into, the wording each promises, the `on_death` consequences, the
+    // stake rules and the placement table's rows. `None` for a campaign that
+    // declares none of the three, and for one that assembles no world — a
+    // contract nobody can walk is not the same fact as an empty one.
+    let mut death_plan: Option<Value> = None;
 
     // Every anchor-bearing effect, at every nesting depth, must resolve to a real
     // world position or the build stops (DW0360). This runs FIRST among the
@@ -552,6 +558,17 @@ pub fn build_with_warnings(
                 // death regions — a volume that strands the party is a worse
                 // finding, and it should be reported first.
                 stake_table = crate::stake::build(plan, &world, campaign_spawn(plan))?;
+                // …and the contract the bot tier needs to prove any of it at
+                // runtime. Built here, from the SAME table the proofs above ran
+                // on, because a PackTest fake player is permanently undamageable
+                // (measured 2026-08-03 and 2026-08-09) and so the whole death loop
+                // is the mineflayer tier's claim to make.
+                death_plan = crate::deathplan::build(
+                    plan,
+                    &world,
+                    campaign_spawn(plan),
+                    stake_table.as_ref(),
+                );
                 crate::nav::check_stealth_zones(plan, &world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -1099,6 +1116,19 @@ pub fn build_with_warnings(
         message: e.message,
     })?;
 
+    // ---- score-seeding integrity (DW0495) ----
+    // Every `if score` / `unless score` / `scores={…}` the compiler just wrote
+    // must read an entry the pack itself creates, or be written so a missing entry
+    // cannot change its answer. On the pinned 1.21.11 server a score that was never
+    // written is not zero — every comparison against it is false — which is how
+    // `if score @s dw.deaths > @s dw.death_ack` silently swallowed every player's
+    // FIRST death for as long as checkpoints have existed (see `crate::seeding`).
+    // Feature-blind and read off the finished tree, beside the call-graph proof.
+    crate::seeding::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+        code: e.code,
+        message: e.message,
+    })?;
+
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
     // zip; its SHA-1 is what a client verifies against the itzg RESOURCE_PACK_SHA1
@@ -1208,6 +1238,13 @@ pub fn build_with_warnings(
     // binding is a finding rather than an absence.
     if let Some(t) = &stake_table {
         put_json(&mut out, "validation/stake-gate.json", &t.gate.to_json());
+    }
+    // The bot tier's death contract (`compiler::deathplan`): what the campaign
+    // PROMISES a death does, so the mineflayer tier can assert it against a real
+    // client that really died. Same rule again — a campaign that declares no
+    // volume, no `on_death` and no stake emits no file at all.
+    if let Some(dp) = &death_plan {
+        put_json(&mut out, "validation/death-plan.json", dp);
     }
 
     // ---- manifest (hashes of inputs + all other outputs) ----
@@ -5458,6 +5495,37 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     let alive = "unless data entity @s {Health:0.0f}";
     let dead = "if data entity @s {Health:0.0f}";
     let mut check: Vec<String> = Vec::new();
+    // **The three scores this edge compares have to EXIST before it compares them.**
+    // Found live by the bot tier's death-loop stage (task #68), which is the only
+    // tier that can witness a player death at all; generalised into `DW0495`, which
+    // then named a third objective the instance fix had missed.
+    //
+    // On the pinned 1.21.11 server a scoreboard entry that was never written is
+    // NOT zero: every comparison against it is false, so `execute if score @s A >
+    // @s B` does not fire when B has no entry (measured — see `crate::seeding`,
+    // which now refuses this shape anywhere in the emitted tree as `DW0495`).
+    // `dw.death_ack` and `dw.death_seen` are `dummy` objectives and `dw.deaths` is
+    // `deathCount`, and a player who has never died has an entry in none of the
+    // three — so the whole edge was dead on a player's FIRST death: no `on_death`
+    // (no forfeit, no recovery stake), no `cp_respawn_fire` (no `on_respawn`, no
+    // engine re-seat — the party landed wherever vanilla's own `/spawnpoint` hint
+    // put them, the hint task #145 established cannot be trusted). Both then
+    // worked from the second death onward, which is why it survived since
+    // spec-0012: every manual test of "does dying work" dies twice.
+    //
+    // Seeded here rather than at a join hook because this is the one function that
+    // reads them, so the two facts cannot drift apart; `add … 0` is idempotent
+    // (and, on `deathCount`, does not disturb the criterion — measured: 0 before
+    // the first death, 1 after), so running it every tick is a no-op after the
+    // first. Emitted only for the edge the campaign declares, so a campaign with
+    // neither `on_death` nor a checkpoint moves no byte.
+    check.push("scoreboard players add @s dw.deaths 0".to_string());
+    if !on_death.is_empty() {
+        check.push("scoreboard players add @s dw.death_seen 0".to_string());
+    }
+    if plan.any_checkpoint() {
+        check.push("scoreboard players add @s dw.death_ack 0".to_string());
+    }
     // The corpse side FIRST: `on_death` is the earlier moment, and a reader of the
     // generated function should meet the two edges in the order the player lives
     // them. Ordering is otherwise immaterial — the two branches are mutually
