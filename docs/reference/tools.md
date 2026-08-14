@@ -251,10 +251,24 @@ delve-admit lighting <nbt> [--write] [--dark-threshold 3]       # probe -> decla
 delve-admit catalog validate <card.json ...>
 ```
 
-`socket`, `anchor` and `lighting --write` each own one block of the prefab's
-metadata and rewrite the file with everything else — anchors, sockets, licence,
-and the `license.generated_by` row that says what regenerates the `.nbt` —
-byte-for-byte as they found it. They can be run in any order and repeatedly.
+`socket`, `anchor` and `lighting --write` each own **a named part** of the
+prefab's metadata and rewrite the file with everything else — anchors, sockets,
+licence, the `license.generated_by` row that says what regenerates the `.nbt`,
+the declared `waterline_y`, and any key this version of the tool does not model —
+as they found it. They can be run in any order and repeatedly. That holds because
+these tools and the compiler share one definition of the document
+([`prefab-procedure.md`](prefab-procedure.md) §9); a tool with its own copy of
+the shape deletes whatever its copy omits, silently, on the way out.
+
+The part is as deep as the edit really goes, and for `anchor` that is **four
+fields of one anchor** rather than the anchor map: `pos`, `facing`, `region` and
+`block` say where the anchor is, and re-annotating an anchor the piece already
+carries leaves the rest of it alone — the `dispenser` cell and `trigger_block` a
+trap's hardware lives on, the `resolves_to` the exporter resolved from the
+piece's own contract, and any anchor key this version does not model. Naming a
+`--pos` does supersede a `--region` and vice versa: where the anchor is, is one
+property written two ways. `crates/admit/tests/metadata_preservation.rs` holds
+every step to this, path by path, on a real export carrying every field at risk.
 
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:

@@ -303,7 +303,7 @@ fn a_fill_region_of_water_is_collected_as_a_flood() {
 ///
 /// Before a region write's conclusion was read off its block, this campaign built
 /// **green**: the model added the box to `solid` whatever the block, so it proved a
-/// route that walks the party across a pond in mid-air. The refusal is `DW0543` and
+/// route that walks the party across a pond in mid-air. The refusal is `DW0544` and
 /// not `DW0311` because the geometry is not the defect — the author filled that box
 /// on purpose and has to be told that the fluid is what took the footing away.
 #[test]
@@ -318,7 +318,7 @@ fn a_water_fill_over_the_only_footing_is_dw0543() {
     ));
     match try_build(&water, &dir) {
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            assert_eq!(code, "DW0543", "wrong code: {message}");
+            assert_eq!(code, "DW0544", "wrong code: {message}");
             assert!(
                 message.contains("[3, 64, 6]..[5, 64, 6]"),
                 "the message must name the fluid-filled box: {message}"
@@ -354,7 +354,7 @@ fn a_lava_fill_over_the_only_footing_is_dw0543_too() {
     ));
     match try_build(&lava, &dir) {
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            assert_eq!(code, "DW0543", "wrong code: {message}");
+            assert_eq!(code, "DW0544", "wrong code: {message}");
         }
         other => panic!("a lava floor under the only doorway must be refused: {other:?}"),
     }
@@ -375,7 +375,7 @@ fn a_bare_water_fill_is_refused_exactly_like_the_namespaced_one() {
     ));
     match try_build(&bare, &dir) {
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
-            assert_eq!(code, "DW0543", "wrong code: {message}");
+            assert_eq!(code, "DW0544", "wrong code: {message}");
         }
         other => panic!("`water` is the same block as `minecraft:water`: {other:?}"),
     }

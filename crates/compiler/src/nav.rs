@@ -66,7 +66,7 @@ pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
 /// exist. Derived from a counterfactual: the leg is re-routed over the identical
 /// world with lethality removed, and the volumes covering that route are named.
 pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
-/// `DW0543`: a forced critical-path leg depends on standing where a runtime region
+/// `DW0544`: a forced critical-path leg depends on standing where a runtime region
 /// write leaves **fluid** — water or lava.
 ///
 /// A `fill-region` / `close-gate` / shortcut seal whose block is a fluid does not
@@ -80,7 +80,7 @@ pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
 /// reason `DW0510` is: the prefab is innocent. The author is looking at a box they
 /// filled on purpose and needs to be told that filling it with water is what took
 /// the footing away — not sent hunting for a wedged doorway that is not there.
-pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0543");
+pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544");
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
@@ -3299,7 +3299,7 @@ fn names_of(ids: &[&str]) -> String {
         .join(", ")
 }
 
-/// Render a blamed-region list for a `DW0543` message. A runtime region write has
+/// Render a blamed-region list for a `DW0544` message. A runtime region write has
 /// no author-given id — `fill-region` names a box, not itself — so the box IS the
 /// name, and it identifies the effect uniquely. The empty case is the same honest
 /// admission [`names_of`] makes: the counterfactual found a route that touches no
@@ -3492,7 +3492,7 @@ fn route_visited(
                 });
             }
             // A leg the fluid did not *uniquely* close is still a leg a fluid may
-            // have walled: `DW0543` fires only when the box supplied FOOTING, and a
+            // have walled: `DW0544` fires only when the box supplied FOOTING, and a
             // flood laid across a corridor blocks it whether or not it is wet. That
             // is an unroutable leg the campaign built on purpose, so it may not be
             // reported as a wedged doorway — the "go and fix a prefab that was never
@@ -7615,7 +7615,7 @@ mod tests {
         };
         let err =
             route_visited(&world, &[a, b], std::slice::from_ref(&fluid_fill), &linear).unwrap_err();
-        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0543
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
         assert!(
             err.message.contains("[2, 64, 0]..[2, 64, 0]"),
             "the message must name the box that took the footing: {}",
@@ -7627,8 +7627,8 @@ mod tests {
     /// floor — so a fluid fill laid **across** the corridor closes it exactly as a
     /// `close-gate` would.
     ///
-    /// The code here is `DW0311`, not `DW0543`, and that is the counterfactual being
-    /// honest rather than a gap. `DW0543` answers one question — *would this route
+    /// The code here is `DW0311`, not `DW0544`, and that is the counterfactual being
+    /// honest rather than a gap. `DW0544` answers one question — *would this route
     /// exist if the box held a block?* — and for a box laid across the path the
     /// answer is no: the campaign built a wall, and calling the fluid the culprit
     /// would send the author to change a block that changes nothing. What the fluid

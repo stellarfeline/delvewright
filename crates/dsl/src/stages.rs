@@ -3746,7 +3746,7 @@ pub enum QuestEffect {
     /// `minecraft:lava` leave them **flooded** — impassable and never floor, because
     /// nothing stands on a fluid — and because a fill carries no `replace` filter it
     /// takes away whatever floor was in the box, so a forced leg that needed that
-    /// footing fails `DW0543`.
+    /// footing fails `DW0544`.
     FillRegion {
         /// The volume to fill, as an anchor-centred box (`anchor ± extent`).
         ///

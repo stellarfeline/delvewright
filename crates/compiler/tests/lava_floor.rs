@@ -1,7 +1,7 @@
 //! Prefab-authored lava is not floor — the static half of the fluid-is-not-floor
 //! defect, over the real `emit::build` path.
 //!
-//! The runtime half (a `fill-region` whose block is a fluid) is `DW0543`. This is
+//! The runtime half (a `fill-region` whose block is a fluid) is `DW0544`. This is
 //! the other site: a fluid that arrives from a prefab palette rather than from a
 //! verb. `occupancy_of` classified it by asking `is_water`, so `minecraft:lava`
 //! fell through to the final `else` and became a full-cube solid — floor the
