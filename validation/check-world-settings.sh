@@ -44,8 +44,16 @@ fi
 #     that declares `world.difficulty: "hard"` (v0.6) and boots peaceful is not
 #     merely mistuned: peaceful discards every hostile mob, so the whole cast of
 #     threats disappears. One assertion per derived key.
+#
+#     The two chunk distances are here for the same reason one layer out: they
+#     have no image ENV fallback at all, so a deleted line does not fall back to
+#     a value we chose - it falls back to the itzg base's own
+#     /image/server.properties template (view-distance) and the vanilla jar's
+#     built-in default (simulation-distance), two files nobody in this repo owns.
+#     What renders and what ticks would then be a property of the host.
 for key in difficulty:DIFFICULTY level-seed:SEED level-type:LEVEL_TYPE \
-           generator-settings:GENERATOR_SETTINGS; do
+           generator-settings:GENERATOR_SETTINGS view-distance:VIEW_DISTANCE \
+           simulation-distance:SIMULATION_DISTANCE; do
   prop="${key%%:*}"; env_var="${key##*:}"
   if grep -q "prop $prop" "$SCRIPT" && grep -q "export $env_var=" "$SCRIPT"; then
     pass "entrypoint derives $env_var from the build's \`$prop\`"
@@ -67,16 +75,35 @@ else
   fail "compose packtest runner must mount \${DELVE_OUTPUT:-./delve-output}/server + the shared entrypoint script, set DELVE_SERVER_PROPERTIES, and use it as its entrypoint"
 fi
 
-# 2b) ...and every pack mount must come from the SAME tree. Selecting the output
-#     directory per-run created a new way to reproduce exactly the defect this file
-#     exists to catch: point `datapack` at one build and `server` at another, and the
-#     runner tests a world the delve never shipped — with nothing else to notice.
-#     Three mounts (datapack, packtest-datapack, server), one prefix.
-prefixed=$(grep -c '\${DELVE_OUTPUT:-\./delve-output}/' "$COMPOSE" || true)
-if [ "$prefixed" -eq 3 ]; then
-  pass "compose packtest runner draws all three pack mounts from one build tree"
+# 2b) ...and every mount of BOTH ladders must come from the SAME tree. Selecting the
+#     output directory per-run created a new way to reproduce exactly the defect this
+#     file exists to catch: point `datapack` at one build and `server` at another, and
+#     the runner tests a world the delve never shipped — with nothing else to notice.
+#
+#     Six sites now, not three (task #68): `DELVE_OUTPUT` used to select the tree for
+#     the `packtest` profile ONLY, so `bot-run.sh --output <tree>` set a variable
+#     nothing on the bot path read and the bot ladder silently booted `./delve-output`
+#     whatever it was asked for — a flag that does nothing is worse than a missing one,
+#     because the caller believes it. The bot ladder therefore joins this invariant.
+#
+#     Asserted BY NAME rather than by counting: a bare count says "5 of 3" and leaves
+#     the reader to work out which mount drifted, and it cannot tell a mount that moved
+#     tree from one that was simply added.
+missing=""
+for mount in \
+  '${DELVE_OUTPUT:-./delve-output}/datapack:/packs/datapack:ro' \
+  '${DELVE_OUTPUT:-./delve-output}/packtest-datapack:/packs/packtest-datapack:ro' \
+  '${DELVE_OUTPUT:-./delve-output}/server:/packs/server:ro' \
+  '${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro' \
+  '${DELVE_OUTPUT:-./delve-output}/validation:/delve/validation:ro' \
+  'context: ${DELVE_OUTPUT:-./delve-output}'; do
+  grep -qF -- "$mount" "$COMPOSE" || missing="$missing
+    $mount"
+done
+if [ -z "$missing" ]; then
+  pass "both ladders draw every pack mount and the delve build context from one build tree"
 else
-  fail "compose packtest runner must draw datapack, packtest-datapack and server from the SAME \${DELVE_OUTPUT:-./delve-output} tree (found $prefixed of 3) - a split tree tests a world the delve never ships"
+  fail "compose must draw every mount of BOTH ladders from the SAME \${DELVE_OUTPUT:-./delve-output} tree - a split tree tests a world the delve never ships. Missing:$missing"
 fi
 
 # 3) No consumer may hardcode a campaign-varying world setting: those come from the

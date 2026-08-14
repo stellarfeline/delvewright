@@ -1298,3 +1298,100 @@ export function dieRetryCoverageFailures(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// The die-retry stage's own binding count (playtest-methodology.md rule 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the die-retry stage actually EXAMINED — counted, and stated on every run.
+ *
+ * ## Why this exists
+ *
+ * The stage's precondition is an ARMED checkpoint before a mandatory encounter,
+ * and an encounter that has none is excluded with an advisory (#223) — correctly,
+ * because where a campaign puts its rest points is a content judgement the
+ * compiler's rules own, not the bot's. But the arithmetic downstream of that
+ * exclusion is `dieRetryCoverageFailures` over an already-emptied list, so a build
+ * where EVERY encounter is excluded produces no failures and reports
+ * `passed: true`. The stage then reads as "dying is safe here" while having
+ * scripted no death at all.
+ *
+ * That is not hypothetical and it is not rare: measured 2026-08-11 across every
+ * campaign and fixture in both repos, **no build exercises a scripted death**.
+ * `keep-trial` and `hollow-vigil` field encounters with no checkpoint before them;
+ * `nobodys-cave-island` reports zero mandatory encounters; the drowned bell has no
+ * stage documents yet. Every one of those runs was green on this stage.
+ *
+ * This is the same shape as the island's combat floor gate examining zero enemies
+ * for nineteen rounds, and it gets the same treatment: the count travels in the
+ * run artifact and an unbound stage says so out loud, so nobody has to notice an
+ * empty `die_retry` array to learn that nothing was proven.
+ */
+export interface DieRetryBinding {
+  /** Mandatory encounters the compiler put in the plan. */
+  readonly declared: number;
+  /** Encounters the stage entered. */
+  readonly engaged: number;
+  /** Scripted deaths actually TAKEN — the number that decides `unbound`. */
+  readonly deathsScripted: number;
+  /** Of those, how many reached a verdict about the retry loop. */
+  readonly trialsCompleted: number;
+  /** Encounters excluded because the campaign fires no checkpoint before them. */
+  readonly skippedNoCheckpoint: number;
+  /** Encounters excluded because the governing checkpoint was never armed. */
+  readonly skippedUnarmed: number;
+  /** True when no scripted death was taken — nothing about dying was examined. */
+  readonly unbound: boolean;
+  /** Why it examined nothing. `undefined` exactly when it examined something. */
+  readonly reason?: string;
+}
+
+/** Count what the die-retry stage examined, and say why when that is nothing. */
+export function dieRetryBinding(
+  ran: boolean,
+  declared: number,
+  engagedWaves: ReadonlySet<string>,
+  trials: readonly DeathTrial[],
+  skippedNoCheckpoint: number,
+  skippedUnarmed: number,
+): DieRetryBinding {
+  const deathsScripted = trials.length;
+  const base = {
+    declared,
+    engaged: engagedWaves.size,
+    deathsScripted,
+    trialsCompleted: trials.filter((t) => t.completed).length,
+    skippedNoCheckpoint,
+    skippedUnarmed,
+    unbound: deathsScripted === 0,
+  };
+  if (deathsScripted > 0) return base;
+  let reason: string;
+  if (!ran) {
+    reason =
+      "the stage did not run (no combat plan in this build, or DELVEWRIGHT_DIE_RETRY=0) — " +
+      "nothing about dying is proven or disproven by this run";
+  } else if (declared === 0) {
+    reason =
+      "this build declares NO mandatory encounter, so the stage had nothing to script a " +
+      "death at. A campaign whose fights are not named by a `kill` objective cannot have " +
+      "its retry loop proven by this tier at all";
+  } else if (skippedNoCheckpoint >= declared) {
+    reason =
+      `all ${declared} mandatory encounter(s) were excluded because the campaign fires NO ` +
+      `checkpoint before them: every death there is a full restart, so the stage took no ` +
+      `death and proved nothing. Where the rest points go is a CONTENT judgement ` +
+      `(DW0379/DW0315/DW0316), but the consequence for this stage is that it examined zero`;
+  } else if (skippedUnarmed > 0) {
+    reason =
+      `${skippedUnarmed} encounter(s) were excluded because the governing checkpoint was ` +
+      `never armed — the run's own gap, not the delve's — and no other encounter yielded a ` +
+      `scripted death`;
+  } else {
+    reason =
+      `the stage ran over ${declared} declared encounter(s) and took NO scripted death; ` +
+      `the run ended before it reached one`;
+  }
+  return { ...base, reason };
+}

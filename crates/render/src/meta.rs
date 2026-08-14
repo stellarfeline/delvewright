@@ -77,6 +77,11 @@ impl PrefabMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The document itself, so the projection can be checked against what it
+    // projects rather than against a second copy of this file's beliefs.
+    use delvewright_schem::prefab::{
+        Anchor as DocAnchor, License, LightingProfile, PrefabMeta as Document,
+    };
 
     #[test]
     fn parses_connectors_and_anchors() {
@@ -96,5 +101,122 @@ mod tests {
         assert_eq!(meta.connectors[0].facing, "north");
         assert!(meta.anchors.contains_key("anchor/keeper-stand"));
         assert_eq!(meta.is_lit(), Some(true));
+    }
+
+    /// A document with every block a producer can write, both anchor shapes and
+    /// a full socket. Built through the document's own type, so it is whatever
+    /// the document currently is rather than whatever this file remembers.
+    fn a_full_document() -> Document {
+        let mut doc = Document::skeleton(
+            "chapel-ward",
+            [16, 9, 26],
+            4671,
+            "crates/grammar",
+            License {
+                source: "original".to_string(),
+                spdx: "GPL-3.0-or-later".to_string(),
+                note: "n".to_string(),
+                provenance: "p".to_string(),
+                generated_by: None,
+            },
+        );
+        doc.lighting = Some(Lighting {
+            profile: LightingProfile::Lit,
+            measured_min_light: Some(9),
+            measured: Some("2026-08-11".to_string()),
+            rationale: None,
+            method: Some("static estimate".to_string()),
+        });
+        doc.anchors.insert(
+            "anchor/bell".to_string(),
+            DocAnchor::point([3, 1, 4], "north"),
+        );
+        doc.anchors.insert(
+            "anchor/ward".to_string(),
+            DocAnchor {
+                region: Some(Region {
+                    from: [0, 0, 0],
+                    to: [2, 2, 2],
+                }),
+                block: Some("minecraft:iron_bars".to_string()),
+                resolves_to: Some("via:ward-door".to_string()),
+                ..DocAnchor::default()
+            },
+        );
+        doc.add_connector(Connector {
+            name: "keep:socket".to_string(),
+            target: "keep:socket".to_string(),
+            local_pos: [3, 1, 0],
+            facing: "north".to_string(),
+            opening: [3, 3],
+            joint: "aligned".to_string(),
+        });
+        doc
+    }
+
+    /// **The projection agrees with the document it projects.**
+    ///
+    /// Selecting three blocks out of a larger type is only safe while the two
+    /// sides still mean the same thing by them, and nothing about a `serde`
+    /// struct says so: rename a key on the document and this reader goes on
+    /// parsing, quietly reading its `default` for every block it can no longer
+    /// find. Writing the document with its own writer and reading it back with
+    /// this reader is what turns that from an assertion into a check.
+    #[test]
+    fn the_reader_is_a_projection_of_the_document_not_a_copy_of_it() {
+        let doc = a_full_document();
+        let view: PrefabMeta = serde_json::from_str(&doc.to_json()).unwrap();
+
+        assert_eq!(view.anchors, doc.anchors);
+        assert_eq!(view.connectors, doc.connectors);
+        assert_eq!(view.lighting, doc.lighting);
+
+        // Bound, not vacuous: two empty documents satisfy every equality above.
+        assert_eq!(view.anchors.len(), 2, "the fixture declares two anchors");
+        assert_eq!(view.connectors.len(), 1, "the fixture declares one socket");
+        assert_eq!(view.is_lit(), Some(true));
+        // Both anchor shapes, and fields the renderer's own copy of the document
+        // used to lack — they arrive because the leaf type is the document's.
+        assert_eq!(view.anchors["anchor/bell"].pos, Some([3, 1, 4]));
+        assert_eq!(
+            view.anchors["anchor/ward"].block.as_deref(),
+            Some("minecraft:iron_bars")
+        );
+        assert_eq!(
+            view.anchors["anchor/ward"].resolves_to.as_deref(),
+            Some("via:ward-door"),
+            "a field added to the document's Anchor must reach this reader unedited"
+        );
+    }
+
+    /// Why the projection is a type at all: a tiled zone's manifest carries the
+    /// same three blocks under `structure_set` rather than `structure`, and the
+    /// full document refuses it — deliberately, so a tool that has never heard
+    /// of tile sets fails loudly instead of reviewing a building with no blocks
+    /// in it. The renderer has to open both.
+    #[test]
+    fn the_reader_opens_the_manifest_the_document_type_refuses() {
+        let doc = a_full_document();
+        let mut json: serde_json::Value = serde_json::from_str(&doc.to_json()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("structure");
+        obj.insert(
+            "structure_set".to_string(),
+            serde_json::json!({
+                "base": "chapel-ward", "size": [16, 9, 26], "part_max": 48,
+                "grid": [1, 1, 1], "data_version": 4671, "generator": "crates/grammar",
+                "parts": []
+            }),
+        );
+        let text = serde_json::to_string(&json).unwrap();
+
+        assert!(
+            Document::from_json(&text).is_err(),
+            "the document type must keep refusing a manifest it cannot represent"
+        );
+        let view: PrefabMeta = serde_json::from_str(&text).unwrap();
+        assert_eq!(view.anchors, doc.anchors);
+        assert_eq!(view.connectors, doc.connectors);
+        assert_eq!(view.lighting, doc.lighting);
     }
 }

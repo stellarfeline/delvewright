@@ -84,6 +84,17 @@ def commit_base(root: Path, files: dict[str, str]) -> str:
     return sha
 
 
+def make_shallow(root: Path) -> None:
+    """Give the fixture a real shallow boundary — the same `.git/shallow` file a
+    `git fetch --depth=1` writes, carrying a real commit rather than a placeholder."""
+    tree = run(["git", "hash-object", "-w", "-t", "tree", "--stdin"], cwd=root, input="").strip()
+    boundary = run(["git", "commit-tree", tree, "-m", "shallow boundary"], cwd=root).strip()
+    (root / ".git" / "shallow").write_text(boundary + "\n", encoding="utf-8")
+    assert (
+        run(["git", "rev-parse", "--is-shallow-repository"], cwd=root).strip() == "true"
+    ), "fixture did not actually become shallow"
+
+
 def set_origin_main(root: Path, sha: str) -> None:
     run(["git", "update-ref", "refs/remotes/origin/main", sha], cwd=root)
 
@@ -231,7 +242,11 @@ def test_base_already_carries_a_duplicate(checker, tmp_path, capsys, monkeypatch
 
 def test_unfetched_base_refuses_to_run(checker, tmp_path, capsys, monkeypatch):
     """No refs/remotes/origin/main at all — the gate must refuse, loudly and
-    actionably, never silently compare against nothing."""
+    actionably, never silently compare against nothing.
+
+    And the remedy must not damage the repository it is printed into: `--depth=1`
+    in a full clone shallows it, and a shallow clone answers ancestry questions
+    with confident wrong numbers instead of erroring."""
     init_repo(tmp_path)
     write_local(tmp_path, {**SEED_SPECS, **SEED_ADRS})
 
@@ -240,7 +255,25 @@ def test_unfetched_base_refuses_to_run(checker, tmp_path, capsys, monkeypatch):
     assert checker.main() == 1
     err = capsys.readouterr().err
     assert "does not resolve to a commit" in err
-    assert "git fetch" in err
+    assert "git fetch --no-tags origin main:refs/remotes/origin/main" in err
+    assert "--depth" not in err.split("Do NOT add")[0]
+
+
+def test_unfetched_base_in_a_shallow_checkout_is_told_to_fetch_shallowly(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """CI's case, decided by looking at the repository rather than assuming it:
+    there is no full history left to truncate, so the one-commit fetch is right."""
+    init_repo(tmp_path)
+    write_local(tmp_path, {**SEED_SPECS, **SEED_ADRS})
+    make_shallow(tmp_path)
+
+    checker.ROOT = tmp_path
+    monkeypatch.setattr("sys.argv", ["check-numbered-doc-uniqueness.py"])
+    assert checker.main() == 1
+    err = capsys.readouterr().err
+    assert "ALREADY\n    SHALLOW" in err
+    assert "git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main" in err
 
 
 def test_vacuous_both_sides_empty_is_a_fail(checker, tmp_path, capsys, monkeypatch):

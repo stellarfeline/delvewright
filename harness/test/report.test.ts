@@ -41,9 +41,11 @@ const TRIAL: DeathTrial = {
 };
 
 test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branch run", () => {
-  // `branch-run` comes first because it says WHICH storyline the two stages below
-  // it are about — a passed critical path means something different on each branch.
-  assert.deepEqual([...STAGES], ["branch-run", "critical-path", "die-retry"]);
+  // `branch-run` comes first because it says WHICH storyline the stages below it
+  // are about — a passed critical path means something different on each branch.
+  // `death-loop` (task #68) comes last because it deliberately kills the player:
+  // it is the one stage that must not run until everything else is proven.
+  assert.deepEqual([...STAGES], ["branch-run", "critical-path", "die-retry", "death-loop"]);
 });
 
 test("a report for a build with no branches carries no branches section at all", () => {
