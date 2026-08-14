@@ -418,8 +418,9 @@ impl fmt::Display for ExportError {
             ExportError::Contract { gates } => write!(
                 f,
                 "the expanded model disagrees with the spatial contract this program declares, so \
-                 freezing it would put a  on disk whose metadata describes a building it is \
-                 not true of: {}",
+                 freezing it would put a prefab on disk whose metadata describes a building it is \
+                 not true of: {}. Change the blocks until the contract is true of them, or change \
+                 the declared contract to what this building actually is",
                 gates.join("; ")
             ),
             ExportError::ShapeOmissions { reasons } => write!(
