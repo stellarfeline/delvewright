@@ -199,7 +199,7 @@ pub fn build(g: &mut Grid, seed: u64) {
                 rx,
                 y,
                 rz,
-                "minecraft:chain",
+                "minecraft:iron_chain",
                 Some(vec![("axis", "y"), ("waterlogged", "false")]),
             );
         }

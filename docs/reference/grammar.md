@@ -4,10 +4,44 @@ What `crates/grammar` (package `delvewright-grammar`) does **today**. spec-0027
 is the decision record; this page is the behavior record, and any PR that
 changes the crate's surface updates it in the same PR.
 
-It is a **library**, not a tool: no binary, no `delvec` path, nothing in
-[`tools.md`](tools.md). It ships in no delve — generation-time only (ADR-0003).
-The engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
+It is a library **and** a tool: `delve-grammar` ([`tools.md`](tools.md) §2a) is
+its entry point, and the procedure that drives it is
+[`prefab-procedure.md`](prefab-procedure.md). Nothing here is reachable from
+`delvec` and nothing ships in a delve — generation-time only (ADR-0003). The
+engine depends on it nowhere; `crates/compiler` names it as a *dev*-dependency
 only, to test the export seam of §7 from both sides.
+
+Two library modules exist for the tool and are public for it:
+
+- [`nav`] — `passable` / `solid` / `standable` / `standable_cells` / `connected`
+  / `reachable_with_fall` / `ends` / `components` / `ground_entry` / `sheltered`.
+  These were written inside `tests/`, where a
+  rule's own gate is the right place for the gate and the wrong place for the
+  *predicate* it is written in: a program authored outside this repo has no
+  `tests/support` to reach for, so its author had no way to ask whether the piece
+  could be walked at all. `tests/support/mod.rs` now delegates here;
+  `tests/staging.rs` still carries its own copy, for the reason its own header
+  gives, and folding it in is a named follow-up.
+- [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
+  module is built around: a **gate** has a verdict and a binding count, a
+  **measurement** is a number with no threshold, and the two are never mixed.
+  Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
+  `shape-complete` (every placed state writes its shape-carrying `multipart`
+  properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
+  is filled only under identity orientation or a passed `orientation` guard —
+  `DW0736`, §4b), `non-empty`, and opt-in `traversable` and `reachable-floor`.
+  Measurements:
+  fill, distinct states, standable cells, footprint area/perimeter, silhouette
+  complexity, per-block shares, and **reachability** (§4c) — how much of the
+  floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no anchors, are reported
+  as findings rather than folded into a pass.
+
+`library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
+library reaches `delve-grammar list` without the tool being edited. The `bell::`
+zone programs are deliberately not in it: a zone is one campaign's composition,
+not general vocabulary. The `idiom-*` programs **are** in it, and are neither
+vocabulary nor content — they are the teaching set of §2c, and they are there
+because `list` / `show` is the only way an author reaches the corpus at all.
 
 ## 1. Model
 
@@ -60,10 +94,68 @@ a directional stair or door picks its facing).
 candidate; if none hold, the `otherwise` alternatives are; among candidates the
 seeded PRNG draws by `weight`. **Two guards that can hold at once are a
 probabilistic choice, not a priority order** — guards meant as a decision must be
-mutually exclusive.
+mutually exclusive. **`otherwise` is the only precedence the language has**: it
+is the arm that runs when no other alternative matched, so a decision is written
+as mutually exclusive positive guards plus one `otherwise` for the rest. It is
+also what terminates a recursion — a self-call whose guard finally fails has
+nowhere else to go, and the expansion ends in `NoApplicableRule`.
 
 The IR serialises to JSON (`serde`), which is the authoring form; block states
 are their vanilla string, e.g. `"minecraft:oak_stairs[facing=east,half=top]"`.
+
+**A paint is a block-state string or a weighted list**, and the list is a
+per-cell draw from the seeded stream:
+
+```json
+"palette": {
+  "wall": "minecraft:stone_bricks",
+  "ruin": [
+    { "weight": 9, "block": "minecraft:stone_bricks" },
+    { "weight": 3, "block": "minecraft:mossy_stone_bricks" },
+    { "weight": 2, "block": "minecraft:cracked_stone_bricks" },
+    { "weight": 2, "block": "minecraft:air" }
+  ]
+}
+```
+
+The same two forms are legal inline on a `fill`
+(`{"op":"fill","material":{…}}`). `minecraft:air` is a member like any other,
+which is what makes a mix a *material that is partly not there*; weights are
+positive integers and a zero is refused. **A mix moves no geometry** — the same
+cells are visited whatever the weights say — so a restyle can never change what
+a gate walked, and a sweep over seeds is a sweep over texture alone.
+
+### Four things the surface above does not say
+
+1. **`rounding` other than `truncate` is legal on a split with exactly one
+   relative piece**, and at weight 1 it is inert: the remainder of dividing by
+   one is always zero, so `[abs, rel(1), abs]` covers the axis exactly under
+   `truncate` already. `RoundingWithoutRelative` refuses only a split with *no*
+   relative piece. Rounding starts to matter at weight ≥ 2 or with several
+   shares.
+2. **`smallest` / `largest` break a tie toward the lowest world axis** — `X`,
+   then `Y`, then `Z` — measured over the axes still unclaimed when the
+   extremal spec is resolved. On a cube, `x: largest` names world `X`. Read as
+   an *expression* (`{"expr":"dim","dim":"smallest"}`) the same two words are a
+   number rather than an axis: the smallest of the three world extents, with no
+   tie to break.
+3. **A relative piece that resolves to zero blocks is a silent empty child**,
+   not an error. A zero *weight* is refused (`BadSize`); a positive weight with
+   nothing left to share is a legal zero-volume scope, and `fill` / `void` /
+   `skip` all write nothing in it without complaint. What does refuse is
+   anything needing a cell of it: an absolute split inside it overflows, and a
+   `mark` on it is `MarkOutsideScope`.
+4. **A role bound to a world-cardinal block state does not turn when `largest`
+   turns the scope.** A `fill` writes the state it was given verbatim; nothing
+   rotates a `facing=` property to follow the orientation. So a rule whose frame
+   opens with `z(largest)` — every §5b rule does — lays its stairs, doors and
+   voussoirs the same way round whatever box it is handed, and every gate stays
+   green while the piece faces the wrong way. The construct that answers it is
+   the `orientation` guard: one alternative per axis mapping, each naming the
+   state that mapping wants, which is how `church` picks its four roof stair
+   facings.
+
+All four are asserted in `tests/idioms.rs`.
 
 ## 2b. `mark` — anchor declarations
 
@@ -113,6 +205,285 @@ a mark aimed outside its own scope, an underivable facing, and two marks
 producing the same name are expansion errors — the collision names both rules.
 Two marks on the same **cell** under different names are legal, as in the
 hand-built prefabs.
+
+## 2c. The idiom index — how the constructs make shapes
+
+§2 is the list of constructs. What an author is missing is not that list: it is
+the handful of ways those constructs compose into a shape, none of which is
+visible from a type signature. `prefab-procedure.md` §3 says to start from the
+corpus rather than from the schema, which means **the corpus is the
+expressiveness** — a technique no program in the library demonstrates does not
+exist in practice, whatever the IR supports.
+
+Nine techniques, one minimal program each, all reachable from the tool:
+
+```sh
+delve-grammar list                                     # the `idiom-*` block
+delve-grammar show   --program idiom-shape > p.json    # the whole program
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 -o out/
+```
+
+| # | Technique | Program | Region, seed | What it shows |
+|---|---|---|---|---|
+| 1 | Repetition | `idiom-repetition` | 3 × 5 × 17, 1 | `repeat` tiles a pattern; a self-call carries the remainder, which is the only index there is |
+| 2 | Priority | `idiom-priority` | 13 × 6 × 2, 1 | `otherwise` is the only precedence; overlapping guards are a draw |
+| 3 | Shape | `idiom-shape` | 15 × 9 × 3, 1 | a taper is a recursion whose step is arithmetic on the remaining dimension — and with the paint inverted it is the opening |
+| 4 | Erosion | `idiom-erosion` | 9 × 5 × 3, 1 | `minecraft:air` weighted into a role |
+| 5 | Graded erosion | `idiom-erosion-graded` | 9 × 13 × 3, 1 | a gradient is a banded split, one mix per band |
+| 6 | Surface detail | `idiom-surface-detail` | 9 × 12 × 9, 1 | the rule that built the surface splits off the layer against it |
+| 7 | Symmetry without reflection | `idiom-mirror` | 15 × 11 × 2, 1 | a rule body written mirrored, since `reorient` permutes and never mirrors |
+| 8 | Skip | `idiom-skip` | 7 × 5 × 5, 1 | what `skip` does, and why show-through is not expressible yet |
+| 9 | Light | `idiom-light` | 5 × 6 × 13, 1 | a lamp is a role; a one-cell split is a sconce |
+| — | A composition demonstration | `idiom-composition-arcade` | 3 × 14 × 20, 1 | eight of the nine at once — a ruined arcade |
+
+Each program exists to teach one technique and nothing else, and each is
+expanded at exactly the region and seed above by
+`crates/grammar/tests/idioms.rs`, which asserts the claim in its own row. An
+entry that stopped being true is a red, not a stale page. They declare no
+anchors — the composition declares one — so `expand` prints the no-anchors
+finding over them, which is correct: a teaching program is not a prefab a
+campaign binds to.
+
+The JSON fragments below are **abridged for reading** — a literal where the
+program computes an expression, a `"<…>"` placeholder where an expression is
+long. `delve-grammar show --program <id>` prints the program that runs, and that
+is the one to copy.
+
+**The index is not the corpus.** The index is a curated set of *techniques* and
+grows only when an authoring trial fails for want of one (spec-0033 §4.6, §4.8).
+The corpus is every program `delve-grammar list` names, and every IR construct
+owes it at least one example — which is why `negated-guard` is in the library
+and not in the table above: `none_of` is negation of guards, a language feature
+rather than a way of building anything. The demonstration-coverage report is
+what holds the corpus to that.
+
+### 1. Repetition
+
+The `-X` lane tiles its piers with `"repeat": true`; the `+X` lane peels one
+pier and one bay off the low end and calls itself on the remainder. At the
+documented region the two lanes are the same rhythm, cell for cell.
+
+```json
+"recursed_row": [
+  { "when": { "cond": "cmp", "lhs": {"expr":"dim","dim":"z"}, "op": "ge",
+              "rhs": {"expr":"int","value":5} },
+    "body": { "op": "split", "axis": "z",
+              "sizes": [ {"size":"absolute","blocks":{"expr":"param","name":"pier"}},
+                         {"size":"absolute","blocks":{"expr":"param","name":"bay"}},
+                         {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children": [ {"op":"fill","material":{"role":"mass"}},
+                            {"op":"void"},
+                            {"op":"call","symbol":"recursed_row"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+]
+```
+
+The line between the two forms is the whole entry. A `repeat` split hands every
+tile the same pattern, so **no tile can know how far along it is**; a self-call
+is handed the box that is left, and that box is the only index the IR exposes.
+That is why `stair_flight`'s treads, `store_room`'s tell and every taper in §2c
+are recursions and none of them is a `repeat`. Turn the remainder into
+arithmetic and the same recursion becomes a shape (idiom 3).
+
+The `otherwise` arm is the base case: the remainder too short for another
+pier-and-bay becomes the last pier. Strip it and the expansion is
+`NoApplicableRule` at the first scope the guard rejects.
+
+### 2. Priority
+
+Three bays of three widths, one rule deciding what each becomes — arch, slot,
+solid pier — with the third arm an `otherwise`.
+
+Selection collects **every** non-`otherwise` alternative whose guard holds and
+then draws among them by weight, so writing `X >= 6` and `X >= 3` as the first
+two arms is not "prefer the arch": at a 7-wide bay both hold and the seed picks.
+The second guard is therefore the complement, spelled out:
+
+```json
+{ "cond": "all", "of": [
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"ge",
+      "rhs":{"expr":"param","name":"slot_min"} },
+    { "cond":"cmp", "lhs":{"expr":"dim","dim":"x"}, "op":"lt",
+      "rhs":{"expr":"param","name":"arch_min"} } ] }
+```
+
+The red is measured rather than argued: with the `lt` half dropped, twelve seeds
+build more than one arcade out of the same box.
+
+### 3. Shape
+
+One three-rule recursion — peel a course, inset the remaining box by `step` on
+each side, recurse — and it is simultaneously the arch, the gable, the ramp, the
+vault, the spire and the batter. Which one you get is a matter of which axis is
+split and how big the box is. `church`'s `roofYsplit` / `roofZsplit` /
+`rooffill` already contain half of it.
+
+```json
+"profile": [
+  { "when": { "cond":"all", "of":[ "<X >= 2*step + 1>", "<Y >= 2>" ] },
+    "body": { "op":"split", "axis":"y", "rounding":"start",
+              "sizes":[ {"size":"absolute","blocks":{"expr":"int","value":1}},
+                        {"size":"relative","weight":{"expr":"int","value":1}} ],
+              "children":[ {"op":"fill","material":{"role":"mass"}},
+                           {"op":"call","symbol":"step_in"} ] } },
+  { "when": {"cond":"otherwise"}, "body": {"op":"fill","material":{"role":"mass"}} }
+],
+"step_in": [ { "body": { "op":"split", "axis":"x", "rounding":"start",
+                "sizes":[ "<step>", {"size":"relative","weight":{"expr":"int","value":1}}, "<step>" ],
+                "children":[ {"op":"fill","material":{"role":"cut"}},
+                             {"op":"call","symbol":"profile"},
+                             {"op":"fill","material":{"role":"cut"}} ] } } ]
+```
+
+**The step is not fixed at one cell.** An `absolute` size takes an *expression*,
+so the inset can be read off the scope it is applied in. Here it is
+`max(1, X / run)`, which steps in two cells a side while the courses are wide
+and one when they are narrow — a convex batter, not a 45° wedge. Course widths
+at the documented region are 15, 11, 9, 7, 5, 3, then a one-wide ridge. What is
+*not* expressible is a step that depends on **where** the scope sits: there is
+no positional index.
+
+**With the paint inverted it is every opening in the building.** The two roles
+are the taper (`mass`) and its complement (`cut`), and the default binding makes
+the taper stone standing in air — a gable. Bind them the other way round:
+
+```sh
+delve-grammar expand --program idiom-shape --region 15x9x3 --seed 1 \
+    --role mass=minecraft:air --role cut=minecraft:stone_bricks \
+    --id idiom-shape-arch -o out/
+```
+
+and the identical derivation is a solid wall with a stepped pointed opening in
+it. **A pitched roof and a pointed arch are the same program with the paint
+inverted**; the two expansions are exact complements over all 405 cells, which
+the test measures rather than asserts. A straight jamb under the springing is
+one more `Y` split below the taper — see the composition.
+
+**Two of these crossing is one more rule, not a Rust generator.** Run a second
+prism across the first and the union has a **plus**-shaped cross-section at
+every course; a plus is a partition, so the recursion peels the **ring** of its
+box rather than insetting the box. Lay one solid course, then cut what is left
+into four one-cell slabs and a core — `[1, rel, 1]` down `Z`, and that split's
+middle piece `[1, rel, 1]` down `X` — and hand each slab the taper and the core
+the crossing rule again.
+
+Which taper each slab gets is the whole of it, and it is why no rule counts
+courses. The slabs taken by the first split still span the box's full width, so
+they step in one cell and then lay a course. The slabs taken from the middle
+piece have already lost a cell at each end to the first split, so **their own
+extent is already the width their course needs** and they lay it straight away.
+Both are the two rules above, entered at different points — `step_in` for the
+first pair, `profile` for the second — with the margins skipped rather than
+painted.
+
+Four rules build it: those two, the crossing rule, and one that places the two
+bands in the region. The result is a cross-gable with a true valley at each of
+the four re-entrant corners, both ridges at one height, over the whole
+footprint, at any size. The two bands are given the same width — that is what
+one pitch and one ridge height mean together.
+
+### 4. Erosion
+
+A palette role that carries some air is a material that is partly not there, and
+that is the whole of decay, rubble, spall and pitting here. One role, one rule,
+no geometry. The authoring form is in §2. A role bound to a single block is a
+surface of one material, which is the whole explanation for a zone that renders
+as monoculture — so this is the cheapest change in the language, and the first
+thing to reach for when a piece looks flat.
+
+### 5. Graded erosion
+
+Uniform noise reads as texture; decay has a direction. The language has no
+gradient — a mix's weights cannot vary with position — so **the gradient is the
+split**: band the surface and give each band its own mix, air share climbing.
+More bands is a smoother gradient and nothing else.
+
+The bands are a rounded split, and at the documented region that is
+load-bearing: thirteen courses over three shares do not divide, so under the
+default `truncate` the pieces are 4, 4, 4 and the thirteenth course is **never
+written** — twenty-seven cells of daylight along the top of the wall, with
+`blocks-exist` and `non-empty` both perfectly green. `rounding` is owed by every
+surface, not only by floors.
+
+### 6. Surface detail
+
+Detail is not a pass over a finished model; there is no such pass. It is one
+more piece in the split that made the surface, taken while the rule still has
+the box in hand: `[rel 3, abs 1, abs 1, rel 2]` down `Y` is mass, the crust
+course that is the top of the mass, the litter course standing on the crust, and
+the air above. Scatter members are deliberately not full cubes
+(`moss_carpet`, `short_grass`, `brown_mushroom`) —
+`tools/block-appearance.py --full-cube-only` is for the structural roles, and a
+litter layer is exactly where the rest belong. The same move on a different axis
+is a wall's inner face; with a light-emitting member it is idiom 9.
+
+### 7. Symmetry without reflection
+
+A grammar orientation is a permutation and never a reflection, so no `reorient`
+can hand a rule its own mirror image. That is true, and it is **not** the same
+as "the back end cannot make a symmetric shape": an orientation cannot mirror a
+piece, but a rule *body* can be written mirrored, and a size list reversed is
+exactly that.
+
+`lower_half` and `upper_half` are the same rule twice. One peels its courses off
+the low end (`[abs 1, rel 1]`, children `[inset, slot]`) and the other off the
+high end (`[rel 1, abs 1]`, children `[slot, inset]`); both chamfer by one cell
+per side per course. Above and below a full-width waist they give a chamfered
+octagon — a rose window — at glazing widths 3, 5, 7, 9, 9, 9, 7, 5, 3, symmetric
+about both centre lines of the wall. It re-centres itself as the wall widens,
+because the aperture and every course inside it sit in the middle share of a
+`[margin, aperture, margin]` split.
+
+**This is enough for any shape with a mirror plane.** What it does not reach is
+a smooth curve: the steps are integers and integer arithmetic has no square
+root, so a circle is a polygon here whatever you do.
+
+### 8. Skip
+
+`skip` writes nothing; `void` writes air into every cell. **They are
+indistinguishable in the finished model**, and that is a property of the IR
+rather than of this example: nothing writes a cell twice — a split's children
+partition their box, a rule body is a single node, there is no sequencing
+operator — so every cell is written by exactly one node or by none, and a model
+starts as air. There is no earlier fill for `skip` to leave standing. The test
+swaps the two and the bytes do not move.
+
+What `skip` carries today is **intent** — *this box is not mine to write* —
+which is what a `mark` whose body writes nothing wants to say, and it costs
+nothing where `void` costs one write per cell. Show-through waits on an overlay
+primitive, the same missing construct that stops a zone carving a doorway into a
+piece's own wall (§5c).
+
+### 9. Light
+
+There is no light construct: a role bound to `minecraft:sea_lantern` is a role,
+and a split that gives it one cell every `sconce_period` along a wall course is
+a run of sconces. That is the whole technique, and it is the only reason a
+program's lighting is the program's own business. The period is the split's own
+pattern, so it is a real control — widen it and the same gallery has fewer
+sconces.
+
+It matters because a piece that places no light **is** dark, the grammar cannot
+warn about it, and the emitted metadata says `"profile": "unmeasured"` and means
+it: expansion places blocks, not photons. `delve-admit lighting --write`
+(procedure §7) is where the number comes from.
+
+### A composition demonstration
+
+`idiom-composition-arcade` is a ruined arcade, and it is here to be **read**
+rather than reused: a campaign that wants an arcade writes its own program from
+the techniques, against its own fiction. Adding `gothic_arcade` to the
+vocabulary would be the catalogue mistake — the next creator wants a headframe,
+a gantry, a ziggurat, finds no entry and concludes the back end cannot.
+
+Eight of the nine are in it: the colonnade is a recursion (1) whose `otherwise`
+arm places the last pier (2); each bay's head is the taper with the paint
+inverted (3), so what narrows is the hole; every masonry role carries some air
+(4) and the footing, wall and crest are three mixes up the elevation (5); the
+crest's own top course is a litter layer (6); and every pier carries a sconce
+cell on both faces (9). Idiom 7 is not in it — nothing here has a mirror plane
+the recursion does not already centre for itself — and neither is idiom 8, since
+the bays are meant to be empty, which is what `void` says.
 
 ## 3. Determinism (ADR-0006)
 
@@ -167,6 +538,104 @@ of spec-0027 §4 are a later phase and will own a DW range then.
 Consequence for authors: a region too small for a program's absolute sizes is an
 error, not a building with pieces outside its box. Each library program documents
 its minimum region.
+
+## 4b. Blocks have to exist
+
+Every block state the export writes is checked against the pinned 1.21.11
+block-state registry (`crates/compiler/data/blocks-1.21.11.json`, 1166 blocks,
+via `delvewright_schem::blocks`) — the id, every property name, and every
+property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
+the cell count and a suggested rename.
+
+The check is **at the emitter, not in a test**, for the reason CLAUDE.md records
+for commands: the operator running the tool does not run `cargo test`. Its cost
+if absent is total and silent — a structure template loads an unknown block as
+AIR, so the piece is well-formed, the generator exits 0, the determinism gate
+passes, and the feature is simply not there. `minecraft:chain` was renamed
+`minecraft:iron_chain` in 1.21.11; when this gate was first run over the library
+it found `threshold_motif` painting the old id, i.e. the boss-door bell-rope
+curtain — the entire point of that rule — had been 14 cells of air.
+
+`tests/library.rs` asserts it over every program in the library with its binding
+count, and `gates::judge` reports the same verdict without exporting.
+
+Two more members of the same spelling rule ride the same sites, gate and
+export refusal both:
+
+- **Shape completeness (`DW0735`).** A placed state must write every property
+  named by a `multipart` selector in its block's own blockstate definition
+  (`crates/compiler/data/blockstate-shape-props-1.21.11.json`, derived from the
+  client jar). A `variants` property the state omits renders the complete
+  default model — benign; a `multipart` property it omits drops assembled
+  geometry, so a bare `iron_bars`/`oak_fence`/`cobblestone_wall` places as a
+  row of isolated posts. When this gate was first run over the corpus it found
+  `broken_grate` and `far_side_bar` both painting bare `iron_bars` — every
+  grate and every sealed doorway they had ever built.
+- **Oriented fills (`DW0736`).** A reorientation permutes geometry and never
+  rewrites block-state properties, so a literal `facing`/`axis`/connection/
+  `rotation` state inside a reoriented scope lands however the scope was
+  turned. The mechanism is `Cond::Orientation` — one alternative per
+  orientation, each carrying the matching state — and the expander records
+  every fill that skips it (sensitivity derived from the registry's value
+  vocabulary, `BlockRegistry::oriented_mismatch`). A passed guard licenses a
+  fill only while the orientation it asserted still holds. First run over the
+  corpus, it found `cliff_path`'s skull yaw literal under the recess's own
+  reorientation: the same program at a box longer in world X shipped skulls
+  facing along the path instead of out of the niche. Because a role binds ONE
+  state per name, an orientation-dependent block cannot be a palette role;
+  `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as guarded
+  inline states (an oriented-role surface is a named gap, §7).
+
+`tests/shape_orient.rs` demonstrates both red→green on `broken_grate`'s bars;
+`tests/library.rs` and `tests/zones.rs` sweep both gates over every library
+program and every bell zone with summed binding counts.
+
+## 4c. Reachability — how much of the floor a body can get to
+
+`traversable` proves one thing: a walk joins the approach face to the exit face.
+Both faces are at ground level, so a piece passes it with every storey above the
+floor stranded. The Notre-Dame zone of `docs/trials/trial-0001-notre-dame.md`
+passes it at 31 × 64 × 93 with **2267 of 4982** standable cells reachable and
+**zero** reachable above the ground band: five levels of aisle, gallery, belfry
+and tower deck that no body can walk to.
+
+So every expansion also carries a **reachability measurement**, printed by
+`delve-grammar expand` and written into `<id>.report.json` whether or not any
+optional gate was asked for. It walks `nav::components` over the standable cells
+from `nav::ground_entry` and reports:
+
+| Number | Meaning |
+|---|---|
+| `standable` | cells examined — the measurement's binding count. Zero is a finding |
+| `entry_cells` | standable cells on a **side face at grade**, where a body walks in. Zero is a finding, never a reachability of zero |
+| `reachable` / `reachable_share` | what the walk covers |
+| `sheltered` | standable cells with something solid overhead |
+| `unreachable_sheltered` | floor under a roof with no route to it — **a room with no way in** |
+| `unreachable_open` | unreachable floor open to the sky |
+| `pockets`, `largest_pockets` | how many disconnected pockets, and the bounding box of five of them |
+
+**The entrance is derived, not assumed.** Grade is the lowest `Y` at which any
+side-face cell is standable, and the entry set is the side-face cells within one
+course of it — one course because that is the walk's own step height. A belfry
+louvre is a standable cell on a side face and is deliberately *not* an entrance:
+seeding a walk from every opening in a building is how a reachability measure
+reports a stranded gallery as reached.
+
+**A roof is standable and nobody walks it, and the engine cannot tell a roof from
+a terrace.** The one distinction it *can* draw is whether anything solid stands
+over a cell, so that is the distinction the report draws and the only one it acts
+on. `unreachable_sheltered > 0` is raised as a finding by name, with the pockets
+to go and look at, ranked most-sheltered-first. `unreachable_open` is a number
+and never a finding: almost every building has an unreachable roof, and raising
+it every time is the nag that costs the other finding its reader.
+
+`--reachable-floor` turns the sheltered half into a verdict, for a piece that
+claims a body can get everywhere indoors. It is opt-in for the same reason
+`traversable` is and more so: 12 of the 33 library programs have **no** roofed
+floor at all — `castle`, `church` and `stair-flight` among them — and the gate
+binds to zero on each, which is a finding and not a pass. A piece is entitled to
+strand floor: `rafter_hall`'s rafters are meant to be looked at, and `drop_shaft`
+is one-way by design.
 
 ## 5. Rule library — ported buildings
 
@@ -229,7 +698,7 @@ over whichever of the four spacings the remaining path has room for).
 
 | | |
 |---|---|
-| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock`, `corpse` |
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-orientation guarded inline states, `corpse_prop` — its yaw follows the recess's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
 | Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
 | Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
@@ -471,7 +940,7 @@ breaks exactly one grate cell, applied to a wall band instead of a floor row.
 
 | | |
 |---|---|
-| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate`, `grate_broken` |
+| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate_broken` (the plain bars are per-orientation guarded inline states, `grate_bars` — their connections follow the row's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head` + 2) × `MIN_LINE` (3) — the same "three is the shortest row the odd one always has a neighbour in" proof `store_room` makes |
 | Anchors | `anchor/grate-secret` — the broken cell, facing out into the room across the row |
 
@@ -553,12 +1022,12 @@ position depends on how the margins split at expansion time.
 ### `far_side_bar` — the sealed shortcut door
 
 The grammar half of a souls shortcut (spec-0016 §2): `ambush_door`'s own
-wall-across-the-box shape, but the one opening is filled solid with a `bar`
-role material instead of left open — not a narrower door, a **barred** one.
+wall-across-the-box shape, but the one opening is filled with bars instead of
+left open — not a narrower door, a **barred** one.
 
 | | |
 |---|---|
-| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock`, `bar` |
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` (the bars are per-orientation guarded inline states, `bar_cell` — their connections follow the wall's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
 | Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
@@ -1372,25 +1841,33 @@ deliberate divergence from `tests/staging.rs`'s piece-scale copy — a landing m
 be a member of the cell set under consideration, or a fall would walk straight
 through a gate's own cut.
 
-Zone programs are **not** in the export suite. The reason given was the vanilla
-48-per-axis structure cap, and tiling a zone into prefabs is a jigsaw design
-rather than an export detail (§6) — but `chapel_ward`'s fixture is 12 × 9 × 20,
-so that reason no longer covers every zone, and the honest statement is now the
-narrower one: **no zone has been put in the export suite, and the first one that
-fits is a decision nobody has taken.** Taking it would mean a zone's anchors
-round-tripping through `PrefabRegistry` and carrying a spec-0027 §2 provenance
-row like a rule's, which is a capability question and not a size one. Meanwhile
+Zone programs are **not** in the export suite. Size is no longer why — every
+zone exports, tiling if it must (§6) — so the statement is the narrow one:
+**no zone has been put in the export suite, and doing so is a decision nobody
+has taken.** Taking it would mean a zone's anchors round-tripping through
+`PrefabRegistry` and carrying a spec-0027 §2 provenance row like a rule's,
+which is a capability question and not a size one. Meanwhile
 their structural validity, JSON round trip, determinism and palette-swap
 promises are asserted in `tests/zones.rs`.
 
 ## 6. Export — freezing an expansion as a prefab
 
-`export::export_prefab(program, region, options, id)` produces the two files a
-prefab library holds: `<id>.nbt` (a vanilla structure template) and `<id>.json`
-beside it. It takes the *program*, not a finished model, and expands it itself —
-which is what makes the provenance row unforgeable, since the hash and seed in
-the metadata cannot describe a different expansion than the one that produced
-the bytes.
+`export::export_zone(program, region, options, id)` is the export. It takes the
+*program*, not a finished model, and expands it itself — which is what makes the
+provenance row unforgeable, since the hash and seed in the metadata cannot
+describe a different expansion than the one that produced the bytes.
+
+It writes one of two shapes, decided from the region and from nothing an author
+says:
+
+- a region within 48 on every axis → `<id>.nbt` (a vanilla structure template)
+  and `<id>.json` beside it, the two files a prefab library holds;
+- a region past it → a set of `≤48` tiles, `<id>.x<i>y<j>z<k>.nbt`, plus one
+  manifest at `<id>.json`.
+
+`export::export_prefab` is the single-template writer the first shape is made
+of, and it still refuses an oversize region. Nothing outside the module calls
+it: a region an author chose is never the wrong size.
 
 The `.nbt` comes from `delvewright-schem`'s `build_region`, the emitter the
 `.schem` asset pipeline already uses: one structure writer, one set of
@@ -1398,7 +1875,11 @@ determinism guarantees (sorted palette, `x`→`y`→`z` cell order, gzip mtime 0
 A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
-The metadata is the hand-built shape, minus what expansion cannot know:
+The metadata is the hand-built shape, minus what expansion cannot know. Its
+shape is defined once, in `delvewright_schem::prefab` — the crate that also
+writes the `.nbt` half — and every tool that produces or edits a prefab reads and
+writes it through that one type, so an admission step cannot drop the parts it
+does not itself model:
 
 ```json
 {
@@ -1407,6 +1888,7 @@ The metadata is the hand-built shape, minus what expansion cannot know:
                  "size": [13, 14, 21], "data_version": 4671,
                  "generator": "crates/grammar" },
   "anchors": {},
+  "connectors": [],
   "lighting": { "profile": "unmeasured" },
   "license": { "source": "original", "spdx": "GPL-3.0-or-later",
                "note": "…", "provenance": "…",
@@ -1426,8 +1908,11 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   indexes normally. The castle, which marks, exports
   `"anchors": { "anchor/courtyard": { "pos": [20, 0, 12], "facing": "north" } }`
   over its 41×14×25 region.
-- **No `connectors` key.** Jigsaw socketing of grammar prefabs waits on the
-  tileset conventions; a guessed socket is worse than none.
+- **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
+  tileset conventions; a guessed socket is worse than none. The key is present
+  and empty rather than absent, because "this piece has no sockets" and "this
+  metadata was written before sockets existed" are different claims, and
+  `delve-admit socket` appends to it.
 - **`"profile": "unmeasured"`.** A lighting profile is a *measurement*, taken by
   the live 1.21.11 probe. Expansion places blocks, not photons, so it declares
   the true thing and admission to a campaign still runs the probe. `unmeasured`
@@ -1437,11 +1922,72 @@ The metadata is the hand-built shape, minus what expansion cannot know:
   `measured`, and an `unmeasured` one may not carry them (`delvewright-dsl`
   refuses both at parse).
 
+### The tiled shape
+
+A zone past the cap carries `structure_set` where a single prefab carries
+`structure`. Everything else is the same file: same `prefab_id`, same
+zone-relative `anchors`, same empty `connectors`, same `lighting`, same
+`license` — the provenance row regenerates the whole set at once, because one
+expansion produced all of it.
+
+```json
+{
+  "prefab_id": "prefab/z2-gate-ward",
+  "structure_set": {
+    "base": "z2-gate-ward", "size": [20, 10, 84], "part_max": 48,
+    "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+    "parts": [
+      { "file": "z2-gate-ward.x0y0z0.nbt", "id": "z2-gate-ward.x0y0z0",
+        "grid_index": [0, 0, 0], "offset": [0, 0, 0],  "size": [20, 10, 48] },
+      { "file": "z2-gate-ward.x0y0z1.nbt", "id": "z2-gate-ward.x0y0z1",
+        "grid_index": [0, 0, 1], "offset": [0, 0, 48], "size": [20, 10, 36] }
+    ]
+  },
+  "anchors": { … }, "connectors": [], "lighting": { … }, "license": { … }
+}
+```
+
+- The key is a **different name**, never `structure` with an extra field. Every
+  existing consumer requires `structure`, so a tool that has not learned about
+  tile sets fails to parse this file rather than reading it as a prefab with no
+  blocks in it.
+- `offset` is **zone-relative**: add it to a tile-local cell to get the zone
+  cell. That is the only transform reassembly needs.
+- The cuts come from `delvewright_schem::split::plan_split`, the same function
+  that tiles an oversize `.schem` import — one tiling, so one reassembly rule
+  reads both. They are a pure function of the region and the cap: no RNG, no
+  clock, no dependence on the program, the seed or the blocks, so the tiles and
+  the manifest are byte-identical across runs (`tests/export.rs`).
+- **A tile is packaging and never a unit of judgement.** The gates judge the
+  whole expansion, the block-legality check runs over the whole model, and both
+  the anchors and every diagnostic position are in zone coordinates. Binding
+  counts stay zone-level.
+- `TileSet` (`delvewright_schem::split`) is the contract, `Serialize` for the
+  writer and `Deserialize` for the readers — one struct, so the halves cannot
+  drift. `TileSet::validate` refuses a manifest whose parts do not tile the zone
+  exactly, so a truncated one is a refusal and not a building with a hole.
+
+The rest of the loop takes the manifest and treats the zone as one thing:
+`delve-render piece <id>.json` reassembles and renders one scene, and
+`delve-admit audit <id>.json` audits every tile's bytes for one zone verdict
+(with a per-tile listing). Both **refuse** a lone tile of a set and name the
+manifest to use instead — a render of a fragment is a review that passes and
+means nothing, and a verdict over one tile reads as a verdict over the zone.
+
+Not built: compiler-side placement of a tile group in world assembly, and
+jigsaw connector emission. Both are queued.
+
 Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
-region, a region past the vanilla 48-per-axis structure cap (tiling a prefab
-into parts is a jigsaw design, not an export detail), and a model containing a
-block the structure safety strip would replace with air — a grammar that asked
-for a command block meant to, so shipping a silent hole is refused instead.
+region, and a model containing a block the structure safety strip would replace
+with air — a grammar that asked for a command block meant to, so shipping a
+silent hole is refused instead. **Size is not among them.**
+
+The first two are properties of the inputs alone, and are refused before the
+expansion runs: `export::is_valid_id` is public so the CLI can ask before it
+expands anything, rather than after it has printed a verdict. The third is
+knowable only from the expanded model, so it is refused after the gates have
+passed — and the verdict is printed only once the prefab is on disk, so no
+`pass` line ever sits above a refusal.
 
 `PrefabRegistry` (the engine's reader) loads the result with no diagnostics;
 `crates/compiler/tests/grammar_prefab.rs` tests that seam from both sides.
@@ -1463,6 +2009,17 @@ today.
 trap anchors (`dispenser`, `trigger_block`) and the entry names the engine
 treats specially (`spawn`, `entry`) are expressible in prefab metadata but not
 yet by a rule — each needs its own declaration, not a widened `mark`.
+
+**An oriented palette role.** A role binds ONE block state per name, so a
+state whose properties depend on the scope's orientation — a bar's
+connections, a skull's yaw, a stair's facing — cannot be a role at all: the
+pieces that carry one (`broken_grate`, `far_side_bar`, `cliff_path`,
+`church`) write per-orientation guarded inline states instead (`DW0736`'s
+mechanism), and each such piece gives up the role's restyle surface to do it.
+The general form is a role that binds a state per orientation, so a campaign
+can restyle the material while the guard machinery keeps choosing the variant.
+Named here so the surface is designed once, at the object (the role), rather
+than re-invented per rule.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the
@@ -1545,3 +2102,47 @@ generalise to a rule with two symmetric sides.
 That is now two worked examples with the same shape and one rule that only
 avoided it by luck of layout. Still not built here — the red line for W2 was
 compose-existing-verbs-only — but the case is no longer thin.
+
+## 8. Demonstration coverage — what the corpus proves is reachable
+
+`prefab-procedure.md` §3 sends an author to the corpus, never to the schema. Under
+that instruction the corpus **is** the language: a construct no example writes
+does not exist in practice, whatever §2 says the IR supports.
+
+```sh
+delve-grammar coverage            # the table; exit 4 when anything is at zero
+delve-grammar coverage --json coverage.json
+```
+
+It counts, over every program `delve-grammar list` names, how many times each
+`Node` kind, each `Cond` kind and each palette paint kind is written, and prints
+each with its **binding count** and the programs that demonstrate it — the same
+shape the expansion gates use, and for the same reason: a number beside the word
+`pass` that examined nothing is worse than no number.
+
+**What it measures, and the thing it must never be read as.** It measures
+demonstration, not expressiveness. A pass means no part of the IR is left
+undemonstrated by the corpus an author is sent to. It is **not** evidence that an
+author can build any particular thing, and no document, PR or review may cite it
+as such. The command prints that sentence on every run, pass or fail, and carries
+it in the JSON, because a number travels further than the page that qualifies it.
+
+**How to read a zero.** A zero is not "the language cannot". It is "an author
+following the procedure would never find this", which is the more actionable of
+the two and the only one the corpus can answer. Close it by writing the smallest
+program that teaches the construct and putting it in the library — not by
+removing the construct from the required set. Every construct is required; an
+exemption is an entry in `coverage::EXEMPT` carrying its reason, and the report
+reds if the corpus later demonstrates an exempt construct, so the allowlist can
+only shrink.
+
+**Why the construct list cannot go stale.** The kinds are generated from one
+list that produces both the enum and its `ALL` slice, and each kind is assigned
+by an exhaustive `match` over `Node`, `Cond` and `Paint`. A new IR variant
+therefore **fails to compile** until someone classifies it, and it then begins
+life at zero bindings — a surface nothing demonstrates is a finding on the day it
+lands. The check is bound to two events rather than to a line in this document:
+an IR change cannot compile past it, and a corpus change cannot be pushed past
+the `#[test]` in `crates/grammar/src/coverage.rs` that carries the same
+assertion inside `cargo test --workspace`. CI runs the command as its own step so
+the table reaches the log.

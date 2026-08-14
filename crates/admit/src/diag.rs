@@ -8,6 +8,9 @@
 //! | `DW0730` | audit: a palette block is not in the allowlist. |
 //! | `DW0731` | audit: a hard-forbidden code-injection vector (command/structure block, NBT-bearing spawner, or embedded `Command`). |
 //! | `DW0732` | input error (unreadable/unparseable `.nbt` or metadata/JSON). |
+//! | `DW0733` | audit: a palette block state does not exist in the pinned Minecraft version, in a template claiming the pin's `DataVersion` (or later) — no datafix runs, the block loads as air. |
+//! | `DW0734` | audit (warning, defined in `delvewright_schem::blocks`): a pre-pin template carries a state the pin does not know; load-time datafixing is expected to migrate it. |
+//! | `DW0735` | audit (defined in `delvewright_schem::blocks`): a palette entry omits a shape-carrying (multipart) property, so it places disconnected. |
 //! | `DW0740` | catalog card: schema/field validation failure. |
 //! | `DW0741` | catalog card: license not in the ADR-0013 allowlist (NC/ND/unknown reject). |
 //! | `DW0750` | admission tooling (socket/anchor/lighting) failure. |
@@ -22,6 +25,7 @@ use serde::Serialize;
 pub const DW_ALLOWLIST: &str = "DW0730";
 pub const DW_FORBIDDEN: &str = "DW0731";
 pub const DW_INPUT: &str = "DW0732";
+pub const DW_UNKNOWN_BLOCK: &str = "DW0733";
 pub const DW_CATALOG: &str = "DW0740";
 pub const DW_LICENSE: &str = "DW0741";
 pub const DW_TOOLING: &str = "DW0750";

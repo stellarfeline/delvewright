@@ -598,8 +598,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      - Omitting a live NPC is `DW0460`: an unaccounted NPC is how two crew
        members ended up standing forgotten in the alcoves while the player
        escaped the cave.
-3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; see
-   `crates/dsl/README.md` + `crates/compiler/README.md` tables). Loop until clean.
+3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; the
+   complete catalogue is `docs/reference/compiler.md` §5). Loop until clean.
    Three failed repairs on the same code → stop and think about the design instead
    of patching syntax.
 4. Interactive mode: present a 3–6 line summary of the stage; wait.
@@ -642,6 +642,20 @@ have caught gets paid for twice once stages 5–6 are written against it.
   "is the set pretty"; only an eye-height frame on the walk answers "what does a
   player walking in experience", and the second question is the one the review
   exists for.
+- **The moment she confirms, the approved images become campaign files.** Copy
+  them to `campaigns/<id>/design/concept/`, one per scene, named for the scene,
+  and write `campaigns/<id>/design/README.md` carrying the approval date, the
+  approved names, and the sentence that every later round is held to: *author
+  from the image, judge against it, present every choice beside it.* Commit them
+  with the campaign. `tools/refimg.py` writes to a gitignored working directory,
+  which is right for a draft and wrong for an approved one — **an approval that
+  lives only in a published page is bound to nothing.**
+- **Every later step that asks the owner to choose reads `design/` FIRST**, and
+  presents the choice beside that scene's image, under the approved name, saying
+  which element of the image the thing on offer corresponds to. A round that
+  cannot say that is not ready to ask. This binds hardest on contact-sheet
+  curation, which is the step most likely to run in a later session that never
+  saw the gate.
 - **Do not begin stage 5 until she has confirmed it.** A confirmation is her
   words in chat, not the absence of an objection.
 - In **e2e mode** the Artifact is still produced and still shown — e2e removes
@@ -733,13 +747,92 @@ Symptom → tool:
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
   see the Localization stage below.
-- **The layout needs a prefab the library doesn't have**: import it with
-  `delve-schem convert`, then run the **whole** `delve-admit` admission chain
-  (`audit` → `resolve-jigsaw` → `socket` → `anchor` → `lighting --write` →
-  `catalog validate`; that order — `resolve-jigsaw` before `socket`). Never place
-  an un-audited piece: `audit` is the ADR-0013 licence/code-injection gate, and
-  an unadmitted piece has no anchors or lighting profile for the DSL to name.
-  Flags in `docs/reference/tools.md` §3.
+- **The layout needs a prefab the library doesn't have**: follow
+  `docs/reference/prefab-procedure.md` — it is the procedure, and these are its
+  mandatory steps, in order. Do not improvise around them.
+  1. **Write the scene description first** (one or two sentences: what a body
+     does in the space, the material feeling, what the campaign will attach).
+     Written after the render, it is a description of the render.
+  2. **Choose the palette by measurement, never from memory.**
+     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
+     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
+     Record the measured hex beside each role.
+  3. **Author a grammar program.** Read the **idiom index** first
+     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     each — repetition, `otherwise`, taper/arch/gable (one recursion),
+     air-in-a-mix erosion, graded erosion, surface detail, symmetry without
+     reflection, `skip`, light. It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the nine.
+     `delve-grammar show --program idiom-shape` prints one. Then start from the
+     corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
+     p.json`, edit, and `delve-grammar check --file p.json` after every edit.
+     You write JSON — never Rust, and never blocks by hand. Four traps the
+     procedure names: two guards that can both hold are a **probability, not a
+     priority** (the "none of the above" arm is `otherwise`, and it is also what
+     stops a recursion); **`rounding` is owed by every surface, not only
+     floors** — the default truncates and an unwritten cell is air, which no
+     gate reads; a palette role may be a **weighted list with `minecraft:air` in
+     it**, which is the whole of decay and the cure for a piece that renders as
+     one flat material; and a `facing=` block state **does not turn** when
+     `largest` turns the piece.
+  4. **Expand and let the machine judge**:
+     `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
+     --reachable-floor -o out/`. Pass `--traversable` for any passage, stair or
+     route; pass `--reachable-floor` for any piece with an inside a body is meant
+     to walk around. A red gate writes no `.nbt` (exit 4). **Read the `findings`
+     in the report** — a gate that bound to zero objects, or a program that
+     declared no anchors, is a finding, not a pass.
+     **Read the `reachability` line too**, which prints whether you asked or not:
+     `traversable` joins two ground-level faces and says nothing about the
+     storeys above, so a building can pass every gate with half its floor
+     stranded. Unreachable floor **under a roof** is a room with no way in, and
+     the report gives you the box to go and look at. Unreachable floor open to
+     the sky is a roof, and is nobody's defect.
+  5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
+     against step 1. The gates prove it is buildable and walkable; they say
+     nothing about whether it is the scene you asked for. If the expand wrote a
+     tile set instead of one `.nbt`, pass the manifest — `delve-render piece
+     out/<id>.json` — which renders the assembled zone as one scene, eye shots
+     included. Never review a single tile; the command refuses one anyway.
+     **Open the `eye-<anchor>.png` frames FIRST.** They are the only cameras
+     inside the piece — a body's eye at 1.62, at each declared anchor, looking
+     the way that anchor faces. The orbit shots (`ext-*`, `top`, `door-*`,
+     `anchor-*`) are fitted from outside, and on a roofed piece they are all the
+     same picture of the same rock. Read `<id>-shots.json` beside the images for
+     which cell each body is standing in: a camera whose anchor cell held a gate
+     or a barrel steps back along the facing and says so (`DW0727`), and an
+     anchor with no body cell gets no eye shot at all — the run states that count.
+     A flat grey frame is outside the piece, and an eye shot that is *only* that
+     is reported as an empty frame: the anchor is aimed at nothing.
+  6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
+     `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
+     For a tile set, `audit` takes the manifest and returns one zone verdict —
+     but `socket`, `anchor` and `lighting` take a single structure template and
+     refuse a manifest (`DW0732`), so a zone past the axis cap gets `audit` and
+     nothing else, and keeps `"profile": "unmeasured"`. Do **not** run them on
+     one of its tiles to get round that: `lighting` on a tile succeeds and
+     writes a second, unprovenanced metadata file describing one slice of the
+     building. A grammar prefab has **no connectors and no lighting** until this
+     step, so it cannot enter a `prefab_pool` and will be dark, until you do it.
+
+  What the grammar cannot express — **escalate, do not work around**: block
+  entities of any kind (chest loot, sign text, spawners — bind those in the
+  campaign against an anchor the piece declares), **smooth** curves, diagonals,
+  a profile step that varies independently of the box, a vault bending on two
+  axes at once, and terrain. **Neither a stepped arch nor a symmetric shape is
+  on this list** — the first is idiom 3 (one recursion whose step is arithmetic
+  on the remaining dimension, and the same program inverted is the opening), the
+  second is idiom 7 (a rule body written mirrored, since `reorient` permutes and
+  never mirrors). Check §2c before escalating. **Size is not on this list**
+  either: a region of any extent expands, and one past the 48-per-axis
+  structure-template cap is written as a tile set plus a manifest at
+  `<id>.json`. Never shrink a scene to fit a file format.
+
+  A piece that comes from **outside** (a community schematic) instead enters via
+  `delve-schem convert` and then the same admission chain with
+  `resolve-jigsaw` before `socket`. Never place an un-audited piece: `audit` is
+  the ADR-0013 licence/code-injection gate and the `DW0733` check that the blocks
+  in it exist at all. Flags in `docs/reference/tools.md` §2a and §3.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain
   (`tools/skin`, spec-0009) composes an original 64×64 skin from a cast-sheet
   entry and renders previews — `python -m delve_skin all <cast.json>
@@ -1003,11 +1096,12 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
      hand-edit output.
 
    **Judge the player's eye first, and the set second** (owner concern, recorded
-   during the nobodys-cave QA rounds). The per-prefab renders are orbit cameras:
-   they answer *"is the set well made"*, which is not the question a playtest
-   asks. The question is *"what does a player walking in experience"*, and only a
-   first-person frame on the actual route answers it. The compiler already emits
-   those shots — a `pov` camera at eye height on every corner-thinned
+   during the nobodys-cave QA rounds). A per-prefab eye shot is a body inside one
+   piece; it cannot see the route, the seams between pieces, or the world's real
+   light. The question a playtest asks is *"what does a player walking in
+   experience"*, and only a first-person frame on the actual assembled route
+   answers it. The compiler emits those shots — a `pov` camera at eye height on
+   every corner-thinned
    critical-path waypoint, looking along the walk and, at each leg's end, toward
    the objective it arrives at, each with its own machine `expect` line. Every POV
    eye sits on a proven-standable waypoint, so the camera is provably in open air.

@@ -1,0 +1,1137 @@
+//! **How an expansion is judged before a human looks at it** (spec-0027 §3's
+//! "machine gates filter", the step §6 records as not built).
+//!
+//! # A gate and a measurement are different things, and this module keeps them apart
+//!
+//! A *gate* has a verdict: it can be red, and the condition that reddens it is
+//! stated. A *measurement* is a number with no threshold. The distinction is the
+//! whole design here, because the failure this project keeps hitting is a green
+//! that binds to nothing (CLAUDE.md): a number printed beside the word "pass" is
+//! not a gate, and calling it one is worse than printing nothing, since the next
+//! reader believes something was checked.
+//!
+//! So: [`Gate`]s carry a verdict **and a binding count** — how many objects the
+//! gate examined. A zero binding is reported as a finding in its own right, not
+//! folded into a pass. [`Measurements`] carry numbers and no verdicts, and are
+//! deliberately not dressed up as gates.
+//!
+//! # Why the craft gates of spec-0027 §4 are not here
+//!
+//! §4 asks for a palette-role budget "computed per **material family**". Nothing
+//! in this repo can decide what family a block belongs to: the two places that
+//! need it (`tests/staging.rs`'s boulder-stair and broken-grate mirrors) each
+//! hand-write the family map for the blocks that test uses. A diagnostic cannot
+//! take a hand-written map — it would only ever be as complete as the fixture
+//! that wrote it, which is the vacuity mode this module exists to avoid. The
+//! honest state is therefore: **the family-grouped palette budget is not built,
+//! and what blocks it is a missing derivation, not missing effort.**
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::Serialize;
+
+use crate::expand::Expansion;
+use crate::model::VoxelModel;
+use crate::nav;
+
+/// One gate's verdict over one expansion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Gate {
+    /// Stable id, e.g. `blocks-exist`.
+    pub id: &'static str,
+    /// True when the gate held.
+    pub pass: bool,
+    /// **How many objects the gate examined.** A gate that examined zero
+    /// objects is not a pass; `Report::findings` says so by name.
+    pub bound: usize,
+    /// What the gate found, in one line.
+    pub detail: String,
+}
+
+/// Numbers with no threshold. Not gates, and deliberately not presented as any.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Measurements {
+    /// Cells the expansion wrote something other than air into.
+    pub filled_cells: usize,
+    /// Cells in the region.
+    pub region_cells: usize,
+    /// Distinct block states in the model's palette (air included).
+    pub distinct_states: usize,
+    /// Cells a body could stand in.
+    pub standable_cells: usize,
+    /// Columns of the footprint that carry any block.
+    pub footprint_area: usize,
+    /// Edges of the footprint that face empty ground — the silhouette's length.
+    ///
+    /// spec-0027 §4 wants a "silhouette/perimeter complexity floor", calling it
+    /// the one metric that tracked quality in the sandbox probe. The probe's
+    /// threshold was never written down, so this is reported and **not** gated:
+    /// inventing a number here would be a fabricated gate.
+    pub footprint_perimeter: usize,
+    /// `footprint_perimeter` over the perimeter of a solid rectangle of the same
+    /// area — 1.0 for a plain box, higher the more articulated the plan.
+    pub silhouette_complexity: f64,
+    /// The five commonest non-air block states, with their share of filled cells.
+    pub top_blocks: Vec<(String, f64)>,
+    /// How much of the floor a body can actually get to, and where the rest is.
+    pub reachability: Reachability,
+}
+
+/// One pocket of standable floor with no walking route to the rest of the piece.
+///
+/// It carries its bounding box because a count is not actionable: "42% of the
+/// floor is reachable" tells an author nothing about which tower is stranded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Pocket {
+    /// Standable cells in the pocket.
+    pub cells: usize,
+    /// How many of them have something solid overhead — floor under a roof that
+    /// nobody can walk to. The other cells are open to the sky.
+    pub sheltered: usize,
+    /// Minimum corner of the pocket's bounding box.
+    pub min: [i32; 3],
+    /// Maximum corner of the pocket's bounding box, **inclusive**.
+    pub max: [i32; 3],
+}
+
+impl Pocket {
+    /// `48 cells (48 sheltered) x 4..26 y 14..21 z 8..84` — where to go and look.
+    pub fn describe(&self) -> String {
+        format!(
+            "{} cell(s), {} sheltered — x {}..{} y {}..{} z {}..{}",
+            self.cells,
+            self.sheltered,
+            self.min[0],
+            self.max[0],
+            self.min[1],
+            self.max[1],
+            self.min[2],
+            self.max[2],
+        )
+    }
+}
+
+/// **What fraction of the standable floor a body can actually reach on foot from
+/// the entrance, and what it cannot.**
+///
+/// # Why this is a measurement and not a gate
+///
+/// [`Options::traversable`] proves one thing: a walk connects the approach face
+/// to the exit face. Both faces are at ground level, so a piece passes it while
+/// every storey above the floor is stranded decoration — measured on the two
+/// Notre-Dame trial artifacts at 42% and 46% of standable floor reachable, with
+/// **zero** reachable above the ground band in either. The gate is not wrong; it
+/// answers a narrower question than a reader takes it for.
+///
+/// The obvious repair — gate on it — is a gate that reds on almost every piece
+/// in the library, because a roof is standable and nobody walks it, a rafter is
+/// standable and is meant to be looked at, and a sealed crypt is floor on
+/// purpose. **The engine cannot tell "unreachable" from "not meant to be
+/// reached"**, and a gate that cannot make that distinction is one an author
+/// learns to pass rather than read.
+///
+/// So the split is: the numbers are always computed and always printed, the one
+/// distinction the engine *can* draw is drawn ([`nav::sheltered`] — is there a
+/// roof over it), unreachable floor **under a roof** is raised as a finding
+/// because that is a room nobody can enter, unreachable floor **open to the
+/// sky** is reported as a number and never nagged about, and an author who
+/// wants the strong claim asks for it with [`Options::reachable_floor`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Reachability {
+    /// Standable cells examined — **the binding count of the measurement**.
+    pub standable: usize,
+    /// Of those, how many have something solid overhead: floor somebody was
+    /// meant to stand on, as opposed to a roof or a parapet. The binding set of
+    /// the opt-in [`Options::reachable_floor`] gate.
+    pub sheltered: usize,
+    /// Cells the walk started from: standable, on a side face, at grade
+    /// ([`nav::ground_entry`]). Zero is a finding, not a reachability of zero.
+    pub entry_cells: usize,
+    /// Standable cells a body can walk to from `entry_cells`.
+    pub reachable: usize,
+    /// `reachable / standable`; `0.0` when nothing is standable.
+    pub reachable_share: f64,
+    /// Unreachable cells with something solid overhead: floor in a space a body
+    /// cannot enter.
+    pub unreachable_sheltered: usize,
+    /// Unreachable cells open to the sky — a roof, a parapet, a terrace, a cliff
+    /// top. The engine cannot tell which, and never gates on them.
+    pub unreachable_open: usize,
+    /// How many disconnected pockets the unreachable floor forms.
+    pub pockets: usize,
+    /// The pockets worth walking to, at most five: **most sheltered cells
+    /// first**, then largest, then by position so the order is total (ADR-0006).
+    ///
+    /// Ranked that way and not by size alone because size alone answers the
+    /// wrong question on a building. Notre-Dame run 1 strands 2715 cells; the
+    /// five biggest are all aisle-roof and tower-deck plates, and the pockets an
+    /// author can do something about — rooms with a roof and no door — are
+    /// nowhere near the top. Where nothing is sheltered the ranking degenerates
+    /// to size, which is the right answer for a piece stranded out of doors.
+    pub largest_pockets: Vec<Pocket>,
+}
+
+/// How many pockets the report names before it stops. Five is enough to send an
+/// author somewhere; the totals above it are exact however many there are.
+const POCKETS_REPORTED: usize = 5;
+
+/// Walk the model from its grade entrance and count what that reaches.
+fn reachability(model: &VoxelModel, standable: &BTreeSet<[i32; 3]>) -> Reachability {
+    let entry = nav::ground_entry(model);
+    let sheltered_total = standable
+        .iter()
+        .filter(|&&c| nav::sheltered(model, c))
+        .count();
+    let components = nav::components(standable);
+    let (reached, stranded): (Vec<_>, Vec<_>) = components
+        .into_iter()
+        .partition(|c| c.iter().any(|cell| entry.contains(cell)));
+    let reachable: usize = reached.iter().map(|c| c.len()).sum();
+
+    let mut unreachable_sheltered = 0usize;
+    let mut unreachable_open = 0usize;
+    let mut pockets: Vec<Pocket> = Vec::with_capacity(stranded.len());
+    for component in &stranded {
+        let mut min = [i32::MAX; 3];
+        let mut max = [i32::MIN; 3];
+        let mut sheltered = 0usize;
+        for &cell in component {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(cell[axis]);
+                max[axis] = max[axis].max(cell[axis]);
+            }
+            if nav::sheltered(model, cell) {
+                sheltered += 1;
+            }
+        }
+        unreachable_sheltered += sheltered;
+        unreachable_open += component.len() - sheltered;
+        pockets.push(Pocket {
+            cells: component.len(),
+            sheltered,
+            min,
+            max,
+        });
+    }
+    pockets.sort_by(|a, b| {
+        b.sheltered
+            .cmp(&a.sheltered)
+            .then_with(|| b.cells.cmp(&a.cells))
+            .then_with(|| a.min.cmp(&b.min))
+    });
+    pockets.truncate(POCKETS_REPORTED);
+
+    Reachability {
+        standable: standable.len(),
+        sheltered: sheltered_total,
+        entry_cells: entry.len(),
+        reachable,
+        reachable_share: if standable.is_empty() {
+            0.0
+        } else {
+            reachable as f64 / standable.len() as f64
+        },
+        unreachable_sheltered,
+        unreachable_open,
+        pockets: stranded.len(),
+        largest_pockets: pockets,
+    }
+}
+
+/// The whole verdict over one expansion.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Report {
+    /// `"pass"` when every gate held, else `"fail"`.
+    pub verdict: &'static str,
+    /// Every gate, in a fixed order.
+    pub gates: Vec<Gate>,
+    /// Numbers, no verdicts.
+    pub measurements: Measurements,
+    /// Anchors the program declared, by exported name.
+    pub anchors: BTreeMap<String, [i32; 3]>,
+    /// Things a reader must be told even though no gate went red — a gate that
+    /// examined nothing, an expansion that declared no anchors.
+    pub findings: Vec<String>,
+}
+
+impl Report {
+    /// True when no gate went red. Findings do not fail a report; they are
+    /// carried so they cannot be lost.
+    pub fn is_pass(&self) -> bool {
+        self.verdict == "pass"
+    }
+
+    /// Canonical pretty JSON with a trailing newline.
+    pub fn to_json(&self) -> String {
+        let mut s = serde_json::to_string_pretty(self).expect("a gate report serialises");
+        s.push('\n');
+        s
+    }
+}
+
+/// Which optional gates to run beyond the always-on ones.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Options {
+    /// Assert the piece can be walked from its approach end to its exit end.
+    ///
+    /// Opt-in because it is a claim about a *kind* of piece: a room with one
+    /// door has no far end to reach and would fail a traversability gate
+    /// correctly and uselessly. The author says which claim the piece makes.
+    pub traversable: bool,
+    /// Allow a fall edge when walking (a piece entered by stepping off a ledge).
+    pub allow_falls: bool,
+    /// Assert that **every sheltered standable cell** — every piece of floor
+    /// with a roof over it — can be walked to from the grade entrance.
+    ///
+    /// Opt-in for the same reason `traversable` is, and the reason is sharper
+    /// here: a piece whose upper floor is decoration seen from below is a
+    /// legitimate piece, and so is a rafter, and so is a sealed crypt. The
+    /// author says whether this one claims a body can get everywhere indoors.
+    /// The *measurement* runs either way and is printed either way
+    /// ([`Reachability`]) — this flag only decides whether it can go red.
+    pub reachable_floor: bool,
+}
+
+/// Judge one expansion.
+pub fn judge(expansion: &Expansion, options: Options) -> Report {
+    let model = &expansion.model;
+    let mut gates = Vec::new();
+    let mut findings = Vec::new();
+
+    // --- Gate: every block state exists in the pinned version. -------------
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let mut bad = Vec::new();
+    for state in model.palette() {
+        if let Err(e) = registry.validate(&state.name, &state.properties) {
+            bad.push(e.to_string());
+        }
+    }
+    gates.push(Gate {
+        id: "blocks-exist",
+        pass: bad.is_empty(),
+        bound: model.palette().len(),
+        detail: if bad.is_empty() {
+            format!(
+                "{} block state(s), all present in Minecraft {}",
+                model.palette().len(),
+                delvewright_schem::blocks::MC_VERSION
+            )
+        } else {
+            bad.join("; ")
+        },
+    });
+
+    // --- Gate: every placed state writes its shape-carrying properties. -----
+    //
+    // A `multipart` property the state omits removes assembled geometry — a
+    // wall with none written places as an isolated post — and no downstream
+    // reader can tell the omission from a choice (`DW0735`). Judged over the
+    // states CELLS actually use: an entry an earlier fill created and a later
+    // fill fully overwrote ships in no cell and is not this gate's business.
+    let mut used: std::collections::BTreeSet<&crate::block::BlockState> = Default::default();
+    for pos in model.region().positions() {
+        if let Some(state) = model.get(pos) {
+            used.insert(state);
+        }
+    }
+    let omissions: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    gates.push(Gate {
+        id: "shape-complete",
+        pass: omissions.is_empty(),
+        bound: used.len(),
+        detail: if omissions.is_empty() {
+            format!(
+                "{} placed block state(s), every shape-carrying (multipart) property written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — these properties assemble the block's model, so the omitted \
+                 default drops geometry (a wall reads as an isolated post). Write the \
+                 connection state the design means",
+                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                omissions.join("; ")
+            )
+        },
+    });
+
+    // --- Gate: oriented block states were guarded where the scope turns. ----
+    //
+    // A reorientation permutes geometry and never rewrites properties
+    // (`crate::orient`), so a literal `facing`/`axis`/connection state inside
+    // a reoriented scope lands however the scope was turned — silently —
+    // unless a `Cond::Orientation` guard pinned the orientation the author
+    // wrote it for (`DW0736`). The predicate ran during expansion, where the
+    // scope orientations exist; this gate reports what it saw.
+    let audit = &expansion.oriented;
+    gates.push(Gate {
+        id: "oriented-fills",
+        pass: audit.unguarded.is_empty(),
+        bound: audit.fills as usize,
+        detail: if audit.unguarded.is_empty() {
+            format!(
+                "{} fill(s) examined, {} carrying block-state properties; every \
+                 orientation-sensitive one was under identity orientation or an \
+                 `orientation` guard",
+                audit.fills, audit.carrying
+            )
+        } else {
+            format!(
+                "{}: {} — write one alternative per orientation, each guarded with the \
+                 `orientation` cond and carrying the facing that matches it (the guard \
+                 mechanism `Cond::Orientation` exists for exactly this)",
+                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
+                audit
+                    .unguarded
+                    .iter()
+                    .map(|f| format!(
+                        "rule {:?} fills {} whose {} lands wrong under {}",
+                        f.rule, f.state, f.property, f.orientation
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        },
+    });
+
+    // --- Gate: the expansion built something. ------------------------------
+    let filled = model.filled_cells();
+    let region_cells = model.region().positions().count();
+    gates.push(Gate {
+        id: "non-empty",
+        pass: filled > 0,
+        bound: region_cells,
+        detail: format!("{filled} filled cell(s) of {region_cells} in the region"),
+    });
+
+    // --- Gate (opt-in): a body can walk the piece end to end. --------------
+    let standable = nav::standable_cells(model);
+    let reach = reachability(model, &standable);
+    if options.traversable {
+        let (entry, exit) = nav::ends(model);
+        let bound = entry.len() + exit.len();
+        let walked = if options.allow_falls {
+            nav::reachable_with_fall(model, &standable, &entry, &exit)
+        } else {
+            nav::connected(&standable, &entry, &exit)
+        };
+        gates.push(Gate {
+            id: "traversable",
+            pass: walked && bound > 0,
+            bound,
+            // The piece's total standable count used to be quoted here, beside
+            // the word `pass`, and it read as coverage: a Notre-Dame zone said
+            // "4982 standable in all; walking connects them" while 58% of that
+            // floor had no route to anything. This gate is about the ROUTE and
+            // says so; how much floor the route reaches is the reachability
+            // measurement, which runs on every expansion.
+            detail: format!(
+                "{} standable cell(s) at the approach end, {} at the exit end; walking{} {}. A \
+                 claim about the route only — see the reachability measurement for how much of \
+                 the piece's floor a body reaches",
+                entry.len(),
+                exit.len(),
+                if options.allow_falls {
+                    " (with falls)"
+                } else {
+                    ""
+                },
+                if walked {
+                    "connects them"
+                } else {
+                    "does NOT connect them"
+                }
+            ),
+        });
+    }
+
+    // --- Gate (opt-in): every roofed cell of floor can be walked to. --------
+    if options.reachable_floor {
+        let bound = reach.sheltered;
+        gates.push(Gate {
+            id: "reachable-floor",
+            pass: bound > 0 && reach.unreachable_sheltered == 0,
+            bound,
+            detail: format!(
+                "{} standable cell(s) under a roof; {} of them have no walking route from the {} \
+                 grade entry cell(s){}",
+                bound,
+                reach.unreachable_sheltered,
+                reach.entry_cells,
+                if reach.unreachable_sheltered == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        ". Largest pocket: {}",
+                        reach
+                            .largest_pockets
+                            .first()
+                            .map(Pocket::describe)
+                            .unwrap_or_default()
+                    )
+                }
+            ),
+        });
+    }
+
+    for gate in &gates {
+        if gate.bound == 0 {
+            findings.push(format!(
+                "gate `{}` examined ZERO objects — its verdict binds to nothing",
+                gate.id
+            ));
+        }
+    }
+    // The reachability measurement's own vacuity, then the one thing it finds
+    // that an author must be told about even though no gate went red.
+    //
+    // Open-to-sky pockets are deliberately NOT a finding. Almost every building
+    // has a roof, a roof is standable, and nobody walks it: raising it every
+    // time is the nag an author learns to skip past, which would cost the two
+    // findings below their audience. They are counted in the measurement line.
+    if reach.standable == 0 {
+        findings.push(
+            "the reachability measurement examined ZERO standable cells — nothing in this piece \
+             can be stood in, so it binds to nothing"
+                .to_string(),
+        );
+    } else if reach.entry_cells == 0 {
+        findings.push(format!(
+            "the reachability measurement found ZERO entry cells — no standable cell touches a \
+             side face of the region at grade, so there is nowhere for a body to walk in from and \
+             the measurement binds to nothing. The piece's {} standable cell(s) form {} \
+             component(s)",
+            reach.standable, reach.pockets
+        ));
+    } else if reach.unreachable_sheltered > 0 {
+        let named: Vec<String> = reach
+            .largest_pockets
+            .iter()
+            .filter(|p| p.sheltered > 0)
+            .map(Pocket::describe)
+            .collect();
+        findings.push(format!(
+            "{} standable cell(s) UNDER A ROOF have no walking route from the entrance — floor in \
+             a space a body cannot get to. {} pocket(s) of unreachable floor in all; the largest: \
+             {}",
+            reach.unreachable_sheltered,
+            reach.pockets,
+            named.join(" · ")
+        ));
+    }
+    if expansion.anchors.is_empty() {
+        findings.push(
+            "the program declared no anchors: nothing in a campaign can name a place inside this \
+             piece"
+                .to_string(),
+        );
+    }
+
+    let (footprint_area, footprint_perimeter) = footprint(model);
+    let verdict = if gates.iter().all(|g| g.pass) {
+        "pass"
+    } else {
+        "fail"
+    };
+    Report {
+        verdict,
+        measurements: Measurements {
+            filled_cells: filled,
+            region_cells,
+            distinct_states: model.palette().len(),
+            standable_cells: standable.len(),
+            footprint_area,
+            footprint_perimeter,
+            silhouette_complexity: complexity(footprint_area, footprint_perimeter),
+            top_blocks: top_blocks(model, filled),
+            reachability: reach,
+        },
+        gates,
+        anchors: expansion
+            .anchors
+            .iter()
+            .map(|(name, a)| (name.clone(), a.pos))
+            .collect(),
+        findings,
+    }
+}
+
+/// The plan view: how many columns carry a block, and how long the outline of
+/// those columns is.
+fn footprint(model: &VoxelModel) -> (usize, usize) {
+    let region = model.region();
+    let mut columns: BTreeSet<[i32; 2]> = BTreeSet::new();
+    for pos in region.positions() {
+        if model.get(pos).is_some_and(|b| !b.is_air()) {
+            columns.insert([pos[0], pos[2]]);
+        }
+    }
+    let perimeter = columns
+        .iter()
+        .map(|&[x, z]| {
+            [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                .iter()
+                .filter(|[dx, dz]| !columns.contains(&[x + dx, z + dz]))
+                .count()
+        })
+        .sum();
+    (columns.len(), perimeter)
+}
+
+/// The outline's length over the outline a solid square of the same area would
+/// have. 1.0 is a plain box; a colonnade or a buttressed wall is well above it.
+fn complexity(area: usize, perimeter: usize) -> f64 {
+    if area == 0 {
+        return 0.0;
+    }
+    let square = 4.0 * (area as f64).sqrt();
+    perimeter as f64 / square
+}
+
+fn top_blocks(model: &VoxelModel, filled: usize) -> Vec<(String, f64)> {
+    if filled == 0 {
+        return Vec::new();
+    }
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for pos in model.region().positions() {
+        if let Some(b) = model.get(pos)
+            && !b.is_air()
+        {
+            *counts.entry(b.to_string()).or_insert(0) += 1;
+        }
+    }
+    let mut rows: Vec<(String, usize)> = counts.into_iter().collect();
+    // Descending by count, then by name, so the order is total (ADR-0006).
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    rows.truncate(5);
+    rows.into_iter()
+        .map(|(name, n)| (name, n as f64 / filled as f64))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::BlockState;
+    use crate::expand::ExpandOptions;
+    use crate::geom::{Axis, Box3};
+    use crate::ir::{
+        Alternative, CmpOp, Cond, DimRef, Expr, Material, Node, Program, Reorient, Rounding, Size,
+        Split,
+    };
+    use crate::library;
+
+    fn solid_block(name: &str) -> Program {
+        Program::new("slab", "all").rule(
+            "all",
+            Node::Fill {
+                material: Material::block(BlockState::simple(name)),
+            },
+        )
+    }
+
+    /// **The red and the green of the reachability work, one rule apart.**
+    ///
+    /// A two-storey building under one roof, expanded into `9 x 13 x 9`: a
+    /// ground floor at `y=1`, a first floor at `y=6` over a slab at `y=5`, a
+    /// roof at `y=10`, and a three-block-wide well cut down the `x=0..2` side.
+    ///
+    /// `with_stair` is the only difference and it is one rule. `false` floors
+    /// the well like the rest of the storey, so the first floor is 81 cells of
+    /// standable floor under a roof with nothing leading to it — the shape the
+    /// Notre-Dame zones ship at scale, and one every existing gate calls green.
+    /// `true` fills the well with the taper recursion, whose treads rise one
+    /// course per cell of depth and therefore walk.
+    ///
+    /// The roof is standable too, and is *meant* to be: it is the fixture's
+    /// second job, because a gate that cannot tell an unreachable roof from an
+    /// unreachable room is one an author turns off.
+    fn two_storey(with_stair: bool) -> Program {
+        let void_floor_void = Node::Split(Split {
+            axis: Axis::Y,
+            sizes: vec![Size::abs(4), Size::abs(1), Size::rel(1)],
+            rounding: Rounding::Truncate,
+            repeat: false,
+            orient: Reorient::KEEP,
+            children: vec![Node::Void, Node::fill("stone"), Node::Void],
+        });
+        let well = if with_stair {
+            Node::call("stair")
+        } else {
+            void_floor_void.clone()
+        };
+        Program::new("two-storey", "all")
+            .role("stone", BlockState::simple("minecraft:stone_bricks"))
+            .rule(
+                "all",
+                Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::abs(9), Size::abs(1), Size::rel(1)],
+                    rounding: Rounding::Truncate,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![
+                        Node::fill("stone"),
+                        Node::call("body"),
+                        Node::fill("stone"),
+                        Node::Void,
+                    ],
+                }),
+            )
+            .rule(
+                "body",
+                Node::Split(Split {
+                    axis: Axis::X,
+                    sizes: vec![Size::abs(3), Size::rel(1)],
+                    rounding: Rounding::Truncate,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![well, Node::call("storeys")],
+                }),
+            )
+            .rule("storeys", void_floor_void)
+            // One tread per course, cut back one cell per course: the taper
+            // recursion of `grammar.md` §2c, which is the only way the language
+            // states a stair.
+            .rule_alts(
+                "stair",
+                vec![
+                    Alternative::new(Node::fill("stone")).when(Cond::Any {
+                        of: vec![
+                            Cond::cmp(Expr::dim(DimRef::Y), CmpOp::Le, Expr::int(1)),
+                            Cond::cmp(Expr::dim(DimRef::Z), CmpOp::Le, Expr::int(1)),
+                        ],
+                    }),
+                    Alternative::new(Node::Split(Split {
+                        axis: Axis::Y,
+                        sizes: vec![Size::abs(1), Size::rel(1)],
+                        rounding: Rounding::Truncate,
+                        repeat: false,
+                        orient: Reorient::KEEP,
+                        children: vec![
+                            Node::fill("stone"),
+                            Node::Split(Split {
+                                axis: Axis::Z,
+                                sizes: vec![Size::abs(1), Size::rel(1)],
+                                rounding: Rounding::Truncate,
+                                repeat: false,
+                                orient: Reorient::KEEP,
+                                children: vec![Node::Void, Node::call("stair")],
+                            }),
+                        ],
+                    }))
+                    .when(Cond::Otherwise),
+                ],
+            )
+    }
+
+    fn judge_two_storey(with_stair: bool, options: Options) -> Report {
+        let out = crate::expand(
+            &two_storey(with_stair),
+            Box3::at_origin([9, 13, 9]),
+            &ExpandOptions::seeded(0),
+        )
+        .unwrap();
+        judge(&out, options)
+    }
+
+    #[test]
+    fn a_program_painting_a_renamed_block_fails_the_blocks_gate() {
+        let out = crate::expand(
+            &solid_block("minecraft:chain"),
+            Box3::at_origin([3, 3, 3]),
+            &ExpandOptions::seeded(0),
+        )
+        .unwrap();
+        let report = judge(&out, Options::default());
+        assert!(!report.is_pass());
+        let gate = report
+            .gates
+            .iter()
+            .find(|g| g.id == "blocks-exist")
+            .unwrap();
+        assert!(!gate.pass);
+        assert_eq!(gate.bound, 2, "air plus the one painted state");
+        assert!(
+            gate.detail.contains("minecraft:iron_chain"),
+            "{}",
+            gate.detail
+        );
+    }
+
+    /// A gate whose binding count is zero is called out even though nothing
+    /// went red — the vacuity CLAUDE.md names.
+    #[test]
+    fn a_program_that_declares_no_anchors_is_a_finding_not_a_silent_pass() {
+        let out = crate::expand(
+            &solid_block("minecraft:stone"),
+            Box3::at_origin([3, 3, 3]),
+            &ExpandOptions::seeded(0),
+        )
+        .unwrap();
+        let report = judge(&out, Options::default());
+        assert!(report.is_pass());
+        // Two of them, and a solid cube earns both: nothing names a place in it,
+        // and there is nowhere in it to stand, so the reachability measurement
+        // examined nothing either.
+        assert_eq!(report.findings.len(), 2, "{:?}", report.findings);
+        assert!(
+            report.findings.iter().any(|f| f.contains("no anchors")),
+            "{:?}",
+            report.findings
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.contains("ZERO standable cells")),
+            "{:?}",
+            report.findings
+        );
+    }
+
+    /// The opt-in walk gate, shown from both sides on rules whose whole point is
+    /// that they answer it differently: a stair flight walks end to end, a drop
+    /// shaft only does so if falls are allowed.
+    #[test]
+    fn the_traversability_gate_separates_a_stair_from_a_one_way_drop() {
+        let opts = Options {
+            traversable: true,
+            allow_falls: false,
+            reachable_floor: false,
+        };
+        let stair = crate::expand(
+            &library::stair_flight(),
+            Box3::at_origin([5, 14, 22]),
+            &ExpandOptions::seeded(3),
+        )
+        .unwrap();
+        let report = judge(&stair, opts);
+        let gate = report.gates.iter().find(|g| g.id == "traversable").unwrap();
+        assert!(gate.pass, "{}", gate.detail);
+        assert!(gate.bound > 0, "{}", gate.detail);
+
+        let drop = crate::expand(
+            &library::drop_shaft(),
+            Box3::at_origin([4, 8, 6]),
+            &ExpandOptions::seeded(3),
+        )
+        .unwrap();
+        let walk_only = judge(&drop, opts);
+        assert!(
+            !walk_only
+                .gates
+                .iter()
+                .find(|g| g.id == "traversable")
+                .unwrap()
+                .pass,
+            "a one-way spill must not walk back up"
+        );
+        let with_falls = judge(
+            &drop,
+            Options {
+                traversable: true,
+                allow_falls: true,
+                reachable_floor: false,
+            },
+        );
+        assert!(
+            with_falls
+                .gates
+                .iter()
+                .find(|g| g.id == "traversable")
+                .unwrap()
+                .pass,
+            "a one-way spill IS traversable once falling is allowed"
+        );
+    }
+
+    /// **The red.** A storey of floor under a roof with no stair to it, and
+    /// every gate that existed before this one calls the building green —
+    /// including `traversable`, whose walk runs along the ground floor and
+    /// never looks up.
+    #[test]
+    fn an_upper_storey_with_no_stair_passes_traversable_and_is_still_unreachable() {
+        let report = judge_two_storey(
+            false,
+            Options {
+                traversable: true,
+                allow_falls: false,
+                reachable_floor: false,
+            },
+        );
+        assert!(report.is_pass(), "{:#?}", report.gates);
+        let walk = report.gates.iter().find(|g| g.id == "traversable").unwrap();
+        assert!(walk.pass, "{}", walk.detail);
+
+        let r = &report.measurements.reachability;
+        assert_eq!(r.standable, 243, "two storeys and a roof, 81 cells each");
+        assert_eq!(r.sheltered, 162, "the two storeys; the roof is not");
+        assert_eq!(r.reachable, 81, "the ground floor, and nothing else");
+        assert_eq!(r.unreachable_sheltered, 81, "the whole upper storey");
+        assert_eq!(r.unreachable_open, 81, "the roof — reported, never gated");
+        assert_eq!(r.pockets, 2);
+        // Ranked so the room an author can fix comes before the roof they
+        // cannot, and carrying the box that says which storey it is.
+        assert_eq!(r.largest_pockets[0].sheltered, 81);
+        assert_eq!(r.largest_pockets[0].min, [0, 6, 0]);
+        assert_eq!(r.largest_pockets[0].max, [8, 6, 8]);
+        assert_eq!(r.largest_pockets[1].sheltered, 0, "the roof");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.contains("81 standable cell(s) UNDER A ROOF")),
+            "{:?}",
+            report.findings
+        );
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.contains("open to the sky")),
+            "an unreachable roof is never raised as a finding: {:?}",
+            report.findings
+        );
+    }
+
+    /// **The red as a verdict, and the green.** The same building, one rule
+    /// apart, under the gate an author opts into when the piece claims a body
+    /// can get everywhere indoors.
+    #[test]
+    fn the_reachable_floor_gate_reds_on_the_missing_stair_and_greens_on_the_stair() {
+        let opts = Options {
+            traversable: true,
+            allow_falls: false,
+            reachable_floor: true,
+        };
+
+        let red = judge_two_storey(false, opts);
+        let gate = red
+            .gates
+            .iter()
+            .find(|g| g.id == "reachable-floor")
+            .unwrap();
+        assert!(!gate.pass, "{}", gate.detail);
+        assert_eq!(gate.bound, 162, "it examined the floor under the roof");
+        assert!(!red.is_pass());
+
+        let green = judge_two_storey(true, opts);
+        let gate = green
+            .gates
+            .iter()
+            .find(|g| g.id == "reachable-floor")
+            .unwrap();
+        assert!(gate.pass, "{}", gate.detail);
+        assert!(gate.bound > 0, "{}", gate.detail);
+        assert!(green.is_pass(), "{:#?}", green.gates);
+
+        let r = &green.measurements.reachability;
+        assert_eq!(r.unreachable_sheltered, 0);
+        assert!(
+            r.unreachable_open > 0,
+            "the roof is still unreachable and still fine"
+        );
+        assert!(
+            !green.findings.iter().any(|f| f.contains("UNDER A ROOF")),
+            "{:?}",
+            green.findings
+        );
+    }
+
+    /// A gate that can only go red is not a gate. This one binds to the floor
+    /// under the roof, so a piece with no such floor reports a binding of zero
+    /// rather than a pass — the vacuity rule applied to the new artifact.
+    #[test]
+    fn a_piece_with_no_sheltered_floor_binds_the_reachability_gate_to_zero() {
+        let report = judge_two_storey(
+            true,
+            Options {
+                traversable: false,
+                allow_falls: false,
+                reachable_floor: true,
+            },
+        );
+        assert!(report.is_pass());
+
+        let solid = judge(
+            &crate::expand(
+                &solid_block("minecraft:stone"),
+                Box3::at_origin([5, 5, 5]),
+                &ExpandOptions::seeded(0),
+            )
+            .unwrap(),
+            Options {
+                traversable: false,
+                allow_falls: false,
+                reachable_floor: true,
+            },
+        );
+        let gate = solid
+            .gates
+            .iter()
+            .find(|g| g.id == "reachable-floor")
+            .unwrap();
+        assert_eq!(gate.bound, 0);
+        assert!(!gate.pass, "a zero binding is never a pass");
+        assert!(
+            solid
+                .findings
+                .iter()
+                .any(|f| f.contains("ZERO standable cells")),
+            "{:?}",
+            solid.findings
+        );
+    }
+
+    /// A sealed piece has nowhere for a body to walk in from, and that is a
+    /// binding of zero — never a reachability of zero, which would read as a
+    /// building full of stranded rooms.
+    #[test]
+    fn a_piece_with_no_way_in_reports_a_zero_binding_not_a_zero_reachability() {
+        // A roofed slab with air inside and no opening: standable floor, no
+        // standable cell anywhere on a side face.
+        let sealed = Program::new("sealed", "all")
+            .role("stone", BlockState::simple("minecraft:stone_bricks"))
+            .rule(
+                "all",
+                Node::Split(Split {
+                    axis: Axis::X,
+                    sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
+                    rounding: Rounding::Truncate,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![
+                        Node::fill("stone"),
+                        Node::call("slice"),
+                        Node::fill("stone"),
+                    ],
+                }),
+            )
+            .rule(
+                "slice",
+                Node::Split(Split {
+                    axis: Axis::Z,
+                    sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
+                    rounding: Rounding::Truncate,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![
+                        Node::fill("stone"),
+                        Node::call("column"),
+                        Node::fill("stone"),
+                    ],
+                }),
+            )
+            .rule(
+                "column",
+                Node::Split(Split {
+                    axis: Axis::Y,
+                    sizes: vec![Size::abs(1), Size::rel(1), Size::abs(1)],
+                    rounding: Rounding::Truncate,
+                    repeat: false,
+                    orient: Reorient::KEEP,
+                    children: vec![Node::fill("stone"), Node::Void, Node::fill("stone")],
+                }),
+            );
+        let report = judge(
+            &crate::expand(
+                &sealed,
+                Box3::at_origin([7, 6, 7]),
+                &ExpandOptions::seeded(0),
+            )
+            .unwrap(),
+            Options::default(),
+        );
+        let r = &report.measurements.reachability;
+        assert!(r.standable > 0, "there is floor inside");
+        assert_eq!(r.entry_cells, 0, "and no way in");
+        assert_eq!(r.reachable, 0);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.contains("ZERO entry cells")),
+            "{:?}",
+            report.findings
+        );
+    }
+
+    /// The measurement is a function of the model alone: expanding the same
+    /// program at the same seed twice gives byte-identical report JSON, and the
+    /// component walk is order-independent because every set it walks is a
+    /// `BTreeSet` (ADR-0006).
+    #[test]
+    fn the_reachability_measurement_is_deterministic_and_order_independent() {
+        let opts = Options {
+            traversable: true,
+            allow_falls: false,
+            reachable_floor: false,
+        };
+        let a = judge_two_storey(false, opts);
+        let b = judge_two_storey(false, opts);
+        assert_eq!(a.to_json(), b.to_json());
+
+        // Order independence, stated where it can fail: the components of a set
+        // do not depend on which cell the walk starts from.
+        let model = &crate::expand(
+            &two_storey(false),
+            Box3::at_origin([9, 13, 9]),
+            &ExpandOptions::seeded(0),
+        )
+        .unwrap()
+        .model;
+        let cells = nav::standable_cells(model);
+        let forward = nav::components(&cells);
+        let reversed: BTreeSet<[i32; 3]> = cells.iter().rev().copied().collect();
+        assert_eq!(forward, nav::components(&reversed));
+        assert_eq!(forward.iter().map(|c| c.len()).sum::<usize>(), cells.len());
+    }
+
+    /// The silhouette measurement moves with the shape it measures, which is
+    /// the only claim made for it: it is reported, never gated.
+    #[test]
+    fn the_silhouette_measurement_separates_a_box_from_a_colonnade() {
+        let box_report = judge(
+            &crate::expand(
+                &solid_block("minecraft:stone"),
+                Box3::at_origin([9, 5, 9]),
+                &ExpandOptions::seeded(0),
+            )
+            .unwrap(),
+            Options::default(),
+        );
+        assert_eq!(box_report.measurements.footprint_area, 81);
+        assert!(
+            (box_report.measurements.silhouette_complexity - 1.0).abs() < 0.01,
+            "a solid square plan is complexity 1.0, got {}",
+            box_report.measurements.silhouette_complexity
+        );
+
+        let temple = judge(
+            &crate::expand(
+                &library::temple(),
+                Box3::at_origin([13, 14, 21]),
+                &ExpandOptions::seeded(7),
+            )
+            .unwrap(),
+            Options::default(),
+        );
+        assert!(
+            temple.measurements.silhouette_complexity >= 1.0,
+            "{}",
+            temple.measurements.silhouette_complexity
+        );
+    }
+}

@@ -60,7 +60,8 @@ and it is never redistributed.
 | `DW0723` | renderer/GPU error or textures not found |
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
 | `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor binding (warning) |
-| `DW0727` | a prefab blockstate has no definition in the asset source (`viewer` / `palette`) — warning, with its cell count |
+| `DW0727` | an anchor's eye-level camera does not stand on the anchor's own cell, or could not be stood up at all (warning) |
+| `DW0780` | a prefab blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
 except `DW0724`, which the compiler's visual tier holds. Take the next unused

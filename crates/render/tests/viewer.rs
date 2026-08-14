@@ -170,7 +170,7 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
 /// never a block silently drawn as if it were fine. This is the general form of
 /// the `minecraft:chain` case: the id does not exist at the pinned version.
 #[test]
-fn an_unresolvable_blockstate_is_dw0727_with_its_cell_count() {
+fn an_unresolvable_blockstate_is_dw0780_with_its_cell_count() {
     let Some(nbt) = prefab("hero-temple-ruin-arch.nbt") else {
         eprintln!("skip: no content symlink");
         return;
@@ -192,7 +192,7 @@ fn an_unresolvable_blockstate_is_dw0727_with_its_cell_count() {
     // to see the rest of the building.
     assert_eq!(r.status.code(), Some(0), "{r:?}");
     let stderr = String::from_utf8_lossy(&r.stderr);
-    assert!(stderr.contains("DW0727"), "expected DW0727: {stderr}");
+    assert!(stderr.contains("DW0780"), "expected DW0780: {stderr}");
     assert!(
         stderr.contains("minecraft:chain"),
         "the finding names the block: {stderr}"
