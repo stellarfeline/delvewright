@@ -758,7 +758,14 @@ Symptom → tool:
   2. **Choose the palette by measurement, never from memory.**
      `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
      — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
-     Record the measured hex beside each role.
+     Record the measured hex beside each role. The tool needs the pinned block
+     registry from `crates/compiler/data/` **and** a 1.21.11 client jar, and
+     refuses by name when either is absent. That does not make the step optional:
+     take role names from the corpus instead (`delve-grammar list`, then
+     `delve-grammar show --program <nearest>`), which is a palette somebody
+     already measured, and record where each name came from. Never invent one —
+     a block that does not exist is refused at export, and one that exists but
+     looks nothing like its name is caught only by eye at step 5.
   3. **Author a grammar program.** Read the **idiom index** first
      (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
      each — repetition, `otherwise`, taper/arch/gable (one recursion),
@@ -777,6 +784,24 @@ Symptom → tool:
      it**, which is the whole of decay and the cure for a piece that renders as
      one flat material; and a `facing=` block state **does not turn** when
      `largest` turns the piece.
+     **Decide the split order before the first rule** (`grammar.md` §2c, the
+     section before the nine). A split's children copy the parent box on the two
+     axes it does not cut, so siblings of a split are the only two things
+     guaranteed to line up, and there is no way to say "this opening is the same
+     cells as that one". Hence: **the last axis you split is the only axis on
+     which two things are guaranteed to meet — split last on the axis your
+     openings run through**, and write a hole as a piece of that split whose
+     siblings are the two things that must meet (best as the *absence* of a
+     sibling, which cannot be misaligned). Within one axis, pin a course to a
+     band's end and not to a height: `[relative 1, absolute 1]` is *the last
+     course of this band* at any band height, where `[absolute 5, absolute 1]`
+     is a computed height that also refuses a short band. Every constant you do
+     not eliminate this way fails silently.
+     One more refusal to expect: **`repeat` clamps the last tile but does not
+     rescue a box too short for the first one** — one pass of the pattern is
+     resolved before any tiling, so a repeat whose absolutes sum to 8 across a
+     7-deep box is a hard refusal. Guard the extent and give the short box an
+     `otherwise` arm.
   4. **Expand and let the machine judge**:
      `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
      --reachable-floor -o out/`. Pass `--traversable` for any passage, stair or
@@ -790,6 +815,16 @@ Symptom → tool:
      stranded. Unreachable floor **under a roof** is a room with no way in, and
      the report gives you the box to go and look at. Unreachable floor open to
      the sky is a roof, and is nobody's defect.
+     **One design the gate cannot be told about: a one-way descent.** A level a
+     body drops into and does not climb back out of is unreachable on foot on
+     purpose, and nothing in the CLI, the report or the metadata can state that
+     claim. So do **not** pass `--reachable-floor` on such a piece — it fails
+     (`drop-shaft` 9×12×9 seed 1: 28 of 63 roofed cells unreached) and a red gate
+     writes no `.nbt`, so the flag ships nothing rather than shipping a known
+     red. Expand without it, read the always-on reachability line, and record in
+     the campaign's `GENERATION.md` that the `unreachable_sheltered` pocket it
+     names is the drop and not a room with no way in. That verdict is bounded by
+     the instrument, and this is the step at which to say so.
   5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
      against step 1. The gates prove it is buildable and walkable; they say
      nothing about whether it is the scene you asked for. If the expand wrote a

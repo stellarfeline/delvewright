@@ -414,6 +414,30 @@ def distance(a: tuple[int, int, int], b: list[int]) -> float:
     )
 
 
+def load_registry() -> str:
+    """The pinned 1.21.11 block list, or a refusal that says what to do instead.
+
+    This tool is a mandatory step of `docs/reference/prefab-procedure.md` §2, and
+    it is run from checkouts that do not carry `crates/` — a `FileNotFoundError`
+    traceback there tells an author the step is broken rather than which of its
+    two inputs is missing and what the fallback is.
+    """
+    try:
+        return REGISTRY.read_text()
+    except OSError:
+        raise SystemExit(
+            f"no block registry at {REGISTRY} — this tool needs the pinned "
+            "1.21.11 block list from crates/compiler/data/, and this checkout "
+            "does not have it.\n"
+            "The palette step is not optional: take role names from the corpus "
+            "instead (`delve-grammar list`, then `delve-grammar show --program "
+            "<nearest>`), which is a palette that was measured already. Never "
+            "name a block from memory — an id that does not exist is refused at "
+            "export, and an id that exists but looks nothing like its name is "
+            "caught only by eye."
+        ) from None
+
+
 def resolve_jar(explicit: str | None) -> Path:
     candidates = [
         explicit,
@@ -457,7 +481,7 @@ def main(argv: list[str]) -> int:
     if not (args.id or args.near or args.list):
         ap.error("give --id, --near or --list")
 
-    registry = json.loads(REGISTRY.read_text())
+    registry = json.loads(load_registry())
     jar = Jar(resolve_jar(args.jar))
 
     if args.id:

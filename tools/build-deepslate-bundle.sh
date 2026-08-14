@@ -68,10 +68,21 @@ echo "bundling …" >&2
 	--target=es2020 --legal-comments=inline \
 	--outfile=bundle.raw.js >/dev/null)
 
-python3 - "$work/bundle.raw.js" "$out" <<'PY'
-import sys, hashlib, pathlib
+# Patch, write, digest and list — one python step rather than one per job, so the
+# lockfile that produced the bytes and the bytes themselves are read by the same
+# program. `newline` is pinned because a carriage return from a text-mode stdout
+# survives command substitution and makes a digest compare unequal to itself on
+# exactly one runner.
+python3 - "$work/bundle.raw.js" "$out" "$work/package-lock.json" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
 
-src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+sys.stdout.reconfigure(newline="\n")
+sys.stderr.reconfigure(newline="\n")
+
+src, dst, lockfile = (pathlib.Path(a) for a in sys.argv[1:4])
 text = src.read_text(encoding="utf-8")
 
 # (wrong id, right id, exactly how many occurrences to expect)
@@ -90,16 +101,22 @@ for wrong, right, expect in PATCHES:
         )
     text = text.replace(wrong, right)
 
-dst.write_text(text, encoding="utf-8")
-print(f"{dst}: {len(text.encode())} bytes, sha256 {hashlib.sha256(text.encode()).hexdigest()}")
-PY
+data = text.encode("utf-8")
+dst.write_bytes(data)
+print(f"{dst}: {len(data)} bytes, sha256 {hashlib.sha256(data).hexdigest()}")
+print("pin this digest in versions.toml [render].deepslate_bundle_sha256")
 
-echo "licences of everything in the bundle:" >&2
-(cd "$work" && node -e '
-const lock = JSON.parse(require("fs").readFileSync("package-lock.json", "utf8"));
-const rows = Object.entries(lock.packages)
-  .filter(([k, v]) => k.startsWith("node_modules/") && !v.dev && !v.optional)
-  .map(([k, v]) => `  ${k.replace("node_modules/", "")}@${v.version} — ${v.license}`)
-  .sort();
-console.error(rows.join("\n"));
-')
+# Everything that ends up in those bytes, with its licence, read from the
+# lockfile that produced them. A new transitive dependency cannot arrive
+# unnamed: the ACKNOWLEDGEMENTS entry is written from this list.
+lock = json.loads(lockfile.read_text(encoding="utf-8"))
+rows = sorted(
+    "  {}@{} — {}".format(
+        name.removeprefix("node_modules/"), meta.get("version"), meta.get("license")
+    )
+    for name, meta in lock.get("packages", {}).items()
+    if name.startswith("node_modules/") and not meta.get("dev") and not meta.get("optional")
+)
+print("licences of everything in the bundle:", file=sys.stderr)
+print("\n".join(rows), file=sys.stderr)
+PY
