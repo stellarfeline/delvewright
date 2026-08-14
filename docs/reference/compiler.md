@@ -1351,6 +1351,58 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `peaceful` for wave-free campaigns, **`easy`** when any wave exists (peaceful
   removes summoned mobs). No server jar, no region files (ADR-0010) — the
   bootstrap `/place template`s prefabs, so byte-identity covers the whole tree.
+  `view-distance=10` and `simulation-distance=10` (below). The file writes 15
+  keys and the key set is asserted exactly
+  (`crates/compiler/tests/server_properties.rs`): what a delve pins and what it
+  leaves to the host is a reviewed decision, not a residue.
+- **Chunk distances.** `view-distance=10` (160-block render radius) and
+  `simulation-distance=10`, two keys answering two questions and pinned for two
+  reasons. *View*: the largest shipped scene spans 114 × 165 blocks and the next
+  35 × 115 (measured from the emitted piece `forceload` AABBs), so 160 blocks
+  reaches the far side of either from any standpoint inside it, and on an `ocean`
+  horizon it puts the fog line 160 blocks of open sea past the shore. It is also
+  the radius `docs/notes/horizon-library-dossier.md` §3–4 and spec-0026 §6 do
+  their vista arithmetic against. Perf is non-gating on the Pi (owner ruling
+  2026-08-04), so prod does not force the number down; the absence of delve
+  content past 160 blocks is what stops it going up. *Simulation*: not what makes
+  a delve tick — `setup` force-loads every placed piece and never releases it, so
+  scene chunks are entity-ticking wherever the party stands, and everything
+  beyond them is inert backdrop. Its job is to make the ticking rim a **known**
+  radius: with both pinned, the chunks that can tick or be seen are bounded by
+  the force-loaded scene ∪ Chebyshev radius 10 (+1 loading margin) around any
+  player — a bound a whole-plane proof can be written against, and one the
+  compiler cannot state otherwise.
+- **Unpinned keys.** The pinned server version writes 70 properties; the build
+  pins 15. Every other key is left at the host default *on purpose*, and the
+  distinction that matters is that a delve has two boot paths with two different
+  default sources: the shipped image starts from the itzg base's own
+  `/image/server.properties` template, the owner's playtest server
+  (`tools/playtest-server.sh`, `OVERRIDE_SERVER_PROPERTIES=false`) copies the
+  build's file in and lets the vanilla jar fill the rest. Measured on both paths
+  against the pinned version, the 55 unpinned keys resolve as follows.
+  - **Diverge between the paths, harmless**: `enable-rcon` (image on, playtest
+    server off until `playtest-server.sh` appends its own), `rcon.password` and
+    `management-server-secret` (both generated per boot). Operator transport,
+    never world state; `management-server-enabled=false` on both, so the secret
+    is inert.
+  - **Agree, and load-bearing**: `function-permission-level=2` (the level every
+    datapack command in the pack runs at — a host that lowered it would break the
+    whole bootstrap), `initial-enabled-packs=vanilla` (an enabled experimental
+    feature pack changes worldgen and content), `entity-broadcast-range-percentage=100`
+    (how far NPCs and markers are sent to a client), `hardcore=false`,
+    `allow-flight=false`. Safe at their defaults today and the first place to
+    look if a host ever renders or ticks a delve differently.
+  - **Agree, product-shaped**: `max-players=20` against a 1–4 player delve
+    (`world.min_players` states the floor, nothing states the ceiling), `motd`,
+    `white-list=false`, `player-idle-timeout=0`, `pause-when-empty-seconds=60`
+    (an empty server stops ticking, including force-loaded chunks, and resumes on
+    join — desirable for a delve).
+  - **Agree, irrelevant to a delve**: `max-world-size` and
+    `max-chained-neighbor-updates` (the boundary region and command-driven traps
+    make both moot), `region-file-compression` (changes generated region bytes,
+    which are never shipped or compared), `sync-chunk-writes`, `max-tick-time`,
+    and the remaining transport/status/resource-pack keys — the delve's resource
+    pack is installed client-side, never served through `resource-pack`.
 - `horizon:"ocean"` (v0.6, spec-0013) swaps `generator-settings` for a pinned
   superflat `{"biome":"minecraft:ocean","layers":[bedrock×1, stone×118,
   water×8]}`: from the −64 build floor the top water block lands at **y=62** (sea
