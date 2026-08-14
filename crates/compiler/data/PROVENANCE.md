@@ -54,8 +54,8 @@ not third-party reconstructions.
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
   missing. Consumed by `delvewright_schem::blocks` (the grammar export and
-  `delve-admit audit`'s `DW0733`) and by `prefabs/invariants.rs` (all five
-  tileset generators, source-included).
+  `delve-admit audit`'s `DW0733`) and by `prefabs/invariants.rs` (every
+  `prefabs/*-generator` workspace, source-included).
   **Note on the nearest existing check**: `DW0193` validates DSL-authored block
   ids against the *item* registry plus five technical ids
   (`ItemBackedBlockRegistry`). Measured against this registry, that proxy has
