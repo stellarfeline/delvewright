@@ -134,8 +134,8 @@ fn the_symmetry_gate_and_the_reachability_gate_run_on_one_expansion() {
     assert!(ids.contains(&"reachable-floor"), "{ids:?}");
     assert_eq!(
         report.gates.len(),
-        6,
-        "four always-on gates plus the two opt-in ones: {ids:?}"
+        7,
+        "five always-on gates plus the two opt-in ones: {ids:?}"
     );
     for gate in &report.gates {
         assert!(

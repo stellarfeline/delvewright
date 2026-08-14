@@ -94,11 +94,11 @@ pub struct AuditReport {
     /// a wall/fence/pane/vine whose connection properties are unwritten loads
     /// as an isolated post, silently.
     pub underspecified: usize,
-    /// **Stairs examined** by the `stair-shape` rule (`DW0739`) — its binding
+    /// **Stairs examined** by the `stair-shape` rule (`DW0801`) — its binding
     /// count. Zero means this piece has no stairs and the rule said nothing
     /// about it, which is a different fact from "the rule holds here".
     pub stairs_examined: usize,
-    /// **Fluid cells examined** by the `fluid-contained` rule (`DW0738`) — its
+    /// **Fluid cells examined** by the `fluid-contained` rule (`DW0800`) — its
     /// binding count, over the fluid that runs (`water`/`lava` blocks).
     pub fluid_cells_examined: usize,
     /// Cells written `waterlogged=true`: wet, measured not to spread, and so

@@ -2,12 +2,32 @@
 //! subset `delve-render piece` needs to aim interior shots. Degrades gracefully:
 //! a missing/partial file just yields fewer shots (exterior + top-down always
 //! render from the `.nbt` alone).
+//!
+//! # A narrow view, not a second definition
+//!
+//! [`PrefabMeta`] here reads three of the document's blocks and is a genuinely
+//! narrower type than the document — because it must also read a **tile-set
+//! manifest**, which carries the same `anchors`, `connectors` and `lighting`
+//! under the same keys but names its blocks `structure_set` rather than
+//! `structure`. The full document requires `structure`, so it cannot parse a
+//! manifest, and one reader has to serve both shapes.
+//!
+//! What it does not do is re-declare the fields. Every leaf type below is the
+//! document's own ([`delvewright_schem::prefab`]), so an anchor here is an
+//! anchor there — same keys, same optionality, same tolerance of a key this
+//! version has never heard of. The only local decision is *which* blocks are
+//! read.
 
 use std::path::Path;
 
 use serde::Deserialize;
 
-/// The subset of prefab metadata the renderer reads.
+/// The document's own leaf types. A projection selects blocks; it does not get
+/// to have its own opinion about what an anchor is.
+pub use delvewright_schem::prefab::{Anchor as AnchorMeta, Connector, Lighting, Region};
+
+/// The subset of prefab metadata the renderer reads, from either shape of the
+/// document (single template or tile-set manifest).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PrefabMeta {
     /// Named anchors (`spawn`, `anchor/…`), keyed by name.
@@ -19,38 +39,6 @@ pub struct PrefabMeta {
     /// Declared lighting profile, if measured.
     #[serde(default)]
     pub lighting: Option<Lighting>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct AnchorMeta {
-    /// Point-anchor local position.
-    #[serde(default)]
-    pub pos: Option<[i32; 3]>,
-    /// Facing keyword for point anchors.
-    #[serde(default)]
-    pub facing: Option<String>,
-    /// Region (two inclusive corners) for gate anchors.
-    #[serde(default)]
-    pub region: Option<Region>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Region {
-    pub from: [i32; 3],
-    pub to: [i32; 3],
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Connector {
-    /// Socket local position (the doorway centre at floor level).
-    pub local_pos: [i32; 3],
-    /// Outward facing keyword (the socket's normal, pointing away from the room).
-    pub facing: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Lighting {
-    pub profile: String,
 }
 
 impl PrefabMeta {
@@ -80,7 +68,9 @@ impl PrefabMeta {
 
     /// `true` when the declared lighting profile is `lit`.
     pub fn is_lit(&self) -> Option<bool> {
-        self.lighting.as_ref().map(|l| l.profile == "lit")
+        self.lighting
+            .as_ref()
+            .map(|l| l.profile == delvewright_schem::prefab::LightingProfile::Lit)
     }
 }
 
@@ -96,9 +86,10 @@ mod tests {
                 "anchor/keeper-stand": { "pos": [3,1,2], "facing": "north" }
             },
             "connectors": [
-                { "name": "keep:socket", "local_pos": [3,1,0], "facing": "north", "opening": [3,3] }
+                { "name": "keep:socket", "target": "keep:socket", "local_pos": [3,1,0],
+                  "facing": "north", "opening": [3,3], "joint": "aligned" }
             ],
-            "lighting": { "profile": "lit", "measured_min_light": 9 }
+            "lighting": { "profile": "lit", "measured_min_light": 9, "measured": "2026-08-01" }
         }"#;
         let meta: PrefabMeta = serde_json::from_slice(json).unwrap();
         assert_eq!(meta.connectors.len(), 1);

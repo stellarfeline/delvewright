@@ -116,7 +116,7 @@ pub fn bait_stand() -> Program {
         .param("bracket", 1)
         .param("canopy", 0)
         .role("stone", BlockState::simple("stone_bricks"))
-        .role("timber", BlockState::simple("dark_oak_wood"))
+        .role("timber", BlockState::with("dark_oak_wood", [("axis", "y")]))
         .role("pedestal", BlockState::simple("chiseled_stone_bricks"))
         // --- frame -----------------------------------------------------------
         .rule(

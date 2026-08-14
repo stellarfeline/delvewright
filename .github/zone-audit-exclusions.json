@@ -1,0 +1,28 @@
+{
+  "_": [
+    "Programs that are KNOWN red, and the exact diagnostic codes each must fail with.",
+    "",
+    "This file INVERTS an assertion; it never removes one. A recorded program is still",
+    "expanded and still judged, and three things are findings: it passes (the record has",
+    "expired), it fails with a different code (a second defect was hiding behind the first),",
+    "or it fails with one more. A plain skip would be satisfied by the very defect it",
+    "excuses, which is the vacuity mode this project has shipped six times.",
+    "",
+    "An entry belongs here only while a CAPABILITY the zone needs is missing from the",
+    "engine, and it names that capability in words a later session can act on. A defect a",
+    "session could fix today is fixed today; it does not become a record.",
+    "",
+    "Ids are audit labels, so both corpora are recordable here: `library/<program>` for the",
+    "rule library this repo owns, `<campaign>/<zone>` for a campaign's zone programs.",
+    "",
+    "Every campaign zone program of every campaign expands and judges green. The rule",
+    "library holds one recorded red."
+  ],
+  "exclusion": [
+    {
+      "id": "library/causeway",
+      "capability_gap": "A body cannot stand on water, and `nav::standable` does not know it: any non-air cell reads as floor. `causeway` floods its ward from floor to ceiling on both flanks of a 1-wide raised spine precisely so that the flanks are not walkable, and lowering the waterline — the only repair that keeps the design — would leave water with a body-height air pocket over it, which `nav` would then call a walkable surface and the ward's whole claim would go green while being false. The repair is spec-0038 §2.1's rule one layer over, in `nav`, with its own round and its own playtest gate.",
+      "expect_codes": ["DW0800"]
+    }
+  ]
+}

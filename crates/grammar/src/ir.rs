@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 use crate::block::BlockState;
 use crate::geom::{Axis, Mirror, Orientation};
 use crate::version::{
-    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, MIRROR_SINCE, has_bind, has_contract,
-    has_mirror, is_supported_version,
+    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, has_bind,
+    has_contract, has_local_frame, has_mirror, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -443,15 +443,125 @@ pub struct WeightedBlock {
     pub block: BlockState,
 }
 
-/// What a palette role resolves to.
+/// The block states a paint writes: one, or a weighted draw.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum Paint {
+pub enum States {
     /// A single block state.
-    Block(BlockState),
+    One(BlockState),
     /// A per-cell weighted draw from the seeded stream (upstream's `dict`
     /// materials, which drew with `random.choices`).
     Mix(Vec<WeightedBlock>),
+}
+
+impl States {
+    /// Every block state this can write, in draw order.
+    pub fn each(&self) -> Vec<&BlockState> {
+        match self {
+            States::One(b) => vec![b],
+            States::Mix(mix) => mix.iter().map(|w| &w.block).collect(),
+        }
+    }
+
+    /// The same states with every block replaced by `f` of it, shape kept.
+    pub(crate) fn map<E>(
+        &self,
+        mut f: impl FnMut(&BlockState) -> Result<BlockState, E>,
+    ) -> Result<States, E> {
+        Ok(match self {
+            States::One(b) => States::One(f(b)?),
+            States::Mix(mix) => States::Mix(
+                mix.iter()
+                    .map(|w| {
+                        Ok(WeightedBlock {
+                            weight: w.weight,
+                            block: f(&w.block)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, E>>()?,
+            ),
+        })
+    }
+}
+
+/// **Which axes a block state's properties are named in.**
+///
+/// `north`, `east`, `axis=x` and a 16-step `rotation` all name a *direction*,
+/// and a direction is only meaningful against a frame. Every other authored
+/// value in this IR already says which frame it is in — [`DimRef::X`] is local
+/// and [`DimRef::WorldX`] is not, [`AxisSpec`] spells both out, a
+/// [`MarkAt::Offset`] is local where [`MarkAt::FloorCenter`] is world. A block
+/// state was the one value with no frame to name, so it meant the world's axes
+/// by default and a reorientation left it pointing the way the author's
+/// keyboard happened to face.
+///
+/// [`Paint::Local`] is that missing declaration, and nothing more: the state is
+/// read in the scope's own axis names and resolved into the world's at fill
+/// time, through the *same* transform the `oriented-fills` diagnostic uses to
+/// decide that an unframed state landed wrong
+/// (`delvewright_schem::blocks::BlockRegistry::permuted_properties`). One rule
+/// therefore works at every orientation, which is what a palette role — one
+/// name, one binding — could not previously carry.
+///
+/// A scope's frame has two halves, a permutation and a reflection
+/// ([`crate::geom::Orientation`]), and the resolution reads **both**: a
+/// reflected local `X` sends the scope's `east` to the world's `west` under the
+/// identity permutation, so a resolver keyed on the permutation alone would
+/// write the mirror image of what the author asked for.
+///
+/// A state whose image the pinned vocabulary does not determine is refused
+/// (`DW0738`), never guessed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Paint {
+    /// States whose properties name **world** directions: `north` is the
+    /// world's `-Z` however the scope was turned. What an unannotated state
+    /// has always meant, and what the `orientation` guard pins.
+    World(States),
+    /// States whose properties name the **scope's own** directions, resolved
+    /// through its frame at fill time.
+    Local {
+        /// The states, in the local frame.
+        local: States,
+    },
+}
+
+impl Paint {
+    /// A single world-frame block state.
+    pub fn block(block: BlockState) -> Paint {
+        Paint::World(States::One(block))
+    }
+
+    /// A world-frame weighted draw.
+    pub fn mix(mix: Vec<WeightedBlock>) -> Paint {
+        Paint::World(States::Mix(mix))
+    }
+
+    /// A single block state written in the scope's own axis names.
+    pub fn local_block(block: BlockState) -> Paint {
+        Paint::Local {
+            local: States::One(block),
+        }
+    }
+
+    /// A weighted draw written in the scope's own axis names.
+    pub fn local_mix(mix: Vec<WeightedBlock>) -> Paint {
+        Paint::Local {
+            local: States::Mix(mix),
+        }
+    }
+
+    /// The states, whichever frame they are in.
+    pub fn states(&self) -> &States {
+        match self {
+            Paint::World(s) | Paint::Local { local: s } => s,
+        }
+    }
+
+    /// True when the states are written in the scope's own axis names.
+    pub fn is_local(&self) -> bool {
+        matches!(self, Paint::Local { .. })
+    }
 }
 
 /// What a `fill` writes.
@@ -476,9 +586,19 @@ impl Material {
         }
     }
 
-    /// An inline single block.
+    /// An inline single block, in the world frame.
     pub fn block(block: BlockState) -> Material {
-        Material::Inline(Paint::Block(block))
+        Material::Inline(Paint::block(block))
+    }
+
+    /// An inline single block written in the scope's own axis names.
+    ///
+    /// The frame belongs to the *state*, so it reaches every consumer of one —
+    /// a palette role, an inline fill, and either as a weighted mix. Building
+    /// it onto the palette alone would have left an inline fill with no way to
+    /// say the same thing, which is how a second bespoke field gets written.
+    pub fn local_block(block: BlockState) -> Material {
+        Material::Inline(Paint::local_block(block))
     }
 }
 
@@ -1576,13 +1696,28 @@ impl Program {
 
     /// Bind a palette role to a single block (builder form).
     pub fn role(mut self, role: &str, block: BlockState) -> Program {
-        self.palette.insert(role.to_string(), Paint::Block(block));
+        self.palette.insert(role.to_string(), Paint::block(block));
         self
     }
 
     /// Bind a palette role to a weighted mix (builder form).
     pub fn role_mix(mut self, role: &str, mix: Vec<WeightedBlock>) -> Program {
-        self.palette.insert(role.to_string(), Paint::Mix(mix));
+        self.palette.insert(role.to_string(), Paint::mix(mix));
+        self
+    }
+
+    /// Bind a palette role to a single block written in the scope's own axis
+    /// names (builder form) — the role a turning piece can still restyle.
+    pub fn role_local(mut self, role: &str, block: BlockState) -> Program {
+        self.palette
+            .insert(role.to_string(), Paint::local_block(block));
+        self
+    }
+
+    /// Bind a palette role to a weighted mix written in the scope's own axis
+    /// names (builder form).
+    pub fn role_local_mix(mut self, role: &str, mix: Vec<WeightedBlock>) -> Program {
+        self.palette.insert(role.to_string(), Paint::local_mix(mix));
         self
     }
 
@@ -1654,13 +1789,7 @@ impl Program {
             }
         }
         for (role, paint) in &self.palette {
-            if let Paint::Mix(mix) = paint
-                && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
-            {
-                return Err(ProgramError::ZeroWeight {
-                    symbol: format!("palette:{role}"),
-                });
-            }
+            self.check_paint(&format!("palette:{role}"), paint)?;
         }
         self.check_contract()?;
         Ok(())
@@ -1758,13 +1887,16 @@ impl Program {
                             referenced_by: site.clone(),
                         });
                     }
-                    Some(Paint::Mix(_)) => {
+                    // A bar is ONE state, in either frame: the local frame is
+                    // resolved at fill time and leaves the role single-valued,
+                    // so it is a mix — not a frame — that this refuses.
+                    Some(p) if matches!(p.states(), States::Mix(_)) => {
                         return Err(ProgramError::BarBlockIsAMix {
                             role: bar.block.clone(),
                             region: bar.region.clone(),
                         });
                     }
-                    Some(Paint::Block(_)) => {}
+                    Some(_) => {}
                 }
             }
             for name in own {
@@ -1964,11 +2096,30 @@ impl Program {
             }
             Material::Inline(paint) => paint,
         };
-        if let Paint::Mix(mix) = paint
+        self.check_paint(symbol, paint)
+    }
+
+    /// A paint's own two rules: usable weights, and the version fence its frame
+    /// rides.
+    ///
+    /// One function because a paint reaches the document from two places — a
+    /// palette binding and an inline `fill`/`bind` material — and the frame
+    /// belongs to the *state*, so both places can write one. A fence checked at
+    /// only one of them is a fence a document walks around by moving the state.
+    fn check_paint(&self, written_by: &str, paint: &Paint) -> Result<(), ProgramError> {
+        if paint.is_local() && !has_local_frame(&self.version) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a block state in the scope's own axes (`local`)",
+                since: LOCAL_FRAME_SINCE,
+                declared: self.version.clone(),
+                written_by: written_by.to_string(),
+            });
+        }
+        if let States::Mix(mix) = paint.states()
             && (mix.is_empty() || mix.iter().any(|w| w.weight == 0))
         {
             return Err(ProgramError::ZeroWeight {
-                symbol: symbol.to_string(),
+                symbol: written_by.to_string(),
             });
         }
         Ok(())

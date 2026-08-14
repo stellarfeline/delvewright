@@ -2,80 +2,28 @@
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::{Paint, Program, WeightedBlock};
-use delvewright_grammar::library::{
-    ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple,
-    watch_bay,
-};
+use delvewright_grammar::library;
+use delvewright_grammar::library::{castle, church, temple};
 use delvewright_grammar::{Box3, ExpandOptions, expand};
-// W3: the palette/prop family (W + S + M + X).
-use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
-// The mechanism family (task #182 zone round): the rest point, the lure and the
-// hazard control.
-use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
-/// Regions each program is comfortably sized for. Sizes below these are a
-/// documented error, not a silent nothing — see `undersized_regions_are_loud`.
+/// The regions the individual claims below are made at. Every SWEEP reads its
+/// region off `library::PROGRAMS`; what is left here is the handful a single
+/// named test measures one building against.
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
-const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
 const CHURCH_REGION: Box3 = Box3::at_origin([15, 16, 30]);
-/// The original staging rules (spec-0027 W1, W2 and W4) travel with the
-/// ports: they owe the same structural validity, JSON round trip and
-/// determinism.
-const CLIFF_REGION: Box3 = Box3::at_origin([3, 6, 30]);
-const PASSAGE_REGION: Box3 = Box3::at_origin([7, 7, 24]);
-const HALL_REGION: Box3 = Box3::at_origin([13, 6, 25]);
-const DOOR_REGION: Box3 = Box3::at_origin([11, 5, 13]);
-const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
-/// W3: the palette/prop family (spec-0027 W + S + M + X).
-const STAIR_REGION: Box3 = Box3::at_origin([9, 6, 27]);
-const THRESHOLD_REGION: Box3 = Box3::at_origin([9, 6, 13]);
-const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
-/// The topology family (task #182): vertical links, one-way bars, elite ground.
-const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
-const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
-const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);
-const TEE_REGION: Box3 = Box3::at_origin([5, 5, 12]);
-const CAUSEWAY_REGION: Box3 = Box3::at_origin([7, 10, 9]);
-const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
-/// The vertical family's two-way member: five across (two walls and a
-/// three-wide lane), fourteen tall, twenty-two long.
-const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
-/// The vertical family's *stationary* member (task #182, entry L/4): five
-/// across, sixteen tall — the sill plus two whole storeys — and seven deep, so
-/// the frame turns the landing face onto the long axis the way a zone hands it.
-const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
-/// The mechanism family: a rest point's nook, a lure with its watcher, and a
-/// hazard's control at the head of its run.
-const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
-const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
-const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 
+/// **Every program the registry carries, at the expansion it declares.**
+///
+/// Read off `library::PROGRAMS`, never restated. This used to be a hand-written
+/// list of twenty-two of the thirty-three, with the other ten in
+/// `tests/idioms.rs` and `negated-guard` in neither, so no sweep here ever saw
+/// the whole corpus. Now a program cannot enter the registry without its
+/// region, and every sweep below is bound to all of it by construction.
 fn programs() -> Vec<(Program, Box3)> {
-    vec![
-        (temple(), TEMPLE_REGION),
-        (castle(), CASTLE_REGION),
-        (church(), CHURCH_REGION),
-        (cliff_path(), CLIFF_REGION),
-        (watch_bay(), PASSAGE_REGION),
-        (rafter_hall(), HALL_REGION),
-        (ambush_door(), DOOR_REGION),
-        (store_room(), STORE_REGION),
-        (boulder_stair::boulder_stair(), STAIR_REGION),
-        (threshold_motif::threshold_motif(), THRESHOLD_REGION),
-        (broken_grate::broken_grate(), GRATE_REGION),
-        (drop_shaft(), SHAFT_REGION),
-        (dumbwaiter(), DUCT_REGION),
-        (far_side_bar(), BAR_REGION),
-        (tee_passage(), TEE_REGION),
-        (causeway(), CAUSEWAY_REGION),
-        (elite_ground(), ARENA_REGION),
-        (stair_flight(), FLIGHT_REGION),
-        (lift_shaft(), LIFT_REGION),
-        (hearth_ward(), HEARTH_REGION),
-        (bait_stand(), BAIT_REGION),
-        (disarm_stand(), DISARM_REGION),
-    ]
+    library::PROGRAMS
+        .iter()
+        .map(|p| ((p.build)(), Box3::at_origin(p.region)))
+        .collect()
 }
 
 #[test]
@@ -87,9 +35,26 @@ fn every_library_program_is_structurally_valid() {
     }
 }
 
+/// Every program that builds a PIECE — the vocabulary, not the teaching set.
+///
+/// The class comes off the registry entry, never off the id: `negated-guard` is
+/// a language example and carries no `idiom-` prefix, and a filter keyed on the
+/// prefix asserted "that is a cube, not a building" against a program whose
+/// whole job is to fill its box. It matters for exactly one claim below — a
+/// teaching program's job is to show one construct, and `idiom-mirror` filling
+/// its 15 x 11 x 2 slab solid is the demonstration working.
+fn pieces() -> Vec<(Program, Box3)> {
+    library::PROGRAMS
+        .iter()
+        .filter(|p| p.kind == library::Kind::Piece)
+        .map(|p| ((p.build)(), Box3::at_origin(p.region)))
+        .collect()
+}
+
 #[test]
-fn every_library_program_builds_something_inside_its_box() {
-    for (program, region) in programs() {
+fn every_library_piece_builds_something_inside_its_box() {
+    let mut judged = 0usize;
+    for (program, region) in pieces() {
         let out = expand(&program, region, &ExpandOptions::seeded(1))
             .unwrap_or_else(|e| panic!("{}: {e}", program.name));
         let filled = out.model.filled_cells();
@@ -105,10 +70,100 @@ fn every_library_program_builds_something_inside_its_box() {
             program.name
         );
         assert_eq!(out.model.region(), region);
-        // Every cell the model holds is inside the region by construction; this
-        // asserts the derivation actually reached the far corners of the box.
-        assert!(out.stats.rules_applied > 5, "{}", program.name);
+        judged += 1;
     }
+    assert_eq!(
+        judged, 22,
+        "the vocabulary this swept — 33 less the 11 language examples"
+    );
+}
+
+/// **Every program in the registry gives the verdict the record says it gives,
+/// at the expansion it declares** — the sweep `delve-grammar audit --library`
+/// runs, run here so `cargo test` carries it too.
+///
+/// One program is recorded red: `causeway`'s flood is not contained, which is a
+/// missing `nav` capability rather than a defect a session could fix
+/// ([`UNCONTAINED_LIBRARY_RULES`], and `.github/zone-audit-exclusions.json`,
+/// which is what the CLI sweep reads). The assertion is INVERTED for it rather
+/// than dropped: a recorded program that starts passing reds this test, and so
+/// does any other program that fails anything. That is the same discrimination
+/// in both directions the exclusions record gives the CLI, and it is why this
+/// test does not say "every gate passes" — it would be false, and the way to
+/// make it true would be to stop judging the one piece that fails.
+///
+/// This replaces a `rules_applied > 5` assertion that used to sit in the sweep
+/// above. That number measured how MUCH derivation happened rather than how far
+/// it reached, and it was tuned against the twenty-two building-scale programs
+/// the sweep saw when it was hand-written; registry-driven, the sweep also
+/// reaches the teaching set, where `idiom-erosion` covers its whole box with one
+/// rule. It was not lowered — it was a proxy that is false as a general claim,
+/// and what stands in its place is strictly stronger: the full gate report,
+/// every gate, every program, with the binding counts asserted.
+#[test]
+fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() {
+    use delvewright_grammar::gates;
+    let mut totals: std::collections::BTreeMap<&str, usize> = Default::default();
+    for entry in library::PROGRAMS {
+        let program = (entry.build)();
+        let out = expand(
+            &program,
+            Box3::at_origin(entry.region),
+            &ExpandOptions::seeded(entry.seed),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
+        let report = gates::judge(&out, entry.gates);
+        for gate in &report.gates {
+            // The one inversion, and it is exact in both directions: this gate
+            // on this program MUST be red, everything else MUST be green.
+            let recorded_red =
+                gate.id == "fluid-contained" && UNCONTAINED_LIBRARY_RULES.contains(&entry.id);
+            assert_eq!(
+                gate.pass,
+                !recorded_red,
+                "{}: `{}` — {}{}",
+                entry.id,
+                gate.id,
+                gate.detail,
+                if recorded_red {
+                    ". This program is RECORDED red on this gate. It passing means the capability \
+                     gap closed, and this record plus its note in \
+                     `.github/zone-audit-exclusions.json` must go with it"
+                } else {
+                    ""
+                }
+            );
+            assert!(
+                gate.bound > 0,
+                "{}: gate `{}` examined zero objects",
+                entry.id,
+                gate.id
+            );
+            *totals.entry(gate.id).or_default() += gate.bound;
+        }
+    }
+    // Binding counts, so a corpus that quietly stopped reaching these gates is
+    // a red rather than a shorter green list (CLAUDE.md's first vacuity mode).
+    assert_eq!(library::PROGRAMS.len(), 35, "the corpus this swept");
+    for (id, floor) in [
+        ("blocks-exist", 100usize),
+        ("shape-complete", 100),
+        ("states-complete", 100),
+        ("oriented-fills", 600),
+        ("non-empty", 40000),
+    ] {
+        let bound = *totals.get(id).unwrap_or(&0);
+        assert!(
+            bound >= floor,
+            "gate `{id}` bound {bound}, expected >= {floor}"
+        );
+    }
+    // The route claim binds to something: a corpus in which no entry claims a
+    // route would run this gate zero times and read as a pass.
+    assert!(
+        *totals.get("traversable").unwrap_or(&0) > 0,
+        "no library entry claims a route, so the walk gate examined nothing"
+    );
 }
 
 /// Count the distinct column runs along the temple's front colonnade.
@@ -294,7 +349,7 @@ fn a_palette_swap_restyles_without_touching_a_rule() {
     sandstone
         .set_role(
             "marble",
-            Paint::Block(BlockState::simple("smooth_sandstone")),
+            Paint::block(BlockState::simple("smooth_sandstone")),
         )
         .unwrap();
     let marble = expand(&temple(), TEMPLE_REGION, &ExpandOptions::seeded(1)).unwrap();
@@ -319,7 +374,7 @@ fn a_weathered_palette_mixes_per_cell_under_the_seed() {
     weathered
         .set_role(
             "marble",
-            Paint::Mix(vec![
+            Paint::mix(vec![
                 WeightedBlock {
                     weight: 6,
                     block: BlockState::simple("quartz_block"),
@@ -357,7 +412,7 @@ fn unknown_knobs_are_refused_rather_than_ignored() {
     assert!(program.set_param("colum_height", 12).is_err());
     assert!(
         program
-            .set_role("marbel", Paint::Block(BlockState::air()))
+            .set_role("marbel", Paint::block(BlockState::air()))
             .is_err()
     );
     assert_eq!(program, temple(), "a refused override changes nothing");
@@ -396,7 +451,7 @@ fn every_library_program_paints_only_blocks_that_exist() {
 }
 
 /// **The one library rule whose body of water is not contained** — a live
-/// finding of `DW0738`, pinned here rather than hidden by it.
+/// finding of `DW0800`, pinned here rather than hidden by it.
 ///
 /// `causeway` is a flooded ward with a 1-wide raised spine through it, and the
 /// flood is water from the ward floor to the ceiling on both flanks of that
@@ -422,8 +477,8 @@ fn every_library_program_paints_only_blocks_that_exist() {
 /// quietly absorb a new defect and it cannot outlive the fix.
 const UNCONTAINED_LIBRARY_RULES: [&str; 1] = ["causeway"];
 
-/// **Both settling gates over the whole corpus** (`DW0739` stair shapes,
-/// `DW0738` bodies of fluid), at each program's documented region.
+/// **Both settling gates over the whole corpus** (`DW0801` stair shapes,
+/// `DW0800` bodies of fluid), at each program's documented region.
 ///
 /// This is the invocation that keeps them from being UNRUN over the library
 /// (CLAUDE.md's fourth vacuity mode), and it states what they BIND here rather

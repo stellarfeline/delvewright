@@ -350,6 +350,20 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # The step above proves a diagnostic's CODE exists, is documented, is
+      # unique and is asserted by a test. Nothing proved anything about the
+      # SENTENCE, and `delve-grammar expand` refused an author's export with "…
+      # would put a  on disk …" — a dropped noun, sitting across a `\`-newline
+      # continuation so no line of the file contained the gap. It survived every
+      # required status check, because the message is the one part of a
+      # diagnostic nothing ever read. This renders every message the source can
+      # produce — including `crates/render`, a workspace of its own that no
+      # `cargo test` here builds — and refuses a gap in one. It states its
+      # binding count and names every expression it could not render, so a
+      # message out of reach is a line in the log, never a silent pass.
+      # Deterministic, offline, stdlib-only python3.
+      - name: every diagnostic message is a whole sentence
+        run: python3 tools/check-diagnostic-messages.py
       # Every owner decision this repo has written down is bound to the place it
       # landed, both directions. A `landed` row whose implementation is deleted
       # or renamed reds here; a decision written into an ADR, an owner-approved
@@ -689,6 +703,23 @@ jobs:
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
         run: python3 tools/build-every-campaign.py --delvec target/debug/delvec
+      # A campaign's ZONE PROGRAMS are not reached by the step above: they are
+      # the grammar IR a zone's prefab is expanded from, they live under
+      # `design/programs/`, and a campaign that has them may carry no
+      # `world.json` at all yet (the drowned-bell remake is exactly that). So
+      # nothing ran a check against a zone program — the artifact ADR-0018 calls
+      # the record — until this step. It is bound to the same event as the
+      # campaign build: a content re-pin cannot land without it.
+      #
+      # `--library` in the same call because the vocabulary and the zones that
+      # compose it fail together, and one command means one thing to remember.
+      # The exclusions file INVERTS the assertion for zones that are known red;
+      # see its header for why that is not a skip.
+      - name: every zone program expands and judges green
+        run: |
+          cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- \
+            audit --library --campaign-root campaigns \
+            --exclusions .github/zone-audit-exclusions.json
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors

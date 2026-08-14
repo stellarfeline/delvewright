@@ -95,7 +95,8 @@ const SLOT: i64 = 2;
 /// recess is), `watch_back` (how far up-path the watch cell sits). Palette
 /// roles: `rock` (the cliff). The teaching variant's corpse prop is not a
 /// role: its yaw depends on the scope's orientation, so it is per-orientation
-/// guarded inline states (`corpse_prop` below), which one role name cannot
+/// guarded inline states (`corpse_prop` below) rather than a role in the
+/// scope's own axes, which is the shorter way to say the same thing and cannot
 /// express.
 ///
 /// `watch_back` must leave room in the lead — `watch_back + 1 < spacing_min` —
@@ -209,11 +210,17 @@ pub fn cliff_path() -> Program {
             vec![
                 alt_when(
                     oriented(Axis::X, Axis::Y, Axis::Z),
-                    fill_block(BlockState::with("skeleton_skull", [("rotation", "8")])),
+                    fill_block(BlockState::with(
+                        "skeleton_skull",
+                        [("powered", "false"), ("rotation", "8")],
+                    )),
                 ),
                 alt_when(
                     oriented(Axis::Z, Axis::Y, Axis::X),
-                    fill_block(BlockState::with("skeleton_skull", [("rotation", "4")])),
+                    fill_block(BlockState::with(
+                        "skeleton_skull",
+                        [("powered", "false"), ("rotation", "4")],
+                    )),
                 ),
             ],
         )

@@ -353,10 +353,10 @@ fn a_copy_edited_out_of_step_is_green_on_every_gate() {
     assert!(report.is_pass(), "{:#?}", report.gates);
     assert_eq!(
         report.gates.len(),
-        4,
-        "the four always-on gates: blocks-exist, shape-complete, oriented-fills, non-empty. The \
-         two settling gates are emitted only over a piece that holds a stair or a body of fluid, \
-         and this one holds neither"
+        5,
+        "the five always-on gates: blocks-exist, shape-complete, states-complete, \
+         oriented-fills, non-empty. The two settling gates are emitted only over a piece that \
+         holds a stair or a body of fluid, and this one holds neither"
     );
     for gate in &report.gates {
         println!(
@@ -562,7 +562,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
 #[test]
 fn the_transparency_corpus_covers_every_library_program() {
     let listed: BTreeSet<&str> = CORPUS.iter().map(|(id, _)| *id).collect();
-    let registered: BTreeSet<&str> = library::PROGRAMS.iter().map(|(id, _)| *id).collect();
+    let registered: BTreeSet<&str> = library::PROGRAMS.iter().map(|p| p.id).collect();
     assert_eq!(listed, registered);
     assert_eq!(listed.len(), CORPUS.len(), "the table repeats an id");
 }
@@ -687,7 +687,7 @@ fn a_non_identity_frame_does_change_the_bytes() {
             .palette
             .iter()
             .find(|(_, paint)| {
-                matches!(paint, delvewright_grammar::ir::Paint::Block(b) if !b.is_air())
+                matches!(paint.states(), delvewright_grammar::ir::States::One(b) if !b.is_air())
             })
             .map(|(role, _)| role.clone())
         else {

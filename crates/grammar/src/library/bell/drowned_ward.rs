@@ -143,7 +143,7 @@ pub fn drowned_ward() -> Program {
         .param("ward_run", 20)
         .param("junction_run", 20)
         .param("strip_depth", 21)
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "drowned_ward",

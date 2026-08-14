@@ -80,7 +80,7 @@ pub const GENERATOR: &str = "crates/grammar";
 /// measurement, and declaring nothing would be indistinguishable from legacy
 /// metadata that predates the field — so the export declares `unmeasured`, which
 /// is the true statement, and admission to a campaign still runs the probe.
-pub const LIGHTING_PROFILE: &str = "unmeasured";
+pub const LIGHTING_PROFILE: &str = delvewright_schem::prefab::UNMEASURED;
 
 /// Vanilla caps a structure template at 48 blocks per axis.
 ///
@@ -418,8 +418,9 @@ impl fmt::Display for ExportError {
             ExportError::Contract { gates } => write!(
                 f,
                 "the expanded model disagrees with the spatial contract this program declares, so \
-                 freezing it would put a  on disk whose metadata describes a building it is \
-                 not true of: {}",
+                 freezing it would put a prefab on disk whose metadata describes a building it is \
+                 not true of: {}. Change the blocks until the contract is true of them, or change \
+                 the declared contract to what this building actually is",
                 gates.join("; ")
             ),
             ExportError::ShapeOmissions { reasons } => write!(
@@ -524,7 +525,7 @@ pub fn export_prefab(
             id: id.to_string(),
             size,
             data_version: DATA_VERSION,
-            generator: GENERATOR.to_string(),
+            generator: Some(GENERATOR.to_string()),
         },
         anchors: anchor_metadata(&expansion),
         // The export emits no jigsaw connectors (see the module header), and
@@ -532,12 +533,11 @@ pub fn export_prefab(
         // with no sockets and a piece whose metadata predates sockets are not
         // the same claim.
         connectors: Vec::new(),
-        lighting: LightingMetadata {
-            profile: LIGHTING_PROFILE.to_string(),
-            ..LightingMetadata::unmeasured()
-        },
-        license: license_metadata(program, &hash, options.seed, size, None),
+        lighting: Some(LightingMetadata::unmeasured()),
+        license: Some(license_metadata(program, &hash, options.seed, size, None)),
+        waterline_y: None,
         spatial_contract: contract_metadata(&expansion),
+        extra: BTreeMap::new(),
     };
     let metadata_json = metadata.to_json();
 
@@ -646,10 +646,7 @@ pub fn export_zone(
         // Same claim, same key, same reason as the single-template export: an
         // empty list says "no sockets", an absent key says nothing at all.
         connectors: Vec::new(),
-        lighting: LightingMetadata {
-            profile: LIGHTING_PROFILE.to_string(),
-            ..LightingMetadata::unmeasured()
-        },
+        lighting: LightingMetadata::unmeasured(),
         license: license_metadata(
             program,
             &hash,

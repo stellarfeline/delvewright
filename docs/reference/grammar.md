@@ -27,17 +27,19 @@ Two library modules exist for the tool and are public for it:
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
   `shape-complete` (every placed state writes its shape-carrying `multipart`
-  properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
-  is filled only under the identity frame or a passed `orientation` guard —
-  `DW0736`, §4b), `non-empty`, and the opt-in `traversable`, `symmetric` and
-  `reachable-floor` (§4c). Two more are emitted **only over a piece that holds
-  what they judge** (§4e): `stair-shape` (every written stair `shape` is the one
-  vanilla derives at that cell — `DW0739`) and `fluid-contained` (every body of
-  fluid is saturated and walled — `DW0738`). Measurements: fill, distinct
-  states, standable cells, footprint area/perimeter, silhouette complexity,
-  per-block shares, stairs, fluid cells, still (`waterlogged`) cells, run
-  directions leaving the piece, and **reachability** (§4d) — how much of the
-  floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no
+  properties — `DW0735`, §4b), `states-complete` (every placed state writes
+  EVERY property the block has — `DW0737`, §4b), `oriented-fills` (an
+  orientation-sensitive state is filled only under the identity frame, a passed
+  `orientation` guard, or the scope's own axis frame — `DW0736`, §4b),
+  `non-empty`, and the opt-in `traversable`, `symmetric` and `reachable-floor`
+  (§4c). Two more are emitted **only over a piece that holds what they judge**:
+  `stair-shape` (every written stair `shape` is the one vanilla derives at that
+  cell — `DW0801`) and `fluid-contained` (every body of fluid is saturated and
+  walled — `DW0800`). Measurements: fill, distinct states, standable cells,
+  footprint area/perimeter, silhouette complexity, per-block shares, local-frame
+  fills, stairs, fluid cells, still (`waterlogged`) cells, run directions leaving
+  the piece, and **reachability** (§4d) — how much of the floor a body reaches on
+  foot and where the rest of it sits. A zero binding count, and a program declaring no
   anchors, are reported
   as findings rather than folded into a pass.
 
@@ -47,6 +49,14 @@ zone programs are deliberately not in it: a zone is one campaign's composition,
 not general vocabulary. The `idiom-*` programs **are** in it, and are neither
 vocabulary nor content — they are the teaching set of §2c, and they are there
 because `list` / `show` is the only way an author reaches the corpus at all.
+
+Each entry carries **the expansion it is judged at** — region, seed, which
+optional gates it claims, and whether it is a piece of the vocabulary or a
+language example. A program is region-polymorphic, so "which region" is not a
+property of the program; it is a property of the entry, and carrying it there is
+what lets a sweep be driven from the registry instead of from a list somebody
+wrote out. `delve-grammar list` prints it, so an author reaching for a piece gets
+its region from the tool rather than from this page.
 
 ## 1. Model
 
@@ -97,6 +107,7 @@ The ledger is every number the format has and the one surface each names
 | `1.1.0` | the frame's direction — `mirror` on a `reorient` request and on an `orientation` guard | yes |
 | `1.2.0` | the spatial contract — the program-level `contract` block and the scope-bound `claim` node | yes |
 | `1.3.0` | the scope's names as a frame — the `bind` node | yes |
+| `1.4.0` | the state's own frame — a `local` paint, on a palette role or inline on a `fill` | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -243,6 +254,52 @@ positive integers and a zero is refused. **A mix moves no geometry** — the sam
 cells are visited whatever the weights say — so a restyle can never change what
 a gate walked, and a sweep over seeds is a sweep over texture alone.
 
+**A paint names the axes its properties are written in.** `north`, `east`,
+`axis=x` and a 16-step `rotation` all name a direction, and a direction is only
+meaningful against a frame. Written bare, a state is in the **world** frame:
+`north` is the world's `−Z` however the scope was framed. Wrapped in `local`,
+it is in the **scope's own** frame and is resolved into the world's at fill
+time:
+
+```json
+"palette": {
+  "grille": { "local": "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]" },
+  "rubble": { "local": [ { "weight": 3, "block": "minecraft:oak_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]" } ] }
+}
+```
+
+Both forms take either shape — one state or a weighted list — and both are legal
+inline on a `fill`, because the frame belongs to the state and every consumer of
+a state gets it: a palette role, an inline material, and a role a `bind` pushes
+down a call. `"grille"` above says *the bars run along my local X*: expanded into
+a box whose local X is the world X it writes `east`/`west`, into a box turned
+90° it writes `north`/`south`, and into a box whose local X runs *backwards* it
+writes the mirror of the first — all from the one binding. That is what lets an
+orientation-dependent block be a palette **role**, so a campaign restyles it
+without knowing which way the piece was laid; a `--role` override is a restyle
+and keeps the frame of the binding it replaces.
+
+**Both halves of the scope's frame are read.** A frame is a signed permutation:
+which world axis each local axis names, and whether it runs backwards along it.
+A reflection is the sign, so `east` under a reflected local X is the world's
+`west` — and a resolver that read the permutation alone would answer "the
+identity moves nothing" for every mirrored body and write the state's mirror
+image in silence.
+
+The resolution is exact or it refuses (`DW0738`, §4b). A direction (by key or by
+value), an `axis` and a `<dir>_<dir>` pair have exact images under every frame.
+A 16-step `rotation` and a handedness (`hinge`, a stair's corner `shape`) do not:
+they are stated against a fixed vertical *and* a fixed handedness, so they are
+determined only under a **pure turn about the vertical** — the identity, or the
+horizontal transposition `x↔z`, which is itself a reflection of the horizontal
+plane and sends a yaw `r` to `(12 − r) mod 16` and left to right. Reflect any
+axis, or move the vertical, and they are refused rather than guessed. A
+`top`/`bottom` half needs the vertical kept and running forward. A value that
+names no handedness (`straight`, `single`) and a `double` slab are their own
+image under every frame and are never refused.
+
+`local` is fenced at document version **1.4.0** (§2e).
+
 ### Six things the surface above does not say
 
 1. **`rounding` other than `truncate` is legal on a split with exactly one
@@ -263,20 +320,21 @@ a gate walked, and a sweep over seeds is a sweep over texture alone.
    `skip` all write nothing in it without complaint. What does refuse is
    anything needing a cell of it: an absolute split inside it overflows, and a
    `mark` on it is `MarkOutsideScope`.
-4. **A role bound to a world-cardinal block state does not turn when `largest`
-   turns the scope, and does not reflect under `mirror` either.** A `fill` writes
-   the state it was given verbatim; nothing rotates or reflects a `facing=`
+4. **A role bound to a WORLD-frame block state does not turn when `largest`
+   turns the scope, and does not reflect under `mirror` either.** A `fill`
+   writes a world-frame state verbatim; nothing rotates or reflects a `facing=`
    property to follow the frame. So a rule whose frame opens with `z(largest)` —
    every §5b rule does — lays its stairs, doors and voussoirs the same way round
-   whatever box it is handed. `oriented-fills` (§4b) is the gate that reads it,
-   and it reads both halves of the frame: the piece is refused, not shipped
-   facing the wrong way. The construct that answers it is the `orientation`
-   guard: one
-   alternative per frame, each naming the state that frame wants, which is how
-   `church` picks its four roof stair facings. Because the guard matches the
-   reflection too, the two sides of a mirror pair are separable — an alternative
-   guarded on the unreflected frame does not fire in the reflected scope, which
-   falls to `otherwise`.
+   whatever box it is handed, and `oriented-fills` (§4b) is the gate that reads
+   it, both halves of the frame included: the piece is refused, not shipped
+   facing the wrong way. Two constructs answer it. Write the state in the
+   scope's own frame (`{"local": …}`) and one binding turns *and* reflects with
+   the piece — which is how `far_side_bar`'s bar stays a role. Or pin the frame
+   with an `orientation` guard and write one alternative per frame, which is
+   what a rule needs when the whole BODY differs by frame rather than just the
+   state. Because the guard matches the reflection too, the two sides of a
+   mirror pair are separable: an alternative guarded on the unreflected frame
+   does not fire in the reflected scope, which falls to `otherwise`.
 
 5. **An `absolute` size takes an expression, so anything derivable from the
    scope's own extents needs no argument at all.** `max(1, X / run)` steps a
@@ -681,8 +739,9 @@ filled by `shoulders`, the second rule of the recursion — so a glazed head nee
 a copy of `shoulders`, which needs a copy of `head` to call it, twice over for
 the two axes. Nothing keeps four copies in step and no gate reads the
 difference: `tests/arguments.rs` builds the eight-rule program, edits one copy's
-taper, and all four always-on gates — `blocks-exist`, `shape-complete`,
-`oriented-fills`, `non-empty` — plus the coverage report and the determinism
+taper, and all five always-on gates — `blocks-exist`, `shape-complete`,
+`states-complete`, `oriented-fills`, `non-empty` — plus the coverage report and
+the determinism
 gate are green over a building that now carries two different arches. The
 same file proves the collapse is exact — the four-copy program and
 `idiom-arguments` are byte-identical at four seeds, anchors included.
@@ -1039,10 +1098,13 @@ curtain — the entire point of that rule — had been 14 cells of air.
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
 
-Two more members of the same spelling rule ride the same sites, gate and export
-refusal both. Both run before the contract refusal, because a state that omits
-its connections or lands the wrong way round changes what the bytes *mean*, and
-a contract checked against isolated posts answers about a different building.
+Three more members of the same spelling rule ride the same sites. Two are gate
+and export refusal both (`DW0735`, `DW0736`) and run before the contract
+refusal, because a state that omits its connections or lands the wrong way round
+changes what the bytes *mean*, and a contract checked against isolated posts
+answers about a different building; the third (`DW0737`) is a gate only. A
+fourth (`DW0738`) is neither — it refuses during expansion, before there is a
+model to judge at all.
 
 - **Shape completeness (`DW0735`).** A placed state must write every property
   named by a `multipart` selector in its block's own blockstate definition
@@ -1056,7 +1118,7 @@ a contract checked against isolated posts answers about a different building.
   not on the frame, so a `bind` that rebinds a role to an incomplete state is
   caught exactly as an inline one is.
 - **Oriented fills (`DW0736`).** A frame permutes *and reflects* geometry and
-  never rewrites block-state properties, so a literal
+  never rewrites block-state properties, so a **world-frame** literal
   `facing`/`axis`/connection/`rotation` state inside a turned or mirrored scope
   lands however the scope was framed. **Both halves of the frame count.** A
   reflection is not a permutation — no rotation reproduces one — and it is a
@@ -1064,33 +1126,66 @@ a contract checked against isolated posts answers about a different building.
   south, and a door's `hinge` and a stair's corner `shape` flip, which is what
   nothing rotational does. A reflection of an axis the state does not name is
   harmless and is not reported.
-  The mechanism is `Cond::Orientation` — one alternative per frame, each
-  carrying the matching state — and the expander records every fill that skips
-  it (sensitivity derived from the registry's value vocabulary,
-  `BlockRegistry::oriented_mismatch`, which reads the permutation and the
-  reflection). A passed guard licenses a fill only while the frame it asserted
-  still holds, and the guard names the frame exactly, reflection included, so a
-  guard written for one arm of a mirror pair does not license the other. `bind`
-  and `claim` move neither half of the frame and hand the licence on unchanged.
+  Two mechanisms answer it — the local axis frame (§2), and `Cond::Orientation`,
+  one alternative per frame each carrying the matching state — and the expander
+  records every fill that uses neither (sensitivity derived from the registry's
+  value vocabulary, `BlockRegistry::oriented_mismatch`, which reads the
+  permutation and the reflection). A passed guard licenses a fill only while the
+  frame it asserted still holds, and the guard names the frame exactly,
+  reflection included, so a guard written for one arm of a mirror pair does not
+  license the other. `bind` and `claim` move neither half of the frame: a pushed
+  paint is read in the frame of the scope it lands in, and a claim hands the
+  licence on unchanged.
   First run over the corpus, it found `cliff_path`'s skull yaw literal under the
   recess's own reorientation: the same program at a box longer in world X
-  shipped skulls facing along the path instead of out of the niche. Because a
-  role binds ONE state per name, an orientation-dependent block cannot be a
-  palette role; `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as
-  guarded inline states (an oriented-role surface is a named gap, §7). A
-  `barred` edge's `bar` names a role and so inherits that gap: its state is
-  shape-complete but single, and a program whose bars must turn cannot say so
-  through the contract's bar surface.
+  shipped skulls facing along the path instead of out of the niche. The gate's
+  detail states three numbers — fills examined, fills carrying properties, and
+  how many of those were resolved out of the local frame — so a population that
+  moves to the frame is visible rather than a binding that quietly fell.
   A finding names the frame as `x->X,y->Y,z->-Z`, with a leading `-` on a
   reflected axis, so a mirrored author is not shown a frame that reads as
   identity.
+- **State completeness (`DW0737`).** The whole class `DW0735` is the hard half
+  of. A placed state must write every property its block has, including the
+  ones whose default is benign for the model. Vanilla fills an omitted property
+  from the block's default state, so a partial state is legal and a running
+  server resolves it correctly — and nothing upstream of the server can: the
+  review render, the navigation walk, the diff a reviewer reads and the machine
+  gates each have to guess, and the guesses disagree with each other and with
+  the game. An `oak_stairs[facing=east]` with no `half` and no `shape` is a
+  stair whose geometry no document states, and vanilla recomputes `shape` from
+  the stair's neighbours on every block update. First run over the corpus, this
+  found fourteen authoring sites across nine of the library's programs — the
+  church's four roof stairs and both its door pairs among them — and fifteen in
+  the drowned-bell zone programs. A gate and not an export refusal: unlike
+  `DW0735` the omission costs no geometry in the emitted template, so what it
+  judges is what was AUTHORED.
+- **Unresolvable local frame (`DW0738`).** A state written in the scope's own
+  axis frame whose image the pinned vocabulary does not determine: a yaw or a
+  handedness under anything but a pure turn about the vertical — which is to
+  say under any reflection, or under a frame that moves the vertical — a
+  `top`/`bottom` half under a frame that moves or reverses the vertical, a
+  horizontal connection turned onto a block with no `up` key, a rail's
+  direction-composed `shape`. Refused at expansion, naming the state, the
+  property and the frame. It shares its classifier with `DW0736`, so a state one
+  of them calls wrong is never one the other quietly rewrites — the judge and
+  the rewriter are one transform, read from two ends, and the refusal is what
+  keeps them from ever disagreeing.
 
-`tests/shape_orient.rs` demonstrates both red→green on `broken_grate`'s bars;
-`tests/frames_blockstate.rs` carries the same two gates across the frame
+`tests/shape_orient.rs` demonstrates all four red→green on real pieces —
+`broken_grate`'s bars for the first three, `far_side_bar`'s for the frame, in
+both directions. `tests/frames_blockstate.rs` carries the gates across the frame
 constructs — an unguarded fill inside a mirrored body, a `claim` under a
 reoriented scope, a `bind`-rebound role, and what a refusal's message names
-inside a reframed subtree; `tests/library.rs` and `tests/zones.rs` sweep both
-gates over every library program and every bell zone with summed binding counts.
+inside a reframed subtree — and `tests/frames_local_paint.rs` is the same sweep
+for a LOCAL paint: inside a mirrored body, under a frame that reflects and
+permutes at once, under a pushed argument frame, inside a claimed space, and
+over all forty-eight frames the grammar can build, where every case either
+resolves to a state the pin accepts or refuses with `DW0738`. `tests/library.rs`
+and `tests/zones.rs` sweep the gates over every library program and every bell
+zone with summed binding counts; `delve-grammar audit` (§4e) runs the same sweep
+over a campaign's own zone programs, which is where a zone that has left the
+engine's copy behind is caught.
 
 ## 4c. Opt-in gates — the claims a piece makes
 
@@ -1129,8 +1224,8 @@ each is a claim about a *kind* of piece rather than about every piece.
 `symmetric` is what reads a defect no other gate can. A shape with a mirror plane
 is built by expanding one rule at both sites; if one site is instead a hand-kept
 copy, or is missing its reflection, the building has a hole in one flank and
-`blocks-exist`, `shape-complete`, `oriented-fills`, `non-empty` and
-`traversable` are all still green over it — a missing half is a hole, and every
+`blocks-exist`, `shape-complete`, `states-complete`, `oriented-fills`,
+`non-empty` and `traversable` are all still green over it — a missing half is a hole, and every
 state in it is spelled and framed correctly. The
 gate compares the halves and names the first cell pair that disagrees.
 
@@ -1195,6 +1290,125 @@ lower level appears as an `unreachable_sheltered` pocket with its bounding box.
 That pocket is the design, and the engine cannot tell it from a room with no way
 in. The verdict is bounded by the instrument, and this is where it says so.
 
+## 4e. `audit` — the sweep that makes the gates invoked
+
+`expand` judges the one program an operator names. That left the corpus judged
+only when somebody remembered to walk it, and a campaign's zone programs — the
+artifacts of record — had no caller at all: nine machine gates written over one
+zone read 1 of 9 on the unmodified program with five at zero binding, and then
+stopped running, because nothing invoked them.
+
+```sh
+delve-grammar audit --library                       # the rule library
+delve-grammar audit --campaign-root ../content      # every campaign's zones
+```
+
+It enumerates a corpus, expands every member at the expansion that corpus
+declares, runs the same `gates::judge` `expand` runs, prints a binding count per
+gate over the whole sweep, and writes nothing. It reds when any gate fails, when
+any gate examined zero objects, and when the corpus it was pointed at was empty.
+
+**The two corpora are counted apart**, because they have different owners and a
+zero means a different thing in each:
+
+```
+corpus: library N program(s)
+corpus: campaign N program(s) over R root(s)[ — FINDING: zero binding, …]
+```
+
+The rule library is this repo's own (`library::PROGRAMS`), so `--library` over an
+empty one is a defect here and reds. The campaign corpus belongs to the content
+repo, where an in-progress campaign lives on its own development branch until the
+owner has played it, so a root carrying no zone program is a fact about that
+checkout: the run says so as a named finding and stays green. Whether that zero is
+the RIGHT zero is a separate question with a separate answer, §4f. Summing the two
+totals is what let a full library carry an empty campaign root to a green board
+with the word *campaign* nowhere in the output.
+
+A campaign declares its zones in `design/programs/zones.json`, beside the
+programs it governs: per zone an id, the program file, the region, the seed and
+which optional gates the zone claims (`traversable`, `allow_falls`,
+`reachable_floor`, `symmetric`). That file exists because a grammar program is
+region-polymorphic — a program alone cannot be expanded, and while the region
+lived in a design page nothing could check a zone program at all. The mapping is
+a bijection: a programs directory with no manifest is a finding, a program file
+no entry names is a finding, and an entry naming no file is a finding. Without
+those three, "add a zone program" and "add a zone program nothing will ever
+check" are the same action.
+
+A program that is known red is recorded in the pipeline repo's
+`.github/zone-audit-exclusions.json` with the exact diagnostic codes it must fail
+with and the capability gap that keeps it red. The record INVERTS the assertion
+rather than removing it: the program is still expanded and still judged, and it
+is a finding if it passes, if it fails with a different code, or if it fails with
+one more. An entry belongs there only while the engine is missing a capability
+the program needs. Ids are audit labels, so both corpora are recordable:
+`library/<program>` and `<campaign>/<zone>`.
+
+Every zone program of every campaign expands and judges green. The rule library
+holds one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
+ceiling on both flanks of its spine, which is what makes the flanks unwalkable,
+and lowering the waterline needs `nav` to know that a body cannot stand on water
+— until it does, a lowered waterline would read as walkable floor and the ward's
+own claim would go green while being false.
+
+The sweep also totals the **local-frame binding count** — how many fills read
+their states in the scope's own axes — beside the gate whose population they
+come out of, so a green `oriented-fills` that got greener by writing fewer
+world literals says so in numbers rather than by silence.
+
+## 4f. The pinned campaign corpus, enumerated
+
+`.github/content-zone-corpus.json` names the campaigns the pinned content repo
+carries and how many zone programs each declares.
+`crates/grammar/tests/campaign_zones.rs` checks every number in it against the
+content checkout, inside `cargo test`.
+
+It exists because the campaign corpus is not this repo's to produce. An
+in-progress campaign lives on its own content-repo development branch and reaches
+content `main` only after the owner has played it, and CI checks the content out
+at `versions.toml` `[content].sha`. So the pinned tree can legitimately carry no
+zone program at all. "The sweep found nothing, so it passes" would then be an
+opt-out the defect itself supplies: deleting every zone program of every campaign
+produces exactly that state. Enumeration is the different demand — a campaign that
+loses its programs reds on a count, and a pin that genuinely carries none passes
+with its inventory printed.
+
+| Field | Meaning |
+|---|---|
+| `content_sha` | must equal `versions.toml` `[content].sha` |
+| `on_pin[]` | `campaign`, `zone_programs`, `note` — a campaign the pin carries |
+| `off_pin[]` | `campaign`, `zone_programs`, `branch`, `note` — a campaign known to own zone programs somewhere this repo cannot see |
+
+Five assertions, and the last two are what keep the enumeration from becoming a
+choice the author makes:
+
+1. `content_sha` equals the pin. This is what binds the record to the event it
+   guards: a re-pin cannot land without the inventory being restated at the new
+   pin, and a restated inventory is checked against the tree, so writing a number
+   the tree disagrees with is a red rather than a shortcut.
+2. Every `on_pin` count equals the number of program files in
+   `campaigns/<c>/design/programs/` **and** the number of entries in that
+   campaign's `zones.json`.
+3. Every campaign the checkout carries is named. An unnamed one would sweep as
+   zero and say nothing.
+4. Every `on_pin` entry is present in the checkout. A campaign emptied of both
+   `world.json` and `design/` stops being a campaign directory, and this is what
+   notices.
+5. Every `off_pin` entry is **absent** from the checkout. `off_pin` is a queue,
+   not an exemption: an entry that has landed must move across and have its count
+   checked, so a campaign cannot be parked in the queue to avoid the count. Which
+   list an entry belongs to is decided by the tree, never by the author.
+
+Every sweep in that file prints the corpus it examined, its binding count, and the
+pin it was measured at; a zero is printed as a named zero rather than left to
+silence.
+
+This repo can gate only what the pin lets it see. A campaign's zone programs on a
+content development branch are gated there, by the content repo's own
+`zone-audit.yml`, which runs `delve-grammar audit` against a pinned checkout of
+this repo on every push and pull request.
+
 ## 5. Rule library — ported buildings
 
 Ported from `yawgmoth/GDMC25` (BSD-3-Clause; see
@@ -1256,7 +1470,7 @@ over whichever of the four spacings the remaining path has room for).
 
 | | |
 |---|---|
-| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-orientation guarded inline states, `corpse_prop` — its yaw follows the recess's orientation, which one role name cannot carry) |
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-orientation guarded inline states, `corpse_prop` — its yaw follows the recess's frame; a role in the scope's own axes would say the same in one binding, and this piece is one of the corpus's two remaining demonstrations of the `orientation` guard, §7) |
 | Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
 | Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
 | Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
@@ -1498,7 +1712,7 @@ breaks exactly one grate cell, applied to a wall band instead of a floor row.
 
 | | |
 |---|---|
-| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate_broken` (the plain bars are per-orientation guarded inline states, `grate_bars` — their connections follow the row's orientation, which one role name cannot carry) |
+| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate_broken` (the plain bars are per-orientation guarded inline states, `grate_bars` — their connections follow the row's frame; a role in the scope's own axes would say the same in one binding, and this piece is the corpus's red→green demonstration of the guard, §7) |
 | Smallest region | 3 × (`head` + 2) × `MIN_LINE` (3) — the same "three is the shortest row the odd one always has a neighbour in" proof `store_room` makes |
 | Anchors | `anchor/grate-secret` — the broken cell, facing out into the room across the row |
 
@@ -1585,7 +1799,7 @@ left open — not a narrower door, a **barred** one.
 
 | | |
 |---|---|
-| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` (the bars are per-orientation guarded inline states, `bar_cell` — their connections follow the wall's orientation, which one role name cannot carry) |
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` and `bar`, the second written in the scope's own axis frame (`{"local": …}`) so its connections span the wall's local `X` whichever way the piece is laid, reflections included |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
 | Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
@@ -2602,16 +2816,22 @@ a `barred` edge's bar region is the cells a campaign's `shortcut` / `close-gate`
 / `lift` addresses; what is missing is the export half, since a claimed region
 reaches the metadata's `spatial_contract` block and not its `anchors` map.
 
-**An oriented palette role.** A role binds ONE block state per name, so a
-state whose properties depend on the scope's orientation — a bar's
-connections, a skull's yaw, a stair's facing — cannot be a role at all: the
-pieces that carry one (`broken_grate`, `far_side_bar`, `cliff_path`,
-`church`) write per-orientation guarded inline states instead (`DW0736`'s
-mechanism), and each such piece gives up the role's restyle surface to do it.
-The general form is a role that binds a state per orientation, so a campaign
-can restyle the material while the guard machinery keeps choosing the variant.
-Named here so the surface is designed once, at the object (the role), rather
-than re-invented per rule.
+**Three pieces still spell out per-orientation variants they no longer need to.**
+An orientation-dependent block is a palette role as of the local axis frame
+(§2), and `far_side_bar`'s bar is one. `broken_grate`'s bars, `cliff_path`'s
+corpse yaw and `church`'s doors are still written as one guarded alternative
+per orientation, which is the longer way to say the same thing — and `church`
+pays twice over, binding `door_lower`/`alt_door_lower` and
+`door_upper`/`alt_door_upper` where one framed role each would do. Converting
+them is mechanical and byte-neutral (the frame resolves to exactly the states
+the guards select), and the corpus is what an author copies from, so the
+variants that remain teach a workaround for a solved problem. What holds the
+first two back is that the `orientation` guard is a real construct with no
+other demonstration in the corpus: `coverage` counts `cond:orientation` over
+the library alone, and converting every site would take it to zero bindings —
+a live surface nothing shows. The general form wanted is a program that
+demonstrates the guard for what only the guard can do (a rule body that
+differs by orientation, not merely a state), after which the three convert.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the

@@ -328,11 +328,11 @@ mod tests {
         let root_palette = BTreeMap::from([
             (
                 "mass".to_string(),
-                Paint::Block(crate::block::BlockState::simple("stone")),
+                Paint::block(crate::block::BlockState::simple("stone")),
             ),
             (
                 "cut".to_string(),
-                Paint::Block(crate::block::BlockState::air()),
+                Paint::block(crate::block::BlockState::air()),
             ),
         ]);
         let root = Env::root(&root_params, &root_palette);
@@ -340,7 +340,7 @@ mod tests {
         let inner_params = BTreeMap::from([("step".to_string(), 3)]);
         let inner_palette = BTreeMap::from([(
             "cut".to_string(),
-            Paint::Block(crate::block::BlockState::simple("glass")),
+            Paint::block(crate::block::BlockState::simple("glass")),
         )]);
         let inner = Env::child(&root, &inner_params, &inner_palette);
 
@@ -349,18 +349,18 @@ mod tests {
         assert_eq!(inner.param("nope"), None);
         assert_eq!(
             inner.paint("cut"),
-            Some(&Paint::Block(crate::block::BlockState::simple("glass")))
+            Some(&Paint::block(crate::block::BlockState::simple("glass")))
         );
         assert_eq!(
             inner.paint("mass"),
-            Some(&Paint::Block(crate::block::BlockState::simple("stone")))
+            Some(&Paint::block(crate::block::BlockState::simple("stone")))
         );
         // The outer frame is untouched: a binding has the extent of its body and
         // nothing outlives it.
         assert_eq!(root.param("step"), Some(1));
         assert_eq!(
             root.paint("cut"),
-            Some(&Paint::Block(crate::block::BlockState::air()))
+            Some(&Paint::block(crate::block::BlockState::air()))
         );
     }
 

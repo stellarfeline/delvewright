@@ -98,7 +98,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
 #[test]
 fn the_transparency_corpus_covers_every_library_program() {
     let listed: BTreeSet<&str> = CORPUS.iter().map(|(id, _)| *id).collect();
-    let registered: BTreeSet<&str> = library::PROGRAMS.iter().map(|(id, _)| *id).collect();
+    let registered: BTreeSet<&str> = library::PROGRAMS.iter().map(|p| p.id).collect();
     assert_eq!(listed, registered);
     assert_eq!(listed.len(), CORPUS.len(), "the table repeats an id");
 }
@@ -380,7 +380,7 @@ fn the_exported_contract_is_the_one_this_expansion_resolved() {
     // metadata would describe a grille while the bytes hold isolated posts.
     assert_eq!(
         bar.block,
-        "minecraft:iron_bars[east=true,north=false,south=false,west=true]"
+        "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]"
     );
     assert_eq!(bar.boxes.len(), 1);
     assert_eq!(bar.boxes[0].from, [4, 1, 7]);

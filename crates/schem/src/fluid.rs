@@ -47,7 +47,7 @@
 use std::collections::BTreeMap;
 
 /// A body of fluid in a piece is not still, or not where it was authored.
-pub const DW_FLUID_ESCAPES: &str = "DW0738";
+pub const DW_FLUID_ESCAPES: &str = "DW0800";
 
 /// Minecraft's two fluids. Not a hand-kept list that can rot: a third fluid
 /// would be a new game version, which is a pin change (ADR-0009), and the
