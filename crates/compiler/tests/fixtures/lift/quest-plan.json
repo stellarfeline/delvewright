@@ -1,28 +1,30 @@
 {
-  "dsl_version": "0.7.0",
   "campaign_id": "lift",
-  "stage": "quest-plan",
   "content": {
+    "finale": "quest/ride",
     "quests": [
       {
-        "id": "quest/board",
-        "goal": "Find the hoist and learn how it is called.",
+        "act": 1,
         "area": "area/keep",
-        "npcs": [],
         "depends_on": [],
+        "goal": "Find the hoist and learn how it is called.",
+        "id": "quest/board",
         "mandatory": true,
-        "act": 1
+        "npcs": []
       },
       {
-        "id": "quest/ride",
-        "goal": "Ride the cage and come back to the landing you started from.",
+        "act": 1,
         "area": "area/keep",
-        "npcs": [],
-        "depends_on": [ "quest/board" ],
+        "depends_on": [
+          "quest/board"
+        ],
+        "goal": "Ride the cage and come back to the landing you started from.",
+        "id": "quest/ride",
         "mandatory": true,
-        "act": 1
+        "npcs": []
       }
-    ],
-    "finale": "quest/ride"
-  }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quest-plan"
 }

@@ -21,13 +21,55 @@
 #
 # The other sanctioned 25565 binding is `tools/playtest-server.sh` (a throwaway
 # `docker run`, owner-facing, and it takes the same mutex). Nothing else, ever.
+#
+# ## The staging gate rides on THIS file, deliberately
+#
+# Publishing 25565 is exactly the act of putting a build in front of the owner,
+# and this is the only file that does it — so this is where "no build reaches
+# her while a past finding has no live, binding check on it" becomes structural
+# instead of remembered (playtest-methodology.md rule 7).
+#
+# `staging-admission` runs `validation/staging-admission.sh` over the build tree
+# and exits non-zero unless it carries a valid token minted by
+# `tools/staging-gate.py` for THAT EXACT tree. Both owner-facing services
+# `depends_on` it with `service_completed_successfully`, so compose refuses to
+# start them at all when it fails. The gate itself is a host-side step (it needs
+# the campaign SOURCE, which the build tree does not carry, and Python, which
+# the delve image must never gain — ADR-0003):
+#
+#   python3 tools/staging-gate.py --campaign <campaign-dir> --build validation/delve-output
+#   EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
+#       --profile play up
+#
+# The verifier reuses `delvewright/delve:local` — already built by both services
+# from the same context — so this adds no image, no pull and no new dependency;
+# only bash and coreutils are used. The worker ladders (`--profile validate`,
+# plain `compose.yaml`) never name this file and are completely unaffected.
 services:
+  staging-admission:
+    profiles: ["play", "playtest"]
+    build:
+      context: ./delve-output
+      dockerfile: ../Dockerfile.delve
+    image: delvewright/delve:local
+    entrypoint: ["/bin/bash", "/verify/staging-admission.sh", "/delve-output"]
+    command: []
+    volumes:
+      - ./staging-admission.sh:/verify/staging-admission.sh:ro
+      - ./delve-output:/delve-output:ro
+    restart: "no"
   server:
     container_name: delvewright-server
+    depends_on:
+      staging-admission:
+        condition: service_completed_successfully
     ports:
       # 127.0.0.1 only — never world-reachable.
       - "127.0.0.1:25565:25565"
   playtest:
     container_name: delvewright-playtest
+    depends_on:
+      staging-admission:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:25565:25565"

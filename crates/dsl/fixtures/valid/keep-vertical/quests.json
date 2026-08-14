@@ -1,122 +1,122 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "keep-vertical",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/greet",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "talk-to",
             "id": "obj/talk",
-            "npc": "npc/keeper"
+            "npc": "npc/keeper",
+            "type": "talk-to"
           }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/talk": [
             {
-              "type": "open-gate",
-              "anchor": "anchor/gate"
+              "anchor": "anchor/gate",
+              "type": "open-gate"
             },
             {
               "type": "spawn-wave",
               "wave": "wave/guards"
             },
             {
-              "type": "set-flag",
-              "flag": "flag/summoned"
+              "flag": "flag/summoned",
+              "type": "set-flag"
             }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/trial",
-        "trigger": {
-          "type": "quest-complete",
-          "quest": "quest/greet"
-        },
         "objectives": [
           {
-            "type": "kill",
             "id": "obj/slay",
-            "wave": "wave/guards",
             "requires_flags": [
               "flag/summoned"
-            ]
+            ],
+            "type": "kill",
+            "wave": "wave/guards"
           },
           {
-            "type": "collect",
-            "id": "obj/key",
-            "item": "minecraft:tripwire_hook",
-            "count": 1,
-            "anchor": "anchor/chest",
             "after": [
               "obj/slay"
             ],
+            "anchor": "anchor/chest",
+            "count": 1,
+            "id": "obj/key",
+            "item": "minecraft:tripwire_hook",
             "requires_flags": [
               "flag/cleared"
-            ]
+            ],
+            "type": "collect"
           },
           {
-            "type": "interact",
-            "id": "obj/door",
-            "anchor": "anchor/door",
-            "requires_item": "minecraft:tripwire_hook",
             "after": [
               "obj/key"
-            ]
+            ],
+            "anchor": "anchor/door",
+            "id": "obj/door",
+            "requires_item": "minecraft:tripwire_hook",
+            "type": "interact"
           },
           {
-            "type": "reach-anchor",
-            "id": "obj/shrine",
-            "anchor": "anchor/objective",
-            "radius": 2,
             "after": [
               "obj/door"
             ],
+            "anchor": "anchor/objective",
+            "id": "obj/shrine",
+            "radius": 2,
             "requires_flags": [
               "flag/opened"
-            ]
+            ],
+            "type": "reach-anchor"
           }
         ],
-        "on_objective_complete": {
-          "obj/slay": [
-            {
-              "type": "set-flag",
-              "flag": "flag/cleared"
-            }
-          ],
-          "obj/door": [
-            {
-              "type": "set-flag",
-              "flag": "flag/opened"
-            }
-          ]
-        },
         "on_complete": [
           {
             "type": "campaign-complete"
           }
-        ]
+        ],
+        "on_objective_complete": {
+          "obj/door": [
+            {
+              "flag": "flag/opened",
+              "type": "set-flag"
+            }
+          ],
+          "obj/slay": [
+            {
+              "flag": "flag/cleared",
+              "type": "set-flag"
+            }
+          ]
+        },
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
       }
     ],
     "waves": [
       {
-        "id": "wave/guards",
         "anchor": "anchor/wave",
+        "id": "wave/guards",
         "mobs": [
           {
-            "entity": "minecraft:zombie",
             "count": 2,
+            "entity": "minecraft:zombie",
             "name": "Keep Guard"
           }
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.3.0",
+  "stage": "quests"
 }

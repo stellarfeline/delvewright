@@ -681,7 +681,7 @@ pub fn transparent(cell: &Cell) -> bool {
                 | "minecraft:soul_lantern"
                 | "minecraft:torch"
                 | "minecraft:wall_torch"
-                | "minecraft:chain"
+                | "minecraft:iron_chain"
                 | "minecraft:iron_bars"
                 | "minecraft:oak_fence"
                 | "minecraft:stone_brick_wall"

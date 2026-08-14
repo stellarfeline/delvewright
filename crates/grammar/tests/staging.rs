@@ -1462,7 +1462,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_tread() {
     restyled
         .set_role(
             "smooth",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, STAIR_PALETTE_REGION, STAIR_SEED);
@@ -1532,7 +1532,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
             (region.origin[0]..region.maximum()[0]).any(|x| {
                 out.model
                     .get([x, y, narrate[2]])
-                    .is_some_and(|b| b.name == "minecraft:chain")
+                    .is_some_and(|b| b.name == "minecraft:iron_chain")
             })
         })
         .expect("the doorband has a curtain band somewhere above the floor");
@@ -1540,7 +1540,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
         .filter(|&x| {
             out.model
                 .get([x, y, narrate[2]])
-                .is_some_and(|b| b.name == "minecraft:chain")
+                .is_some_and(|b| b.name == "minecraft:iron_chain")
         })
         .count()
 }
@@ -1747,7 +1747,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_grate_row() {
     restyled
         .set_role(
             "grate_broken",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, GRATE_PALETTE_REGION, 1);
@@ -3258,7 +3258,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
             restyled
                 .set_role(
                     role,
-                    delvewright_grammar::ir::Paint::Block(BlockState::simple(
+                    delvewright_grammar::ir::Paint::block(BlockState::simple(
                         SWATCH[i % SWATCH.len()],
                     )),
                 )

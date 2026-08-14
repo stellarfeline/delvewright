@@ -33,7 +33,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvec --bin delvec -- \
+          cargo run --locked -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
       # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
@@ -203,7 +203,7 @@ jobs:
           cache-dependency-path: harness/package-lock.json
       - name: build the two-branch fixture
         run: |
-          cargo run -p delvec --bin delvec -- \
+          cargo run --locked -p delvec --bin delvec -- \
             build crates/compiler/tests/fixtures/branch-two-endings \
             -o validation/delve-output --prefabs campaigns/prefabs
       - name: every enumerated branch is walked to its own ending
@@ -226,9 +226,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvec --bin delvec -- \
+          cargo run --locked -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
+
+      # A published delve image is the strongest form of staging a build for the
+      # owner: she runs it on the Pi and plays it (CLAUDE.md Environments). So
+      # the same gate that guards the two local 25565 binders guards the push —
+      # every past finding's general form must be a live, binding check on THIS
+      # tree (playtest-methodology.md rule 7). Deliberately BEFORE the GHCR
+      # login: a refusal must cost nothing and publish nothing.
+      #
+      # This is a tier-3 job on `rc-*` tags and manual dispatch only, so it never
+      # reds an ordinary PR — the gate is not a status check anywhere, by design.
+      # To publish over a red list, run the gate locally with
+      # `--stage-anyway "<reason>" --acknowledge-red <N>`, commit the resulting
+      # admission token, and say so in the release notes.
+      - name: staging gate — no unadmitted delve is published
+        run: |
+          python3 tools/staging-gate.py \
+            --campaign crates/dsl/fixtures/valid/hello-world \
+            --build validation/delve-output \
+            --report validation/delve-output/staging-gate.md
 
       - name: derive image tags
         id: meta

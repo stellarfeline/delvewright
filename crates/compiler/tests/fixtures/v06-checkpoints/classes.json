@@ -1,23 +1,44 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "v06-checkpoints",
-  "stage": "classes",
   "content": {
     "classes": [
       {
-        "id": "class/warden",
-        "name": "Warden",
         "blurb": "Iron sword and mail — made for the front rank.",
+        "id": "class/warden",
         "kit": [
-          { "item": "minecraft:iron_sword", "count": 1 },
-          { "item": "minecraft:iron_helmet", "count": 1 },
-          { "item": "minecraft:iron_chestplate", "count": 1 },
-          { "item": "minecraft:iron_leggings", "count": 1 },
-          { "item": "minecraft:iron_boots", "count": 1 },
-          { "item": "minecraft:cooked_beef", "count": 8 },
-          { "item": "minecraft:torch", "count": 8 }
-        ]
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_helmet"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_chestplate"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_leggings"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_boots"
+          },
+          {
+            "count": 8,
+            "item": "minecraft:cooked_beef"
+          },
+          {
+            "count": 8,
+            "item": "minecraft:torch"
+          }
+        ],
+        "name": "Warden"
       }
     ]
-  }
+  },
+  "dsl_version": "0.4.0",
+  "stage": "classes"
 }

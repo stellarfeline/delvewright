@@ -1,18 +1,9 @@
 {
   "description": "world content has an unknown field",
-  "expect": "DW0100",
-  "schema_reject": true,
   "documents": {
     "world": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "world",
       "content": {
-        "title": "The Keeper's Door",
-        "theme": "A lonely keep at the edge of the moor.",
-        "premise": "One locked door stands between you and the road home.",
-        "seed": 20260729,
-        "target_minutes": 5,
         "areas": [
           {
             "id": "area/keep",
@@ -20,8 +11,17 @@
             "prefab": "prefab/hello-room"
           }
         ],
-        "bogus": true
-      }
+        "bogus": true,
+        "premise": "One locked door stands between you and the road home.",
+        "seed": 20260729,
+        "target_minutes": 5,
+        "theme": "A lonely keep at the edge of the moor.",
+        "title": "The Keeper's Door"
+      },
+      "dsl_version": "0.2.0",
+      "stage": "world"
     }
-  }
+  },
+  "expect": "DW0100",
+  "schema_reject": true
 }

@@ -1,0 +1,8 @@
+{
+  "campaign_id": "region-offset",
+  "content": {
+    "dialogues": []
+  },
+  "dsl_version": "0.10.0",
+  "stage": "dialogue"
+}

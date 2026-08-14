@@ -95,8 +95,12 @@ fn socket_and_lighting_write_metadata() {
     let meta = PrefabMeta::beside_nbt(&nbt).unwrap().unwrap();
     assert_eq!(meta.connectors.len(), 1);
     assert!(meta.anchors.contains_key("anchor/npc-stand"));
-    assert_eq!(meta.lighting.profile, "lit");
-    assert!(meta.lighting.method.contains("static"));
+    let lighting = meta.lighting.expect("--write records the probe");
+    assert_eq!(
+        lighting.profile,
+        delvewright_admit::meta::LightingProfile::Lit
+    );
+    assert!(lighting.method.as_deref().unwrap().contains("static"));
 
     std::fs::remove_dir_all(&dir).ok();
 }

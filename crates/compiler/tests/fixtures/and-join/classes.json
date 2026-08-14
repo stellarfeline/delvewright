@@ -1,19 +1,30 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "and-join",
-  "stage": "classes",
   "content": {
     "classes": [
       {
-        "id": "class/warden",
-        "name": "Warden",
         "blurb": "Steady hands for a steady ward.",
+        "id": "class/warden",
         "kit": [
-          { "item": "minecraft:iron_sword", "count": 1 },
-          { "item": "minecraft:bread", "count": 3 },
-          { "item": "minecraft:lantern", "count": 1, "name": "The Pair-Lantern", "carrier": "one" }
-        ]
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword"
+          },
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          },
+          {
+            "carrier": "one",
+            "count": 1,
+            "item": "minecraft:lantern",
+            "name": "The Pair-Lantern"
+          }
+        ],
+        "name": "Warden"
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "classes"
 }

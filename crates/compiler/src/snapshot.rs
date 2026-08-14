@@ -281,7 +281,7 @@ fn exact_color(id: &str) -> Option<[u8; 3]> {
         "cartography_table" => [124, 100, 72],
         "decorated_pot" => [178, 110, 84],
         "ladder" => [150, 120, 72],
-        "chain" => [70, 74, 84],
+        "chain" | "iron_chain" => [70, 74, 84],
         "iron_bars" => [150, 152, 156],
         "glass_pane" => [180, 215, 225],
         "white_glazed_terracotta" => [222, 226, 226],

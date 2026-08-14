@@ -1,47 +1,47 @@
 {
   "description": "a stage-6 dialogue tree references an npc not declared in stage 2",
-  "expect": "DW0153",
   "documents": {
     "dialogue": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "dialogue",
       "content": {
         "dialogues": [
           {
-            "npc": "npc/keeper",
-            "root": "dlg/greeting",
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler.",
                 "options": [
                   {
-                    "label": "Open the door, please.",
                     "effects": [
                       {
-                        "type": "complete-objective",
-                        "objective": "obj/talk"
+                        "objective": "obj/talk",
+                        "type": "complete-objective"
                       }
-                    ]
+                    ],
+                    "label": "Open the door, please."
                   }
-                ]
+                ],
+                "text": "Halt, traveler."
               }
-            ]
+            ],
+            "npc": "npc/keeper",
+            "root": "dlg/greeting"
           },
           {
-            "npc": "npc/ghost",
-            "root": "dlg/haunt",
             "nodes": [
               {
                 "id": "dlg/haunt",
-                "text": "Wooo.",
-                "options": []
+                "options": [],
+                "text": "Wooo."
               }
-            ]
+            ],
+            "npc": "npc/ghost",
+            "root": "dlg/haunt"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "dialogue"
     }
-  }
+  },
+  "expect": "DW0153"
 }

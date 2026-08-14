@@ -11,12 +11,26 @@ use delvewright_dsl::{
 use serde::Deserialize;
 
 /// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
-/// failed to read or parse as prefab metadata. Silently skipping it made an
-/// older `delvec` meeting newer metadata surface only as a baffling downstream
-/// `DW0300` "prefab not found"; the parse failure itself is the information.
-/// Reported at **validation tier (exit 1)**; loading continues for the other
-/// files (report-all, not fail-fast).
+/// failed to read or parse. Silently skipping it made a bad file surface only as
+/// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
+/// the information. Reported at **validation tier (exit 1)**; loading continues
+/// for the other files (report-all, not fail-fast).
+///
+/// A key this delvec does not model is deliberately **not** one of these: it is
+/// kept and reported as [`DW_PREFAB_META_UNKNOWN_KEY`].
 pub const DW_PREFAB_META_INVALID: DwCode = DwCode::every_version("DW0346");
+
+/// `DW0543`: a prefab metadata file carries a key this delvec does not model.
+///
+/// A **warning**, and the severity is the decision. Refusing the document was
+/// the previous behaviour and it was wrong in exactly one direction: a consumer
+/// that is not a document's owner meets new keys as a matter of course — the
+/// content library and the engine version independently — and every forward
+/// addition became a hard failure at the layer with the least context. Ignoring
+/// the key is wrong in the other direction, because the same observation is also
+/// what a misspelled key looks like. So the piece loads, the key survives a
+/// rewrite ([`delvewright_dsl::prefab`]), and the reader says what it saw.
+pub const DW_PREFAB_META_UNKNOWN_KEY: DwCode = DwCode::every_version("DW0543");
 
 /// The complete 1.21.11 item registry (1505 ids) plus each item's
 /// `minecraft:max_stack_size`, vendored under `data/`.
@@ -291,63 +305,27 @@ impl DamageTypeRegistry {
 // Prefab metadata (`prefabs/<name>.json`)
 // ---------------------------------------------------------------------------
 
-/// A prefab's `.json` metadata: structure reference + declared anchors + license.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PrefabMeta {
-    /// The DSL prefab id (`prefab/<name>`).
-    pub prefab_id: String,
-    /// The structure-template reference.
-    pub structure: StructureMeta,
-    /// Named anchors, keyed by DSL anchor name (`spawn`, `anchor/…`).
-    pub anchors: BTreeMap<String, AnchorMeta>,
-    /// The local y of this piece's **top authored water block** — its waterline —
-    /// for open-air island pieces built to the `prefabs/island-tileset.md`
-    /// convention (waterline local y=2, walk plane local y=3). Consumed by the
-    /// ocean-horizon placement invariant (`DW0344`, `plan::check_ocean_waterline`):
-    /// in a `horizon: ocean` world the declared waterline must land at world sea
-    /// level. Absent for pieces that author no sea (interiors, keep/cave tilesets),
-    /// which are then not checked.
-    #[serde(default)]
-    pub waterline_y: Option<i32>,
-    /// keep-socket-v1 connectors (jigsaw sockets). Empty for single-piece prefabs
-    /// (e.g. `hello-room`); the layout solver (`crate::solver`) mates these when
-    /// assembling a `prefab_pool` area (M2 task #9). Optional so single-piece
-    /// metadata without them still loads.
-    #[serde(default)]
-    pub connectors: Vec<Connector>,
-    /// Declared lighting profile (spec-0001 "Lighting contract"). Typed as the
-    /// DSL [`Lighting`] block; consumed by the `dark`-needs-mitigation analysis
-    /// (`DW0210`, `analyze`). Optional so legacy metadata without it still loads.
-    #[serde(default)]
-    pub lighting: Option<Lighting>,
-    /// License/provenance (opaque here; validated by review + `LICENSE-ASSETS.md`).
-    #[serde(default)]
-    pub license: serde_json::Value,
-}
-
-/// One keep-socket-v1 connector (a jigsaw doorway) declared by a prefab. See
-/// `prefabs/keep-tileset.md` "Connection convention". `local_pos` is the socket's
-/// wall cell (bottom-centre of the 3×3 opening) in the prefab's local coordinates;
-/// `facing` is the cardinal direction the opening faces outward. The solver mates
-/// two sockets by placing the child so its socket sits one block beyond the
-/// parent socket, facing the opposite way (see `crate::solver`).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Connector {
-    /// Jigsaw `name` (uniform `keep:socket` in keep-socket-v1).
-    pub name: String,
-    /// Jigsaw `target` (uniform `keep:socket`).
-    pub target: String,
-    /// The socket's wall cell, local coords `[x, y, z]`.
-    pub local_pos: [i32; 3],
-    /// Cardinal direction the opening faces (`north`/`south`/`east`/`west`).
-    pub facing: String,
-    /// Opening extent `[width, height]` (3×3 in keep-socket-v1).
-    pub opening: [i32; 2],
-    /// Jigsaw joint (`aligned` in keep-socket-v1).
-    pub joint: String,
-}
+/// The prefab metadata document, defined once in [`delvewright_dsl::prefab`] and
+/// re-exported here under the names this crate has always called it by.
+///
+/// **This crate does not define the shape and must not.** It used to: a private
+/// `PrefabMeta` with `deny_unknown_fields`, which meant that the first
+/// grammar-exported prefab carrying a key this engine predated would have failed
+/// every campaign build — not one piece, and not a degraded render. The
+/// duplication was the defect; adding the missing field names to the copy each
+/// time is what made it look like a fixed one.
+///
+/// The compiler consumes a narrow part of the document (anchors, sockets, the
+/// lighting profile, the declared waterline, the face contract). A narrow VIEW
+/// is not a reason to re-declare the fields — it is a reason for the accessors
+/// below to read only what they read.
+pub use delvewright_dsl::prefab::{
+    Anchor as AnchorMeta, Connector, PrefabMeta, Region, SpatialContract as SpatialContractMeta,
+    StructureMeta,
+};
+/// A face of the piece's face contract, and its opening. The opening is an
+/// ordinary [`Region`]; assembly reads it as one.
+pub use delvewright_dsl::prefab::{ContractFace as ContractFaceMeta, Region as FaceOpening};
 
 /// One member of a prefab pool: a prefab id, a weight, and a layout role. Roles
 /// (`entry`, `connector`, `room`, `terminal`) steer the solver — `entry` seeds
@@ -381,68 +359,6 @@ struct PoolsFile {
 #[serde(deny_unknown_fields)]
 struct PoolDef {
     members: Vec<PoolMember>,
-}
-
-/// The structure-template reference of a prefab.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StructureMeta {
-    /// The `.nbt` filename, relative to the prefab metadata file.
-    pub file: String,
-    /// The datapack structure id (path segment, e.g. `hello-room`).
-    pub id: String,
-    /// Structure extent `[x, y, z]`.
-    pub size: [i32; 3],
-    /// The MC data version the structure targets.
-    pub data_version: i32,
-    /// How the `.nbt` was generated (provenance breadcrumb).
-    #[serde(default)]
-    pub generator: Option<String>,
-}
-
-/// One anchor: either a point (`pos`, optional `facing`) or a gate (`region` of
-/// `block`). Field presence distinguishes the two.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AnchorMeta {
-    /// Local point position (offset from the structure origin).
-    #[serde(default)]
-    pub pos: Option<[i32; 3]>,
-    /// Facing keyword (`north`/`south`/`east`/`west`) for point anchors.
-    #[serde(default)]
-    pub facing: Option<String>,
-    /// Local region (two inclusive corners) for gate anchors.
-    #[serde(default)]
-    pub region: Option<Region>,
-    /// The block filling a gate region (e.g. `minecraft:iron_bars`).
-    #[serde(default)]
-    pub block: Option<String>,
-    /// The pre-wired dispenser socket cell (local coords) for an `anchor/trap`
-    /// marker (DSL v0.6, spec-0011). `pos` is the trap's trigger/hazard cell (the
-    /// plate/tripwire/chest the compiler models as a hazard); `dispenser` is the
-    /// separate cell holding the empty dispenser whose payload the compiler fills.
-    /// Absent for every non-trap anchor (byte-identical for existing metadata).
-    #[serde(default)]
-    pub dispenser: Option<[i32; 3]>,
-    /// The block the prefab wired as this `anchor/trap`'s **trigger** — the plate
-    /// or tripwire sitting on `pos` (DSL v0.6). Declared with its full blockstate
-    /// exactly as authored (`minecraft:oak_pressure_plate[powered=false]`), because
-    /// flag-gating a trap physically removes and restores this block and must put
-    /// back what was there. The gate-anchor `block` above is the same contract for
-    /// `close-gate`. Absent for every non-trap anchor, and only *required* by a
-    /// trap that declares a flag gate (`DW0363`).
-    #[serde(default)]
-    pub trigger_block: Option<String>,
-}
-
-/// An inclusive local block region (two corners).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Region {
-    /// One corner (local coords).
-    pub from: [i32; 3],
-    /// The opposite corner (local coords).
-    pub to: [i32; 3],
 }
 
 /// Loads and caches prefab metadata from a `prefabs/` directory, and answers
@@ -503,9 +419,11 @@ impl PrefabRegistry {
                     "prefabs",
                     file.clone(),
                     format!(
-                        "prefab metadata `{file}` {what} — the library may use a newer metadata \
-                         schema than this delvec understands: upgrade delvec, or fix the field. \
-                         (The file is skipped; every other prefab still loads.)"
+                        "prefab metadata `{file}` {what} — the document is malformed for this \
+                         delvec: a required block is absent, or a value is of the wrong type. \
+                         (A key this delvec has never heard of is NOT this: unknown keys are \
+                         kept and reported as `DW0543`.) The file is skipped; every other \
+                         prefab still loads."
                     ),
                 ));
             };
@@ -528,8 +446,69 @@ impl PrefabRegistry {
                 }
                 continue;
             }
+            // A tile-set manifest is a shape this delvec understands and cannot
+            // yet PLACE, which is a different fact from a schema it has never
+            // heard of — and "upgrade delvec, or fix the field" is advice that
+            // would not have worked. Placing a tile group in world assembly is
+            // queued (chunked export phase 2); until it lands, say so.
+            if serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("structure_set").cloned())
+                .is_some()
+            {
+                load_diagnostics.push(Diagnostic::error(
+                    DW_PREFAB_META_INVALID,
+                    "prefabs",
+                    file.clone(),
+                    format!(
+                        "prefab metadata `{file}` describes a TILE SET (`structure_set`): a zone \
+                         too big for one 48-per-axis structure template, exported as several \
+                         `.nbt` tiles plus this manifest. Placing a tile group during world \
+                         assembly is queued engine work (chunked export phase 2) and this delvec \
+                         cannot do it, so the zone is skipped rather than half-placed. Authoring \
+                         and review already handle it: `delve-render piece` and `delve-admit \
+                         audit` both take this manifest."
+                    ),
+                ));
+                continue;
+            }
             match serde_json::from_str::<PrefabMeta>(&raw) {
                 Ok(meta) => {
+                    // A key this delvec does not model is kept, not refused —
+                    // and not silent either. It is one of exactly two things: a
+                    // library newer than this engine, or a typo, and the reader
+                    // cannot tell them apart. Saying so is the whole of what a
+                    // consumer is entitled to do about it; refusing was the
+                    // defect this diagnostic replaces.
+                    let unknown = meta.unknown_keys();
+                    if !unknown.is_empty() {
+                        let named = unknown
+                            .iter()
+                            .map(|(owner, key)| {
+                                if owner.is_empty() {
+                                    format!("`{key}`")
+                                } else {
+                                    format!("`{key}` (on anchor `{owner}`)")
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        load_diagnostics.push(Diagnostic::warning(
+                            DW_PREFAB_META_UNKNOWN_KEY,
+                            "prefabs",
+                            file.clone(),
+                            format!(
+                                "prefab metadata `{file}` carries {} key(s) this delvec does not \
+                                 model: {named}. The piece loads and the key is preserved on any \
+                                 rewrite, so this is not a failure — but it is one of two things \
+                                 and this delvec cannot tell which: the library is NEWER than \
+                                 this engine (upgrade delvec to consume the key), or the key is \
+                                 a misspelling of one this document does define, in which case \
+                                 whatever it was meant to say is not being said.",
+                                unknown.len()
+                            ),
+                        ));
+                    }
                     let names: BTreeSet<String> = meta.anchors.keys().cloned().collect();
                     anchor_names.insert(meta.prefab_id.clone(), names);
                     by_id.insert(meta.prefab_id.clone(), meta);

@@ -1,21 +1,24 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "and-join",
-  "stage": "world",
   "content": {
-    "title": "The Two Levers",
-    "theme": "A keep whose inner shrine answers only to two hands at once.",
-    "premise": "The shrine door is barred by two wards in two separate rooms. One traveler cannot reach both in time; a pair can.",
-    "seed": 20260802,
-    "target_minutes": 6,
-    "min_players": 2,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Stone Keep",
-        "prefab_pool": "pool/stone-keep",
-        "pieces": { "min": 7, "max": 9 }
+        "pieces": {
+          "max": 9,
+          "min": 7
+        },
+        "prefab_pool": "pool/stone-keep"
       }
-    ]
-  }
+    ],
+    "min_players": 2,
+    "premise": "The shrine door is barred by two wards in two separate rooms. One traveler cannot reach both in time; a pair can.",
+    "seed": 20260802,
+    "target_minutes": 6,
+    "theme": "A keep whose inner shrine answers only to two hands at once.",
+    "title": "The Two Levers"
+  },
+  "dsl_version": "0.6.0",
+  "stage": "world"
 }

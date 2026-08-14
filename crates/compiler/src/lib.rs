@@ -67,6 +67,7 @@ pub mod deathplan;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
+pub mod faces;
 pub mod flow;
 pub mod gates;
 pub mod integrity;

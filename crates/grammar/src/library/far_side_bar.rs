@@ -16,8 +16,8 @@
 //! ```
 //!
 //! `ambush_door` is the closest relative — same wall-across-the-box shape, same
-//! one opening — but there the opening is open. Here it is filled solid with a
-//! `bar` role material: not a narrower door, a **barred** one. Unbarring it
+//! one opening — but there the opening is open. Here it is filled with bars
+//! (`bar_cell`): not a narrower door, a **barred** one. Unbarring it
 //! (the `unbarred` test knob) turns the fill back to air and nothing else
 //! changes, which is what proves the bar — and not some second gap in the
 //! wall — is what was blocking the room.
@@ -60,15 +60,32 @@ use super::{
 /// Parameters: `head` (interior headroom, both rooms), `door_height` (how tall
 /// the barred opening is, at most `head`), `unbarred` — a test knob, off by
 /// default, that swaps the bar for air so the no-route gate can be shown to
-/// fail when it should. Palette roles: `rock` (the shell), `bar` (the fill that
-/// seals the doorway).
+/// fail when it should. Palette roles: `rock` (the shell) and `bar` (what
+/// seals the doorway), the second written in the scope's own axis frame so a
+/// campaign can restyle the bar without knowing which way the piece was turned.
 pub fn far_side_bar() -> Program {
     Program::new("far_side_bar", "threshold")
         .param("head", 3)
         .param("door_height", 2)
         .param("unbarred", 0)
         .role("rock", BlockState::simple("stone_bricks"))
-        .role("bar", BlockState::simple("iron_bars"))
+        // The bars span the opening along the wall's own axis — the local X —
+        // and they say so: `east`/`west` here name the scope's directions, and
+        // the fill resolves them into the world's. One binding, every
+        // orientation, and it is still a role, so `--role bar=…` restyles it.
+        .role_local(
+            "bar",
+            BlockState::with(
+                "iron_bars",
+                [
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("south", "false"),
+                    ("waterlogged", "false"),
+                    ("west", "true"),
+                ],
+            ),
+        )
         // --- frame -----------------------------------------------------------
         .rule(
             "threshold",
@@ -130,10 +147,18 @@ pub fn far_side_bar() -> Program {
         .rule_alts(
             "bar_or_open",
             vec![
-                alt_when(cmp(par("unbarred"), CmpOp::Le, int(0)), fill("bar")),
+                alt_when(cmp(par("unbarred"), CmpOp::Le, int(0)), call("bar_cell")),
                 alt_when(cmp(par("unbarred"), CmpOp::Ge, int(1)), void()),
             ],
         )
+        // The bars that seal the doorway, one rule and one binding. A bare
+        // `iron_bars` role shipped here for as long as this rule existed, and
+        // every doorway it sealed read as a line of isolated posts (`DW0735`);
+        // writing the connections in instead made them land turned wherever
+        // the scope turned (`DW0736`). Both horns come from the same missing
+        // word — which axes the connections are named in — and the role now
+        // says it.
+        .rule("bar_cell", fill("bar"))
 }
 
 /// A plain floor-to-ceiling room, walled at both ends of the width, with

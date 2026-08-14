@@ -1,28 +1,34 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "v04-showcase",
-  "stage": "quest-plan",
   "content": {
+    "finale": "quest/trial",
     "quests": [
       {
-        "id": "quest/greet",
-        "goal": "Take the Keeper's charge and raise the guard.",
+        "act": 1,
         "area": "area/keep",
-        "npcs": ["npc/keeper"],
         "depends_on": [],
+        "goal": "Take the Keeper's charge and raise the guard.",
+        "id": "quest/greet",
         "mandatory": true,
-        "act": 1
+        "npcs": [
+          "npc/keeper"
+        ]
       },
       {
-        "id": "quest/trial",
-        "goal": "Clear the guard, take the key, open the door, reach the shrine.",
+        "act": 2,
         "area": "area/keep",
-        "npcs": ["npc/keeper"],
-        "depends_on": ["quest/greet"],
+        "depends_on": [
+          "quest/greet"
+        ],
+        "goal": "Clear the guard, take the key, open the door, reach the shrine.",
+        "id": "quest/trial",
         "mandatory": true,
-        "act": 2
+        "npcs": [
+          "npc/keeper"
+        ]
       }
-    ],
-    "finale": "quest/trial"
-  }
+    ]
+  },
+  "dsl_version": "0.4.0",
+  "stage": "quest-plan"
 }

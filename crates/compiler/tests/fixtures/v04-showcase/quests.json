@@ -1,97 +1,253 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "v04-showcase",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/greet",
-        "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }
+          {
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/talk": [
-            { "type": "open-gate", "anchor": "anchor/gate" },
-            { "type": "spawn-wave", "wave": "wave/guards" },
-            { "type": "set-flag", "flag": "flag/summoned" },
-            { "type": "narrate", "text": "The guard rises around you.", "style": "subtitle", "sound": "minecraft:entity.wither.spawn" },
-            { "type": "give-item", "item": "minecraft:paper", "count": 1, "name": "Keeper's Writ" }
+            {
+              "anchor": "anchor/gate",
+              "type": "open-gate"
+            },
+            {
+              "type": "spawn-wave",
+              "wave": "wave/guards"
+            },
+            {
+              "flag": "flag/summoned",
+              "type": "set-flag"
+            },
+            {
+              "sound": "minecraft:entity.wither.spawn",
+              "style": "subtitle",
+              "text": "The guard rises around you.",
+              "type": "narrate"
+            },
+            {
+              "count": 1,
+              "item": "minecraft:paper",
+              "name": "Keeper's Writ",
+              "type": "give-item"
+            }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/trial",
-        "trigger": { "type": "quest-complete", "quest": "quest/greet" },
         "objectives": [
-          { "type": "kill", "id": "obj/slay", "title": "Clear the Guard", "hint": "Cut down every guard the moor raised.", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
-          { "type": "collect", "id": "obj/key", "title": "Take the Old Key", "hint": "The key sits in a chest off the hall.", "item": "minecraft:tripwire_hook", "count": 1, "anchor": "anchor/chest", "after": ["obj/slay"], "requires_flags": ["flag/cleared"] },
-          { "type": "interact", "id": "obj/door", "title": "Unbar the Inner Door", "hint": "Pull the lever on the barred door.", "anchor": "anchor/door", "requires_item": "minecraft:tripwire_hook", "prop": { "block": "minecraft:lever" }, "after": ["obj/key"] },
-          { "type": "reach-anchor", "id": "obj/shrine", "title": "Reach the Shrine", "hint": "Slip past the gate to the shrine at the hall's end.", "anchor": "anchor/objective", "radius": 2, "after": ["obj/door"], "requires_flags": ["flag/opened"], "stealth": true }
+          {
+            "hint": "Cut down every guard the moor raised.",
+            "id": "obj/slay",
+            "requires_flags": [
+              "flag/summoned"
+            ],
+            "title": "Clear the Guard",
+            "type": "kill",
+            "wave": "wave/guards"
+          },
+          {
+            "after": [
+              "obj/slay"
+            ],
+            "anchor": "anchor/chest",
+            "count": 1,
+            "hint": "The key sits in a chest off the hall.",
+            "id": "obj/key",
+            "item": "minecraft:tripwire_hook",
+            "requires_flags": [
+              "flag/cleared"
+            ],
+            "title": "Take the Old Key",
+            "type": "collect"
+          },
+          {
+            "after": [
+              "obj/key"
+            ],
+            "anchor": "anchor/door",
+            "hint": "Pull the lever on the barred door.",
+            "id": "obj/door",
+            "prop": {
+              "block": "minecraft:lever"
+            },
+            "requires_item": "minecraft:tripwire_hook",
+            "title": "Unbar the Inner Door",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/door"
+            ],
+            "anchor": "anchor/objective",
+            "hint": "Slip past the gate to the shrine at the hall's end.",
+            "id": "obj/shrine",
+            "radius": 2,
+            "requires_flags": [
+              "flag/opened"
+            ],
+            "stealth": true,
+            "title": "Reach the Shrine",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "style": "title",
+            "text": "The shrine is reached.",
+            "type": "narrate"
+          },
+          {
+            "npc": "npc/keeper",
+            "type": "despawn-npc"
+          },
+          {
+            "type": "campaign-complete"
+          }
         ],
         "on_objective_complete": {
-          "obj/slay": [
-            { "type": "set-flag", "flag": "flag/cleared" },
-            { "type": "set-block", "anchor": "anchor/gate", "block": "minecraft:torch" },
-            { "type": "move-npc", "npc": "npc/keeper", "to_anchor": "anchor/objective" },
-            { "type": "cutscene", "seconds": 2, "path": [ { "anchor": "anchor/objective", "offset": [0, 2, 2] }, { "anchor": "anchor/objective", "offset": [0, 2, 0] } ] }
-          ],
           "obj/door": [
-            { "type": "set-flag", "flag": "flag/opened" },
-            { "type": "spawn-wave", "wave": "wave/ambush" }
+            {
+              "flag": "flag/opened",
+              "type": "set-flag"
+            },
+            {
+              "type": "spawn-wave",
+              "wave": "wave/ambush"
+            }
+          ],
+          "obj/slay": [
+            {
+              "flag": "flag/cleared",
+              "type": "set-flag"
+            },
+            {
+              "anchor": "anchor/gate",
+              "block": "minecraft:torch",
+              "type": "set-block"
+            },
+            {
+              "npc": "npc/keeper",
+              "to_anchor": "anchor/objective",
+              "type": "move-npc"
+            },
+            {
+              "path": [
+                {
+                  "anchor": "anchor/objective",
+                  "offset": [
+                    0,
+                    2,
+                    2
+                  ]
+                },
+                {
+                  "anchor": "anchor/objective",
+                  "offset": [
+                    0,
+                    2,
+                    0
+                  ]
+                }
+              ],
+              "seconds": 2,
+              "type": "cutscene"
+            }
           ]
         },
-        "on_complete": [
-          { "type": "narrate", "text": "The shrine is reached.", "style": "title" },
-          { "type": "despawn-npc", "npc": "npc/keeper" },
-          { "type": "campaign-complete" }
-        ]
-      }
-    ],
-    "waves": [
-      {
-        "id": "wave/guards",
-        "anchor": "anchor/keeper-stand",
-        "mobs": [
-          {
-            "entity": "minecraft:zombie",
-            "count": 2,
-            "name": "Keep Guard",
-            "attributes": { "max_health": 12.0, "movement_speed": 0.2, "attack_damage": 3.0 },
-            "effects": [ { "effect": "minecraft:slowness", "amplifier": 1 } ]
-          }
-        ]
-      },
-      {
-        "id": "wave/ambush",
-        "anchor": "anchor/wave",
-        "mobs": [
-          { "entity": "minecraft:sheep", "count": 2, "name": "Startled Ewe" }
-        ]
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
       }
     ],
     "triggers": [
       {
-        "id": "trigger/shrine-hum",
         "at": "anchor/objective",
-        "on": { "on": "approach", "range": 3 },
-        "requires_flags": ["flag/opened"],
-        "once": true,
         "effects": [
-          { "type": "narrate", "text": "A low hum rises from the shrine.", "style": "chat" }
+          {
+            "style": "chat",
+            "text": "A low hum rises from the shrine.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/shrine-hum",
+        "on": {
+          "on": "approach",
+          "range": 3
+        },
+        "once": true,
+        "requires_flags": [
+          "flag/opened"
         ]
       },
       {
-        "id": "trigger/gate-ward",
         "at": "anchor/gate",
-        "on": { "on": "strike" },
-        "once": true,
         "effects": [
-          { "type": "narrate", "text": "The gate wards flare.", "style": "chat" },
-          { "type": "set-flag", "flag": "flag/struck" }
+          {
+            "style": "chat",
+            "text": "The gate wards flare.",
+            "type": "narrate"
+          },
+          {
+            "flag": "flag/struck",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/gate-ward",
+        "on": {
+          "on": "strike"
+        },
+        "once": true
+      }
+    ],
+    "waves": [
+      {
+        "anchor": "anchor/keeper-stand",
+        "id": "wave/guards",
+        "mobs": [
+          {
+            "attributes": {
+              "attack_damage": 3.0,
+              "max_health": 12.0,
+              "movement_speed": 0.2
+            },
+            "count": 2,
+            "effects": [
+              {
+                "amplifier": 1,
+                "effect": "minecraft:slowness"
+              }
+            ],
+            "entity": "minecraft:zombie",
+            "name": "Keep Guard"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/wave",
+        "id": "wave/ambush",
+        "mobs": [
+          {
+            "count": 2,
+            "entity": "minecraft:sheep",
+            "name": "Startled Ewe"
+          }
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.4.0",
+  "stage": "quests"
 }

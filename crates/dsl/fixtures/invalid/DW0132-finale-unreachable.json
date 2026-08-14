@@ -1,95 +1,95 @@
 {
   "description": "a mandatory quest is not a dependency of the finale",
-  "expect": "DW0132",
   "documents": {
     "quest-plan": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "quest-plan",
       "content": {
+        "finale": "quest/open-the-door",
         "quests": [
           {
-            "id": "quest/open-the-door",
-            "goal": "Get the Keeper to open the door and leave the keep.",
+            "act": 1,
             "area": "area/keep",
+            "depends_on": [],
+            "goal": "Get the Keeper to open the door and leave the keep.",
+            "id": "quest/open-the-door",
+            "mandatory": true,
             "npcs": [
               "npc/keeper"
-            ],
-            "depends_on": [],
-            "mandatory": true,
-            "act": 1
+            ]
           },
           {
-            "id": "quest/side-trip",
-            "goal": "Wander off, unrelated to the finale.",
+            "act": 1,
             "area": "area/keep",
-            "npcs": [],
             "depends_on": [],
+            "goal": "Wander off, unrelated to the finale.",
+            "id": "quest/side-trip",
             "mandatory": true,
-            "act": 1
+            "npcs": []
           }
-        ],
-        "finale": "quest/open-the-door"
-      }
+        ]
+      },
+      "dsl_version": "0.2.0",
+      "stage": "quest-plan"
     },
     "quests": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/open-the-door",
-            "trigger": {
-              "type": "campaign-start"
-            },
             "objectives": [
               {
-                "type": "talk-to",
                 "id": "obj/talk",
-                "npc": "npc/keeper"
+                "npc": "npc/keeper",
+                "type": "talk-to"
               },
               {
-                "type": "reach-anchor",
-                "id": "obj/exit",
-                "anchor": "anchor/exit",
-                "radius": 2,
                 "after": [
                   "obj/talk"
-                ]
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
               }
             ],
             "on_objective_complete": {
               "obj/talk": [
                 {
-                  "type": "open-gate",
-                  "anchor": "anchor/door"
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
                 }
               ]
             },
-            "on_complete": [
-              {
-                "type": "campaign-complete"
-              }
-            ]
+            "trigger": {
+              "type": "campaign-start"
+            }
           },
           {
             "id": "quest/side-trip",
-            "trigger": {
-              "type": "campaign-start"
-            },
             "objectives": [
               {
-                "type": "reach-anchor",
-                "id": "obj/side-exit",
                 "anchor": "anchor/exit",
-                "radius": 2
+                "id": "obj/side-exit",
+                "radius": 2,
+                "type": "reach-anchor"
               }
             ],
-            "on_complete": []
+            "on_complete": [],
+            "trigger": {
+              "type": "campaign-start"
+            }
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0132"
 }

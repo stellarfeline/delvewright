@@ -1,0 +1,58 @@
+{
+  "_": [
+    "THE PINNED CONTENT REPO'S ZONE INVENTORY, enumerated rather than counted.",
+    "",
+    "Two corpora of grammar programs exist and they have different owners. The",
+    "RULE LIBRARY lives in this repo (`library::PROGRAMS`), so its size is a fact",
+    "of this tree and a zero there is a hard red. The CAMPAIGN corpus lives in the",
+    "content repo, and an in-progress campaign lives on its own development branch",
+    "and reaches content `main` only after the owner has played it. So this repo",
+    "can see a campaign's zone programs only once they are on `main` and",
+    "`versions.toml` `[content].sha` has moved to carry them — and until then a",
+    "sweep over the campaign corpus honestly examines nothing.",
+    "",
+    "'Nothing was found, so pass' is an opt-out the defect supplies: deleting every",
+    "zone program of every campaign produces exactly that state. This file is the",
+    "different demand. It NAMES the campaigns the pin carries and how many zone",
+    "programs each is expected to declare, so a campaign that loses its programs",
+    "reds on a count, while a pin that genuinely carries none passes with its",
+    "inventory printed.",
+    "",
+    "WHICH LIST AN ENTRY BELONGS TO IS DECIDED BY THE PINNED TREE, NEVER BY THE",
+    "AUTHOR. `on_pin` entries must be present in the pinned checkout; `off_pin`",
+    "entries must be ABSENT from it. Moving an entry across to dodge a count reds",
+    "immediately, which is what keeps the two lists from being a choice.",
+    "",
+    "`content_sha` must equal `versions.toml` `[content].sha`. That is what binds",
+    "this file to the event it guards: a re-pin cannot land without the inventory",
+    "being restated at the new pin, and a restated inventory is checked against",
+    "the tree, so writing a number the tree disagrees with is a red rather than a",
+    "shortcut.",
+    "",
+    "`off_pin` is a queue, not an exemption. It records what a campaign owes and",
+    "where that obligation is discharged today, so that when the pin moves the",
+    "reviewer has the number to check. Nothing in this repo can verify a content",
+    "branch; the content repo's own `zone-audit.yml` runs the same sweep there."
+  ],
+  "content_sha": "046d1868582c876ca4ec56b135f0fb4927a9fc37",
+  "on_pin": [
+    {
+      "campaign": "hollow-vigil",
+      "zone_programs": 0,
+      "note": "A prefab-and-jigsaw campaign. Its geometry comes from the .nbt library, not from the grammar back end, so it declares no zone program."
+    },
+    {
+      "campaign": "nobodys-cave-island",
+      "zone_programs": 0,
+      "note": "Predates the grammar back end (ADR-0018); its world is authored as prefabs and world edits, so it declares no zone program."
+    }
+  ],
+  "off_pin": [
+    {
+      "campaign": "the-drowned-bell-r2",
+      "zone_programs": 8,
+      "branch": "campaign/bell-r2",
+      "note": "The remake in progress. Its eight zone programs are the artifact of record for its geometry and they are gated on that branch by the content repo's zone-audit workflow. They become this repo's obligation at the re-pin that follows the owner's acceptance, at which point this entry moves to on_pin and its count is checked against the tree."
+    }
+  ]
+}

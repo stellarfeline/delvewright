@@ -51,22 +51,16 @@
 //! several flights stacked, which needs a **switchback**: a second flight
 //! climbing back the way the first came.
 //!
-//! That is *not* the blocker the vocabulary has been recording. The recorded
-//! reason a switchback is unbuildable is that "a grammar orientation is a
-//! permutation without reflection", and that is the right answer to the wrong
-//! question. An orientation cannot mirror a piece — but a **rule body can be
-//! written mirrored**, and for a stair that is one line: this rule peels its
-//! treads off the local `Z`-max end (`[rel, abs]`, recursion first), and the
-//! same rule written `[abs, rel]` peels them off `Z`-min and climbs the other
-//! way. Two lanes side by side in `X`, one of each, joined at the top of the
-//! first, is a dogleg that doubles the rise per unit of length and recurses for
-//! as many flights as `Y` allows.
+//! A switchback is **this rule and its reflection**. It peels its treads off the
+//! local `Z`-max end (`[rel, abs]`, recursion first); under `mirror: {z}` the
+//! same rule peels them off `Z`-min and climbs the other way. Two lanes side by
+//! side in `X`, one of each, joined at the top of the first, is a dogleg that
+//! doubles the rise per unit of length and recurses for as many flights as `Y`
+//! allows.
 //!
 //! Not built here — the round's obligation was an ascending route and its gate,
 //! and a second run shape is a design decision, not a corollary. It is recorded
-//! because "needs a mirroring orientation" is a **false blocker**, and a false
-//! blocker in the file every future round reads is worth more than a missing
-//! feature.
+//! because the construction is available and the shape recurs.
 //!
 //! # The gates
 //!

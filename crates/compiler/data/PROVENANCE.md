@@ -35,9 +35,59 @@ not third-party reconstructions.
 | `data/damage_type/data.min.json` | `0ce7edc377446ecddfd1c3b74b32e2dc3b248edc4035275134fb821e98a6c7ad` |
 | `data/tag/damage_type/data.min.json` | `794ce6343293660b5f32d6a78f7a374623bb785d18dfc5ce3cbdeb3093b0161d` |
 | `data/tag/entity_type/data.min.json` | `5523f45b7ddb178cd9f8bbe998458cc070910a74bc6c551a37b9279f5d73f844` |
+| `data/tag/block/data.min.json` | `ff73a0c7f08cb8276a48daa39c104a34d79f0aebd872b37de9c9dc137d49082f` |
+| `data/recipe/data.min.json` | `811e914cf45fc801146103442811285342327a6bb2f46641a58120a131e31918` |
 | `version.json`              | `be02c05f3cce0e39a4ae855c01b3dda2f572078d575f4b6b2fd824cc8a137d62` |
 
 ## Vendored files (derived, committed here)
+
+- **`blocks-1.21.11.json`** — every 1.21.11 **block** with every property and its
+  legal values, from `blocks/data.min.json` of the same summary (source SHA-256
+  `178a12096f59f863758a6c685e5eb6de38721b376a30a30383e171d0799f3ee7`, retrieved
+  2026-08-11). 1166 blocks, namespaced and sorted. The source's second element —
+  the default state — is deliberately dropped: a validator needs to know which
+  properties and values are legal, and a second copy of information nothing reads
+  is a second thing that can go stale.
+  **Why it exists**: the repo checked every emitted *command* against a pinned
+  command tree and every item id against a pinned item registry, and checked an
+  emitted **block** against nothing. `minecraft:chain` was renamed
+  `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
+  loads an unknown block as AIR, so the piece ships with the feature silently
+  missing. Consumed by `delvewright_schem::blocks` (the grammar export and
+  `delve-admit audit`'s `DW0733`) and by `prefabs/invariants.rs` (all five
+  tileset generators, source-included).
+  **Note on the nearest existing check**: `DW0193` validates DSL-authored block
+  ids against the *item* registry plus five technical ids
+  (`ItemBackedBlockRegistry`). Measured against this registry, that proxy has
+  **149 false rejects** (real blocks with no item form — wall signs, crops,
+  `bubble_column`) and **492 false accepts** (items that are not blocks —
+  `minecraft:diamond` passes as a block id). Widening `DW0193` onto this file is
+  a `dsl_version`-scale change and is deliberately NOT done here.
+  **Reproduce it**: `python3 tools/extract-block-registry.py
+  <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json`. The script
+  pins and checks the source SHA-256 and the block count.
+
+- **`blockstate-shape-props-1.21.11.json`** — per block, the properties named by
+  `multipart` selectors in the block's own blockstate definition
+  (`assets/minecraft/blockstates/<block>.json`, 1.21.11 client jar). 95 blocks.
+  This is the **shape-carrying** property class `DW0735` fires on: a `variants`
+  property the state omits picks one complete model (benign — the default is
+  what the author meant), while a `multipart` property *assembles* the model,
+  so an omitted connection property drops geometry — a `cobblestone_wall` with
+  none written places as an isolated post, silently, in 20 of the 36 library
+  prefabs when first measured (2026-08-14). The class is derived from Mojang's
+  own blockstate definitions, never a hand-kept id list (CLAUDE.md: a
+  capability belongs to the object class).
+  Like the font metrics below, the client jar is EULA-bound and never
+  committed; what is committed is the derived table of property names.
+  **Reproduce it**: `python3 tools/extract-shape-properties.py
+  <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json`.
+  The script pins the jar's `version.json` to `1.21.11` / DataVersion 4671 and
+  cross-checks every derived property against `blocks-1.21.11.json` — a
+  selector naming a property the registry does not define is a refusal.
+  Consumed by `delvewright_schem::blocks` (`shape_carrying` /
+  `omitted_shape_carrying`), which serves `delve-admit audit` and the grammar
+  back end's `shape-complete` gate + export refusal.
 
 - **`items-1.21.11.json`** — the `item` registry array from `registries/data.min.json`,
   each id namespaced (`minecraft:<id>`) to match DSL usage, de-duplicated and sorted.
@@ -99,6 +149,42 @@ not third-party reconstructions.
   difficulty formula alone would have been wrong by 2× in the lenient direction.
   **Reproduce it**: `python3 tools/extract-damage-types.py <damage_type/data.min.json>
   <tag/damage_type/data.min.json> crates/compiler/data/damage-types-1.21.11.json`.
+
+- **`block-classification-1.21.11.json`** — every block's **form** (its shape
+  class) and material **family**, derived from vanilla's own block tags and
+  recipe graph in the same summary. 1166 blocks → **788 families**, 128
+  multi-member covering 506 blocks, largest **20** (deepslate). Consumed by
+  `tools/block-appearance.py`'s screen and mix report (spec-0035).
+  **Why it exists**: palette selection needed to answer "what shape is this" and
+  "what material is this derived from", and the only alternative was name
+  morphology — which mis-merges in both directions (`packed_mud` is not
+  `mud_bricks`; `end_stone` is not `stone`) and is exactly the invented data the
+  section below refuses. Form is Mojang's own answer (`#slabs`, `#stairs`,
+  `#walls`, `#fences`, `#doors`, `#trapdoors`, `#buttons`, `#pressure_plates`,
+  `#all_signs`, resolved transitively because `#logs` is a tag of tags); `pane`
+  is the one form vanilla has no tag for and is read off the blockstate
+  connection signature `{east,north,south,waterlogged,west}`, which catches glass
+  panes, iron bars and copper bars — 26 blocks — and nothing else. Family is the
+  connected components of "one block stock becomes another block": stonecutting,
+  cooking, and crafting recipes with **exactly one ingredient, and it a block**.
+  That last clause is load-bearing rather than fussy: `granite` is
+  `diorite` + `quartz` and `andesite` is `diorite` + `cobblestone`, so counting
+  "one block-valued ingredient among any others" welds the whole stone group into
+  a 41-member component and makes diorite's family read 41 instead of 7.
+  **What it deliberately does not do**: spec-0035 §3.4 recommends unioning the
+  graph with `#planks`, `#logs`, `#wool`, `#terracotta`, `#stone_bricks`,
+  `#sand`, `#dirt`, `#leaves` and `#copper`. Measured, that takes the largest
+  family from 20 to **87** — a species' planks already reach its stairs, slabs,
+  doors and buttons through the recipe graph, so welding the twelve species
+  together welds everything downstream of them, and it breaks spec-0035's own
+  45-member runaway guard. The purely-derived table is what ships;
+  `--family-tags` and `--loose` reproduce both measurements.
+  **Reproduce it**: `python3 tools/extract-block-classification.py
+  <tag/block/data.min.json> <recipe/data.min.json>
+  crates/compiler/data/block-classification-1.21.11.json`. The script pins and
+  checks both source SHA-256s and the block count, and picks each family's
+  representative as its lexicographically smallest member so the output cannot
+  depend on edge order (ADR-0006).
 
 - **`entity-tags-1.21.11.json`** — vanilla's built-in `entity_type` tags, from
   `data/tag/entity_type/data.min.json` in the same summary: tag id (namespaced,
@@ -175,6 +261,8 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `item-stack-sizes-1.21.11.json` | `a896955918220c489ab2225db6772cd417a0273d94d8dd691029572566e1b5ee` |
 | `item-combat-1.21.11.json` | `362288eae4c77d9c53d91547b5735c00d739cafc95e1ab2ef57cd1343b9d29ff` |
 | `damage-types-1.21.11.json` | `c3daed77f2557dc7fd784d373e74c1d67b45157bb812c8e4dee761db4696b6fd` |
+| `blocks-1.21.11.json` | `e38653d774e3e837dbb74f8baa05d2687741e56eb7e702c03218c31bd2481087` |
+| `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 
 ## Not committed
 
