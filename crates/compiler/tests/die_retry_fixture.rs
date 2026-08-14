@@ -20,6 +20,25 @@
 //! (`die_retry_binding`), and this fixture is what gives the stage something to
 //! examine.
 //!
+//! # Why it is a keep and not a room
+//!
+//! The first version put the checkpoint and the guard in one `prefab/hello-room`,
+//! four blocks apart. `DW0478` refuses that, and is right to: a respawn point
+//! inside a hostile's perception radius delivers the party into contact on the
+//! tick they arrive, which is a soft-lock and the opposite of the property this
+//! fixture exists to exercise. No placement inside an 11x11x6 room can satisfy
+//! it — the room's longest diagonal is under the default 16-block
+//! `follow_range`, so the constraint is geometric and not a matter of where the
+//! anchors sit. Shrinking `follow_range` to buy the clearance is what the
+//! diagnostic tells an author not to do, because it retunes the fight to hide a
+//! placement bug.
+//!
+//! So the area is the `pool/stone-keep` jigsaw, whose pieces carry every anchor
+//! this fixture names (`keeper-stand`, `door`, `exit`) in separate rooms: the
+//! guard rises 27.7 blocks from the stone the party comes back to, and the walk
+//! between them IS the loop under test. It is still one area — areas sit
+//! `AREA_SPACING` apart across void, which a pathfinder-free bot cannot cross.
+//!
 //! # What this test holds
 //!
 //! Not that the loop passes — a server and a bot decide that, and
