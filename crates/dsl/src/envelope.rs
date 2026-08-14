@@ -56,6 +56,10 @@ pub fn is_supported_version(version: &str) -> bool {
 /// hand-written `version == "0.4.0" || version == "0.5.0" || …` chains this
 /// replaced had to be extended in lockstep in five places; forgetting one made
 /// the newest campaigns silently lose an older version's surface.
+///
+/// Public as [`minor_ordinal`]: the obligation fence ([`crate::fence`]) compares
+/// a rule's [`Binds::Since`](crate::Binds::Since) against exactly this number, so
+/// "version 0.8.0" means the same thing to a fence as it does to `is_v08`.
 fn ordinal(version: &str) -> u32 {
     match version {
         "0.2.0" => 2,
@@ -70,6 +74,13 @@ fn ordinal(version: &str) -> u32 {
         "0.11.0" => 11,
         _ => 0,
     }
+}
+
+/// The minor-version ordinal of a supported `dsl_version` (`0.8.0` → `8`); `0`
+/// for anything this crate does not accept. The number every `is_v0*` predicate
+/// below compares, and the number [`crate::fence`] grandfathers against.
+pub fn minor_ordinal(version: &str) -> u32 {
+    ordinal(version)
 }
 
 /// True if `version` enables the DSL v0.3 verbs (`kill`/`collect`/`interact`,

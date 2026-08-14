@@ -1,51 +1,51 @@
 {
   "description": "The finale quest is triggered only by its own completion (quest-complete of itself), so it can never become active and never completes. No static rule is violated — depends_on is acyclic and empty (DW0130), the plan converges (DW0132), the trigger reference resolves (DW0112), and the keeper's talk-to objective still has a reachable completing option (DW0123). Only the compiler's deep fixpoint sees the deadlock: exit 2 / DW0201 (plus DW0202). Proves analyze is not vacuous now that the dialogue-completion case is caught statically.",
-  "expect": "DW0201",
   "documents": {
     "quests": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/open-the-door",
-            "trigger": {
-              "type": "quest-complete",
-              "quest": "quest/open-the-door"
-            },
             "objectives": [
               {
-                "type": "talk-to",
                 "id": "obj/talk",
-                "npc": "npc/keeper"
+                "npc": "npc/keeper",
+                "type": "talk-to"
               },
               {
-                "type": "reach-anchor",
-                "id": "obj/exit",
-                "anchor": "anchor/exit",
-                "radius": 2,
                 "after": [
                   "obj/talk"
-                ]
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
               }
             ],
             "on_objective_complete": {
               "obj/talk": [
                 {
-                  "type": "open-gate",
-                  "anchor": "anchor/door"
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
                 }
               ]
             },
-            "on_complete": [
-              {
-                "type": "campaign-complete"
-              }
-            ]
+            "trigger": {
+              "quest": "quest/open-the-door",
+              "type": "quest-complete"
+            }
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0201"
 }

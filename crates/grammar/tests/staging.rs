@@ -23,8 +23,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::ir::Program;
+use delvewright_grammar::library::bait_stand::{self, bait_stand};
 use delvewright_grammar::library::causeway::MIN_GATE_RISE;
+use delvewright_grammar::library::disarm_stand::{self, disarm_stand};
 use delvewright_grammar::library::elite_ground::MIN_RADIUS;
+use delvewright_grammar::library::hearth_ward::{self, hearth_ward};
+use delvewright_grammar::library::lift_shaft::{self, lift_shaft};
 use delvewright_grammar::library::rafter_hall::FLOOR_CELLS_PER_PERCH;
 use delvewright_grammar::library::stair_flight::{self, stair_flight};
 use delvewright_grammar::library::tee_passage::{self, tee_passage};
@@ -119,6 +123,17 @@ const DUCT_TEETH_REGION: Box3 = Box3::at_origin([6, 5, 8]);
 /// remaining run, so a fixture whose `Y` ran out first would put the break
 /// nowhere. Eight treads, seven blocks of rise; the gates pin both.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The lift shaft fixture: five across (mass, a three-wide lane, mass), sixteen
+/// tall — a six-cell sill and two whole five-cell storeys — and seven deep, so
+/// the frame turns the landing face onto the long axis the way a zone hands it.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
+/// The same shaft with a **one-block** drop under its lowest station: the
+/// calibration control for the one-way gate, the same short-drop pairing
+/// `drop_shaft` uses for `rescue_ladder`.
+const LIFT_SHALLOW_REGION: Box3 = Box3::at_origin([5, 12, 7]);
+/// Neither the shaft nor the flight draws from the seed; it is stated, not
+/// chosen.
+const LIFT_SEED: u64 = 1;
 /// `stair_flight` draws nothing from the seed; it is stated, not chosen.
 const FLIGHT_SEED: u64 = 1;
 
@@ -1447,7 +1462,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_tread() {
     restyled
         .set_role(
             "smooth",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, STAIR_PALETTE_REGION, STAIR_SEED);
@@ -1517,7 +1532,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
             (region.origin[0]..region.maximum()[0]).any(|x| {
                 out.model
                     .get([x, y, narrate[2]])
-                    .is_some_and(|b| b.name == "minecraft:chain")
+                    .is_some_and(|b| b.name == "minecraft:iron_chain")
             })
         })
         .expect("the doorband has a curtain band somewhere above the floor");
@@ -1525,7 +1540,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
         .filter(|&x| {
             out.model
                 .get([x, y, narrate[2]])
-                .is_some_and(|b| b.name == "minecraft:chain")
+                .is_some_and(|b| b.name == "minecraft:iron_chain")
         })
         .count()
 }
@@ -1732,7 +1747,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_grate_row() {
     restyled
         .set_role(
             "grate_broken",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, GRATE_PALETTE_REGION, 1);
@@ -3175,6 +3190,19 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         [stair_flight::MIN_WIDTH as u32, 7, 12],
         &[[2, 7, 12], [3, 6, 12], [3, 7, 11]],
     );
+    // lift_shaft: lane + 2 across and the same deep (mass, the lane, mass — and
+    // on the deep axis the landing face takes the last of it), sill + storey
+    // tall, since a shaft with no whole storey in it has no station.
+    check(
+        "lift_shaft",
+        &lift_shaft(),
+        [
+            lift_shaft::MIN_LANE as u32 + 2,
+            11,
+            lift_shaft::MIN_LANE as u32 + 2,
+        ],
+        &[[4, 11, 5], [5, 10, 5], [5, 11, 4]],
+    );
     // elite_ground: both horizontal extents >= diameter + 2*flank_margin + 2
     // (the wider of the rule's two checks — see the module note), head + 2
     // tall — at `radius`'s enforced floor of 4 (a 9×9 circle) and the default
@@ -3218,6 +3246,10 @@ fn the_staging_rules_restyle_without_moving_a_block() {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (lift_shaft(), LIFT_REGION),
+        (hearth_ward(), HEARTH_REGION),
+        (bait_stand(), BAIT_REGION),
+        (disarm_stand(), DISARM_REGION),
     ] {
         let mut restyled = base.clone();
         let roles: Vec<String> = base.palette.keys().cloned().collect();
@@ -3226,7 +3258,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
             restyled
                 .set_role(
                     role,
-                    delvewright_grammar::ir::Paint::Block(BlockState::simple(
+                    delvewright_grammar::ir::Paint::block(BlockState::simple(
                         SWATCH[i % SWATCH.len()],
                     )),
                 )
@@ -3248,4 +3280,785 @@ fn the_staging_rules_restyle_without_moving_a_block() {
             base.name
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The rest point, the lure and the control (`hearth_ward`, `bait_stand`,
+// `disarm_stand`) — the three mechanisms the zone round needed and the
+// vocabulary did not have
+// ---------------------------------------------------------------------------
+
+/// The hearth-ward fixture: a lane with room for a nook beside it, and length
+/// enough that the nook's band has plain corridor at both ends of it. `Z`
+/// strictly longer than `X`, as `SHAFT_TEETH_REGION` notes.
+const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
+/// `hearth_ward` draws nothing from the seed; it is stated, not chosen.
+const HEARTH_SEED: u64 = 1;
+
+/// The bait-stand fixture, and two more box shapes the co-location gate is
+/// re-bound over: a motif that only lines up at one width is a coincidence.
+const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
+const BAIT_SEED: u64 = 1;
+const BAIT_SIZES: [Box3; 3] = [
+    Box3::at_origin([9, 8, 14]),
+    Box3::at_origin([7, 8, 12]),
+    Box3::at_origin([13, 9, 20]),
+];
+
+/// The disarm-stand fixture: a head with room for the stand beside the lane,
+/// and a run long enough to be worth jamming.
+const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
+/// `disarm_stand` draws nothing from the seed; it is stated, not chosen.
+const DISARM_SEED: u64 = 1;
+
+/// The standable cells at each end of a piece's travel axis.
+fn travel_ends(model: &VoxelModel) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let region = model.region();
+    let far = region.origin[2] + region.size[2] as i32 - 1;
+    let near = region.origin[2];
+    let cells = standable_cells(model);
+    (
+        cells.iter().copied().filter(|c| c[2] == far).collect(),
+        cells.iter().copied().filter(|c| c[2] == near).collect(),
+    )
+}
+
+/// The nook's own standable cells, read off the anchor inside it and the rule's
+/// published width rather than recomputed from the fixture's arithmetic.
+///
+/// `anchor/hearth` sits at the floor centre of the nook's inner half, and a
+/// two-wide box centres onto its lower cell, so the anchor's own `x` is the
+/// nook's `X`-min and its `z` is one past the mouth.
+fn nook_cells(out: &Expansion, nook_len: i32) -> BTreeSet<[i32; 3]> {
+    let hearth = out.anchors["anchor/hearth"].pos;
+    standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| {
+            c[0] >= hearth[0]
+                && c[0] < hearth[0] + hearth_ward::NOOK_WIDTH as i32
+                && c[2] >= hearth[2] - 1
+                && c[2] < hearth[2] - 1 + nook_len
+        })
+        .collect()
+}
+
+/// Every standable cell outside `set` that a walker could step into it from.
+fn neighbours_of(cells: &BTreeSet<[i32; 3]>, set: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
+    let mut found = BTreeSet::new();
+    for [x, y, z] in set.iter().copied() {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dy in [0, 1, -1] {
+                let next = [x + dx, y + dy, z + dz];
+                if cells.contains(&next) && !set.contains(&next) {
+                    found.insert(next);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Gate 1: a rest ward is a **chain segment**, not a room. The lane walks end to
+/// end, so a zone that lays one in its piece run still has a route through it.
+///
+/// Binding: 78 standable cells, 6 at each end.
+#[test]
+fn the_hearth_ward_is_a_lane_that_walks_end_to_end() {
+    let out = expand_at(&hearth_ward(), HEARTH_REGION, HEARTH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 78);
+    let (entry, exit) = travel_ends(&out.model);
+    assert_eq!(entry.len(), 6, "the lane at the approach end");
+    assert_eq!(exit.len(), 6, "the lane at the way out");
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the rest ward does not walk end to end"
+    );
+}
+
+/// Gate 2: the focus is reachable, and reaching it is a **detour**. A rest point
+/// on the road is a corridor with a campfire in it; the whole mechanism is that
+/// you step aside for it.
+///
+/// Binding: 6 nook cells deleted, 78 standable re-walked without them. Teeth:
+/// `mouth_sealed`.
+#[test]
+fn the_hearth_is_reachable_and_off_the_road() {
+    let out = expand_at(&hearth_ward(), HEARTH_REGION, HEARTH_SEED);
+    let cells = standable_cells(&out.model);
+    let hearth: BTreeSet<[i32; 3]> = [out.anchors["anchor/hearth"].pos].into_iter().collect();
+    assert!(
+        standable(&out.model, out.anchors["anchor/hearth"].pos),
+        "nothing can rest at {:?}",
+        out.anchors["anchor/hearth"].pos
+    );
+    let (entry, exit) = travel_ends(&out.model);
+    assert!(
+        connected(&cells, &entry, &hearth),
+        "the lane cannot reach its own hearth"
+    );
+
+    let nook = nook_cells(&out, 3);
+    assert_eq!(nook.len(), 6, "the nook's own cells");
+    let without: BTreeSet<[i32; 3]> = cells.difference(&nook).copied().collect();
+    assert!(
+        connected(&without, &entry, &exit),
+        "delete the nook and the lane stops walking — the rest point is on the \
+         road rather than beside it"
+    );
+}
+
+/// ...and it has teeth: filling the nook's one open cell leaves the hearth
+/// standing and unreachable, while the lane walks exactly as before.
+#[test]
+fn sealing_the_nooks_mouth_puts_the_hearth_out_of_reach() {
+    let mut sealed = hearth_ward();
+    sealed.set_param("mouth_sealed", 1).unwrap();
+    let out = expand_at(&sealed, HEARTH_REGION, HEARTH_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(
+        cells.len(),
+        76,
+        "the mouth's two cells, and only they, are gone"
+    );
+    let hearth: BTreeSet<[i32; 3]> = [out.anchors["anchor/hearth"].pos].into_iter().collect();
+    let (entry, exit) = travel_ends(&out.model);
+    assert!(
+        !connected(&cells, &entry, &hearth),
+        "the mouth was filled and the hearth is still reachable — the way in was \
+         never the mouth"
+    );
+    assert!(
+        connected(&cells, &entry, &exit),
+        "sealing the nook sealed the lane, so the red above is measuring a \
+         severed ward rather than an unreachable hearth"
+    );
+}
+
+/// Gate 3: **exactly one way in.** What makes a rest point defensible is that
+/// you can only be come at from the direction you are already facing, and that
+/// is a count of the nook's standable neighbours, not a claim about walls.
+///
+/// Binding: 6 nook cells, 2 neighbours. Teeth: `back_door`.
+#[test]
+fn the_nook_has_exactly_one_way_in() {
+    let out = expand_at(&hearth_ward(), HEARTH_REGION, HEARTH_SEED);
+    let cells = standable_cells(&out.model);
+    let nook = nook_cells(&out, 3);
+    assert_eq!(nook.len(), 6);
+    let ways_in = neighbours_of(&cells, &nook);
+    assert_eq!(
+        ways_in.len(),
+        hearth_ward::NOOK_WIDTH as usize,
+        "the nook is approachable from {ways_in:?} — a rest point with a second \
+         approach is a room, not a shelter"
+    );
+    // ...and the one way in is the mouth: every neighbour is on the lane side of
+    // the nook's own Z-min face.
+    let hearth = out.anchors["anchor/hearth"].pos;
+    for cell in &ways_in {
+        assert_eq!(
+            cell[2],
+            hearth[2] - 2,
+            "{cell:?} is not in front of the mouth"
+        );
+    }
+}
+
+/// ...and it has teeth: `back_door` opens the outer wall behind the nook, and
+/// the count of ways in rises off the mouth's own two.
+#[test]
+fn a_door_behind_the_hearth_reds_the_shelter_gate() {
+    let mut holed = hearth_ward();
+    holed.set_param("back_door", 1).unwrap();
+    let out = expand_at(&holed, HEARTH_REGION, HEARTH_SEED);
+    let cells = standable_cells(&out.model);
+    let nook = nook_cells(&out, 3);
+    assert_eq!(nook.len(), 6, "the nook itself did not change");
+    let ways_in = neighbours_of(&cells, &nook);
+    assert_eq!(
+        ways_in.len(),
+        5,
+        "a doorway was opened behind the hearth and the shelter gate still \
+         counted one way in — it proves nothing"
+    );
+}
+
+/// A box too narrow to hold a nook beside a lane is a refusal naming the rule,
+/// never a rest ward that quietly is not one.
+///
+/// Binding: 1 refusal, against the same box one cell wider, which builds.
+#[test]
+fn a_ward_too_narrow_for_a_nook_is_refused() {
+    let program = hearth_ward();
+    let narrow = Box3::at_origin([hearth_ward::MIN_WIDTH as u32 - 1, 6, 14]);
+    let err = expand(&program, narrow, &ExpandOptions::seeded(HEARTH_SEED)).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("ward_plan"),
+        "the refusal does not name the rule that refused: {text}"
+    );
+    expand_at(
+        &program,
+        Box3::at_origin([hearth_ward::MIN_WIDTH as u32, 6, 14]),
+        HEARTH_SEED,
+    );
+}
+
+/// Gate 1 of the lure: **the watcher stands over the bait.** Same column, the
+/// perch above, the perch standable and the pedestal a solid block a campaign
+/// can put something on.
+///
+/// Binding: 3 box shapes, each one bait/perch pair.
+#[test]
+fn the_watcher_stands_directly_over_the_lure() {
+    for region in BAIT_SIZES {
+        let out = expand_at(&bait_stand(), region, BAIT_SEED);
+        let bait = out.anchors["anchor/bait"].pos;
+        let perch = out.anchors["anchor/bait-perch"].pos;
+        assert_eq!(
+            [bait[0], bait[2]],
+            [perch[0], perch[2]],
+            "{region:?}: the perch is not over the pedestal"
+        );
+        assert!(
+            perch[1] > bait[1] + 1,
+            "{region:?}: the perch is on the pedestal rather than over it"
+        );
+        assert!(
+            solid(&out.model, bait),
+            "{region:?}: the pedestal is not a block"
+        );
+        assert!(
+            standable(&out.model, perch),
+            "{region:?}: nothing can wait on the perch"
+        );
+        // The display space: the cell over the pedestal is open, or there is
+        // nowhere to put the lure at all.
+        assert!(
+            passable(&out.model, [bait[0], bait[1] + 1, bait[2]]),
+            "{region:?}: the pedestal has no room over it"
+        );
+    }
+}
+
+/// Gate 2, and the reason this rule exists: **wherever the lure can be seen
+/// from, so can the watcher.** That is variant 1 of the dossier's bait pattern
+/// stated as geometry; variant 3 — the trigger you cannot see — is banned, and
+/// this gate is what makes the ban machine-checkable.
+///
+/// Binding: 42 approach cells, all 42 of which see the bait, and all 42 the
+/// perch. Teeth: `canopy`.
+#[test]
+fn the_watcher_is_visible_wherever_the_lure_is() {
+    let out = expand_at(&bait_stand(), BAIT_REGION, BAIT_SEED);
+    let bait = out.anchors["anchor/bait"].pos;
+    let perch = out.anchors["anchor/bait-perch"].pos;
+    let approach: Vec<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] > perch[2] + 1)
+        .collect();
+    assert_eq!(approach.len(), 42, "the approach the player decides from");
+    let mut lure_seen = 0;
+    for cell in &approach {
+        if sees(&out.model, *cell, bait).is_ok() {
+            lure_seen += 1;
+            if let Err(blocker) = sees(&out.model, *cell, perch) {
+                panic!(
+                    "from {cell:?} the lure is visible and the body over it is not \
+                     ({blocker:?} is in the way) — that is the displaced ambush the \
+                     catalogue bans"
+                );
+            }
+        }
+    }
+    assert_eq!(lure_seen, 42, "the lure is visible from the whole approach");
+}
+
+/// ...and it has teeth: `canopy` hangs a valance in front of the perch. The
+/// lure's own count does not move — which is what makes the red an *ambush*
+/// defect and not a walled-off room.
+#[test]
+fn a_canopy_over_the_lure_hides_its_watcher() {
+    let mut hidden = bait_stand();
+    hidden.set_param("canopy", 1).unwrap();
+    let out = expand_at(&hidden, BAIT_REGION, BAIT_SEED);
+    let bait = out.anchors["anchor/bait"].pos;
+    let perch = out.anchors["anchor/bait-perch"].pos;
+    let approach: Vec<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| c[2] > perch[2] + 1)
+        .collect();
+    assert_eq!(approach.len(), 42, "the same approach set");
+    let lure_seen = approach
+        .iter()
+        .filter(|c| sees(&out.model, **c, bait).is_ok())
+        .count();
+    let watcher_seen = approach
+        .iter()
+        .filter(|c| sees(&out.model, **c, perch).is_ok())
+        .count();
+    assert_eq!(lure_seen, 42, "the valance moved the lure's own visibility");
+    assert_eq!(
+        watcher_seen, 0,
+        "a valance was hung in front of the perch and the co-visibility gate \
+         still read it as legible — the gate proves nothing"
+    );
+}
+
+/// Gate 3: the gallery is a chain segment too, so a zone can lay one in its
+/// piece run.
+///
+/// Binding: 99 standable cells, 5 at each end.
+#[test]
+fn the_bait_stand_is_a_room_that_walks_end_to_end() {
+    let out = expand_at(&bait_stand(), BAIT_REGION, BAIT_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 99);
+    let (entry, exit) = travel_ends(&out.model);
+    assert_eq!(entry.len(), 7);
+    assert_eq!(exit.len(), 7);
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the gallery does not walk"
+    );
+}
+
+/// A perch with no air over it is not a perch, and the rule refuses rather than
+/// hanging one in the ceiling.
+///
+/// Binding: 2 refusals (`perch_rise` under its floor, and a `head` that does not
+/// clear the perch), against the defaults, which build.
+#[test]
+fn a_perch_with_no_air_over_it_is_refused() {
+    for (knob, value) in [("perch_rise", bait_stand::MIN_RISE - 1), ("head", 4)] {
+        let mut bad = bait_stand();
+        bad.set_param(knob, value).unwrap();
+        let err = expand(&bad, BAIT_REGION, &ExpandOptions::seeded(BAIT_SEED)).unwrap_err();
+        let text = err.to_string();
+        assert!(
+            text.contains("stand_plan"),
+            "{knob}={value}: the refusal does not name the rule: {text}"
+        );
+    }
+    expand_at(&bait_stand(), BAIT_REGION, BAIT_SEED);
+}
+
+/// Gate 1 of the control: the lane still walks, so a stand at the head of a
+/// hazard does not become the thing that severs the zone.
+///
+/// Binding: 107 standable cells.
+#[test]
+fn the_disarm_stand_is_a_lane_that_walks_end_to_end() {
+    let out = expand_at(&disarm_stand(), DISARM_REGION, DISARM_SEED);
+    let cells = standable_cells(&out.model);
+    assert_eq!(cells.len(), 107);
+    let (entry, exit) = travel_ends(&out.model);
+    assert_eq!(entry.len(), 4, "the lane past the stand");
+    assert_eq!(exit.len(), 7, "the run at the far end");
+    assert!(
+        connected(&cells, &entry, &exit),
+        "the head does not join its run"
+    );
+}
+
+/// Gate 2, and the whole point of the mechanism: **the release cannot be worked
+/// from the run it governs.** Every standable cell of the run is checked for
+/// adjacency to the mechanism, so the claim binds to the run's own size and
+/// cannot go quietly vacuous on a shorter box.
+///
+/// Binding: 103 run cells examined, 0 of them in reach of the release. Teeth:
+/// `release_in_lane`.
+#[test]
+fn the_release_is_out_of_reach_of_its_own_run() {
+    let out = expand_at(&disarm_stand(), DISARM_REGION, DISARM_SEED);
+    let release = out.anchors["anchor/release"].pos;
+    assert!(
+        solid(&out.model, release),
+        "the release is not a block anything could be bound to"
+    );
+    let (run, operators) = run_and_operators(&out);
+    assert_eq!(run.len(), 103, "the run the release governs");
+    let from_run = run.iter().filter(|c| adjacent(**c, release)).count();
+    assert_eq!(
+        from_run, 0,
+        "the release can be worked from inside the run it governs — a hazard you \
+         disarm while standing in it is not a third rung"
+    );
+    assert_eq!(operators.len(), 1, "the stand's own operating position");
+}
+
+/// ...and it has teeth: `release_in_lane` sets the mechanism into the divider
+/// instead of the outer wall, which is exactly the mistake, and the count of
+/// in-run operating positions rises off zero.
+#[test]
+fn a_release_in_the_divider_reds_the_out_of_reach_gate() {
+    let mut wrong = disarm_stand();
+    wrong.set_param("release_in_lane", 1).unwrap();
+    let out = expand_at(&wrong, DISARM_REGION, DISARM_SEED);
+    let release = out.anchors["anchor/release"].pos;
+    let (run, _) = run_and_operators(&out);
+    assert_eq!(run.len(), 103, "the same run");
+    let from_run = run.iter().filter(|c| adjacent(**c, release)).count();
+    assert_eq!(
+        from_run, 1,
+        "the mechanism was moved into the lane's own wall and the gate still \
+         reported it out of reach — it proves nothing"
+    );
+}
+
+/// Gate 3: ...and it can be worked at all. A control nobody can reach is not
+/// safer than one in the lane, it is absent.
+///
+/// Binding: 1 operating position, reached from the run's 103 cells. Teeth:
+/// `stand_sealed`.
+#[test]
+fn the_release_can_be_reached_from_the_run() {
+    let out = expand_at(&disarm_stand(), DISARM_REGION, DISARM_SEED);
+    let cells = standable_cells(&out.model);
+    let (run, operators) = run_and_operators(&out);
+    assert_eq!(operators.len(), 1);
+    assert!(
+        connected(&cells, &run, &operators),
+        "the stand cannot be entered from the run — the release is unreachable"
+    );
+
+    let mut sealed = disarm_stand();
+    sealed.set_param("stand_sealed", 1).unwrap();
+    let shut = expand_at(&sealed, DISARM_REGION, DISARM_SEED);
+    let shut_cells = standable_cells(&shut.model);
+    let (shut_run, shut_operators) = run_and_operators(&shut);
+    assert_eq!(
+        shut_operators.len(),
+        1,
+        "the operating position is still standable, merely cut off"
+    );
+    assert!(
+        !connected(&shut_cells, &shut_run, &shut_operators),
+        "the stand's mouth was filled and the release is still reachable — the \
+         way in was never the mouth"
+    );
+    let (entry, exit) = travel_ends(&shut.model);
+    assert!(
+        connected(&shut_cells, &entry, &exit),
+        "sealing the stand sealed the lane, so the red above is measuring a \
+         severed piece rather than an unreachable control"
+    );
+}
+
+/// The run the release governs, and the positions it can be worked from.
+///
+/// The run is **every standable cell but the stand's own**, deliberately: the
+/// hazard's path is the whole lane, including the stretch of it that runs past
+/// the head, and a definition that only counted the far zone would let a
+/// mechanism reachable from the lane beside the stand pass unnoticed.
+fn run_and_operators(out: &Expansion) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+    let release = out.anchors["anchor/release"].pos;
+    let head = out.anchors["anchor/run-head"].pos;
+    let origin = out.model.region().origin;
+    let stand: BTreeSet<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| {
+            c[0] > origin[0]
+                && c[0] <= origin[0] + disarm_stand::STAND_WIDTH as i32
+                && c[2] > head[2]
+        })
+        .collect();
+    let run: BTreeSet<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| !stand.contains(c))
+        .collect();
+    let operators: BTreeSet<[i32; 3]> = standable_cells(&out.model)
+        .into_iter()
+        .filter(|c| adjacent(*c, release))
+        .filter(|c| stand.contains(c))
+        .collect();
+    (run, operators)
+}
+
+/// Orthogonally touching, at the same height: what "in reach" means for a hand
+/// on a wall block.
+fn adjacent(cell: [i32; 3], block: [i32; 3]) -> bool {
+    cell[1] == block[1] && (cell[0] - block[0]).abs() + (cell[2] - block[2]).abs() == 1
+}
+
+/// A box with no room for a stand beside the lane is a refusal naming the rule.
+///
+/// Binding: 1 refusal, against the same box one cell wider, which builds.
+#[test]
+fn a_head_too_narrow_for_a_stand_is_refused() {
+    let program = disarm_stand();
+    let narrow = Box3::at_origin([disarm_stand::MIN_WIDTH as u32 - 1, 7, 16]);
+    let err = expand(&program, narrow, &ExpandOptions::seeded(DISARM_SEED)).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("stand_plan"),
+        "the refusal does not name the rule that refused: {text}"
+    );
+    expand_at(
+        &program,
+        Box3::at_origin([disarm_stand::MIN_WIDTH as u32, 7, 16]),
+        DISARM_SEED,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// L/4 — the lift shaft
+// ---------------------------------------------------------------------------
+//
+// The lift itself is campaign JSON (spec-0031): runtime state, region
+// fill/clear and teleport-by-region, nothing moving. So every gate here is
+// about the two things a prefab still owes it — cells the ride can *name*, and
+// a hole that behaves like a hole. The one-way pair is read with the same
+// `standable` predicate and the same two walks `drop_shaft` and `stair_flight`
+// are gated on, for the reason that section states: one model of "can a body
+// get there", not three.
+
+/// Every air cell on the outer surface of a box — i.e. every way in or out of
+/// the shell, counted rather than eyeballed.
+fn shell_openings(model: &VoxelModel) -> Vec<[i32; 3]> {
+    let region = model.region();
+    let (sx, sy, sz) = (
+        region.size[0] as i32,
+        region.size[1] as i32,
+        region.size[2] as i32,
+    );
+    let mut found = Vec::new();
+    for y in 0..sy {
+        for x in 0..sx {
+            for z in 0..sz {
+                let on_shell = x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let cell = [
+                    region.origin[0] + x,
+                    region.origin[1] + y,
+                    region.origin[2] + z,
+                ];
+                if on_shell && passable(model, cell) {
+                    found.push(cell);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The landing cells: every standable cell that is not on the shaft floor, i.e.
+/// the doorway sills a body steps through.
+fn landings(model: &VoxelModel, floor_top: i32) -> BTreeSet<[i32; 3]> {
+    standable_cells(model)
+        .into_iter()
+        .filter(|c| c[1] > floor_top)
+        .collect()
+}
+
+#[test]
+fn a_lift_shaft_expands_deterministically() {
+    let program = lift_shaft();
+    let a = expand_at(&program, LIFT_REGION, LIFT_SEED);
+    let b = expand_at(&program, LIFT_REGION, LIFT_SEED);
+    assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
+    assert_eq!(a.anchors, b.anchors);
+    assert!(a.anchors.contains_key("anchor/lift-pit"));
+    assert_eq!(
+        (
+            indexed(&a.anchors, "lift-station").len(),
+            indexed(&a.anchors, "lift-call").len()
+        ),
+        (2, 2),
+        "the fixture's two storeys are the binding count every gate below reads"
+    );
+}
+
+/// **The contract the shipped lift reads, asserted on the geometry.**
+///
+/// `crates/compiler/tests/fixtures/lift` builds its car with `fill-region
+/// {anchor, extent [1,0,1]}` — a box *centred* on the station with unsigned
+/// half-extents, so 3×3 at the station's own level — clears the same box at the
+/// floor it leaves, and teleports its riders to the anchor itself. Three things
+/// have to be true of the prefab for that to be a lift rather than a hole
+/// punched through a wall, and none of them is visible to the compiler:
+///
+/// 1. every cell of the car's 3×3 footprint is air, so the fill writes the deck
+///    and not through the shaft wall;
+/// 2. the station is *not* standable — a station a body can stand on is a floor,
+///    and the whole point is that the deck arrives;
+/// 3. the call control's cell is outside that footprint and solid, or the first
+///    `fill-region` of a ride buries the lever that started it.
+///
+/// Binding: 2 stations × 9 footprint cells = 18, and 2 call cells.
+#[test]
+fn every_station_can_hold_the_car_the_campaign_fills() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let model = &out.model;
+    let stations = indexed(&out.anchors, "lift-station");
+    let calls = indexed(&out.anchors, "lift-call");
+    assert_eq!((stations.len(), calls.len()), (2, 2));
+
+    let mut footprint = 0;
+    for (station, call) in stations.iter().zip(&calls) {
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let cell = [station[0] + dx, station[1], station[2] + dz];
+                assert!(
+                    passable(model, cell),
+                    "the car's own footprint cell {cell:?} is solid, so a runtime \
+                     `fill-region` at {station:?} writes through the shaft"
+                );
+                footprint += 1;
+            }
+        }
+        assert!(
+            !standable(model, *station),
+            "{station:?} is standable — a station with a floor under it is not a \
+             shaft, it is a alcove, and the car has nothing to arrive as"
+        );
+        assert!(
+            solid(model, *call),
+            "the call control at {call:?} has no block to sit on"
+        );
+        let inside = (call[0] - station[0]).abs() <= 1 && (call[2] - station[2]).abs() <= 1;
+        assert!(
+            !inside,
+            "the call control at {call:?} is inside the car's footprint at \
+             {station:?} — the first ride would bury it"
+        );
+        assert_eq!(
+            call[1], station[1],
+            "the call control is not on its own storey's landing level"
+        );
+    }
+    assert_eq!(footprint, 18, "the gate examined {footprint} car cells");
+}
+
+/// **One opening per storey, and nothing else.** Every cell of the shell's four
+/// side planes is solid but for the `door_height` cells of each landing
+/// doorway, counted rather than argued — a second gap would be a way into the
+/// shaft nobody declared and no campaign could gate.
+///
+/// Teeth: `sealed` fills every doorway with the shell material and nothing else
+/// changes, so the count drops to zero and the landings stop being standable.
+///
+/// Binding: 4 openings (2 storeys × `door_height` 2), and the 11 standable cells
+/// they are read against.
+#[test]
+fn the_shell_opens_exactly_once_a_storey() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let openings = shell_openings(&out.model);
+    assert_eq!(
+        openings.len(),
+        4,
+        "the shaft's shell openings: {openings:?}"
+    );
+    // ...and they are two doorways, not four scattered holes: one column of
+    // `door_height` cells per storey.
+    let columns: BTreeSet<[i32; 2]> = openings.iter().map(|c| [c[0], c[2]]).collect();
+    assert_eq!(columns.len(), 1, "the doorways are not one above the other");
+    assert_eq!(standable_cells(&out.model).len(), 11);
+
+    let mut sealed = lift_shaft();
+    sealed.set_param("sealed", 1).unwrap();
+    let shut = expand_at(&sealed, LIFT_REGION, LIFT_SEED);
+    assert!(
+        shell_openings(&shut.model).is_empty(),
+        "sealing the doorways left {:?} open, so the count above proves nothing",
+        shell_openings(&shut.model)
+    );
+    assert_eq!(
+        standable_cells(&shut.model).len(),
+        9,
+        "sealing the doorways took away exactly the two landings"
+    );
+}
+
+/// **The L family's pair, the third time.** A body steps off a landing into an
+/// empty shaft and falls to `anchor/lift-pit` (`reachable_with_fall`, the
+/// player's own movement model); the pit does **not** walk back up to any
+/// landing under the plain ±1 step, because a fall edge only ever points down
+/// and proving the negative under the generous model would be circular.
+///
+/// The control is what `sill` is for, and it is the same short-drop pairing
+/// `drop_shaft` uses: at `sill = 2` the pit is one block under the lowest
+/// station and the identical check must find a way back. Both programs are the
+/// same rule; the one variable is the knob.
+///
+/// Binding: 11 standable cells (2 landings, the 3×3 shaft floor), 1 pit.
+#[test]
+fn the_shaft_drops_a_body_and_will_not_carry_one_back() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let model = &out.model;
+    let pit = out.anchors["anchor/lift-pit"].pos;
+    assert!(standable(model, pit), "{pit:?}");
+    let cells = standable_cells(model);
+    assert_eq!(cells.len(), 11);
+    let sills = landings(model, pit[1]);
+    assert_eq!(sills.len(), 2, "the fixture's landings: {sills:?}");
+
+    let to: BTreeSet<[i32; 3]> = [pit].into_iter().collect();
+    assert!(
+        reachable_with_fall(model, &cells, &sills, &to),
+        "a body cannot even fall down its own shaft"
+    );
+    assert!(
+        !connected(&cells, &to, &sills),
+        "the pit walks back up to a landing — the shaft is not one-way"
+    );
+
+    // The control: one block of drop, and the same walk finds the way back.
+    let mut shallow = lift_shaft();
+    shallow.set_param("sill", 2).unwrap();
+    let low = expand_at(&shallow, LIFT_SHALLOW_REGION, LIFT_SEED);
+    let low_cells = standable_cells(&low.model);
+    let low_pit: BTreeSet<[i32; 3]> = [low.anchors["anchor/lift-pit"].pos].into_iter().collect();
+    let low_sills = landings(&low.model, low.anchors["anchor/lift-pit"].pos[1]);
+    assert_eq!(low_sills.len(), 2, "the control's landings: {low_sills:?}");
+    assert!(
+        connected(&low_cells, &low_pit, &low_sills),
+        "a one-block sill still reports no way back, so the negative above is the \
+         walk being broken rather than the shaft being deep"
+    );
+}
+
+/// The stations are numbered bottom up and stand exactly `storey` apart, so a
+/// campaign that binds `lift-station-1` to "the ground floor" is right by
+/// construction rather than by luck.
+///
+/// Binding: 2 stations, 2 call controls, 1 gap between them.
+#[test]
+fn the_stations_climb_by_one_storey_each() {
+    let out = expand_at(&lift_shaft(), LIFT_REGION, LIFT_SEED);
+    let stations = indexed(&out.anchors, "lift-station");
+    let calls = indexed(&out.anchors, "lift-call");
+    assert_eq!((stations.len(), calls.len()), (2, 2));
+    let storey =
+        out.anchors["anchor/lift-station-2"].pos[1] - out.anchors["anchor/lift-station-1"].pos[1];
+    assert_eq!(storey, 5, "the fixture's `storey`, read off the anchors");
+    for pair in stations.windows(2) {
+        assert!(
+            pair[1][1] > pair[0][1],
+            "the stations are not numbered bottom up: {stations:?}"
+        );
+    }
+    assert_eq!(
+        out.anchors["anchor/lift-station-1"].pos[1] - out.anchors["anchor/lift-pit"].pos[1],
+        5,
+        "the drop under the lowest station is not `sill - 1`"
+    );
+
+    // A shaft whose storeys do not divide the rise it is given is refused, not
+    // built with its top course of face wall missing.
+    let mut ragged = lift_shaft();
+    ragged.set_param("storey", 4).unwrap();
+    let err = expand(&ragged, LIFT_REGION, &ExpandOptions::seeded(LIFT_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
+    // ...and so is a lane too narrow for the car the campaign fills.
+    let mut narrow = lift_shaft();
+    narrow.set_param("lane", lift_shaft::MIN_LANE - 1).unwrap();
+    let err = expand(&narrow, LIFT_REGION, &ExpandOptions::seeded(LIFT_SEED)).unwrap_err();
+    assert!(
+        err.to_string().contains("no alternative of rule"),
+        "expected a refusal, got: {err}"
+    );
 }

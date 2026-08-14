@@ -4,8 +4,16 @@
 #
 #   tools/playtest-server.sh up <campaign-dir> [--lang LANG] [--prefabs DIR]
 #                                [--delvec BIN] [--name NAME] [--out DIR]
+#                                [--stage-anyway "REASON" --acknowledge-red N]
 #   tools/playtest-server.sh down [--name NAME]
 #   tools/playtest-server.sh status
+#
+# `up` BUILDS, then runs the staging gate against that exact tree, and only then
+# starts a container: no build reaches the owner while a past finding's general
+# form is not a live, binding check on it (playtest-methodology.md rule 7). A
+# refusal exits non-zero and prints the red list. `--stage-anyway "<reason>"
+# --acknowledge-red <N>` overrides deliberately — it prints every class being
+# overridden and stamps the reason into the build's admission token.
 #
 # Owner-facing contract: `up` ends by printing the connect address and, if the
 # build ships a resource pack, the pack file name to enable. `down` removes the
@@ -36,6 +44,8 @@ LANG_ARG=""
 PREFABS_ARG=""
 DELVEC=""
 OUT_DIR=""
+STAGE_ANYWAY=""
+ACK_RED=""
 RCON_PW="playtest"
 
 die() { echo "playtest-server: $*" >&2; exit 1; }
@@ -51,11 +61,23 @@ while [ $# -gt 0 ]; do
     --delvec)  DELVEC="$2"; shift 2;;
     --name)    NAME="$2"; shift 2;;
     --out)     OUT_DIR="$2"; shift 2;;
+    # The deliberate override (playtest-methodology.md rule 7). Never a bare
+    # flag: it needs a real reason AND the exact current red count, which moves
+    # as the ledger does, so it cannot become the way this script is run.
+    --stage-anyway)    STAGE_ANYWAY="$2"; shift 2;;
+    --acknowledge-red) ACK_RED="$2"; shift 2;;
     *) [ -z "$CAMPAIGN" ] && CAMPAIGN="$1" || die "unexpected arg: $1"; shift;;
   esac
 done
 
-rcon() { docker exec "$NAME" rcon-cli --password "$RCON_PW" "$@"; }
+# Checked by default (tools/lib/rcon.sh, task #70): a staging command the server
+# refused must not pass for one that worked. `rcon_raw` is the unjudged form, for
+# the one call whose failure is genuinely uninteresting.
+# shellcheck source=tools/lib/rcon.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/tools/lib/rcon.sh"
+DW_RCON_ARGS=(--password "$RCON_PW")
+rcon() { dw_rcon "$NAME" "$1"; }
+rcon_raw() { dw_rcon_probe "$NAME" "$1"; }
 
 if [ "$cmd" = "status" ]; then
   docker ps --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
@@ -105,6 +127,25 @@ BUILD_ARGS=(build "$CAMPAIGN" --out "$OUT_DIR")
 echo "delvec ${BUILD_ARGS[*]}"
 "$DELVEC" "${BUILD_ARGS[@]}" || die "build failed — fix the campaign before serving it"
 
+# ---- the staging gate --------------------------------------------------------
+# A build compiling is not a build she should see. Every past finding's general
+# form must be a live, binding check ON THIS TREE (playtest-methodology.md rule
+# 7). This runs BETWEEN the build and the container, so a refusal costs a
+# container that never started rather than an hour of hers.
+#
+# It is an invocation, not a doc line, on purpose: the gate shipped with nothing
+# calling it, which is the UNRUN shape — a correct gate whose obligation to run
+# lived in prose. `validation/owner-play.yaml` requires the same admission for
+# the other 25565 binder.
+GATE_ARGS=(--campaign "$CAMPAIGN" --build "$OUT_DIR" --report "$OUT_DIR/staging-gate.md")
+if [ -n "$STAGE_ANYWAY" ]; then
+  [ -n "$ACK_RED" ] || die "--stage-anyway needs --acknowledge-red <N> (the gate prints N)"
+  GATE_ARGS+=(--stage-anyway "$STAGE_ANYWAY" --acknowledge-red "$ACK_RED")
+fi
+echo "staging gate: $CAMPAIGN"
+python3 "$REPO_ROOT/tools/staging-gate.py" "${GATE_ARGS[@]}" || die \
+  "staging gate REFUSED this build — not serving it (full table: $OUT_DIR/staging-gate.md)"
+
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-data.XXXXXX")"
 mkdir -p "$STAGE/world/datapacks"
 cp "$OUT_DIR/server/server.properties" "$STAGE/server.properties"
@@ -132,7 +173,7 @@ OBJECTIVES="$(rcon "scoreboard objectives list")"
 [[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
 NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
 [[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
-rcon "scoreboard objectives setdisplay sidebar" >/dev/null || true
+rcon_raw "scoreboard objectives setdisplay sidebar" >/dev/null || true
 
 PACK_NOTE="no resource pack in this build"
 if [ -f "$OUT_DIR/resourcepack.zip" ]; then

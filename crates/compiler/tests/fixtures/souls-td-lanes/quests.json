@@ -1,36 +1,36 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "souls-td-lanes",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/hold-the-keep",
-        "trigger": {
-          "type": "campaign-start"
-        },
         "objectives": [
           {
-            "type": "reach-anchor",
-            "id": "obj/take-post",
             "anchor": "anchor/keeper-stand",
-            "radius": 3
+            "id": "obj/take-post",
+            "radius": 3,
+            "type": "reach-anchor"
           },
           {
-            "type": "kill",
+            "after": [
+              "obj/take-post"
+            ],
             "id": "obj/break-warband",
-            "wave": "wave/warband",
-            "after": [
-              "obj/take-post"
-            ]
+            "type": "kill",
+            "wave": "wave/warband"
           },
           {
-            "type": "kill",
-            "id": "obj/break-drowned",
-            "wave": "wave/drowned",
             "after": [
               "obj/take-post"
-            ]
+            ],
+            "id": "obj/break-drowned",
+            "type": "kill",
+            "wave": "wave/drowned"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
           }
         ],
         "on_objective_complete": {
@@ -45,50 +45,50 @@
             }
           ]
         },
-        "on_complete": [
-          {
-            "type": "campaign-complete"
-          }
-        ]
+        "trigger": {
+          "type": "campaign-start"
+        }
       }
     ],
     "waves": [
       {
-        "id": "wave/warband",
         "anchor": "anchor/exit",
-        "mobs": [
-          {
-            "entity": "minecraft:pillager",
-            "count": 2
-          },
-          {
-            "entity": "minecraft:vindicator",
-            "count": 1
-          }
-        ],
+        "id": "wave/warband",
         "lane": {
+          "aggro_radius": 16,
           "waypoints": [
             "anchor/keeper-stand",
             "anchor/chest",
             "spawn"
-          ],
-          "aggro_radius": 16
-        }
-      },
-      {
-        "id": "wave/drowned",
-        "anchor": "anchor/keeper-stand",
-        "summon": "aggro-edge",
+          ]
+        },
         "mobs": [
           {
-            "entity": "minecraft:drowned",
             "count": 2,
-            "attributes": {
-              "follow_range": 12
-            }
+            "entity": "minecraft:pillager"
+          },
+          {
+            "count": 1,
+            "entity": "minecraft:vindicator"
           }
         ]
+      },
+      {
+        "anchor": "anchor/keeper-stand",
+        "id": "wave/drowned",
+        "mobs": [
+          {
+            "attributes": {
+              "follow_range": 12
+            },
+            "count": 2,
+            "entity": "minecraft:drowned"
+          }
+        ],
+        "summon": "aggro-edge"
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "quests"
 }

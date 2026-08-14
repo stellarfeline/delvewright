@@ -124,38 +124,20 @@ fn build_scheduled_branch_fixture() -> BuildOutput {
     for f in common::STAGE_FILES {
         std::fs::copy(src.join(f), dst.join(f)).unwrap();
     }
-    let search = r#"            {
-              "type": "campaign-complete",
-              "ending": "ending/abandoned",
-              "happening": {
-                "verb": "loses",
-                "text": "The delve ends with the gate still shut and the watch unstood."
-              }
-            }"#;
-    let replace = r#"            {
-              "type": "sequence",
-              "steps": [
-                {
-                  "at_ticks": 200,
-                  "effects": [
-                    {
-                      "type": "campaign-complete",
-                      "ending": "ending/abandoned",
-                      "happening": {
-                        "verb": "loses",
-                        "text": "The delve ends with the gate still shut and the watch unstood."
-                      }
-                    }
-                  ]
-                }
-              ]
-            }"#;
-    let qp = dst.join("quests.json");
-    let q = std::fs::read_to_string(&qp)
-        .unwrap()
-        .replace(search, replace);
-    assert!(q.contains("at_ticks"), "quests.json patch applied");
-    std::fs::write(&qp, q).unwrap();
+    // Wrap the losing ending in a `sequence` so the ending fires 200 ticks
+    // later — the AWAITED-ending shape the template below must handle.
+    common::patch_file(&dst.join("quests.json"), |d| {
+        let effects = common::objective_effects(d, 1, "obj/bolt");
+        let idx = effects
+            .iter()
+            .position(|e| e["type"] == "campaign-complete")
+            .expect("quest/bolt still ends the campaign on obj/bolt");
+        let ending = effects[idx].clone();
+        effects[idx] = serde_json::json!({
+            "type": "sequence",
+            "steps": [ { "at_ticks": 200, "effects": [ending] } ]
+        });
+    });
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);
     out

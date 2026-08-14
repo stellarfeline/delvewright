@@ -237,19 +237,26 @@ use delvewright_dsl::Diagnostic;
 
 use crate::nav::{ActorMovePlan, MovePlan, World};
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0452`: a walked leg's route contains a move the body cannot make — today,
 /// passing through a closed fence gate with no capability to open one.
-pub const DW_TRAVERSAL_IMPOSSIBLE: &str = "DW0452";
+pub const DW_TRAVERSAL_IMPOSSIBLE: DwCode = DwCode::every_version("DW0452");
 
 /// `DW0453`: a walked leg's route goes **over** a barrier line by stepping onto a
 /// full-cube course of it. Advisory: the step is physically legal, and whether
 /// the course is a kerb or an enclosure is a content judgement.
-pub const DW_BARRIER_SURMOUNTED: &str = "DW0453";
+pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453");
 
 /// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
 /// rule's verdict, so nothing in this build holds the body to it (spec-0034).
-pub const DW_TRAVERSAL_DECLARATION_INERT: &str = "DW0454";
+///
+/// [`Binds::EveryVersion`](delvewright_dsl::Binds::EveryVersion), like its two
+/// neighbours: the verdict is a function of the campaign alone — the author's
+/// own declaration set against the world the author built — so there is nothing
+/// to grandfather. The surface that carries the declaration is fenced per stage
+/// at 0.11 by `DW0141`, so a campaign below 0.11 cannot raise this code at all.
+pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::every_version("DW0454");
 
 /// How many route steps after a rise still count as "and came down the other
 /// side". Four: the island's crossing takes one step up, at most two along the
@@ -508,7 +515,7 @@ impl TraversalGate {
 #[derive(Debug)]
 pub struct TraversalError {
     /// The stable diagnostic code ([`DW_TRAVERSAL_IMPOSSIBLE`]).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation naming the body, the leg, the cell and the
     /// capability the route assumed — plus every further violation, so one build
     /// reports them all.

@@ -1,35 +1,35 @@
 {
-  "dsl_version": "0.7.0",
   "campaign_id": "teleport-volume",
-  "stage": "npcs",
   "content": {
     "npcs": [
       {
+        "anchor": "anchor/keeper-stand",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
         "id": "npc/keeper",
         "name": "The Keeper",
-        "role": "quest-giver",
-        "area": "area/keep",
-        "anchor": "anchor/keeper-stand",
-        "base_entity": "minecraft:villager",
         "persona": {
           "archetype": "stoic gatekeeper",
-          "speech_style": "Terse, formal, archaic.",
-          "motivation": "Keep the gate shut until someone asks well."
-        }
+          "motivation": "Keep the gate shut until someone asks well.",
+          "speech_style": "Terse, formal, archaic."
+        },
+        "role": "quest-giver"
       },
       {
+        "anchor": "anchor/exit",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
         "id": "npc/sleeper",
         "name": "The Sleeper",
-        "role": "flavor",
-        "area": "area/keep",
-        "anchor": "anchor/exit",
-        "base_entity": "minecraft:villager",
         "persona": {
           "archetype": "wine-drowned watchman",
-          "speech_style": "Slurred, half-dreaming.",
-          "motivation": "Sleep through his whole watch."
-        }
+          "motivation": "Sleep through his whole watch.",
+          "speech_style": "Slurred, half-dreaming."
+        },
+        "role": "flavor"
       }
     ]
-  }
+  },
+  "dsl_version": "0.7.0",
+  "stage": "npcs"
 }

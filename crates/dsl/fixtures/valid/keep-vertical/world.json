@@ -1,20 +1,23 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "keep-vertical",
-  "stage": "world",
   "content": {
-    "title": "The Vertical Keep",
-    "theme": "A ruined keep built into the moor's cliff, its shrine perched a storey above the gate.",
-    "premise": "The Keeper sends you up through the keep: cut down the guard the moor raised, take the old key, unbar the inner door, and climb to the shrine on the level above.",
-    "seed": 20260731,
-    "target_minutes": 8,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Vertical Keep",
-        "prefab_pool": "pool/vertical-keep",
-        "pieces": { "min": 8, "max": 10 }
+        "pieces": {
+          "max": 10,
+          "min": 8
+        },
+        "prefab_pool": "pool/vertical-keep"
       }
-    ]
-  }
+    ],
+    "premise": "The Keeper sends you up through the keep: cut down the guard the moor raised, take the old key, unbar the inner door, and climb to the shrine on the level above.",
+    "seed": 20260731,
+    "target_minutes": 8,
+    "theme": "A ruined keep built into the moor's cliff, its shrine perched a storey above the gate.",
+    "title": "The Vertical Keep"
+  },
+  "dsl_version": "0.3.0",
+  "stage": "world"
 }

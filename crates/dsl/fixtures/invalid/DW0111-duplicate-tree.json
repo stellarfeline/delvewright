@@ -1,57 +1,57 @@
 {
   "description": "two dialogue trees are declared for the same npc",
-  "expect": "DW0111",
   "documents": {
     "dialogue": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "dialogue",
       "content": {
         "dialogues": [
           {
-            "npc": "npc/keeper",
-            "root": "dlg/greeting",
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler.",
                 "options": [
                   {
-                    "label": "Open the door, please.",
                     "effects": [
                       {
-                        "type": "complete-objective",
-                        "objective": "obj/talk"
+                        "objective": "obj/talk",
+                        "type": "complete-objective"
                       }
-                    ]
+                    ],
+                    "label": "Open the door, please."
                   }
-                ]
+                ],
+                "text": "Halt, traveler."
               }
-            ]
+            ],
+            "npc": "npc/keeper",
+            "root": "dlg/greeting"
           },
           {
-            "npc": "npc/keeper",
-            "root": "dlg/greeting",
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler.",
                 "options": [
                   {
-                    "label": "Open the door, please.",
                     "effects": [
                       {
-                        "type": "complete-objective",
-                        "objective": "obj/talk"
+                        "objective": "obj/talk",
+                        "type": "complete-objective"
                       }
-                    ]
+                    ],
+                    "label": "Open the door, please."
                   }
-                ]
+                ],
+                "text": "Halt, traveler."
               }
-            ]
+            ],
+            "npc": "npc/keeper",
+            "root": "dlg/greeting"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "dialogue"
     }
-  }
+  },
+  "expect": "DW0111"
 }

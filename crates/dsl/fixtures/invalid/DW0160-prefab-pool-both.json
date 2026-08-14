@@ -1,30 +1,30 @@
 {
   "description": "an area binds both `prefab` and `prefab_pool` (exactly one is required)",
-  "expect": "DW0160",
   "documents": {
     "world": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "world",
       "content": {
-        "title": "The Keeper's Door",
-        "theme": "A lonely keep at the edge of the moor.",
-        "premise": "One locked door stands between you and the road home.",
-        "seed": 20260729,
-        "target_minutes": 5,
         "areas": [
           {
             "id": "area/keep",
             "name": "The Keep",
-            "prefab": "prefab/hello-room",
-            "prefab_pool": "pool/hello-rooms",
             "pieces": {
-              "min": 1,
-              "max": 3
-            }
+              "max": 3,
+              "min": 1
+            },
+            "prefab": "prefab/hello-room",
+            "prefab_pool": "pool/hello-rooms"
           }
-        ]
-      }
+        ],
+        "premise": "One locked door stands between you and the road home.",
+        "seed": 20260729,
+        "target_minutes": 5,
+        "theme": "A lonely keep at the edge of the moor.",
+        "title": "The Keeper's Door"
+      },
+      "dsl_version": "0.2.0",
+      "stage": "world"
     }
-  }
+  },
+  "expect": "DW0160"
 }

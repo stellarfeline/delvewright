@@ -1,28 +1,44 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "and-join",
-  "stage": "dialogue",
   "content": {
     "dialogues": [
       {
-        "npc": "npc/warden",
-        "root": "dlg/greeting",
         "nodes": [
           {
             "id": "dlg/greeting",
-            "text": "Two wards, two rooms. Draw them together, or not at all.",
             "options": [
-              { "label": "Why two?", "next": "dlg/lore" },
-              { "label": "We will split up.", "effects": [ { "type": "complete-objective", "objective": "obj/talk" } ] }
-            ]
+              {
+                "label": "Why two?",
+                "next": "dlg/lore"
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/talk",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "We will split up."
+              }
+            ],
+            "text": "Two wards, two rooms. Draw them together, or not at all."
           },
           {
             "id": "dlg/lore",
-            "text": "Because one hand can be bought. Two cannot agree on a price.",
-            "options": [ { "label": "Back.", "next": "dlg/greeting" } ]
+            "options": [
+              {
+                "label": "Back.",
+                "next": "dlg/greeting"
+              }
+            ],
+            "text": "Because one hand can be bought. Two cannot agree on a price."
           }
-        ]
+        ],
+        "npc": "npc/warden",
+        "root": "dlg/greeting"
       }
     ]
-  }
+  },
+  "dsl_version": "0.2.0",
+  "stage": "dialogue"
 }
