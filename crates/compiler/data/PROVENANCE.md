@@ -65,6 +65,28 @@ not third-party reconstructions.
   <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json`. The script
   pins and checks the source SHA-256 and the block count.
 
+- **`blockstate-shape-props-1.21.11.json`** — per block, the properties named by
+  `multipart` selectors in the block's own blockstate definition
+  (`assets/minecraft/blockstates/<block>.json`, 1.21.11 client jar). 95 blocks.
+  This is the **shape-carrying** property class `DW0735` fires on: a `variants`
+  property the state omits picks one complete model (benign — the default is
+  what the author meant), while a `multipart` property *assembles* the model,
+  so an omitted connection property drops geometry — a `cobblestone_wall` with
+  none written places as an isolated post, silently, in 20 of the 36 library
+  prefabs when first measured (2026-08-14). The class is derived from Mojang's
+  own blockstate definitions, never a hand-kept id list (CLAUDE.md: a
+  capability belongs to the object class).
+  Like the font metrics below, the client jar is EULA-bound and never
+  committed; what is committed is the derived table of property names.
+  **Reproduce it**: `python3 tools/extract-shape-properties.py
+  <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json`.
+  The script pins the jar's `version.json` to `1.21.11` / DataVersion 4671 and
+  cross-checks every derived property against `blocks-1.21.11.json` — a
+  selector naming a property the registry does not define is a refusal.
+  Consumed by `delvewright_schem::blocks` (`shape_carrying` /
+  `omitted_shape_carrying`), which serves `delve-admit audit` and the grammar
+  back end's `shape-complete` gate + export refusal.
+
 - **`items-1.21.11.json`** — the `item` registry array from `registries/data.min.json`,
   each id namespaced (`minecraft:<id>`) to match DSL usage, de-duplicated and sorted.
   1505 items. Deterministic transform: `sorted(set("minecraft:"+i for i in item))`,

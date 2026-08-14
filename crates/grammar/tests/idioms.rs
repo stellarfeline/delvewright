@@ -189,7 +189,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            if case.traversable { 3 } else { 2 },
+            if case.traversable { 5 } else { 4 },
             "{}",
             case.id
         );
@@ -204,7 +204,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
             judged += 1;
         }
     }
-    assert_eq!(judged, 22, "10 examples, 2 always-on gates, 2 walk gates");
+    assert_eq!(judged, 42, "10 examples, 4 always-on gates, 2 walk gates");
 }
 
 /// The documented ids are the ids the tool lists, and **every idiom the library
