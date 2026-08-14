@@ -1605,6 +1605,96 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     );
 }
 
+/// `DW0364`: an ocean world in which the invariant above examined **nothing**.
+///
+/// This is the shape of the failure `DW0344` cannot have: it is keyed off an
+/// optional metadata field, so a piece that loses that field does not fail the
+/// check, it silently leaves it. That is exactly what the admission tool did to
+/// `waterline_y` — it read prefab metadata through a type that did not model the
+/// field and wrote the document back without it — and the world it deleted the
+/// field from would have gone on building green with `DW0344` binding to zero
+/// pieces.
+///
+/// Both directions, because a one-directional gate proves nothing: with the
+/// declaration present the advisory is silent, with it gone the advisory names
+/// the count. And a non-ocean world raises nothing either way — "does not apply"
+/// and "applies and examined nothing" are different states.
+#[test]
+fn an_ocean_world_where_nothing_declares_a_waterline_warns_dw0364() {
+    let prefabs_copy = tmp("dw0364-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
+    let meta_path = prefabs_copy.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap();
+
+    let ocean_camp = tmp("dw0364-camp");
+    copy_dir(&common::hello_world_dir(), &ocean_camp);
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(ocean_camp.join("world.json")).unwrap())
+            .unwrap();
+    world["dsl_version"] = serde_json::json!("0.6.0");
+    let content = world["content"].as_object_mut().unwrap();
+    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+    std::fs::write(
+        ocean_camp.join("world.json"),
+        serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+
+    let build = |tag: &str, camp: &std::path::Path| -> String {
+        let out = tmp(tag);
+        let r = delvec(&[
+            "build",
+            camp.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+            "--prefabs",
+            prefabs_copy.to_str().unwrap(),
+        ]);
+        assert_eq!(
+            code(&r),
+            0,
+            "an unbound check is advisory, never a build failure: {}",
+            String::from_utf8_lossy(&r.stderr)
+        );
+        String::from_utf8_lossy(&r.stdout).to_string()
+    };
+
+    // Bound: the placed piece declares the convention waterline, so the datum is
+    // really checked and there is nothing to report.
+    meta["waterline_y"] = serde_json::json!(2);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let bound = build("dw0364-bound-out", &ocean_camp);
+    assert!(
+        !bound.contains("DW0364"),
+        "a check that examined a piece must not report itself unbound:\n{bound}"
+    );
+
+    // Unbound: the declaration is gone — which is precisely what an admission
+    // step that did not model the field left behind.
+    meta.as_object_mut().unwrap().remove("waterline_y");
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    let unbound = build("dw0364-unbound-out", &ocean_camp);
+    assert!(
+        unbound.contains("DW0364"),
+        "an ocean world where nothing declares a waterline must say so:\n{unbound}"
+    );
+    assert!(
+        unbound.contains("examined ZERO pieces") && unbound.contains("places 1 piece(s)"),
+        "the advisory must state what it examined and out of how many:\n{unbound}"
+    );
+
+    // A world with no ocean horizon is not in scope at all.
+    let void_camp = tmp("dw0364-void-camp");
+    copy_dir(&common::hello_world_dir(), &void_camp);
+    let void = build("dw0364-void-out", &void_camp);
+    assert!(
+        !void.contains("DW0364"),
+        "a world with no ocean horizon has no datum to bind to:\n{void}"
+    );
+}
+
 /// `DW0345` + the entry-anchor alias. Every campaign must resolve an ENTRY POINT —
 /// the one cell that is `setworldspawn`, the class-apply teleport, the first-join
 /// placement and the `dw:cp` seed. The shipped tileset library spells that anchor

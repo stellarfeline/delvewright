@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.2.0
+version: 1.3.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -613,7 +613,7 @@ settled and the pieces it needs exist, **you deliver an Artifact and stop.**
 The Artifact tells the **complete story** and walks through **every scene's
 design**, and each scene carries images at **both near view and far view**. Not a
 document with pictures in it — a visual walkthrough, in the medium the owner
-actually reviews in. She does not read long documents (CLAUDE.md PR policy); a
+actually reviews in. She does not read long documents (the review protocol); a
 design she cannot see is a design she cannot approve, and every problem it would
 have caught gets paid for twice once stages 5–6 are written against it.
 
@@ -748,16 +748,44 @@ Symptom → tool:
   1. **Write the scene description first** (one or two sentences: what a body
      does in the space, the material feeling, what the campaign will attach).
      Written after the render, it is a description of the render.
-  2. **Choose the palette by measurement, never from memory.**
-     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
-     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
-     Record the measured hex beside each role.
+  2. **Choose the palette by measurement, never from memory** — and it is
+     three steps, not one. A block's name is not its appearance (`packed_mud`
+     is orange, 142/107/80).
+     **Screen** the shelf by constraints rather than by a guessed hex:
+     `python3 tools/block-appearance.py --screen --where full_cube --where
+     'L>=0.75' --where 'C_mean<0.02' --where 'texture_range<=0.30'` takes 1146
+     blocks to a handful (`L` = Oklab lightness, `C_mean` = how coloured,
+     `texture_range` = how loud the pattern; `form=`, `family=`, `not tinted`,
+     `not gravity` are facets too). Then **measure the mix**:
+     `--mix 'a=3,b=3,c=4'` or `--program p.json` reports `chroma_mass`,
+     `chromatic_area`, the **named** `loudest_member` with its area share, and
+     `dominant_hue` — never a mean as the verdict, because a mean cannot see
+     that 60% of a wall is one loud family when the craft rule gives it 10%.
+     Then **LOOK**: `--sheet` writes `.sheets/palette/swatches.png`, every
+     survivor tiled and every mix rendered as its seeded weighted tiling —
+     **read that PNG before binding anything.** A shortlist is not a choice,
+     and the screen will hand you blocks that are right on every measured axis
+     and wrong for the job (a light source, a gravity block, wool). Record the
+     measured hex beside each role.
+     The tool needs the pinned block registry from `crates/compiler/data/`
+     **and** a 1.21.11 client jar, and refuses by name when either is
+     absent. That does not make the step optional: take role names from the
+     corpus instead (`delve-grammar list`, then `delve-grammar show
+     --program <nearest>`), which is a palette somebody already measured,
+     and record where each name came from. Never invent one — a block that
+     does not exist is refused at export, and one that exists but looks
+     nothing like its name is caught only by eye at step 5.
   3. **Author a grammar program.** Read the **idiom index** first
-     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     (`docs/reference/grammar.md` §2c): ten techniques with a runnable program
      each — repetition, `otherwise`, taper/arch/gable (one recursion),
      air-in-a-mix erosion, graded erosion, surface detail, symmetry without
-     reflection, `skip`, light. It is the part of the language no type signature
-     shows, and a scene that looks impossible is usually one of the nine.
+     reflection, `skip`, light, and arguments (`bind` — one rule called with
+     different content). It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the ten.
+     **Never copy a rule to change its paint, its size or its axis**: a caller
+     passes a paint or a size with `bind`, an axis with `reorient`, and anything
+     derivable from the box with an expression over `dim` — a copied rule family
+     is one nothing keeps in step and no gate reads.
      `delve-grammar show --program idiom-shape` prints one. Then start from the
      corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
      p.json`, edit, and `delve-grammar check --file p.json` after every edit.
@@ -768,8 +796,33 @@ Symptom → tool:
      floors** — the default truncates and an unwritten cell is air, which no
      gate reads; a palette role may be a **weighted list with `minecraft:air` in
      it**, which is the whole of decay and the cure for a piece that renders as
-     one flat material; and a `facing=` block state **does not turn** when
-     `largest` turns the piece.
+     one flat material; and a `facing=` block state **does not turn when the frame
+     turns and does not flip when it reflects** — `oriented-fills` (`DW0736`)
+     refuses the piece rather than shipping it facing the wrong way. Say which
+     axes the state is written in: wrap it as
+     `{"local": "minecraft:iron_bars[east=true,…]"}` and its directions mean the
+     scope's own, so one palette role gives the right state at every frame,
+     reflections included. Where the whole rule BODY differs by frame, use an
+     `orientation` guard instead — one alternative per frame, naming the
+     reflection as well as the axes.
+     **Decide the split order before the first rule** (`grammar.md` §2c, the
+     section before the ten). A split's children copy the parent box on the two
+     axes it does not cut, so siblings of a split are the only two things
+     guaranteed to line up, and there is no way to say "this opening is the same
+     cells as that one". Hence: **the last axis you split is the only axis on
+     which two things are guaranteed to meet — split last on the axis your
+     openings run through**, and write a hole as a piece of that split whose
+     siblings are the two things that must meet (best as the *absence* of a
+     sibling, which cannot be misaligned). Within one axis, pin a course to a
+     band's end and not to a height: `[relative 1, absolute 1]` is *the last
+     course of this band* at any band height, where `[absolute 5, absolute 1]`
+     is a computed height that also refuses a short band. Every constant you do
+     not eliminate this way fails silently.
+     One more refusal to expect: **`repeat` clamps the last tile but does not
+     rescue a box too short for the first one** — one pass of the pattern is
+     resolved before any tiling, so a repeat whose absolutes sum to 8 across a
+     7-deep box is a hard refusal. Guard the extent and give the short box an
+     `otherwise` arm.
   4. **Expand and let the machine judge**:
      `delve-grammar expand --file p.json --region XxYxZ --seed N --traversable
      --reachable-floor -o out/`. Pass `--traversable` for any passage, stair or
@@ -777,12 +830,39 @@ Symptom → tool:
      to walk around. A red gate writes no `.nbt` (exit 4). **Read the `findings`
      in the report** — a gate that bound to zero objects, or a program that
      declared no anchors, is a finding, not a pass.
+     Three of the always-on gates are about how a block state is SPELLED —
+     `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and
+     `oriented-fills` (`DW0736`). Write every property of every block state you
+     paint, including the ones whose default looks obvious: a state that omits
+     one means whatever a running server decides, and the render you are about
+     to check the piece against cannot know which. Where a property names a
+     direction — a bar's connections, a stair's facing, a skull's yaw — write
+     the state in the scope's own frame (`{"local": …}`) rather than guessing
+     which way the zone will hand your piece its box.
      **Read the `reachability` line too**, which prints whether you asked or not:
      `traversable` joins two ground-level faces and says nothing about the
      storeys above, so a building can pass every gate with half its floor
      stranded. Unreachable floor **under a roof** is a room with no way in, and
      the report gives you the box to go and look at. Unreachable floor open to
      the sky is a roof, and is nobody's defect.
+     If the piece is one of a campaign's **zones**, its program belongs to the
+     campaign: put it in `campaigns/<campaign>/design/programs/` and name it in
+     `zones.json` there with the region, seed and gate claims it is built at
+     (`traversable`, `allow_falls`, `reachable_floor`, `symmetric`).
+     `delve-grammar audit --campaign-root <content repo>` judges every zone a
+     campaign declares, and CI in both repos runs it — a program that directory
+     carries and the manifest does not name is a red.
+
+     **One design the gate cannot be told about: a one-way descent.** A level a
+     body drops into and does not climb back out of is unreachable on foot on
+     purpose, and nothing in the CLI, the report or the metadata can state that
+     claim. So do **not** pass `--reachable-floor` on such a piece — it fails
+     (`drop-shaft` 9×12×9 seed 1: 28 of 63 roofed cells unreached) and a red gate
+     writes no `.nbt`, so the flag ships nothing rather than shipping a known
+     red. Expand without it, read the always-on reachability line, and record in
+     the campaign's `GENERATION.md` that the `unreachable_sheltered` pocket it
+     names is the drop and not a room with no way in. That verdict is bounded by
+     the instrument, and this is the step at which to say so.
   5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
      against step 1. The gates prove it is buildable and walkable; they say
      nothing about whether it is the scene you asked for. If the expand wrote a

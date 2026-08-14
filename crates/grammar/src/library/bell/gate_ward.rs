@@ -184,7 +184,7 @@ pub fn gate_ward() -> Program {
         .param("stand_run", 10)
         .param("door_run", 10)
         .param("strip_depth", 11)
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "gate_ward",

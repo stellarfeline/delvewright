@@ -425,8 +425,10 @@ mod tests {
                     "anchor/keeper": { "pos": [3,1,2], "facing": "north" }
                 },
                 "connectors": [
-                    { "name": "s", "local_pos": [3,1,0], "facing": "north", "opening": [3,3] },
-                    { "name": "s", "local_pos": [3,1,8], "facing": "south", "opening": [3,3] }
+                    { "name": "s", "target": "s", "local_pos": [3,1,0], "facing": "north",
+                      "opening": [3,3], "joint": "aligned" },
+                    { "name": "s", "target": "s", "local_pos": [3,1,8], "facing": "south",
+                      "opening": [3,3], "joint": "aligned" }
                 ]
             }"#,
         )

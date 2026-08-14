@@ -157,7 +157,7 @@ pub fn cistern_deep() -> Program {
         .param("vent_run", 20)
         .param("gallery_run", 20)
         .param("strip_depth", 21)
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "cistern_deep",

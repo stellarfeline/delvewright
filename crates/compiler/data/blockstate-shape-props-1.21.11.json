@@ -1,0 +1,594 @@
+{
+  "minecraft:acacia_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:acacia_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:andesite_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:bamboo": [
+    "age",
+    "leaves"
+  ],
+  "minecraft:bamboo_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:bamboo_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:birch_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:birch_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:black_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:blackstone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:blue_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:brewing_stand": [
+    "has_bottle_0",
+    "has_bottle_1",
+    "has_bottle_2"
+  ],
+  "minecraft:brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:brown_mushroom_block": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:brown_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:cherry_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:cherry_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:chiseled_bookshelf": [
+    "facing",
+    "slot_0_occupied",
+    "slot_1_occupied",
+    "slot_2_occupied",
+    "slot_3_occupied",
+    "slot_4_occupied",
+    "slot_5_occupied"
+  ],
+  "minecraft:chorus_plant": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:cobbled_deepslate_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:cobblestone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:composter": [
+    "level"
+  ],
+  "minecraft:copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:crimson_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:crimson_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:cyan_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:dark_oak_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:dark_oak_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:deepslate_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:deepslate_tile_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:diorite_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:end_stone_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:exposed_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:fire": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:glow_lichen": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:granite_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:gray_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:green_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:iron_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:jungle_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:jungle_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:leaf_litter": [
+    "facing",
+    "segment_amount"
+  ],
+  "minecraft:light_blue_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:light_gray_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:lime_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:magenta_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:mangrove_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:mangrove_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:mossy_cobblestone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:mossy_stone_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:mud_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:mushroom_stem": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:nether_brick_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:nether_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:oak_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:oak_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:orange_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:oxidized_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:pale_moss_carpet": [
+    "bottom",
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:pale_oak_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:pale_oak_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:pink_petals": [
+    "facing",
+    "flower_amount"
+  ],
+  "minecraft:pink_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:polished_blackstone_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:polished_blackstone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:polished_deepslate_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:polished_tuff_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:prismarine_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:purple_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:red_mushroom_block": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:red_nether_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:red_sandstone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:red_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:redstone_wire": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:resin_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:resin_clump": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:sandstone_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:sculk_vein": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:spruce_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:spruce_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:stone_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:tuff_brick_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:tuff_wall": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:vine": [
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "minecraft:warped_fence": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:warped_shelf": [
+    "facing",
+    "powered",
+    "side_chain"
+  ],
+  "minecraft:waxed_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:waxed_exposed_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:waxed_oxidized_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:waxed_weathered_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:weathered_copper_bars": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:white_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ],
+  "minecraft:wildflowers": [
+    "facing",
+    "flower_amount"
+  ],
+  "minecraft:yellow_stained_glass_pane": [
+    "east",
+    "north",
+    "south",
+    "west"
+  ]
+}

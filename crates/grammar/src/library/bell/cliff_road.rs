@@ -80,7 +80,8 @@ pub const MIN_GULF: i64 = 3;
 /// under the road so the drop gate can be shown to fail when it should — and
 /// every parameter of the included [`cliff_path`], under the `path/` prefix
 /// (`path/spacing_min`, `path/niche_height`, `path/watch_back`). Palette role:
-/// `crag`, plus `path/rock` and `path/corpse`.
+/// `crag`, plus `path/rock` (the corpse prop is not a role — see
+/// [`cliff_path`]).
 pub fn cliff_road() -> Program {
     let path = cliff_path();
     let zone = Program::new("bell_cliff_road", "cliff_road")

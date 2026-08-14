@@ -58,9 +58,8 @@
 //!
 //! By default the post's plinth is solid from the ward floor to its own floor,
 //! and the piece is a **terminus**: its far face carries nothing standable, so
-//! nothing can be chained past it (a grammar orientation is a permutation
-//! without reflection, so turning the piece round does not move the post to the
-//! other end either).
+//! nothing can be chained past it (no frame helps — turning or reflecting a
+//! terminus gives a terminus).
 //!
 //! `berm_gate = 1` carries the spine's own column *through* the station at berm
 //! height: the berm continues under the cantilever and tunnels through the
@@ -147,7 +146,7 @@ pub fn causeway() -> Program {
         .param("berm_gate", 0)
         .param("obstruct", 0)
         .role("stone", BlockState::simple("stone"))
-        .role("water", BlockState::simple("water"))
+        .role("water", BlockState::with("water", [("level", "0")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "ward_plan",
