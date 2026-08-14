@@ -278,7 +278,10 @@
     model: null,
     mesh: null,
     cutY: 0,
-    mode: "orbit",
+    // "walk" is the page's resting state and its opening state. Orbit exists,
+    // but only because a button that says so was pressed — never as the mode a
+    // reviewer discovers by finding that W does nothing.
+    mode: "walk",
     // orbit
     target: [0, 0, 0],
     dist: 30,
@@ -293,7 +296,7 @@
   const FACING_YAW = { south: 0, west: -Math.PI / 2, north: Math.PI, east: Math.PI / 2 };
 
   function cameraEye() {
-    if (state.mode === "pov") return state.eye;
+    if (state.mode === "walk") return state.eye;
     const cp = Math.cos(state.pitch);
     return [
       state.target[0] + state.dist * cp * Math.sin(state.yaw),
@@ -303,7 +306,7 @@
   }
 
   function cameraCenter() {
-    if (state.mode !== "pov") return state.target;
+    if (state.mode !== "walk") return state.target;
     const cp = Math.cos(state.pitch);
     return [
       state.eye[0] + cp * Math.sin(state.yaw),
@@ -377,7 +380,10 @@
     }
     const socket = model.anchors.find((a) => usable(a) && a.socket);
     if (socket) return "pov:" + socket.name;
-    return "exterior";
+    // A prefab that declares no way in still opens on a pair of feet, standing
+    // off the piece at eye height. Opening in orbit instead is what made W do
+    // nothing on exactly the prefabs whose interiors most needed walking.
+    return "ground";
   }
 
   /**
@@ -398,7 +404,15 @@
   function applyPreset(id) {
     const model = state.model;
     state.preset = id;
-    if (id === "exterior") {
+    if (id === "ground") {
+      // Feet on the ground, off the south face, far enough back that the whole
+      // piece is in frame — and walkable from the first frame.
+      const c = centerOf(model);
+      state.mode = "walk";
+      state.eye = [c[0], EYE, c[2] - fitDistance(model) * 0.85];
+      state.yaw = 0;      // looking +Z, at the piece
+      state.pitch = 0.18;
+    } else if (id === "exterior") {
       state.mode = "orbit";
       state.target = centerOf(model);
       state.dist = fitDistance(model);
@@ -414,7 +428,7 @@
       const name = id.slice(4);
       const a = model.anchors.find((x) => x.name === name);
       if (!a || !a.pos) return;
-      state.mode = "pov";
+      state.mode = "walk";
       // Feet in the anchor's cell, eyes 1.62 blocks above its floor — the same
       // offset the game gives a standing player.
       state.eye = [a.pos[0] + 0.5, a.pos[1] + EYE, a.pos[2] + 0.5];
@@ -431,6 +445,32 @@
 
   function centerOf(model) {
     return [model.size[0] / 2, model.size[1] / 2, model.size[2] / 2];
+  }
+
+  /**
+   * Orbit is a switch the reviewer throws, never a state the page puts them in.
+   *
+   * Turning it on frames the whole piece — that is what the button offers, so
+   * that is what it should do. Turning it off leaves the camera exactly where
+   * the orbit put it, facing the model: yaw turns through half a circle and
+   * pitch inverts, because the orbit's angles describe where the eye sits
+   * relative to the target and a walker's describe where they are looking.
+   */
+  function setOrbit(on) {
+    if (on === (state.mode === "orbit")) return;
+    if (on) {
+      applyPreset("exterior");
+    } else {
+      const e = cameraEye();
+      state.mode = "walk";
+      state.eye = [e[0], e[1], e[2]];
+      state.yaw += Math.PI;
+      state.pitch = C.clampPitch(-state.pitch);
+      state.preset = "";
+    }
+    syncPresetButtons();
+    updateReadout();
+    invalidate();
   }
 
   /* ------------------------------------------------------------- drawing -- */
@@ -667,13 +707,23 @@
 
   /* --------------------------------------------------------------- input -- */
 
+  // Every key and every gesture resolves through the shared control table, so
+  // this page and any other front end the viewer grows answer a reviewer's hands
+  // identically. Nothing below decides what a key means; it only carries out
+  // what `controls.js` says it means.
+  const C = DelveControls;
+
   const pointers = new Map();
   let lastPinch = 0;
 
   function onDown(e) {
     canvas.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey });
+    // Focus follows the drag, so the keys the reviewer presses next reach the
+    // camera rather than whichever panel control was clicked last.
+    if (canvas.focus) canvas.focus({ preventScroll: true });
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
     lastPinch = 0;
+    noteFirstInput();
   }
 
   function onMove(e) {
@@ -692,7 +742,11 @@
       return;
     }
 
-    const panning = prev.button === 1 || prev.button === 2 || e.shiftKey;
+    // The left button always looks (or orbits, while orbit is switched on).
+    // Shift no longer pans: shift is "move faster", and one modifier cannot
+    // mean two things without the reviewer having to know which mode they are
+    // in — which is the defect this file is being repaired for.
+    const panning = prev.button === 1 || prev.button === 2;
     if (panning) pan(dx, dy);
     else look(dx, dy);
     invalidate();
@@ -704,14 +758,13 @@
   }
 
   function look(dx, dy) {
-    const k = 0.005;
-    // In a point of view the camera turns its head; in orbit it swings around
-    // the model, which is the opposite sense.
-    const sign = state.mode === "pov" ? 1 : -1;
-    state.yaw -= sign * dx * k;
-    state.pitch += sign * dy * k * (state.mode === "pov" ? -1 : 1);
-    const lim = Math.PI / 2 - 0.001;
-    state.pitch = Math.max(-lim, Math.min(lim, state.pitch));
+    // Walking turns the head; orbiting swings the model, which inverts yaw.
+    // Both senses come from the shared table so the two gestures cannot drift
+    // apart, and pitch is the same in each because tilting the head down and
+    // tilting the model down look identical from the reviewer's side.
+    const d = state.mode === "walk" ? C.lookStep(dx, dy) : C.orbitStep(dx, dy);
+    state.yaw += d.dyaw;
+    state.pitch = C.clampPitch(state.pitch + d.dpitch);
     markCustom();
   }
 
@@ -719,14 +772,17 @@
     const eye = cameraEye(), c = cameraCenter();
     let fx = c[0] - eye[0], fy = c[1] - eye[1], fz = c[2] - eye[2];
     const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
-    let rx = fz, rz = -fx;
+    // Same right vector the walk uses, from the same place — the duplicated
+    // hand-written copy here is what let A/D and the pan axes disagree.
+    const b = C.basis(Math.atan2(fx, fz));
+    let rx = -b.right[0], rz = -b.right[1];
     const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
     const ux = rz * fy, uy = rx * fz - rz * fx, uz = -rx * fy;
-    const scale = state.mode === "pov" ? 0.02 : state.dist * 0.0022;
+    const scale = state.mode === "walk" ? 0.02 : state.dist * 0.0022;
     const mx = (-dx * rx + dy * ux) * scale;
     const my = (dy * uy) * scale;
     const mz = (-dx * rz + dy * uz) * scale;
-    if (state.mode === "pov") {
+    if (state.mode === "walk") {
       state.eye = [state.eye[0] + mx, state.eye[1] + my, state.eye[2] + mz];
     } else {
       state.target = [state.target[0] + mx, state.target[1] + my, state.target[2] + mz];
@@ -735,7 +791,7 @@
   }
 
   function zoom(amount) {
-    if (state.mode === "pov") {
+    if (state.mode === "walk") {
       const c = cameraCenter();
       const dx = c[0] - state.eye[0], dy = c[1] - state.eye[1], dz = c[2] - state.eye[2];
       const step = -amount * 1.2;
@@ -757,32 +813,44 @@
     invalidate();
   }
 
-  const keys = new Set();
-  function step() {
-    if (state.mode === "pov" && keys.size) {
-      const c = cameraCenter();
-      let fx = c[0] - state.eye[0], fz = c[2] - state.eye[2];
-      const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
-      // The strafe basis. In Minecraft's axes (+X east, +Z south, Y up) the
-      // vector to a body's right of `forward` is (-fz, fx): face north
-      // (0, -1) and it gives east (1, 0); face east (1, 0) and it gives
-      // south (0, 1). Written with the signs the other way round it is the
-      // LEFT vector, and A and D swap — which is how this shipped.
-      const rx = -fz, rz = fx;
-      let mx = 0, my = 0, mz = 0;
-      const v = keys.has("shift") ? 0.34 : 0.13;
-      if (keys.has("w")) { mx += fx * v; mz += fz * v; }
-      if (keys.has("s")) { mx -= fx * v; mz -= fz * v; }
-      if (keys.has("d")) { mx += rx * v; mz += rz * v; }
-      if (keys.has("a")) { mx -= rx * v; mz -= rz * v; }
-      if (keys.has(" ")) my += v;
-      if (keys.has("c")) my -= v;
-      if (mx || my || mz) {
-        state.eye = [state.eye[0] + mx, state.eye[1] + my, state.eye[2] + mz];
+  /** Actions currently held down, never raw keys — the table owns that mapping. */
+  const held = new Set();
+
+  /** One frame's worth of whatever is held down. Split out of the animation
+   *  loop so a check can advance the camera one tick without a real clock. */
+  function applyHeld() {
+    if (held.size) {
+      // A movement key is never inert. If the reviewer is orbiting and presses
+      // W, the page leaves orbit and walks from where the camera was standing —
+      // visibly, because the orbit button un-presses. A key that silently does
+      // nothing is how this page failed twice.
+      if (state.mode !== "walk") {
+        for (const a of held) {
+          if (C.isMovement(a)) { setOrbit(false); break; }
+        }
+      }
+
+      const turn = C.lookKeyStep(held);
+      if (turn.dyaw || turn.dpitch) {
+        state.yaw += turn.dyaw;
+        state.pitch = C.clampPitch(state.pitch + turn.dpitch);
         markCustom();
         invalidate();
       }
+
+      if (state.mode === "walk") {
+        const m = C.walkStep({ yaw: state.yaw, held: held });
+        if (m[0] || m[1] || m[2]) {
+          state.eye = [state.eye[0] + m[0], state.eye[1] + m[1], state.eye[2] + m[2]];
+          markCustom();
+          invalidate();
+        }
+      }
     }
+  }
+
+  function step() {
+    applyHeld();
     if (needsDraw) { needsDraw = false; draw(); }
     requestAnimationFrame(step);
   }
@@ -795,16 +863,30 @@
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
     window.addEventListener("keydown", (e) => {
-      const k = e.key.toLowerCase();
-      if ("wasdc ".indexOf(k) >= 0) { keys.add(k === " " ? " " : k); e.preventDefault(); }
-      if (e.key === "Shift") keys.add("shift");
+      // Leave the browser's own chords alone; nothing here binds a modifier
+      // combination, so swallowing one could only ever break something.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A focused slider or button keeps its keys. The cutaway slider is
+      // steered with the same arrows the camera uses, and a control the
+      // reviewer can see but cannot use is worse than one that is absent.
+      if (C.isTypingTarget(e.target)) return;
+      const a = C.actionFor(e);
+      if (!a) return;
+      held.add(a);
+      noteFirstInput();
+      e.preventDefault();
     });
     window.addEventListener("keyup", (e) => {
-      const k = e.key.toLowerCase();
-      keys.delete(k === " " ? " " : k);
-      if (e.key === "Shift") keys.delete("shift");
+      const a = C.actionFor(e);
+      if (a) held.delete(a);
+      // Shift reports two codes and either release should stop the sprint.
+      if (e.key === "Shift") held.delete(C.ACTIONS.FASTER);
     });
-    window.addEventListener("blur", () => keys.clear());
+    // Anything that can strand a key down — tab away, alt-tab, a chord that
+    // steals the keyup — clears the whole set rather than leaving the camera
+    // drifting on a key nobody is holding.
+    window.addEventListener("blur", () => held.clear());
+    document.addEventListener("visibilitychange", () => { if (document.hidden) held.clear(); });
     window.addEventListener("resize", invalidate);
   }
 
@@ -827,17 +909,48 @@
     panel: document.getElementById("panel"),
     app: document.getElementById("app"),
     panelToggle: document.getElementById("panel-toggle"),
+    orbitToggle: document.getElementById("orbit-toggle"),
+    controlsHelp: document.getElementById("controls-help"),
+    firstHint: document.getElementById("first-hint"),
   };
 
   let presetButtons = [];
+
+  /** The panel's key list is the control table, printed. Neither can drift from
+   *  the other because there is only one of them. */
+  function buildControlsHelp() {
+    if (!els.controlsHelp) return;
+    els.controlsHelp.textContent = "";
+    for (const row of C.HELP) {
+      const li = document.createElement("li");
+      const g = document.createElement("span");
+      g.className = "gesture";
+      g.textContent = row.gesture;
+      const e = document.createElement("span");
+      e.className = "effect";
+      e.textContent = row.effect;
+      li.appendChild(g);
+      li.appendChild(e);
+      els.controlsHelp.appendChild(li);
+    }
+  }
+
+  let sawInput = false;
+  function noteFirstInput() {
+    if (sawInput) return;
+    sawInput = true;
+    if (els.firstHint) els.firstHint.classList.add("gone");
+  }
 
   function syncPresetButtons() {
     for (const b of presetButtons) {
       b.setAttribute("aria-pressed", String(b.dataset.preset === state.preset));
     }
-    els.cameraHint.textContent = state.mode === "pov"
-      ? "Eyes " + EYE.toFixed(2) + " blocks above the floor of that cell. Drag to look, W/A/S/D to walk, space and C for up and down, scroll to step forward."
-      : "Drag to orbit, shift-drag or right-drag to pan, scroll to zoom.";
+    const orbiting = state.mode === "orbit";
+    if (els.orbitToggle) els.orbitToggle.setAttribute("aria-pressed", String(orbiting));
+    els.cameraHint.textContent = orbiting
+      ? "Orbiting: dragging now swings the camera around the piece. Any movement key puts you back on your feet."
+      : "On foot, eyes " + EYE.toFixed(2) + " blocks off the floor — a standing player's height.";
   }
 
   function updateReadout() {
@@ -845,9 +958,9 @@
     const e = cameraEye();
     const fmt = (n) => n.toFixed(1);
     const heading = ((state.yaw * 180 / Math.PI) % 360 + 360) % 360;
-    readout.textContent = state.mode === "pov"
-      ? "eye " + fmt(e[0]) + ", " + fmt(e[1]) + ", " + fmt(e[2]) + "  ·  " + heading.toFixed(0) + "°  ·  player eye height " + EYE
-      : "orbit  ·  " + fmt(state.dist) + " blocks out  ·  " + heading.toFixed(0) + "°";
+    readout.textContent = state.mode === "walk"
+      ? "on foot " + fmt(e[0]) + ", " + fmt(e[1]) + ", " + fmt(e[2]) + "  ·  " + heading.toFixed(0) + "°  ·  player eye height " + EYE
+      : "orbiting  ·  " + fmt(state.dist) + " blocks out  ·  " + heading.toFixed(0) + "°";
   }
 
   function rebuildMesh() {
@@ -906,7 +1019,7 @@
     }
     rebuildMesh();
     const want = hash.preset;
-    const known = want && (want === "exterior" || want === "plan"
+    const known = want && (want === "ground" || want === "exterior" || want === "plan"
       || (want.startsWith("pov:") && m.anchors.some((a) => a.name === want.slice(4) && a.pos)));
     applyPreset(known ? want : defaultPreset(m));
   }
@@ -915,6 +1028,7 @@
     els.presets.textContent = "";
     presetButtons = [];
     const list = [
+      { id: "ground", label: "Ground level" },
       { id: "exterior", label: "Exterior ¾" },
       { id: "plan", label: "Plan" },
     ].concat(anchorPresets(model));
@@ -924,7 +1038,15 @@
       b.textContent = p.label;
       b.dataset.preset = p.id;
       b.setAttribute("aria-pressed", "false");
-      b.addEventListener("click", () => { applyPreset(p.id); invalidate(); });
+      b.addEventListener("click", () => {
+        applyPreset(p.id);
+        // Hand the keyboard straight back to the camera. Left focused, this
+        // button would swallow the next Space the reviewer presses.
+        b.blur();
+        if (canvas.focus) canvas.focus({ preventScroll: true });
+        noteFirstInput();
+        invalidate();
+      });
       els.presets.appendChild(b);
       presetButtons.push(b);
     }
@@ -998,6 +1120,17 @@
     }
   }
 
+  buildControlsHelp();
+
+  if (els.orbitToggle) {
+    els.orbitToggle.addEventListener("click", () => {
+      setOrbit(state.mode !== "orbit");
+      els.orbitToggle.blur();
+      if (canvas.focus) canvas.focus({ preventScroll: true });
+      noteFirstInput();
+    });
+  }
+
   els.cut.addEventListener("input", () => {
     state.cutY = Number(els.cut.value);
     els.cutValue.textContent = els.cut.value;
@@ -1065,5 +1198,21 @@
     }),
     applyPreset: (id) => { applyPreset(id); draw(); },
     selectModel: (i) => { selectModel(i); draw(); },
+    // The control surface, reachable without synthesising events, so a headless
+    // check can drive exactly what a pair of hands drives.
+    controls: C,
+    held: held,
+    setOrbit: (on) => { setOrbit(on); draw(); },
+    press: (code) => {
+      const a = C.actionFor({ code: code });
+      if (a) { held.add(a); noteFirstInput(); }
+      return a;
+    },
+    release: (code) => {
+      const a = C.actionFor({ code: code });
+      if (a) held.delete(a);
+      return a;
+    },
+    tick: () => { applyHeld(); draw(); },
   };
 })();

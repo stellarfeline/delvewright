@@ -273,14 +273,29 @@ the same jar (`temperature`/`downfall` index the vanilla colormaps;
 `effects.water_color` colours water), which is why `--biome` is a real knob: a
 swamp, a desert and a cherry grove each produce their own table.
 
-**Cameras.** `Exterior ¾` and `Plan` always exist; every declared anchor and
-jigsaw socket adds a **player point of view** — eye at **1.62 blocks** above the
-floor of that cell, the height a standing player actually sees from. A socket's
-facing points *out* of the piece, so its point of view looks the other way. The
-page opens on the first anchor whose name stem is a reserved way in (`spawn`,
-`entry`, `entrance`, `threshold`), else the first socket, skipping any whose eye
-would land inside a block; a prefab that declares none opens on the exterior.
-Orbit, pan and zoom work with mouse and touch; in a point of view, W/A/S/D walks.
+**The page is walked.** It opens on a pair of feet and it stays there: `W`/`A`/`S`/`D`
+walk, the mouse looks, `Space` and `C` rise and sink, `Shift` moves faster, arrow
+keys turn a little at a time, right- or middle-drag slides the camera without
+turning, and the wheel moves along the view axis. Nothing is conditional — there
+is no camera state in which a movement key does nothing, and no gesture that
+changes meaning depending on which view was picked. `Orbit the whole piece` is a
+labelled button that swings the camera around the outside for a look at the
+massing; while it is on, dragging orbits, and any movement key puts the reviewer
+back on their feet with the button visibly released.
+
+The whole mapping lives in one file, `crates/render/src/viewer/controls.js`,
+which knows nothing about how the page draws. `crates/render/tests/controls.test.mjs`
+executes it — pressing keys and checking where the body ends up in each of the
+four cardinal facings — and CI runs it as a step of `rust (fmt, clippy, test)`.
+
+**Cameras.** `Ground level`, `Exterior ¾` and `Plan` always exist; every declared
+anchor and jigsaw socket adds a **point of view** — eye at **1.62 blocks** above
+the floor of that cell, the height a standing player actually sees from. A
+socket's facing points *out* of the piece, so its point of view looks the other
+way. The page opens on the first anchor whose name stem is a reserved way in
+(`spawn`, `entry`, `entrance`, `threshold`), else the first socket, skipping any
+whose eye would land inside a block; a prefab that declares none stands the
+reviewer on the ground off the south face, still walkable from the first frame.
 The **cutaway** slider hides everything above a Y level and re-meshes, which is
 how a roofed interior gets read at all.
 

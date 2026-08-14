@@ -405,6 +405,7 @@ fn render_html(title: &str, data_json: &str) -> String {
          <title>{title}</title>\n<style>\n{css}</style>\n</head>\n<body>\n\
          {body}\n\
          <script type=\"application/json\" id=\"delve-model\">{data}</script>\n\
+         <script>\n{controls}</script>\n\
          <script>\n{js}</script>\n</body>\n</html>\n",
         title = escape_html(title),
         css = include_str!("viewer/page.css"),
@@ -412,6 +413,10 @@ fn render_html(title: &str, data_json: &str) -> String {
         // The payload sits in a `application/json` block, so the only sequence
         // that could break out of it is a literal `</script`.
         data = data_json.replace("</", "<\\/"),
+        // The control mapping loads first and in its own block: it is shared
+        // with whatever else drives this viewer, and it depends on nothing the
+        // renderer defines. Which key does what is decided in exactly one file.
+        controls = include_str!("viewer/controls.js"),
         js = include_str!("viewer/page.js"),
     )
 }

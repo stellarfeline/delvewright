@@ -358,13 +358,29 @@ chain is a thin post. Grass, foliage and water tint from
 `data/**/worldgen/biome/<id>.json` in the same jar, which is why `--biome` is a
 real knob rather than decoration.
 
-**Presets**: `Exterior ¾`, `Plan`, and a **player point of view** per declared
-anchor and jigsaw socket — eye at **1.62 blocks** above that cell's floor. A
-socket faces *out* of the piece, so its view looks the other way. The page opens
-on the first reserved way-in stem (`spawn`/`entry`/`entrance`/`threshold`), else
-the first socket, skipping any whose eye would land inside a block. The cutaway
-slider hides everything above a Y level and re-meshes — how a roofed interior
-gets read at all.
+**Controls**: `W`/`A`/`S`/`D` walk, the mouse looks, `Space`/`C` rise and sink,
+`Shift` moves faster, arrow keys turn a little at a time, right- or middle-drag
+slides the camera, and the wheel moves along the view axis. It works from the
+first frame — there is no mode in which a movement key does nothing, and no
+gesture whose meaning depends on which view is selected. `Orbit the whole piece`
+is a labelled button for reading the massing from outside; while it is on,
+dragging orbits, and any movement key returns the reviewer to their feet.
+
+The mapping is `src/viewer/controls.js`, a DOM-free module that knows nothing
+about how the page draws, so it survives a change of rendering core.
+`tests/controls.test.mjs` presses keys and checks where the body ends up in each
+of the four cardinal facings; CI runs it as a step of `rust (fmt, clippy, test)`.
+Keys match on `KeyboardEvent.code`, the physical key — matching on `.key` makes
+WASD dead under a Chinese IME, which reports `"Process"` for every letter.
+
+**Presets**: `Ground level`, `Exterior ¾`, `Plan`, and a **point of view** per
+declared anchor and jigsaw socket — eye at **1.62 blocks** above that cell's
+floor. A socket faces *out* of the piece, so its view looks the other way. The
+page opens on the first reserved way-in stem
+(`spawn`/`entry`/`entrance`/`threshold`), else the first socket, skipping any
+whose eye would land inside a block; a prefab declaring none starts the reviewer
+standing on the ground off the south face. The cutaway slider hides everything
+above a Y level and re-meshes — how a roofed interior gets read at all.
 
 **Anchors come from `<basename>.json`**, the same sidecar `piece` reads, so
 hand-built prefabs work today and a grammar snapshot's semantics sidecar loads

@@ -20,6 +20,20 @@
 
 * { box-sizing: border-box; }
 
+/* `[hidden] { display: none }` is a USER-AGENT rule, so any author rule that
+   sets `display` on the same element beats it and the element stays laid out —
+   invisible, empty, and still in the hit test.
+   This is not a hypothetical tidiness rule. `#fallback` is the no-WebGL notice:
+   `hidden` in the markup, and `position: absolute; inset: 0; display: grid`
+   below. Those three lines put a transparent sheet over the ENTIRE stage, and
+   `document.elementFromPoint` in the middle of the model returned `fallback`,
+   not the canvas. Every drag, every right-drag and every scroll wheel landed on
+   a `<p>` with nothing in it. No mouse gesture had ever reached the viewer.
+   Declared here rather than on `#fallback` alone because the trap belongs to the
+   attribute, not to that one element: the next overlay to be given a `display`
+   would repeat it exactly. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -143,6 +157,61 @@ h2.warn { color: var(--warn); }
   letter-spacing: 0;
 }
 .hint { margin: 8px 0 0; color: var(--ink-dim); font-size: 11px; line-height: 1.5; }
+
+/* The control table, printed. It is the first section of the panel because a
+ * reviewer who cannot move cannot review anything else on the page. */
+.controls-help { margin: 0; padding: 0; list-style: none; font-size: 12px; }
+.controls-help li {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  align-items: baseline;
+}
+.controls-help .gesture {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
+.controls-help .effect { color: var(--ink-dim); line-height: 1.45; }
+
+.toggle { margin-top: 10px; width: 100%; padding: 6px 10px; font-size: 12px; }
+.toggle[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* Says what the hands do, on the canvas, until the hands do it. */
+#first-hint {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  background: #0b0e14e0;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  pointer-events: none;
+  transition: opacity 260ms ease;
+}
+#first-hint.gone { opacity: 0; }
+#first-hint kbd {
+  display: inline-block;
+  margin-right: 3px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 11px;
+}
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips button { padding: 4px 9px; font-size: 12px; }

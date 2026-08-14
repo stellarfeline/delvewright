@@ -307,3 +307,90 @@ fn a_real_prefab_page_is_small() {
         "island-mountain page is {bytes} bytes; the packing has regressed"
     );
 }
+
+/* ----------------------------------------------------------------- controls -- */
+
+/// The mapping the emitted page actually ships, checked at the seam Rust owns.
+///
+/// What each key DOES is proved by `tests/controls.test.mjs`, which executes the
+/// module; what this proves is that the module reaches the page at all, ahead of
+/// the code that calls it, and that no second copy of the mapping came with it.
+/// Both halves are needed: an arithmetic proof of a file the page never loads is
+/// the unemitted kind of vacuous.
+#[test]
+fn the_page_carries_the_shared_control_table_and_only_that_one() {
+    let Some(nbt) = prefab("keep-gate-room.nbt") else {
+        eprintln!("skip: no content symlink");
+        return;
+    };
+    let dir = tmp("controls");
+    let pal = write_palette(&dir);
+    let out = dir.join("page.html");
+
+    let r = Command::new(BIN)
+        .arg("viewer")
+        .arg(&nbt)
+        .arg("-o")
+        .arg(&out)
+        .arg("--palette")
+        .arg(&pal)
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(0), "{r:?}");
+    let html = std::fs::read_to_string(&out).unwrap();
+
+    let table = html
+        .find("globalThis.DelveControls")
+        .expect("control table absent");
+    let user = html
+        .find("C.walkStep(")
+        .expect("page never calls the shared walk");
+    assert!(
+        table < user,
+        "the page calls the control table before defining it"
+    );
+
+    // The physical keys, in the page, as codes — not as characters. `.key` is
+    // what a Chinese IME rewrites to "Process", which is how a WASD matched on
+    // characters goes dead for exactly this project's reader.
+    for code in [
+        "KeyW",
+        "KeyA",
+        "KeyS",
+        "KeyD",
+        "Space",
+        "ShiftLeft",
+        "ArrowLeft",
+    ] {
+        assert!(
+            html.contains(code),
+            "physical key {code} missing from the page"
+        );
+    }
+    assert!(
+        !html.contains("\"wasdc \".indexOf"),
+        "the hand-rolled key string is back in the page"
+    );
+}
+
+/// A gate nothing invokes is not a gate (CLAUDE.md). The control tests are
+/// JavaScript, so `cargo test` cannot reach them — which is exactly the shape
+/// that lets a check rot into a line in a document. This binds them to a job
+/// that already has to pass, and fails if the invocation is ever removed.
+#[test]
+fn ci_runs_the_control_mapping_tests() {
+    let ci = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows/ci.yml");
+    let Ok(text) = std::fs::read_to_string(&ci) else {
+        panic!("cannot read {}", ci.display());
+    };
+    assert!(
+        text.contains("node --test crates/render/tests/controls.test.mjs"),
+        "ci.yml no longer runs the viewer's control mapping tests"
+    );
+    assert!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/controls.test.mjs")
+            .exists(),
+        "the control mapping tests are gone but CI still claims to run them"
+    );
+}

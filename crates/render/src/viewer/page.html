@@ -11,17 +11,24 @@
   </header>
 
   <div id="stage">
-    <canvas id="view" aria-label="Interactive 3D view of the prefab"></canvas>
+    <canvas id="view" tabindex="0" aria-label="Interactive 3D view of the prefab. W A S D walks, drag to look."></canvas>
     <div id="labels" aria-hidden="true"></div>
+    <p id="first-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk &middot; drag to look</p>
     <p id="readout"></p>
     <p id="fallback" hidden></p>
   </div>
 
   <aside id="panel">
     <section>
-      <h2>Camera</h2>
-      <div id="presets" class="chips"></div>
+      <h2>Getting around</h2>
+      <ul id="controls-help" class="controls-help"></ul>
+      <button id="orbit-toggle" type="button" class="toggle" aria-pressed="false">Orbit the whole piece</button>
       <p class="hint" id="camera-hint"></p>
+    </section>
+
+    <section>
+      <h2>Stand here</h2>
+      <div id="presets" class="chips"></div>
     </section>
 
     <section>
