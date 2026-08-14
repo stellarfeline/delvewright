@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.2.0
+version: 1.3.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -748,17 +748,33 @@ Symptom → tool:
   1. **Write the scene description first** (one or two sentences: what a body
      does in the space, the material feeling, what the campaign will attach).
      Written after the render, it is a description of the render.
-  2. **Choose the palette by measurement, never from memory.**
-     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
-     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
-     Record the measured hex beside each role. The tool needs the pinned block
-     registry from `crates/compiler/data/` **and** a 1.21.11 client jar, and
-     refuses by name when either is absent. That does not make the step optional:
-     take role names from the corpus instead (`delve-grammar list`, then
-     `delve-grammar show --program <nearest>`), which is a palette somebody
-     already measured, and record where each name came from. Never invent one —
-     a block that does not exist is refused at export, and one that exists but
-     looks nothing like its name is caught only by eye at step 5.
+  2. **Choose the palette by measurement, never from memory** — and it is
+     three steps, not one. A block's name is not its appearance (`packed_mud`
+     is orange, 142/107/80).
+     **Screen** the shelf by constraints rather than by a guessed hex:
+     `python3 tools/block-appearance.py --screen --where full_cube --where
+     'L>=0.75' --where 'C_mean<0.02' --where 'texture_range<=0.30'` takes 1146
+     blocks to a handful (`L` = Oklab lightness, `C_mean` = how coloured,
+     `texture_range` = how loud the pattern; `form=`, `family=`, `not tinted`,
+     `not gravity` are facets too). Then **measure the mix**:
+     `--mix 'a=3,b=3,c=4'` or `--program p.json` reports `chroma_mass`,
+     `chromatic_area`, the **named** `loudest_member` with its area share, and
+     `dominant_hue` — never a mean as the verdict, because a mean cannot see
+     that 60% of a wall is one loud family when the craft rule gives it 10%.
+     Then **LOOK**: `--sheet` writes `.sheets/palette/swatches.png`, every
+     survivor tiled and every mix rendered as its seeded weighted tiling —
+     **read that PNG before binding anything.** A shortlist is not a choice,
+     and the screen will hand you blocks that are right on every measured axis
+     and wrong for the job (a light source, a gravity block, wool). Record the
+     measured hex beside each role.
+     The tool needs the pinned block registry from `crates/compiler/data/`
+     **and** a 1.21.11 client jar, and refuses by name when either is
+     absent. That does not make the step optional: take role names from the
+     corpus instead (`delve-grammar list`, then `delve-grammar show
+     --program <nearest>`), which is a palette somebody already measured,
+     and record where each name came from. Never invent one — a block that
+     does not exist is refused at export, and one that exists but looks
+     nothing like its name is caught only by eye at step 5.
   3. **Author a grammar program.** Read the **idiom index** first
      (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
      each — repetition, `otherwise`, taper/arch/gable (one recursion),

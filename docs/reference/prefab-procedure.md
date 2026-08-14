@@ -65,31 +65,76 @@ chosen region and seed beside the program — in the campaign's `GENERATION.md`,
 since the program JSON does not yet carry its own region (queued engine
 surface).
 
-## 2. Choose the palette by MEASUREMENT
+## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 
 **Never name a block from memory.** Block names are not descriptions of block
 appearance and repeatedly are not close: `packed_mud` is orange (142, 107, 80),
 `lightning_rod` is signal orange (197, 111, 83), `dried_kelp_block` is a woven
 olive-green (46, 55, 36).
 
+Three steps, in this order. Do not stop after the first.
+
+**2a. Screen the shelf.** State the fiction as constraints on measured axes, not
+as a guessed hex. Constraints eliminate; they never score.
+
 ```sh
-python3 tools/block-appearance.py --near '#3a4038' -n 10 --full-cube-only
-python3 tools/block-appearance.py --id minecraft:packed_mud \
-                                  --id minecraft:deepslate_tiles   # --id repeats
+python3 tools/block-appearance.py --screen \
+    --where full_cube --where 'L>=0.75' --where 'L<=0.95' \
+    --where 'C_mean<0.02' --where 'texture_range<=0.30'
 ```
 
-Rules:
+`L` is Oklab lightness, `C_mean` is how coloured the block is (0.03 is the
+shelf's own 30th percentile — below it a block reads as a neutral), and
+`texture_range` is how loud its pattern is (`white_concrete` 0.006,
+`stone_bricks` 0.221, `dried_kelp_block` 0.419). `form=slab`,
+`family=minecraft:sandstone`, `not tinted` and `not gravity` are facets too. The
+example above takes 1146 blocks to 14.
 
-- Pick the target colour from the fiction, then take candidates from the ranked
-  list. Record the measured hex beside each role in the program.
-- `--full-cube-only` for anything structural: a wall made of a block whose model
-  is mostly air is not a wall.
-- The tool ranks; it cannot choose. A mean colour cannot see pattern or scale,
-  and it has no idea what a block *is* — it will rank `structure_block` next to
-  deepslate. Technical blocks are excluded by default; everything else you
-  **see** at step 5 before believing.
+`--near '#rrggbb'` still ranks by colour when you genuinely have a target hex,
+and `--id` still answers "what colour IS this".
+
+**2b. Measure the mix, and never trust its mean.** A weighted paint is reported
+by four numbers:
+
+```sh
+python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
+```
+
+`chroma_mass`, `chromatic_area` (what fraction of the wall is coloured rather
+than neutral), `loudest_member` **named with its area share**, `dominant_hue`,
+and `void_area` — `minecraft:air` is a member like any other, so a role that is
+45% holes says so instead of reporting a solid wall's numbers. The mean is printed and is never the verdict: swapping half a
+sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units —
+nothing — while the chromatic area falls 60% → 30%, which is a different
+building. The craft rule the numbers serve is 60/30/10: **the loud member gets
+10%, not 60%.** Every report states its binding count, and a zero binding is a
+finding, not a pass.
+
+**2c. Look at it.** A shortlist is not a choice.
+
+```sh
+python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+    --mix 'calcite=6,diorite=3,white_concrete=1' --sheet --seed 7
+```
+
+writes `.sheets/palette/swatches.png` — every survivor tiled and labelled, and
+every candidate mix as its seeded weighted tiling, which is the wall at distance
+zero. No GPU, no world, under a second. **Then read the PNG.** Measurement can
+prove a mix is not warm; only a look decides it is right.
+
+What the numbers cannot decide, stated so you do not wait for them to:
+
+- **Whether the palette reads as the referent.** "Île-de-France limestone" vs
+  "Egyptian sandstone" is cultural reference; no statistic contains it.
+- **Role fitness.** The screen above returns a light source, a gravity block,
+  wool and a metal — all right on every measured axis, all wrong for a wall.
+  Light emission lives in game code and is in no vanilla data branch at all.
+- **Pattern at distance.** Whether `stone_bricks` still reads as masonry twenty
+  blocks away is a render question — step 5's contact sheet.
 - Biome-tinted blocks (`*_leaves`, grass, water) are flagged: their number is
-  the untinted texture and the world will not look like it.
+  the untinted texture and the world will not look like it. `--exclude-tinted`
+  drops them.
 
 **When the tool cannot run.** It needs two things that are not always there: the
 pinned block registry at `crates/compiler/data/blocks-1.21.11.json`, and a
