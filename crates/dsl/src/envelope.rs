@@ -54,6 +54,10 @@ pub fn is_supported_version(version: &str) -> bool {
 /// hand-written `version == "0.4.0" || version == "0.5.0" || …` chains this
 /// replaced had to be extended in lockstep in five places; forgetting one made
 /// the newest campaigns silently lose an older version's surface.
+///
+/// Public as [`minor_ordinal`]: the obligation fence ([`crate::fence`]) compares
+/// a rule's [`Binds::Since`](crate::Binds::Since) against exactly this number, so
+/// "version 0.8.0" means the same thing to a fence as it does to `is_v08`.
 fn ordinal(version: &str) -> u32 {
     match version {
         "0.2.0" => 2,
@@ -68,6 +72,13 @@ fn ordinal(version: &str) -> u32 {
         "0.11.0" => 11,
         _ => 0,
     }
+}
+
+/// The minor-version ordinal of a supported `dsl_version` (`0.8.0` → `8`); `0`
+/// for anything this crate does not accept. The number every `is_v0*` predicate
+/// below compares, and the number [`crate::fence`] grandfathers against.
+pub fn minor_ordinal(version: &str) -> u32 {
+    ordinal(version)
 }
 
 /// True if `version` enables the DSL v0.3 verbs (`kill`/`collect`/`interact`,
@@ -394,11 +405,27 @@ pub fn parse_campaign(raw: &RawCampaign) -> Result<Campaign, Vec<Diagnostic>> {
     }
 }
 
-/// Parse then validate. Convenience over [`parse_campaign`] +
-/// [`crate::validate::validate_campaign`].
+/// Parse then validate, **through the obligation fence**.
+///
+/// Convenience over [`parse_campaign`], [`crate::validate::validate_campaign`]
+/// and [`crate::fence::Fenced`], and the fence is not optional here: a caller with
+/// a raw document in hand has no campaign to fence against afterwards, so an
+/// unfenced list handed out from this function is one nothing downstream could
+/// correct. Every diagnostic returned is one the campaign's own declared
+/// `dsl_version` makes it answerable for; a [`crate::Binds::Since`] rule raised
+/// against a stage below its version is grandfathered and never appears.
+///
+/// A document that does not parse cannot be fenced — there is no declared
+/// version to read — so that path takes [`crate::fence::Fenced::structural`],
+/// which refuses to carry anything version-scoped.
 pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
     match parse_campaign(raw) {
-        Ok(campaign) => crate::validate::validate_campaign(&campaign),
-        Err(diags) => diags,
+        Ok(campaign) => {
+            let diags = crate::validate::validate_campaign(&campaign);
+            crate::fence::Fenced::apply(&campaign, diags)
+                .reported()
+                .to_vec()
+        }
+        Err(diags) => crate::fence::Fenced::structural(diags).reported().to_vec(),
     }
 }

@@ -3,6 +3,10 @@
 *A factory that ships hand-crafted-feeling Minecraft dungeons — built by robots,
 proven by robots, enjoyed by humans.*
 
+[![delvec on crates.io](https://img.shields.io/crates/v/delvec?logo=rust&label=delvec)](https://crates.io/crates/delvec)
+[![delvewright-dsl on crates.io](https://img.shields.io/crates/v/delvewright-dsl?logo=rust&label=delvewright-dsl)](https://crates.io/crates/delvewright-dsl)
+[![delve image on ghcr.io](https://img.shields.io/badge/ghcr.io-delve_image-2496ED?logo=docker&logoColor=white)](https://github.com/stellarfeline/delvewright-campaigns/pkgs/container/delve-nobodys-cave-island)
+
 ## What is this?
 
 Delvewright is an automated production line for **delves**: self-contained,

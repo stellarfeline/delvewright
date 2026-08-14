@@ -160,7 +160,7 @@ fn prefabs() -> PrefabRegistry {
 fn assert_validates(c: &Campaign) {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = delvewright_dsl::validate_campaign_with(c, &items, &prefabs(), &entities);
+    let d = common::fenced_diagnostics(c, &items, &prefabs(), &entities);
     assert!(d.is_empty(), "fixture must validate cleanly: {d:#?}");
 }
 

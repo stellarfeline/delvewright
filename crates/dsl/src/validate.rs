@@ -1504,15 +1504,13 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
 /// differ from each other only because the two classes historically differed.
 ///
-/// **Migration note.** The version gate here is the ordinary per-stage
-/// `is_v11(...)` idiom. Task #51's general form — every diagnostic declaring the
-/// version at which it became an obligation, so an unfenced obligation cannot
-/// compile — is being built on `feat/obligation-fence`; this check is exactly the
-/// kind it governs and should move onto it when it lands.
+/// The fence is the general one: `DW0429` is declared [`Binds::Since`] 0.11.0 on
+/// its own [`DwCode`](crate::DwCode), and [`crate::fence::Fenced`] grandfathers
+/// it against a quests stage below that version. This check therefore raises the
+/// diagnostic unconditionally and never tests a version itself — a private
+/// `is_v11(...)` guard here would be a second, narrower copy of the mechanism
+/// that already governs exactly this case.
 fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    if !is_v11(c.quests.dsl_version.as_str()) {
-        return;
-    }
     let quests = &c.quests.content;
 
     // Every gate anchor some `close-gate` seals, and whether any firing on it

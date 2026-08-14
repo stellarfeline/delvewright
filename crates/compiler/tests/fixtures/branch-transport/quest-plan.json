@@ -1,86 +1,86 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "hello-world",
-  "stage": "quest-plan",
   "content": {
+    "branch_points": [
+      {
+        "branches": [
+          {
+            "flags": [
+              "flag/wait"
+            ],
+            "id": "branch/hold",
+            "leads_to": "ending/held"
+          },
+          {
+            "flags": [
+              "flag/flee"
+            ],
+            "id": "branch/bolt",
+            "leads_to": "ending/abandoned"
+          }
+        ],
+        "forks_on": [
+          "flag/wait",
+          "flag/flee"
+        ],
+        "id": "branch-point/gate",
+        "opens_at": "quest/decide"
+      }
+    ],
+    "finale": "quest/hold",
     "quests": [
       {
-        "id": "quest/decide",
-        "goal": "Choose whether to hold the gate or bolt for the moor road.",
+        "act": 1,
         "area": "area/keep",
+        "depends_on": [],
+        "goal": "Choose whether to hold the gate or bolt for the moor road.",
+        "id": "quest/decide",
+        "mandatory": true,
         "npcs": [
           "npc/keeper"
-        ],
-        "depends_on": [],
-        "mandatory": true,
-        "act": 1
+        ]
       },
       {
-        "id": "quest/bolt",
-        "goal": "Bolt for the road and end the delve early (the abandoned ending).",
+        "act": 2,
         "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
         "depends_on": [
           "quest/decide"
         ],
+        "goal": "Bolt for the road and end the delve early (the abandoned ending).",
+        "id": "quest/bolt",
         "mandatory": true,
-        "act": 2
+        "npcs": [
+          "npc/keeper"
+        ]
       },
       {
-        "id": "quest/away",
-        "goal": "Row out to the galley and put the moor behind you for good.",
+        "act": 2,
         "area": "area/galley",
-        "npcs": [],
         "depends_on": [
           "quest/bolt"
         ],
+        "goal": "Row out to the galley and put the moor behind you for good.",
+        "id": "quest/away",
         "mandatory": true,
-        "act": 2
+        "npcs": []
       },
       {
-        "id": "quest/hold",
-        "goal": "Hold the gate with the Keeper and walk out the front door.",
+        "act": 2,
         "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
         "depends_on": [
           "quest/decide",
           "quest/bolt",
           "quest/away"
         ],
+        "goal": "Hold the gate with the Keeper and walk out the front door.",
+        "id": "quest/hold",
         "mandatory": true,
-        "act": 2
-      }
-    ],
-    "finale": "quest/hold",
-    "branch_points": [
-      {
-        "id": "branch-point/gate",
-        "opens_at": "quest/decide",
-        "forks_on": [
-          "flag/wait",
-          "flag/flee"
-        ],
-        "branches": [
-          {
-            "id": "branch/hold",
-            "flags": [
-              "flag/wait"
-            ],
-            "leads_to": "ending/held"
-          },
-          {
-            "id": "branch/bolt",
-            "flags": [
-              "flag/flee"
-            ],
-            "leads_to": "ending/abandoned"
-          }
+        "npcs": [
+          "npc/keeper"
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "quest-plan"
 }

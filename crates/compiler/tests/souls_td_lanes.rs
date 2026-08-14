@@ -104,7 +104,7 @@ fn template<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
 
 fn code_of(e: &BuildFailure) -> &str {
     match e {
-        BuildFailure::Diagnostic { code, .. } => code,
+        BuildFailure::Diagnostic { code, .. } => code.id(),
         other => panic!("expected a diagnostic, got {other:?}"),
     }
 }

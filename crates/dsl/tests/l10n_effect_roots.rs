@@ -30,11 +30,9 @@ const RESPAWN_NARRATE_EN: &str = "You wake in the dark, and the keep remembers y
 
 /// hello-world's `world` doc declaring one translation language.
 fn world_doc() -> String {
-    common::read_valid("world.json").replace(
-        r#""seed": 20260729,"#,
-        r#""seed": 20260729,
-    "languages": ["zh-cn"],"#,
-    )
+    common::patch_doc(&common::read_valid("world.json"), |d| {
+        d["content"]["languages"] = serde_json::json!(["zh-cn"]);
+    })
 }
 
 /// hello-world's `quests` doc, with a raw `traps` array body spliced in.
@@ -84,25 +82,25 @@ fn trap_with_narrate() -> String {
 /// whose `on_respawn` bundle narrates. Everything else is the stock tree, so the
 /// inventory differs from the stock campaign's by exactly this one key.
 fn dialogue_doc() -> String {
-    common::read_valid("dialogue.json").replace(
-        r#"{
-                    "type": "complete-objective",
-                    "objective": "obj/talk"
-                  }"#,
-        &format!(
-            r#"{{
-                    "type": "complete-objective",
-                    "objective": "obj/talk"
-                  }},
-                  {{
-                    "type": "set-checkpoint",
-                    "anchor": "anchor/exit",
-                    "on_respawn": [
-                      {{ "type": "narrate", "style": "title", "text": "{RESPAWN_NARRATE_EN}" }}
-                    ]
-                  }}"#
-        ),
-    )
+    common::patch_doc(&common::read_valid("dialogue.json"), |d| {
+        let opts = d["content"]["dialogues"][0]["nodes"][0]["options"]
+            .as_array_mut()
+            .expect("the greeting node has options");
+        let effects = opts[1]["effects"]
+            .as_array_mut()
+            .expect("the second option completes the objective");
+        assert_eq!(
+            effects[0]["type"], "complete-objective",
+            "the option this test hangs the checkpoint on has moved"
+        );
+        effects.push(serde_json::json!({
+            "type": "set-checkpoint",
+            "anchor": "anchor/exit",
+            "on_respawn": [
+                { "type": "narrate", "style": "title", "text": RESPAWN_NARRATE_EN }
+            ]
+        }));
+    })
 }
 
 fn parse(quests: String, dialogue: String) -> Campaign {

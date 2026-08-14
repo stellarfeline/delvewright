@@ -68,7 +68,7 @@ use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, EnvTrigger, parse_campaign};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
 /// from the far side, with the author's own **left**-click answer already on it.
@@ -77,16 +77,22 @@ fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
-    assert!(
-        diagnostics(&campaign).is_empty(),
-        "fixture must validate clean"
-    );
+    let d = diagnostics(&campaign);
+    assert!(d.is_empty(), "fixture must validate clean: {d:#?}");
     campaign
 }
 
+/// The diagnostics the campaign is **answerable for** — raised, then put through
+/// the obligation fence, which is the list `delvec` prints and exits on.
+///
+/// The fence is load-bearing for this file specifically: the base fixture
+/// declares 0.9.0 and is deliberately a silent door, so `DW0429` is raised
+/// against it on every call and grandfathered on every call. Reading the raw
+/// list here would make the fixture's own silence — the thing the tests below
+/// bump to 0.11.0 in order to observe — look like a broken fixture.
 fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    validate_campaign_with(
+    common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,

@@ -16,8 +16,12 @@ use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 use delvewright_dsl::{
-    Diagnostic, Severity, Stage, parse_campaign, stage_schema, validate_campaign_with,
+    Diagnostic, DwCode, Fenced, Stage, parse_campaign, stage_schema, validate_campaign_with,
 };
+
+/// `DW0309`: a mannequin NPC declares a `skin.texture_id` for which the campaign
+/// ships no `skins/<texture_id>.png`. Build-tier (exit 3).
+const DW_SKIN_PNG_MISSING: DwCode = DwCode::every_version("DW0309");
 
 /// Internal-error exit code (spec-0002: ≥10).
 const EXIT_INTERNAL: u8 = 10;
@@ -78,6 +82,24 @@ enum Command {
     L10nInventory {
         /// Campaign directory.
         campaign_dir: PathBuf,
+    },
+    /// Rewrite authored Delvewright JSON in canonical form — object keys
+    /// sorted, two-space indent, non-ASCII raw, one trailing newline — so an
+    /// insertion is a one-line diff instead of a whole-file rewrite. **Array
+    /// order is semantic and is never touched** (`quests[]`, `objectives[]`,
+    /// `effects[]`); the formatter proves that on every file it writes.
+    ///
+    /// `--check` is the `cargo fmt --check` half: it writes nothing and exits 1
+    /// listing the files that are not canonical.
+    Fmt {
+        /// Files or directories. A directory is walked recursively for `*.json`,
+        /// skipping dot-directories and any `delvec build` output tree (a
+        /// directory holding `manifest.json`).
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Report instead of rewriting; exit 1 if anything is not canonical.
+        #[arg(long)]
+        check: bool,
     },
     /// Export a stage's JSON Schema (LLM authoring aid).
     Schema {
@@ -217,6 +239,7 @@ fn main() -> ExitCode {
         Command::L10nInventory { campaign_dir } => {
             run_l10n_inventory(campaign_dir, &cli.lang, cli.json)
         }
+        Command::Fmt { paths, check } => run_fmt(paths, *check, cli.json),
         Command::Schema { stage } => run_schema(stage),
         Command::Snapshot {
             campaign_dir,
@@ -451,7 +474,10 @@ struct Validated {
     prefabs: PrefabRegistry,
     loaded: delvewright_compiler::load::LoadedCampaign,
     sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
-    diags: Vec<Diagnostic>,
+    /// The accumulated diagnostics, **after the obligation fence**
+    /// ([`delvewright_dsl::fence`]): a campaign is judged at the `dsl_version` it
+    /// declares, so this is the list a verdict may be read off.
+    diags: Fenced,
 }
 
 /// Parse an `l10n/<code>.json` sidecar map (raw bytes) into typed [`L10nDoc`]s.
@@ -601,6 +627,13 @@ fn validate_loaded(
             // leakage, hard event contradictions — plus the forcing function that
             // every story node says what it does to the story. No-op below 0.8.0.
             diags.extend(delvewright_compiler::branch::check_branches(&campaign));
+            // THE OBLIGATION FENCE. Every check above ran; this is where a
+            // campaign's own declared `dsl_version` decides which of their
+            // findings it is answerable for (owner ruling 2026-08-10). Nothing
+            // downstream can un-fence it: `print_diags` and `Validated::diags`
+            // both hold `Fenced`, which has no constructor from a bare list.
+            let diags = Fenced::apply(&campaign, diags);
+            report_grandfathered(&diags);
             print_diags(&diags, json);
             Ok(Validated {
                 campaign,
@@ -611,7 +644,10 @@ fn validate_loaded(
             })
         }
         Err(diags) => {
-            print_diags(&diags, json);
+            // No campaign parsed, so no declared version to grandfather against —
+            // and `structural` is the constructor that says so and refuses to
+            // carry anything version-scoped.
+            print_diags(&Fenced::structural(diags), json);
             Err(1)
         }
     }
@@ -622,8 +658,8 @@ fn validate_loaded(
 /// decide with certainty (e.g. `DW0330`, where the true limit depends on the
 /// player's window size and GUI scale), so failing on them would dress a judgement
 /// call as a fact. Every `Severity::Error` still exits non-zero exactly as before.
-fn has_error(diags: &[Diagnostic]) -> bool {
-    diags.iter().any(|d| d.severity == Severity::Error)
+fn has_error(diags: &Fenced) -> bool {
+    diags.has_error()
 }
 
 fn run_validate(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode {
@@ -642,9 +678,9 @@ fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -> ExitCode 
     if has_error(&v.diags) {
         return ExitCode::from(1);
     }
-    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
+    let adiags = Fenced::apply(&v.campaign, analyze_campaign(&v.campaign, &v.prefabs));
     print_diags(&adiags, json);
-    if adiags.is_empty() {
+    if adiags.reported().is_empty() {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(2)
@@ -703,7 +739,7 @@ fn run_l10n_inventory(campaign_dir: &Path, lang: &str, json: bool) -> ExitCode {
     let campaign = match parse_campaign(&loaded.raw) {
         Ok(c) => c,
         Err(diags) => {
-            print_diags(&diags, json);
+            print_diags(&Fenced::structural(diags), json);
             return ExitCode::from(1);
         }
     };
@@ -816,7 +852,7 @@ fn run_snapshot(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&e.warnings, json);
+            print_diags(&Fenced::apply(&campaign, e.warnings), json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -825,7 +861,7 @@ fn run_snapshot(
     // through `emit::build_with_warnings`; the view commands never emit, so they
     // report them here — a draw that repeats an anchored piece is exactly what a
     // reviewer is looking at in a snapshot.
-    print_diags(&plan.warnings, json);
+    print_diags(&Fenced::apply(&campaign, plan.warnings.clone()), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1014,7 +1050,7 @@ fn read_structures(
                 }
                 Err(e) => {
                     print_build_error(
-                        "DW0300",
+                        delvewright_compiler::plan::DW_BUILD,
                         &format!(
                             "cannot read prefab structure file `{}`: {e} — the prefab metadata \
                              points at an `.nbt` that is missing or unreadable in the prefabs dir. \
@@ -1294,7 +1330,7 @@ fn run_blocking_chart(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&e.warnings, json);
+            print_diags(&Fenced::apply(&campaign, e.warnings), json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -1303,7 +1339,7 @@ fn run_blocking_chart(
     // through `emit::build_with_warnings`; the view commands never emit, so they
     // report them here — a draw that repeats an anchored piece is exactly what a
     // reviewer is looking at in a snapshot.
-    print_diags(&plan.warnings, json);
+    print_diags(&Fenced::apply(&campaign, plan.warnings.clone()), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
@@ -1408,8 +1444,8 @@ fn run_build(
         sidecars,
         ..
     } = v;
-    let adiags = analyze_campaign(&campaign, &prefabs);
-    if !adiags.is_empty() {
+    let adiags = Fenced::apply(&campaign, analyze_campaign(&campaign, &prefabs));
+    if !adiags.reported().is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
@@ -1453,7 +1489,7 @@ fn run_build(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&e.warnings, json);
+            print_diags(&Fenced::apply(&campaign, e.warnings), json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -1486,7 +1522,7 @@ fn run_build(
             // Advisory build-tier findings (stage-7 edit replay: DW0353/DW0354).
             // Printed exactly like the validation-tier warnings, and like them
             // they never change the exit code.
-            print_diags(&warnings, json);
+            print_diags(&Fenced::apply(&campaign, warnings), json);
             o
         }
         Err(emit::BuildFailure::Validation(errors)) => {
@@ -1509,7 +1545,7 @@ fn run_build(
             // diagnostics (DW0307/DW0308/DW0311) print like a solver DW03xx error and
             // exit 3.
             print_build_error(code, &message, json);
-            let analysis_tier = code.starts_with("DW02")
+            let analysis_tier = code.id().starts_with("DW02")
                 || code == emit::DW_WAVE_NO_ROOM
                 || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
                 || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
@@ -1549,7 +1585,7 @@ fn read_skins(
             }
             Err(e) => {
                 print_build_error(
-                    "DW0309",
+                    DW_SKIN_PNG_MISSING,
                     &format!(
                         "cannot read skin PNG `{}`: {e} — a mannequin npc declares this \
                          `skin.texture_id` but the campaign has no matching \
@@ -1700,7 +1736,7 @@ fn run_edit(
             // Advisories raised before the failure and explaining it (`DW0498`:
             // the pool draw behind an ambiguous-anchor `DW0305`) print first —
             // the cause above the symptom.
-            print_diags(&e.warnings, json);
+            print_diags(&Fenced::apply(&v.campaign, e.warnings), json);
             print_build_error(e.code, &e.message, json);
             return ExitCode::from(3);
         }
@@ -1715,7 +1751,7 @@ fn run_edit(
         Err(e) => {
             print_build_error(e.code, &e.message, json);
             // Same tier mapping as `build` (analysis-tier content defects → 2).
-            let analysis_tier = e.code.starts_with("DW02")
+            let analysis_tier = e.code.id().starts_with("DW02")
                 || e.code == emit::DW_WAVE_NO_ROOM
                 || e.code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
                 || e.code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
@@ -1805,8 +1841,8 @@ fn run_edit(
     // DW0314/DW0724, entry anchor DW0345, and the emitted-command validator).
     // Output is discarded — this run exists purely so `edit` can never accept a
     // script `build` would reject.
-    let adiags = analyze_campaign(&v.campaign, &v.prefabs);
-    if !adiags.is_empty() {
+    let adiags = Fenced::apply(&v.campaign, analyze_campaign(&v.campaign, &v.prefabs));
+    if !adiags.reported().is_empty() {
         print_diags(&adiags, json);
         return ExitCode::from(2);
     }
@@ -1826,7 +1862,7 @@ fn run_edit(
         &content_sha,
         &skins,
     ) {
-        Ok((_, warnings)) => print_diags(&warnings, json),
+        Ok((_, warnings)) => print_diags(&Fenced::apply(&v.campaign, warnings), json),
         Err(emit::BuildFailure::Validation(errors)) => {
             eprintln!(
                 "build failure: {} emitted command(s) failed validation:",
@@ -1839,7 +1875,7 @@ fn run_edit(
         }
         Err(emit::BuildFailure::Diagnostic { code, message }) => {
             print_build_error(code, &message, json);
-            let analysis_tier = code.starts_with("DW02")
+            let analysis_tier = code.id().starts_with("DW02")
                 || code == emit::DW_WAVE_NO_ROOM
                 || code == delvewright_compiler::assembled::DW_GRAVITY_DESPAWN
                 || code == delvewright_compiler::nav::DW_TRAP_LETHAL_UNAVOIDABLE;
@@ -1961,6 +1997,152 @@ fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {
     Ok(())
 }
 
+/// `delvec fmt [--check] <path>…` — canonical form for authored Delvewright
+/// JSON (task #52; owner directive 2026-08-07).
+///
+/// A formatter AND a check, deliberately in that order: a `--check`-only gate
+/// makes authors hand-sort a 900-key sidecar, which nobody does twice, so the
+/// gate ends up waived. `cargo fmt` is the shape that works.
+///
+/// Exit codes: `0` clean · `1` something is unformatted (`--check`), unparseable
+/// (`DW0770`/`DW0771`), or matched nothing (`DW0774`) · `10` an I/O failure.
+///
+/// Every run states its binding count — how many files it examined. Zero is a
+/// FINDING, not a pass (CLAUDE.md: a green gate that binds to nothing is
+/// vacuous), because the way this gate dies quietly is a path that stops
+/// matching after a directory is renamed.
+fn run_fmt(paths: &[PathBuf], check: bool, json: bool) -> ExitCode {
+    use delvewright_dsl::fmt;
+
+    let mut files: Vec<PathBuf> = Vec::new();
+    for root in paths {
+        match fmt::discover(root) {
+            Ok(found) => files.extend(found),
+            Err(e) => {
+                eprintln!("internal error: cannot read `{}`: {e}", root.display());
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+
+    let mut diags: Vec<Diagnostic> = Vec::new();
+    let mut changed: Vec<PathBuf> = Vec::new();
+
+    for path in &files {
+        let shown = path.display().to_string();
+        let original = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("internal error: cannot read `{shown}`: {e}");
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        let formatted = match fmt::format_text(&original) {
+            Ok(s) => s,
+            Err(e) => {
+                diags.push(Diagnostic::error(
+                    DwCode::every_version(e.code),
+                    "fmt",
+                    format!("{shown}:{}:{}", e.line, e.col),
+                    e.message,
+                ));
+                continue;
+            }
+        };
+        if formatted == original {
+            continue;
+        }
+        changed.push(path.clone());
+        if check {
+            diags.push(Diagnostic::error(
+                DwCode::every_version(fmt::DW_FMT_UNFORMATTED),
+                "fmt",
+                shown.clone(),
+                format!(
+                    "not in canonical form (first difference at line {}). \
+                     Run `delvec fmt {shown}`.",
+                    first_differing_line(&original, &formatted)
+                ),
+            ));
+        } else if let Err(e) = std::fs::write(path, &formatted) {
+            eprintln!("internal error: cannot write `{shown}`: {e}");
+            return ExitCode::from(EXIT_INTERNAL);
+        }
+    }
+
+    for d in &diags {
+        print_one_diag(d, json);
+    }
+
+    // Vacuity: a formatter that formatted nothing because it found nothing is
+    // not a pass, and this is exactly how the CI gate would rot — a renamed
+    // fixture directory, a path that no longer exists.
+    if files.is_empty() {
+        let d = Diagnostic::error(
+            DwCode::every_version(fmt::DW_FMT_NO_BINDING),
+            "fmt",
+            paths
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            "matched 0 JSON files. A formatter or a --check that binds to nothing is \
+             vacuous, not a pass: check the paths (a `delvec build` output tree, a \
+             dot-directory and a symlinked directory are all skipped deliberately)."
+                .to_string(),
+        );
+        print_one_diag(&d, json);
+        return ExitCode::from(1);
+    }
+
+    let unreadable = diags.len() - if check { changed.len() } else { 0 };
+    if check {
+        eprintln!(
+            "delvec fmt --check: examined {} file(s); {} not in canonical form, {} unparseable",
+            files.len(),
+            changed.len(),
+            unreadable
+        );
+    } else {
+        eprintln!(
+            "delvec fmt: examined {} file(s); reformatted {}, {} unparseable",
+            files.len(),
+            changed.len(),
+            unreadable
+        );
+    }
+
+    if diags.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// 1-based line of the first difference, so `--check` points an author at a
+/// place rather than at a file.
+fn first_differing_line(a: &str, b: &str) -> usize {
+    for (i, (la, lb)) in a.lines().zip(b.lines()).enumerate() {
+        if la != lb {
+            return i + 1;
+        }
+    }
+    a.lines().count().min(b.lines().count()) + 1
+}
+
+fn print_one_diag(d: &Diagnostic, json: bool) {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(d).expect("diagnostic serializes")
+        );
+    } else {
+        println!("{} [error] {} {}: {}", d.code, d.stage, d.path, d.message);
+    }
+}
+
 fn run_schema(stage: &str) -> ExitCode {
     let stages = match stage {
         "1" => vec![Stage::World],
@@ -2002,7 +2184,7 @@ fn run_schema(stage: &str) -> ExitCode {
 
 /// Print a `DW03xx` build/solver diagnostic (exit 3), honoring `--json`. Mirrors
 /// the spec-0002 one-object-per-line JSON shape used for validation diagnostics.
-fn print_build_error(code: &str, message: &str, json: bool) {
+fn print_build_error(code: DwCode, message: &str, json: bool) {
     if json {
         let d = serde_json::json!({
             "code": code,
@@ -2017,8 +2199,45 @@ fn print_build_error(code: &str, message: &str, json: bool) {
     }
 }
 
-fn print_diags(diags: &[Diagnostic], json: bool) {
-    for d in diags {
+/// State the obligation fence's **binding count** on stderr: how many findings
+/// this campaign's declared `dsl_version` excused it from, and which rules they
+/// belonged to.
+///
+/// A fence nobody can see is indistinguishable from a check nobody wrote
+/// (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). This
+/// is the line that turns "the campaign is green" into "the campaign is green,
+/// and here is what it is not yet answerable for" — the input to the adoption
+/// round its next `dsl_version` bump owes.
+///
+/// stderr, not stdout: `--json` reserves stdout for one diagnostic object per
+/// line, and this is not a diagnostic — nothing here is wrong.
+fn report_grandfathered(diags: &Fenced) {
+    let held = diags.grandfathered();
+    if held.is_empty() {
+        return;
+    }
+    let mut by_code: BTreeMap<&str, usize> = BTreeMap::new();
+    for d in held {
+        *by_code.entry(d.code.as_str()).or_default() += 1;
+    }
+    let summary: Vec<String> = by_code.iter().map(|(c, n)| format!("{c} x{n}")).collect();
+    eprintln!(
+        "obligation fence: {} finding(s) grandfathered by this campaign's declared dsl_version \
+         ({}). They become live when the stage that owns them adopts the version that introduced \
+         them.",
+        held.len(),
+        summary.join(", ")
+    );
+}
+
+/// Print a fenced diagnostic list, honoring `--json`.
+///
+/// It takes a [`Fenced`], not a `Vec<Diagnostic>`, and that is the point: the
+/// obligation fence is not a step somebody has to remember to run before
+/// reporting, it is the only way to obtain a value this function accepts
+/// (`delvewright_dsl::fence`).
+fn print_diags(diags: &Fenced, json: bool) {
+    for d in diags.reported() {
         if json {
             println!("{}", serde_json::to_string(d).unwrap());
         } else {

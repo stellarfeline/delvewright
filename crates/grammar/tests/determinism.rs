@@ -8,11 +8,15 @@ use delvewright_grammar::ir::Program;
 use delvewright_grammar::library::temple::roof;
 use delvewright_grammar::library::{
     ambush_door, castle, causeway, church, cliff_path, drop_shaft, dumbwaiter, elite_ground,
-    far_side_bar, rafter_hall, stair_flight, store_room, tee_passage, temple, watch_bay,
+    far_side_bar, lift_shaft, rafter_hall, stair_flight, store_room, tee_passage, temple,
+    watch_bay,
 };
 use delvewright_grammar::{Box3, ExpandOptions, expand};
 // W3: the palette/prop family (W + S + M + X).
 use delvewright_grammar::library::{boulder_stair, broken_grate, threshold_motif};
+// The mechanism family (task #182 zone round): the rest point, the lure and the
+// hazard control.
+use delvewright_grammar::library::{bait_stand, disarm_stand, hearth_ward};
 
 const TEMPLE_REGION: Box3 = Box3::at_origin([13, 14, 21]);
 const CASTLE_REGION: Box3 = Box3::at_origin([41, 14, 25]);
@@ -43,6 +47,15 @@ const ARENA_REGION: Box3 = Box3::at_origin([19, 5, 25]);
 /// The vertical family's two-way member: five across (two walls and a
 /// three-wide lane), fourteen tall, twenty-two long.
 const FLIGHT_REGION: Box3 = Box3::at_origin([5, 14, 22]);
+/// The vertical family's stationary member: five across, sixteen tall (a sill
+/// and two whole storeys), seven deep — so the `lift-station-<i>` and
+/// `lift-call-<i>` numbering a campaign binds is part of what is pinned here.
+const LIFT_REGION: Box3 = Box3::at_origin([5, 16, 7]);
+/// The mechanism family: a rest point's nook, a lure with its watcher, and a
+/// hazard's control at the head of its run.
+const HEARTH_REGION: Box3 = Box3::at_origin([8, 6, 14]);
+const BAIT_REGION: Box3 = Box3::at_origin([9, 8, 14]);
+const DISARM_REGION: Box3 = Box3::at_origin([9, 7, 16]);
 
 fn cases() -> Vec<(Program, Box3)> {
     vec![
@@ -64,12 +77,17 @@ fn cases() -> Vec<(Program, Box3)> {
         (causeway(), CAUSEWAY_REGION),
         (elite_ground(), ARENA_REGION),
         (stair_flight(), FLIGHT_REGION),
+        (lift_shaft(), LIFT_REGION),
+        (hearth_ward(), HEARTH_REGION),
+        (bait_stand(), BAIT_REGION),
+        (disarm_stand(), DISARM_REGION),
     ]
 }
 
 /// A grammar program with a genuinely probabilistic rule, authored the way the
 /// pipeline will author one: as JSON. Doubles as the IR's schema-shape example.
 const CAIRN_JSON: &str = r#"{
+  "version": "1.3.0",
   "name": "cairn",
   "start": "cairn",
   "params": { "course": 1 },
@@ -263,7 +281,7 @@ fn runaway_recursion_stops_deterministically() {
     // authoring mistake into a diagnostic instead of a hang.
     let program: Program = serde_json::from_str(
         r#"{
-          "name": "runaway", "start": "loop",
+          "version": "1.3.0", "name": "runaway", "start": "loop",
           "rules": { "loop": [{ "body": { "op": "call", "symbol": "loop" } }] }
         }"#,
     )
@@ -275,4 +293,74 @@ fn runaway_recursion_stops_deterministically() {
     )
     .unwrap_err();
     assert!(err.to_string().contains("depth limit"), "{err}");
+}
+
+/// **A local-frame paint is resolved from the SCOPE, never from the stream**,
+/// so it cannot be a source of nondeterminism — proved on the model bytes and
+/// on the gate report independently, with a seed change as the control that
+/// says the comparison discriminates at all.
+#[test]
+fn a_local_frame_paint_is_byte_stable_and_the_control_still_moves() {
+    use delvewright_grammar::block::BlockState;
+    use delvewright_grammar::ir::{Node, Program, WeightedBlock};
+
+    // A mix under a local frame: the frame is resolved per state, the DRAW is
+    // still the seeded stream, so both halves are exercised at once.
+    let program = Program::new("framed_mix", "all")
+        .role_local_mix(
+            "bars",
+            vec![
+                WeightedBlock {
+                    weight: 3,
+                    block: "minecraft:iron_bars[east=true,north=false,south=false,\
+                            waterlogged=false,west=true]"
+                        .parse::<BlockState>()
+                        .unwrap(),
+                },
+                WeightedBlock {
+                    weight: 1,
+                    block: "minecraft:oak_stairs[facing=north,half=bottom,shape=straight,\
+                            waterlogged=false]"
+                        .parse::<BlockState>()
+                        .unwrap(),
+                },
+            ],
+        )
+        .rule("all", Node::fill("bars"));
+    let region = Box3::at_origin([9, 3, 5]);
+    let run = |seed: u64| {
+        let out = expand(&program, region, &ExpandOptions::seeded(seed)).unwrap();
+        let report = delvewright_grammar::gates::judge(&out, Default::default());
+        (
+            out.model.canonical_bytes(),
+            report.to_json(),
+            out.oriented.resolved,
+        )
+    };
+    let (bytes_a, json_a, resolved_a) = run(11);
+    let (bytes_b, json_b, _) = run(11);
+    let (bytes_c, json_c, _) = run(12);
+
+    // Method 1: the block grid.
+    assert_eq!(bytes_a, bytes_b);
+    assert_ne!(bytes_a, bytes_c, "the seed must reach this program at all");
+    // Method 2: the whole judged report, which is computed from the model by a
+    // different traversal and carries the measurements as well.
+    assert_eq!(json_a, json_b);
+    assert_ne!(json_a, json_c);
+
+    assert_eq!(resolved_a, 1, "the frame bound to something");
+    // The states are the LOCAL ones turned into world ones: this box is longer
+    // in X, so the piece is at identity and they are written as authored.
+    let out = expand(&program, region, &ExpandOptions::seeded(11)).unwrap();
+    let palette: Vec<String> = out
+        .model
+        .palette()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert!(
+        palette.iter().any(|s| s.contains("iron_bars[east=true")),
+        "{palette:?}"
+    );
 }

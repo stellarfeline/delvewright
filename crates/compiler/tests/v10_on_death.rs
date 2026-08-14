@@ -72,7 +72,7 @@ fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
 
 fn build(loaded: &LoadedCampaign, c: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,

@@ -20,7 +20,7 @@ use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
 use delvewright_compiler::gates;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, Diagnostic, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, Diagnostic, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc at `dsl_version`, opening `anchor/door` on the talk
 /// objective and running `on_complete` after the exit is reached — where a
@@ -180,7 +180,7 @@ fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
 /// Full validation, for the checks that are validation-tier (`DW0429`).
 fn diagnostics(c: &Campaign) -> Vec<Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    validate_campaign_with(
+    common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,

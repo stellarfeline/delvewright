@@ -17,6 +17,12 @@ path = "src/main.rs"
 path = "src/lib.rs"
 
 [dependencies]
+# The prefab metadata document's one definition (`delvewright_dsl::prefab`),
+# re-exported by `prefab.rs`. It lives in the DSL crate rather than here because
+# `delvec` is published to crates.io and may only depend on published crates —
+# so that crate is the only one every reader of the document can reach, and a
+# second definition inside the compiler is exactly what this removes.
+delvewright-dsl = { path = "../dsl" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }

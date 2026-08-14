@@ -10,6 +10,9 @@
 //!      ┌───────────────────────────┬─────────────────────────────┐
 //!      │  far room │ BAR │ near rm │ D │  the junction's lane    │  junction_run
 //!      ├───────────────────────────┼─────────────────────────────┤
+//!      │      solid margin         │  lane, with the hearth's    │  hearth_run
+//!      │                           │  nook off its west side     │
+//!      ├───────────────────────────┼─────────────────────────────┤
 //!      │                           │                             │
 //!      │      solid margin         │  the chute: landing, duct,  │  the rest
 //!      │                           │  and the ledge stepped off  │
@@ -31,6 +34,9 @@
 //! * the player arrives **falling**, off the keep's kitchen duct
 //!   ([`crate::library::dumbwaiter`], §4 entry **L**) — the landing the zone is
 //!   named for;
+//! * one bay along, a nook off the west side of the lane carries the ward's
+//!   rest point ([`crate::library::hearth_ward`], **BF3**): a detour, not a
+//!   room on the route — the lane walks whether or not you take it;
 //! * they walk out along the junction's lane
 //!   ([`crate::library::tee_passage`]), which carries one doorway in its side;
 //! * through that doorway is the sealed half of a souls shortcut
@@ -53,17 +59,21 @@
 //! discipline `docs/reference/grammar.md` §5c documents for the seam, used
 //! deliberately instead of fought.
 //!
+//! # The hearth, and why it took a rule
+//!
+//! Z4 is the rest ward, and a rest point is `bonfire{anchor}` (spec-0016 §1) — a
+//! campaign verb that needs an *anchor* to bind. No rule declared one, and a zone
+//! program may not mint an anchor of its own: an anchor name is the campaign's
+//! contract with a **rule**, and every anchor in every zone here comes from the
+//! piece that built the cell. So the gap was never "a bonfire", it was a
+//! mechanism, and [`crate::library::hearth_ward`] is it — somewhere off the road
+//! with one declared focus and one way in. The zone composes it between the
+//! landing and the junction: the player falls in, steps aside to rest, and walks
+//! out past the shortcut they cannot yet open.
+//!
 //! # Missing (REMAKE §3 Z4)
 //!
-//! **The hearth.** Z4 is a rest ward, and a rest point is `bonfire{anchor}`
-//! (spec-0016 §1) — a campaign verb that needs an *anchor* to bind. No rule in
-//! the vocabulary declares one, and a zone program may not mint an anchor of its
-//! own: an anchor name is the campaign's contract with a **rule**, and every
-//! anchor in every zone here comes from the piece that built the cell. So the
-//! hearth is named, not faked, exactly as Z2's and Z5's gaps are. The smallest
-//! honest form of what it needs is a `hearth_ward` rule — a walled room with
-//! `anchor/hearth` at its centre and a gate that no hostile ground is inside it
-//! — which is a §5b rule and not a zone's business to write.
+//! Nothing.
 //!
 //! # Gates (`tests/zones.rs`)
 //!
@@ -79,20 +89,25 @@
 //! 4. **Nothing on the mainline was turned**, and the branch was turned *on
 //!    purpose*: the mainline's anchors run in travel order down the zone's own
 //!    axis and face along it, and the branch's face across it.
+//! 5. **The hearth is reachable from the hub's own route, and off it**: the
+//!    zone reaches `anchor/hearth` under walk-and-fall, and deleting the nook
+//!    leaves the hub still crossing. Teeth: `hearth/mouth_sealed`.
 
 use crate::block::BlockState;
 use crate::compose::entry;
 use crate::geom::Axis;
 use crate::ir::{ArithOp, AxisSpec, CmpOp, DimRef, Expr, Program, Reorient};
 use crate::library::{
-    absp, all_of, alt_when, call, cmp, dim, dumbwaiter, far_side_bar, fill, par, rel, reoriented,
-    split_exact, tee_passage,
+    absp, all_of, alt_when, call, cmp, dim, dumbwaiter, far_side_bar, fill, hearth_ward, par, rel,
+    reoriented, split_exact, tee_passage,
 };
 
 use super::composed;
 
 /// The prefix the kitchen duct is included under.
 const CHUTE: &str = "chute";
+/// The prefix the rest ward's own nook is included under.
+const HEARTH: &str = "hearth";
 /// The prefix the junction — a `tee_passage` — is included under.
 const JUNCTION: &str = "junction";
 /// The prefix the sealed shortcut is included under.
@@ -101,21 +116,24 @@ const SHORTCUT: &str = "shortcut";
 /// The Chapel Ward.
 ///
 /// Parameters: `strip_depth` (how far off the mainline the branch strip runs,
-/// and therefore how deep the shortcut's two rooms are), `junction_run` (the
-/// junction's own length along the zone; the chute takes the rest, so a longer
-/// zone is a longer approach and never a differently-shaped junction), plus
-/// every parameter of the three included pieces under the `chute/`, `junction/`
-/// and `shortcut/` prefixes — including the knobs the gates are shown red with,
-/// `chute/rescue_ladder`, `chute/drop`, `shortcut/unbarred` and
-/// `junction/sealed`. Palette role: `margin`, the zone's own inert mass.
+/// and therefore how deep the shortcut's two rooms are), `junction_run` and
+/// `hearth_run` (their own lengths along the zone; the chute takes the rest, so
+/// a longer zone is a longer approach and never a differently-shaped junction),
+/// plus every parameter of the four included pieces under the `chute/`,
+/// `hearth/`, `junction/` and `shortcut/` prefixes — including the knobs the
+/// gates are shown red with, `chute/rescue_ladder`, `chute/drop`,
+/// `shortcut/unbarred`, `junction/sealed` and `hearth/mouth_sealed`. Palette
+/// role: `margin`, the zone's own inert mass.
 pub fn chapel_ward() -> Program {
     let chute = dumbwaiter();
+    let hearth = hearth_ward();
     let junction = tee_passage();
     let shortcut = far_side_bar();
     let zone = Program::new("bell_chapel_ward", "chapel_ward")
-        .param("strip_depth", 7)
-        .param("junction_run", 6)
-        .role("margin", BlockState::simple("deepslate"))
+        .param("strip_depth", 9)
+        .param("junction_run", 8)
+        .param("hearth_run", 8)
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "chapel_ward",
@@ -135,11 +153,8 @@ pub fn chapel_ward() -> Program {
                 all_of(vec![
                     cmp(par("strip_depth"), CmpOp::Gt, par("junction_run")),
                     cmp(par("junction_run"), CmpOp::Gt, mainline_width()),
-                    cmp(
-                        dim(DimRef::Z).arith(ArithOp::Sub, par("junction_run")),
-                        CmpOp::Gt,
-                        mainline_width(),
-                    ),
+                    cmp(par("hearth_run"), CmpOp::Gt, mainline_width()),
+                    cmp(chute_run(), CmpOp::Gt, mainline_width()),
                 ]),
                 split_exact(
                     Axis::X,
@@ -169,9 +184,10 @@ pub fn chapel_ward() -> Program {
             "mainline",
             split_exact(
                 Axis::Z,
-                vec![absp("junction_run"), rel(1)],
+                vec![absp("junction_run"), absp("hearth_run"), rel(1)],
                 vec![
                     call(&entry(JUNCTION, &junction)),
+                    call(&entry(HEARTH, &hearth)),
                     call(&entry(CHUTE, &chute)),
                 ],
             ),
@@ -180,6 +196,7 @@ pub fn chapel_ward() -> Program {
         zone,
         &[
             (CHUTE, &chute),
+            (HEARTH, &hearth),
             (JUNCTION, &junction),
             (SHORTCUT, &shortcut),
         ],
@@ -190,4 +207,11 @@ pub fn chapel_ward() -> Program {
 /// less the branch strip cut off the side of it.
 fn mainline_width() -> Expr {
     dim(DimRef::X).arith(ArithOp::Sub, par("strip_depth"))
+}
+
+/// What the chute gets: whatever length the junction and the rest ward leave.
+fn chute_run() -> Expr {
+    dim(DimRef::Z)
+        .arith(ArithOp::Sub, par("junction_run"))
+        .arith(ArithOp::Sub, par("hearth_run"))
 }

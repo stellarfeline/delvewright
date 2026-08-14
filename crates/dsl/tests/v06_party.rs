@@ -190,13 +190,17 @@ fn give_item_carrier_reserved_before_0_6() {
 #[test]
 fn kit_carrier_is_v06_gated() {
     let with_carrier = |version: &str| {
-        common::read_valid("classes.json")
-            .replacen("\"0.2.0\"", &format!("\"{version}\""), 1)
-            .replacen(
-                "\"item\": \"minecraft:bread\",\n            \"count\": 3",
-                "\"item\": \"minecraft:bread\",\n            \"count\": 3,\n            \"carrier\": \"one\"",
-                1,
-            )
+        common::patch_doc(&common::read_valid("classes.json"), |d| {
+            d["dsl_version"] = serde_json::json!(version);
+            let kit = d["content"]["classes"][0]["kit"]
+                .as_array_mut()
+                .expect("the wanderer has a kit");
+            let bread = kit
+                .iter_mut()
+                .find(|i| i["item"] == "minecraft:bread")
+                .expect("the wanderer's kit still carries bread");
+            bread["carrier"] = serde_json::json!("one");
+        })
     };
     let ok = check_campaign(&raw_with(None, Some(&with_carrier("0.6.0")), None));
     assert!(ok.is_empty(), "kit carrier is legal at 0.6.0: {ok:#?}");

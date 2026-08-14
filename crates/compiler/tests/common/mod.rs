@@ -132,10 +132,11 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// sees is `DW0300` "no matching prefab metadata" — a message that then states,
 /// confidently and wrongly, "this is a prefab-library/naming issue".
 ///
-/// The live case is an engine/content pair mid-flight: `PrefabMeta` is
-/// `deny_unknown_fields`, so an engine that predates a metadata field drops
-/// **every** prefab carrying it. Thirty-seven files, silently, reported as a
-/// naming problem.
+/// A key newer than this engine is no longer one of those cases — the document
+/// has one definition, it keeps what it does not model, and the report is a
+/// `DW0543` warning. What remains is a genuinely malformed file: a wrong-typed
+/// value, an absent required block, a tile-set manifest this delvec cannot
+/// place.
 ///
 /// So this checks it once and says what actually happened. Docs are the weakest
 /// form a lesson can take (CLAUDE.md debug doctrine); a tooling default that
@@ -151,15 +152,25 @@ pub fn prefabs_dir() -> PathBuf {
             // something else.
             return;
         };
-        let diags = reg.load_diagnostics();
+        // Errors only, and the distinction is the point: an ERROR means the
+        // file did not parse and the prefab is absent from the registry, which
+        // is the state that impersonates a naming problem. A warning (`DW0543`,
+        // a key newer than this engine) leaves the prefab loaded and usable, so
+        // it cannot produce that impersonation — and it has its own test, which
+        // states its binding count, in `tests/registry_load.rs`.
+        let diags: Vec<_> = reg
+            .load_diagnostics()
+            .iter()
+            .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+            .collect();
         assert!(
             diags.is_empty(),
             "the prefab library at {} has {} file(s) this delvec cannot parse, so those \
              prefabs are ABSENT from the registry and every fixture binding one will fail \
              as DW0300 \"no matching prefab metadata\" — which is not what went wrong.\n\n\
-             Almost always: the `campaigns/` symlink points at a content checkout NEWER \
-             than this engine (PrefabMeta is deny_unknown_fields, so one unknown field \
-             drops the whole file). Point it at the SHA `versions.toml` [content].sha \
+             Look first at whether the `campaigns/` symlink points at a content checkout \
+             this engine cannot read: a wrong-typed value or an absent required block \
+             drops the whole file. Point it at the SHA `versions.toml` [content].sha \
              pins, which is what CI builds against.\n\n{}",
             dir.display(),
             diags.len(),
@@ -228,4 +239,63 @@ pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>
     delvewright_compiler::load::load_campaign_dir(dir)
         .expect("campaign dir loads")
         .inputs
+}
+
+/// Patch a JSON document **structurally**: parse the text, hand the closure the
+/// parsed value, and return it re-rendered in canonical form.
+///
+/// Tests used to splice fixtures with `str::replace` over exact indented text.
+/// That coupling is invisible when it breaks: `str::replace` matching nothing
+/// returns the input unchanged, so the test goes on to assert against an
+/// **unpatched** campaign and passes for the wrong reason. Reformatting every
+/// fixture into canonical form (task #52) exposed four such silent no-ops at
+/// once — including the `DW0307` unroutable-move test, which had been asserting
+/// against a campaign with no `move-npc` in it. A structural patch cannot miss:
+/// an absent key is a panic, not a quiet pass.
+pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
+    let mut v: serde_json::Value = serde_json::from_str(text).expect("fixture is valid JSON");
+    f(&mut v);
+    delvewright_dsl::to_canonical_string(&v).expect("patched fixture serializes")
+}
+
+/// [`patch_doc`] against a file, in place.
+pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+    std::fs::write(path, patch_doc(&text, f)).unwrap();
+}
+
+/// The effect list a quest runs when one of its objectives completes —
+/// `content.quests[<quest>].on_objective_complete[<objective>]`. Panics if the
+/// path is absent, which is the whole point (see [`patch_doc`]).
+pub fn objective_effects<'a>(
+    doc: &'a mut serde_json::Value,
+    quest: usize,
+    objective: &str,
+) -> &'a mut Vec<serde_json::Value> {
+    doc["content"]["quests"][quest]["on_objective_complete"][objective]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("quests[{quest}].on_objective_complete[{objective}] is an array"))
+}
+
+/// Validation diagnostics a campaign is **answerable for**: `validate_campaign_with`
+/// put through the obligation fence, which is the list `delvec` prints and derives
+/// its exit code from (`compiler::main`).
+///
+/// Fixtures are written at the `dsl_version` their feature landed at, and a
+/// `Binds::Since` rule raised against a stage below its version is grandfathered
+/// — so a helper that asserted the RAW list would hold a 0.6 fixture to an
+/// obligation the engine never applies to it, and would red on a rule that in
+/// fact never reaches it. One helper rather than a fence rewritten at each call
+/// site: a rule that lives inside one caller is a rule the next caller has
+/// nothing to reuse of.
+pub fn fenced_diagnostics(
+    c: &delvewright_dsl::Campaign,
+    items: &delvewright_compiler::registry::FullItemRegistry,
+    prefabs: &delvewright_compiler::registry::PrefabRegistry,
+    entities: &delvewright_compiler::registry::FullEntityRegistry,
+) -> Vec<delvewright_dsl::Diagnostic> {
+    let raised = delvewright_dsl::validate_campaign_with(c, items, prefabs, entities);
+    delvewright_dsl::Fenced::apply(c, raised)
+        .reported()
+        .to_vec()
 }

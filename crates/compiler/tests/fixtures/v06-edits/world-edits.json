@@ -1,50 +1,44 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "hello-world",
-  "stage": "world-edits",
   "content": {
     "batches": [
       {
-        "id": "batch/dress-floor",
         "area": "area/keep",
-        "note": "Break the uniform stone floor into weathered variation (fixture: piece-local box + palette-match + replace).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/interior",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                1,
-                0,
-                1
-              ],
+              "kind": "box",
               "max": [
                 9,
                 0,
                 9
+              ],
+              "min": [
+                1,
+                0,
+                1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/floor-stone",
             "shape": {
-              "kind": "palette-match",
-              "within": "region/interior",
               "blocks": [
                 "minecraft:stone"
-              ]
-            }
+              ],
+              "kind": "palette-match",
+              "within": "region/interior"
+            },
+            "verb": "select"
           },
           {
-            "verb": "replace",
-            "region": "region/floor-stone",
             "matching": [
               "minecraft:stone"
             ],
@@ -64,75 +58,75 @@
                 }
               ],
               "scale": 0.35
-            }
+            },
+            "region": "region/floor-stone",
+            "verb": "replace"
           }
-        ]
+        ],
+        "id": "batch/dress-floor",
+        "note": "Break the uniform stone floor into weathered variation (fixture: piece-local box + palette-match + replace)."
       },
       {
-        "id": "batch/hearth-nook",
         "area": "area/keep",
-        "note": "Carve a second doorway through the inner wall and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/nook",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                7,
-                1,
-                6
-              ],
+              "kind": "box",
               "max": [
                 8,
                 2,
                 6
+              ],
+              "min": [
+                7,
+                1,
+                6
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "carve",
-            "region": "region/nook"
+            "region": "region/nook",
+            "verb": "carve"
           },
           {
-            "verb": "select",
             "name": "region/exit-pad",
             "shape": {
-              "kind": "box",
               "frame": {
-                "kind": "anchor-relative",
-                "anchor": "anchor/exit"
+                "anchor": "anchor/exit",
+                "kind": "anchor-relative"
               },
-              "min": [
-                -1,
-                -1,
-                -1
-              ],
+              "kind": "box",
               "max": [
                 1,
                 -1,
                 1
+              ],
+              "min": [
+                -1,
+                -1,
+                -1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/pad-surface",
             "shape": {
+              "from": 0,
               "kind": "surface-band",
               "over": "region/exit-pad",
-              "from": 0,
               "to": 0
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "fill",
-            "region": "region/pad-surface",
             "recipe": {
               "blocks": [
                 {
@@ -145,61 +139,62 @@
                 }
               ],
               "scale": 0.5
-            }
+            },
+            "region": "region/pad-surface",
+            "verb": "fill"
           }
-        ]
+        ],
+        "id": "batch/hearth-nook",
+        "note": "Carve a second doorway through the inner wall and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill)."
       },
       {
-        "id": "batch/corner-terraces",
         "area": "area/keep",
-        "note": "Raise low corner terraces in both chambers (fixture: union + morph raise).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/outer-corner",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                1,
-                0,
-                1
-              ],
+              "kind": "box",
               "max": [
                 2,
                 0,
                 2
+              ],
+              "min": [
+                1,
+                0,
+                1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/inner-corner",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                8,
-                0,
-                8
-              ],
+              "kind": "box",
               "max": [
                 9,
                 0,
                 9
+              ],
+              "min": [
+                8,
+                0,
+                8
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/corners",
             "shape": {
               "kind": "union",
@@ -207,14 +202,13 @@
                 "region/outer-corner",
                 "region/inner-corner"
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "morph",
-            "region": "region/corners",
             "op": {
-              "kind": "raise",
               "by": 1,
+              "kind": "raise",
               "recipe": {
                 "blocks": [
                   {
@@ -227,62 +221,62 @@
                   }
                 ]
               }
-            }
+            },
+            "region": "region/corners",
+            "verb": "morph"
           }
-        ]
+        ],
+        "id": "batch/corner-terraces",
+        "note": "Raise low corner terraces in both chambers (fixture: union + morph raise)."
       },
       {
-        "id": "batch/garden",
         "area": "area/keep",
-        "note": "Green the outer chamber and scatter wildflowers off the walk lane (fixture: scatter + avoid envelope).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/garden-floor",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                1,
-                0,
-                1
-              ],
+              "kind": "box",
               "max": [
                 9,
                 0,
                 5
+              ],
+              "min": [
+                1,
+                0,
+                1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/walk-lane",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                4,
-                0,
-                1
-              ],
+              "kind": "box",
               "max": [
                 6,
                 0,
                 9
+              ],
+              "min": [
+                4,
+                0,
+                1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "replace",
-            "region": "region/garden-floor",
             "matching": [
               "minecraft:stone",
               "minecraft:cobblestone",
@@ -300,21 +294,25 @@
                 }
               ],
               "scale": 0.4
-            }
+            },
+            "region": "region/garden-floor",
+            "verb": "replace"
           },
           {
-            "verb": "select",
             "name": "region/garden-air",
             "shape": {
+              "from": 1,
               "kind": "surface-band",
               "over": "region/garden-floor",
-              "from": 1,
               "to": 1
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "scatter",
-            "region": "region/garden-air",
+            "avoid": [
+              "region/walk-lane"
+            ],
+            "density": 0.3,
             "items": [
               {
                 "block": "minecraft:poppy",
@@ -333,138 +331,140 @@
                 "weight": 3.0
               }
             ],
-            "density": 0.3,
-            "avoid": [
-              "region/walk-lane"
-            ]
+            "region": "region/garden-air",
+            "verb": "scatter"
           }
-        ]
+        ],
+        "id": "batch/garden",
+        "note": "Green the outer chamber and scatter wildflowers off the walk lane (fixture: scatter + avoid envelope)."
       },
       {
-        "id": "batch/orchard",
         "area": "area/keep",
-        "note": "One lean-or-grow oak in the inner chamber, clear of the exit lane (fixture: plant, #121 canopy rules).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/inner-floor",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                1,
-                0,
-                7
-              ],
+              "kind": "box",
               "max": [
                 9,
                 0,
                 9
+              ],
+              "min": [
+                1,
+                0,
+                7
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/exit-lane",
             "shape": {
-              "kind": "box",
               "frame": {
-                "kind": "anchor-relative",
-                "anchor": "anchor/exit"
+                "anchor": "anchor/exit",
+                "kind": "anchor-relative"
               },
-              "min": [
-                -1,
-                -1,
-                -2
-              ],
+              "kind": "box",
               "max": [
                 1,
                 -1,
                 2
+              ],
+              "min": [
+                -1,
+                -1,
+                -2
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "select",
             "name": "region/inner-air",
             "shape": {
+              "from": 1,
               "kind": "surface-band",
               "over": "region/inner-floor",
-              "from": 1,
               "to": 1
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "plant",
-            "region": "region/inner-air",
-            "tree": "oak",
-            "count": 1,
             "avoid": [
               "region/exit-lane"
-            ]
+            ],
+            "count": 1,
+            "region": "region/inner-air",
+            "tree": "oak",
+            "verb": "plant"
           }
-        ]
+        ],
+        "id": "batch/orchard",
+        "note": "One lean-or-grow oak in the inner chamber, clear of the exit lane (fixture: plant, #121 canopy rules)."
       },
       {
-        "id": "batch/annex",
         "area": "area/keep",
-        "note": "Stamp a detached basement annex below the room (fixture: fragment, library provenance).",
         "edits": [
           {
-            "verb": "fragment",
-            "prefab": "prefab/hello-room",
+            "at": [
+              0,
+              -7,
+              0
+            ],
             "frame": {
               "kind": "piece-local",
               "piece": 0,
               "prefab": "prefab/hello-room"
             },
-            "at": [
-              0,
-              -7,
-              0
-            ]
+            "prefab": "prefab/hello-room",
+            "verb": "fragment"
           }
-        ]
+        ],
+        "id": "batch/annex",
+        "note": "Stamp a detached basement annex below the room (fixture: fragment, library provenance)."
       },
       {
-        "id": "batch/lamplight",
         "area": "area/keep",
-        "note": "Bake a torch into the carved nook (fixture: explicit region relight with overrides).",
         "edits": [
           {
-            "verb": "select",
             "name": "region/nook-r",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/hello-room"
               },
-              "min": [
-                7,
-                1,
-                6
-              ],
+              "kind": "box",
               "max": [
                 8,
                 2,
                 6
+              ],
+              "min": [
+                7,
+                1,
+                6
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "relight",
-            "region": "region/nook-r",
             "fixture": "torch",
-            "min_light": 12
+            "min_light": 12,
+            "region": "region/nook-r",
+            "verb": "relight"
           }
-        ]
+        ],
+        "id": "batch/lamplight",
+        "note": "Bake a torch into the carved nook (fixture: explicit region relight with overrides)."
       }
     ]
-  }
+  },
+  "dsl_version": "0.6.0",
+  "stage": "world-edits"
 }

@@ -46,6 +46,7 @@
 //! boulder hint. One cell, one hitbox.
 
 use crate::plan::{Plan, ResolvedAnchor};
+use delvewright_dsl::DwCode;
 
 /// `DW0426`: a click trigger is anchored where a player can never click.
 ///
@@ -54,7 +55,7 @@ use crate::plan::{Plan, ResolvedAnchor};
 /// press lands on nothing — so the beat simply never happens and every board
 /// stays green. This is the shape of the gap the whole task came from, and the
 /// single most valuable thing here: it is the check that would have caught it.
-pub const DW_TRIGGER_UNPRESSABLE: &str = "DW0426";
+pub const DW_TRIGGER_UNPRESSABLE: DwCode = DwCode::every_version("DW0426");
 
 /// What a click at an anchor lands on.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,6 +124,74 @@ pub fn body_at(plan: &Plan, anchor: &str) -> Body {
         };
     }
     Body::Nothing
+}
+
+/// One line of human-readable prose naming what a click at an anchor lands on.
+pub fn describe(body: &Body) -> String {
+    match body {
+        Body::Rides { owner, tag } => format!("rides the {owner}'s own hitboxes (`{tag}`)"),
+        Body::Region(cells) => format!("arms {} clickable cell(s) of the region", cells.len()),
+        Body::Point(p) => format!("a 1.0x2.0 body in open air at {p:?}"),
+        Body::Nothing => "nothing — DW0426".to_string(),
+    }
+}
+
+/// What the `DW0426` proof resolved a body for, on this build.
+///
+/// Emitted as `validation/press-bodies.json`. `DW0426` is an error, so a build
+/// that ships proves *no press lands on nothing* — but that sentence is equally
+/// true of a campaign with no click triggers at all, and the two are the same
+/// silence from outside. This ledger is the difference (CLAUDE.md: *every
+/// validation artifact states its binding count*), and it doubles as the record
+/// of WHICH body each press got: a trigger that rides a seal and one that arms a
+/// six-cell doorway shell are both green here and behave completely differently
+/// under a crosshair.
+#[derive(Clone, Debug, Default)]
+pub struct PressLedger {
+    /// `(trigger id, click kind, anchor, what the click lands on)`, in campaign
+    /// declaration order.
+    pub presses: Vec<(String, String, String, String)>,
+}
+
+impl PressLedger {
+    /// Record one resolved press.
+    pub fn push(&mut self, trigger: &str, kind: &str, anchor: &str, body: &str) {
+        self.presses.push((
+            trigger.to_string(),
+            kind.to_string(),
+            anchor.to_string(),
+            body.to_string(),
+        ));
+    }
+
+    /// The ledger as the `validation/press-bodies.json` artifact.
+    pub fn to_json(&self) -> serde_json::Value {
+        let n = self.presses.len();
+        let mut o = serde_json::json!({
+            "code": DW_TRIGGER_UNPRESSABLE,
+            "presses": self
+                .presses
+                .iter()
+                .map(|(id, kind, anchor, body)| serde_json::json!({
+                    "trigger": id,
+                    "click": kind,
+                    "anchor": anchor,
+                    "body": body,
+                }))
+                .collect::<Vec<_>>(),
+            "examined": n,
+            "unbound": n == 0,
+        });
+        if n == 0 {
+            o["reason"] = serde_json::json!(
+                "this campaign arms no `strike`/`use` trigger on an anchor at all, so nothing \
+                 here can be pressed and DW0426 had nothing to resolve a body for. A press that \
+                 lands on nothing is the defect this proof exists for; a campaign with no \
+                 presses has not passed it, it is outside it"
+            );
+        }
+        o
+    }
 }
 
 /// The shell cells of an inclusive region: every cell with at least one

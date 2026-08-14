@@ -84,11 +84,12 @@ use delvewright_dsl::{Campaign, Diagnostic, Objective, QuestEffect, TriggerOn};
 
 use crate::nav::entity_dims;
 use crate::plan::Plan;
+use delvewright_dsl::DwCode;
 
 /// `DW0359`: an NPC or actor body stands on (error) or immediately in front of
 /// (warning) an interaction affordance, so the player's crosshair reaches the
 /// body instead of the affordance.
-pub const DW_BODY_ECLIPSE: &str = "DW0359";
+pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 
 /// `DW0422`: a **pressable body's hitbox** shares a cell with another
 /// compiler-owned interaction affordance (DSL v0.8, task #142; widened to the
@@ -112,14 +113,14 @@ pub const DW_BODY_ECLIPSE: &str = "DW0359";
 /// the protrusion exists to beat the block the body stands in, and
 /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
 /// into a neighbouring cell's affordances.
-pub const DW_SEAL_HITBOX_COLLISION: &str = "DW0422";
+pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::every_version("DW0422");
 
 /// A build failure raised by the eclipse proof (mapped to exit 3, like the
 /// `nav`/`edit` build errors it sits beside).
 #[derive(Debug)]
 pub struct EclipseError {
     /// The stable diagnostic code ([`DW_BODY_ECLIPSE`]).
-    pub code: &'static str,
+    pub code: DwCode,
     /// Human-readable explanation, naming both entities and both cells.
     pub message: String,
 }
