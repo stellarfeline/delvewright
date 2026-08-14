@@ -403,7 +403,10 @@ fn a_declared_view_on_a_tiled_zone_aims_at_the_zone_not_at_a_tile() {
 
     let plan = shots::plan_piece(st, Some(&meta), &[at_anchor, at_model]).unwrap();
     assert_eq!(plan.views.declared, 2);
-    assert_eq!(plan.views.planned, 2, "a tiled zone plans views like any piece");
+    assert_eq!(
+        plan.views.planned, 2,
+        "a tiled zone plans views like any piece"
+    );
 
     // The planned set is untouched by declaring views — the eye shot the test
     // above pins is still there and still the zone's.

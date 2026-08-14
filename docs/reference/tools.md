@@ -589,7 +589,16 @@ cap ships as several `.nbt` files and one manifest. `viewer` reassembles it
 before it draws anything, exactly as `piece` does, and a lone tile passed by name
 is refused with the manifest named. Pointed at a directory holding such a set,
 the page shows the zone and never its tiles — a review of a building sliced at a
-packaging boundary passes and means nothing.
+packaging boundary passes and means nothing. `piece --view` frames a tiled zone
+the same way and off the same anchors, so an elevation of a zone is asked for
+exactly as an elevation of a single template is.
+
+**`viewer` and `piece --view` answer the same question differently**, and the
+difference is the artifact. Both put a camera where the planned set has none;
+the page hands it to a person for as long as they want it, and a view hands back
+**a PNG and a manifest line** — something a trial record, a review report or a
+byte-comparison can cite. Drive the page to decide what the picture should be;
+declare the view to keep it.
 
 **Fidelity is reported, never assumed.** Three findings, each with its cell
 count, on the page and on stderr:
