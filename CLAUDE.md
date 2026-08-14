@@ -223,6 +223,24 @@ validation/          # docker compose: headless server + bot, same image as CI &
     by this.
   Until its gate is passed a PR stays open. Unit/CI tests alone prove the
   change broke nothing, not that it fixed the target.
+- **Every validation authoring needs must be runnable on the creator's own
+  machine, and this is not negotiable** (owner, 2026-08-14). The toolchain is
+  *for creators*, so a check that only we can run is not a check the product
+  has. The floor is deliberately low and always available: **clone the repo and
+  build from source**. Completeness is guaranteed there, never by the
+  convenience layer.
+  The consequence, and it is what makes the rule cheap to hold: **binary
+  distribution is an optimisation, not the guarantee.** Where a platform's
+  prebuilt binary cannot carry a capability, that is not a reason to contort the
+  binary, drop the capability, or ship a creator a diminished tool — the
+  **skill** states how to build locally, and the first run builds from source. A
+  skill is a prompt: state it clearly and the agent does it. So every skill owns
+  an explicit **`Init` section that establishes a complete toolchain before any
+  work begins**, and a tool that cannot be bundled is acquired at the step that
+  needs it rather than assumed present.
+  This is why a distribution question is never allowed to decide a capability
+  question. The two are separate, and only the second is about what the engine
+  can do.
 - **Write short documents.** Specs/ADRs are owner-consumed via chat summaries;
   their long form exists for agents. Keep them as terse as correctness allows.
 - **A decision put to the owner leads with the PROBLEM, never with the options**
