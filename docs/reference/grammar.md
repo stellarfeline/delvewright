@@ -26,11 +26,15 @@ Two library modules exist for the tool and are public for it:
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
-  `non-empty`, and the opt-in `traversable`, `symmetric` and `reachable-floor`
-  (§4c). Measurements: fill, distinct states, standable cells, footprint
-  area/perimeter, silhouette complexity, per-block shares, and **reachability**
-  (§4d) — how much of the floor a body reaches on foot and where the rest of it
-  sits. A zero binding count, and a program declaring no anchors, are reported
+  `shape-complete` (every placed state writes its shape-carrying `multipart`
+  properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
+  is filled only under the identity frame or a passed `orientation` guard —
+  `DW0736`, §4b), `non-empty`, and the opt-in `traversable`, `symmetric` and
+  `reachable-floor` (§4c). Measurements: fill, distinct states, standable cells,
+  footprint area/perimeter, silhouette complexity, per-block shares, and
+  **reachability** (§4d) — how much of the floor a body reaches on foot and
+  where the rest of it sits. A zero binding count, and a program declaring no
+  anchors, are reported
   as findings rather than folded into a pass.
 
 `library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
@@ -260,8 +264,10 @@ a gate walked, and a sweep over seeds is a sweep over texture alone.
    the state it was given verbatim; nothing rotates or reflects a `facing=`
    property to follow the frame. So a rule whose frame opens with `z(largest)` —
    every §5b rule does — lays its stairs, doors and voussoirs the same way round
-   whatever box it is handed, and every gate stays green while the piece faces
-   the wrong way. The construct that answers it is the `orientation` guard: one
+   whatever box it is handed. `oriented-fills` (§4b) is the gate that reads it,
+   and it reads both halves of the frame: the piece is refused, not shipped
+   facing the wrong way. The construct that answers it is the `orientation`
+   guard: one
    alternative per frame, each naming the state that frame wants, which is how
    `church` picks its four roof stair facings. Because the guard matches the
    reflection too, the two sides of a mirror pair are separable — an alternative
@@ -388,6 +394,40 @@ and not in the table above: `none_of` is negation of guards, a language feature
 rather than a way of building anything. The demonstration-coverage report is
 what holds the corpus to that.
 
+### The order of the splits — decided before any of the ten
+
+Not an eleventh technique and not a row in the table: the ten below are how a
+shape is made, and this is the decision taken before any of them, in the first
+ten minutes, on almost no information. It decides which of the building's openings
+can line up at all.
+
+A split cuts one axis. Its children copy the parent box **unchanged on the two
+axes it does not cut**; only the cut axis differs. So two siblings of a split are
+guaranteed to have the same extent on the other two axes, and that guarantee is
+the only alignment this language gives away: there is no positional index and no
+way to say *this opening is the same cells as that one*. Every other alignment is
+a constant an author computed, which is a constant an author can get wrong, and
+nothing checks it.
+
+**The last axis you split is the only axis on which two things are guaranteed to
+meet — so split last on the axis your openings run through.** A hole is then a
+*piece of a split whose siblings are the two things that must meet*: a breach and
+the deck outside it are two children of one split across the wall's thickness, so
+they share their other two extents by construction and there is no sill height to
+match. The opening itself is best written as the **absence** of a sibling
+(`void`, or a piece with no child painting it), because an absence cannot be
+misaligned.
+
+Within one axis, pin a course to a band's **end** rather than to a height:
+`[relative 1, absolute 1]` down `Y` makes a slab *the last course of that band*
+at any band height — measured at bands 4, 7, 11 and 13 deep, one course each
+time, with no rule stating a rise. `[absolute 5, absolute 1]` is a course at a
+computed height, and it also refuses any band shorter than six. Write every slab
+the first way and the holes between storeys stop needing arithmetic.
+
+The order cannot be changed afterwards without rewriting the decomposition, so
+choose it from where the openings are, not from how the building is drawn.
+
 ### 1. Repetition
 
 The `-X` lane tiles its piers with `"repeat": true`; the `+X` lane peels one
@@ -419,6 +459,15 @@ arithmetic and the same recursion becomes a shape (idiom 3).
 The `otherwise` arm is the base case: the remainder too short for another
 pier-and-bay becomes the last pier. Strip it and the expansion is
 `NoApplicableRule` at the first scope the guard rejects.
+
+**`repeat` clamps the last tile; it does not rescue a box too short for the first
+one.** One pass of the pattern is resolved before any tiling happens, and its
+absolute pieces must fit the scope — so a `[absolute 3, absolute 5]` repeat
+handed a 7-deep box is `rule "row": split needs 8 blocks but the scope is 7
+across`, a refusal, not a single clamped tile. A rule that repeats therefore owes
+a guard on the extent and an `otherwise` arm for the short box, exactly as a
+recursion does; `boulder_stair` gives its short lane no pockets rather than an
+error.
 
 ### 2. Priority
 
@@ -628,8 +677,9 @@ filled by `shoulders`, the second rule of the recursion — so a glazed head nee
 a copy of `shoulders`, which needs a copy of `head` to call it, twice over for
 the two axes. Nothing keeps four copies in step and no gate reads the
 difference: `tests/arguments.rs` builds the eight-rule program, edits one copy's
-taper, and `blocks-exist`, `non-empty`, the coverage report and the determinism
-gate are all green over a building that now carries two different arches. The
+taper, and all four always-on gates — `blocks-exist`, `shape-complete`,
+`oriented-fills`, `non-empty` — plus the coverage report and the determinism
+gate are green over a building that now carries two different arches. The
 same file proves the collapse is exact — the four-copy program and
 `idiom-arguments` are byte-identical at four seeds, anchors included.
 
@@ -985,6 +1035,59 @@ curtain — the entire point of that rule — had been 14 cells of air.
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
 
+Two more members of the same spelling rule ride the same sites, gate and export
+refusal both. Both run before the contract refusal, because a state that omits
+its connections or lands the wrong way round changes what the bytes *mean*, and
+a contract checked against isolated posts answers about a different building.
+
+- **Shape completeness (`DW0735`).** A placed state must write every property
+  named by a `multipart` selector in its block's own blockstate definition
+  (`crates/compiler/data/blockstate-shape-props-1.21.11.json`, derived from the
+  client jar). A `variants` property the state omits renders the complete
+  default model — benign; a `multipart` property it omits drops assembled
+  geometry, so a bare `iron_bars`/`oak_fence`/`cobblestone_wall` places as a row
+  of isolated posts. When this gate was first run over the corpus it found
+  `broken_grate` and `far_side_bar` both painting bare `iron_bars` — every grate
+  and every sealed doorway they had ever built. The check is on the state and
+  not on the frame, so a `bind` that rebinds a role to an incomplete state is
+  caught exactly as an inline one is.
+- **Oriented fills (`DW0736`).** A frame permutes *and reflects* geometry and
+  never rewrites block-state properties, so a literal
+  `facing`/`axis`/connection/`rotation` state inside a turned or mirrored scope
+  lands however the scope was framed. **Both halves of the frame count.** A
+  reflection is not a permutation — no rotation reproduces one — and it is a
+  sign on the axis: under a reflected local `Z` a literal `facing=north` lands
+  south, and a door's `hinge` and a stair's corner `shape` flip, which is what
+  nothing rotational does. A reflection of an axis the state does not name is
+  harmless and is not reported.
+  The mechanism is `Cond::Orientation` — one alternative per frame, each
+  carrying the matching state — and the expander records every fill that skips
+  it (sensitivity derived from the registry's value vocabulary,
+  `BlockRegistry::oriented_mismatch`, which reads the permutation and the
+  reflection). A passed guard licenses a fill only while the frame it asserted
+  still holds, and the guard names the frame exactly, reflection included, so a
+  guard written for one arm of a mirror pair does not license the other. `bind`
+  and `claim` move neither half of the frame and hand the licence on unchanged.
+  First run over the corpus, it found `cliff_path`'s skull yaw literal under the
+  recess's own reorientation: the same program at a box longer in world X
+  shipped skulls facing along the path instead of out of the niche. Because a
+  role binds ONE state per name, an orientation-dependent block cannot be a
+  palette role; `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as
+  guarded inline states (an oriented-role surface is a named gap, §7). A
+  `barred` edge's `bar` names a role and so inherits that gap: its state is
+  shape-complete but single, and a program whose bars must turn cannot say so
+  through the contract's bar surface.
+  A finding names the frame as `x->X,y->Y,z->-Z`, with a leading `-` on a
+  reflected axis, so a mirrored author is not shown a frame that reads as
+  identity.
+
+`tests/shape_orient.rs` demonstrates both red→green on `broken_grate`'s bars;
+`tests/frames_blockstate.rs` carries the same two gates across the frame
+constructs — an unguarded fill inside a mirrored body, a `claim` under a
+reoriented scope, a `bind`-rebound role, and what a refusal's message names
+inside a reframed subtree; `tests/library.rs` and `tests/zones.rs` sweep both
+gates over every library program and every bell zone with summed binding counts.
+
 ## 4c. Opt-in gates — the claims a piece makes
 
 Three gates run only when the author says the piece makes their claim, because
@@ -1022,7 +1125,9 @@ each is a claim about a *kind* of piece rather than about every piece.
 `symmetric` is what reads a defect no other gate can. A shape with a mirror plane
 is built by expanding one rule at both sites; if one site is instead a hand-kept
 copy, or is missing its reflection, the building has a hole in one flank and
-`blocks-exist`, `non-empty` and `traversable` are all still green over it. The
+`blocks-exist`, `shape-complete`, `oriented-fills`, `non-empty` and
+`traversable` are all still green over it — a missing half is a hole, and every
+state in it is spelled and framed correctly. The
 gate compares the halves and names the first cell pair that disagrees.
 
 ```sh
@@ -1055,8 +1160,9 @@ from `nav::ground_entry` and reports:
 | `pockets`, `largest_pockets` | how many disconnected pockets, and the bounding box of five of them |
 
 **The entrance is derived, not assumed.** Grade is the lowest `Y` at which any
-side-face cell is standable, and the entry set is the side-face cells within one
-course of it — one course because that is the walk's own step height. A belfry
+side-face cell is standable, and the entry set is every side-face standable cell
+**at grade or one course above it** — `y <= grade + 1`, inclusive of both, one
+course because that is the walk's own step height. A belfry
 louvre is a standable cell on a side face and is deliberately *not* an entrance:
 seeding a walk from every opening in a building is how a reachability measure
 reports a stranded gallery as reached.
@@ -1070,6 +1176,20 @@ and never a finding: almost every building has an unreachable roof, and raising
 it every time is the nag that costs the other finding its reader.
 
 `--reachable-floor` (§4c) is what turns the sheltered half into a verdict.
+
+**A one-way descent cannot be stated, and the gate cannot be told about it.**
+`nav::reachable_with_fall` is the predicate that would answer "a body gets down
+there but not back up", and `drop_shaft`'s own tests are gated on it in both
+directions — but nothing outside `cargo test` can ask, so no flag, no report
+field and no metadata carries the claim. On a piece whose design *is* a one-way
+drop, `--reachable-floor` is therefore not a gate to satisfy but one to leave
+off: `drop-shaft` at 9×12×9 seed 1 fails it with 28 of 63 roofed cells
+unreached, and a red gate writes **no** `.nbt` (exit 4), so passing the flag does
+not ship a piece with a red — it ships nothing. What to do instead: expand
+without the flag and read the always-on reachability line, where the stranded
+lower level appears as an `unreachable_sheltered` pocket with its bounding box.
+That pocket is the design, and the engine cannot tell it from a room with no way
+in. The verdict is bounded by the instrument, and this is where it says so.
 
 ## 5. Rule library — ported buildings
 
@@ -1132,7 +1252,7 @@ over whichever of the four spacings the remaining path has room for).
 
 | | |
 |---|---|
-| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock`, `corpse` |
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-orientation guarded inline states, `corpse_prop` — its yaw follows the recess's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
 | Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
 | Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
@@ -1374,7 +1494,7 @@ breaks exactly one grate cell, applied to a wall band instead of a floor row.
 
 | | |
 |---|---|
-| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate`, `grate_broken` |
+| Controls | `head` (3), `grate_height` (2); roles `stone`, `grate_broken` (the plain bars are per-orientation guarded inline states, `grate_bars` — their connections follow the row's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head` + 2) × `MIN_LINE` (3) — the same "three is the shortest row the odd one always has a neighbour in" proof `store_room` makes |
 | Anchors | `anchor/grate-secret` — the broken cell, facing out into the room across the row |
 
@@ -1456,12 +1576,12 @@ position depends on how the margins split at expansion time.
 ### `far_side_bar` — the sealed shortcut door
 
 The grammar half of a souls shortcut (spec-0016 §2): `ambush_door`'s own
-wall-across-the-box shape, but the one opening is filled solid with a `bar`
-role material instead of left open — not a narrower door, a **barred** one.
+wall-across-the-box shape, but the one opening is filled with bars instead of
+left open — not a narrower door, a **barred** one.
 
 | | |
 |---|---|
-| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock`, `bar` |
+| Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` (the bars are per-orientation guarded inline states, `bar_cell` — their connections follow the wall's orientation, which one role name cannot carry) |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
 | Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: region anchors (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) are not yet expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` already accepted. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
@@ -2451,6 +2571,17 @@ passed — and the verdict is printed only once the prefab is on disk, so no
 The §4 craft diagnostics, jigsaw connector emission, and the JSON schema stage in
 front of the IR. Later phases of spec-0027.
 
+The §4 palette budget's **measurement** does exist, out of the compiler:
+`python3 tools/block-appearance.py --program <p.json>` reads every `palette` role
+and every inline `fill` material of a program and reports each mix's
+`chroma_mass`, `chromatic_area`, **named** `loudest_member` with its area share,
+and `dominant_hue`, stating its binding count. What is missing is the *binding* —
+the compiler cannot run it, because the numbers are measured from the EULA-gated
+client jar and whether the derived table may be committed is spec-0035 §7's open
+question for the owner. Until that is answered the measurement is an authoring
+aid an author runs, not a gate, and it must not be described as one. It is also
+whole-zone today: scoping it to player-reachable mass is the risk §5 records.
+
 The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
 candidate renders out as one page, optionally ordered by a similarity score
 against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
@@ -2466,6 +2597,17 @@ its own declaration, not a widened `mark`. A rule can name a *region* (§2d), an
 a `barred` edge's bar region is the cells a campaign's `shortcut` / `close-gate`
 / `lift` addresses; what is missing is the export half, since a claimed region
 reaches the metadata's `spatial_contract` block and not its `anchors` map.
+
+**An oriented palette role.** A role binds ONE block state per name, so a
+state whose properties depend on the scope's orientation — a bar's
+connections, a skull's yaw, a stair's facing — cannot be a role at all: the
+pieces that carry one (`broken_grate`, `far_side_bar`, `cliff_path`,
+`church`) write per-orientation guarded inline states instead (`DW0736`'s
+mechanism), and each such piece gives up the role's restyle surface to do it.
+The general form is a role that binds a state per orientation, so a campaign
+can restyle the material while the guard machinery keeps choosing the variant.
+Named here so the surface is designed once, at the object (the role), rather
+than re-invented per rule.
 
 **A socket convention — which faces a piece leaves open.** The junction itself is
 built (`tee_passage`, §5b), and `far_side_bar` beside a `tee_passage` is the

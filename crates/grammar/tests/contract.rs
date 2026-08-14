@@ -375,7 +375,13 @@ fn the_exported_contract_is_the_one_this_expansion_resolved() {
     let barred = ca.edges.iter().find(|e| e.class == "barred").unwrap();
     let bar = barred.bar.as_ref().unwrap();
     assert_eq!(bar.region, "gate");
-    assert_eq!(bar.block, "minecraft:iron_bars");
+    // The FULL state, properties included: the contract records what the role
+    // resolved to, and a bar whose connections were dropped on the way into the
+    // metadata would describe a grille while the bytes hold isolated posts.
+    assert_eq!(
+        bar.block,
+        "minecraft:iron_bars[east=true,north=false,south=false,west=true]"
+    );
     assert_eq!(bar.boxes.len(), 1);
     assert_eq!(bar.boxes[0].from, [4, 1, 7]);
     assert_eq!(bar.boxes[0].to, [6, 3, 7]);

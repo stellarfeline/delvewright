@@ -342,6 +342,89 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         },
     });
 
+    // --- Gate: every placed state writes its shape-carrying properties. -----
+    //
+    // A `multipart` property the state omits removes assembled geometry — a
+    // wall with none written places as an isolated post — and no downstream
+    // reader can tell the omission from a choice (`DW0735`). Judged over the
+    // states CELLS actually use: an entry an earlier fill created and a later
+    // fill fully overwrote ships in no cell and is not this gate's business.
+    let mut used: std::collections::BTreeSet<&crate::block::BlockState> = Default::default();
+    for pos in model.region().positions() {
+        if let Some(state) = model.get(pos) {
+            used.insert(state);
+        }
+    }
+    let omissions: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    gates.push(Gate {
+        id: "shape-complete",
+        pass: omissions.is_empty(),
+        bound: used.len(),
+        detail: if omissions.is_empty() {
+            format!(
+                "{} placed block state(s), every shape-carrying (multipart) property written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — these properties assemble the block's model, so the omitted \
+                 default drops geometry (a wall reads as an isolated post). Write the \
+                 connection state the design means",
+                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                omissions.join("; ")
+            )
+        },
+    });
+
+    // --- Gate: oriented block states were guarded where the scope turns. ----
+    //
+    // A reorientation permutes geometry and never rewrites properties
+    // (`crate::orient`), so a literal `facing`/`axis`/connection state inside
+    // a reoriented scope lands however the scope was turned — silently —
+    // unless a `Cond::Orientation` guard pinned the orientation the author
+    // wrote it for (`DW0736`). The predicate ran during expansion, where the
+    // scope orientations exist; this gate reports what it saw.
+    let audit = &expansion.oriented;
+    gates.push(Gate {
+        id: "oriented-fills",
+        pass: audit.unguarded.is_empty(),
+        bound: audit.fills as usize,
+        detail: if audit.unguarded.is_empty() {
+            format!(
+                "{} fill(s) examined, {} carrying block-state properties; every \
+                 orientation-sensitive one was under identity orientation or an \
+                 `orientation` guard",
+                audit.fills, audit.carrying
+            )
+        } else {
+            format!(
+                "{}: {} — write one alternative per orientation, each guarded with the \
+                 `orientation` cond and carrying the facing that matches it (the guard \
+                 mechanism `Cond::Orientation` exists for exactly this)",
+                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
+                audit
+                    .unguarded
+                    .iter()
+                    .map(|f| format!(
+                        "rule {:?} fills {} whose {} lands wrong under {}",
+                        f.rule, f.state, f.property, f.orientation
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        },
+    });
+
     // --- Gate: the expansion built something. ------------------------------
     let filled = model.filled_cells();
     let region_cells = model.region().positions().count();

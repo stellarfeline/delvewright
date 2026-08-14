@@ -66,7 +66,30 @@ pub fn spatial_contract() -> Program {
     Program::new("spatial_contract", "piece")
         .role("shell", BlockState::simple("stone_bricks"))
         .role("floor", BlockState::simple("stone"))
-        .role("bar", BlockState::simple("iron_bars"))
+        // The bars run across the doorway along local X, so they connect east
+        // and west and to nothing north or south. Written out, because an
+        // `iron_bars` state that omits its connections places as a row of
+        // isolated posts rather than as a grille (`DW0735`) — the doorway would
+        // look barred in the metadata and walk-through in the world.
+        //
+        // A single state, and it has to be: a `barred` edge's `bar` names a
+        // palette ROLE, and a role binds one state per name. That is the same
+        // named gap an oriented block has (`grammar.md` §4b), and it is why
+        // this program keeps the identity frame throughout — under a frame that
+        // turned local X onto world Z these connections would land crosswise,
+        // and the contract surface has no way to say which frame it meant.
+        .role(
+            "bar",
+            BlockState::with(
+                "iron_bars",
+                [
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("south", "false"),
+                    ("west", "true"),
+                ],
+            ),
+        )
         .contract(
             Contract::new("near")
                 .space("near", Envelope::Enclosed)

@@ -213,7 +213,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            2 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
+            4 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
             "{}",
             case.id
         );
@@ -229,8 +229,8 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         }
     }
     assert_eq!(
-        judged, 25,
-        "11 examples, 2 always-on gates, 2 walk gates, 1 mirror-plane gate"
+        judged, 47,
+        "11 examples, 4 always-on gates each, 2 walk gates, 1 mirror-plane gate"
     );
 }
 

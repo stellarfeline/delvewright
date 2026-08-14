@@ -351,7 +351,11 @@ fn a_copy_edited_out_of_step_is_green_on_every_gate() {
     let report = gate_report(&drifted, 1);
     println!("four copies, one edited: verdict {}", report.verdict);
     assert!(report.is_pass(), "{:#?}", report.gates);
-    assert_eq!(report.gates.len(), 2);
+    assert_eq!(
+        report.gates.len(),
+        4,
+        "the four always-on gates: blocks-exist, shape-complete, oriented-fills, non-empty"
+    );
     for gate in &report.gates {
         println!(
             "  {:<14} {}  bound {:<7} {}",

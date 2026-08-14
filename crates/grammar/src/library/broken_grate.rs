@@ -52,8 +52,8 @@ use crate::geom::Axis;
 use crate::ir::{Alternative, AxisSpec, CmpOp, DimRef, MarkAt, Program, Reorient};
 
 use super::{
-    abs, absp, all_of, alt_else, alt_when, call, cmp, dim, fill, int, marked, par, rel, reoriented,
-    split, void,
+    abs, absp, all_of, alt_else, alt_when, call, cmp, dim, fill, fill_block, int, marked, oriented,
+    par, rel, reoriented, split, void,
 };
 
 /// Weight on carrying down the row rather than spending the break here — the
@@ -67,14 +67,15 @@ pub const MIN_LINE: i64 = 3;
 /// The wall with its broken-grate row.
 ///
 /// Parameters: `head` (room headroom), `grate_height` (how tall the row is;
-/// must be ≤ `head`). Palette roles: `stone` (the room), `grate`,
-/// `grate_broken`.
+/// must be ≤ `head`). Palette roles: `stone` (the room) and `grate_broken`
+/// (the break). The plain bars are NOT a role: their connection properties
+/// depend on the scope's orientation, so they are per-orientation guarded
+/// inline states (see `grate_bars` below), which one role name cannot express.
 pub fn broken_grate() -> Program {
     Program::new("broken_grate", "broken_grate")
         .param("head", 3)
         .param("grate_height", 2)
         .role("stone", BlockState::simple("cobblestone"))
-        .role("grate", BlockState::simple("iron_bars"))
         // The same family, distressed: mossy variant of the same bars, not a
         // different material.
         .role("grate_broken", BlockState::simple("mossy_cobblestone"))
@@ -134,7 +135,7 @@ pub fn broken_grate() -> Program {
         .rule_alts(
             "line_before_tell",
             vec![
-                Alternative::new(step(call("line_before_tell"), fill("grate")))
+                Alternative::new(step(call("line_before_tell"), call("grate_bars")))
                     .when(cmp(dim(DimRef::Z), CmpOp::Ge, int(2)))
                     .weight(CARRY_ON),
                 Alternative::new(step(call("line_after_tell"), call("broken_cell")))
@@ -146,7 +147,46 @@ pub fn broken_grate() -> Program {
                 alt_else(call("broken_cell")),
             ],
         )
-        .rule("line_after_tell", fill("grate"))
+        .rule("line_after_tell", call("grate_bars"))
+        // The bars themselves. `iron_bars` connects along the row — the local
+        // `Z` — and a connection property names a WORLD direction, which a
+        // reorientation does not rewrite (`crate::orient` permutes geometry
+        // only). So the bars cannot be a palette role (one state per name):
+        // they are one alternative per orientation, each guarded with the
+        // `orientation` cond and writing the connections that match — the
+        // `DW0736` mechanism, and the reason a bare `iron_bars` role was a
+        // `DW0735` isolated-post defect for as long as this rule shipped one.
+        // The root pins local `Y` to world `Y`, so these two orientations are
+        // the only reachable ones; a third would refuse loudly.
+        .rule_alts(
+            "grate_bars",
+            vec![
+                alt_when(
+                    oriented(Axis::X, Axis::Y, Axis::Z),
+                    fill_block(BlockState::with(
+                        "iron_bars",
+                        [
+                            ("east", "false"),
+                            ("north", "true"),
+                            ("south", "true"),
+                            ("west", "false"),
+                        ],
+                    )),
+                ),
+                alt_when(
+                    oriented(Axis::Z, Axis::Y, Axis::X),
+                    fill_block(BlockState::with(
+                        "iron_bars",
+                        [
+                            ("east", "true"),
+                            ("north", "false"),
+                            ("south", "false"),
+                            ("west", "true"),
+                        ],
+                    )),
+                ),
+            ],
+        )
         .rule(
             "broken_cell",
             reoriented(

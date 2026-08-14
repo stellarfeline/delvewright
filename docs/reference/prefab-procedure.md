@@ -65,31 +65,90 @@ chosen region and seed beside the program — in the campaign's `GENERATION.md`,
 since the program JSON does not yet carry its own region (queued engine
 surface).
 
-## 2. Choose the palette by MEASUREMENT
+## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 
 **Never name a block from memory.** Block names are not descriptions of block
 appearance and repeatedly are not close: `packed_mud` is orange (142, 107, 80),
 `lightning_rod` is signal orange (197, 111, 83), `dried_kelp_block` is a woven
 olive-green (46, 55, 36).
 
+Three steps, in this order. Do not stop after the first.
+
+**2a. Screen the shelf.** State the fiction as constraints on measured axes, not
+as a guessed hex. Constraints eliminate; they never score.
+
 ```sh
-python3 tools/block-appearance.py --near '#3a4038' -n 10 --full-cube-only
-python3 tools/block-appearance.py --id minecraft:packed_mud \
-                                  --id minecraft:deepslate_tiles   # --id repeats
+python3 tools/block-appearance.py --screen \
+    --where full_cube --where 'L>=0.75' --where 'L<=0.95' \
+    --where 'C_mean<0.02' --where 'texture_range<=0.30'
 ```
 
-Rules:
+`L` is Oklab lightness, `C_mean` is how coloured the block is (0.03 is the
+shelf's own 30th percentile — below it a block reads as a neutral), and
+`texture_range` is how loud its pattern is (`white_concrete` 0.006,
+`stone_bricks` 0.221, `dried_kelp_block` 0.419). `form=slab`,
+`family=minecraft:sandstone`, `not tinted` and `not gravity` are facets too. The
+example above takes 1146 blocks to 14.
 
-- Pick the target colour from the fiction, then take candidates from the ranked
-  list. Record the measured hex beside each role in the program.
-- `--full-cube-only` for anything structural: a wall made of a block whose model
-  is mostly air is not a wall.
-- The tool ranks; it cannot choose. A mean colour cannot see pattern or scale,
-  and it has no idea what a block *is* — it will rank `structure_block` next to
-  deepslate. Technical blocks are excluded by default; everything else you
-  **see** at step 5 before believing.
+`--near '#rrggbb'` still ranks by colour when you genuinely have a target hex,
+and `--id` still answers "what colour IS this".
+
+**2b. Measure the mix, and never trust its mean.** A weighted paint is reported
+by four numbers:
+
+```sh
+python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
+```
+
+`chroma_mass`, `chromatic_area` (what fraction of the wall is coloured rather
+than neutral), `loudest_member` **named with its area share**, `dominant_hue`,
+and `void_area` — `minecraft:air` is a member like any other, so a role that is
+45% holes says so instead of reporting a solid wall's numbers. The mean is printed and is never the verdict: swapping half a
+sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units —
+nothing — while the chromatic area falls 60% → 30%, which is a different
+building. The craft rule the numbers serve is 60/30/10: **the loud member gets
+10%, not 60%.** Every report states its binding count, and a zero binding is a
+finding, not a pass.
+
+**2c. Look at it.** A shortlist is not a choice.
+
+```sh
+python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+    --mix 'calcite=6,diorite=3,white_concrete=1' --sheet --seed 7
+```
+
+writes `.sheets/palette/swatches.png` — every survivor tiled and labelled, and
+every candidate mix as its seeded weighted tiling, which is the wall at distance
+zero. No GPU, no world, under a second. **Then read the PNG.** Measurement can
+prove a mix is not warm; only a look decides it is right.
+
+What the numbers cannot decide, stated so you do not wait for them to:
+
+- **Whether the palette reads as the referent.** "Île-de-France limestone" vs
+  "Egyptian sandstone" is cultural reference; no statistic contains it.
+- **Role fitness.** The screen above returns a light source, a gravity block,
+  wool and a metal — all right on every measured axis, all wrong for a wall.
+  Light emission lives in game code and is in no vanilla data branch at all.
+- **Pattern at distance.** Whether `stone_bricks` still reads as masonry twenty
+  blocks away is a render question — step 5's contact sheet.
 - Biome-tinted blocks (`*_leaves`, grass, water) are flagged: their number is
-  the untinted texture and the world will not look like it.
+  the untinted texture and the world will not look like it. `--exclude-tinted`
+  drops them.
+
+**When the tool cannot run.** It needs two things that are not always there: the
+pinned block registry at `crates/compiler/data/blocks-1.21.11.json`, and a
+1.21.11 client jar (`--jar`, `$DELVEWRIGHT_CLIENT_JAR`, or
+`~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
+says which. **The step does not become optional** — it becomes a different
+source of measured names: the library corpus is a palette somebody already
+measured, so take roles from it (`delve-grammar list`, then `delve-grammar show
+--program <nearest>`) and bind by editing a role that already exists rather than
+by recalling a block. Record where each name came from beside the role, as you
+would record a hex. The one thing you still may not do is invent a name: an id
+that is not in 1.21.11 is refused at export by `blocks-exist` (`grammar.md` §4b),
+and an id that exists but looks nothing like its name will pass every gate and be
+caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
@@ -169,9 +228,13 @@ delve-grammar expand --file my-piece.json --region 9x6x21 --seed 1 \
     --traversable --id my-piece -o out/
 ```
 
-Writes `<id>.nbt`, `<id>.json` (prefab metadata) and `<id>.report.json`.
+Writes `<id>.json` (prefab metadata), `<id>.report.json`, and the blocks: one
+`<id>.nbt` for a region within 48 on every axis, or a set of `<id>.x<i>y<j>z<k>.nbt`
+tiles for a region past it, in which case `<id>.json` is the manifest (§6). Which
+one you got is a fact about the region, and the rest of the loop asks for
+whichever file is there.
 
-**What `<id>` is.** It is the prefab's identity: it names all three files and
+**What `<id>` is.** It is the prefab's identity: it names every file above and
 becomes the datapack structure path, so it may contain only lowercase letters,
 digits and hyphens. `--id` sets it. Without `--id` it defaults to the library
 program id (`--program`) or **to the input file's stem** (`--file`) — so
@@ -209,6 +272,19 @@ so a green `traversable` says nothing about the storeys above: a cathedral has
 passed it with 45% of its floor reachable and nothing at all reachable above the
 nave. **Pass `--reachable-floor` whenever the piece has an inside a body is meant
 to walk around** — it is the gate that catches the upper level with no stair.
+
+**The one piece to leave it off: a one-way descent.** A level a body drops into
+and does not climb back out of is unreachable on foot *by design*, and the engine
+has no way to be told — the predicate that would answer it is library-internal,
+so no flag, no report field and no metadata carries the claim. So
+`--reachable-floor` is not a gate such a piece can satisfy: `drop-shaft` at
+9×12×9 seed 1 fails it with 28 of 63 roofed cells unreached, and a red gate
+writes **no** `.nbt`, so passing the flag anyway does not ship a piece with a
+known red — it ships nothing. Expand without it and read the always-on
+reachability line instead, where the lower level appears as an
+`unreachable_sheltered` pocket with its bounding box. That pocket is the design,
+and nothing here can tell it from a room with no way in, so say which it is in
+the §1 scene description and the report has a reader who knows.
 
 Every gate reports a **binding count**. A gate that examined zero objects is
 printed as a finding, not folded into the pass; so is a program that declared no
@@ -378,12 +454,17 @@ Each of these was established by running it, except the two marked otherwise:
 ## 7. Admit it
 
 ```sh
-delve-admit audit    out/<id>.nbt
+delve-admit audit    out/<id>.json         # or out/<id>.nbt — audit takes either
 delve-admit socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
                      --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
 delve-admit lighting out/<id>.nbt --write
-delve-admit audit    out/<id>.nbt          # again, after the edits
+delve-admit audit    out/<id>.json         # again, after the edits
 ```
+
+A tiled zone has no `out/<id>.nbt` at all — its blocks are the
+`out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
+a zone the first and last lines are the whole of this step, for the reason spelled
+out three paragraphs down.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
