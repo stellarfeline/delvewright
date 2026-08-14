@@ -81,9 +81,35 @@ pub struct SpatialContract {
     /// The graph, in declaration order.
     #[serde(default)]
     pub edges: Vec<ContractEdge>,
+    /// **The piece's face contract**: every `exterior` edge, as the side of the
+    /// piece it is on and the opening it leaves there.
+    ///
+    /// Derived from the edges and the blocks at export time and written out, so
+    /// that assembly can ask whether two pieces fit without opening either
+    /// `.nbt`. It is the thing an `exterior` edge IS from the outside: an edge
+    /// with no cells is a claim nothing can mate with, and one whose opening
+    /// does not answer its neighbour's is two pieces that were each approved
+    /// alone and do not assemble.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faces: Vec<ContractFace>,
     /// The author's acknowledgement that this piece is mostly out-of-walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_body_majority_ack: Option<String>,
+}
+
+/// One face of the piece's face contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractFace {
+    /// The space the way in or out belongs to.
+    pub space: String,
+    /// The edge's class: `walk` | `stair` | `drop` | `barred` | `vision`.
+    pub class: String,
+    /// Which side of the piece: `east` | `west` | `up` | `down` | `south` |
+    /// `north`.
+    pub dir: String,
+    /// The opening, as an inclusive local cell range flat in the face's own
+    /// axis.
+    pub opening: Region,
 }
 
 /// One entry of `spatial_contract.spaces`.

@@ -128,10 +128,10 @@ pub fn program_hash(program: &Program) -> String {
 // how `license.generated_by` — the ADR-0006 row this whole module exists to emit
 // — got dropped by the next documented step in the procedure.
 pub use delvewright_schem::prefab::{
-    Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractNoBody, ContractSpace,
-    ContractVolume, GeneratedBy, License as LicenseMetadata, Lighting as LightingMetadata,
-    PrefabMeta as PrefabMetadata, Region as RegionMetadata, SpatialContract,
-    StructureMeta as StructureMetadata,
+    Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
+    ContractSpace, ContractVolume, GeneratedBy, License as LicenseMetadata,
+    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, Region as RegionMetadata,
+    SpatialContract, StructureMeta as StructureMetadata,
 };
 
 /// The manifest of a zone too big for one structure template.
@@ -645,6 +645,37 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
 /// space with no boxes is written with none, because a zero binding is a finding
 /// for whatever reads the contract and deleting it would hide the finding.
 pub fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
+    let mut out = contract_without_faces(expansion)?;
+    // The face contract is derived once, here, and written down — so assembly
+    // asks the metadata rather than reopening the `.nbt`, and so the faces a
+    // reviewer reads are the faces the checker judged.
+    out.faces = crate::contract::exterior_faces(&expansion.model, &out)
+        .into_iter()
+        .map(|f| ContractFace {
+            space: f.space,
+            class: f.class,
+            dir: f.dir.as_str().to_string(),
+            opening: RegionMetadata {
+                from: [
+                    f.cells.iter().map(|c| c[0]).min().unwrap_or(0),
+                    f.cells.iter().map(|c| c[1]).min().unwrap_or(0),
+                    f.cells.iter().map(|c| c[2]).min().unwrap_or(0),
+                ],
+                to: [
+                    f.cells.iter().map(|c| c[0]).max().unwrap_or(0),
+                    f.cells.iter().map(|c| c[1]).max().unwrap_or(0),
+                    f.cells.iter().map(|c| c[2]).max().unwrap_or(0),
+                ],
+            },
+        })
+        .collect();
+    Some(out)
+}
+
+/// The resolved contract without its derived face contract — what
+/// [`crate::contract::exterior_faces`] reads, so the derivation cannot depend on
+/// its own output.
+fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
     let contract = expansion.contract.as_ref()?;
     let ranges = |boxes: &[Box3]| -> Vec<RegionMetadata> { boxes.iter().map(range).collect() };
     Some(SpatialContract {
@@ -694,6 +725,7 @@ pub fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
                 }),
             })
             .collect(),
+        faces: Vec::new(),
         no_body_majority_ack: contract.no_body_majority_ack.clone(),
     })
 }
