@@ -59,6 +59,16 @@ use super::{
 /// The shortest box the rule will lay a threshold in.
 pub const MIN_DEPTH: i64 = 3;
 
+/// The block the curtain hangs from, in the pinned version's own vocabulary.
+///
+/// 1.21.11 calls the plain chain `minecraft:iron_chain`; `minecraft:chain` is
+/// not a block in this version at all. Named here rather than spelled at both
+/// the rule and the gate that counts strands, because a block id that exists in
+/// neither the registry nor the client pack fails **silently** everywhere it is
+/// consumed — the mesher drops the cells and renders the doorway bare — so the
+/// two places that must agree agree by construction.
+pub const CURTAIN_BLOCK: &str = "minecraft:iron_chain";
+
 /// The boss-door threshold motif.
 ///
 /// Parameters: `head` (room headroom), `curtain_height` (how tall the hanging
@@ -74,7 +84,7 @@ pub fn threshold_motif() -> Program {
         .param("strand_period", 1)
         .param("single_strand", 0)
         .role("stone", BlockState::simple("stone_bricks"))
-        .role("curtain", BlockState::simple("chain"))
+        .role("curtain", BlockState::simple(CURTAIN_BLOCK))
         // --- frame -------------------------------------------------------
         .rule(
             "threshold_motif",

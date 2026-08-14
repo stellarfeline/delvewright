@@ -58,6 +58,8 @@ and it is never redistributed.
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
 | `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning |
 | `DW0727` | a shot's cutaway removes the whole model — the frame would be empty (exit 2) |
+| `DW0728` | the pack has no blockstate for a block the piece contains — the mesher would drop those cells and the picture would lie (exit 2) |
+| `DW0729` | a plan key annotated nothing: the piece declares no anchor the key could place (warning) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
 except `DW0724`, which the compiler's visual tier holds. Take the next unused
@@ -85,13 +87,29 @@ their cutaway is `y-max:<layers above the target>`. In a five-tall room that is 
 one or two layers the old ceiling-strip removed; in a fourteen-tall tower it is the
 eleven that were hiding the anchor.
 
-Metadata is read from `<basename>.json` beside the `.nbt` (sockets from
-`connectors`, anchors from `anchors`, lighting from `lighting`); it **degrades
-gracefully** — a missing/partial file still yields the exterior + section set.
+Every set also carries **`<stem>-key.png`, the plan key** — a CPU-drawn diagram,
+not a render: the walkable floor as a plan shaded by level, every boundary
+opening in blue, every declared anchor numbered on the plan and named underneath
+with its position, facing and declaring rule. It draws only what the metadata
+supplies (there is one authority on standability, and it is the generator's), and
+it never nominates an entrance — which opening is the door is authored, and a key
+that guessed would invent the decision the curation page exists to ask for.
 
-Every run prints its **binding** — `cutaway bound to N/M shot(s)` — because a shot
-set in which nothing was cut is a set of exterior pictures and must not read as an
-interior review.
+Metadata is read from `<basename>.json` beside the `.nbt` (sockets from
+`connectors`, anchors from `anchors`, lighting from `lighting`, the walkable
+floor from `floor`, boundary openings from `openings`); it **degrades gracefully**
+— a missing/partial file still yields the exterior + section set and a footprint
+key that says which parts nobody supplied.
+
+Every run prints two **bindings** — `cutaway bound to N/M shot(s)` and `key bound
+to N/M anchor(s), …` — because a shot set in which nothing was cut is a set of
+exterior pictures and must not read as an interior review, and a key that
+annotated nothing must not read as a piece with nothing to annotate.
+
+A block the pack cannot resolve is **refused** (`DW0728`) before any GPU work,
+naming the block and its cell count: the mesher's own answer is to drop it with a
+per-cell warning, which ships a picture of a building the `.nbt` does not
+describe.
 
 ### The cutaway: which solid the viewer is inside
 

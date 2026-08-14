@@ -64,6 +64,28 @@
 //! and hide choices instead of inventing them. `tests` below measure both
 //! directions on the same zone.
 //!
+//! # What a candidate carries besides its blocks
+//!
+//! A grey solid is not the medium a massing decision is made in. The reviewer's
+//! questions are *where does the party come in, where does it leave, which cells
+//! can be walked on, and where is every declared anchor* — and the program
+//! already knows all four. It computes anchors (rules declare them), and the
+//! floor is derivable from the model with the same rule the generator's gates
+//! assert with ([`crate::floor`]).
+//!
+//! So every candidate that builds gets a **semantics sidecar**, `<id>.json`
+//! beside `<id>.nbt`, in the prefab-metadata shape `delve-render` already reads
+//! — which is what puts an anchor on the picture rather than in a field nobody
+//! draws. [`Built`] carries the counts, so `sweep.json` alone answers "did this
+//! zone declare anything at all", and [`SweepReport`] states the binding: a
+//! sweep whose candidates declared **zero** anchors is a finding about the
+//! programs, not a page.
+//!
+//! What is emitted is exactly what is known. Anchors are **declared**;
+//! standable cells and the boundary openings are **derived**; which opening is
+//! the entrance is **neither**, today, and nothing here invents one — see
+//! [`crate::floor`].
+//!
 //! Nothing here ships: sweeps, snapshots and sheets are generation-time working
 //! material (ADR-0013), and none of it can move a delve's bytes (ADR-0006).
 
@@ -75,14 +97,34 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::eval::GuardRefusal;
-use crate::expand::{ExpandError, ExpandOptions, expand};
+use crate::expand::{ExpandError, ExpandOptions, Expansion, expand};
 use crate::export::{ExportError, program_hash, snapshot_nbt};
+use crate::floor::{FloorPlan, Openings};
 use crate::geom::Box3;
 use crate::ir::Program;
 use crate::library::bell;
 
 /// The manifest schema id, written into every report.
 pub const SCHEMA: &str = "delvewright.grammar-sweep/1";
+
+/// The schema id of the per-candidate semantics sidecar.
+pub const SEMANTICS_SCHEMA: &str = "delvewright.snapshot-semantics/1";
+
+/// Anchor names the engine treats as the party's way in and out.
+///
+/// These are the **engine's** reserved names (`crates/dsl/data/anchors.json`),
+/// not one campaign's vocabulary: any creator's piece declares its entrance by
+/// marking one of these, whatever the fiction calls the door. Matched on the
+/// last path segment, so `entry` and `anchor/entry` are the same declaration.
+pub const WAY_IN_NAMES: [&str; 2] = ["spawn", "entry"];
+
+/// Anchor names the engine treats as the party's way onward.
+pub const WAY_OUT_NAMES: [&str; 1] = ["exit"];
+
+/// The last path segment of an anchor name (`anchor/gate-north` → `gate-north`).
+fn stem_of(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or(name)
+}
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -277,6 +319,108 @@ impl std::error::Error for SweepError {}
 // Running
 // ---------------------------------------------------------------------------
 
+/// One anchor as the sidecar and the report carry it.
+///
+/// `pos` and `facing` are the shape a prefab's metadata already uses, so the
+/// render layer reads this file with the code path it has. `declared_by` is the
+/// third thing the expansion knows and the metadata shape has no room for — the
+/// rule that put the anchor there — and it is what turns "there is a marker at
+/// 12,1,40" into "the ambush alcove is at 12,1,40" on a reviewer's page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnchorRow {
+    /// Local cell `[x, y, z]`.
+    pub pos: [i32; 3],
+    /// Cardinal facing keyword.
+    pub facing: String,
+    /// The rule that declared it.
+    pub declared_by: String,
+}
+
+/// The per-candidate semantics sidecar: everything the program knows about this
+/// building that a picture of its blocks cannot show.
+///
+/// Written as `<id>.json` beside `<id>.nbt`, which is exactly where
+/// `delve-render` looks for a piece's metadata — so the anchors reach the shot
+/// planner and the plan key with no adapter, and a consumer that only wants the
+/// blocks is unaffected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Semantics {
+    /// Always [`SEMANTICS_SCHEMA`].
+    pub schema: String,
+    /// The candidate id.
+    pub id: String,
+    /// The program this candidate came from.
+    pub program: String,
+    /// `sha256:` over the program's canonical JSON.
+    pub program_hash: String,
+    /// The seed this candidate expanded at.
+    pub seed: u64,
+    /// The region it expanded over.
+    pub region: [u32; 3],
+    /// The parameter overrides applied.
+    pub params: BTreeMap<String, i64>,
+    /// Declared anchors, by exported name.
+    pub anchors: BTreeMap<String, AnchorRow>,
+    /// The derived walkable floor.
+    pub floor: FloorPlan,
+    /// The derived boundary openings.
+    pub openings: Openings,
+    /// Anchors naming the party's way in ([`WAY_IN_NAMES`]) — empty when the
+    /// program declares none, which is a statement and not an omission.
+    pub declared_entries: Vec<String>,
+    /// Anchors naming the party's way onward ([`WAY_OUT_NAMES`]).
+    pub declared_exits: Vec<String>,
+}
+
+impl Semantics {
+    /// Read one expansion.
+    fn of(
+        id: &str,
+        program: &Program,
+        program_hash: &str,
+        seed: u64,
+        region: [u32; 3],
+        params: &BTreeMap<String, i64>,
+        expansion: &Expansion,
+    ) -> Semantics {
+        let anchors: BTreeMap<String, AnchorRow> = expansion
+            .anchors
+            .iter()
+            .map(|(name, a)| {
+                (
+                    name.clone(),
+                    AnchorRow {
+                        pos: a.pos,
+                        facing: a.facing.to_string(),
+                        declared_by: a.declared_by.clone(),
+                    },
+                )
+            })
+            .collect();
+        let named = |set: &[&str]| -> Vec<String> {
+            anchors
+                .keys()
+                .filter(|n| set.contains(&stem_of(n)))
+                .cloned()
+                .collect()
+        };
+        Semantics {
+            schema: SEMANTICS_SCHEMA.to_string(),
+            id: id.to_string(),
+            program: program.name.clone(),
+            program_hash: program_hash.to_string(),
+            seed,
+            region,
+            params: params.clone(),
+            declared_entries: named(&WAY_IN_NAMES),
+            declared_exits: named(&WAY_OUT_NAMES),
+            anchors,
+            floor: FloorPlan::of(&expansion.model),
+            openings: Openings::of(&expansion.model),
+        }
+    }
+}
+
 /// What one candidate produced.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Built {
@@ -291,8 +435,20 @@ pub struct Built {
     pub params: BTreeMap<String, i64>,
     /// The snapshot filename written for this candidate.
     pub snapshot: String,
+    /// The semantics sidecar written beside it. Empty for a candidate that did
+    /// not build — there is nothing to say about a building that does not exist.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub semantics: String,
     /// Cells that are not air.
     pub filled_cells: usize,
+    /// Anchors this candidate declared.
+    pub anchors: usize,
+    /// Cells of it a player can stand in.
+    pub standable_cells: usize,
+    /// Standable cells lying on the boundary — every place a body could cross
+    /// into or out of this building. Which one is the entrance is authored, and
+    /// is `declared_entries` on the sidecar, not this number.
+    pub boundary_openings: usize,
     /// `sha256:` over the model's placement-canonical bytes — block-for-block
     /// identity, **up to placement**.
     pub model_digest: String,
@@ -347,6 +503,18 @@ pub struct SweepReport {
     /// Counted up to placement, so a building and the same building turned
     /// ninety degrees are one. See the module note.
     pub distinct_massings: usize,
+    /// Anchors declared across every candidate that built. **Zero is a
+    /// finding**: the sheet drawn from this sweep can annotate nothing, and a
+    /// page that annotated nothing must not read like a page that had nothing
+    /// to annotate (CLAUDE.md: a green gate that binds to nothing is vacuous).
+    pub anchors_declared: usize,
+    /// Candidates that declared at least one anchor.
+    pub rows_with_anchors: usize,
+    /// Candidates whose program declared the party's way in ([`WAY_IN_NAMES`]).
+    pub rows_with_entry: usize,
+    /// Candidates whose program declared the party's way onward
+    /// ([`WAY_OUT_NAMES`]).
+    pub rows_with_exit: usize,
     /// Per candidate, in manifest order.
     pub rows: Vec<Built>,
 }
@@ -356,14 +524,35 @@ impl SweepReport {
     pub fn summary(&self) -> String {
         format!(
             "{}: {} candidate(s), {} built, {} refused, {} distinct model(s), {} distinct \
-             massing(s)",
+             massing(s), {} anchor(s) on {}/{} built candidate(s)",
             self.program,
             self.candidates,
             self.built,
             self.refused,
             self.distinct_models,
-            self.distinct_massings
+            self.distinct_massings,
+            self.anchors_declared,
+            self.rows_with_anchors,
+            self.built
         )
+    }
+
+    /// True when nothing that built declared an anchor, so every artifact drawn
+    /// from this sweep annotates zero objects.
+    ///
+    /// Named for the same reason [`SweepReport::massing_is_uniform`] is: it is a
+    /// condition every consumer has to say out loud rather than a comparison
+    /// each of them re-invents, and a page that silently annotated nothing is
+    /// precisely how this gap survived — nothing ever said "0 anchors drawn".
+    pub fn anchors_bind_to_nothing(&self) -> bool {
+        self.built > 0 && self.anchors_declared == 0
+    }
+
+    /// True when no candidate's program declares where the party enters or
+    /// leaves. A statement about the programs, never repaired by guessing at
+    /// the geometry.
+    pub fn ways_are_undeclared(&self) -> bool {
+        self.built > 0 && self.rows_with_entry == 0 && self.rows_with_exit == 0
     }
 
     /// True when every candidate that built is the same building.
@@ -432,14 +621,17 @@ pub fn validate(manifest: &Manifest) -> Result<Entry, SweepError> {
     Ok(entry)
 }
 
-/// Expand every candidate and write its snapshot into `dir`.
+/// Expand every candidate and write its snapshot — and its semantics — into
+/// `dir`.
 ///
-/// `dir` must exist. One `<id>.nbt` per candidate that built, flat — which is
-/// exactly what `delve-render batch` consumes, so the sweep hands the render
-/// layer its input without an adapter in between.
+/// `dir` must exist. Per candidate that built: `<id>.nbt` (the blocks) and
+/// `<id>.json` (the semantics sidecar), flat — which is exactly what
+/// `delve-render batch` consumes, sidecar included, so the sweep hands the
+/// render layer both halves without an adapter in between.
 pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
     let entry = validate(manifest)?;
     let program = (entry.program)();
+    let hash = program_hash(&program);
     let base_region = manifest.region.unwrap_or(entry.region);
 
     let mut rows = Vec::with_capacity(manifest.candidates.len());
@@ -447,6 +639,10 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
     let mut massings = BTreeSet::new();
     let mut built = 0usize;
     let mut refused = 0usize;
+    let mut anchors_declared = 0usize;
+    let mut rows_with_anchors = 0usize;
+    let mut rows_with_entry = 0usize;
+    let mut rows_with_exit = 0usize;
 
     for c in &manifest.candidates {
         let seed = c.seed.unwrap_or(manifest.seed);
@@ -457,6 +653,7 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
             prog.params.insert(k.clone(), *v);
         }
         let snapshot = format!("{}.nbt", c.id);
+        let sidecar = format!("{}.json", c.id);
 
         let mut row = Built {
             id: c.id.clone(),
@@ -464,7 +661,11 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
             region: region_size,
             params: c.params.clone(),
             snapshot: snapshot.clone(),
+            semantics: String::new(),
             filled_cells: 0,
+            anchors: 0,
+            standable_cells: 0,
+            boundary_openings: 0,
             model_digest: String::new(),
             massing_digest: String::new(),
             error: None,
@@ -486,13 +687,49 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
                 models.insert(row.model_digest.clone());
                 massings.insert(row.massing_digest.clone());
 
+                // What the program knows about this building, read once and
+                // written where the render layer looks for it. The counts ride
+                // on the row so `sweep.json` alone answers "was there anything
+                // to annotate", and the sidecar carries the positions.
+                let semantics =
+                    Semantics::of(&c.id, &program, &hash, seed, region_size, &c.params, &e);
+                row.anchors = semantics.anchors.len();
+                row.standable_cells = semantics.floor.standable_cells;
+                row.boundary_openings = semantics.openings.total();
+
                 match snapshot_nbt(&e.model) {
                     Ok(nbt) => {
                         if let Err(err) = std::fs::write(dir.join(&snapshot), &nbt) {
                             row.error = Some(format!("cannot write {snapshot}: {err}"));
                             refused += 1;
                         } else {
-                            built += 1;
+                            match serde_json::to_string_pretty(&semantics) {
+                                Ok(mut text) => {
+                                    text.push('\n');
+                                    if let Err(err) = std::fs::write(dir.join(&sidecar), &text) {
+                                        // The blocks without their meaning is
+                                        // the defect this sidecar exists to
+                                        // remove, so a snapshot whose semantics
+                                        // could not be written is a refusal and
+                                        // not a quieter success.
+                                        row.error = Some(format!("cannot write {sidecar}: {err}"));
+                                        refused += 1;
+                                    } else {
+                                        row.semantics = sidecar.clone();
+                                        anchors_declared += row.anchors;
+                                        rows_with_anchors += usize::from(row.anchors > 0);
+                                        rows_with_entry +=
+                                            usize::from(!semantics.declared_entries.is_empty());
+                                        rows_with_exit +=
+                                            usize::from(!semantics.declared_exits.is_empty());
+                                        built += 1;
+                                    }
+                                }
+                                Err(err) => {
+                                    row.error = Some(format!("cannot serialise {sidecar}: {err}"));
+                                    refused += 1;
+                                }
+                            }
                         }
                     }
                     Err(ExportError::ForbiddenBlocks { reasons }) => {
@@ -520,12 +757,16 @@ pub fn run(manifest: &Manifest, dir: &Path) -> Result<SweepReport, SweepError> {
         schema: SCHEMA.to_string(),
         program: manifest.program.clone(),
         program_name: program.name.clone(),
-        program_hash: program_hash(&program),
+        program_hash: hash,
         candidates: manifest.candidates.len(),
         built,
         refused,
         distinct_models: models.len(),
         distinct_massings: massings.len(),
+        anchors_declared,
+        rows_with_anchors,
+        rows_with_entry,
+        rows_with_exit,
         rows,
     })
 }
@@ -911,16 +1152,151 @@ mod tests {
         let rb = run(&m, &b).unwrap();
         assert_eq!(ra, rb);
         for row in &ra.rows {
-            assert_eq!(
-                std::fs::read(a.join(&row.snapshot)).unwrap(),
-                std::fs::read(b.join(&row.snapshot)).unwrap(),
-                "{} differs between two runs of one manifest",
-                row.id
-            );
+            // Both halves: the blocks and their meaning. A sidecar that drifted
+            // between two runs of one manifest would be a reviewer's page
+            // changing under a decision that had already been made.
+            for file in [&row.snapshot, &row.semantics] {
+                assert_eq!(
+                    std::fs::read(a.join(file)).unwrap(),
+                    std::fs::read(b.join(file)).unwrap(),
+                    "{file} differs between two runs of one manifest"
+                );
+            }
         }
         for d in [&a, &b] {
             std::fs::remove_dir_all(d).ok();
         }
+    }
+
+    /// The whole point, end to end: the anchors the rules declared and the floor
+    /// derived from the model reach a file beside the snapshot, in the shape
+    /// `delve-render` reads prefab metadata from — because a field the pictures
+    /// do not consume is the unemitted vacuity, not a fix.
+    ///
+    /// Binding: 1 candidate, ≥1 anchor, a floor with cells in it, at least one
+    /// boundary opening, and the report's counts equal to the sidecar's.
+    #[test]
+    fn a_built_candidate_carries_its_semantics_beside_its_blocks() {
+        let dir = std::env::temp_dir().join("dw-sweep-semantics");
+        std::fs::create_dir_all(&dir).unwrap();
+        let report = run(&Manifest::over_seeds("bell:gate-ward", &[1]), &dir).unwrap();
+        assert_eq!(report.built, 1, "{}", report.summary());
+        let row = &report.rows[0];
+        assert_eq!(row.semantics, "seed-001.json");
+
+        let text = std::fs::read_to_string(dir.join(&row.semantics)).unwrap();
+        let s: Semantics = serde_json::from_str(&text).unwrap();
+        assert_eq!(s.schema, SEMANTICS_SCHEMA);
+        assert_eq!(s.id, row.id);
+        assert_eq!(s.seed, row.seed);
+        assert_eq!(s.program_hash, report.program_hash);
+
+        // Declared: the marks, with the rule that placed each one.
+        assert!(!s.anchors.is_empty(), "the gatehouse declares marks");
+        assert_eq!(s.anchors.len(), row.anchors);
+        assert_eq!(report.anchors_declared, row.anchors);
+        assert_eq!(report.rows_with_anchors, 1);
+        for (name, a) in &s.anchors {
+            assert!(!a.declared_by.is_empty(), "{name} has no declaring rule");
+        }
+
+        // Derived: the floor, and where it meets the boundary.
+        assert_eq!(s.floor.standable_cells, row.standable_cells);
+        assert!(s.floor.standable_cells > 0);
+        assert_eq!(
+            s.floor.columns.len(),
+            (s.region[0] * s.region[2]) as usize,
+            "the plan is not one entry per column"
+        );
+        assert_eq!(s.openings.total(), row.boundary_openings);
+        assert!(s.openings.total() > 0, "no body could enter this zone");
+
+        // Authored, and absent: nothing here nominates a doorway.
+        assert!(s.declared_entries.is_empty() && s.declared_exits.is_empty());
+        assert!(report.ways_are_undeclared());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// ...and the same reading over the whole registry, so "the sweep annotates
+    /// something" is a measured fact about every zone rather than about the one
+    /// a test happened to name.
+    ///
+    /// Binding: 8 zones, every one declaring at least one anchor and reaching
+    /// its own boundary; **0 of 8 declaring an entry or an exit**, which is the
+    /// finding this test pins rather than papers over. When a rule finally
+    /// declares one, this assertion goes red and is the place to record it.
+    #[test]
+    fn every_zone_declares_anchors_and_none_declares_a_way_in() {
+        let dir = std::env::temp_dir().join("dw-sweep-registry-semantics");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut checked = 0usize;
+        for e in registry() {
+            let report = run(&Manifest::over_seeds(&e.id, &[1]), &dir).unwrap();
+            assert_eq!(report.built, 1, "{}", report.summary());
+            assert!(
+                report.anchors_declared > 0,
+                "{}: declares no anchor, so every picture of it annotates nothing",
+                e.id
+            );
+            assert!(!report.anchors_bind_to_nothing(), "{}", e.id);
+            assert!(
+                report.rows[0].boundary_openings > 0,
+                "{}: its floor never reaches the edge of its box",
+                e.id
+            );
+            assert_eq!(
+                (report.rows_with_entry, report.rows_with_exit),
+                (0, 0),
+                "{}: a zone now declares a way in or out — record it, and give the plan key \
+                 something better to draw than every boundary cell",
+                e.id
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, bell::ZONES.len(), "a zone went unswept");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A program that marks nothing says so, loudly, instead of producing a page
+    /// that looks annotated. The vacuous-green case, kept exercisable.
+    #[test]
+    fn a_program_with_no_marks_reports_a_binding_of_zero() {
+        use crate::block::BlockState;
+        use crate::ir::{Material, Node};
+        let program = Program::new("bare", "all").rule(
+            "all",
+            Node::Fill {
+                material: Material::block(BlockState::simple("stone")),
+            },
+        );
+        let expansion = expand(
+            &program,
+            Box3::at_origin([4, 4, 4]),
+            &ExpandOptions::seeded(1),
+        )
+        .unwrap();
+        let s = Semantics::of(
+            "bare",
+            &program,
+            "sha256:0",
+            1,
+            [4, 4, 4],
+            &BTreeMap::new(),
+            &expansion,
+        );
+        assert!(s.anchors.is_empty());
+        assert_eq!(s.floor.standable_cells, 0, "a solid block has no floor");
+        assert!(s.declared_entries.is_empty());
+    }
+
+    #[test]
+    fn a_reserved_way_name_is_recognised_however_it_is_pathed() {
+        assert_eq!(stem_of("anchor/entry"), "entry");
+        assert_eq!(stem_of("entry"), "entry");
+        assert_eq!(stem_of("anchor/gate-north"), "gate-north");
+        assert!(WAY_IN_NAMES.contains(&stem_of("anchor/spawn")));
+        assert!(WAY_OUT_NAMES.contains(&stem_of("exit")));
+        assert!(!WAY_IN_NAMES.contains(&stem_of("anchor/entry-hall")));
     }
 
     #[test]

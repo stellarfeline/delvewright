@@ -6,10 +6,28 @@ of a campaign's build sequence ("zone contact sheets -> owner curates massing").
 It chains three tools that already exist and adds no judgement of its own:
 
     delve-grammar sweep         expand one program many ways -> snapshots
-    delve-render  batch         image every snapshot          -> PNGs
+                                + a semantics sidecar per candidate
+    delve-render  batch         image every snapshot          -> PNGs + plan keys
     delve-render  contact-sheet composite one page per program
 
 Every program in `delve-grammar list` gets a sheet, or name the ones you want.
+
+## Two pages per program, and why
+
+**`<program>.png` is the massing page**: one three-quarter render per candidate.
+It answers "what shape is it" and nothing else — a grey solid cannot say where
+the party enters, which cells can be walked on, or where an anchor sits.
+
+**`<program>-key.png` is the plan-key page**: the same candidates in the same
+order, each drawn as a plan with its walkable floor shaded by level, its
+boundary openings marked, and every declared anchor numbered and named. Those
+are the facts the program already computed; the sweep now carries them through
+to the picture instead of discarding them at the `.nbt`.
+
+Read them together. The summary's `ANCHORS` column is the key page's binding
+count: `0/0` means the programs declare nothing and the key page annotates
+nothing, which is a finding about the programs and is said out loud rather than
+left to be noticed.
 
 ## The number to read first
 
@@ -226,6 +244,7 @@ def build_one(
             file=sys.stderr,
         )
         report["_sheet"] = None
+        report["_key_sheet"] = None
         return report
 
     run(
@@ -233,28 +252,42 @@ def build_one(
         quiet=quiet,
     )
 
-    sheet = work / f"{slug}.png"
-    title = (
-        f"{program} - {report['built']}/{report['candidates']} built, "
-        f"{report['distinct_massings']} distinct massing(s)"
+    massings = report["distinct_massings"]
+    built, total = report["built"], report["candidates"]
+    anchors, with_anchors = report["anchors_declared"], report["rows_with_anchors"]
+
+    def compose(stem: str, which: str, extra_title: str, with_scores: bool) -> str:
+        out = work / f"{stem}.png"
+        cmd = [
+            render_bin,
+            "contact-sheet",
+            str(render_dir),
+            "-o",
+            str(out),
+            "--thumb",
+            str(thumb),
+            "--shot",
+            which,
+            "--title",
+            f"{program} - {built}/{total} built, {massings} distinct massing(s){extra_title}",
+        ]
+        if with_scores and scores:
+            cmd += ["--scores", str(scores)]
+        run(cmd, quiet=quiet)
+        return str(out)
+
+    # The massing page: what shape is it. Ranked when scores were supplied.
+    report["_sheet"] = compose(slug, shot, "", True)
+    # The key page: what the program KNOWS about it. Never score-ranked — a
+    # similarity score measures a render against concept art and has nothing to
+    # say about a plan diagram, so ordering it by one would be a number pretending
+    # to be a measurement.
+    report["_key_sheet"] = compose(
+        f"{slug}-key",
+        "key",
+        f", {anchors} anchor(s) on {with_anchors}/{built}",
+        False,
     )
-    sheet_cmd = [
-        render_bin,
-        "contact-sheet",
-        str(render_dir),
-        "-o",
-        str(sheet),
-        "--thumb",
-        str(thumb),
-        "--shot",
-        shot,
-        "--title",
-        title,
-    ]
-    if scores:
-        sheet_cmd += ["--scores", str(scores)]
-    run(sheet_cmd, quiet=quiet)
-    report["_sheet"] = str(sheet)
     return report
 
 
@@ -348,17 +381,31 @@ def main() -> int:
     index = args.out / "sheets.json"
     index.write_text(json.dumps(reports, indent=2) + "\n")
 
-    print(f"\n{'program':<22} {'cand':>5} {'built':>6} {'models':>7} {'MASSINGS':>9}  sheet")
+    print(
+        f"\n{'program':<22} {'cand':>5} {'built':>6} {'models':>7} {'MASSINGS':>9} "
+        f"{'ANCHORS':>9} {'WAYS':>5}  sheets"
+    )
     uniform = []
+    unannotated = []
+    no_ways = []
     for r in reports:
         flag = ""
         if r["built"] > 1 and r["distinct_massings"] <= 1:
             flag = "  <-- ONE BUILDING, NO CHOICE"
             uniform.append(r["program"])
+        if r["built"] and not r["anchors_declared"]:
+            flag += "  <-- NOTHING ANNOTATED"
+            unannotated.append(r["program"])
+        ways = r["rows_with_entry"] + r["rows_with_exit"]
+        if r["built"] and not ways:
+            no_ways.append(r["program"])
+        sheets = "-"
+        if r["_sheet"]:
+            sheets = f"{Path(r['_sheet']).name} + {Path(r['_key_sheet']).name}"
         print(
             f"{r['program']:<22} {r['candidates']:>5} {r['built']:>6} "
-            f"{r['distinct_models']:>7} {r['distinct_massings']:>9}  "
-            f"{Path(r['_sheet']).name if r['_sheet'] else '-'}{flag}"
+            f"{r['distinct_models']:>7} {r['distinct_massings']:>9} "
+            f"{r['anchors_declared']:>9} {ways:>5}  {sheets}{flag}"
         )
     print(f"\nindex: {index}")
 
@@ -372,8 +419,27 @@ def main() -> int:
             + "\nThose pages are evidence, not choices. Vary region or parameters, not only seeds.",
             file=sys.stderr,
         )
-        if args.require_choice:
-            return 1
+    # A key page that annotated nothing is the vacuity this driver exists to stop
+    # being silent about: it looks exactly like a key page of a piece with nothing
+    # to annotate. Say which it is, by name, every run.
+    if unannotated:
+        print(
+            f"\nFINDING: {len(unannotated)} of {len(reports)} program(s) declare NO ANCHOR: "
+            + ", ".join(unannotated)
+            + "\nTheir key pages draw a shape and name nothing on it. An anchor is declared by a "
+            "rule (`mark`); rendering cannot recover one that was never declared.",
+            file=sys.stderr,
+        )
+    if no_ways:
+        print(
+            f"\nFINDING: {len(no_ways)} of {len(reports)} program(s) declare NO ENTRY OR EXIT: "
+            + ", ".join(no_ways)
+            + "\nThe key pages mark every boundary cell a body could cross, in blue, and say so. "
+            "Which of them is the door is authored — no tool here guesses at it.",
+            file=sys.stderr,
+        )
+    if uniform and args.require_choice:
+        return 1
     return 0
 
 

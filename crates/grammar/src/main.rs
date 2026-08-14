@@ -4,8 +4,11 @@
 //! Exit codes (mirrors `delve-schem`): `0` ok · `2` input/usage · `3` output ·
 //! `≥10` internal.
 //!
-//! The sweep writes snapshots `delve-render batch` consumes directly, so the
-//! whole §3 loop is three commands with nothing hand-assembled between them:
+//! The sweep writes snapshots `delve-render batch` consumes directly — each one
+//! with its semantics sidecar beside it, so the anchors, the walkable floor and
+//! the boundary openings reach the pictures rather than stopping at the blocks —
+//! and the whole §3 loop is three commands with nothing hand-assembled between
+//! them:
 //!
 //! ```text
 //! delve-grammar sweep --program bell:gate-ward --seeds 1,2,3 -o .sheets/nbt
@@ -190,19 +193,43 @@ fn run_sweep(
     ExitCode::SUCCESS
 }
 
-/// Say what the sweep produced, and say plainly when it produced no choice.
+/// Say what the sweep produced, and say plainly when it produced no choice —
+/// or nothing to annotate.
 fn report_to_stderr(report: &SweepReport) {
     eprintln!("{}", report.summary());
     for row in &report.rows {
         match &row.error {
             Some(e) => eprintln!("  {:<18} REFUSED  {e}", row.id),
             None => eprintln!(
-                "  {:<18} {:>7} filled  massing {}",
+                "  {:<18} {:>7} filled  {:>6} floor  {:>3} anchor(s)  {:>3} opening(s)  \
+                 massing {}",
                 row.id,
                 row.filled_cells,
+                row.standable_cells,
+                row.anchors,
+                row.boundary_openings,
                 &row.massing_digest[7..15]
             ),
         }
+    }
+    if report.anchors_bind_to_nothing() {
+        eprintln!(
+            "\nFINDING: none of the {} candidates that built declares an ANCHOR. Every picture \
+             drawn from this sweep will annotate zero objects, and a page that annotated \
+             nothing must not read like a page with nothing to annotate. The fix is in the \
+             program — a rule marks the cells that matter — not in the sweep.",
+            report.built
+        );
+    }
+    if report.ways_are_undeclared() {
+        eprintln!(
+            "\nFINDING: no candidate declares where the party ENTERS or LEAVES (an anchor named \
+             {} or {}). The sidecars state every standable cell on the boundary, which is \
+             where a body COULD cross; which of them is the doorway is authored, and nothing \
+             here guesses at it.",
+            sweep::WAY_IN_NAMES.join("/"),
+            sweep::WAY_OUT_NAMES.join("/"),
+        );
     }
     if report.massing_is_uniform() {
         eprintln!(
