@@ -13,7 +13,7 @@
 //! engine state (a recovery stake's marker, an affordance hitbox), so carrying it
 //! does not move a thing, it rewrites a fact — and for a stake the tick after the
 //! ride deletes the marker and the wager with it. The class is decided at the
-//! OBJECT (`compiler::affordance`, `DW0543`), which is why one negated tag can
+//! OBJECT (`compiler::affordance`, `DW0544`), which is why one negated tag can
 //! stand where a type roster cannot.
 //!
 //! That roster is still a deliberate divergence from `lethal_volumes[]` (#347),
@@ -239,7 +239,7 @@ fn teleport_line(out: &BuildOutput) -> String {
 /// `limit=`, `sort=` or `nbt=` term still reds here, and so does a second tag.
 /// What it now also states is *which* narrowing is licit and why there is exactly
 /// one — a negated CLASS, decided at the object, never a roster of types decided
-/// inside this verb (`DW0543`, `compiler::affordance`).
+/// inside this verb (`DW0544`, `compiler::affordance`).
 #[test]
 fn the_teleport_selection_is_total_over_bodies() {
     let out = build("total");

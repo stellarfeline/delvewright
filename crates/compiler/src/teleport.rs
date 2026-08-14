@@ -27,7 +27,7 @@
 //! **compiler itself placed**, which it can. A proof beats a list that grows with
 //! the engine.
 //!
-//! ## The one narrowing, and why it is not an exemption list (`DW0543`)
+//! ## The one narrowing, and why it is not an exemption list (`DW0544`)
 //!
 //! `tag=!dw_fixture` is not a roster of types wearing a tag's clothes. It is a
 //! **class the object declares about itself** at the moment the engine summons
@@ -87,7 +87,7 @@
 //! Engine furniture with **no** compile-time cell — a recovery stake's marker,
 //! a cutscene's return mark — is not refused here either, and cannot be: an
 //! author cannot move a thing whose position the runtime chooses. It is excluded
-//! from the selector instead (`DW0543`). The split is the whole design: **a place
+//! from the selector instead (`DW0544`). The split is the whole design: **a place
 //! the author can move is refused; a place only the runtime can put down is
 //! skipped.**
 //!

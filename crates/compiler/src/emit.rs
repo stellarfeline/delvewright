@@ -1067,7 +1067,7 @@ pub fn build_with_warnings(
     // See `crate::affordance` for the drowned-bell soft-lock this encodes.
     crate::affordance::check(&affordances(plan), &out)?;
 
-    // ---- fixture-class self-check (DW0543) ----
+    // ---- fixture-class self-check (DW0544) ----
     // `DW0421` above is tag-keyed and asks who may DESTROY an affordance's
     // hardware. A region verb selects by BOX and MOVES what it finds, so it slips
     // past that entirely — which is how a lift carries a recovery stake's marker
@@ -7494,7 +7494,7 @@ const BORNE_NBT: &str = "\"dw_borne\",";
 /// The exclusion is NOT added here, because the *player* selectors
 /// (`damage-players`, `give-effect`, the volume's `@a` half) share this
 /// formatter and no player is a fixture. [`entity_box_selector`] is the entity
-/// spelling, and `DW0543` proves nothing else reaches a box.
+/// spelling, and `DW0544` proves nothing else reaches a box.
 pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {
     format!(
         "x={},dx={},y={},dy={},z={},dz={}",
@@ -7511,7 +7511,7 @@ pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {
 /// fixture-class exclusion.
 ///
 /// **Every** entity selector narrowed by a box in this engine goes through here,
-/// and `DW0543` reads the shipped datapack to prove it. One term, negating one
+/// and `DW0544` reads the shipped datapack to prove it. One term, negating one
 /// class tag — never a `type=!…` roster, which grows with the engine and, on a
 /// verb that moves rather than deletes, would strip an NPC's dialogue hitbox off
 /// its body.
@@ -15260,13 +15260,13 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
     emit_teleport_packtests(plan, out);
-    // …and the runtime half of the fixture class (`DW0543`), one template per
+    // …and the runtime half of the fixture class (`DW0544`), one template per
     // (teleport × stake) pair — the one defect in this family that has no
     // compile-time form at all.
     emit_fixture_packtests(plan, out);
 }
 
-/// spec-0032 / `DW0543` PackTests: one template per (`teleport`, `stake`) pair,
+/// spec-0032 / `DW0544` PackTests: one template per (`teleport`, `stake`) pair,
 /// each of which **leaves a real recovery-stake marker in a real teleport's
 /// volume, rides, and asserts the marker stayed while a body left.**
 ///
@@ -15335,7 +15335,7 @@ fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
             let mut t = packtest_header(&format!(
                 "{title}: `{name}` carries a body out of its volume and leaves the recovery \
                  stake `{}` standing — a marker is a PLACE, and moving it would move the \
-                 position its ledger recorded (DW0543)",
+                 position its ledger recorded (DW0544)",
                 st.id
             ));
             t.push(format!("function {ns}:setup"));

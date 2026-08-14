@@ -18,11 +18,11 @@
 //! **the question is not where this thing is, it is what this thing is.**
 //!
 //! So the fix is a class carried by the object (`compiler::affordance`,
-//! `DW0543`): every entity the engine summons declares whether its position IS
+//! `DW0544`): every entity the engine summons declares whether its position IS
 //! engine state (`dw_fixture` — a place) or belongs to a body that carries it
 //! (`dw_borne` — an NPC's dialogue hitbox, which must ride whatever its speaker
 //! rides). Every selector narrowed by a positional box then excludes the fixture
-//! class, and `DW0543` proves both halves over the shipped datapack.
+//! class, and `DW0544` proves both halves over the shipped datapack.
 //!
 //! ## What lives here and what does not
 //!

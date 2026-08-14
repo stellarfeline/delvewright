@@ -4404,7 +4404,7 @@ pub enum QuestEffect {
     /// retires a marker nobody has a wager at). Places whose cell is known at
     /// compile time are refused outright instead, because the author can move
     /// them (`DW0542`); places the runtime puts down are excluded by the selector,
-    /// because nobody can (`DW0543`). Nothing an author writes carries either tag,
+    /// because nobody can (`DW0544`). Nothing an author writes carries either tag,
     /// and no campaign JSON can turn either off.
     ///
     /// **A teleport is not a rescue.** Accumulated fall distance carries across

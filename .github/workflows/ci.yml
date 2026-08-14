@@ -1105,7 +1105,7 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lift \
             --output ./delve-output-lift
 
-      # task #74 — the fixture class (`DW0543`). `tests/fixtures/lift-stake` is the
+      # task #74 — the fixture class (`DW0544`). `tests/fixtures/lift-stake` is the
       # lift with a recovery stake standing in the same room, which is the one
       # arrangement where a region verb can carry a piece of ENGINE state out from
       # under itself: a ride moves the marker away from the position the collecting

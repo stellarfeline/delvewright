@@ -56,7 +56,7 @@
 //!   own answer to "which verbs rewrite a box", so a later verb of that family is
 //!   covered by existing rather than by being remembered.
 //! * **A `teleport`'s `from` box** (spec-0031) — **NOT in scope here, and this is
-//!   a deliberate ruling rather than an omission. Closed by `DW0543`, task #74,
+//!   a deliberate ruling rather than an omission. Closed by `DW0544`, task #74,
 //!   one layer away from this file.** A teleport moves *entities*, not blocks, so
 //!   the ground under a marker is untouched; what moves is the marker itself,
 //!   away from the position the collecting player's ledger recorded — after which
@@ -82,7 +82,7 @@
 //!   select?* — and the answer is that a marker is a **place**, which is a
 //!   property of the marker and not of any verb. So the class is declared where
 //!   the marker is summoned and every box-narrowed selector reads it
-//!   ([`crate::affordance`], `DW0543`). **Nothing in this module changed**, which
+//!   ([`crate::affordance`], `DW0544`). **Nothing in this module changed**, which
 //!   is the point: a capability keyed to the object needs no cooperation from the
 //!   objects around it.
 //!

@@ -34,7 +34,7 @@
 //! the fix stays fixed, in the same family as the exported-waypoint and
 //! POV-camera self-checks.
 //!
-//! # The third proof: the same rule, one verb wider (`DW0543`)
+//! # The third proof: the same rule, one verb wider (`DW0544`)
 //!
 //! `DW0421` says *only the owner may **retire** an affordance's hardware*, and it
 //! decides that by reading the **tag** in a `kill` selector. A region verb does
@@ -109,7 +109,7 @@ pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::every_version("DW0420");
 /// live affordance, which is how the drowned bell read as a vanished lever.
 pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::every_version("DW0421");
 
-/// `DW0543`: an engine **fixture** — an entity whose position is engine state —
+/// `DW0544`: an engine **fixture** — an entity whose position is engine state —
 /// is reachable by a selector that quantifies over a **box**.
 ///
 /// `DW0421`'s rule, one verb wider and one binding wider: only an affordance's
@@ -125,7 +125,7 @@ pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::every_version("DW0421"
 /// Both are compiler defects, never authoring ones: no campaign JSON can cause
 /// either, and no campaign JSON can fix either. That is why the message is
 /// addressed to whoever is changing the engine.
-pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::every_version("DW0543");
+pub const DW_FIXTURE_REACHABLE: DwCode = DwCode::every_version("DW0544");
 
 /// The class tag on every engine-summoned entity whose position **is** engine
 /// state — an affordance hitbox, its visible hardware, a stake marker, a
@@ -309,7 +309,7 @@ pub fn check(affordances: &[Affordance], out: &BuildOutput) -> Result<(), BuildF
 }
 
 /// Prove that no selector narrowed by a **positional box** can reach an engine
-/// fixture, and return the binding ledger (`DW0543`).
+/// fixture, and return the binding ledger (`DW0544`).
 ///
 /// Reads the shipped datapack, like [`check`], so the verdict is about commands
 /// that ship rather than about intent — and so it covers every engine-summoned
@@ -638,7 +638,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // DW0543 — the fixture class
+    // DW0544 — the fixture class
     // -----------------------------------------------------------------------
 
     /// A stake marker summoned with no class declaration. This is the clause that
@@ -656,7 +656,7 @@ mod tests {
             panic!("expected a coded diagnostic");
         };
         assert_eq!(code, DW_FIXTURE_REACHABLE);
-        assert_eq!(code.id(), "DW0543");
+        assert_eq!(code.id(), "DW0544");
         assert!(message.contains("stk_fill_embers"), "{message}");
         assert!(message.contains("dw_fixture"), "{message}");
     }
