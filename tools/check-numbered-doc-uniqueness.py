@@ -121,6 +121,15 @@ zero files on BOTH sides is a FAIL (CLAUDE.md: a green gate that binds to
 nothing is VACUOUS) — the directory moved, was renamed, or the pattern no
 longer matches; a real run of this repo always has files in both
 `docs/specs/` and `docs/adr/`.
+
+## Fetching `--base`
+
+This script performs no network I/O. When the ref is missing it says so and
+prints how to get it, computed from THIS repository by `tools/lib/gitbase.py` —
+a plain fetch in a full clone, a `--depth=1` fetch in an already-shallow one.
+The two are not interchangeable, which is the whole reason that decision is not
+made here: `--depth=1` in a full clone shallows it, and a shallow clone answers
+ancestry questions with confident wrong numbers rather than with an error.
 """
 
 from __future__ import annotations
@@ -131,6 +140,10 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+
+from gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -206,16 +219,9 @@ def main() -> int:
     base = args.base
 
     try:
-        base_sha = git("rev-parse", "--verify", f"{base}^{{commit}}").strip()
-    except RuntimeError:
-        print(
-            f"check-numbered-doc-uniqueness: FAIL — {base!r} does not resolve to "
-            f"a commit in this checkout.\n"
-            f"    This gate diffs the checkout against that ref and cannot run "
-            f"without it having been fetched first, e.g.:\n"
-            f"      git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main",
-            file=sys.stderr,
-        )
+        base_sha = resolve_base(ROOT, base, "check-numbered-doc-uniqueness")
+    except BaseUnresolved as unresolved:
+        print(unresolved.message, file=sys.stderr)
         return 1
 
     findings: list[str] = []

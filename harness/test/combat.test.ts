@@ -10,6 +10,7 @@ import {
   assistCommand,
   assistPolicy,
   deathPhases,
+  dieRetryBinding,
   dieRetryCoverageFailures,
   dieRetryFindings,
   floorFinding,
@@ -555,4 +556,48 @@ test("a governing bonfire the path only rests at LATER is still unarmed now", ()
   assert.equal(v?.reds, true);
   assert.match(String(v?.finding), /does not rest at bonfire 1 \(anchor\/beach-fire\) until AFTER/);
   assert.match(String(v?.finding), /path step 40/);
+});
+
+// ---------------------------------------------------------------------------
+// The die-retry stage's binding count (playtest-methodology.md rule 1)
+// ---------------------------------------------------------------------------
+
+test("a die-retry stage that scripted no death reports UNBOUND, whatever else it says", () => {
+  // The exact state measured across every campaign and fixture in both repos on
+  // 2026-08-11: encounters exist, every one is excluded for want of a governing
+  // checkpoint, the coverage arithmetic runs over an emptied list and finds
+  // nothing wrong, and the stage reports a pass having proven nothing.
+  const b = dieRetryBinding(true, 1, new Set(), [], 1, 0);
+  assert.equal(b.unbound, true);
+  assert.equal(b.deathsScripted, 0);
+  assert.match(b.reason ?? "", /fires NO\s+checkpoint before them/);
+});
+
+test("a build with no mandatory encounter says THAT, not something vaguer", () => {
+  const b = dieRetryBinding(true, 0, new Set(), [], 0, 0);
+  assert.equal(b.unbound, true);
+  assert.match(b.reason ?? "", /declares NO mandatory encounter/);
+});
+
+test("a stage that did not run is distinguished from one that ran and found nothing", () => {
+  const b = dieRetryBinding(false, 2, new Set(), [], 0, 0);
+  assert.equal(b.unbound, true);
+  assert.match(b.reason ?? "", /did not run/);
+});
+
+test("an unarmed governing checkpoint is the RUN's own gap, and is named as such", () => {
+  const b = dieRetryBinding(true, 2, new Set(), [], 0, 2);
+  assert.match(b.reason ?? "", /never armed — the run's own gap/);
+});
+
+test("a stage that took deaths is bound, and owes no reason", () => {
+  const t1 = openTrial(encounter(), 1, "first-contact");
+  t1.completed = true;
+  const t2 = openTrial(encounter(), 2, "mid-fight");
+  const b = dieRetryBinding(true, 1, new Set(["wave/bellkeeper"]), [t1, t2], 0, 0);
+  assert.equal(b.unbound, false);
+  assert.equal(b.reason, undefined);
+  assert.equal(b.deathsScripted, 2);
+  assert.equal(b.trialsCompleted, 1, "taken and completed are different counts");
+  assert.equal(b.engaged, 1);
 });

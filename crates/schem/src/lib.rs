@@ -22,6 +22,7 @@ pub mod convert;
 pub mod diag;
 pub mod fixtures;
 pub mod fluid;
+pub mod nav;
 pub mod nbt;
 pub mod prefab;
 pub mod schematic;

@@ -106,6 +106,7 @@ pub mod contract;
 pub mod coverage;
 pub mod eval;
 pub mod expand;
+pub mod explain;
 pub mod export;
 pub mod gates;
 pub mod geom;
@@ -123,9 +124,11 @@ pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
 pub use contract::{ContractReport, ExteriorFace, NoBodyKind, exterior_faces};
 pub use expand::{
-    Anchor, ExpandError, ExpandOptions, Expansion, Limits, ResolvedBar, ResolvedContract,
-    ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume, Stats, expand,
+    Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ResolvedBar,
+    ResolvedContract, ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume,
+    ScopeAt, Stats, expand,
 };
+pub use explain::GuardLeaf;
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
 };

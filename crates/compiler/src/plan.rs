@@ -2010,6 +2010,95 @@ impl<'a> Plan<'a> {
         self.checkpoints.iter().filter(|c| c.rest)
     }
 
+    /// For each [`Self::checkpoints`] entry, in the same order: the step at which
+    /// it stops being where a dead player lands, or `None` for "never".
+    ///
+    /// A plain `set-checkpoint` is **monotonic** (spec-0012): the next one to fire
+    /// replaces it outright, so its reign is `[fire_step, next_set_checkpoint)`.
+    /// A later **bonfire** does not end it — the checkpoint moves only when the
+    /// party actually rests, and nobody is forced to (the same "an unguaranteed
+    /// firing may be assumed only where assuming so is conservative" rule
+    /// [`collect_region_events`] states).
+    ///
+    /// A **bonfire**'s reign is `None`: the party can return to the last fire they
+    /// rested at for the rest of the campaign, and a proof over it must not narrow
+    /// on the strength of a rest that might never happen. That is also exactly
+    /// today's behaviour, so every bonfire proof is unchanged by this existing.
+    pub fn respawn_reign_ends(&self) -> Vec<Option<usize>> {
+        let later_plain: Vec<usize> = self
+            .checkpoints
+            .iter()
+            .filter(|c| !c.rest)
+            .map(|c| c.fire_step)
+            .collect();
+        self.checkpoints
+            .iter()
+            .map(|c| {
+                if c.rest {
+                    return None;
+                }
+                later_plain
+                    .iter()
+                    .copied()
+                    .filter(|s| *s > c.fire_step)
+                    .min()
+            })
+            .collect()
+    }
+
+    /// The earliest critical-path step at which each hostile force can be in the
+    /// world, keyed by wave id and actor id.
+    ///
+    /// Read off the campaign's own staging beats — `spawn-wave` and
+    /// `spawn-actor` — through the one effect walk, so a new root or a new
+    /// nesting site cannot leave a body invisible here. A force no beat stages,
+    /// or one staged from a root with no step of its own (a trigger, a trap
+    /// payload, a death bundle), reports **0**: the conservative answer is "it
+    /// could be there from the start", and a proof that guessed later would be a
+    /// proof that looked away.
+    ///
+    /// `unleash-actor` is deliberately NOT an onset. It does not put a body in
+    /// the world — it replaces an already-summoned puppet with a real-AI twin, and
+    /// an unleash of something never spawned is a no-op ([`crate::combat`]'s
+    /// "unleash or nothing" rule states the same fact from the other side).
+    /// Counting it moved `nobodys-cave-island`'s warden onto step 0 because a
+    /// proximity trigger unleashes it, and reported a body five quests in the
+    /// future as standing two blocks from the party's respawn.
+    pub fn hostile_onsets(&self) -> BTreeMap<String, usize> {
+        let mut out: BTreeMap<String, usize> = BTreeMap::new();
+        let mut note = |id: &str, step: usize| {
+            let slot = out.entry(id.to_string()).or_insert(step);
+            *slot = (*slot).min(step);
+        };
+        delvewright_dsl::for_each_campaign_effect(self.campaign, &mut |_, site, eff| {
+            let step = match site {
+                delvewright_dsl::EffectSite::Objective { objective, .. } => self
+                    .objective_steps
+                    .get(objective.as_str())
+                    .copied()
+                    .unwrap_or(0),
+                delvewright_dsl::EffectSite::QuestComplete { quest } => self
+                    .campaign
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .find(|q| q.id.as_str() == quest)
+                    .map_or(0, |q| quest_complete_step(q, &self.objective_steps)),
+                // Roots with no beat of their own: proximity, a sprung trap, a
+                // death, a shortcut bar lifting, a shop purchase, a dialogue
+                // respawn hook. Rooted at 0, conservatively.
+                _ => 0,
+            };
+            match eff {
+                QuestEffect::SpawnWave { wave, .. } => note(wave.as_str(), step),
+                QuestEffect::SpawnActor { actor, .. } => note(actor.as_str(), step),
+                _ => {}
+            }
+        });
+        out
+    }
+
     /// Translate a [`Self::critical_path`] index into the index the SAME step
     /// carries in the **exported** `critical-path.json`.
     ///

@@ -21,28 +21,52 @@
 #   0. the operating-practice page — the half of the constitution that is not
 #      checked in (see below)
 #   1. both checkouts: current commit, dirtiness
-#   2. worktrees beyond the main checkout (each is owned by an open dispatch,
+#   2. shallow checkouts — the one corruption that reports numbers, not errors
+#   3. worktrees beyond the main checkout (each is owned by an open dispatch,
 #      or it is garbage)
-#   3. commits that exist on NO remote (the only unrecoverable git state)
-#   4. open PRs, both repos (the in-flight set the planner must be able to hold)
-#   5. decision ledger: open + unenforced rows
+#   4. commits that exist on NO remote (the only unrecoverable git state)
+#   5. open PRs, both repos (the in-flight set the planner must be able to hold)
+#   6. decision ledger: open + unenforced rows
 #
-# THE OPERATING-PRACTICE PAGE
+# WHY SHALLOWNESS IS ON THIS PAGE
+#
+# Every other failure a planner meets announces itself. A shallow repository does
+# not: it answers ancestry questions with plausible wrong integers. Measured on
+# throwaway clones — a branch 1 commit ahead of `origin/main` and 5 behind reads
+# as 401 ahead and 1 behind once the repo is shallow, and `git merge origin/main`
+# answers "refusing to merge unrelated histories". The refusal costs minutes; the
+# counts are what someone resets or force-pushes on. It is also sticky and shared:
+# the boundary lives in the object store, so one `--depth` fetch in any linked
+# worktree shallows the main checkout too, and nothing ever says so.
+#
+# So it is reported here rather than left to be inferred from a strange git
+# answer hours later and a directory away — on the same two events as everything
+# else on this page, because a doc line telling someone to check is the UNRUN
+# vacuity mode (CLAUDE.md).
+#
+# THE LOCAL HALF OF THE CONSTITUTION
 #
 # CLAUDE.md holds what anyone building Delvewright must obey. How this project
 # is RUN — dispatch, review, merge gates, staging, decision sessions — is about
 # one owner and one deployment, and a repository holds finished results rather
-# than a person's decisions, so that half lives in
-# docs/notes/private/OPERATING-PRACTICE.md and is gitignored.
+# than a person's decisions, so that half lives in CLAUDE.local.md, which is
+# gitignored.
 #
-# Emitting it here is what stops it degrading into a file someone has to
-# remember to read: it rides the same two events as everything else on this
-# page, which is the strongest binding this repo has. And its ABSENCE IS LOUD.
-# A gitignored file is missing on exactly the machine that has never had it — a
-# fresh clone — so a silent no-op there would be the UNRUN vacuity mode wearing
-# the fix's clothes. Missing or EMPTY => a refusal that names the file and says
-# the session is running on half a constitution. That is the ONE thing on this
-# page that is not merely informational.
+# It is NOT printed here, and that is the point. CLAUDE.local.md is loaded by
+# the same memory loader as CLAUDE.md, so the local half carries the same force
+# as the checked-in half: it is instructions, not text an agent is shown and may
+# skim. An earlier design emitted the page from this script, which made it a
+# tool result — the same standing as a doc line, and this project's own doctrine
+# says a doc line is not an invocation.
+#
+# What remains here is the part a loader cannot do: SAY SO WHEN IT IS ABSENT. A
+# gitignored file is missing on exactly the machine that has never had it — a
+# fresh clone — and a missing memory file loads silently, which is the UNRUN
+# vacuity mode wearing the fix's clothes. Missing or EMPTY => a refusal that
+# names the file and says the session is running on half a constitution. Present
+# => one line stating its size, so "loaded" is an observation rather than an
+# assumption. That refusal is the ONE thing on this page that is not merely
+# informational.
 #
 # The refusal is CONTENT, not an exit code, and deliberately so: this script's
 # output is injected into the session, and a `UserPromptSubmit` hook that exits
@@ -103,6 +127,43 @@ repo_line() { # <label> <path>
     "$([ "$dirty" = 0 ] && echo clean || echo "DIRTY ($dirty files)")"
 }
 
+# Shallowness is a property of the OBJECT STORE, so one call answers for a
+# checkout and every worktree linked to it. Prints nothing when the repo is
+# whole; the caller counts what was examined either way, so "no finding" and
+# "looked at nothing" stay distinguishable (CLAUDE.md: state the binding count).
+shallow_line() { # <label> <path>
+  local label="$1" path="$2"
+  [ -n "$path" ] && [ -d "$path" ] || return 1
+  local answer
+  answer="$(git -C "$path" rev-parse --is-shallow-repository 2>/dev/null || echo '?')"
+  case "$answer" in
+    true)
+      cat <<EOF
+  SHALLOW — $label ($path)
+
+  This repository has a truncated history, and so does every worktree sharing
+  its object store. It does not fail; it ANSWERS WRONG. \`git merge origin/main\`
+  says "refusing to merge unrelated histories", \`merge-base\` returns nothing,
+  and ahead/behind counts come back as confident integers computed from the two
+  commits that survived. Do not reset, rebase or force-push on any number this
+  checkout produced until it is repaired.
+
+  Repair it, then re-read anything you concluded from git here:
+      git -C $path fetch --unshallow --no-tags
+
+  Cause: a \`git fetch --depth=…\` or a \`git clone --depth=…\` run against a
+  working checkout. That flag belongs to CI, whose checkout is disposable.
+EOF
+      return 0
+      ;;
+    false) return 1 ;;
+    *)
+      printf '  %s: could not be computed (git said %s)\n' "$label" "$answer"
+      return 0
+      ;;
+  esac
+}
+
 worktrees() { # <path>
   git -C "$1" worktree list --porcelain 2>/dev/null |
     awk '/^worktree /{print $2}' | tail -n +2 | while read -r wt; do
@@ -129,11 +190,11 @@ open_prs() { # <repo-dir>
 }
 
 LOCAL="$ROOT/docs/notes/private"
-PRACTICE="$LOCAL/OPERATING-PRACTICE.md"
+PRACTICE="$ROOT/CLAUDE.local.md"
 
 section "operating practice — the half of the constitution that is not checked in"
 if [ -s "$PRACTICE" ]; then
-  cat "$PRACTICE"
+  echo "  present ($(wc -c < "$PRACTICE" | tr -d ' ') bytes) — loaded as instructions, not printed here."
 else
   cat <<EOF
   REFUSED — $PRACTICE is missing.
@@ -155,6 +216,17 @@ fi
 section "checkouts"
 repo_line "engine " "$ROOT"
 repo_line "content" "$CONTENT"
+
+section "history depth (a shallow repo answers with wrong numbers, never an error)"
+examined=0; found=0
+for pair in "engine:$ROOT" "content:$CONTENT"; do
+  label="${pair%%:*}"; path="${pair#*:}"
+  [ -n "$path" ] && [ -d "$path" ] || continue
+  examined=$((examined + 1))
+  if shallow_line "$label" "$path"; then found=$((found + 1)); fi
+done
+printf '  examined %s checkout(s); %s shallow\n' "$examined" "$found"
+[ "$examined" = 0 ] && printf '  BINDING ZERO — no checkout could be examined, so this section proves nothing.\n'
 
 section "worktrees beyond main (each owned by an open dispatch, or garbage)"
 ew="$(worktrees "$ROOT")"; cw="$([ -n "$CONTENT" ] && worktrees "$CONTENT")"

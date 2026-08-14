@@ -19,12 +19,17 @@ particular deployment of this project is run: how work is dispatched, how a chan
 is reviewed and merged, how a playtest round is staged, how a decision session is
 conducted. That half is deployment-specific, so it is not checked in.
 
-It is delivered by `tools/planner-state.sh`, which `.claude/settings.json` binds to
-`SessionStart` and to `UserPromptSubmit --if-stale 12`. The script reads
-`docs/notes/private/OPERATING-PRACTICE.md` (gitignored) and prints it. **If that file
-is absent the script refuses and says so by name**, because a fresh clone is exactly
-the case where it is missing and a silent no-op there would be the UNRUN vacuity mode
-wearing the fix's clothes.
+That half lives in **`CLAUDE.local.md`**, which is gitignored. It is loaded by the
+same memory loader as this file, so it carries the same force: instructions, not a
+page an agent is shown and may skim. Delivering it any other way weakens it —
+emitting it from a hook makes it a tool result, which is the standing of a doc line,
+and this file's own doctrine says a doc line is not an invocation.
+
+A missing memory file loads silently, so `tools/planner-state.sh` — bound to
+`SessionStart` and `UserPromptSubmit --if-stale 12` — **refuses by name when it is
+absent**, and states its size when present. A fresh clone is exactly the case where
+it is missing, and a silent no-op there would be the UNRUN vacuity mode wearing the
+fix's clothes.
 
 So: if you have not been given that page, **you have half a constitution**. Say so
 and ask before improvising anything about dispatch, review, merge or staging. Nothing
@@ -84,10 +89,15 @@ docs/specs/          # approved specs, one per feature
 docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
                      #   grammar.md + how a round is run: playtest-methodology.md
                      #   + how a delve is generated: skill-workflow.md
+                     #   + how a prefab is admitted: prefab-procedure.md
+                     #   + what a fresh checkout still needs: worktree-bootstrap.md
+                     #   + distribution-size.md
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / grammar / orchestrator /
                      #   admit / schem / render
-prefabs/             # .nbt library + metadata (git-lfs)
+prefabs/             # tileset GENERATORS + shared invariants. The .nbt library and
+                     #   its metadata live in the CONTENT repo, reached through the
+                     #   `campaigns/` dev symlink — see prefabs/README.md
 harness/             # mineflayer bot tests (TypeScript)
 tools/               # auxiliary Python/shell tooling (skins, i18n, CI checks) —
                      #   never shipped in delves

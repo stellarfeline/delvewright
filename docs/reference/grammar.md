@@ -1060,6 +1060,34 @@ than 65 536 distinct block states in one model), `MarkOutsideScope`,
 `VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
 `Debug` struct.
 
+**A refusal names the comparison, not just the rule.** A guard exhaustion
+(`NoApplicableRule`) reports, for every rejected alternative, each condition
+that decided the rejection with **both operands as evaluated at that scope**:
+every failed conjunct of an `all` at once (an author handed one constraint at a
+time re-runs into the next), a condition that *held* under `none_of`,
+required-versus-actual for an `orientation` guard, and a conjunct that cannot
+be evaluated (say, a division by zero behind a short-circuit) by name. A
+composite operand shows the authored expression, its value, and the value of
+each `dim`/`param` inside it —
+`required dim:z >= ((param:gate/approach + param:gate/span) + 4); at this scope
+left = 12, right = 15  [param:gate/approach = 8, param:gate/span = 3]`. The
+refusal also states the scope's **own** local dimensions, orientation and world
+box — the dimensions at the failure site, which after `reorient`s and splits
+are not the region on the command line — and the derivation path that reached
+it, as rule names and split pieces (`mainline › split z→z piece 4/6 › …`).
+Wherever a frame is printed, required or actual, it is printed as a frame:
+the axis mapping, and `local z reversed` after it when the frame reflects.
+Two frames can share a mapping and differ, so a mapping-only rendering shows a
+reflected-frame rejection as `required x→x, y→y, z→z; this scope has x→x, y→y,
+z→z` — an author told that their guard failed against itself.
+`Split`, `Orient`, `BadSize` and `Eval` carry the same scope-and-path record; a
+split refusal additionally shows its evaluated size pattern beside the authored
+expressions, and a bad size or failed evaluation names the expression it came
+from. `PaletteFull`, the budgets and the mark errors do not: the palette and
+the budgets are model-global, and a mark error already names its cell and box.
+All of it is asserted — operand values included, because a message is a claim —
+in `tests/failures.rs`.
+
 The three budgets live on `Limits` and are inputs, never silent clamps:
 `max_depth` and `max_scopes` turn an unguarded recursive rule into a diagnostic
 instead of a hang; `max_volume` (default 2²⁴ cells) is checked *before* the dense
@@ -2226,6 +2254,14 @@ Gates:
    position stands, unreachable, and the lane walks unchanged.
 
 ## 5c. Zone programs — the vocabulary composed
+
+> **Where `REMAKE` is.** Every `REMAKE §n` citation in this file and in
+> `crates/grammar/src/library/bell/` names
+> `campaigns/the-drowned-bell/REMAKE.md` in the **content** repo
+> (`delvewright-campaigns`), which a dev checkout reaches through the
+> `campaigns/` symlink at `campaigns/campaigns/the-drowned-bell/REMAKE.md`.
+> §3 is the zone list, §4 the lettered staging catalogue (K, R, O, W, …),
+> §7 the engine prerequisites.
 
 `library::bell::{barrow_shore, cliff_road, gate_ward, drowned_ward,
 chapel_ward, hall_keep, cistern_deep, bell_tower}` are the drowned-bell remake's
