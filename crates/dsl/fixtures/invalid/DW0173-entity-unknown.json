@@ -1,34 +1,74 @@
 {
   "description": "a wave mob uses an entity id that is not a known vanilla entity (v0.3)",
-  "expect": "DW0173",
   "documents": {
     "quests": {
-      "dsl_version": "0.3.0",
       "campaign_id": "hello-world",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/open-the-door",
-            "trigger": { "type": "campaign-start" },
             "objectives": [
-              { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
-              { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] },
-              { "type": "kill", "id": "obj/guard", "wave": "wave/guards", "after": ["obj/talk"] }
+              {
+                "id": "obj/talk",
+                "npc": "npc/keeper",
+                "type": "talk-to"
+              },
+              {
+                "after": [
+                  "obj/talk"
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              },
+              {
+                "after": [
+                  "obj/talk"
+                ],
+                "id": "obj/guard",
+                "type": "kill",
+                "wave": "wave/guards"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
+              }
             ],
             "on_objective_complete": {
               "obj/talk": [
-                { "type": "open-gate", "anchor": "anchor/door" },
-                { "type": "spawn-wave", "wave": "wave/guards" }
+                {
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
+                },
+                {
+                  "type": "spawn-wave",
+                  "wave": "wave/guards"
+                }
               ]
             },
-            "on_complete": [ { "type": "campaign-complete" } ]
+            "trigger": {
+              "type": "campaign-start"
+            }
           }
         ],
         "waves": [
-          { "id": "wave/guards", "anchor": "anchor/exit", "mobs": [ { "entity": "minecraft:goblin", "count": 1 } ] }
+          {
+            "anchor": "anchor/exit",
+            "id": "wave/guards",
+            "mobs": [
+              {
+                "count": 1,
+                "entity": "minecraft:goblin"
+              }
+            ]
+          }
         ]
-      }
+      },
+      "dsl_version": "0.3.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0173"
 }

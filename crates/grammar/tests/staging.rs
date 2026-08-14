@@ -22,7 +22,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_grammar::block::BlockState;
-use delvewright_grammar::geom::Orientation;
+use delvewright_grammar::geom::{Axis, Mirror, Orientation};
 use delvewright_grammar::ir::{AxisSpec, Node, Program, Split};
 use delvewright_grammar::library::bait_stand::{self, bait_stand};
 use delvewright_grammar::library::causeway::MIN_GATE_RISE;
@@ -587,29 +587,33 @@ fn the_niche_spacing_is_a_real_control() {
 // K — is this rule reachable by a turned frame at all?
 // ---------------------------------------------------------------------------
 //
-// Two rounds of the bell vocabulary recorded that a switchback was unbuildable
-// because "a grammar orientation is a permutation without reflection", and then
-// recorded a doubt about the way out: a rule *body* can be written mirrored
-// (`stair_flight` says so), but whether that reaches `cliff_path`, "whose lane
-// and recesses are placed by `reorient` rather than by split order, has not been
-// checked".
+// The recorded doubt was whether a mirrored rule *body* reaches `cliff_path`,
+// "whose lane and recesses are placed by `reorient` rather than by split
+// order". It is measured here rather than argued. **No cell of the lane is
+// placed by `reorient`**: the ledge, the recess and the backing are three
+// pieces of an `X` split. The one `reorient` inside the rule aims
+// `anchor/niche-<i>` and, through that same derived facing, picks which yaw the
+// recess's corpse prop is written with — so it decides one PROPERTY of one cell
+// per niche and no cell's position at all.
 //
-// It is checked here, and the answer decided the design. **Nothing in
-// `cliff_path` is placed by `reorient`**: the ledge, the recess and the backing
-// are three pieces of an `X` split, and the one `reorient` inside the rule
-// writes no block at all — it exists to aim an anchor. So a mirrored body would
-// have reached it. What a mirrored body could *not* reach is the case a hairpin
-// actually needs, which is not a mirror in one axis but a **half-turn** in two;
-// writing that as a body means a second copy of the rule. The frame carries a
-// sign instead, and the second test below is what that buys.
+// What a mirrored body could not reach is the case a hairpin actually needs,
+// which is not a mirror in one axis but a **half-turn** in two; writing that as
+// a body means a second copy of the rule. The frame carries the sign instead,
+// and the second test below is what that buys.
 
-/// The `reorient` in `recess_slice` moves no block: strip it and the model is
-/// byte-identical. Only the derived facing of `anchor/niche-<i>` changes, which
-/// is the whole of its job.
+/// The `reorient` in `recess_slice` moves no cell: strip it and every position
+/// in the model holds the same block *kind*. What changes is the derived facing
+/// of `anchor/niche-<i>` and, with it, the yaw of the corpse prop that faces out
+/// of the recess — one property of one cell per niche, which is the whole of the
+/// reorientation's job.
 ///
 /// This is the measurement the module's open question asked for, stated as the
-/// thing it decides rather than as prose: if the recess lane were placed by a
-/// reorientation, removing it would move blocks.
+/// thing it decides: if the recess lane were *placed* by a reorientation,
+/// removing it would move blocks. It does not, and the gate is stronger than a
+/// byte comparison because it says exactly which property may differ and refuses
+/// any other.
+///
+/// Binding: 540 cells compared by kind, and every `niche` anchor.
 #[test]
 fn the_recess_reorientation_aims_an_anchor_and_writes_nothing() {
     fn strip(node: &Node) -> Node {
@@ -651,15 +655,34 @@ fn the_recess_reorientation_aims_an_anchor_and_writes_nothing() {
 
     let plain = expand_at(&cliff_path(), CLIFF_REGION, CLIFF_SEED);
     let flat = expand_at(&flattened, CLIFF_REGION, CLIFF_SEED);
-    assert_eq!(
-        plain.model.canonical_bytes(),
-        flat.model.canonical_bytes(),
-        "removing the recess reorientation moved blocks, so the lane really is \
-         placed by it"
-    );
 
-    // ...and the control, so the byte-identity above is not the identity
-    // transform quietly doing nothing: the facings it aimed did change.
+    // Every cell holds the same block KIND either way: nothing is placed by the
+    // reorientation. The only cells whose full state may differ are the corpse
+    // props, whose yaw is the frame's answer, and they are counted so a silent
+    // drop to zero is a red rather than a pass.
+    let mut compared = 0usize;
+    let mut yawed = 0usize;
+    for pos in CLIFF_REGION.positions() {
+        let (a, b) = (plain.model.get(pos), flat.model.get(pos));
+        compared += 1;
+        assert_eq!(
+            a.map(|s| &s.name),
+            b.map(|s| &s.name),
+            "removing the recess reorientation moved a block at {pos:?}, so the \
+             lane really is placed by it"
+        );
+        if a != b {
+            let (a, b) = (a.expect("a differing cell holds a block"), b.unwrap());
+            assert_eq!(a.name, "minecraft:skeleton_skull");
+            assert_eq!(a.properties["rotation"], "4", "the aimed yaw at {pos:?}");
+            assert_eq!(b.properties["rotation"], "8", "the unaimed yaw at {pos:?}");
+            yawed += 1;
+        }
+    }
+    assert_eq!(compared, 540, "the gate compared {compared} cells");
+
+    // ...and the control, so the identity above is not the strip quietly doing
+    // nothing: the facings it aimed did change, and the props followed them.
     let niches = indexed(&plain.anchors, "niche");
     assert!(!niches.is_empty());
     for i in 1..=niches.len() {
@@ -671,18 +694,30 @@ fn the_recess_reorientation_aims_an_anchor_and_writes_nothing() {
             "{name} kept its aim without the reorientation that aims it"
         );
     }
+    assert!(
+        yawed > 0,
+        "no corpse prop changed yaw, so the strip proved nothing about the \
+         property the reorientation decides"
+    );
 }
 
 /// The same rule under a **half-turn about the vertical** is the same piece
-/// turned round: every block of the turned model is the plain model's block at
+/// turned round: every cell of the turned model holds the plain model's block at
 /// the mirrored cell, in `X` and `Z` together.
+///
+/// Compared by block *kind*, because **a facing does not reflect**: a directional
+/// property is a literal world value, so the corpse prop that faces out of a
+/// recess is written with the yaw its own frame derives rather than with the
+/// plain model's. Those cells are counted and their yaw checked to have turned
+/// the right way round, which is a stronger claim than "the states match" and the
+/// one that would actually catch a prop left facing the way it was written.
 ///
 /// This is what makes a switchback's second leg the *same* rule rather than a
 /// hand-mirrored copy of it, and it is asserted cell by cell over the whole
 /// fixture rather than sampled, because "mostly mirrored" is the failure that
 /// would ship a road with one recess on the wrong side.
 ///
-/// Binding: 540 cells, and every anchor the rule declares.
+/// Binding: 540 cells, every anchor the rule declares, and every corpse prop.
 #[test]
 fn the_cliff_path_turned_round_is_the_same_path_mirrored() {
     let mut turned = cliff_path();
@@ -704,15 +739,40 @@ fn the_cliff_path_turned_round_is_the_same_path_mirrored() {
     let mirror = |[x, y, z]: [i32; 3]| [sx - 1 - x, y, sz - 1 - z];
 
     let mut compared = 0usize;
+    let mut props = 0usize;
     for pos in CLIFF_REGION.positions() {
+        let (here, there) = (round.model.get(pos), plain.model.get(mirror(pos)));
+        compared += 1;
         assert_eq!(
-            round.model.get(pos),
-            plain.model.get(mirror(pos)),
+            here.map(|s| &s.name),
+            there.map(|s| &s.name),
             "the turned path differs from the plain one mirrored, at {pos:?}"
         );
-        compared += 1;
+        let Some(here) = here else { continue };
+        if here.name == "minecraft:skeleton_skull" {
+            // A yaw is a world value and does not reflect: the recess it faces
+            // out of is now looking the other way down world X, so `west` (4)
+            // becomes `east` (12).
+            assert_eq!(there.expect("mirrored cell").properties["rotation"], "4");
+            assert_eq!(
+                here.properties["rotation"], "12",
+                "the corpse prop at {pos:?} did not turn with its recess"
+            );
+            props += 1;
+        } else {
+            assert_eq!(
+                Some(here),
+                there,
+                "a non-directional block differs at {pos:?}"
+            );
+        }
     }
     assert_eq!(compared, 540, "the gate compared {compared} cells");
+    assert!(
+        props > 0,
+        "no corpse prop was compared, so the directional half of the turn is \
+         unproven"
+    );
 
     // The anchors turn with it: same names, mirrored cells, and the derived
     // facings point the other way down both axes — `west`→`east` for a recess
@@ -741,12 +801,13 @@ fn the_cliff_path_turned_round_is_the_same_path_mirrored() {
 
     // The control: the turn is a *rotation*, not a mirror image — a chiral piece
     // keeps its hand. One reversal would not.
+    let half_turn = Orientation::IDENTITY.mirrored(Mirror::of(Axis::X).and(Axis::Z));
+    assert!(half_turn.is_rotation());
     assert!(
-        Orientation {
-            reversed: [true, false, true],
-            ..Orientation::IDENTITY
-        }
-        .is_rotation()
+        !Orientation::IDENTITY
+            .mirrored(Mirror::of(Axis::X))
+            .is_rotation(),
+        "one reversal is a reflection, and a chiral piece would change hand"
     );
 }
 
@@ -1630,7 +1691,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_tread() {
     restyled
         .set_role(
             "smooth",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, STAIR_PALETTE_REGION, STAIR_SEED);
@@ -1700,7 +1761,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
             (region.origin[0]..region.maximum()[0]).any(|x| {
                 out.model
                     .get([x, y, narrate[2]])
-                    .is_some_and(|b| b.name == "minecraft:chain")
+                    .is_some_and(|b| b.name == "minecraft:iron_chain")
             })
         })
         .expect("the doorband has a curtain band somewhere above the floor");
@@ -1708,7 +1769,7 @@ fn curtain_strand_count(out: &Expansion, region: Box3) -> usize {
         .filter(|&x| {
             out.model
                 .get([x, y, narrate[2]])
-                .is_some_and(|b| b.name == "minecraft:chain")
+                .is_some_and(|b| b.name == "minecraft:iron_chain")
         })
         .count()
 }
@@ -1915,7 +1976,7 @@ fn the_palette_mirror_still_fires_on_a_genuine_accent_in_the_grate_row() {
     restyled
         .set_role(
             "grate_broken",
-            delvewright_grammar::ir::Paint::Block(BlockState::simple("gold_block")),
+            delvewright_grammar::ir::Paint::block(BlockState::simple("gold_block")),
         )
         .unwrap();
     let out = expand_at(&restyled, GRATE_PALETTE_REGION, 1);
@@ -3426,7 +3487,7 @@ fn the_staging_rules_restyle_without_moving_a_block() {
             restyled
                 .set_role(
                     role,
-                    delvewright_grammar::ir::Paint::Block(BlockState::simple(
+                    delvewright_grammar::ir::Paint::block(BlockState::simple(
                         SWATCH[i % SWATCH.len()],
                     )),
                 )

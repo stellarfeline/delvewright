@@ -1,34 +1,34 @@
 {
-  "dsl_version": "0.7.0",
   "campaign_id": "talkto-cast-pos",
-  "stage": "quest-plan",
   "content": {
+    "finale": "quest/farewell",
     "quests": [
       {
-        "id": "quest/ask",
-        "goal": "Ask the Keeper to lift the gate.",
+        "act": 1,
         "area": "area/keep",
+        "depends_on": [],
+        "goal": "Ask the Keeper to lift the gate.",
+        "id": "quest/ask",
+        "mandatory": true,
         "npcs": [
           "npc/keeper"
-        ],
-        "depends_on": [],
-        "mandatory": true,
-        "act": 1
+        ]
       },
       {
-        "id": "quest/farewell",
-        "goal": "Take the Keeper's last word on the far side of the gate.",
+        "act": 2,
         "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
         "depends_on": [
           "quest/ask"
         ],
+        "goal": "Take the Keeper's last word on the far side of the gate.",
+        "id": "quest/farewell",
         "mandatory": true,
-        "act": 2
+        "npcs": [
+          "npc/keeper"
+        ]
       }
-    ],
-    "finale": "quest/farewell"
-  }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quest-plan"
 }

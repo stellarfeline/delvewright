@@ -25,27 +25,23 @@
 //!          the far leg (Z-min → Z-max). Both drops are into the same gulf.
 //! ```
 //!
-//! # Why there are two legs and not one, and what it cost
+//! # Why there are two legs and not one
 //!
-//! Z1 was a **single run** for four rounds, recorded honestly as a finding: the
-//! design's fairness mechanism does not work without the switchback. §4 K makes
-//! a first-time player's survival depend on the niche being "VISIBLE as a
+//! The design's fairness mechanism does not work without the switchback. §4 K
+//! makes a first-time player's survival depend on the niche being "VISIBLE as a
 //! shadowed recess **from the previous switchback**" — the observability rule
 //! (§2.2-5). A one-deep recess off a one-wide ledge is invisible from anywhere
-//! *along* its own path, deliberately ([`crate::library::cliff_path()`]); the only
-//! place it can be read from is another leg looking **across**. One run has no
-//! other leg, so teach → test → twist was being asked to teach with nothing
+//! *along* its own path, deliberately ([`crate::library::cliff_path()`]); the
+//! only place it can be read from is another leg looking **across**. A single
+//! run has no other leg, so teach → test → twist would be teaching with nothing
 //! visible to learn from.
 //!
-//! What blocked it was recorded as "a grammar orientation is a permutation
-//! without reflection", and that was the wrong diagnosis for two rounds. A
-//! hairpin's second leg is the first leg **turned round** — a half-turn about
-//! the vertical, which is a *rotation*, proper and chirality-preserving. The
-//! missing thing was never reflection in particular; it was **sign**. An
-//! orientation now carries one ([`crate::geom::Orientation`]), so the far leg is
-//! literally the near leg under [`crate::ir::Reorient::turned`]: same rule, same
-//! parameters, no mirrored copy of anything, and `cliff_path` did not change by
-//! a line.
+//! A hairpin's second leg is the first leg **turned round** — a half-turn about
+//! the vertical, which is a *rotation*, proper and chirality-preserving, and not
+//! a reflection ([`crate::geom::Orientation::is_rotation`]). A frame carries a
+//! sign per local axis ([`crate::geom::Mirror`]), so the far leg is literally
+//! the near leg under [`crate::ir::Reorient::turned`]: same rule, same
+//! parameters, no mirrored copy of anything.
 //!
 //! That is why the gulf is between the legs rather than under a stack of them.
 //! Both legs must keep a real drop, and a leg stacked over another leg fills the
@@ -140,8 +136,8 @@ pub const MIN_TURN: i64 = 2;
 /// `turn_run` (how long the head the hairpin turns on is), two test knobs, and
 /// every parameter of the two included [`cliff_path`]s under the `near/` and
 /// `far/` prefixes (`near/spacing_min`, `far/watch_back`, …). Palette role:
-/// `crag`, plus `near/rock`, `near/corpse`, `far/rock`, `far/corpse` — so the
-/// two legs can be styled apart or together.
+/// `crag`, plus `near/rock` and `far/rock` — so the two legs can be styled
+/// apart or together. (The corpse prop is not a role: see [`cliff_path`].)
 ///
 /// The knobs, both off by default and both moving no block when they are:
 /// `ledge_shelf` lays a shelf across the gulf one course under the roads, so the

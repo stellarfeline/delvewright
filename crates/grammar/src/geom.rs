@@ -4,37 +4,11 @@
 //! `SplitGrammar.py`'s `Scope` in `yawgmoth/GDMC25` (BSD-3-Clause; see
 //! `LICENSE-GDMC25`).
 //!
-//! A scope is a world-space box plus an [`Orientation`]: a **signed**
-//! permutation mapping the grammar's *local* axes (the `X`/`Y`/`Z` a rule
-//! writes) onto world axes. Rules are therefore written once and reused under
-//! `reorient`.
-//!
-//! # Why the map carries signs
-//!
-//! Upstream's orientation is a bare axis permutation — six maps, all of them
-//! taking local minimum to world minimum. That is enough to turn a piece 90°
-//! and not enough to turn it **round**, and the difference is not academic:
-//!
-//! * A hairpin's second leg is the first leg rotated 180° about the vertical.
-//!   Every one-sided piece — a ledge with the drop on one hand, a stair whose
-//!   treads peel off one end, a guard post at one end of a causeway — meets
-//!   this the moment a route doubles back.
-//! * The vocabulary recorded the gap as "a permutation cannot **reflect**",
-//!   which is the wrong diagnosis and sent two rounds looking for the wrong
-//!   primitive. A half-turn is a *rotation*: proper, orientation-preserving,
-//!   chirality-preserving. What the map could not express was not reflection
-//!   in particular but **sign at all** — of the 48 signed axis maps, a bare
-//!   permutation reaches 6, and of the 24 rotations it reaches 3.
-//!
-//! So a local axis now records whether it runs *with* or *against* the world
-//! axis it names. Signs default to positive everywhere and no rule sets one
-//! unless it asks, so every program written against the unsigned map expands to
-//! the same bytes it always did.
-//!
-//! Reflections (an odd number of reversals) are expressible too and are not
-//! refused: a mirrored building is a legitimate thing to want. They do flip
-//! chirality, so [`Orientation::is_rotation`] exists to let a caller — or a
-//! test — say which kind it is holding.
+//! A scope is a world-space box plus an [`Orientation`]: the **frame** a rule
+//! reads its box through. A frame says two things about each local axis (the
+//! `X`/`Y`/`Z` a rule writes) — which world axis it names, and which way along
+//! that axis local coordinates increase. Rules are therefore written once and
+//! reused turned (`reorient`) or reflected (`mirror`).
 
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +53,7 @@ impl Axis {
 /// Sizes are unsigned; a zero-sized box is legal (it simply contains no cells)
 /// because grammar splits legitimately produce degenerate leftovers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Box3 {
     /// Smallest corner, world space.
     pub origin: [i32; 3],
@@ -133,13 +108,117 @@ impl Box3 {
     }
 }
 
-/// A signed permutation mapping local axes onto world axes.
+/// Which local axes run **backwards** along the world axis they name.
 ///
-/// `orientation.get(Axis::X)` is the world axis that the rule's local `X` names,
-/// and `orientation.is_reversed(Axis::X)` says whether local `X` counts *down*
-/// that world axis. The identity orientation maps every local axis onto its
-/// namesake, running forward.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Bilateral symmetry is the commonest symmetry a building has, and a
+/// permutation cannot express it: turning a scope 180° about the vertical also
+/// turns the other horizontal axis, so the two halves of a transept, a facade or
+/// a stair pair are not related by any permutation. A reflection is the missing
+/// sign, and it belongs to the frame rather than to any one verb, because
+/// *every* question a rule asks of its box — where a split lays its first piece,
+/// which corner `corner_min` is, which way an anchor looks — is asked in the
+/// frame's terms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Mirror {
+    /// The local `X` runs against the world axis it names.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub x: bool,
+    /// The local `Y` runs against the world axis it names.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub y: bool,
+    /// The local `Z` runs against the world axis it names.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub z: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+impl Mirror {
+    /// Every local axis runs forward — the frame every rule starts in.
+    pub const NONE: Mirror = Mirror {
+        x: false,
+        y: false,
+        z: false,
+    };
+
+    /// Reflect one local axis.
+    pub const fn of(axis: Axis) -> Mirror {
+        match axis {
+            Axis::X => Mirror {
+                x: true,
+                y: false,
+                z: false,
+            },
+            Axis::Y => Mirror {
+                x: false,
+                y: true,
+                z: false,
+            },
+            Axis::Z => Mirror {
+                x: false,
+                y: false,
+                z: true,
+            },
+        }
+    }
+
+    /// True when nothing is reflected.
+    pub fn is_none(&self) -> bool {
+        *self == Mirror::NONE
+    }
+
+    /// Whether one local axis is reflected.
+    pub fn get(&self, local: Axis) -> bool {
+        match local {
+            Axis::X => self.x,
+            Axis::Y => self.y,
+            Axis::Z => self.z,
+        }
+    }
+
+    /// Also reflect `axis` (builder form).
+    pub fn and(mut self, axis: Axis) -> Mirror {
+        match axis {
+            Axis::X => self.x = true,
+            Axis::Y => self.y = true,
+            Axis::Z => self.z = true,
+        }
+        self
+    }
+
+    /// As a `[bool; 3]` triple indexed by local axis.
+    pub fn axes(&self) -> [bool; 3] {
+        [self.x, self.y, self.z]
+    }
+
+    /// Rebuild from a `[bool; 3]` triple indexed by local axis.
+    pub fn from_axes(axes: [bool; 3]) -> Mirror {
+        Mirror {
+            x: axes[0],
+            y: axes[1],
+            z: axes[2],
+        }
+    }
+}
+
+/// The frame a rule reads its box through: a permutation mapping local axes onto
+/// world axes, plus the direction each local axis runs in.
+///
+/// `orientation.axis(Axis::X)` is the world axis that the rule's local `X`
+/// names; `orientation.reversed(Axis::X)` says whether local `X` counts *down*
+/// that world axis. The identity frame maps every local axis onto its namesake,
+/// running forward.
+///
+/// Deliberately **not** serialisable. It is the frame a scope is *in* at
+/// expansion time, not a thing a document says: what a document writes is
+/// [`ir::Reorient`](crate::ir::Reorient), a frame *request*. It carried a
+/// `Serialize`/`Deserialize` derive that no format ever reached, which put a
+/// second `mirror` field on the document surface's ledger with no document
+/// behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Orientation {
     /// World axis of the local `X`.
     pub x: Axis,
@@ -147,20 +226,8 @@ pub struct Orientation {
     pub y: Axis,
     /// World axis of the local `Z`.
     pub z: Axis,
-    /// Which local axes run **against** the world axis they name, indexed by
-    /// local axis ([`Axis::index`]).
-    ///
-    /// A reversed local axis puts the rule's local *minimum* at the box's world
-    /// *maximum*: split pieces are laid from that end, and a local offset is
-    /// measured from it. Defaults to all-forward, and is skipped in JSON when
-    /// it is, so an unsigned program serialises exactly as it always did.
-    #[serde(default, skip_serializing_if = "not_reversed")]
-    pub reversed: [bool; 3],
-}
-
-/// Serde helper: an all-forward orientation writes no `reversed` key.
-fn not_reversed(reversed: &[bool; 3]) -> bool {
-    !reversed[0] && !reversed[1] && !reversed[2]
+    /// Which local axes run backwards along the world axis they name.
+    pub mirror: Mirror,
 }
 
 impl Default for Orientation {
@@ -170,16 +237,21 @@ impl Default for Orientation {
 }
 
 impl Orientation {
-    /// Local axes map onto their world namesakes, all running forward.
+    /// Local axes map onto their world namesakes, running forward.
     pub const IDENTITY: Orientation = Orientation {
         x: Axis::X,
         y: Axis::Y,
         z: Axis::Z,
-        reversed: [false; 3],
+        mirror: Mirror::NONE,
     };
 
     /// The world axis a local axis names.
-    pub fn get(&self, local: Axis) -> Axis {
+    ///
+    /// Deliberately *not* called `get`: it answers half the question, and the
+    /// other half — which way along that axis local coordinates increase — is
+    /// [`Orientation::reversed`]. A caller that only needs an extent wants this
+    /// one; a caller that places a cell needs both, and has to say so.
+    pub fn axis(&self, local: Axis) -> Axis {
         match local {
             Axis::X => self.x,
             Axis::Y => self.y,
@@ -187,69 +259,70 @@ impl Orientation {
         }
     }
 
-    /// Whether a local axis counts down the world axis it names.
-    pub fn is_reversed(&self, local: Axis) -> bool {
-        self.reversed[local.index()]
+    /// Whether a local axis counts *down* the world axis it names.
+    pub fn reversed(&self, local: Axis) -> bool {
+        self.mirror.get(local)
     }
 
-    /// The world offset of a local offset along one local axis, given the
-    /// scope's world extent along the axis that local one names.
+    /// The world cell offset, from the box's minimum **world** corner, of local
+    /// coordinate `coord` along local axis `local` in a box of `size`.
     ///
-    /// This is the one place the sign is applied to a coordinate, so a mark, a
-    /// split cursor and a face all mirror the same way or none of them do.
-    /// Order-reversing on `0..extent`, which is why an out-of-range local
-    /// offset stays out of range once mapped and cannot smuggle itself back
-    /// inside the box.
-    pub fn place(&self, local: Axis, offset: i64, extent: u32) -> i64 {
-        if self.is_reversed(local) {
-            extent as i64 - 1 - offset
+    /// This is the one place the frame's sign turns into a number, so that "a
+    /// reflected axis counts from the other end" is stated once rather than at
+    /// every site that places a cell.
+    pub fn offset(&self, local: Axis, coord: i64, size: [u32; 3]) -> i64 {
+        let world = self.axis(local);
+        if self.reversed(local) {
+            size[world.index()] as i64 - 1 - coord
         } else {
-            offset
+            coord
         }
     }
 
-    /// As a `[world_axis; 3]` triple indexed by local axis. Signs are not part
-    /// of it — ask [`Orientation::is_reversed`] for those.
+    /// As a `[world_axis; 3]` triple indexed by local axis.
     pub fn axes(&self) -> [Axis; 3] {
         [self.x, self.y, self.z]
     }
 
-    /// Rebuild from a `[world_axis; 3]` triple indexed by local axis, all
-    /// running forward.
+    /// Rebuild from a `[world_axis; 3]` triple indexed by local axis, running
+    /// forward.
     pub fn from_axes(axes: [Axis; 3]) -> Orientation {
-        Orientation::from_signed_axes(axes, [false; 3])
-    }
-
-    /// Rebuild from a `[world_axis; 3]` triple and its per-local-axis signs.
-    pub fn from_signed_axes(axes: [Axis; 3], reversed: [bool; 3]) -> Orientation {
         Orientation {
             x: axes[0],
             y: axes[1],
             z: axes[2],
-            reversed,
+            mirror: Mirror::NONE,
         }
+    }
+
+    /// The same permutation, with `mirror` applied (builder form).
+    pub fn mirrored(mut self, mirror: Mirror) -> Orientation {
+        self.mirror = mirror;
+        self
     }
 
     /// The local axis naming a given world axis, if any.
     pub fn local_of(&self, world: Axis) -> Option<Axis> {
-        Axis::ALL.into_iter().find(|&l| self.get(l) == world)
+        Axis::ALL.into_iter().find(|&l| self.axis(l) == world)
     }
 
     /// True when every world axis is named exactly once — the invariant every
-    /// orientation must satisfy. Signs are free and never affect it.
+    /// orientation must satisfy.
     pub fn is_permutation(&self) -> bool {
         let a = self.axes();
         a[0] != a[1] && a[1] != a[2] && a[0] != a[2]
     }
 
-    /// True when the map is a **rotation** — proper, chirality-preserving — and
-    /// false when it is a reflection.
+    /// True when the frame is a **rotation** — proper, chirality-preserving —
+    /// and false when it is a reflection.
     ///
     /// The determinant of the signed permutation: the parity of the axis
-    /// permutation times the parity of the reversals. A half-turn about the
+    /// permutation times the parity of the reflections. A half-turn about the
     /// vertical (local `X` and local `Z` both reversed) is proper, which is why
-    /// a hairpin's second leg is genuinely the same piece turned round and not
-    /// a mirror image of it.
+    /// a route doubling back is genuinely the same piece turned round and not a
+    /// mirror image of it — a distinction a caller placing a chiral piece has
+    /// to be able to ask about, and which [`Orientation::reversed`] alone
+    /// cannot answer.
     pub fn is_rotation(&self) -> bool {
         debug_assert!(self.is_permutation());
         let a = self.axes();
@@ -257,7 +330,7 @@ impl Orientation {
         // exactly one local axis keeps its namesake.
         let fixed = (0..3).filter(|&i| a[i] == Axis::from_index(i)).count();
         let perm_even = fixed != 1;
-        let flips_even = self.reversed.iter().filter(|r| **r).count() % 2 == 0;
+        let flips_even = self.mirror.axes().iter().filter(|r| **r).count() % 2 == 0;
         perm_even == flips_even
     }
 }
@@ -291,86 +364,57 @@ mod tests {
         assert!(Orientation::IDENTITY.is_permutation());
         assert_eq!(Orientation::IDENTITY.local_of(Axis::Z), Some(Axis::Z));
         assert!(
-            !Orientation {
-                x: Axis::X,
-                y: Axis::X,
-                z: Axis::Z,
-                reversed: [false; 3],
-            }
-            .is_permutation()
+            !Orientation::from_axes([Axis::X, Axis::X, Axis::Z]).is_permutation(),
+            "naming one world axis twice is not a frame"
         );
-    }
-
-    #[test]
-    fn a_reversed_axis_puts_the_local_minimum_at_the_world_maximum() {
-        let turned = Orientation {
-            reversed: [true, false, true],
-            ..Orientation::IDENTITY
-        };
-        // Local Z-min is world Z-max, and the mapping is an involution.
-        assert_eq!(turned.place(Axis::Z, 0, 10), 9);
-        assert_eq!(turned.place(Axis::Z, 9, 10), 0);
-        assert_eq!(turned.place(Axis::Y, 3, 10), 3, "Y was not reversed");
-        // Order-reversing on the whole integer line, so out of range stays out.
-        assert!(turned.place(Axis::X, -1, 4) >= 4);
-        assert!(turned.place(Axis::X, 4, 4) < 0);
-    }
-
-    #[test]
-    fn the_half_turn_about_the_vertical_is_a_rotation_and_one_flip_is_not() {
-        // The switchback's second leg: X and Z both reversed, Y left alone.
-        let half_turn = Orientation {
-            reversed: [true, false, true],
-            ..Orientation::IDENTITY
-        };
-        assert!(half_turn.is_permutation());
+        // A reflection does not disturb the permutation: the two halves of the
+        // frame are independent, which is why one can be checked without the
+        // other.
         assert!(
-            half_turn.is_rotation(),
-            "a hairpin wants a rotation, not a reflection — that was the whole \
-             misdiagnosis"
-        );
-        let mirror = Orientation {
-            reversed: [true, false, false],
-            ..Orientation::IDENTITY
-        };
-        assert!(mirror.is_permutation());
-        assert!(!mirror.is_rotation(), "one reversal mirrors");
-        // ...and the parity of the axis permutation counts too: a bare
-        // transposition is already improper before any sign is set.
-        let swap = Orientation {
-            x: Axis::Z,
-            y: Axis::Y,
-            z: Axis::X,
-            reversed: [false; 3],
-        };
-        assert!(!swap.is_rotation());
-        assert!(
-            Orientation {
-                reversed: [true, false, false],
-                ..swap
-            }
-            .is_rotation()
-        );
-    }
-
-    #[test]
-    fn an_unsigned_orientation_serialises_without_the_sign_field() {
-        let json = serde_json::to_string(&Orientation::IDENTITY).unwrap();
-        assert!(
-            !json.contains("reversed"),
-            "an unsigned orientation must round trip as the bytes it always \
-             was, got {json}"
-        );
-        assert_eq!(
-            serde_json::from_str::<Orientation>(&json).unwrap(),
             Orientation::IDENTITY
+                .mirrored(Mirror::of(Axis::X))
+                .is_permutation()
         );
-        let turned = Orientation {
-            reversed: [true, false, true],
-            ..Orientation::IDENTITY
-        };
-        let json = serde_json::to_string(&turned).unwrap();
-        assert!(json.contains("reversed"));
-        assert_eq!(serde_json::from_str::<Orientation>(&json).unwrap(), turned);
+    }
+
+    /// The frame's sign turns into a number in exactly one place, and it counts
+    /// from the far end of the box.
+    #[test]
+    fn a_reflected_axis_counts_from_the_other_end() {
+        let size = [7u32, 4, 5];
+        let plain = Orientation::IDENTITY;
+        assert_eq!(plain.offset(Axis::X, 0, size), 0);
+        assert_eq!(plain.offset(Axis::X, 6, size), 6);
+
+        let flipped = Orientation::IDENTITY.mirrored(Mirror::of(Axis::X));
+        assert_eq!(flipped.offset(Axis::X, 0, size), 6, "local 0 is world max");
+        assert_eq!(flipped.offset(Axis::X, 6, size), 0);
+        assert_eq!(
+            flipped.offset(Axis::Z, 0, size),
+            0,
+            "an unreflected axis is untouched"
+        );
+
+        // Reflection is measured on the WORLD axis the local one names, so a
+        // rotated frame reflects the rotated extent.
+        let rotated =
+            Orientation::from_axes([Axis::Z, Axis::Y, Axis::X]).mirrored(Mirror::of(Axis::X));
+        assert_eq!(
+            rotated.offset(Axis::X, 0, size),
+            4,
+            "local X names world Z, which is 5 across"
+        );
+    }
+
+    #[test]
+    fn a_mirror_is_a_set_of_local_axes() {
+        assert!(Mirror::NONE.is_none());
+        assert_eq!(Mirror::of(Axis::Y).axes(), [false, true, false]);
+        assert_eq!(
+            Mirror::of(Axis::X).and(Axis::Z),
+            Mirror::from_axes([true, false, true])
+        );
+        assert!(Mirror::of(Axis::Z).get(Axis::Z));
+        assert!(!Mirror::of(Axis::Z).get(Axis::X));
     }
 }

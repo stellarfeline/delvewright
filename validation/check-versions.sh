@@ -45,6 +45,11 @@ emit("CONTENT_SHA",       d["content"]["sha"])
 emit("NUCLEATION_REV",    d["render"]["nucleation_rev"])   # spec-0007 render layer
 emit("NUCLEATION_REPO",   d["render"]["nucleation_repo"])
 emit("CHUNKY_CORE",       d["render"]["chunky_core"])
+emit("DEEPSLATE_VERSION", d["render"]["deepslate_version"])
+emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
+emit("ESBUILD_VERSION",   d["render"]["esbuild_version"])
+emit("DEEPSLATE_BUNDLE",  d["render"]["deepslate_bundle"])
+emit("DEEPSLATE_SHA256",  d["render"]["deepslate_bundle_sha256"])
 PY
 )"
 
@@ -118,6 +123,27 @@ if [[ $CONTENT_SHA =~ ^[0-9a-f]{40}$ ]]; then
 else
   fail "content.sha '$CONTENT_SHA' is not a full 40-hex commit SHA"
 fi
+# The pin's ZONE INVENTORY is a consumer of this value like any other.
+# `.github/content-zone-corpus.json` names the campaigns the pin carries and how
+# many zone programs each declares; every number in it is checked against the
+# content checkout by crates/grammar/tests/campaign_zones.rs. That check is only
+# about the right corpus while the record and the pin agree, so a re-pin that
+# leaves the inventory behind is caught here, in tier 1, with no content checkout
+# needed — rather than measuring the new tree against the old pin's expectations.
+ZONE_CORPUS="$ROOT/.github/content-zone-corpus.json"
+if [ -f "$ZONE_CORPUS" ]; then
+  # `sys.stdout.reconfigure(newline="\n")` before the print, or a Windows runner
+  # would append a `\r` that survives command substitution and makes the SHA
+  # compare unequal to itself (tools/check-python-shell-newlines.py).
+  corpus_sha="$(python3 -c 'import json,sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1]))["content_sha"])' "$ZONE_CORPUS")"
+  if [ "$corpus_sha" = "$CONTENT_SHA" ]; then
+    pass "content.sha -> .github/content-zone-corpus.json ($CONTENT_SHA)"
+  else
+    fail ".github/content-zone-corpus.json enumerates content $corpus_sha but versions.toml pins $CONTENT_SHA — restate the zone inventory at the new pin: every campaign it carries, with the number of zone programs each declares"
+  fi
+else
+  fail ".github/content-zone-corpus.json missing — the campaign zone corpus is judged against that enumeration, and without it a pin carrying no zone program cannot be told from one that lost them"
+fi
 
 echo "== Render layer ([render], spec-0007) =="
 # Nucleation is pinned by git REV; the compiler-independent render crate must pin
@@ -133,6 +159,37 @@ if [ -f "$RENDER_CARGO" ]; then
 else
   fail "crates/render/Cargo.toml missing (cannot verify the render dep pin)"
 fi
+# deepslate is BUNDLED, unlike every other renderer here, so the pin has to bind
+# to the bytes rather than to a version string: the page carries the renderer
+# inline, and a hand-edited or silently-rebuilt bundle would ship a different
+# renderer under the same declared version. Every consumer of the three npm pins
+# is the build script, and the fourth check is the digest of what it produced.
+DEEPSLATE_BUILDER="$ROOT/tools/build-deepslate-bundle.sh"
+if [ -f "$DEEPSLATE_BUILDER" ]; then
+  want_in "deepslate version -> tools/build-deepslate-bundle.sh" "\"$DEEPSLATE_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "gl-matrix version -> tools/build-deepslate-bundle.sh" "\"$GL_MATRIX_VERSION\"" "$DEEPSLATE_BUILDER"
+  want_in "esbuild version -> tools/build-deepslate-bundle.sh"   "\"$ESBUILD_VERSION\"" "$DEEPSLATE_BUILDER"
+else
+  fail "tools/build-deepslate-bundle.sh missing (cannot verify the bundled renderer pins)"
+fi
+if [ -f "$ROOT/$DEEPSLATE_BUNDLE" ]; then
+  got="$(shasum -a 256 < "$ROOT/$DEEPSLATE_BUNDLE" | cut -d' ' -f1)"
+  if [ "$got" = "$DEEPSLATE_SHA256" ]; then
+    pass "deepslate bundle digest matches the manifest ($DEEPSLATE_SHA256)"
+  else
+    fail "deepslate bundle digest is $got but the manifest pins $DEEPSLATE_SHA256 — rebuild with tools/build-deepslate-bundle.sh and update versions.toml in the same commit"
+  fi
+  # The local patch, asserted on the shipped bytes. Unpatched, every banner and
+  # shield in every page renders as the missing-texture checker and says nothing.
+  if grep -qF 'entity/banner/banner_base' "$ROOT/$DEEPSLATE_BUNDLE"; then
+    fail "the vendored deepslate bundle still asks for entity/banner/banner_base, a path no Minecraft version ships"
+  else
+    pass "the vendored deepslate bundle carries the banner/shield texture-id patch"
+  fi
+else
+  fail "$DEEPSLATE_BUNDLE missing (the review page has no renderer to embed)"
+fi
+
 # Chunky is a snapshot core (1.21.x needs it); assert the pin looks like one.
 if [[ $CHUNKY_CORE =~ ^chunky-core-.*SNAPSHOT ]]; then
   pass "render.chunky_core is a snapshot build ($CHUNKY_CORE)"
@@ -202,13 +259,20 @@ req = req if isinstance(req, str) else req.get("version", "<absent>")
     f"compiler depends on {e['dsl_crate']} {req!r} (manifest: {e['dsl_crate_req']!r})")
 
 # 4. Publishability inventory, in BOTH directions. The two crates that must be
-#    publishable, and every other workspace member that must NOT be — a new
+#    publishable, and every other crate under `crates/` that must NOT be — a new
 #    crate added without `publish = false` would otherwise be swept onto
 #    crates.io by the first `--workspace` anything, irreversibly.
-members = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]["members"]
+#
+#    `exclude` counts as much as `members`: `crates/render` sits outside the
+#    workspace (its git dependency is quarantined there, /Cargo.toml), and a
+#    members-only walk would have quietly dropped it from this inventory — the
+#    exemption a crate gets for free by leaving the workspace is exactly the kind
+#    that nobody notices. The binding count below is what makes that visible.
+ws = tomllib.load((root / "Cargo.toml").open("rb"))["workspace"]
+crates = list(ws["members"]) + [x for x in ws.get("exclude", []) if x.startswith("crates/")]
 publishable = {e["crate"], e["dsl_crate"]}
 n_pub = n_priv = 0
-for m in members:
+for m in crates:
     mani = tomllib.load((root / m / "Cargo.toml").open("rb"))
     name, flag = mani["package"]["name"], mani["package"].get("publish", True)
     if name in publishable:
@@ -219,10 +283,11 @@ for m in members:
         (ok if flag is False else bad)(
             f"{name} declares `publish = false` (it is not on the release line "
             f"and must never reach crates.io)")
-missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in members}
+missing = publishable - {tomllib.load((root / m / "Cargo.toml").open("rb"))["package"]["name"] for m in ws["members"]}
 if missing:
     bad(f"versions.toml names crate(s) that are not workspace members: {sorted(missing)}")
-ok(f"publish inventory: {len(members)} member(s) = {n_pub} publishable + {n_priv} private")
+ok(f"publish inventory: {len(crates)} crate(s) = {n_pub} publishable + {n_priv} private "
+   f"({len(ws['members'])} workspace member(s) + {len(crates) - len(ws['members'])} excluded)")
 
 # 5. `rust-version` in a published manifest is a promise to a stranger running
 #    `cargo install`. It must be the toolchain this repo actually builds on, not

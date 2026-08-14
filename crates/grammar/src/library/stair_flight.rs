@@ -51,28 +51,21 @@
 //! several flights stacked, which needs a **switchback**: a second flight
 //! climbing back the way the first came.
 //!
-//! That is *not* the blocker the vocabulary has been recording. The recorded
-//! reason a switchback is unbuildable was that "a grammar orientation is a
-//! permutation without reflection", and this module's answer used to be: an
-//! orientation cannot mirror a piece, but a **rule body can be written
-//! mirrored** — this rule peels its treads off the local `Z`-max end (`[rel,
-//! abs]`, recursion first), and the same rule written `[abs, rel]` peels them
-//! off `Z`-min and climbs the other way.
+//! A switchback is **this rule under a turned frame**. It peels its treads off
+//! the local `Z`-max end (`[rel, abs]`, recursion first); under `mirror: {z}`
+//! the same rule peels them off `Z`-min and climbs the other way. A return
+//! flight wants more than that: it climbs back the way it came *with the wall
+//! on the same hand*, which is a half-turn about the vertical — a reversal in
+//! local `X` and `Z` both, and therefore a rotation rather than a reflection
+//! ([`crate::ir::Reorient::turned`]). Two lanes side by side in `X`, the second
+//! turned, joined at the top of the first, is a dogleg that doubles the rise per
+//! unit of length and recurses for as many flights as `Y` allows.
 //!
-//! Both are true and both aimed at the wrong primitive, which is worth keeping
-//! written down because the sequence is the lesson. A leg that doubles back is
-//! not a mirror in one axis: it is a **half-turn** in two, a *rotation*, and
-//! writing that as a body is a second copy of the whole rule. Since an
-//! [`crate::geom::Orientation`] carries a sign
-//! ([`crate::ir::Reorient::turned`]), a return flight is this rule turned round
-//! — no second body, no mirrored variant — and two lanes side by side in `X`,
-//! joined at the top of the first, are a dogleg that doubles the rise per unit
-//! of length.
-//!
-//! Still not built here: the round's obligation was an ascending route and its
-//! gate, and a second run shape is a design decision, not a corollary. What
-//! changed is that it is no longer *blocked*, and `cliff_path` under
-//! `Reorient::turned()` is the worked example (`tests/staging.rs`).
+//! Not built here — the round's obligation was an ascending route and its gate,
+//! and a second run shape is a design decision, not a corollary. It is recorded
+//! because the construction is available and the shape recurs; `cliff_path`
+//! under [`crate::ir::Reorient::turned`] is the worked example
+//! (`tests/staging.rs`).
 //!
 //! # The gates
 //!

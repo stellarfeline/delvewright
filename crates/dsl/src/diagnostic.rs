@@ -232,7 +232,8 @@ impl Diagnostic {
     }
 }
 
-/// The stable validation diagnostic codes (see `crates/dsl/README.md`).
+/// The stable validation diagnostic codes (catalogued in
+/// `docs/reference/compiler.md` §5).
 ///
 /// Every entry is a [`DwCode`], so every entry states when it starts binding a
 /// campaign ([`Binds`]) — there is no way to add one that does not.

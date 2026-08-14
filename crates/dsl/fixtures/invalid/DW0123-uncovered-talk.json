@@ -1,41 +1,41 @@
 {
   "description": "the keeper's dialogue tree never offers an option that completes obj/talk, so the talk-to objective is uncovered",
-  "expect": "DW0123",
   "documents": {
     "dialogue": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "dialogue",
       "content": {
         "dialogues": [
           {
-            "npc": "npc/keeper",
-            "root": "dlg/greeting",
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler. This keep is mine to guard, and the door stays shut.",
                 "options": [
                   {
                     "label": "Who are you?",
                     "next": "dlg/lore"
                   }
-                ]
+                ],
+                "text": "Halt, traveler. This keep is mine to guard, and the door stays shut."
               },
               {
                 "id": "dlg/lore",
-                "text": "I am the Keeper.",
                 "options": [
                   {
                     "label": "Back.",
                     "next": "dlg/greeting"
                   }
-                ]
+                ],
+                "text": "I am the Keeper."
               }
-            ]
+            ],
+            "npc": "npc/keeper",
+            "root": "dlg/greeting"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "dialogue"
     }
-  }
+  },
+  "expect": "DW0123"
 }

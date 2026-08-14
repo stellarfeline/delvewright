@@ -43,35 +43,103 @@ pub fn church() -> Program {
         .role("glass", BlockState::simple("glass"))
         .role(
             "roof_west",
-            BlockState::with("oak_stairs", [("facing", "east")]),
+            BlockState::with(
+                "oak_stairs",
+                [
+                    ("facing", "east"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
         )
         .role(
             "roof_east",
-            BlockState::with("oak_stairs", [("facing", "west")]),
+            BlockState::with(
+                "oak_stairs",
+                [
+                    ("facing", "west"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
         )
         .role(
             "roof_north",
-            BlockState::with("oak_stairs", [("facing", "north")]),
+            BlockState::with(
+                "oak_stairs",
+                [
+                    ("facing", "north"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
         )
         .role(
             "roof_south",
-            BlockState::with("oak_stairs", [("facing", "south")]),
+            BlockState::with(
+                "oak_stairs",
+                [
+                    ("facing", "south"),
+                    ("half", "bottom"),
+                    ("shape", "straight"),
+                    ("waterlogged", "false"),
+                ],
+            ),
         )
         .role(
             "door_lower",
-            BlockState::with("oak_door", [("facing", "north"), ("half", "lower")]),
+            BlockState::with(
+                "oak_door",
+                [
+                    ("facing", "north"),
+                    ("half", "lower"),
+                    ("hinge", "left"),
+                    ("open", "false"),
+                    ("powered", "false"),
+                ],
+            ),
         )
         .role(
             "door_upper",
-            BlockState::with("oak_door", [("facing", "north"), ("half", "upper")]),
+            BlockState::with(
+                "oak_door",
+                [
+                    ("facing", "north"),
+                    ("half", "upper"),
+                    ("hinge", "left"),
+                    ("open", "false"),
+                    ("powered", "false"),
+                ],
+            ),
         )
         .role(
             "alt_door_lower",
-            BlockState::with("oak_door", [("facing", "west"), ("half", "lower")]),
+            BlockState::with(
+                "oak_door",
+                [
+                    ("facing", "west"),
+                    ("half", "lower"),
+                    ("hinge", "left"),
+                    ("open", "false"),
+                    ("powered", "false"),
+                ],
+            ),
         )
         .role(
             "alt_door_upper",
-            BlockState::with("oak_door", [("facing", "west"), ("half", "upper")]),
+            BlockState::with(
+                "oak_door",
+                [
+                    ("facing", "west"),
+                    ("half", "upper"),
+                    ("hinge", "left"),
+                    ("open", "false"),
+                    ("powered", "false"),
+                ],
+            ),
         )
         // --- plan --------------------------------------------------------------
         .rule(
@@ -193,11 +261,7 @@ pub fn church() -> Program {
             "doors",
             vec![
                 alt_when(
-                    Cond::Orientation {
-                        x: WX,
-                        y: WY,
-                        z: WZ,
-                    },
+                    Cond::orientation(WX, WY, WZ),
                     split(
                         Axis::Y,
                         vec![abs(1), abs(1)],
@@ -361,11 +425,7 @@ pub fn church() -> Program {
                 alt_when(
                     Cond::All {
                         of: vec![
-                            Cond::Orientation {
-                                x: WX,
-                                y: WY,
-                                z: WZ,
-                            },
+                            Cond::orientation(WX, WY, WZ),
                             cmp(dim(DimRef::X), CmpOp::Ge, int(2)),
                         ],
                     },

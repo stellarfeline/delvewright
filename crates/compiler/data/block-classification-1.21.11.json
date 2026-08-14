@@ -1,0 +1,4678 @@
+{
+  "blocks": {
+    "minecraft:acacia_button": {
+      "family": "minecraft:acacia_button",
+      "form": "button"
+    },
+    "minecraft:acacia_door": {
+      "family": "minecraft:acacia_button",
+      "form": "door"
+    },
+    "minecraft:acacia_fence": {
+      "family": "minecraft:acacia_fence",
+      "form": "fence"
+    },
+    "minecraft:acacia_fence_gate": {
+      "family": "minecraft:acacia_fence_gate",
+      "form": "block"
+    },
+    "minecraft:acacia_hanging_sign": {
+      "family": "minecraft:acacia_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:acacia_leaves": {
+      "family": "minecraft:acacia_leaves",
+      "form": "block"
+    },
+    "minecraft:acacia_log": {
+      "family": "minecraft:acacia_log",
+      "form": "block"
+    },
+    "minecraft:acacia_planks": {
+      "family": "minecraft:acacia_button",
+      "form": "block"
+    },
+    "minecraft:acacia_pressure_plate": {
+      "family": "minecraft:acacia_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:acacia_sapling": {
+      "family": "minecraft:acacia_sapling",
+      "form": "block"
+    },
+    "minecraft:acacia_shelf": {
+      "family": "minecraft:acacia_shelf",
+      "form": "block"
+    },
+    "minecraft:acacia_sign": {
+      "family": "minecraft:acacia_sign",
+      "form": "sign"
+    },
+    "minecraft:acacia_slab": {
+      "family": "minecraft:acacia_button",
+      "form": "slab"
+    },
+    "minecraft:acacia_stairs": {
+      "family": "minecraft:acacia_button",
+      "form": "stair"
+    },
+    "minecraft:acacia_trapdoor": {
+      "family": "minecraft:acacia_button",
+      "form": "trapdoor"
+    },
+    "minecraft:acacia_wall_hanging_sign": {
+      "family": "minecraft:acacia_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:acacia_wall_sign": {
+      "family": "minecraft:acacia_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:acacia_wood": {
+      "family": "minecraft:acacia_log",
+      "form": "block"
+    },
+    "minecraft:activator_rail": {
+      "family": "minecraft:activator_rail",
+      "form": "block"
+    },
+    "minecraft:air": {
+      "family": "minecraft:air",
+      "form": "block"
+    },
+    "minecraft:allium": {
+      "family": "minecraft:allium",
+      "form": "block"
+    },
+    "minecraft:amethyst_block": {
+      "family": "minecraft:amethyst_block",
+      "form": "block"
+    },
+    "minecraft:amethyst_cluster": {
+      "family": "minecraft:amethyst_cluster",
+      "form": "block"
+    },
+    "minecraft:ancient_debris": {
+      "family": "minecraft:ancient_debris",
+      "form": "block"
+    },
+    "minecraft:andesite": {
+      "family": "minecraft:andesite",
+      "form": "block"
+    },
+    "minecraft:andesite_slab": {
+      "family": "minecraft:andesite",
+      "form": "slab"
+    },
+    "minecraft:andesite_stairs": {
+      "family": "minecraft:andesite",
+      "form": "stair"
+    },
+    "minecraft:andesite_wall": {
+      "family": "minecraft:andesite",
+      "form": "wall"
+    },
+    "minecraft:anvil": {
+      "family": "minecraft:anvil",
+      "form": "block"
+    },
+    "minecraft:attached_melon_stem": {
+      "family": "minecraft:attached_melon_stem",
+      "form": "block"
+    },
+    "minecraft:attached_pumpkin_stem": {
+      "family": "minecraft:attached_pumpkin_stem",
+      "form": "block"
+    },
+    "minecraft:azalea": {
+      "family": "minecraft:azalea",
+      "form": "block"
+    },
+    "minecraft:azalea_leaves": {
+      "family": "minecraft:azalea_leaves",
+      "form": "block"
+    },
+    "minecraft:azure_bluet": {
+      "family": "minecraft:azure_bluet",
+      "form": "block"
+    },
+    "minecraft:bamboo": {
+      "family": "minecraft:bamboo",
+      "form": "block"
+    },
+    "minecraft:bamboo_block": {
+      "family": "minecraft:bamboo",
+      "form": "block"
+    },
+    "minecraft:bamboo_button": {
+      "family": "minecraft:bamboo_button",
+      "form": "button"
+    },
+    "minecraft:bamboo_door": {
+      "family": "minecraft:bamboo_button",
+      "form": "door"
+    },
+    "minecraft:bamboo_fence": {
+      "family": "minecraft:bamboo_fence",
+      "form": "fence"
+    },
+    "minecraft:bamboo_fence_gate": {
+      "family": "minecraft:bamboo_fence_gate",
+      "form": "block"
+    },
+    "minecraft:bamboo_hanging_sign": {
+      "family": "minecraft:bamboo_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:bamboo_mosaic": {
+      "family": "minecraft:bamboo_button",
+      "form": "block"
+    },
+    "minecraft:bamboo_mosaic_slab": {
+      "family": "minecraft:bamboo_button",
+      "form": "slab"
+    },
+    "minecraft:bamboo_mosaic_stairs": {
+      "family": "minecraft:bamboo_button",
+      "form": "stair"
+    },
+    "minecraft:bamboo_planks": {
+      "family": "minecraft:bamboo_button",
+      "form": "block"
+    },
+    "minecraft:bamboo_pressure_plate": {
+      "family": "minecraft:bamboo_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:bamboo_sapling": {
+      "family": "minecraft:bamboo_sapling",
+      "form": "block"
+    },
+    "minecraft:bamboo_shelf": {
+      "family": "minecraft:bamboo_shelf",
+      "form": "block"
+    },
+    "minecraft:bamboo_sign": {
+      "family": "minecraft:bamboo_sign",
+      "form": "sign"
+    },
+    "minecraft:bamboo_slab": {
+      "family": "minecraft:bamboo_button",
+      "form": "slab"
+    },
+    "minecraft:bamboo_stairs": {
+      "family": "minecraft:bamboo_button",
+      "form": "stair"
+    },
+    "minecraft:bamboo_trapdoor": {
+      "family": "minecraft:bamboo_button",
+      "form": "trapdoor"
+    },
+    "minecraft:bamboo_wall_hanging_sign": {
+      "family": "minecraft:bamboo_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:bamboo_wall_sign": {
+      "family": "minecraft:bamboo_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:barrel": {
+      "family": "minecraft:barrel",
+      "form": "block"
+    },
+    "minecraft:barrier": {
+      "family": "minecraft:barrier",
+      "form": "block"
+    },
+    "minecraft:basalt": {
+      "family": "minecraft:basalt",
+      "form": "block"
+    },
+    "minecraft:beacon": {
+      "family": "minecraft:beacon",
+      "form": "block"
+    },
+    "minecraft:bedrock": {
+      "family": "minecraft:bedrock",
+      "form": "block"
+    },
+    "minecraft:bee_nest": {
+      "family": "minecraft:bee_nest",
+      "form": "block"
+    },
+    "minecraft:beehive": {
+      "family": "minecraft:beehive",
+      "form": "block"
+    },
+    "minecraft:beetroots": {
+      "family": "minecraft:beetroots",
+      "form": "block"
+    },
+    "minecraft:bell": {
+      "family": "minecraft:bell",
+      "form": "block"
+    },
+    "minecraft:big_dripleaf": {
+      "family": "minecraft:big_dripleaf",
+      "form": "block"
+    },
+    "minecraft:big_dripleaf_stem": {
+      "family": "minecraft:big_dripleaf_stem",
+      "form": "block"
+    },
+    "minecraft:birch_button": {
+      "family": "minecraft:birch_button",
+      "form": "button"
+    },
+    "minecraft:birch_door": {
+      "family": "minecraft:birch_button",
+      "form": "door"
+    },
+    "minecraft:birch_fence": {
+      "family": "minecraft:birch_fence",
+      "form": "fence"
+    },
+    "minecraft:birch_fence_gate": {
+      "family": "minecraft:birch_fence_gate",
+      "form": "block"
+    },
+    "minecraft:birch_hanging_sign": {
+      "family": "minecraft:birch_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:birch_leaves": {
+      "family": "minecraft:birch_leaves",
+      "form": "block"
+    },
+    "minecraft:birch_log": {
+      "family": "minecraft:birch_log",
+      "form": "block"
+    },
+    "minecraft:birch_planks": {
+      "family": "minecraft:birch_button",
+      "form": "block"
+    },
+    "minecraft:birch_pressure_plate": {
+      "family": "minecraft:birch_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:birch_sapling": {
+      "family": "minecraft:birch_sapling",
+      "form": "block"
+    },
+    "minecraft:birch_shelf": {
+      "family": "minecraft:birch_shelf",
+      "form": "block"
+    },
+    "minecraft:birch_sign": {
+      "family": "minecraft:birch_sign",
+      "form": "sign"
+    },
+    "minecraft:birch_slab": {
+      "family": "minecraft:birch_button",
+      "form": "slab"
+    },
+    "minecraft:birch_stairs": {
+      "family": "minecraft:birch_button",
+      "form": "stair"
+    },
+    "minecraft:birch_trapdoor": {
+      "family": "minecraft:birch_button",
+      "form": "trapdoor"
+    },
+    "minecraft:birch_wall_hanging_sign": {
+      "family": "minecraft:birch_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:birch_wall_sign": {
+      "family": "minecraft:birch_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:birch_wood": {
+      "family": "minecraft:birch_log",
+      "form": "block"
+    },
+    "minecraft:black_banner": {
+      "family": "minecraft:black_banner",
+      "form": "block"
+    },
+    "minecraft:black_bed": {
+      "family": "minecraft:black_bed",
+      "form": "block"
+    },
+    "minecraft:black_candle": {
+      "family": "minecraft:black_candle",
+      "form": "block"
+    },
+    "minecraft:black_candle_cake": {
+      "family": "minecraft:black_candle_cake",
+      "form": "block"
+    },
+    "minecraft:black_carpet": {
+      "family": "minecraft:black_bed",
+      "form": "block"
+    },
+    "minecraft:black_concrete": {
+      "family": "minecraft:black_concrete",
+      "form": "block"
+    },
+    "minecraft:black_concrete_powder": {
+      "family": "minecraft:black_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:black_glazed_terracotta": {
+      "family": "minecraft:black_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:black_shulker_box": {
+      "family": "minecraft:black_shulker_box",
+      "form": "block"
+    },
+    "minecraft:black_stained_glass": {
+      "family": "minecraft:black_stained_glass",
+      "form": "block"
+    },
+    "minecraft:black_stained_glass_pane": {
+      "family": "minecraft:black_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:black_terracotta": {
+      "family": "minecraft:black_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:black_wall_banner": {
+      "family": "minecraft:black_wall_banner",
+      "form": "block"
+    },
+    "minecraft:black_wool": {
+      "family": "minecraft:black_bed",
+      "form": "block"
+    },
+    "minecraft:blackstone": {
+      "family": "minecraft:blackstone",
+      "form": "block"
+    },
+    "minecraft:blackstone_slab": {
+      "family": "minecraft:blackstone",
+      "form": "slab"
+    },
+    "minecraft:blackstone_stairs": {
+      "family": "minecraft:blackstone",
+      "form": "stair"
+    },
+    "minecraft:blackstone_wall": {
+      "family": "minecraft:blackstone",
+      "form": "wall"
+    },
+    "minecraft:blast_furnace": {
+      "family": "minecraft:blast_furnace",
+      "form": "block"
+    },
+    "minecraft:blue_banner": {
+      "family": "minecraft:blue_banner",
+      "form": "block"
+    },
+    "minecraft:blue_bed": {
+      "family": "minecraft:blue_bed",
+      "form": "block"
+    },
+    "minecraft:blue_candle": {
+      "family": "minecraft:blue_candle",
+      "form": "block"
+    },
+    "minecraft:blue_candle_cake": {
+      "family": "minecraft:blue_candle_cake",
+      "form": "block"
+    },
+    "minecraft:blue_carpet": {
+      "family": "minecraft:blue_bed",
+      "form": "block"
+    },
+    "minecraft:blue_concrete": {
+      "family": "minecraft:blue_concrete",
+      "form": "block"
+    },
+    "minecraft:blue_concrete_powder": {
+      "family": "minecraft:blue_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:blue_glazed_terracotta": {
+      "family": "minecraft:blue_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:blue_ice": {
+      "family": "minecraft:blue_ice",
+      "form": "block"
+    },
+    "minecraft:blue_orchid": {
+      "family": "minecraft:blue_orchid",
+      "form": "block"
+    },
+    "minecraft:blue_shulker_box": {
+      "family": "minecraft:blue_shulker_box",
+      "form": "block"
+    },
+    "minecraft:blue_stained_glass": {
+      "family": "minecraft:blue_stained_glass",
+      "form": "block"
+    },
+    "minecraft:blue_stained_glass_pane": {
+      "family": "minecraft:blue_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:blue_terracotta": {
+      "family": "minecraft:blue_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:blue_wall_banner": {
+      "family": "minecraft:blue_wall_banner",
+      "form": "block"
+    },
+    "minecraft:blue_wool": {
+      "family": "minecraft:blue_bed",
+      "form": "block"
+    },
+    "minecraft:bone_block": {
+      "family": "minecraft:bone_block",
+      "form": "block"
+    },
+    "minecraft:bookshelf": {
+      "family": "minecraft:bookshelf",
+      "form": "block"
+    },
+    "minecraft:brain_coral": {
+      "family": "minecraft:brain_coral",
+      "form": "block"
+    },
+    "minecraft:brain_coral_block": {
+      "family": "minecraft:brain_coral_block",
+      "form": "block"
+    },
+    "minecraft:brain_coral_fan": {
+      "family": "minecraft:brain_coral_fan",
+      "form": "block"
+    },
+    "minecraft:brain_coral_wall_fan": {
+      "family": "minecraft:brain_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:brewing_stand": {
+      "family": "minecraft:brewing_stand",
+      "form": "block"
+    },
+    "minecraft:brick_slab": {
+      "family": "minecraft:brick_slab",
+      "form": "slab"
+    },
+    "minecraft:brick_stairs": {
+      "family": "minecraft:brick_slab",
+      "form": "stair"
+    },
+    "minecraft:brick_wall": {
+      "family": "minecraft:brick_slab",
+      "form": "wall"
+    },
+    "minecraft:bricks": {
+      "family": "minecraft:brick_slab",
+      "form": "block"
+    },
+    "minecraft:brown_banner": {
+      "family": "minecraft:brown_banner",
+      "form": "block"
+    },
+    "minecraft:brown_bed": {
+      "family": "minecraft:brown_bed",
+      "form": "block"
+    },
+    "minecraft:brown_candle": {
+      "family": "minecraft:brown_candle",
+      "form": "block"
+    },
+    "minecraft:brown_candle_cake": {
+      "family": "minecraft:brown_candle_cake",
+      "form": "block"
+    },
+    "minecraft:brown_carpet": {
+      "family": "minecraft:brown_bed",
+      "form": "block"
+    },
+    "minecraft:brown_concrete": {
+      "family": "minecraft:brown_concrete",
+      "form": "block"
+    },
+    "minecraft:brown_concrete_powder": {
+      "family": "minecraft:brown_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:brown_glazed_terracotta": {
+      "family": "minecraft:brown_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:brown_mushroom": {
+      "family": "minecraft:brown_mushroom",
+      "form": "block"
+    },
+    "minecraft:brown_mushroom_block": {
+      "family": "minecraft:brown_mushroom_block",
+      "form": "block"
+    },
+    "minecraft:brown_shulker_box": {
+      "family": "minecraft:brown_shulker_box",
+      "form": "block"
+    },
+    "minecraft:brown_stained_glass": {
+      "family": "minecraft:brown_stained_glass",
+      "form": "block"
+    },
+    "minecraft:brown_stained_glass_pane": {
+      "family": "minecraft:brown_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:brown_terracotta": {
+      "family": "minecraft:brown_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:brown_wall_banner": {
+      "family": "minecraft:brown_wall_banner",
+      "form": "block"
+    },
+    "minecraft:brown_wool": {
+      "family": "minecraft:brown_bed",
+      "form": "block"
+    },
+    "minecraft:bubble_column": {
+      "family": "minecraft:bubble_column",
+      "form": "block"
+    },
+    "minecraft:bubble_coral": {
+      "family": "minecraft:bubble_coral",
+      "form": "block"
+    },
+    "minecraft:bubble_coral_block": {
+      "family": "minecraft:bubble_coral_block",
+      "form": "block"
+    },
+    "minecraft:bubble_coral_fan": {
+      "family": "minecraft:bubble_coral_fan",
+      "form": "block"
+    },
+    "minecraft:bubble_coral_wall_fan": {
+      "family": "minecraft:bubble_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:budding_amethyst": {
+      "family": "minecraft:budding_amethyst",
+      "form": "block"
+    },
+    "minecraft:bush": {
+      "family": "minecraft:bush",
+      "form": "block"
+    },
+    "minecraft:cactus": {
+      "family": "minecraft:cactus",
+      "form": "block"
+    },
+    "minecraft:cactus_flower": {
+      "family": "minecraft:cactus_flower",
+      "form": "block"
+    },
+    "minecraft:cake": {
+      "family": "minecraft:cake",
+      "form": "block"
+    },
+    "minecraft:calcite": {
+      "family": "minecraft:calcite",
+      "form": "block"
+    },
+    "minecraft:calibrated_sculk_sensor": {
+      "family": "minecraft:calibrated_sculk_sensor",
+      "form": "block"
+    },
+    "minecraft:campfire": {
+      "family": "minecraft:campfire",
+      "form": "block"
+    },
+    "minecraft:candle": {
+      "family": "minecraft:candle",
+      "form": "block"
+    },
+    "minecraft:candle_cake": {
+      "family": "minecraft:candle_cake",
+      "form": "block"
+    },
+    "minecraft:carrots": {
+      "family": "minecraft:carrots",
+      "form": "block"
+    },
+    "minecraft:cartography_table": {
+      "family": "minecraft:cartography_table",
+      "form": "block"
+    },
+    "minecraft:carved_pumpkin": {
+      "family": "minecraft:carved_pumpkin",
+      "form": "block"
+    },
+    "minecraft:cauldron": {
+      "family": "minecraft:cauldron",
+      "form": "block"
+    },
+    "minecraft:cave_air": {
+      "family": "minecraft:cave_air",
+      "form": "block"
+    },
+    "minecraft:cave_vines": {
+      "family": "minecraft:cave_vines",
+      "form": "block"
+    },
+    "minecraft:cave_vines_plant": {
+      "family": "minecraft:cave_vines_plant",
+      "form": "block"
+    },
+    "minecraft:chain_command_block": {
+      "family": "minecraft:chain_command_block",
+      "form": "block"
+    },
+    "minecraft:cherry_button": {
+      "family": "minecraft:cherry_button",
+      "form": "button"
+    },
+    "minecraft:cherry_door": {
+      "family": "minecraft:cherry_button",
+      "form": "door"
+    },
+    "minecraft:cherry_fence": {
+      "family": "minecraft:cherry_fence",
+      "form": "fence"
+    },
+    "minecraft:cherry_fence_gate": {
+      "family": "minecraft:cherry_fence_gate",
+      "form": "block"
+    },
+    "minecraft:cherry_hanging_sign": {
+      "family": "minecraft:cherry_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:cherry_leaves": {
+      "family": "minecraft:cherry_leaves",
+      "form": "block"
+    },
+    "minecraft:cherry_log": {
+      "family": "minecraft:cherry_log",
+      "form": "block"
+    },
+    "minecraft:cherry_planks": {
+      "family": "minecraft:cherry_button",
+      "form": "block"
+    },
+    "minecraft:cherry_pressure_plate": {
+      "family": "minecraft:cherry_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:cherry_sapling": {
+      "family": "minecraft:cherry_sapling",
+      "form": "block"
+    },
+    "minecraft:cherry_shelf": {
+      "family": "minecraft:cherry_shelf",
+      "form": "block"
+    },
+    "minecraft:cherry_sign": {
+      "family": "minecraft:cherry_sign",
+      "form": "sign"
+    },
+    "minecraft:cherry_slab": {
+      "family": "minecraft:cherry_button",
+      "form": "slab"
+    },
+    "minecraft:cherry_stairs": {
+      "family": "minecraft:cherry_button",
+      "form": "stair"
+    },
+    "minecraft:cherry_trapdoor": {
+      "family": "minecraft:cherry_button",
+      "form": "trapdoor"
+    },
+    "minecraft:cherry_wall_hanging_sign": {
+      "family": "minecraft:cherry_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:cherry_wall_sign": {
+      "family": "minecraft:cherry_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:cherry_wood": {
+      "family": "minecraft:cherry_log",
+      "form": "block"
+    },
+    "minecraft:chest": {
+      "family": "minecraft:chest",
+      "form": "block"
+    },
+    "minecraft:chipped_anvil": {
+      "family": "minecraft:chipped_anvil",
+      "form": "block"
+    },
+    "minecraft:chiseled_bookshelf": {
+      "family": "minecraft:chiseled_bookshelf",
+      "form": "block"
+    },
+    "minecraft:chiseled_copper": {
+      "family": "minecraft:chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:chiseled_deepslate": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:chiseled_nether_bricks": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "block"
+    },
+    "minecraft:chiseled_polished_blackstone": {
+      "family": "minecraft:blackstone",
+      "form": "block"
+    },
+    "minecraft:chiseled_quartz_block": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "block"
+    },
+    "minecraft:chiseled_red_sandstone": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "block"
+    },
+    "minecraft:chiseled_resin_bricks": {
+      "family": "minecraft:chiseled_resin_bricks",
+      "form": "block"
+    },
+    "minecraft:chiseled_sandstone": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "block"
+    },
+    "minecraft:chiseled_stone_bricks": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:chiseled_tuff": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "block"
+    },
+    "minecraft:chiseled_tuff_bricks": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "block"
+    },
+    "minecraft:chorus_flower": {
+      "family": "minecraft:chorus_flower",
+      "form": "block"
+    },
+    "minecraft:chorus_plant": {
+      "family": "minecraft:chorus_plant",
+      "form": "block"
+    },
+    "minecraft:clay": {
+      "family": "minecraft:clay",
+      "form": "block"
+    },
+    "minecraft:closed_eyeblossom": {
+      "family": "minecraft:closed_eyeblossom",
+      "form": "block"
+    },
+    "minecraft:coal_block": {
+      "family": "minecraft:coal_block",
+      "form": "block"
+    },
+    "minecraft:coal_ore": {
+      "family": "minecraft:coal_ore",
+      "form": "block"
+    },
+    "minecraft:coarse_dirt": {
+      "family": "minecraft:coarse_dirt",
+      "form": "block"
+    },
+    "minecraft:cobbled_deepslate": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:cobbled_deepslate_slab": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "slab"
+    },
+    "minecraft:cobbled_deepslate_stairs": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "stair"
+    },
+    "minecraft:cobbled_deepslate_wall": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "wall"
+    },
+    "minecraft:cobblestone": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:cobblestone_slab": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "slab"
+    },
+    "minecraft:cobblestone_stairs": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "stair"
+    },
+    "minecraft:cobblestone_wall": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "wall"
+    },
+    "minecraft:cobweb": {
+      "family": "minecraft:cobweb",
+      "form": "block"
+    },
+    "minecraft:cocoa": {
+      "family": "minecraft:cocoa",
+      "form": "block"
+    },
+    "minecraft:command_block": {
+      "family": "minecraft:command_block",
+      "form": "block"
+    },
+    "minecraft:comparator": {
+      "family": "minecraft:comparator",
+      "form": "block"
+    },
+    "minecraft:composter": {
+      "family": "minecraft:composter",
+      "form": "block"
+    },
+    "minecraft:conduit": {
+      "family": "minecraft:conduit",
+      "form": "block"
+    },
+    "minecraft:copper_bars": {
+      "family": "minecraft:copper_bars",
+      "form": "pane"
+    },
+    "minecraft:copper_block": {
+      "family": "minecraft:chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:copper_bulb": {
+      "family": "minecraft:copper_bulb",
+      "form": "block"
+    },
+    "minecraft:copper_chain": {
+      "family": "minecraft:copper_chain",
+      "form": "block"
+    },
+    "minecraft:copper_chest": {
+      "family": "minecraft:copper_chest",
+      "form": "block"
+    },
+    "minecraft:copper_door": {
+      "family": "minecraft:copper_door",
+      "form": "door"
+    },
+    "minecraft:copper_golem_statue": {
+      "family": "minecraft:copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:copper_grate": {
+      "family": "minecraft:chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:copper_lantern": {
+      "family": "minecraft:copper_lantern",
+      "form": "block"
+    },
+    "minecraft:copper_ore": {
+      "family": "minecraft:copper_ore",
+      "form": "block"
+    },
+    "minecraft:copper_torch": {
+      "family": "minecraft:copper_torch",
+      "form": "block"
+    },
+    "minecraft:copper_trapdoor": {
+      "family": "minecraft:copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:copper_wall_torch": {
+      "family": "minecraft:copper_wall_torch",
+      "form": "block"
+    },
+    "minecraft:cornflower": {
+      "family": "minecraft:cornflower",
+      "form": "block"
+    },
+    "minecraft:cracked_deepslate_bricks": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:cracked_deepslate_tiles": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:cracked_nether_bricks": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "block"
+    },
+    "minecraft:cracked_polished_blackstone_bricks": {
+      "family": "minecraft:blackstone",
+      "form": "block"
+    },
+    "minecraft:cracked_stone_bricks": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:crafter": {
+      "family": "minecraft:crafter",
+      "form": "block"
+    },
+    "minecraft:crafting_table": {
+      "family": "minecraft:crafting_table",
+      "form": "block"
+    },
+    "minecraft:creaking_heart": {
+      "family": "minecraft:creaking_heart",
+      "form": "block"
+    },
+    "minecraft:creeper_head": {
+      "family": "minecraft:creeper_head",
+      "form": "block"
+    },
+    "minecraft:creeper_wall_head": {
+      "family": "minecraft:creeper_wall_head",
+      "form": "block"
+    },
+    "minecraft:crimson_button": {
+      "family": "minecraft:crimson_button",
+      "form": "button"
+    },
+    "minecraft:crimson_door": {
+      "family": "minecraft:crimson_button",
+      "form": "door"
+    },
+    "minecraft:crimson_fence": {
+      "family": "minecraft:crimson_fence",
+      "form": "fence"
+    },
+    "minecraft:crimson_fence_gate": {
+      "family": "minecraft:crimson_fence_gate",
+      "form": "block"
+    },
+    "minecraft:crimson_fungus": {
+      "family": "minecraft:crimson_fungus",
+      "form": "block"
+    },
+    "minecraft:crimson_hanging_sign": {
+      "family": "minecraft:crimson_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:crimson_hyphae": {
+      "family": "minecraft:crimson_hyphae",
+      "form": "block"
+    },
+    "minecraft:crimson_nylium": {
+      "family": "minecraft:crimson_nylium",
+      "form": "block"
+    },
+    "minecraft:crimson_planks": {
+      "family": "minecraft:crimson_button",
+      "form": "block"
+    },
+    "minecraft:crimson_pressure_plate": {
+      "family": "minecraft:crimson_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:crimson_roots": {
+      "family": "minecraft:crimson_roots",
+      "form": "block"
+    },
+    "minecraft:crimson_shelf": {
+      "family": "minecraft:crimson_shelf",
+      "form": "block"
+    },
+    "minecraft:crimson_sign": {
+      "family": "minecraft:crimson_sign",
+      "form": "sign"
+    },
+    "minecraft:crimson_slab": {
+      "family": "minecraft:crimson_button",
+      "form": "slab"
+    },
+    "minecraft:crimson_stairs": {
+      "family": "minecraft:crimson_button",
+      "form": "stair"
+    },
+    "minecraft:crimson_stem": {
+      "family": "minecraft:crimson_hyphae",
+      "form": "block"
+    },
+    "minecraft:crimson_trapdoor": {
+      "family": "minecraft:crimson_button",
+      "form": "trapdoor"
+    },
+    "minecraft:crimson_wall_hanging_sign": {
+      "family": "minecraft:crimson_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:crimson_wall_sign": {
+      "family": "minecraft:crimson_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:crying_obsidian": {
+      "family": "minecraft:crying_obsidian",
+      "form": "block"
+    },
+    "minecraft:cut_copper": {
+      "family": "minecraft:chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:cut_copper_slab": {
+      "family": "minecraft:chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:cut_copper_stairs": {
+      "family": "minecraft:chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:cut_red_sandstone": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "block"
+    },
+    "minecraft:cut_red_sandstone_slab": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "slab"
+    },
+    "minecraft:cut_sandstone": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "block"
+    },
+    "minecraft:cut_sandstone_slab": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "slab"
+    },
+    "minecraft:cyan_banner": {
+      "family": "minecraft:cyan_banner",
+      "form": "block"
+    },
+    "minecraft:cyan_bed": {
+      "family": "minecraft:cyan_bed",
+      "form": "block"
+    },
+    "minecraft:cyan_candle": {
+      "family": "minecraft:cyan_candle",
+      "form": "block"
+    },
+    "minecraft:cyan_candle_cake": {
+      "family": "minecraft:cyan_candle_cake",
+      "form": "block"
+    },
+    "minecraft:cyan_carpet": {
+      "family": "minecraft:cyan_bed",
+      "form": "block"
+    },
+    "minecraft:cyan_concrete": {
+      "family": "minecraft:cyan_concrete",
+      "form": "block"
+    },
+    "minecraft:cyan_concrete_powder": {
+      "family": "minecraft:cyan_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:cyan_glazed_terracotta": {
+      "family": "minecraft:cyan_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:cyan_shulker_box": {
+      "family": "minecraft:cyan_shulker_box",
+      "form": "block"
+    },
+    "minecraft:cyan_stained_glass": {
+      "family": "minecraft:cyan_stained_glass",
+      "form": "block"
+    },
+    "minecraft:cyan_stained_glass_pane": {
+      "family": "minecraft:cyan_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:cyan_terracotta": {
+      "family": "minecraft:cyan_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:cyan_wall_banner": {
+      "family": "minecraft:cyan_wall_banner",
+      "form": "block"
+    },
+    "minecraft:cyan_wool": {
+      "family": "minecraft:cyan_bed",
+      "form": "block"
+    },
+    "minecraft:damaged_anvil": {
+      "family": "minecraft:damaged_anvil",
+      "form": "block"
+    },
+    "minecraft:dandelion": {
+      "family": "minecraft:dandelion",
+      "form": "block"
+    },
+    "minecraft:dark_oak_button": {
+      "family": "minecraft:dark_oak_button",
+      "form": "button"
+    },
+    "minecraft:dark_oak_door": {
+      "family": "minecraft:dark_oak_button",
+      "form": "door"
+    },
+    "minecraft:dark_oak_fence": {
+      "family": "minecraft:dark_oak_fence",
+      "form": "fence"
+    },
+    "minecraft:dark_oak_fence_gate": {
+      "family": "minecraft:dark_oak_fence_gate",
+      "form": "block"
+    },
+    "minecraft:dark_oak_hanging_sign": {
+      "family": "minecraft:dark_oak_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:dark_oak_leaves": {
+      "family": "minecraft:dark_oak_leaves",
+      "form": "block"
+    },
+    "minecraft:dark_oak_log": {
+      "family": "minecraft:dark_oak_log",
+      "form": "block"
+    },
+    "minecraft:dark_oak_planks": {
+      "family": "minecraft:dark_oak_button",
+      "form": "block"
+    },
+    "minecraft:dark_oak_pressure_plate": {
+      "family": "minecraft:dark_oak_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:dark_oak_sapling": {
+      "family": "minecraft:dark_oak_sapling",
+      "form": "block"
+    },
+    "minecraft:dark_oak_shelf": {
+      "family": "minecraft:dark_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:dark_oak_sign": {
+      "family": "minecraft:dark_oak_sign",
+      "form": "sign"
+    },
+    "minecraft:dark_oak_slab": {
+      "family": "minecraft:dark_oak_button",
+      "form": "slab"
+    },
+    "minecraft:dark_oak_stairs": {
+      "family": "minecraft:dark_oak_button",
+      "form": "stair"
+    },
+    "minecraft:dark_oak_trapdoor": {
+      "family": "minecraft:dark_oak_button",
+      "form": "trapdoor"
+    },
+    "minecraft:dark_oak_wall_hanging_sign": {
+      "family": "minecraft:dark_oak_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:dark_oak_wall_sign": {
+      "family": "minecraft:dark_oak_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:dark_oak_wood": {
+      "family": "minecraft:dark_oak_log",
+      "form": "block"
+    },
+    "minecraft:dark_prismarine": {
+      "family": "minecraft:dark_prismarine",
+      "form": "block"
+    },
+    "minecraft:dark_prismarine_slab": {
+      "family": "minecraft:dark_prismarine",
+      "form": "slab"
+    },
+    "minecraft:dark_prismarine_stairs": {
+      "family": "minecraft:dark_prismarine",
+      "form": "stair"
+    },
+    "minecraft:daylight_detector": {
+      "family": "minecraft:daylight_detector",
+      "form": "block"
+    },
+    "minecraft:dead_brain_coral": {
+      "family": "minecraft:dead_brain_coral",
+      "form": "block"
+    },
+    "minecraft:dead_brain_coral_block": {
+      "family": "minecraft:dead_brain_coral_block",
+      "form": "block"
+    },
+    "minecraft:dead_brain_coral_fan": {
+      "family": "minecraft:dead_brain_coral_fan",
+      "form": "block"
+    },
+    "minecraft:dead_brain_coral_wall_fan": {
+      "family": "minecraft:dead_brain_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:dead_bubble_coral": {
+      "family": "minecraft:dead_bubble_coral",
+      "form": "block"
+    },
+    "minecraft:dead_bubble_coral_block": {
+      "family": "minecraft:dead_bubble_coral_block",
+      "form": "block"
+    },
+    "minecraft:dead_bubble_coral_fan": {
+      "family": "minecraft:dead_bubble_coral_fan",
+      "form": "block"
+    },
+    "minecraft:dead_bubble_coral_wall_fan": {
+      "family": "minecraft:dead_bubble_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:dead_bush": {
+      "family": "minecraft:dead_bush",
+      "form": "block"
+    },
+    "minecraft:dead_fire_coral": {
+      "family": "minecraft:dead_fire_coral",
+      "form": "block"
+    },
+    "minecraft:dead_fire_coral_block": {
+      "family": "minecraft:dead_fire_coral_block",
+      "form": "block"
+    },
+    "minecraft:dead_fire_coral_fan": {
+      "family": "minecraft:dead_fire_coral_fan",
+      "form": "block"
+    },
+    "minecraft:dead_fire_coral_wall_fan": {
+      "family": "minecraft:dead_fire_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:dead_horn_coral": {
+      "family": "minecraft:dead_horn_coral",
+      "form": "block"
+    },
+    "minecraft:dead_horn_coral_block": {
+      "family": "minecraft:dead_horn_coral_block",
+      "form": "block"
+    },
+    "minecraft:dead_horn_coral_fan": {
+      "family": "minecraft:dead_horn_coral_fan",
+      "form": "block"
+    },
+    "minecraft:dead_horn_coral_wall_fan": {
+      "family": "minecraft:dead_horn_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:dead_tube_coral": {
+      "family": "minecraft:dead_tube_coral",
+      "form": "block"
+    },
+    "minecraft:dead_tube_coral_block": {
+      "family": "minecraft:dead_tube_coral_block",
+      "form": "block"
+    },
+    "minecraft:dead_tube_coral_fan": {
+      "family": "minecraft:dead_tube_coral_fan",
+      "form": "block"
+    },
+    "minecraft:dead_tube_coral_wall_fan": {
+      "family": "minecraft:dead_tube_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:decorated_pot": {
+      "family": "minecraft:decorated_pot",
+      "form": "block"
+    },
+    "minecraft:deepslate": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:deepslate_brick_slab": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "slab"
+    },
+    "minecraft:deepslate_brick_stairs": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "stair"
+    },
+    "minecraft:deepslate_brick_wall": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "wall"
+    },
+    "minecraft:deepslate_bricks": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:deepslate_coal_ore": {
+      "family": "minecraft:deepslate_coal_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_copper_ore": {
+      "family": "minecraft:deepslate_copper_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_diamond_ore": {
+      "family": "minecraft:deepslate_diamond_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_emerald_ore": {
+      "family": "minecraft:deepslate_emerald_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_gold_ore": {
+      "family": "minecraft:deepslate_gold_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_iron_ore": {
+      "family": "minecraft:deepslate_iron_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_lapis_ore": {
+      "family": "minecraft:deepslate_lapis_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_redstone_ore": {
+      "family": "minecraft:deepslate_redstone_ore",
+      "form": "block"
+    },
+    "minecraft:deepslate_tile_slab": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "slab"
+    },
+    "minecraft:deepslate_tile_stairs": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "stair"
+    },
+    "minecraft:deepslate_tile_wall": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "wall"
+    },
+    "minecraft:deepslate_tiles": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:detector_rail": {
+      "family": "minecraft:detector_rail",
+      "form": "block"
+    },
+    "minecraft:diamond_block": {
+      "family": "minecraft:diamond_block",
+      "form": "block"
+    },
+    "minecraft:diamond_ore": {
+      "family": "minecraft:diamond_ore",
+      "form": "block"
+    },
+    "minecraft:diorite": {
+      "family": "minecraft:diorite",
+      "form": "block"
+    },
+    "minecraft:diorite_slab": {
+      "family": "minecraft:diorite",
+      "form": "slab"
+    },
+    "minecraft:diorite_stairs": {
+      "family": "minecraft:diorite",
+      "form": "stair"
+    },
+    "minecraft:diorite_wall": {
+      "family": "minecraft:diorite",
+      "form": "wall"
+    },
+    "minecraft:dirt": {
+      "family": "minecraft:dirt",
+      "form": "block"
+    },
+    "minecraft:dirt_path": {
+      "family": "minecraft:dirt_path",
+      "form": "block"
+    },
+    "minecraft:dispenser": {
+      "family": "minecraft:dispenser",
+      "form": "block"
+    },
+    "minecraft:dragon_egg": {
+      "family": "minecraft:dragon_egg",
+      "form": "block"
+    },
+    "minecraft:dragon_head": {
+      "family": "minecraft:dragon_head",
+      "form": "block"
+    },
+    "minecraft:dragon_wall_head": {
+      "family": "minecraft:dragon_wall_head",
+      "form": "block"
+    },
+    "minecraft:dried_ghast": {
+      "family": "minecraft:dried_ghast",
+      "form": "block"
+    },
+    "minecraft:dried_kelp_block": {
+      "family": "minecraft:dried_kelp_block",
+      "form": "block"
+    },
+    "minecraft:dripstone_block": {
+      "family": "minecraft:dripstone_block",
+      "form": "block"
+    },
+    "minecraft:dropper": {
+      "family": "minecraft:dropper",
+      "form": "block"
+    },
+    "minecraft:emerald_block": {
+      "family": "minecraft:emerald_block",
+      "form": "block"
+    },
+    "minecraft:emerald_ore": {
+      "family": "minecraft:emerald_ore",
+      "form": "block"
+    },
+    "minecraft:enchanting_table": {
+      "family": "minecraft:enchanting_table",
+      "form": "block"
+    },
+    "minecraft:end_gateway": {
+      "family": "minecraft:end_gateway",
+      "form": "block"
+    },
+    "minecraft:end_portal": {
+      "family": "minecraft:end_portal",
+      "form": "block"
+    },
+    "minecraft:end_portal_frame": {
+      "family": "minecraft:end_portal_frame",
+      "form": "block"
+    },
+    "minecraft:end_rod": {
+      "family": "minecraft:end_rod",
+      "form": "block"
+    },
+    "minecraft:end_stone": {
+      "family": "minecraft:end_stone",
+      "form": "block"
+    },
+    "minecraft:end_stone_brick_slab": {
+      "family": "minecraft:end_stone",
+      "form": "slab"
+    },
+    "minecraft:end_stone_brick_stairs": {
+      "family": "minecraft:end_stone",
+      "form": "stair"
+    },
+    "minecraft:end_stone_brick_wall": {
+      "family": "minecraft:end_stone",
+      "form": "wall"
+    },
+    "minecraft:end_stone_bricks": {
+      "family": "minecraft:end_stone",
+      "form": "block"
+    },
+    "minecraft:ender_chest": {
+      "family": "minecraft:ender_chest",
+      "form": "block"
+    },
+    "minecraft:exposed_chiseled_copper": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:exposed_copper": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_bars": {
+      "family": "minecraft:exposed_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:exposed_copper_bulb": {
+      "family": "minecraft:exposed_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_chain": {
+      "family": "minecraft:exposed_copper_chain",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_chest": {
+      "family": "minecraft:exposed_copper_chest",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_door": {
+      "family": "minecraft:exposed_copper_door",
+      "form": "door"
+    },
+    "minecraft:exposed_copper_golem_statue": {
+      "family": "minecraft:exposed_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_grate": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_lantern": {
+      "family": "minecraft:exposed_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:exposed_copper_trapdoor": {
+      "family": "minecraft:exposed_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:exposed_cut_copper": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:exposed_cut_copper_slab": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:exposed_cut_copper_stairs": {
+      "family": "minecraft:exposed_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:exposed_lightning_rod": {
+      "family": "minecraft:exposed_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:farmland": {
+      "family": "minecraft:farmland",
+      "form": "block"
+    },
+    "minecraft:fern": {
+      "family": "minecraft:fern",
+      "form": "block"
+    },
+    "minecraft:fire": {
+      "family": "minecraft:fire",
+      "form": "block"
+    },
+    "minecraft:fire_coral": {
+      "family": "minecraft:fire_coral",
+      "form": "block"
+    },
+    "minecraft:fire_coral_block": {
+      "family": "minecraft:fire_coral_block",
+      "form": "block"
+    },
+    "minecraft:fire_coral_fan": {
+      "family": "minecraft:fire_coral_fan",
+      "form": "block"
+    },
+    "minecraft:fire_coral_wall_fan": {
+      "family": "minecraft:fire_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:firefly_bush": {
+      "family": "minecraft:firefly_bush",
+      "form": "block"
+    },
+    "minecraft:fletching_table": {
+      "family": "minecraft:fletching_table",
+      "form": "block"
+    },
+    "minecraft:flower_pot": {
+      "family": "minecraft:flower_pot",
+      "form": "block"
+    },
+    "minecraft:flowering_azalea": {
+      "family": "minecraft:flowering_azalea",
+      "form": "block"
+    },
+    "minecraft:flowering_azalea_leaves": {
+      "family": "minecraft:flowering_azalea_leaves",
+      "form": "block"
+    },
+    "minecraft:frogspawn": {
+      "family": "minecraft:frogspawn",
+      "form": "block"
+    },
+    "minecraft:frosted_ice": {
+      "family": "minecraft:frosted_ice",
+      "form": "block"
+    },
+    "minecraft:furnace": {
+      "family": "minecraft:furnace",
+      "form": "block"
+    },
+    "minecraft:gilded_blackstone": {
+      "family": "minecraft:gilded_blackstone",
+      "form": "block"
+    },
+    "minecraft:glass": {
+      "family": "minecraft:glass",
+      "form": "block"
+    },
+    "minecraft:glass_pane": {
+      "family": "minecraft:glass",
+      "form": "pane"
+    },
+    "minecraft:glow_lichen": {
+      "family": "minecraft:glow_lichen",
+      "form": "block"
+    },
+    "minecraft:glowstone": {
+      "family": "minecraft:glowstone",
+      "form": "block"
+    },
+    "minecraft:gold_block": {
+      "family": "minecraft:gold_block",
+      "form": "block"
+    },
+    "minecraft:gold_ore": {
+      "family": "minecraft:gold_ore",
+      "form": "block"
+    },
+    "minecraft:granite": {
+      "family": "minecraft:granite",
+      "form": "block"
+    },
+    "minecraft:granite_slab": {
+      "family": "minecraft:granite",
+      "form": "slab"
+    },
+    "minecraft:granite_stairs": {
+      "family": "minecraft:granite",
+      "form": "stair"
+    },
+    "minecraft:granite_wall": {
+      "family": "minecraft:granite",
+      "form": "wall"
+    },
+    "minecraft:grass_block": {
+      "family": "minecraft:grass_block",
+      "form": "block"
+    },
+    "minecraft:gravel": {
+      "family": "minecraft:gravel",
+      "form": "block"
+    },
+    "minecraft:gray_banner": {
+      "family": "minecraft:gray_banner",
+      "form": "block"
+    },
+    "minecraft:gray_bed": {
+      "family": "minecraft:gray_bed",
+      "form": "block"
+    },
+    "minecraft:gray_candle": {
+      "family": "minecraft:gray_candle",
+      "form": "block"
+    },
+    "minecraft:gray_candle_cake": {
+      "family": "minecraft:gray_candle_cake",
+      "form": "block"
+    },
+    "minecraft:gray_carpet": {
+      "family": "minecraft:gray_bed",
+      "form": "block"
+    },
+    "minecraft:gray_concrete": {
+      "family": "minecraft:gray_concrete",
+      "form": "block"
+    },
+    "minecraft:gray_concrete_powder": {
+      "family": "minecraft:gray_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:gray_glazed_terracotta": {
+      "family": "minecraft:gray_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:gray_shulker_box": {
+      "family": "minecraft:gray_shulker_box",
+      "form": "block"
+    },
+    "minecraft:gray_stained_glass": {
+      "family": "minecraft:gray_stained_glass",
+      "form": "block"
+    },
+    "minecraft:gray_stained_glass_pane": {
+      "family": "minecraft:gray_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:gray_terracotta": {
+      "family": "minecraft:gray_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:gray_wall_banner": {
+      "family": "minecraft:gray_wall_banner",
+      "form": "block"
+    },
+    "minecraft:gray_wool": {
+      "family": "minecraft:gray_bed",
+      "form": "block"
+    },
+    "minecraft:green_banner": {
+      "family": "minecraft:green_banner",
+      "form": "block"
+    },
+    "minecraft:green_bed": {
+      "family": "minecraft:green_bed",
+      "form": "block"
+    },
+    "minecraft:green_candle": {
+      "family": "minecraft:green_candle",
+      "form": "block"
+    },
+    "minecraft:green_candle_cake": {
+      "family": "minecraft:green_candle_cake",
+      "form": "block"
+    },
+    "minecraft:green_carpet": {
+      "family": "minecraft:green_bed",
+      "form": "block"
+    },
+    "minecraft:green_concrete": {
+      "family": "minecraft:green_concrete",
+      "form": "block"
+    },
+    "minecraft:green_concrete_powder": {
+      "family": "minecraft:green_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:green_glazed_terracotta": {
+      "family": "minecraft:green_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:green_shulker_box": {
+      "family": "minecraft:green_shulker_box",
+      "form": "block"
+    },
+    "minecraft:green_stained_glass": {
+      "family": "minecraft:green_stained_glass",
+      "form": "block"
+    },
+    "minecraft:green_stained_glass_pane": {
+      "family": "minecraft:green_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:green_terracotta": {
+      "family": "minecraft:green_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:green_wall_banner": {
+      "family": "minecraft:green_wall_banner",
+      "form": "block"
+    },
+    "minecraft:green_wool": {
+      "family": "minecraft:green_bed",
+      "form": "block"
+    },
+    "minecraft:grindstone": {
+      "family": "minecraft:grindstone",
+      "form": "block"
+    },
+    "minecraft:hanging_roots": {
+      "family": "minecraft:hanging_roots",
+      "form": "block"
+    },
+    "minecraft:hay_block": {
+      "family": "minecraft:hay_block",
+      "form": "block"
+    },
+    "minecraft:heavy_core": {
+      "family": "minecraft:heavy_core",
+      "form": "block"
+    },
+    "minecraft:heavy_weighted_pressure_plate": {
+      "family": "minecraft:heavy_weighted_pressure_plate",
+      "form": "pressure_plate"
+    },
+    "minecraft:honey_block": {
+      "family": "minecraft:honey_block",
+      "form": "block"
+    },
+    "minecraft:honeycomb_block": {
+      "family": "minecraft:honeycomb_block",
+      "form": "block"
+    },
+    "minecraft:hopper": {
+      "family": "minecraft:hopper",
+      "form": "block"
+    },
+    "minecraft:horn_coral": {
+      "family": "minecraft:horn_coral",
+      "form": "block"
+    },
+    "minecraft:horn_coral_block": {
+      "family": "minecraft:horn_coral_block",
+      "form": "block"
+    },
+    "minecraft:horn_coral_fan": {
+      "family": "minecraft:horn_coral_fan",
+      "form": "block"
+    },
+    "minecraft:horn_coral_wall_fan": {
+      "family": "minecraft:horn_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:ice": {
+      "family": "minecraft:blue_ice",
+      "form": "block"
+    },
+    "minecraft:infested_chiseled_stone_bricks": {
+      "family": "minecraft:infested_chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:infested_cobblestone": {
+      "family": "minecraft:infested_cobblestone",
+      "form": "block"
+    },
+    "minecraft:infested_cracked_stone_bricks": {
+      "family": "minecraft:infested_cracked_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:infested_deepslate": {
+      "family": "minecraft:infested_deepslate",
+      "form": "block"
+    },
+    "minecraft:infested_mossy_stone_bricks": {
+      "family": "minecraft:infested_mossy_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:infested_stone": {
+      "family": "minecraft:infested_stone",
+      "form": "block"
+    },
+    "minecraft:infested_stone_bricks": {
+      "family": "minecraft:infested_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:iron_bars": {
+      "family": "minecraft:iron_bars",
+      "form": "pane"
+    },
+    "minecraft:iron_block": {
+      "family": "minecraft:iron_block",
+      "form": "block"
+    },
+    "minecraft:iron_chain": {
+      "family": "minecraft:iron_chain",
+      "form": "block"
+    },
+    "minecraft:iron_door": {
+      "family": "minecraft:iron_door",
+      "form": "door"
+    },
+    "minecraft:iron_ore": {
+      "family": "minecraft:iron_ore",
+      "form": "block"
+    },
+    "minecraft:iron_trapdoor": {
+      "family": "minecraft:iron_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:jack_o_lantern": {
+      "family": "minecraft:jack_o_lantern",
+      "form": "block"
+    },
+    "minecraft:jigsaw": {
+      "family": "minecraft:jigsaw",
+      "form": "block"
+    },
+    "minecraft:jukebox": {
+      "family": "minecraft:jukebox",
+      "form": "block"
+    },
+    "minecraft:jungle_button": {
+      "family": "minecraft:jungle_button",
+      "form": "button"
+    },
+    "minecraft:jungle_door": {
+      "family": "minecraft:jungle_button",
+      "form": "door"
+    },
+    "minecraft:jungle_fence": {
+      "family": "minecraft:jungle_fence",
+      "form": "fence"
+    },
+    "minecraft:jungle_fence_gate": {
+      "family": "minecraft:jungle_fence_gate",
+      "form": "block"
+    },
+    "minecraft:jungle_hanging_sign": {
+      "family": "minecraft:jungle_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:jungle_leaves": {
+      "family": "minecraft:jungle_leaves",
+      "form": "block"
+    },
+    "minecraft:jungle_log": {
+      "family": "minecraft:jungle_log",
+      "form": "block"
+    },
+    "minecraft:jungle_planks": {
+      "family": "minecraft:jungle_button",
+      "form": "block"
+    },
+    "minecraft:jungle_pressure_plate": {
+      "family": "minecraft:jungle_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:jungle_sapling": {
+      "family": "minecraft:jungle_sapling",
+      "form": "block"
+    },
+    "minecraft:jungle_shelf": {
+      "family": "minecraft:jungle_shelf",
+      "form": "block"
+    },
+    "minecraft:jungle_sign": {
+      "family": "minecraft:jungle_sign",
+      "form": "sign"
+    },
+    "minecraft:jungle_slab": {
+      "family": "minecraft:jungle_button",
+      "form": "slab"
+    },
+    "minecraft:jungle_stairs": {
+      "family": "minecraft:jungle_button",
+      "form": "stair"
+    },
+    "minecraft:jungle_trapdoor": {
+      "family": "minecraft:jungle_button",
+      "form": "trapdoor"
+    },
+    "minecraft:jungle_wall_hanging_sign": {
+      "family": "minecraft:jungle_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:jungle_wall_sign": {
+      "family": "minecraft:jungle_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:jungle_wood": {
+      "family": "minecraft:jungle_log",
+      "form": "block"
+    },
+    "minecraft:kelp": {
+      "family": "minecraft:kelp",
+      "form": "block"
+    },
+    "minecraft:kelp_plant": {
+      "family": "minecraft:kelp_plant",
+      "form": "block"
+    },
+    "minecraft:ladder": {
+      "family": "minecraft:ladder",
+      "form": "block"
+    },
+    "minecraft:lantern": {
+      "family": "minecraft:lantern",
+      "form": "block"
+    },
+    "minecraft:lapis_block": {
+      "family": "minecraft:lapis_block",
+      "form": "block"
+    },
+    "minecraft:lapis_ore": {
+      "family": "minecraft:lapis_ore",
+      "form": "block"
+    },
+    "minecraft:large_amethyst_bud": {
+      "family": "minecraft:large_amethyst_bud",
+      "form": "block"
+    },
+    "minecraft:large_fern": {
+      "family": "minecraft:large_fern",
+      "form": "block"
+    },
+    "minecraft:lava": {
+      "family": "minecraft:lava",
+      "form": "block"
+    },
+    "minecraft:lava_cauldron": {
+      "family": "minecraft:lava_cauldron",
+      "form": "block"
+    },
+    "minecraft:leaf_litter": {
+      "family": "minecraft:leaf_litter",
+      "form": "block"
+    },
+    "minecraft:lectern": {
+      "family": "minecraft:bookshelf",
+      "form": "block"
+    },
+    "minecraft:lever": {
+      "family": "minecraft:lever",
+      "form": "block"
+    },
+    "minecraft:light": {
+      "family": "minecraft:light",
+      "form": "block"
+    },
+    "minecraft:light_blue_banner": {
+      "family": "minecraft:light_blue_banner",
+      "form": "block"
+    },
+    "minecraft:light_blue_bed": {
+      "family": "minecraft:light_blue_bed",
+      "form": "block"
+    },
+    "minecraft:light_blue_candle": {
+      "family": "minecraft:light_blue_candle",
+      "form": "block"
+    },
+    "minecraft:light_blue_candle_cake": {
+      "family": "minecraft:light_blue_candle_cake",
+      "form": "block"
+    },
+    "minecraft:light_blue_carpet": {
+      "family": "minecraft:light_blue_bed",
+      "form": "block"
+    },
+    "minecraft:light_blue_concrete": {
+      "family": "minecraft:light_blue_concrete",
+      "form": "block"
+    },
+    "minecraft:light_blue_concrete_powder": {
+      "family": "minecraft:light_blue_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:light_blue_glazed_terracotta": {
+      "family": "minecraft:light_blue_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:light_blue_shulker_box": {
+      "family": "minecraft:light_blue_shulker_box",
+      "form": "block"
+    },
+    "minecraft:light_blue_stained_glass": {
+      "family": "minecraft:light_blue_stained_glass",
+      "form": "block"
+    },
+    "minecraft:light_blue_stained_glass_pane": {
+      "family": "minecraft:light_blue_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:light_blue_terracotta": {
+      "family": "minecraft:light_blue_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:light_blue_wall_banner": {
+      "family": "minecraft:light_blue_wall_banner",
+      "form": "block"
+    },
+    "minecraft:light_blue_wool": {
+      "family": "minecraft:light_blue_bed",
+      "form": "block"
+    },
+    "minecraft:light_gray_banner": {
+      "family": "minecraft:light_gray_banner",
+      "form": "block"
+    },
+    "minecraft:light_gray_bed": {
+      "family": "minecraft:light_gray_bed",
+      "form": "block"
+    },
+    "minecraft:light_gray_candle": {
+      "family": "minecraft:light_gray_candle",
+      "form": "block"
+    },
+    "minecraft:light_gray_candle_cake": {
+      "family": "minecraft:light_gray_candle_cake",
+      "form": "block"
+    },
+    "minecraft:light_gray_carpet": {
+      "family": "minecraft:light_gray_bed",
+      "form": "block"
+    },
+    "minecraft:light_gray_concrete": {
+      "family": "minecraft:light_gray_concrete",
+      "form": "block"
+    },
+    "minecraft:light_gray_concrete_powder": {
+      "family": "minecraft:light_gray_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:light_gray_glazed_terracotta": {
+      "family": "minecraft:light_gray_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:light_gray_shulker_box": {
+      "family": "minecraft:light_gray_shulker_box",
+      "form": "block"
+    },
+    "minecraft:light_gray_stained_glass": {
+      "family": "minecraft:light_gray_stained_glass",
+      "form": "block"
+    },
+    "minecraft:light_gray_stained_glass_pane": {
+      "family": "minecraft:light_gray_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:light_gray_terracotta": {
+      "family": "minecraft:light_gray_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:light_gray_wall_banner": {
+      "family": "minecraft:light_gray_wall_banner",
+      "form": "block"
+    },
+    "minecraft:light_gray_wool": {
+      "family": "minecraft:light_gray_bed",
+      "form": "block"
+    },
+    "minecraft:light_weighted_pressure_plate": {
+      "family": "minecraft:light_weighted_pressure_plate",
+      "form": "pressure_plate"
+    },
+    "minecraft:lightning_rod": {
+      "family": "minecraft:lightning_rod",
+      "form": "block"
+    },
+    "minecraft:lilac": {
+      "family": "minecraft:lilac",
+      "form": "block"
+    },
+    "minecraft:lily_of_the_valley": {
+      "family": "minecraft:lily_of_the_valley",
+      "form": "block"
+    },
+    "minecraft:lily_pad": {
+      "family": "minecraft:lily_pad",
+      "form": "block"
+    },
+    "minecraft:lime_banner": {
+      "family": "minecraft:lime_banner",
+      "form": "block"
+    },
+    "minecraft:lime_bed": {
+      "family": "minecraft:lime_bed",
+      "form": "block"
+    },
+    "minecraft:lime_candle": {
+      "family": "minecraft:lime_candle",
+      "form": "block"
+    },
+    "minecraft:lime_candle_cake": {
+      "family": "minecraft:lime_candle_cake",
+      "form": "block"
+    },
+    "minecraft:lime_carpet": {
+      "family": "minecraft:lime_bed",
+      "form": "block"
+    },
+    "minecraft:lime_concrete": {
+      "family": "minecraft:lime_concrete",
+      "form": "block"
+    },
+    "minecraft:lime_concrete_powder": {
+      "family": "minecraft:lime_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:lime_glazed_terracotta": {
+      "family": "minecraft:lime_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:lime_shulker_box": {
+      "family": "minecraft:lime_shulker_box",
+      "form": "block"
+    },
+    "minecraft:lime_stained_glass": {
+      "family": "minecraft:lime_stained_glass",
+      "form": "block"
+    },
+    "minecraft:lime_stained_glass_pane": {
+      "family": "minecraft:lime_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:lime_terracotta": {
+      "family": "minecraft:lime_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:lime_wall_banner": {
+      "family": "minecraft:lime_wall_banner",
+      "form": "block"
+    },
+    "minecraft:lime_wool": {
+      "family": "minecraft:lime_bed",
+      "form": "block"
+    },
+    "minecraft:lodestone": {
+      "family": "minecraft:lodestone",
+      "form": "block"
+    },
+    "minecraft:loom": {
+      "family": "minecraft:loom",
+      "form": "block"
+    },
+    "minecraft:magenta_banner": {
+      "family": "minecraft:magenta_banner",
+      "form": "block"
+    },
+    "minecraft:magenta_bed": {
+      "family": "minecraft:magenta_bed",
+      "form": "block"
+    },
+    "minecraft:magenta_candle": {
+      "family": "minecraft:magenta_candle",
+      "form": "block"
+    },
+    "minecraft:magenta_candle_cake": {
+      "family": "minecraft:magenta_candle_cake",
+      "form": "block"
+    },
+    "minecraft:magenta_carpet": {
+      "family": "minecraft:magenta_bed",
+      "form": "block"
+    },
+    "minecraft:magenta_concrete": {
+      "family": "minecraft:magenta_concrete",
+      "form": "block"
+    },
+    "minecraft:magenta_concrete_powder": {
+      "family": "minecraft:magenta_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:magenta_glazed_terracotta": {
+      "family": "minecraft:magenta_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:magenta_shulker_box": {
+      "family": "minecraft:magenta_shulker_box",
+      "form": "block"
+    },
+    "minecraft:magenta_stained_glass": {
+      "family": "minecraft:magenta_stained_glass",
+      "form": "block"
+    },
+    "minecraft:magenta_stained_glass_pane": {
+      "family": "minecraft:magenta_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:magenta_terracotta": {
+      "family": "minecraft:magenta_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:magenta_wall_banner": {
+      "family": "minecraft:magenta_wall_banner",
+      "form": "block"
+    },
+    "minecraft:magenta_wool": {
+      "family": "minecraft:magenta_bed",
+      "form": "block"
+    },
+    "minecraft:magma_block": {
+      "family": "minecraft:magma_block",
+      "form": "block"
+    },
+    "minecraft:mangrove_button": {
+      "family": "minecraft:mangrove_button",
+      "form": "button"
+    },
+    "minecraft:mangrove_door": {
+      "family": "minecraft:mangrove_button",
+      "form": "door"
+    },
+    "minecraft:mangrove_fence": {
+      "family": "minecraft:mangrove_fence",
+      "form": "fence"
+    },
+    "minecraft:mangrove_fence_gate": {
+      "family": "minecraft:mangrove_fence_gate",
+      "form": "block"
+    },
+    "minecraft:mangrove_hanging_sign": {
+      "family": "minecraft:mangrove_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:mangrove_leaves": {
+      "family": "minecraft:mangrove_leaves",
+      "form": "block"
+    },
+    "minecraft:mangrove_log": {
+      "family": "minecraft:mangrove_log",
+      "form": "block"
+    },
+    "minecraft:mangrove_planks": {
+      "family": "minecraft:mangrove_button",
+      "form": "block"
+    },
+    "minecraft:mangrove_pressure_plate": {
+      "family": "minecraft:mangrove_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:mangrove_propagule": {
+      "family": "minecraft:mangrove_propagule",
+      "form": "block"
+    },
+    "minecraft:mangrove_roots": {
+      "family": "minecraft:mangrove_roots",
+      "form": "block"
+    },
+    "minecraft:mangrove_shelf": {
+      "family": "minecraft:mangrove_shelf",
+      "form": "block"
+    },
+    "minecraft:mangrove_sign": {
+      "family": "minecraft:mangrove_sign",
+      "form": "sign"
+    },
+    "minecraft:mangrove_slab": {
+      "family": "minecraft:mangrove_button",
+      "form": "slab"
+    },
+    "minecraft:mangrove_stairs": {
+      "family": "minecraft:mangrove_button",
+      "form": "stair"
+    },
+    "minecraft:mangrove_trapdoor": {
+      "family": "minecraft:mangrove_button",
+      "form": "trapdoor"
+    },
+    "minecraft:mangrove_wall_hanging_sign": {
+      "family": "minecraft:mangrove_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:mangrove_wall_sign": {
+      "family": "minecraft:mangrove_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:mangrove_wood": {
+      "family": "minecraft:mangrove_log",
+      "form": "block"
+    },
+    "minecraft:medium_amethyst_bud": {
+      "family": "minecraft:medium_amethyst_bud",
+      "form": "block"
+    },
+    "minecraft:melon": {
+      "family": "minecraft:melon",
+      "form": "block"
+    },
+    "minecraft:melon_stem": {
+      "family": "minecraft:melon_stem",
+      "form": "block"
+    },
+    "minecraft:moss_block": {
+      "family": "minecraft:moss_block",
+      "form": "block"
+    },
+    "minecraft:moss_carpet": {
+      "family": "minecraft:moss_block",
+      "form": "block"
+    },
+    "minecraft:mossy_cobblestone": {
+      "family": "minecraft:mossy_cobblestone",
+      "form": "block"
+    },
+    "minecraft:mossy_cobblestone_slab": {
+      "family": "minecraft:mossy_cobblestone",
+      "form": "slab"
+    },
+    "minecraft:mossy_cobblestone_stairs": {
+      "family": "minecraft:mossy_cobblestone",
+      "form": "stair"
+    },
+    "minecraft:mossy_cobblestone_wall": {
+      "family": "minecraft:mossy_cobblestone",
+      "form": "wall"
+    },
+    "minecraft:mossy_stone_brick_slab": {
+      "family": "minecraft:mossy_stone_brick_slab",
+      "form": "slab"
+    },
+    "minecraft:mossy_stone_brick_stairs": {
+      "family": "minecraft:mossy_stone_brick_slab",
+      "form": "stair"
+    },
+    "minecraft:mossy_stone_brick_wall": {
+      "family": "minecraft:mossy_stone_brick_slab",
+      "form": "wall"
+    },
+    "minecraft:mossy_stone_bricks": {
+      "family": "minecraft:mossy_stone_brick_slab",
+      "form": "block"
+    },
+    "minecraft:moving_piston": {
+      "family": "minecraft:moving_piston",
+      "form": "block"
+    },
+    "minecraft:mud": {
+      "family": "minecraft:mud",
+      "form": "block"
+    },
+    "minecraft:mud_brick_slab": {
+      "family": "minecraft:mud_brick_slab",
+      "form": "slab"
+    },
+    "minecraft:mud_brick_stairs": {
+      "family": "minecraft:mud_brick_slab",
+      "form": "stair"
+    },
+    "minecraft:mud_brick_wall": {
+      "family": "minecraft:mud_brick_slab",
+      "form": "wall"
+    },
+    "minecraft:mud_bricks": {
+      "family": "minecraft:mud_brick_slab",
+      "form": "block"
+    },
+    "minecraft:muddy_mangrove_roots": {
+      "family": "minecraft:muddy_mangrove_roots",
+      "form": "block"
+    },
+    "minecraft:mushroom_stem": {
+      "family": "minecraft:mushroom_stem",
+      "form": "block"
+    },
+    "minecraft:mycelium": {
+      "family": "minecraft:mycelium",
+      "form": "block"
+    },
+    "minecraft:nether_brick_fence": {
+      "family": "minecraft:nether_brick_fence",
+      "form": "fence"
+    },
+    "minecraft:nether_brick_slab": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "slab"
+    },
+    "minecraft:nether_brick_stairs": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "stair"
+    },
+    "minecraft:nether_brick_wall": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "wall"
+    },
+    "minecraft:nether_bricks": {
+      "family": "minecraft:chiseled_nether_bricks",
+      "form": "block"
+    },
+    "minecraft:nether_gold_ore": {
+      "family": "minecraft:nether_gold_ore",
+      "form": "block"
+    },
+    "minecraft:nether_portal": {
+      "family": "minecraft:nether_portal",
+      "form": "block"
+    },
+    "minecraft:nether_quartz_ore": {
+      "family": "minecraft:nether_quartz_ore",
+      "form": "block"
+    },
+    "minecraft:nether_sprouts": {
+      "family": "minecraft:nether_sprouts",
+      "form": "block"
+    },
+    "minecraft:nether_wart": {
+      "family": "minecraft:nether_wart",
+      "form": "block"
+    },
+    "minecraft:nether_wart_block": {
+      "family": "minecraft:nether_wart",
+      "form": "block"
+    },
+    "minecraft:netherite_block": {
+      "family": "minecraft:netherite_block",
+      "form": "block"
+    },
+    "minecraft:netherrack": {
+      "family": "minecraft:netherrack",
+      "form": "block"
+    },
+    "minecraft:note_block": {
+      "family": "minecraft:note_block",
+      "form": "block"
+    },
+    "minecraft:oak_button": {
+      "family": "minecraft:oak_button",
+      "form": "button"
+    },
+    "minecraft:oak_door": {
+      "family": "minecraft:oak_button",
+      "form": "door"
+    },
+    "minecraft:oak_fence": {
+      "family": "minecraft:oak_fence",
+      "form": "fence"
+    },
+    "minecraft:oak_fence_gate": {
+      "family": "minecraft:oak_fence_gate",
+      "form": "block"
+    },
+    "minecraft:oak_hanging_sign": {
+      "family": "minecraft:oak_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:oak_leaves": {
+      "family": "minecraft:oak_leaves",
+      "form": "block"
+    },
+    "minecraft:oak_log": {
+      "family": "minecraft:oak_log",
+      "form": "block"
+    },
+    "minecraft:oak_planks": {
+      "family": "minecraft:oak_button",
+      "form": "block"
+    },
+    "minecraft:oak_pressure_plate": {
+      "family": "minecraft:oak_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:oak_sapling": {
+      "family": "minecraft:oak_sapling",
+      "form": "block"
+    },
+    "minecraft:oak_shelf": {
+      "family": "minecraft:oak_shelf",
+      "form": "block"
+    },
+    "minecraft:oak_sign": {
+      "family": "minecraft:oak_sign",
+      "form": "sign"
+    },
+    "minecraft:oak_slab": {
+      "family": "minecraft:oak_button",
+      "form": "slab"
+    },
+    "minecraft:oak_stairs": {
+      "family": "minecraft:oak_button",
+      "form": "stair"
+    },
+    "minecraft:oak_trapdoor": {
+      "family": "minecraft:oak_button",
+      "form": "trapdoor"
+    },
+    "minecraft:oak_wall_hanging_sign": {
+      "family": "minecraft:oak_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:oak_wall_sign": {
+      "family": "minecraft:oak_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:oak_wood": {
+      "family": "minecraft:oak_log",
+      "form": "block"
+    },
+    "minecraft:observer": {
+      "family": "minecraft:observer",
+      "form": "block"
+    },
+    "minecraft:obsidian": {
+      "family": "minecraft:obsidian",
+      "form": "block"
+    },
+    "minecraft:ochre_froglight": {
+      "family": "minecraft:ochre_froglight",
+      "form": "block"
+    },
+    "minecraft:open_eyeblossom": {
+      "family": "minecraft:open_eyeblossom",
+      "form": "block"
+    },
+    "minecraft:orange_banner": {
+      "family": "minecraft:orange_banner",
+      "form": "block"
+    },
+    "minecraft:orange_bed": {
+      "family": "minecraft:orange_bed",
+      "form": "block"
+    },
+    "minecraft:orange_candle": {
+      "family": "minecraft:orange_candle",
+      "form": "block"
+    },
+    "minecraft:orange_candle_cake": {
+      "family": "minecraft:orange_candle_cake",
+      "form": "block"
+    },
+    "minecraft:orange_carpet": {
+      "family": "minecraft:orange_bed",
+      "form": "block"
+    },
+    "minecraft:orange_concrete": {
+      "family": "minecraft:orange_concrete",
+      "form": "block"
+    },
+    "minecraft:orange_concrete_powder": {
+      "family": "minecraft:orange_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:orange_glazed_terracotta": {
+      "family": "minecraft:orange_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:orange_shulker_box": {
+      "family": "minecraft:orange_shulker_box",
+      "form": "block"
+    },
+    "minecraft:orange_stained_glass": {
+      "family": "minecraft:orange_stained_glass",
+      "form": "block"
+    },
+    "minecraft:orange_stained_glass_pane": {
+      "family": "minecraft:orange_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:orange_terracotta": {
+      "family": "minecraft:orange_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:orange_tulip": {
+      "family": "minecraft:orange_tulip",
+      "form": "block"
+    },
+    "minecraft:orange_wall_banner": {
+      "family": "minecraft:orange_wall_banner",
+      "form": "block"
+    },
+    "minecraft:orange_wool": {
+      "family": "minecraft:orange_bed",
+      "form": "block"
+    },
+    "minecraft:oxeye_daisy": {
+      "family": "minecraft:oxeye_daisy",
+      "form": "block"
+    },
+    "minecraft:oxidized_chiseled_copper": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_bars": {
+      "family": "minecraft:oxidized_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:oxidized_copper_bulb": {
+      "family": "minecraft:oxidized_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_chain": {
+      "family": "minecraft:oxidized_copper_chain",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_chest": {
+      "family": "minecraft:oxidized_copper_chest",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_door": {
+      "family": "minecraft:oxidized_copper_door",
+      "form": "door"
+    },
+    "minecraft:oxidized_copper_golem_statue": {
+      "family": "minecraft:oxidized_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_grate": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_lantern": {
+      "family": "minecraft:oxidized_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:oxidized_copper_trapdoor": {
+      "family": "minecraft:oxidized_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:oxidized_cut_copper": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:oxidized_cut_copper_slab": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:oxidized_cut_copper_stairs": {
+      "family": "minecraft:oxidized_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:oxidized_lightning_rod": {
+      "family": "minecraft:oxidized_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:packed_ice": {
+      "family": "minecraft:blue_ice",
+      "form": "block"
+    },
+    "minecraft:packed_mud": {
+      "family": "minecraft:mud_brick_slab",
+      "form": "block"
+    },
+    "minecraft:pale_hanging_moss": {
+      "family": "minecraft:pale_hanging_moss",
+      "form": "block"
+    },
+    "minecraft:pale_moss_block": {
+      "family": "minecraft:pale_moss_block",
+      "form": "block"
+    },
+    "minecraft:pale_moss_carpet": {
+      "family": "minecraft:pale_moss_block",
+      "form": "block"
+    },
+    "minecraft:pale_oak_button": {
+      "family": "minecraft:pale_oak_button",
+      "form": "button"
+    },
+    "minecraft:pale_oak_door": {
+      "family": "minecraft:pale_oak_button",
+      "form": "door"
+    },
+    "minecraft:pale_oak_fence": {
+      "family": "minecraft:pale_oak_fence",
+      "form": "fence"
+    },
+    "minecraft:pale_oak_fence_gate": {
+      "family": "minecraft:pale_oak_fence_gate",
+      "form": "block"
+    },
+    "minecraft:pale_oak_hanging_sign": {
+      "family": "minecraft:pale_oak_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:pale_oak_leaves": {
+      "family": "minecraft:pale_oak_leaves",
+      "form": "block"
+    },
+    "minecraft:pale_oak_log": {
+      "family": "minecraft:pale_oak_log",
+      "form": "block"
+    },
+    "minecraft:pale_oak_planks": {
+      "family": "minecraft:pale_oak_button",
+      "form": "block"
+    },
+    "minecraft:pale_oak_pressure_plate": {
+      "family": "minecraft:pale_oak_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:pale_oak_sapling": {
+      "family": "minecraft:pale_oak_sapling",
+      "form": "block"
+    },
+    "minecraft:pale_oak_shelf": {
+      "family": "minecraft:pale_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:pale_oak_sign": {
+      "family": "minecraft:pale_oak_sign",
+      "form": "sign"
+    },
+    "minecraft:pale_oak_slab": {
+      "family": "minecraft:pale_oak_button",
+      "form": "slab"
+    },
+    "minecraft:pale_oak_stairs": {
+      "family": "minecraft:pale_oak_button",
+      "form": "stair"
+    },
+    "minecraft:pale_oak_trapdoor": {
+      "family": "minecraft:pale_oak_button",
+      "form": "trapdoor"
+    },
+    "minecraft:pale_oak_wall_hanging_sign": {
+      "family": "minecraft:pale_oak_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:pale_oak_wall_sign": {
+      "family": "minecraft:pale_oak_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:pale_oak_wood": {
+      "family": "minecraft:pale_oak_log",
+      "form": "block"
+    },
+    "minecraft:pearlescent_froglight": {
+      "family": "minecraft:pearlescent_froglight",
+      "form": "block"
+    },
+    "minecraft:peony": {
+      "family": "minecraft:peony",
+      "form": "block"
+    },
+    "minecraft:petrified_oak_slab": {
+      "family": "minecraft:petrified_oak_slab",
+      "form": "slab"
+    },
+    "minecraft:piglin_head": {
+      "family": "minecraft:piglin_head",
+      "form": "block"
+    },
+    "minecraft:piglin_wall_head": {
+      "family": "minecraft:piglin_wall_head",
+      "form": "block"
+    },
+    "minecraft:pink_banner": {
+      "family": "minecraft:pink_banner",
+      "form": "block"
+    },
+    "minecraft:pink_bed": {
+      "family": "minecraft:pink_bed",
+      "form": "block"
+    },
+    "minecraft:pink_candle": {
+      "family": "minecraft:pink_candle",
+      "form": "block"
+    },
+    "minecraft:pink_candle_cake": {
+      "family": "minecraft:pink_candle_cake",
+      "form": "block"
+    },
+    "minecraft:pink_carpet": {
+      "family": "minecraft:pink_bed",
+      "form": "block"
+    },
+    "minecraft:pink_concrete": {
+      "family": "minecraft:pink_concrete",
+      "form": "block"
+    },
+    "minecraft:pink_concrete_powder": {
+      "family": "minecraft:pink_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:pink_glazed_terracotta": {
+      "family": "minecraft:pink_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:pink_petals": {
+      "family": "minecraft:pink_petals",
+      "form": "block"
+    },
+    "minecraft:pink_shulker_box": {
+      "family": "minecraft:pink_shulker_box",
+      "form": "block"
+    },
+    "minecraft:pink_stained_glass": {
+      "family": "minecraft:pink_stained_glass",
+      "form": "block"
+    },
+    "minecraft:pink_stained_glass_pane": {
+      "family": "minecraft:pink_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:pink_terracotta": {
+      "family": "minecraft:pink_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:pink_tulip": {
+      "family": "minecraft:pink_tulip",
+      "form": "block"
+    },
+    "minecraft:pink_wall_banner": {
+      "family": "minecraft:pink_wall_banner",
+      "form": "block"
+    },
+    "minecraft:pink_wool": {
+      "family": "minecraft:pink_bed",
+      "form": "block"
+    },
+    "minecraft:piston": {
+      "family": "minecraft:piston",
+      "form": "block"
+    },
+    "minecraft:piston_head": {
+      "family": "minecraft:piston_head",
+      "form": "block"
+    },
+    "minecraft:pitcher_crop": {
+      "family": "minecraft:pitcher_crop",
+      "form": "block"
+    },
+    "minecraft:pitcher_plant": {
+      "family": "minecraft:pitcher_plant",
+      "form": "block"
+    },
+    "minecraft:player_head": {
+      "family": "minecraft:player_head",
+      "form": "block"
+    },
+    "minecraft:player_wall_head": {
+      "family": "minecraft:player_wall_head",
+      "form": "block"
+    },
+    "minecraft:podzol": {
+      "family": "minecraft:podzol",
+      "form": "block"
+    },
+    "minecraft:pointed_dripstone": {
+      "family": "minecraft:dripstone_block",
+      "form": "block"
+    },
+    "minecraft:polished_andesite": {
+      "family": "minecraft:andesite",
+      "form": "block"
+    },
+    "minecraft:polished_andesite_slab": {
+      "family": "minecraft:andesite",
+      "form": "slab"
+    },
+    "minecraft:polished_andesite_stairs": {
+      "family": "minecraft:andesite",
+      "form": "stair"
+    },
+    "minecraft:polished_basalt": {
+      "family": "minecraft:basalt",
+      "form": "block"
+    },
+    "minecraft:polished_blackstone": {
+      "family": "minecraft:blackstone",
+      "form": "block"
+    },
+    "minecraft:polished_blackstone_brick_slab": {
+      "family": "minecraft:blackstone",
+      "form": "slab"
+    },
+    "minecraft:polished_blackstone_brick_stairs": {
+      "family": "minecraft:blackstone",
+      "form": "stair"
+    },
+    "minecraft:polished_blackstone_brick_wall": {
+      "family": "minecraft:blackstone",
+      "form": "wall"
+    },
+    "minecraft:polished_blackstone_bricks": {
+      "family": "minecraft:blackstone",
+      "form": "block"
+    },
+    "minecraft:polished_blackstone_button": {
+      "family": "minecraft:blackstone",
+      "form": "button"
+    },
+    "minecraft:polished_blackstone_pressure_plate": {
+      "family": "minecraft:blackstone",
+      "form": "pressure_plate"
+    },
+    "minecraft:polished_blackstone_slab": {
+      "family": "minecraft:blackstone",
+      "form": "slab"
+    },
+    "minecraft:polished_blackstone_stairs": {
+      "family": "minecraft:blackstone",
+      "form": "stair"
+    },
+    "minecraft:polished_blackstone_wall": {
+      "family": "minecraft:blackstone",
+      "form": "wall"
+    },
+    "minecraft:polished_deepslate": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "block"
+    },
+    "minecraft:polished_deepslate_slab": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "slab"
+    },
+    "minecraft:polished_deepslate_stairs": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "stair"
+    },
+    "minecraft:polished_deepslate_wall": {
+      "family": "minecraft:chiseled_deepslate",
+      "form": "wall"
+    },
+    "minecraft:polished_diorite": {
+      "family": "minecraft:diorite",
+      "form": "block"
+    },
+    "minecraft:polished_diorite_slab": {
+      "family": "minecraft:diorite",
+      "form": "slab"
+    },
+    "minecraft:polished_diorite_stairs": {
+      "family": "minecraft:diorite",
+      "form": "stair"
+    },
+    "minecraft:polished_granite": {
+      "family": "minecraft:granite",
+      "form": "block"
+    },
+    "minecraft:polished_granite_slab": {
+      "family": "minecraft:granite",
+      "form": "slab"
+    },
+    "minecraft:polished_granite_stairs": {
+      "family": "minecraft:granite",
+      "form": "stair"
+    },
+    "minecraft:polished_tuff": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "block"
+    },
+    "minecraft:polished_tuff_slab": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "slab"
+    },
+    "minecraft:polished_tuff_stairs": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "stair"
+    },
+    "minecraft:polished_tuff_wall": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "wall"
+    },
+    "minecraft:poppy": {
+      "family": "minecraft:poppy",
+      "form": "block"
+    },
+    "minecraft:potatoes": {
+      "family": "minecraft:potatoes",
+      "form": "block"
+    },
+    "minecraft:potted_acacia_sapling": {
+      "family": "minecraft:potted_acacia_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_allium": {
+      "family": "minecraft:potted_allium",
+      "form": "block"
+    },
+    "minecraft:potted_azalea_bush": {
+      "family": "minecraft:potted_azalea_bush",
+      "form": "block"
+    },
+    "minecraft:potted_azure_bluet": {
+      "family": "minecraft:potted_azure_bluet",
+      "form": "block"
+    },
+    "minecraft:potted_bamboo": {
+      "family": "minecraft:potted_bamboo",
+      "form": "block"
+    },
+    "minecraft:potted_birch_sapling": {
+      "family": "minecraft:potted_birch_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_blue_orchid": {
+      "family": "minecraft:potted_blue_orchid",
+      "form": "block"
+    },
+    "minecraft:potted_brown_mushroom": {
+      "family": "minecraft:potted_brown_mushroom",
+      "form": "block"
+    },
+    "minecraft:potted_cactus": {
+      "family": "minecraft:potted_cactus",
+      "form": "block"
+    },
+    "minecraft:potted_cherry_sapling": {
+      "family": "minecraft:potted_cherry_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_closed_eyeblossom": {
+      "family": "minecraft:potted_closed_eyeblossom",
+      "form": "block"
+    },
+    "minecraft:potted_cornflower": {
+      "family": "minecraft:potted_cornflower",
+      "form": "block"
+    },
+    "minecraft:potted_crimson_fungus": {
+      "family": "minecraft:potted_crimson_fungus",
+      "form": "block"
+    },
+    "minecraft:potted_crimson_roots": {
+      "family": "minecraft:potted_crimson_roots",
+      "form": "block"
+    },
+    "minecraft:potted_dandelion": {
+      "family": "minecraft:potted_dandelion",
+      "form": "block"
+    },
+    "minecraft:potted_dark_oak_sapling": {
+      "family": "minecraft:potted_dark_oak_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_dead_bush": {
+      "family": "minecraft:potted_dead_bush",
+      "form": "block"
+    },
+    "minecraft:potted_fern": {
+      "family": "minecraft:potted_fern",
+      "form": "block"
+    },
+    "minecraft:potted_flowering_azalea_bush": {
+      "family": "minecraft:potted_flowering_azalea_bush",
+      "form": "block"
+    },
+    "minecraft:potted_jungle_sapling": {
+      "family": "minecraft:potted_jungle_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_lily_of_the_valley": {
+      "family": "minecraft:potted_lily_of_the_valley",
+      "form": "block"
+    },
+    "minecraft:potted_mangrove_propagule": {
+      "family": "minecraft:potted_mangrove_propagule",
+      "form": "block"
+    },
+    "minecraft:potted_oak_sapling": {
+      "family": "minecraft:potted_oak_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_open_eyeblossom": {
+      "family": "minecraft:potted_open_eyeblossom",
+      "form": "block"
+    },
+    "minecraft:potted_orange_tulip": {
+      "family": "minecraft:potted_orange_tulip",
+      "form": "block"
+    },
+    "minecraft:potted_oxeye_daisy": {
+      "family": "minecraft:potted_oxeye_daisy",
+      "form": "block"
+    },
+    "minecraft:potted_pale_oak_sapling": {
+      "family": "minecraft:potted_pale_oak_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_pink_tulip": {
+      "family": "minecraft:potted_pink_tulip",
+      "form": "block"
+    },
+    "minecraft:potted_poppy": {
+      "family": "minecraft:potted_poppy",
+      "form": "block"
+    },
+    "minecraft:potted_red_mushroom": {
+      "family": "minecraft:potted_red_mushroom",
+      "form": "block"
+    },
+    "minecraft:potted_red_tulip": {
+      "family": "minecraft:potted_red_tulip",
+      "form": "block"
+    },
+    "minecraft:potted_spruce_sapling": {
+      "family": "minecraft:potted_spruce_sapling",
+      "form": "block"
+    },
+    "minecraft:potted_torchflower": {
+      "family": "minecraft:potted_torchflower",
+      "form": "block"
+    },
+    "minecraft:potted_warped_fungus": {
+      "family": "minecraft:potted_warped_fungus",
+      "form": "block"
+    },
+    "minecraft:potted_warped_roots": {
+      "family": "minecraft:potted_warped_roots",
+      "form": "block"
+    },
+    "minecraft:potted_white_tulip": {
+      "family": "minecraft:potted_white_tulip",
+      "form": "block"
+    },
+    "minecraft:potted_wither_rose": {
+      "family": "minecraft:potted_wither_rose",
+      "form": "block"
+    },
+    "minecraft:powder_snow": {
+      "family": "minecraft:powder_snow",
+      "form": "block"
+    },
+    "minecraft:powder_snow_cauldron": {
+      "family": "minecraft:powder_snow_cauldron",
+      "form": "block"
+    },
+    "minecraft:powered_rail": {
+      "family": "minecraft:powered_rail",
+      "form": "block"
+    },
+    "minecraft:prismarine": {
+      "family": "minecraft:prismarine",
+      "form": "block"
+    },
+    "minecraft:prismarine_brick_slab": {
+      "family": "minecraft:prismarine_brick_slab",
+      "form": "slab"
+    },
+    "minecraft:prismarine_brick_stairs": {
+      "family": "minecraft:prismarine_brick_slab",
+      "form": "stair"
+    },
+    "minecraft:prismarine_bricks": {
+      "family": "minecraft:prismarine_brick_slab",
+      "form": "block"
+    },
+    "minecraft:prismarine_slab": {
+      "family": "minecraft:prismarine",
+      "form": "slab"
+    },
+    "minecraft:prismarine_stairs": {
+      "family": "minecraft:prismarine",
+      "form": "stair"
+    },
+    "minecraft:prismarine_wall": {
+      "family": "minecraft:prismarine",
+      "form": "wall"
+    },
+    "minecraft:pumpkin": {
+      "family": "minecraft:pumpkin",
+      "form": "block"
+    },
+    "minecraft:pumpkin_stem": {
+      "family": "minecraft:pumpkin_stem",
+      "form": "block"
+    },
+    "minecraft:purple_banner": {
+      "family": "minecraft:purple_banner",
+      "form": "block"
+    },
+    "minecraft:purple_bed": {
+      "family": "minecraft:purple_bed",
+      "form": "block"
+    },
+    "minecraft:purple_candle": {
+      "family": "minecraft:purple_candle",
+      "form": "block"
+    },
+    "minecraft:purple_candle_cake": {
+      "family": "minecraft:purple_candle_cake",
+      "form": "block"
+    },
+    "minecraft:purple_carpet": {
+      "family": "minecraft:purple_bed",
+      "form": "block"
+    },
+    "minecraft:purple_concrete": {
+      "family": "minecraft:purple_concrete",
+      "form": "block"
+    },
+    "minecraft:purple_concrete_powder": {
+      "family": "minecraft:purple_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:purple_glazed_terracotta": {
+      "family": "minecraft:purple_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:purple_shulker_box": {
+      "family": "minecraft:purple_shulker_box",
+      "form": "block"
+    },
+    "minecraft:purple_stained_glass": {
+      "family": "minecraft:purple_stained_glass",
+      "form": "block"
+    },
+    "minecraft:purple_stained_glass_pane": {
+      "family": "minecraft:purple_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:purple_terracotta": {
+      "family": "minecraft:purple_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:purple_wall_banner": {
+      "family": "minecraft:purple_wall_banner",
+      "form": "block"
+    },
+    "minecraft:purple_wool": {
+      "family": "minecraft:purple_bed",
+      "form": "block"
+    },
+    "minecraft:purpur_block": {
+      "family": "minecraft:purpur_block",
+      "form": "block"
+    },
+    "minecraft:purpur_pillar": {
+      "family": "minecraft:purpur_block",
+      "form": "block"
+    },
+    "minecraft:purpur_slab": {
+      "family": "minecraft:purpur_block",
+      "form": "slab"
+    },
+    "minecraft:purpur_stairs": {
+      "family": "minecraft:purpur_block",
+      "form": "stair"
+    },
+    "minecraft:quartz_block": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "block"
+    },
+    "minecraft:quartz_bricks": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "block"
+    },
+    "minecraft:quartz_pillar": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "block"
+    },
+    "minecraft:quartz_slab": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "slab"
+    },
+    "minecraft:quartz_stairs": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "stair"
+    },
+    "minecraft:rail": {
+      "family": "minecraft:rail",
+      "form": "block"
+    },
+    "minecraft:raw_copper_block": {
+      "family": "minecraft:raw_copper_block",
+      "form": "block"
+    },
+    "minecraft:raw_gold_block": {
+      "family": "minecraft:raw_gold_block",
+      "form": "block"
+    },
+    "minecraft:raw_iron_block": {
+      "family": "minecraft:raw_iron_block",
+      "form": "block"
+    },
+    "minecraft:red_banner": {
+      "family": "minecraft:red_banner",
+      "form": "block"
+    },
+    "minecraft:red_bed": {
+      "family": "minecraft:red_bed",
+      "form": "block"
+    },
+    "minecraft:red_candle": {
+      "family": "minecraft:red_candle",
+      "form": "block"
+    },
+    "minecraft:red_candle_cake": {
+      "family": "minecraft:red_candle_cake",
+      "form": "block"
+    },
+    "minecraft:red_carpet": {
+      "family": "minecraft:red_bed",
+      "form": "block"
+    },
+    "minecraft:red_concrete": {
+      "family": "minecraft:red_concrete",
+      "form": "block"
+    },
+    "minecraft:red_concrete_powder": {
+      "family": "minecraft:red_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:red_glazed_terracotta": {
+      "family": "minecraft:red_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:red_mushroom": {
+      "family": "minecraft:red_mushroom",
+      "form": "block"
+    },
+    "minecraft:red_mushroom_block": {
+      "family": "minecraft:red_mushroom_block",
+      "form": "block"
+    },
+    "minecraft:red_nether_brick_slab": {
+      "family": "minecraft:red_nether_brick_slab",
+      "form": "slab"
+    },
+    "minecraft:red_nether_brick_stairs": {
+      "family": "minecraft:red_nether_brick_slab",
+      "form": "stair"
+    },
+    "minecraft:red_nether_brick_wall": {
+      "family": "minecraft:red_nether_brick_slab",
+      "form": "wall"
+    },
+    "minecraft:red_nether_bricks": {
+      "family": "minecraft:red_nether_brick_slab",
+      "form": "block"
+    },
+    "minecraft:red_sand": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "block"
+    },
+    "minecraft:red_sandstone": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "block"
+    },
+    "minecraft:red_sandstone_slab": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "slab"
+    },
+    "minecraft:red_sandstone_stairs": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "stair"
+    },
+    "minecraft:red_sandstone_wall": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "wall"
+    },
+    "minecraft:red_shulker_box": {
+      "family": "minecraft:red_shulker_box",
+      "form": "block"
+    },
+    "minecraft:red_stained_glass": {
+      "family": "minecraft:red_stained_glass",
+      "form": "block"
+    },
+    "minecraft:red_stained_glass_pane": {
+      "family": "minecraft:red_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:red_terracotta": {
+      "family": "minecraft:red_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:red_tulip": {
+      "family": "minecraft:red_tulip",
+      "form": "block"
+    },
+    "minecraft:red_wall_banner": {
+      "family": "minecraft:red_wall_banner",
+      "form": "block"
+    },
+    "minecraft:red_wool": {
+      "family": "minecraft:red_bed",
+      "form": "block"
+    },
+    "minecraft:redstone_block": {
+      "family": "minecraft:redstone_block",
+      "form": "block"
+    },
+    "minecraft:redstone_lamp": {
+      "family": "minecraft:redstone_lamp",
+      "form": "block"
+    },
+    "minecraft:redstone_ore": {
+      "family": "minecraft:redstone_ore",
+      "form": "block"
+    },
+    "minecraft:redstone_torch": {
+      "family": "minecraft:redstone_torch",
+      "form": "block"
+    },
+    "minecraft:redstone_wall_torch": {
+      "family": "minecraft:redstone_wall_torch",
+      "form": "block"
+    },
+    "minecraft:redstone_wire": {
+      "family": "minecraft:redstone_wire",
+      "form": "block"
+    },
+    "minecraft:reinforced_deepslate": {
+      "family": "minecraft:reinforced_deepslate",
+      "form": "block"
+    },
+    "minecraft:repeater": {
+      "family": "minecraft:repeater",
+      "form": "block"
+    },
+    "minecraft:repeating_command_block": {
+      "family": "minecraft:repeating_command_block",
+      "form": "block"
+    },
+    "minecraft:resin_block": {
+      "family": "minecraft:resin_block",
+      "form": "block"
+    },
+    "minecraft:resin_brick_slab": {
+      "family": "minecraft:chiseled_resin_bricks",
+      "form": "slab"
+    },
+    "minecraft:resin_brick_stairs": {
+      "family": "minecraft:chiseled_resin_bricks",
+      "form": "stair"
+    },
+    "minecraft:resin_brick_wall": {
+      "family": "minecraft:chiseled_resin_bricks",
+      "form": "wall"
+    },
+    "minecraft:resin_bricks": {
+      "family": "minecraft:chiseled_resin_bricks",
+      "form": "block"
+    },
+    "minecraft:resin_clump": {
+      "family": "minecraft:resin_block",
+      "form": "block"
+    },
+    "minecraft:respawn_anchor": {
+      "family": "minecraft:respawn_anchor",
+      "form": "block"
+    },
+    "minecraft:rooted_dirt": {
+      "family": "minecraft:rooted_dirt",
+      "form": "block"
+    },
+    "minecraft:rose_bush": {
+      "family": "minecraft:rose_bush",
+      "form": "block"
+    },
+    "minecraft:sand": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "block"
+    },
+    "minecraft:sandstone": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "block"
+    },
+    "minecraft:sandstone_slab": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "slab"
+    },
+    "minecraft:sandstone_stairs": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "stair"
+    },
+    "minecraft:sandstone_wall": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "wall"
+    },
+    "minecraft:scaffolding": {
+      "family": "minecraft:scaffolding",
+      "form": "block"
+    },
+    "minecraft:sculk": {
+      "family": "minecraft:sculk",
+      "form": "block"
+    },
+    "minecraft:sculk_catalyst": {
+      "family": "minecraft:sculk_catalyst",
+      "form": "block"
+    },
+    "minecraft:sculk_sensor": {
+      "family": "minecraft:sculk_sensor",
+      "form": "block"
+    },
+    "minecraft:sculk_shrieker": {
+      "family": "minecraft:sculk_shrieker",
+      "form": "block"
+    },
+    "minecraft:sculk_vein": {
+      "family": "minecraft:sculk_vein",
+      "form": "block"
+    },
+    "minecraft:sea_lantern": {
+      "family": "minecraft:sea_lantern",
+      "form": "block"
+    },
+    "minecraft:sea_pickle": {
+      "family": "minecraft:sea_pickle",
+      "form": "block"
+    },
+    "minecraft:seagrass": {
+      "family": "minecraft:seagrass",
+      "form": "block"
+    },
+    "minecraft:short_dry_grass": {
+      "family": "minecraft:short_dry_grass",
+      "form": "block"
+    },
+    "minecraft:short_grass": {
+      "family": "minecraft:short_grass",
+      "form": "block"
+    },
+    "minecraft:shroomlight": {
+      "family": "minecraft:shroomlight",
+      "form": "block"
+    },
+    "minecraft:shulker_box": {
+      "family": "minecraft:shulker_box",
+      "form": "block"
+    },
+    "minecraft:skeleton_skull": {
+      "family": "minecraft:skeleton_skull",
+      "form": "block"
+    },
+    "minecraft:skeleton_wall_skull": {
+      "family": "minecraft:skeleton_wall_skull",
+      "form": "block"
+    },
+    "minecraft:slime_block": {
+      "family": "minecraft:slime_block",
+      "form": "block"
+    },
+    "minecraft:small_amethyst_bud": {
+      "family": "minecraft:small_amethyst_bud",
+      "form": "block"
+    },
+    "minecraft:small_dripleaf": {
+      "family": "minecraft:small_dripleaf",
+      "form": "block"
+    },
+    "minecraft:smithing_table": {
+      "family": "minecraft:smithing_table",
+      "form": "block"
+    },
+    "minecraft:smoker": {
+      "family": "minecraft:furnace",
+      "form": "block"
+    },
+    "minecraft:smooth_basalt": {
+      "family": "minecraft:basalt",
+      "form": "block"
+    },
+    "minecraft:smooth_quartz": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "block"
+    },
+    "minecraft:smooth_quartz_slab": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "slab"
+    },
+    "minecraft:smooth_quartz_stairs": {
+      "family": "minecraft:chiseled_quartz_block",
+      "form": "stair"
+    },
+    "minecraft:smooth_red_sandstone": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "block"
+    },
+    "minecraft:smooth_red_sandstone_slab": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "slab"
+    },
+    "minecraft:smooth_red_sandstone_stairs": {
+      "family": "minecraft:chiseled_red_sandstone",
+      "form": "stair"
+    },
+    "minecraft:smooth_sandstone": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "block"
+    },
+    "minecraft:smooth_sandstone_slab": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "slab"
+    },
+    "minecraft:smooth_sandstone_stairs": {
+      "family": "minecraft:chiseled_sandstone",
+      "form": "stair"
+    },
+    "minecraft:smooth_stone": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:smooth_stone_slab": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "slab"
+    },
+    "minecraft:sniffer_egg": {
+      "family": "minecraft:sniffer_egg",
+      "form": "block"
+    },
+    "minecraft:snow": {
+      "family": "minecraft:snow",
+      "form": "block"
+    },
+    "minecraft:snow_block": {
+      "family": "minecraft:snow",
+      "form": "block"
+    },
+    "minecraft:soul_campfire": {
+      "family": "minecraft:soul_campfire",
+      "form": "block"
+    },
+    "minecraft:soul_fire": {
+      "family": "minecraft:soul_fire",
+      "form": "block"
+    },
+    "minecraft:soul_lantern": {
+      "family": "minecraft:soul_lantern",
+      "form": "block"
+    },
+    "minecraft:soul_sand": {
+      "family": "minecraft:soul_sand",
+      "form": "block"
+    },
+    "minecraft:soul_soil": {
+      "family": "minecraft:soul_soil",
+      "form": "block"
+    },
+    "minecraft:soul_torch": {
+      "family": "minecraft:soul_torch",
+      "form": "block"
+    },
+    "minecraft:soul_wall_torch": {
+      "family": "minecraft:soul_wall_torch",
+      "form": "block"
+    },
+    "minecraft:spawner": {
+      "family": "minecraft:spawner",
+      "form": "block"
+    },
+    "minecraft:sponge": {
+      "family": "minecraft:sponge",
+      "form": "block"
+    },
+    "minecraft:spore_blossom": {
+      "family": "minecraft:spore_blossom",
+      "form": "block"
+    },
+    "minecraft:spruce_button": {
+      "family": "minecraft:spruce_button",
+      "form": "button"
+    },
+    "minecraft:spruce_door": {
+      "family": "minecraft:spruce_button",
+      "form": "door"
+    },
+    "minecraft:spruce_fence": {
+      "family": "minecraft:spruce_fence",
+      "form": "fence"
+    },
+    "minecraft:spruce_fence_gate": {
+      "family": "minecraft:spruce_fence_gate",
+      "form": "block"
+    },
+    "minecraft:spruce_hanging_sign": {
+      "family": "minecraft:spruce_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:spruce_leaves": {
+      "family": "minecraft:spruce_leaves",
+      "form": "block"
+    },
+    "minecraft:spruce_log": {
+      "family": "minecraft:spruce_log",
+      "form": "block"
+    },
+    "minecraft:spruce_planks": {
+      "family": "minecraft:spruce_button",
+      "form": "block"
+    },
+    "minecraft:spruce_pressure_plate": {
+      "family": "minecraft:spruce_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:spruce_sapling": {
+      "family": "minecraft:spruce_sapling",
+      "form": "block"
+    },
+    "minecraft:spruce_shelf": {
+      "family": "minecraft:spruce_shelf",
+      "form": "block"
+    },
+    "minecraft:spruce_sign": {
+      "family": "minecraft:spruce_sign",
+      "form": "sign"
+    },
+    "minecraft:spruce_slab": {
+      "family": "minecraft:spruce_button",
+      "form": "slab"
+    },
+    "minecraft:spruce_stairs": {
+      "family": "minecraft:spruce_button",
+      "form": "stair"
+    },
+    "minecraft:spruce_trapdoor": {
+      "family": "minecraft:spruce_button",
+      "form": "trapdoor"
+    },
+    "minecraft:spruce_wall_hanging_sign": {
+      "family": "minecraft:spruce_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:spruce_wall_sign": {
+      "family": "minecraft:spruce_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:spruce_wood": {
+      "family": "minecraft:spruce_log",
+      "form": "block"
+    },
+    "minecraft:sticky_piston": {
+      "family": "minecraft:sticky_piston",
+      "form": "block"
+    },
+    "minecraft:stone": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:stone_brick_slab": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "slab"
+    },
+    "minecraft:stone_brick_stairs": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "stair"
+    },
+    "minecraft:stone_brick_wall": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "wall"
+    },
+    "minecraft:stone_bricks": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "block"
+    },
+    "minecraft:stone_button": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "button"
+    },
+    "minecraft:stone_pressure_plate": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "pressure_plate"
+    },
+    "minecraft:stone_slab": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "slab"
+    },
+    "minecraft:stone_stairs": {
+      "family": "minecraft:chiseled_stone_bricks",
+      "form": "stair"
+    },
+    "minecraft:stonecutter": {
+      "family": "minecraft:stonecutter",
+      "form": "block"
+    },
+    "minecraft:stripped_acacia_log": {
+      "family": "minecraft:acacia_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_acacia_wood": {
+      "family": "minecraft:acacia_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_bamboo_block": {
+      "family": "minecraft:bamboo_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_birch_log": {
+      "family": "minecraft:birch_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_birch_wood": {
+      "family": "minecraft:birch_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_cherry_log": {
+      "family": "minecraft:cherry_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_cherry_wood": {
+      "family": "minecraft:cherry_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_crimson_hyphae": {
+      "family": "minecraft:crimson_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_crimson_stem": {
+      "family": "minecraft:crimson_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_dark_oak_log": {
+      "family": "minecraft:dark_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_dark_oak_wood": {
+      "family": "minecraft:dark_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_jungle_log": {
+      "family": "minecraft:jungle_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_jungle_wood": {
+      "family": "minecraft:jungle_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_mangrove_log": {
+      "family": "minecraft:mangrove_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_mangrove_wood": {
+      "family": "minecraft:mangrove_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_oak_log": {
+      "family": "minecraft:oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_oak_wood": {
+      "family": "minecraft:oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_pale_oak_log": {
+      "family": "minecraft:pale_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_pale_oak_wood": {
+      "family": "minecraft:pale_oak_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_spruce_log": {
+      "family": "minecraft:spruce_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_spruce_wood": {
+      "family": "minecraft:spruce_shelf",
+      "form": "block"
+    },
+    "minecraft:stripped_warped_hyphae": {
+      "family": "minecraft:stripped_warped_hyphae",
+      "form": "block"
+    },
+    "minecraft:stripped_warped_stem": {
+      "family": "minecraft:stripped_warped_hyphae",
+      "form": "block"
+    },
+    "minecraft:structure_block": {
+      "family": "minecraft:structure_block",
+      "form": "block"
+    },
+    "minecraft:structure_void": {
+      "family": "minecraft:structure_void",
+      "form": "block"
+    },
+    "minecraft:sugar_cane": {
+      "family": "minecraft:sugar_cane",
+      "form": "block"
+    },
+    "minecraft:sunflower": {
+      "family": "minecraft:sunflower",
+      "form": "block"
+    },
+    "minecraft:suspicious_gravel": {
+      "family": "minecraft:suspicious_gravel",
+      "form": "block"
+    },
+    "minecraft:suspicious_sand": {
+      "family": "minecraft:suspicious_sand",
+      "form": "block"
+    },
+    "minecraft:sweet_berry_bush": {
+      "family": "minecraft:sweet_berry_bush",
+      "form": "block"
+    },
+    "minecraft:tall_dry_grass": {
+      "family": "minecraft:tall_dry_grass",
+      "form": "block"
+    },
+    "minecraft:tall_grass": {
+      "family": "minecraft:tall_grass",
+      "form": "block"
+    },
+    "minecraft:tall_seagrass": {
+      "family": "minecraft:tall_seagrass",
+      "form": "block"
+    },
+    "minecraft:target": {
+      "family": "minecraft:target",
+      "form": "block"
+    },
+    "minecraft:terracotta": {
+      "family": "minecraft:clay",
+      "form": "block"
+    },
+    "minecraft:test_block": {
+      "family": "minecraft:test_block",
+      "form": "block"
+    },
+    "minecraft:test_instance_block": {
+      "family": "minecraft:test_instance_block",
+      "form": "block"
+    },
+    "minecraft:tinted_glass": {
+      "family": "minecraft:tinted_glass",
+      "form": "block"
+    },
+    "minecraft:tnt": {
+      "family": "minecraft:tnt",
+      "form": "block"
+    },
+    "minecraft:torch": {
+      "family": "minecraft:torch",
+      "form": "block"
+    },
+    "minecraft:torchflower": {
+      "family": "minecraft:torchflower",
+      "form": "block"
+    },
+    "minecraft:torchflower_crop": {
+      "family": "minecraft:torchflower_crop",
+      "form": "block"
+    },
+    "minecraft:trapped_chest": {
+      "family": "minecraft:trapped_chest",
+      "form": "block"
+    },
+    "minecraft:trial_spawner": {
+      "family": "minecraft:trial_spawner",
+      "form": "block"
+    },
+    "minecraft:tripwire": {
+      "family": "minecraft:tripwire",
+      "form": "block"
+    },
+    "minecraft:tripwire_hook": {
+      "family": "minecraft:tripwire_hook",
+      "form": "block"
+    },
+    "minecraft:tube_coral": {
+      "family": "minecraft:tube_coral",
+      "form": "block"
+    },
+    "minecraft:tube_coral_block": {
+      "family": "minecraft:tube_coral_block",
+      "form": "block"
+    },
+    "minecraft:tube_coral_fan": {
+      "family": "minecraft:tube_coral_fan",
+      "form": "block"
+    },
+    "minecraft:tube_coral_wall_fan": {
+      "family": "minecraft:tube_coral_wall_fan",
+      "form": "block"
+    },
+    "minecraft:tuff": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "block"
+    },
+    "minecraft:tuff_brick_slab": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "slab"
+    },
+    "minecraft:tuff_brick_stairs": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "stair"
+    },
+    "minecraft:tuff_brick_wall": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "wall"
+    },
+    "minecraft:tuff_bricks": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "block"
+    },
+    "minecraft:tuff_slab": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "slab"
+    },
+    "minecraft:tuff_stairs": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "stair"
+    },
+    "minecraft:tuff_wall": {
+      "family": "minecraft:chiseled_tuff",
+      "form": "wall"
+    },
+    "minecraft:turtle_egg": {
+      "family": "minecraft:turtle_egg",
+      "form": "block"
+    },
+    "minecraft:twisting_vines": {
+      "family": "minecraft:twisting_vines",
+      "form": "block"
+    },
+    "minecraft:twisting_vines_plant": {
+      "family": "minecraft:twisting_vines_plant",
+      "form": "block"
+    },
+    "minecraft:vault": {
+      "family": "minecraft:vault",
+      "form": "block"
+    },
+    "minecraft:verdant_froglight": {
+      "family": "minecraft:verdant_froglight",
+      "form": "block"
+    },
+    "minecraft:vine": {
+      "family": "minecraft:vine",
+      "form": "block"
+    },
+    "minecraft:void_air": {
+      "family": "minecraft:void_air",
+      "form": "block"
+    },
+    "minecraft:wall_torch": {
+      "family": "minecraft:wall_torch",
+      "form": "block"
+    },
+    "minecraft:warped_button": {
+      "family": "minecraft:warped_button",
+      "form": "button"
+    },
+    "minecraft:warped_door": {
+      "family": "minecraft:warped_button",
+      "form": "door"
+    },
+    "minecraft:warped_fence": {
+      "family": "minecraft:warped_fence",
+      "form": "fence"
+    },
+    "minecraft:warped_fence_gate": {
+      "family": "minecraft:warped_fence_gate",
+      "form": "block"
+    },
+    "minecraft:warped_fungus": {
+      "family": "minecraft:warped_fungus",
+      "form": "block"
+    },
+    "minecraft:warped_hanging_sign": {
+      "family": "minecraft:warped_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:warped_hyphae": {
+      "family": "minecraft:warped_hyphae",
+      "form": "block"
+    },
+    "minecraft:warped_nylium": {
+      "family": "minecraft:warped_nylium",
+      "form": "block"
+    },
+    "minecraft:warped_planks": {
+      "family": "minecraft:warped_button",
+      "form": "block"
+    },
+    "minecraft:warped_pressure_plate": {
+      "family": "minecraft:warped_button",
+      "form": "pressure_plate"
+    },
+    "minecraft:warped_roots": {
+      "family": "minecraft:warped_roots",
+      "form": "block"
+    },
+    "minecraft:warped_shelf": {
+      "family": "minecraft:stripped_warped_hyphae",
+      "form": "block"
+    },
+    "minecraft:warped_sign": {
+      "family": "minecraft:warped_sign",
+      "form": "sign"
+    },
+    "minecraft:warped_slab": {
+      "family": "minecraft:warped_button",
+      "form": "slab"
+    },
+    "minecraft:warped_stairs": {
+      "family": "minecraft:warped_button",
+      "form": "stair"
+    },
+    "minecraft:warped_stem": {
+      "family": "minecraft:warped_hyphae",
+      "form": "block"
+    },
+    "minecraft:warped_trapdoor": {
+      "family": "minecraft:warped_button",
+      "form": "trapdoor"
+    },
+    "minecraft:warped_wall_hanging_sign": {
+      "family": "minecraft:warped_wall_hanging_sign",
+      "form": "sign"
+    },
+    "minecraft:warped_wall_sign": {
+      "family": "minecraft:warped_wall_sign",
+      "form": "sign"
+    },
+    "minecraft:warped_wart_block": {
+      "family": "minecraft:warped_wart_block",
+      "form": "block"
+    },
+    "minecraft:water": {
+      "family": "minecraft:water",
+      "form": "block"
+    },
+    "minecraft:water_cauldron": {
+      "family": "minecraft:water_cauldron",
+      "form": "block"
+    },
+    "minecraft:waxed_chiseled_copper": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_bars": {
+      "family": "minecraft:waxed_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:waxed_copper_block": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_bulb": {
+      "family": "minecraft:waxed_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_chain": {
+      "family": "minecraft:waxed_copper_chain",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_chest": {
+      "family": "minecraft:waxed_copper_chest",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_door": {
+      "family": "minecraft:waxed_copper_door",
+      "form": "door"
+    },
+    "minecraft:waxed_copper_golem_statue": {
+      "family": "minecraft:waxed_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_grate": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_lantern": {
+      "family": "minecraft:waxed_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:waxed_copper_trapdoor": {
+      "family": "minecraft:waxed_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:waxed_cut_copper": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_cut_copper_slab": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:waxed_cut_copper_stairs": {
+      "family": "minecraft:waxed_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:waxed_exposed_chiseled_copper": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_bars": {
+      "family": "minecraft:waxed_exposed_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:waxed_exposed_copper_bulb": {
+      "family": "minecraft:waxed_exposed_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_chain": {
+      "family": "minecraft:waxed_exposed_copper_chain",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_chest": {
+      "family": "minecraft:waxed_exposed_copper_chest",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_door": {
+      "family": "minecraft:waxed_exposed_copper_door",
+      "form": "door"
+    },
+    "minecraft:waxed_exposed_copper_golem_statue": {
+      "family": "minecraft:waxed_exposed_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_grate": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_lantern": {
+      "family": "minecraft:waxed_exposed_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_copper_trapdoor": {
+      "family": "minecraft:waxed_exposed_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:waxed_exposed_cut_copper": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_exposed_cut_copper_slab": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:waxed_exposed_cut_copper_stairs": {
+      "family": "minecraft:waxed_exposed_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:waxed_exposed_lightning_rod": {
+      "family": "minecraft:waxed_exposed_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:waxed_lightning_rod": {
+      "family": "minecraft:waxed_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_chiseled_copper": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_bars": {
+      "family": "minecraft:waxed_oxidized_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:waxed_oxidized_copper_bulb": {
+      "family": "minecraft:waxed_oxidized_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_chain": {
+      "family": "minecraft:waxed_oxidized_copper_chain",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_chest": {
+      "family": "minecraft:waxed_oxidized_copper_chest",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_door": {
+      "family": "minecraft:waxed_oxidized_copper_door",
+      "form": "door"
+    },
+    "minecraft:waxed_oxidized_copper_golem_statue": {
+      "family": "minecraft:waxed_oxidized_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_grate": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_lantern": {
+      "family": "minecraft:waxed_oxidized_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_copper_trapdoor": {
+      "family": "minecraft:waxed_oxidized_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:waxed_oxidized_cut_copper": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_oxidized_cut_copper_slab": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:waxed_oxidized_cut_copper_stairs": {
+      "family": "minecraft:waxed_oxidized_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:waxed_oxidized_lightning_rod": {
+      "family": "minecraft:waxed_oxidized_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_chiseled_copper": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_bars": {
+      "family": "minecraft:waxed_weathered_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:waxed_weathered_copper_bulb": {
+      "family": "minecraft:waxed_weathered_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_chain": {
+      "family": "minecraft:waxed_weathered_copper_chain",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_chest": {
+      "family": "minecraft:waxed_weathered_copper_chest",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_door": {
+      "family": "minecraft:waxed_weathered_copper_door",
+      "form": "door"
+    },
+    "minecraft:waxed_weathered_copper_golem_statue": {
+      "family": "minecraft:waxed_weathered_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_grate": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_lantern": {
+      "family": "minecraft:waxed_weathered_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_copper_trapdoor": {
+      "family": "minecraft:waxed_weathered_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:waxed_weathered_cut_copper": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:waxed_weathered_cut_copper_slab": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:waxed_weathered_cut_copper_stairs": {
+      "family": "minecraft:waxed_weathered_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:waxed_weathered_lightning_rod": {
+      "family": "minecraft:waxed_weathered_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:weathered_chiseled_copper": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:weathered_copper": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_bars": {
+      "family": "minecraft:weathered_copper_bars",
+      "form": "pane"
+    },
+    "minecraft:weathered_copper_bulb": {
+      "family": "minecraft:weathered_copper_bulb",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_chain": {
+      "family": "minecraft:weathered_copper_chain",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_chest": {
+      "family": "minecraft:weathered_copper_chest",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_door": {
+      "family": "minecraft:weathered_copper_door",
+      "form": "door"
+    },
+    "minecraft:weathered_copper_golem_statue": {
+      "family": "minecraft:weathered_copper_golem_statue",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_grate": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_lantern": {
+      "family": "minecraft:weathered_copper_lantern",
+      "form": "block"
+    },
+    "minecraft:weathered_copper_trapdoor": {
+      "family": "minecraft:weathered_copper_trapdoor",
+      "form": "trapdoor"
+    },
+    "minecraft:weathered_cut_copper": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "block"
+    },
+    "minecraft:weathered_cut_copper_slab": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "slab"
+    },
+    "minecraft:weathered_cut_copper_stairs": {
+      "family": "minecraft:weathered_chiseled_copper",
+      "form": "stair"
+    },
+    "minecraft:weathered_lightning_rod": {
+      "family": "minecraft:weathered_lightning_rod",
+      "form": "block"
+    },
+    "minecraft:weeping_vines": {
+      "family": "minecraft:weeping_vines",
+      "form": "block"
+    },
+    "minecraft:weeping_vines_plant": {
+      "family": "minecraft:weeping_vines_plant",
+      "form": "block"
+    },
+    "minecraft:wet_sponge": {
+      "family": "minecraft:sponge",
+      "form": "block"
+    },
+    "minecraft:wheat": {
+      "family": "minecraft:hay_block",
+      "form": "block"
+    },
+    "minecraft:white_banner": {
+      "family": "minecraft:white_banner",
+      "form": "block"
+    },
+    "minecraft:white_bed": {
+      "family": "minecraft:white_bed",
+      "form": "block"
+    },
+    "minecraft:white_candle": {
+      "family": "minecraft:white_candle",
+      "form": "block"
+    },
+    "minecraft:white_candle_cake": {
+      "family": "minecraft:white_candle_cake",
+      "form": "block"
+    },
+    "minecraft:white_carpet": {
+      "family": "minecraft:white_bed",
+      "form": "block"
+    },
+    "minecraft:white_concrete": {
+      "family": "minecraft:white_concrete",
+      "form": "block"
+    },
+    "minecraft:white_concrete_powder": {
+      "family": "minecraft:white_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:white_glazed_terracotta": {
+      "family": "minecraft:white_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:white_shulker_box": {
+      "family": "minecraft:white_shulker_box",
+      "form": "block"
+    },
+    "minecraft:white_stained_glass": {
+      "family": "minecraft:white_stained_glass",
+      "form": "block"
+    },
+    "minecraft:white_stained_glass_pane": {
+      "family": "minecraft:white_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:white_terracotta": {
+      "family": "minecraft:white_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:white_tulip": {
+      "family": "minecraft:white_tulip",
+      "form": "block"
+    },
+    "minecraft:white_wall_banner": {
+      "family": "minecraft:white_wall_banner",
+      "form": "block"
+    },
+    "minecraft:white_wool": {
+      "family": "minecraft:white_bed",
+      "form": "block"
+    },
+    "minecraft:wildflowers": {
+      "family": "minecraft:wildflowers",
+      "form": "block"
+    },
+    "minecraft:wither_rose": {
+      "family": "minecraft:wither_rose",
+      "form": "block"
+    },
+    "minecraft:wither_skeleton_skull": {
+      "family": "minecraft:wither_skeleton_skull",
+      "form": "block"
+    },
+    "minecraft:wither_skeleton_wall_skull": {
+      "family": "minecraft:wither_skeleton_wall_skull",
+      "form": "block"
+    },
+    "minecraft:yellow_banner": {
+      "family": "minecraft:yellow_banner",
+      "form": "block"
+    },
+    "minecraft:yellow_bed": {
+      "family": "minecraft:yellow_bed",
+      "form": "block"
+    },
+    "minecraft:yellow_candle": {
+      "family": "minecraft:yellow_candle",
+      "form": "block"
+    },
+    "minecraft:yellow_candle_cake": {
+      "family": "minecraft:yellow_candle_cake",
+      "form": "block"
+    },
+    "minecraft:yellow_carpet": {
+      "family": "minecraft:yellow_bed",
+      "form": "block"
+    },
+    "minecraft:yellow_concrete": {
+      "family": "minecraft:yellow_concrete",
+      "form": "block"
+    },
+    "minecraft:yellow_concrete_powder": {
+      "family": "minecraft:yellow_concrete_powder",
+      "form": "block"
+    },
+    "minecraft:yellow_glazed_terracotta": {
+      "family": "minecraft:yellow_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:yellow_shulker_box": {
+      "family": "minecraft:yellow_shulker_box",
+      "form": "block"
+    },
+    "minecraft:yellow_stained_glass": {
+      "family": "minecraft:yellow_stained_glass",
+      "form": "block"
+    },
+    "minecraft:yellow_stained_glass_pane": {
+      "family": "minecraft:yellow_stained_glass",
+      "form": "pane"
+    },
+    "minecraft:yellow_terracotta": {
+      "family": "minecraft:yellow_glazed_terracotta",
+      "form": "block"
+    },
+    "minecraft:yellow_wall_banner": {
+      "family": "minecraft:yellow_wall_banner",
+      "form": "block"
+    },
+    "minecraft:yellow_wool": {
+      "family": "minecraft:yellow_bed",
+      "form": "block"
+    },
+    "minecraft:zombie_head": {
+      "family": "minecraft:zombie_head",
+      "form": "block"
+    },
+    "minecraft:zombie_wall_head": {
+      "family": "minecraft:zombie_wall_head",
+      "form": "block"
+    }
+  },
+  "stats": {
+    "blocks": 1166,
+    "blocks_in_multi_member_families": 506,
+    "families": 788,
+    "family_tag_edges": 0,
+    "largest_family": 20,
+    "multi_member_families": 128,
+    "recipe_edges": 626
+  },
+  "version": "1.21.11"
+}

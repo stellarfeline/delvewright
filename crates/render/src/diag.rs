@@ -28,6 +28,56 @@ pub const DW_RANK_ORDER: &str = "DW0725";
 /// zero is an error (nothing was ranked), a partial binding a warning. A gate
 /// that binds to nothing is vacuous, not a pass (CLAUDE.md).
 pub const DW_BINDING: &str = "DW0726";
+/// An anchor's eye-level camera does not stand on the anchor's own cell — or
+/// could not be stood up at all. A prefab is mostly solid, so an eye point taken
+/// from an anchor position lands inside a block often enough that assuming it is
+/// how the whole review goes blind; the resolution is reported here and in the
+/// shot manifest instead, so the reviewer always knows where the body in the
+/// frame is standing.
+pub const DW_ANCHOR_EYE: &str = "DW0727";
+
+// The rest of the `DW072x` block is spoken for, so the asset-resolution
+// diagnostics below take their own `DW079x` block.
+//
+// Take the next unused number from the catalog in `docs/reference/compiler.md`
+// **as it stands on `origin/main` at the moment of the merge**, never from the
+// highest constant here and never from the catalog this branch started at:
+// `DW078x` was free when these three were written and was taken by the spatial
+// contract before they landed, so all three collided on arrival. The uniqueness
+// half of `tools/check-dw-codes.py` is what says so.
+
+/// A blockstate has no definition in the pinned asset source: the id does not
+/// exist at this version, or its model or one of its textures is absent.
+/// Reported with a cell count rather than drawn silently, because a block that
+/// cannot be resolved is a finding about the prefab or the pin, not a cosmetic
+/// detail — `minecraft:chain` is `minecraft:iron_chain` in 1.21.11, so a prefab
+/// naming the old id gets the missing-texture placeholder here.
+///
+/// It says what the PAGE cannot draw, and nothing about what a server would
+/// load. Those are different questions, and only the second depends on the
+/// template's `DataVersion`: a pre-pin file is datafixed on load and places the
+/// renamed block correctly, which is why
+/// [`delvewright_schem::blocks::judge_at`] calls that case a warning and not a
+/// refusal. Answering the second question here would report a defect on a file
+/// the game loads fine.
+pub const DW_UNRESOLVED_BLOCK: &str = "DW0790";
+
+/// A palette entry leaves shape-carrying properties unwritten. The state is
+/// legal — a server fills the rest from the block's default state — but every
+/// reader that is not a running server has to guess, and the guess is a full
+/// cube: a `cobblestone_wall` with no `north`/`east`/`south`/`west` matches no
+/// multipart case at all. Reported per state with the properties it omits and
+/// the cell count, and it is what stops the page reporting a clean resolution
+/// over a building whose walls are the wrong shape.
+pub const DW_UNDERSPECIFIED_STATE: &str = "DW0791";
+
+/// The resource bundle the page carries did not survive its own completeness
+/// self-check: the texture atlas holds fewer cells than were packed into it, or a
+/// block-entity texture id the emitter asks for resolves to nothing at the pin.
+/// A finding about this toolchain, not about the prefab — both failures are
+/// silent by construction, since a dropped atlas cell and a wrong id both render
+/// as magenta and neither raises anything on its own.
+pub const DW_VIEWER_RESOURCES: &str = "DW0792";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real
@@ -56,7 +106,7 @@ pub enum Severity {
 }
 
 /// One diagnostic.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Diagnostic {
     pub code: &'static str,
     pub severity: Severity,

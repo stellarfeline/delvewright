@@ -1,60 +1,128 @@
 {
   "description": "keep-trial with the gate opened only by obj/door (a late objective): the wave and key chest sit sealed behind the gate their own door opens, so the delve deadlocks. Materialized over keep-trial; passes validate + analyze (neither models sealed gates) and fails at build with DW0306.",
-  "expect": "DW0306",
   "documents": {
     "quests": {
-      "dsl_version": "0.3.0",
       "campaign_id": "keep-trial",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/greet",
-            "trigger": { "type": "campaign-start" },
             "objectives": [
-              { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }
+              {
+                "id": "obj/talk",
+                "npc": "npc/keeper",
+                "type": "talk-to"
+              }
             ],
+            "on_complete": [],
             "on_objective_complete": {
               "obj/talk": [
-                { "type": "spawn-wave", "wave": "wave/guards" },
-                { "type": "set-flag", "flag": "flag/summoned" }
+                {
+                  "type": "spawn-wave",
+                  "wave": "wave/guards"
+                },
+                {
+                  "flag": "flag/summoned",
+                  "type": "set-flag"
+                }
               ]
             },
-            "on_complete": []
+            "trigger": {
+              "type": "campaign-start"
+            }
           },
           {
             "id": "quest/trial",
-            "trigger": { "type": "quest-complete", "quest": "quest/greet" },
             "objectives": [
-              { "type": "kill", "id": "obj/slay", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
-              { "type": "collect", "id": "obj/key", "item": "minecraft:tripwire_hook", "count": 1, "anchor": "anchor/chest", "after": ["obj/slay"], "requires_flags": ["flag/cleared"] },
-              { "type": "interact", "id": "obj/door", "anchor": "anchor/door", "requires_item": "minecraft:tripwire_hook", "after": ["obj/key"] },
-              { "type": "reach-anchor", "id": "obj/shrine", "anchor": "anchor/objective", "radius": 2, "after": ["obj/door"], "requires_flags": ["flag/opened"] }
+              {
+                "id": "obj/slay",
+                "requires_flags": [
+                  "flag/summoned"
+                ],
+                "type": "kill",
+                "wave": "wave/guards"
+              },
+              {
+                "after": [
+                  "obj/slay"
+                ],
+                "anchor": "anchor/chest",
+                "count": 1,
+                "id": "obj/key",
+                "item": "minecraft:tripwire_hook",
+                "requires_flags": [
+                  "flag/cleared"
+                ],
+                "type": "collect"
+              },
+              {
+                "after": [
+                  "obj/key"
+                ],
+                "anchor": "anchor/door",
+                "id": "obj/door",
+                "requires_item": "minecraft:tripwire_hook",
+                "type": "interact"
+              },
+              {
+                "after": [
+                  "obj/door"
+                ],
+                "anchor": "anchor/objective",
+                "id": "obj/shrine",
+                "radius": 2,
+                "requires_flags": [
+                  "flag/opened"
+                ],
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
+              }
             ],
             "on_objective_complete": {
-              "obj/slay": [
-                { "type": "set-flag", "flag": "flag/cleared" }
-              ],
               "obj/door": [
-                { "type": "open-gate", "anchor": "anchor/gate" },
-                { "type": "set-flag", "flag": "flag/opened" }
+                {
+                  "anchor": "anchor/gate",
+                  "type": "open-gate"
+                },
+                {
+                  "flag": "flag/opened",
+                  "type": "set-flag"
+                }
+              ],
+              "obj/slay": [
+                {
+                  "flag": "flag/cleared",
+                  "type": "set-flag"
+                }
               ]
             },
-            "on_complete": [
-              { "type": "campaign-complete" }
-            ]
+            "trigger": {
+              "quest": "quest/greet",
+              "type": "quest-complete"
+            }
           }
         ],
         "waves": [
           {
-            "id": "wave/guards",
             "anchor": "anchor/wave",
+            "id": "wave/guards",
             "mobs": [
-              { "entity": "minecraft:zombie", "count": 2, "name": "Keep Guard" }
+              {
+                "count": 2,
+                "entity": "minecraft:zombie",
+                "name": "Keep Guard"
+              }
             ]
           }
         ]
-      }
+      },
+      "dsl_version": "0.3.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0306"
 }

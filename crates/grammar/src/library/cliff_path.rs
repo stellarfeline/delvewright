@@ -71,14 +71,14 @@
 //! than `spacing_min` + 2 is legal and simply has no niches in it.
 
 use crate::block::BlockState;
-use crate::geom::Axis;
+use crate::geom::{Axis, Mirror};
 use crate::ir::{
-    Alternative, ArithOp, AxisSpec, CmpOp, DimRef, Expr, MarkAt, Node, Program, Reorient,
+    Alternative, ArithOp, AxisSpec, CmpOp, Cond, DimRef, Expr, MarkAt, Node, Program, Reorient,
 };
 
 use super::{
-    abs, abse, absp, all_of, alt_else, alt_weight, alt_when, at_offset, call, cmp, dim, fill, int,
-    marked_each, par, rel, reoriented, split, void,
+    abs, abse, absp, all_of, alt_else, alt_weight, alt_when, at_offset, call, cmp, dim, fill,
+    fill_block, int, marked_each, oriented, par, rel, reoriented, split, void,
 };
 
 /// How many niche spacings the rule draws between. Spacings run
@@ -88,12 +88,35 @@ const SPACINGS: i64 = 4;
 /// Cells of a niche slot: the recess, plus the cell the paired variant takes.
 const SLOT: i64 = 2;
 
+/// The reflection a scope handed to a piece doubling back carries: local `X`
+/// and local `Z` both run backwards, local `Y` is untouched.
+const HALF_TURN: Mirror = Mirror {
+    x: true,
+    y: false,
+    z: true,
+};
+
+/// The prop, facing out of the recess: a skull's `rotation` is a literal world
+/// yaw in sixteenths, so the number is the frame's answer rather than the
+/// author's.
+fn corpse(rotation: u8) -> Node {
+    let yaw = rotation.to_string();
+    fill_block(BlockState::with(
+        "skeleton_skull",
+        [("powered", "false"), ("rotation", yaw.as_str())],
+    ))
+}
+
 /// The knockback-niche cliff path.
 ///
 /// Parameters: `spacing_min` (the shortest gap between recesses; the rule draws
 /// uniformly over `spacing_min ..= spacing_min + 3`), `niche_height` (how tall a
 /// recess is), `watch_back` (how far up-path the watch cell sits). Palette
-/// roles: `rock` (the cliff), `corpse` (the teaching variant's prop).
+/// roles: `rock` (the cliff). The teaching variant's corpse prop is not a
+/// role: its yaw depends on the scope's orientation, so it is per-orientation
+/// guarded inline states (`corpse_prop` below) rather than a role in the
+/// scope's own axes, which is the shorter way to say the same thing and cannot
+/// express.
 ///
 /// `watch_back` must leave room in the lead — `watch_back + 1 < spacing_min` —
 /// or the watch cell falls outside the scope that declares it, which is a loud
@@ -104,13 +127,6 @@ pub fn cliff_path() -> Program {
         .param("niche_height", 2)
         .param("watch_back", 3)
         .role("rock", BlockState::simple("stone"))
-        // A skull on the floor of an empty niche: the tell that says "someone
-        // stood here and it did not go well". A palette role, so a campaign can
-        // make it a bone block, a banner, or nothing at all.
-        .role(
-            "corpse",
-            BlockState::with("skeleton_skull", [("rotation", "8")]),
-        )
         // --- frame -----------------------------------------------------------
         // Length runs along whichever horizontal axis the box is longer on, so
         // the rule is reusable turned 90°; up stays up.
@@ -191,8 +207,39 @@ pub fn cliff_path() -> Program {
             recess_slice(split(
                 Axis::Y,
                 vec![abs(1), rel(1)],
-                vec![fill("corpse"), void()],
+                vec![call("corpse_prop"), void()],
             )),
+        )
+        // A skull on the floor of an empty niche: the tell that says "someone
+        // stood here and it did not go well". It faces OUT of the recess — the
+        // same direction the niche anchor's derived facing points — and a
+        // skull's 16-step `rotation` is a literal world yaw that a
+        // reorientation does not rewrite, so it cannot be one palette role:
+        // it is one alternative per frame under an `orientation` guard (the
+        // `DW0736` mechanism). The recess scope pins local `Y` to world `Y`
+        // (the program root does) and never reverses it, so the reachable
+        // frames are the two horizontal permutations times the half-turn about
+        // the vertical — four, and a fifth refuses loudly. Each rotation is
+        // the negative direction of the world axis the recess calls local `Z`,
+        // read with its sign, which is the anchor's derived facing: 8 north,
+        // 4 west, 0 south, 12 east. Before this guard the role carried a
+        // literal `rotation=8`, and the same program at a box longer in world
+        // X shipped skulls facing along the path instead of out of the niche,
+        // silently. The two turned frames are reachable because a caller may
+        // hand this rule a scope under `Reorient::turned` — a hairpin's second
+        // leg does exactly that — and a guard set that stops at the
+        // unreflected pair refuses the whole leg.
+        .rule_alts(
+            "corpse_prop",
+            vec![
+                alt_when(oriented(Axis::X, Axis::Y, Axis::Z), corpse(8)),
+                alt_when(oriented(Axis::Z, Axis::Y, Axis::X), corpse(4)),
+                alt_when(Cond::frame(Axis::X, Axis::Y, Axis::Z, HALF_TURN), corpse(0)),
+                alt_when(
+                    Cond::frame(Axis::Z, Axis::Y, Axis::X, HALF_TURN),
+                    corpse(12),
+                ),
+            ],
         )
         // --- watch cells ------------------------------------------------------
         // Declared on the lead, because the lead is the only scope that contains

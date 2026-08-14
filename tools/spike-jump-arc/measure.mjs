@@ -26,10 +26,9 @@
 // Reuses the harness's pinned mineflayer via createRequire — no new deps.
 
 import { createRequire } from "node:module";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 
-const execFileP = promisify(execFile);
+import { rconChannel } from "../lib/rcon.mjs";
+
 const require = createRequire(new URL("../../harness/package.json", import.meta.url));
 const mineflayer = require("mineflayer");
 
@@ -40,10 +39,10 @@ const Y_SURF = 120; // standing surface; platform blocks at Y_SURF-1
 const LAUNCH_PLANE = 1; // start platform is x<=0, so its east face is x=1
 const ATTEMPTS = 3;
 
-async function rcon(cmd) {
-  const { stdout } = await execFileP("docker", ["exec", CONTAINER, "rcon-cli", cmd]);
-  return stdout.trim();
-}
+// Every rig command is CHECKED (tools/lib/rcon.mjs): a `fill` into an unloaded
+// chunk or a rejected gamerule used to answer, be discarded, and leave the rig
+// measuring a bot falling through a floor that was never placed.
+const { run: rcon } = rconChannel(CONTAINER);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -182,8 +181,13 @@ async function main() {
   // Permanent parking pad outside the rig-wipe volume, and no fall damage — the
   // catch-floor drop after a FAILED attempt must not grind the bot down (fall
   // damage alters no jump kinematics, only the instrument's durability).
+  //
+  // 1.21.11 spells this rule `fall_damage`; the legacy `fallDamage` this line
+  // carried is rejected outright ("Incorrect argument for command"), so the
+  // comment above was simply untrue for the whole spike and no reply was read to
+  // say so (task #70). Re-measured on the pinned server 2026-08-11.
   await rcon(`fill -22 ${Y_SURF - 1} -1 -19 ${Y_SURF - 1} 1 minecraft:stone`);
-  await rcon("gamerule fallDamage false");
+  await rcon("gamerule fall_damage false");
 
   const results = [];
   // (1) flat gaps, walk then sprint.

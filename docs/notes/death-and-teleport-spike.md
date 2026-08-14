@@ -207,6 +207,19 @@ that would otherwise have measured a player falling through a floor that was
 never placed. The measured registry (name = default on a fresh 1.21.11 server) is
 in `observations.json` under `incidental.gamerule_registry`.
 
+**Resolved, task #70 (2026-08-11).** The sweep found two more sites the probe had
+not looked at — `validation/warden-probe.sh` (`doMobSpawning`, `randomTickSpeed`)
+and, in the same gallery function, a `text_opacity:255b` that overflows a signed
+NBT byte. Measured on a pinned 1.21.11 server booted on the gallery's own
+datapack, the cost was larger than "the world cycles day": a refused line takes
+the WHOLE function, so `admit:load` and `admit:finish` never loaded and the
+gallery had no objectives, nothing forceloaded, no piece placed and no label
+summoned. The general forms now in the tree: `ok()`'s rejection rule moved to
+`tools/lib/rcon.{sh,mjs}` and every live site sends through it; the gallery
+validates its emission against the pinned command tree exactly as `delvec` does;
+that validator gained the SNBT byte/short range check; and
+`tools/check-live-commands.py` binds both rules in CI.
+
 **(b) A respawned player is invulnerable for 59 ticks (≈3 s), and `/kill` lies
 about it.** This surfaced as two instrument defects — `/kill <player>` answering
 `Killed <player>` and not killing (2 of 3 in a first loop), and the Q1 scrub

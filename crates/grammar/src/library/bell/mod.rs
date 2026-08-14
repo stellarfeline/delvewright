@@ -168,9 +168,8 @@
 //!    tower_rise`, with the post's floor an island the berm cannot reach
 //!    (deliberately: "not a landing"). The piece was a *terminus*, so any chain
 //!    through it was severed at that face, whichever end of the zone it was
-//!    placed at, and no orientation helped: a grammar orientation is a
-//!    permutation without reflection, so the post cannot be turned to the entry
-//!    end either.
+//!    placed at, and no frame helped: turning or reflecting a terminus gives a
+//!    terminus.
 //!
 //!    The rule now carries `berm_gate`, off by default: it runs the berm's own
 //!    column through the guard station at berm height, so the post becomes a
@@ -196,43 +195,36 @@
 //!    deeper-than-wide, so the bar's own `z(Largest)` aims its travel at the
 //!    chain.
 //!
-//! **Z1 is a switchback — CLOSED**, and it closed by correcting the diagnosis
-//! rather than by building what the diagnosis asked for. Two things were on the
-//! record: that a switchback was blocked because "a grammar orientation is a
-//! permutation *without reflection*", and an open question — whether the
-//! mirrored *rule body* [`crate::library::stair_flight`] describes reaches
-//! `cliff_path`, "whose lane and recesses are placed by `reorient` rather than
-//! by split order".
-//!
-//! **The question was measured first, and it decided the design.** Nothing in
-//! `cliff_path` is placed by `reorient`: the ledge, recess and backing are three
-//! pieces of an `X` split, and the one `reorient` inside the rule writes no
-//! block at all — strip it and the model is byte-identical, only the recess
-//! anchor's derived facing changes
+//! **Z1 is a switchback — CLOSED.** The open question was whether `cliff_path`
+//! survives a reflection at all, "its lane and recesses being placed by
+//! `reorient` rather than by split order". It is measured rather than argued,
+//! and the premise is false: nothing in `cliff_path` is placed by `reorient`.
+//! The ledge, recess and backing are three pieces of an `X` split, and the one
+//! `reorient` inside the rule writes no block — strip it and the model is
+//! byte-identical, only the recess anchor's derived facing changes
 //! (`tests/staging.rs::the_recess_reorientation_aims_an_anchor_and_writes_nothing`).
-//! So a mirrored body *would* have reached it.
 //!
-//! What a mirrored body could not reach is what a hairpin actually needs. Its
-//! second leg keeps the drop on the outer hand while travelling the other way,
-//! which is a **half-turn about the vertical** — a reversal in `X` *and* `Z`, and
-//! therefore a *rotation*, proper and chirality-preserving. Reflection was never
-//! the missing thing; **sign** was. Written as a rule body it is a second copy of
-//! the whole rule, which is review shape 2 (a general mechanism privately
-//! re-implemented) waiting to happen.
-//!
-//! So the capability went where it belongs — on the frame every rule already
-//! reorients through. An [`crate::geom::Orientation`] carries a sign per local
-//! axis and [`crate::ir::Reorient::turned`] is the half-turn, so Z1's far leg is
-//! the near leg *turned round*: same rule, same parameters, `cliff_path`
-//! unchanged by a line, and every program in the library byte-identical because
-//! nothing sets a sign unless it asks.
+//! What the hairpin needs is narrower than a reflection. Its second leg keeps
+//! the drop on the outer hand *while travelling the other way*, which is a
+//! **half-turn about the vertical** — a reversal in local `X` *and* `Z`, and
+//! therefore a rotation, proper and chirality-preserving
+//! ([`crate::geom::Orientation::is_rotation`]). [`crate::ir::Reorient::turned`]
+//! is that half-turn, so Z1's far leg is the near leg *turned round*: same rule,
+//! same parameters, no second copy of the rule body — which would have been
+//! review shape 2, a general mechanism privately re-implemented inside a verb.
 //! `tests/staging.rs::the_cliff_path_turned_round_is_the_same_path_mirrored`
 //! asserts the turned expansion is the plain one mirrored, cell by cell.
 //!
-//! The `cliff_turn` landing rule was not needed either. The hairpin's head is
+//! One thing `cliff_path` did need: its corpse prop is per-frame guarded inline
+//! states, and the guard set stopped at the two unreflected horizontal frames,
+//! so a turned leg refused the whole rule. It now covers the half-turn of each
+//! (`rotation` 0 and 12 beside 8 and 4), which is the reachable set given the
+//! root pins local `Y` to world `Y`.
+//!
+//! The `cliff_turn` landing rule was not needed. The hairpin's head is
 //! `turn_run` cells of solid crag up to road level — mass and absence, which is
 //! exactly what a zone program *does* write, and it carries no encounter
-//! geometry. What Z1 now programs is the whole owner-mandated set piece: two
+//! geometry. What Z1 programs is the whole owner-mandated set piece: two
 //! one-wide ledges either side of one gulf, niches on both, and — the reason the
 //! switchback was a blocker rather than a refinement — **a niche on the later
 //! leg visible from the earlier one**, which is the fairness §4 entry K rests on

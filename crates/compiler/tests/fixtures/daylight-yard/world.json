@@ -1,21 +1,21 @@
 {
-  "dsl_version": "0.6.0",
   "campaign_id": "daylight-yard",
-  "stage": "world",
   "content": {
-    "title": "The Open Yard",
-    "theme": "A gate yard whose roof came down a century ago.",
-    "premise": "The garrison still musters in the yard, and the sun has not forgiven them.",
-    "seed": 20260805,
-    "target_minutes": 5,
-    "time": "noon",
-    "weather": "clear",
     "areas": [
       {
         "id": "area/keep",
         "name": "The Gate Yard",
         "prefab": "prefab/hello-room"
       }
-    ]
-  }
+    ],
+    "premise": "The garrison still musters in the yard, and the sun has not forgiven them.",
+    "seed": 20260805,
+    "target_minutes": 5,
+    "theme": "A gate yard whose roof came down a century ago.",
+    "time": "noon",
+    "title": "The Open Yard",
+    "weather": "clear"
+  },
+  "dsl_version": "0.6.0",
+  "stage": "world"
 }

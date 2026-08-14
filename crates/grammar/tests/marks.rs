@@ -126,87 +126,10 @@ fn offsets_are_read_through_the_scopes_orientation() {
     );
 }
 
-/// The same, once an axis is **reversed**: every position stated in the rule's
-/// own frame is measured from the far end instead, and every one is measured
-/// from the *same* far end — the whole point of routing them through one
-/// `Orientation::place`.
-///
-/// `FloorCenter` is the deliberate exception and is checked here beside the
-/// others rather than left to a doc line: gravity is a world fact, so a floor
-/// centre does not move when a piece is turned round.
-#[test]
-fn a_reversed_axis_measures_every_local_position_from_the_far_end() {
-    let inner = marking(vec![
-        Mark::new("corner", MarkAt::CornerMin),
-        Mark::new("skewed", MarkAt::offset(2, 1, 3)),
-        Mark::new("floor", MarkAt::FloorCenter),
-        Mark::new(
-            "face",
-            MarkAt::FaceCenter {
-                axis: Axis::Z,
-                side: Side::Min,
-            },
-        ),
-    ]);
-    let region = Box3::at_origin([7, 5, 9]);
-    let plain = anchors(&inner, region);
-
-    let mut turned = inner.clone();
-    turned.rules.insert(
-        "root".to_string(),
-        vec![delvewright_grammar::ir::Alternative::new(Node::Reorient {
-            // The half-turn about the vertical: local X and local Z both count
-            // backwards, local Y is left alone.
-            orient: Reorient::KEEP.turned(),
-            body: Box::new(inner.rules["root"][0].body.clone()),
-        })],
-    );
-    let got = anchors(&turned, region);
-
-    assert_eq!(at(&plain, "anchor/corner").0, [0, 0, 0]);
-    assert_eq!(
-        at(&got, "anchor/corner").0,
-        [6, 0, 8],
-        "the local minimum corner is the box's far corner once X and Z run \
-         backwards"
-    );
-    assert_eq!(at(&plain, "anchor/skewed").0, [2, 1, 3]);
-    assert_eq!(
-        at(&got, "anchor/skewed").0,
-        [4, 1, 5],
-        "an offset counts from the local minimum, wherever that now is"
-    );
-    // A face centre pinned to local Z-min is at world Z-max once local Z is
-    // reversed, and the other two axes stay centred.
-    assert_eq!(at(&plain, "anchor/face").0, [3, 2, 0]);
-    assert_eq!(at(&got, "anchor/face").0, [3, 2, 8]);
-    // ...and the floor does not turn.
-    assert_eq!(at(&plain, "anchor/floor").0, at(&got, "anchor/floor").0);
-
-    // The derived facings turn with the scope: local Z now runs backwards along
-    // world Z, so its negative direction is south rather than north.
-    for name in ["anchor/corner", "anchor/skewed", "anchor/face"] {
-        assert_eq!(at(&plain, name).1, Facing::North, "{name}");
-        assert_eq!(at(&got, name).1, Facing::South, "{name}");
-    }
-
-    // Turning round twice is not turning at all: reversal composes.
-    let mut twice = inner.clone();
-    twice.rules.insert(
-        "root".to_string(),
-        vec![delvewright_grammar::ir::Alternative::new(Node::Reorient {
-            orient: Reorient::KEEP.turned(),
-            body: Box::new(Node::Reorient {
-                orient: Reorient::KEEP.turned(),
-                body: Box::new(inner.rules["root"][0].body.clone()),
-            }),
-        })],
-    );
-    assert_eq!(anchors(&twice, region), plain);
-}
-
-/// A facing nobody declared is derived from the scope's orientation: the
-/// negative local `Z` direction, read out into the world.
+/// A facing nobody declared is derived from the scope's frame: the direction of
+/// decreasing local `Z`. With an unreflected frame that is the negative
+/// direction of the world axis the scope calls local `Z`; `tests/mirror.rs`
+/// carries the reflected half, where it is the positive one.
 #[test]
 fn the_facing_follows_the_scope_unless_it_is_declared() {
     let plain = anchors(
@@ -344,7 +267,7 @@ fn an_indexed_mark_numbers_itself_in_expansion_order() {
     // Three 3-wide slices along X, each marking its own floor centre.
     let program: Program = serde_json::from_str(
         r#"{
-          "name": "bays", "start": "row",
+          "version": "1.3.0", "name": "bays", "start": "row",
           "rules": {
             "row": [{ "body": {
               "op": "split", "axis": "x",
