@@ -633,3 +633,31 @@ program. Running one is `cargo run --release --manifest-path
 prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
 through `prefabs/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
+
+`prefabs/connections.rs` runs at the same six emitters, just before those gates.
+It fills the shape-carrying properties a state leaves unwritten — connections
+for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
+piece's own neighbours, by vanilla's rule, and never overwrites a value the
+generator wrote. The `DW0735` verdict and a vine/lichen attachment check are
+emitter post-conditions there, so a generator cannot write a disconnected
+grille and wait for admission to notice.
+
+A pass that *places* a vine or a lichen asks the same module where the block may
+hold on — `attachable_faces(block, cell, at)`, which returns every supported
+face of that block, best first, and an empty list when the cell can hold
+nothing. Ask it rather than walking the neighbours by hand: the module owns
+which faces the block has and which direction each looks in, so a scan can
+neither name the face pointing away from the rock nor overlook that rock
+overhead is rock to hang from.
+
+A fence gate in a run of fencing takes its `facing` from the run, not from
+taste. A gate is joinable only across `facing.getClockWise()`, so a gate whose
+`facing` lies *along* its rail spans the perpendicular axis, joins neither
+neighbour, and opens a permanent gap. Read the axis the rail runs along at the
+gate's cell and pick a `facing` perpendicular to it; where both work, the one a
+player walking in from the approach side would place is the one to write.
+
+A regeneration replaces the `.nbt` only. The `.json` beside it is the document
+of record and several carry anchors no generator models, so rewriting one to
+pick up a `.nbt` change deletes campaign content; regenerate metadata only when
+the generator is what changed it.
