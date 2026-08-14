@@ -308,6 +308,39 @@ impl BlockRegistry {
             .unwrap_or(&[])
     }
 
+    /// The legal values of one property of one block, empty when either is
+    /// unknown or the namespace is foreign.
+    pub fn values(&self, name: &str, property: &str) -> &[String] {
+        let namespaced = namespace(name);
+        self.blocks
+            .get(namespaced.as_ref())
+            .and_then(|props| props.get(property))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// **True when `name` is a stair block**, derived from the pinned registry
+    /// rather than from a list: a stair is the block whose `shape` property
+    /// takes vanilla's five stair values, and nothing else in the game has one.
+    ///
+    /// The derivation matters because the property it feeds
+    /// ([`crate::stairs::derive_shape`]) tests *any* stair against *any* other
+    /// — an oak stair mitres against a stone-brick one — so a hand-kept list
+    /// would be wrong the day a version adds a stair, in the silent direction.
+    pub fn is_stairs(&self, name: &str) -> bool {
+        let values = self.values(name, "shape");
+        values.len() == 5
+            && [
+                "straight",
+                "inner_left",
+                "inner_right",
+                "outer_left",
+                "outer_right",
+            ]
+            .iter()
+            .all(|v| values.iter().any(|has| has == v))
+    }
+
     /// **Every** property of `name` the state omits, sorted — the `DW0737`
     /// predicate, and a superset of [`Self::omitted_shape_carrying`].
     ///

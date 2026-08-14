@@ -32,10 +32,14 @@ Two library modules exist for the tool and are public for it:
   orientation-sensitive state is filled only under the identity frame, a passed
   `orientation` guard, or the scope's own axis frame — `DW0736`, §4b),
   `non-empty`, and the opt-in `traversable`, `symmetric` and `reachable-floor`
-  (§4c). Measurements: fill, distinct states, standable cells, footprint
-  area/perimeter, silhouette complexity, per-block shares, local-frame fills,
-  and **reachability** (§4d) — how much of the floor a body reaches on foot and
-  where the rest of it sits. A zero binding count, and a program declaring no
+  (§4c). Two more are emitted **only over a piece that holds what they judge**:
+  `stair-shape` (every written stair `shape` is the one vanilla derives at that
+  cell — `DW0801`) and `fluid-contained` (every body of fluid is saturated and
+  walled — `DW0800`). Measurements: fill, distinct states, standable cells,
+  footprint area/perimeter, silhouette complexity, per-block shares, local-frame
+  fills, stairs, fluid cells, still (`waterlogged`) cells, run directions leaving
+  the piece, and **reachability** (§4d) — how much of the floor a body reaches on
+  foot and where the rest of it sits. A zero binding count, and a program declaring no
   anchors, are reported
   as findings rather than folded into a pass.
 
@@ -1332,14 +1336,21 @@ no entry names is a finding, and an entry naming no file is a finding. Without
 those three, "add a zone program" and "add a zone program nothing will ever
 check" are the same action.
 
-A zone that is known red is recorded in the pipeline repo's
+A program that is known red is recorded in the pipeline repo's
 `.github/zone-audit-exclusions.json` with the exact diagnostic codes it must fail
 with and the capability gap that keeps it red. The record INVERTS the assertion
-rather than removing it: the zone is still expanded and still judged, and it is a
-finding if it passes, if it fails with a different code, or if it fails with one
-more. An entry belongs there only while the engine is missing a capability the
-zone needs; the list is empty, and every zone program of every campaign expands
-and judges green.
+rather than removing it: the program is still expanded and still judged, and it
+is a finding if it passes, if it fails with a different code, or if it fails with
+one more. An entry belongs there only while the engine is missing a capability
+the program needs. Ids are audit labels, so both corpora are recordable:
+`library/<program>` and `<campaign>/<zone>`.
+
+Every zone program of every campaign expands and judges green. The rule library
+holds one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
+ceiling on both flanks of its spine, which is what makes the flanks unwalkable,
+and lowering the waterline needs `nav` to know that a body cannot stand on water
+— until it does, a lowered waterline would read as walkable floor and the ward's
+own claim would go green while being false.
 
 The sweep also totals the **local-frame binding count** — how many fills read
 their states in the scope's own axes — beside the gate whose population they

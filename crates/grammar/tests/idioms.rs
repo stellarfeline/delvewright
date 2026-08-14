@@ -153,7 +153,10 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            5 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
+            5 + usize::from(case.traversable)
+                + usize::from(case.symmetric.is_some())
+                + usize::from(report.measurements.stairs > 0)
+                + usize::from(report.measurements.fluid_cells > 0),
             "{}",
             case.id
         );
@@ -170,7 +173,7 @@ fn every_documented_example_expands_green_at_its_documented_region() {
     }
     assert_eq!(
         judged, 58,
-        "11 examples, 5 always-on gates each, 2 walk gates, 1 mirror-plane gate"
+        "11 examples, 5 always-on gates each, 2 walk gates, 1 mirror-plane gate. No documented          example holds a stair or a drop of fluid, so neither settling gate is emitted over one          and neither adds to this total"
     );
 }
 

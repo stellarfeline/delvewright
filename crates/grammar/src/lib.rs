@@ -115,6 +115,7 @@ pub mod model;
 pub mod nav;
 pub mod orient;
 pub mod rng;
+pub mod settle;
 pub mod split;
 pub mod version;
 
