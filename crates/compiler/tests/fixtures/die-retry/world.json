@@ -1,23 +1,23 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "die-retry",
-  "stage": "world",
   "content": {
-    "title": "The Keeper's Trial",
-    "theme": "A guarded keep, and a stone far enough from the guard to come back to.",
-    "premise": "The smallest campaign that lets the bot tier's die-retry stage BIND: one mandatory encounter, and a checkpoint that fires before it — set far enough from the guard that dying is survivable, which is the property the stage is about. No campaign or fixture in either repo had both, so the stage reported green over zero scripted deaths everywhere. This fixture exists so that stage has something to examine.",
-    "seed": 20260811,
-    "target_minutes": 5,
     "areas": [
       {
         "id": "area/keep",
         "name": "The Keep",
-        "prefab_pool": "pool/stone-keep",
         "pieces": {
-          "min": 7,
-          "max": 9
-        }
+          "max": 9,
+          "min": 7
+        },
+        "prefab_pool": "pool/stone-keep"
       }
-    ]
-  }
+    ],
+    "premise": "The smallest campaign that lets the bot tier's die-retry stage BIND: one mandatory encounter, and a checkpoint that fires before it — set far enough from the guard that dying is survivable, which is the property the stage is about. No campaign or fixture in either repo had both, so the stage reported green over zero scripted deaths everywhere. This fixture exists so that stage has something to examine.",
+    "seed": 20260811,
+    "target_minutes": 5,
+    "theme": "A guarded keep, and a stone far enough from the guard to come back to.",
+    "title": "The Keeper's Trial"
+  },
+  "dsl_version": "0.4.0",
+  "stage": "world"
 }
