@@ -201,8 +201,21 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   **exit 2**. Its relight fixtures feed both `setup_finish` emission and the nav
   re-verification in pass 9.
 - Every emitted `.mcfunction` line is checked against the vendored 1.21.11
-  Brigadier tree (`compiler::commands`; structure-only — arity/paths, not arg
-  values). mecha re-validates in CI (ADR-0011); disagreement fails CI.
+  Brigadier tree (`compiler::commands`, `data/commands-1.21.11.json`;
+  structure-only — arity/paths, not arg values). mecha re-validates in CI
+  (ADR-0011); disagreement fails CI. The match is exact and complete: the first
+  token must be a known command root, `literal` nodes match verbatim, and
+  `argument` nodes consume a fixed per-parser token count (`vec3`/`block_pos` 3,
+  `vec2`/`column_pos`/`rotation` 2, `message` and greedy `string` the rest, else
+  one balanced token). Tokenizing is brace/bracket/quote-aware, so an NBT
+  compound, a block-state suffix and a selector are each one token. Matching
+  **backtracks** across ambiguous argument branches and follows `redirect`s
+  (`… matches N` → `execute`, `run <cmd>` → the tree root); a line is valid iff
+  every token is consumed ending on an `executable` node. What it therefore
+  catches is a misspelled command, a wrong argument count and a bogus subcommand
+  path; what it does not judge is numeric coordinates, well-formed NBT/JSON, or
+  whether a block or item id exists — those are mecha's cross-check and the DSL
+  item/block registries.
   **Single-entity arity** (round-7 live finding, spec-0018): an entity argument
   the tree marks `amount: "single"` rejects `@a`/`@e` without `limit=1`.
   `damage @a[…] 40 minecraft:generic` is a well-shaped command that 1.21.11
@@ -210,6 +223,16 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   function down with it, silently. The tree already carries the fact, so the
   compiler enforces it rather than leaving it to folklore; the party form of
   `damage-players` is `execute as @a[…] run damage @s …`.
+  **One value-level exception** (task #70): an SNBT integer literal in a
+  `key:value` position whose suffix cannot hold it — NBT bytes and shorts are
+  signed, so `text_opacity:255b` is structurally flawless and unparseable, and
+  1.21.11 answers "Failed to parse number: Value out of range" by dropping the
+  entire function. Quoted spans are skipped, and a bare standalone number is not
+  examined, so it cannot mistake prose for a value. `delve-admit`'s gallery is the
+  second consumer of this validator: it emits `.mcfunction` into a datapack
+  exactly as `delvec` does, so it now runs the same tree over its own output
+  before writing anything (`gallery::validate_functions`, `DW0760`) rather than
+  carrying a private copy of the rule.
 - Determinism (ADR-0006): all map/set iteration is `BTreeMap`/sorted; the only
   randomness is stage-1 `seed` → a named splitmix64 per-area stream.
 
@@ -219,6 +242,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 delvec validate <dir>                      # stages 1–7 schema + referential
 delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
+delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|all>         # export JSON Schema
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
@@ -1354,7 +1378,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - Prefab metadata may declare **`waterline_y`** (optional, integer, local y of
   the piece's top authored water block). Island-tileset pieces declare `2`;
   pieces that author no sea (keep/cave interiors, `hello-room`) omit it and are
-  not checked. Consumed only by `DW0344`.
+  not checked. Consumed only by `DW0344`, which reports how many placed pieces it
+  examined: an ocean world where that count is zero raises `DW0364` rather than
+  passing, because a check keyed off an optional field goes quiet when the field
+  goes missing.
 - Prefab metadata's `lighting.profile` takes a fourth value, **`unmeasured`**
   (spec-0027 §2): a *generated* prefab places blocks, not photons, so it declares
   that a probe is owed rather than fabricating one. It is distinct from an absent
@@ -3172,13 +3199,14 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0342` | A **lethal** trap (spec-0011) whose trigger cell lies on the forced critical path with no discharge — not avoidable (the trigger cell is a required path cell), not survivable (`rearm`, so a respawn walk-back re-triggers it → soft-loop), and not disarmable (no disarm affordance reachable before it, over the world with the trap cell blocked). The player is provably killed or soft-looped. **Analysis-tier: exit 2**, like `DW0312` — a content-design mistake, not a geometry defect; the message names the trap and prescribes moving it off the path, setting `reset: once`, or adding a reachable `disarm`. Renumbered off the spec's stale reserved number (0314 — since taken by the waypoint self-check). |
 | `DW0344` | In a `horizon: ocean` world, a placed piece whose prefab metadata declares `waterline_y` does not land that waterline at sea level (`piece.y + waterline_y ≠ 62`) — the piece floats above the sea (its shore an unclimbable cliff, its authored water pocket hanging in the air) or is drowned under it. Build-tier (exit 3), `compiler::plan`, checked after placement. Nothing downstream can catch this: nav, boundary, POV and PackTest all derive from the very placement that is wrong, so a mis-datumed island validates green and ships unplayable. The message names the area, prefab, placed y and the signed offset, and prescribes correcting the declared `waterline_y` (the local y of the piece's top water block; the island convention is 2) or rebuilding the piece against the convention — ocean areas are placed at y=60 and a piece with a different waterline cannot share that datum. Pieces declaring no `waterline_y` author no sea and are not checked. |
 | `DW0345` | The assembled world resolves **no entry anchor** — no placed piece declares any of the entry-anchor names (`spawn`, `entry`; see §4 "First-join placement"). The compiler then has no cell to call the campaign's start: no `setworldspawn`, no class-apply teleport, no first-join placement, no `dw:cp` seed. Build-tier (exit 3), `compiler::emit`. Silent before — the delve compiled clean and fell back to the vanilla spawn search, which a **dedicated** server resolves to the surface (so every rung of the validation ladder stayed green) and the **integrated singleplayer** server resolves to the build floor, i.e. inside solid stone. Prescription: give the pool's entry-role prefab an entry anchor in its metadata `anchors`, or bind the area to a prefab that has one. |
-| `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse (task #62). The canonical trigger is an **older delvec meeting newer metadata**: `deny_unknown_fields` rejects a field this delvec predates. Previously a silent skip — the prefab vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. Now `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Prescription: upgrade delvec, or fix the named field. |
+| `DW0346` | A prefab metadata `*.json` (or `pools.json`) in the prefabs dir failed to read or parse. `PrefabRegistry::load_dir` records a per-file diagnostic naming the file and the serde error, folded into every `validate`/`analyze`/`build` at **validation tier (exit 1)**; loading continues for the other files (report-all, not fail-fast). Without it the prefab simply vanished from the registry and the run failed much later as a baffling `DW0300` "prefab not found" (or a `DW0160` binding error) with no hint of why. What reaches this code is a document that is **malformed for this delvec**: a value of the wrong type, an absent required block, unreadable bytes. A key this delvec does not model is deliberately not one of them — see `DW0543`. Prescription: fix the named field. **One case gets its own message**: metadata carrying `structure_set` is a TILE SET — a zone too big for one 48-per-axis structure template, exported as several `.nbt` tiles plus that manifest. delvec understands the shape and cannot yet PLACE it (compiler-side placement of a tile group is chunked export phase 2), so the zone is skipped loudly and the diagnostic names the queued work instead of prescribing an upgrade that would not help. Authoring and review already handle tile sets: `delve-render piece` and `delve-admit audit` both take the manifest. |
 | `DW0347` | A `cutscene` shot's aim sweeps faster than the angular budget: over 6°/tick (120°/s) peak on the exact eased path — at 20 Hz that reads as a spin, not a shot (the camera dossier's comfortable band is ≤ 2°/tick; thresholds are the dossier's proposal — the spike rig has no rendering client to calibrate against footage). Typical cause: a `look_at` subject too close to a fast dolly, or a sharp travel-aim corner. Build-tier (exit 3), `compiler::nav` (task #64). An **error**, not a warning: the shot is provably nauseating before it ships, and the fix is always available — more camera distance, a longer `seconds`, or splitting the move into two shots (the hard cut between shots is the idiomatic fast reframe). |
 
 | `DW0360` | An anchor-bearing campaign effect — at **every effect root**, at **any** nesting depth — names an anchor that resolves to no position in the assembled world. The single resolved-anchor-or-diagnostic seal over the whole effect surface, driven by `QuestEffect::anchor_refs` (the referential sibling of `nested_effect_lists`) over the roots `plan::for_each_effect_root` enumerates. **The roots are inherited, not re-listed** (task #24): this walk hand-listed three of the five, so a typo'd anchor in a `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle was never asked the question — the build stayed green and `trap_fire_<trap>.mcfunction` shipped with the `open-gate` simply absent, which is the silent-drop class this seal exists to end, live inside the seal itself. **Scope: the verbs that fail open, plus the corner where nothing else looks.** The spec-0022 payload verbs (`volley`, `collapse`) fail *closed* — `plan_payload_verbs` resolves their volumes with `?` and reports `DW0447`, which names the verb and the volume — so **where `DW0447` runs**, they keep their own diagnostic rather than being preempted by this generic one (see "Known spec ↔ code drift" for why that overlap exists at all). `plan_payload_verbs` lives inside the world block, so it runs only when the campaign assembles a world (`emit::assembles_world`, the one predicate the world block itself reads), and a payload verb does **not** imply that: nothing confines `volley`/`collapse` to `traps[].payload`. The deferral is therefore conditional on the proof running; in a campaign with no traps, no waves, no bodies and no walkable critical leg, this seal keeps the payload verbs itself. It exists because every anchor consumer in emission fails **open**: `open-gate`/`close-gate` scan `plan.anchors` for a name match and fall out of the loop, `set-block`/`set-checkpoint`/`play-sound`/`damage-players` bail out of an `if let Some(pos)`, and a cutscene waypoint silently degrades to `[0, BASE_Y, 0]`. One typo'd anchor therefore emitted **nothing** — a door that never opens, a checkpoint bound to nothing — in a delve that compiled clean. `DW0142` catches what the DSL can see (an area's declared anchor set); this re-asks the question of the *assembled* world, so pool areas and cross-area camera anchors are covered too. Build-tier (exit 3), `compiler::emit`, run **first** among the referential proofs: an unresolved waypoint degraded to the origin otherwise surfaces as a bogus `DW0308` camera clip, sending the author to move a shot that was never the problem. |
 | `DW0361` | Two different generated artifacts (function / dialog / advancement) sanitize to the same name, so one would silently overwrite the other in the emitted pack. `plan::safe_local` is doubly lossy — it drops an id's `<kind>/` prefix and folds `-`, `/` and `.` all into `_` — so wave `wave/npc-x` and npc `npc/x` both name `spawn_npc_x`, and `move-npc npc/guard-a → anchor/post` collides with `npc/guard → anchor/a-post` (which also aliases their tick counters and re-entry sentinels: two live movement drivers sharing one score). The output map is a `BTreeMap`, so the loser used to vanish without a word — the wave simply never spawned. Re-emitting the **same bytes** under one name stays legal (the emitters dedup by content key); only a genuine divergence fails. Build-tier (exit 3), `compiler::emit`. Prescription: rename one of the colliding ids so their sanitized local parts differ. |
 | `DW0362` | A dialogue node declares more than `MAX_GATED_DIALOGUE_OPTIONS` (10) conditionally-visible options (`requires_flags` / `forbids_flags` / a `complete-objective` effect). Vanilla cannot hide a `dialog` option, so the compiler encodes visibility by precomputing **every combination**: `n` gated options emit `2^n` dialog JSONs plus a `2^n`-clause dispatcher keyed on a `dw.dmask` bitmask. Ten is 1024 variants for one node — already an order of magnitude past anything authorable (the largest node in any shipped campaign gates four), and the point past which pack size rather than the author decides what the delve is. Behind the soft cap is a hard wall: the mask is built with `1u32 << i` (a debug-build **panic** at 32 — the original symptom) and compared against a Minecraft scoreboard, i.e. an `i32`. Build-tier (exit 3), `compiler::emit`; the message names the node and npc. Prescription: split the node into a short chain, or move some gating onto the objective that reaches it. |
 | `DW0363` | A trap declares a flag gate (`requires_flags` / `forbids_flags`) whose trigger hardware the compiler cannot remove and restore. Trap flag-gating is a **physical** gate: the trigger block leaves the world while the gate is shut and is put back verbatim (blockstate and all) when it opens, so it is only sound for a trigger whose entire state is the block — a pressure plate or a tripwire. A `trapped-chest` trigger carries a block entity with an inventory that removal would destroy, and a gated trap whose `anchor/trap` metadata declares no `trigger_block` names nothing the compiler could put back. Rejecting the gating surface for those cases is deliberate: the alternative is shipping the documented behaviour as folklore, which is exactly what happened before (the flag lists were planned and `DW0172`-checked but read by **no** emission site, so "inactive while the flag is set" did not exist). Build-tier (exit 3), `compiler::emit`. Prescription: declare the plate/tripwire as `trigger_block` on the anchor's prefab metadata (with its blockstate, as a gate anchor declares its fill `block`), switch the trap to a `pressure-plate`/`tripwire` trigger, or gate the story beat that arms the trap instead. |
+| `DW0364` | **The ocean-datum check examined ZERO pieces** (advisory): the world declares `horizon: ocean`, places at least one piece, and none of the placed pieces declares a `waterline_y`, so `DW0344` had nothing to judge. `compiler::plan`, emitted as a warning beside the build. The mode this exists for is not a mis-authored datum but a *missing declaration*: `DW0344` is keyed off an optional metadata field, so a piece that loses that field does not fail the check — it silently leaves it, and the world ships with its sea-level relationship unproven and every downstream proof (nav, boundary, POV, PackTest) deriving from the placement nobody checked. That is a real path: the field lives on five island prefabs, and an admission step that read the document through a type not modelling it deleted the field on write. Advisory rather than an error because a world whose horizon is pure backdrop legitimately declares nothing. The message states the placed-piece count and separates the two readings — no piece authors sea (expected), or one does and its `waterline_y` is missing (declare it). |
 | `DW0359` | An NPC or actor **body** stands on, or immediately in front of, an interaction affordance the party has to click (owner island QA, round 7). Bodies are boxes: a mannequin wears its `base_entity`'s standing hitbox (`nav::entity_dims` — one dims table, shared with actor-footprint routing), or the player model's 0.6 × 1.8 when it declares a `skin`; every affordance the compiler summons is a `minecraft:interaction` of `width:1.0f,height:2.0f`, i.e. exactly its anchor cell's column two blocks tall. Five affordance sources, one shape: `interact` objectives, `use`/`strike` triggers, `bonfire` rest points, `shortcut` unlocks and trap `disarm` affordances. **Two tiers, one code**: **error (exit 3)** when the boxes overlap in all three axes — the client's ray-pick reaches the invulnerable body and the affordance can never be clicked, so a required objective is unreachable and the delve soft-locks; **advisory (exit 0)** when they are apart but within 1 block horizontally (Chebyshev) with overlapping vertical spans, because whether a neighbouring body actually shadows the crosshair depends on the approach angle the player takes, which the compiler cannot know. `compiler::eclipse`, run with the referential seals before any occupancy model (pure box arithmetic over resolved cells). This is the geometric statement of `DW0350`, which is symbolic (same anchor *name*) and sees only `use` triggers — an NPC body over an *objective's* affordance, or a 1.95-wide ravager's shoulder reaching into the cell next door, passed silently. It is the check the round-7 island needed: `npc/polyphemus`, a 0.9 × 2.9 warden on `anchor/fire-pit`, hid `obj/harden` and `obj/blind` behind itself. Two exemptions, both about not inventing certainty: a `strike` trigger on an NPC's own anchor summons **no** entity (it rides the NPC's hitbox — nothing to eclipse), and a body the campaign ever **moves** (`move-npc`/`move-actor`, any depth) is skipped, because a declared anchor is only a walker's starting mark and deciding "is it still there when the affordance goes live?" needs a timeline the compiler will not guess (known blind spot: a body walked *onto* an affordance, which wants a destination rule of its own). Prescription: move the body's anchor or the interaction's anchor 2+ blocks apart — **never** make the body intangible, which trades a dead objective for a character the party cannot talk to. |
 
 ### DW039x — shot calibration (`delvec calibrate`; spec-0019)
@@ -3611,6 +3639,31 @@ that exists and reports zero is a finding rather than an absence.
 | `DW0541` | **A duration that is not a duration.** A `give-effect`'s `seconds` is zero or past `MAX_EFFECT_SECONDS` (50 000, derived from `MAX_POTION_DURATION_TICKS`), or its `amplifier` is past vanilla's unsigned byte. Validation-tier (exit 1), `dsl::validate`. Zero is the grant that never happens — the unbound-vacuity class as a number; the ceiling is vanilla's own field width, so a value above it is a duration typed in ticks or milliseconds. |
 | `DW0542` | **A teleport volume over an affordance bound to hardware.** A `teleport`'s `from` volume covers an interaction affordance the engine placed on a block it also places — an interact objective, a click trigger, a bonfire, a shortcut unlock, a trap or timed-gate disarm, a sealed gate's answer. Build-tier (exit 3), `compiler::teleport`. The teleport moves the entity and not the block, so the player is left with something they can see and reach that answers nothing. Prescription: move the affordance out of the volume, or shrink the volume's `extent`; do NOT add a type exemption to the selector — that would tear an NPC's dialogue hitbox off its body. |
 
+### DW0543 — a prefab metadata key this delvec does not model (`compiler::registry`)
+
+The prefab metadata document (`docs/reference/prefab-procedure.md` §9) has one
+definition, `delvewright_dsl::prefab`, and every reader — `delvec`,
+`delve-admit`, `delve-grammar`, `delve-render` — uses that type rather than a
+local copy of the shape. `delvec` reaches it through the DSL crate because it is
+published to crates.io and may only depend on published crates.
+
+That type does not carry `deny_unknown_fields`, and the decision is the point.
+The attribute is right on a document whose reader is also its owner — every
+campaign stage struct keeps it, because a typo there is the bug it catches and
+`dsl_version` handles forward compatibility. It is wrong on a **consumer**: a
+content library and an engine version move independently, so a key newer than
+the reader is the normal state of a mixed-version pair, and refusing it turns a
+forward addition into a hard failure at the layer with the least context. One
+key would have stopped **every** campaign building.
+
+Ignoring the key is the other wrong answer, because a misspelled key looks
+exactly the same from here. So the piece loads, the key is preserved on any
+rewrite, and the reader says what it saw.
+
+| Code | Meaning |
+|------|---------|
+| `DW0543` | **A prefab metadata file carries a key this delvec does not model.** Warning, `compiler::registry::PrefabRegistry::load_dir`, reported per file at every `validate`/`analyze`/`build`. The message names every unknown key, at the document root and per anchor, and states the two things it can be: a library newer than this engine (upgrade `delvec` to consume the key), or a misspelling of a key the document does define, in which case whatever it was meant to say is not being said. The prefab **loads** — it is not skipped, and this is not `DW0346`. Binding: the pinned content library must produce zero of these, which is what makes it a tripwire rather than noise (`tests/registry_load.rs`). |
+
 ### DW0510–DW0512 — lethal volumes (`compiler::nav` / `compiler::lethal` / `dsl::validate`; spec-0031, DSL v0.10)
 
 A lethal volume is **geometry that kills**, so most of its completability
@@ -3924,7 +3977,10 @@ therefore not optional for a branching campaign.
 ### DW07xx — workspace tooling (spec-0007; **not `delvec`**)
 
 Separate binaries with their own exit-code schemes; diagnostics to **stderr**.
-Catalogued here so the DW namespace is complete and CI-checked.
+Catalogued here so the DW namespace is complete and CI-checked. Two ranges are
+`delvec`'s own and are numbered by DOMAIN rather than by binary: `DW0724` (the
+visual/render range) and `DW077x` (`delvec fmt`, §9) — a code names a rule, and
+the rule's domain is the more useful thing for the number to say.
 
 | Code | Tool | Meaning |
 |------|------|---------|
@@ -3939,14 +3995,29 @@ Catalogued here so the DW namespace is complete and CI-checked.
 | `DW0724` | `delvec` (visual tier) | A player-POV camera eye cell is occupied (solid/water) in the FINAL assembled world — the frame would render the inside of a block, not the player's view. The self-check behind the visual tier (`compiler::nav::verify_pov_cameras`), mirroring the DW0314 waypoint self-check: every POV camera stands at the eye-height (1.62) of a DW0314-proven-standable waypoint, so this can only fire if the eye-height/standing-cell derivation changes to place the eye in a ceiling/wall (or a later pass mutates the cell). Numbered in the `DW072x` visual/render range; emitted by the compiler's nav pass (exit 3). Fix the camera derivation — never nudge the waypoint or the geometry. |
 | `DW0725` | `delve-render` | **Contact-sheet ordering is not a total order over the candidates** — indices dropped, duplicated or out of range (exit 10). The score RANKS the sheet and NEVER gates it (owner ruling, spec-0028 §3): cross-domain calibration between a painterly reference image and a voxel render is unproven, so a similarity number may decide where a candidate sits on the page and never whether it is on the page. `sheet::build_sheet` puts whatever its ordering function returns through `sheet::verify_total_order` before drawing a pixel, so every way rank-only can erode — a threshold shortening the order, a "best of" repeating an index, an off-by-one losing the last cell — lands here as one refusal instead of a silently shorter page. Promoting the score to a threshold requires its own owner-approved amendment backed by accumulated batch data; do not add one to satisfy this diagnostic. |
 | `DW0726` | `delve-render` | A contact sheet's score set bound to fewer candidates than the sheet holds. **Zero binding is an error** (exit 2) — nothing was ranked, and a score file that matched no candidate must not read as a successful ranking run (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). A partial binding is a **warning** naming the counts; the unscored candidates stay on the page, last, labelled unscored — a missing measurement is not a bad one. Score rows matching no candidate warn under the same code (usually an id typo or a stale run). |
+| `DW0727` | `delve-render` | **An anchor's eye-level camera is not standing on the anchor's own cell**, or could not be stood up at all (warning; `piece`/`batch` still write every other shot). The per-prefab eye shots are the only cameras inside a piece, and a prefab is mostly solid — the motivating ward was 81% rock with an anchor inside a bank of iron bars — so an eye point taken from an anchor position alone lands inside a block often enough that assuming it would put a picture of the inside of a block in a review set, indistinguishable from a picture of a room. Three tiers, one code, because they are one fact the reviewer needs (*where is the body in this frame*): the camera **stepped back** along the facing to a cell where a body fits, naming the block that displaced it and the offset; **no body cell** was found within 3 blocks with the anchor still in front of it, so that anchor gets no eye shot at all; or the frame rendered **empty** — nothing but flat background, meaning the anchor is aimed at nothing in this piece (measured on the pixels, `detect::is_featureless`, not inferred from geometry). Every case also rides `<stem>-shots.json`, since a displaced camera is invisible in its own frame. Fix the anchor's facing or the piece's geometry; never move the camera to make the picture nicer. Zero eye shots over one or more eye-eligible anchors is reported under the same code — a review set with no interior view cannot judge the scene, which is the whole job of `prefab-procedure.md` §5. |
 | `DW0730` | `delve-admit` | Audit: a palette block is not in the allowlist. |
 | `DW0731` | `delve-admit` | Audit: a hard-forbidden code-injection vector (command/structure block, NBT spawner, embedded `Command`). |
 | `DW0732` | `delve-admit` | Input error (unreadable `.nbt`/metadata/JSON). |
+| `DW0733` | `delve-admit` | Audit: a palette block state does not exist in Minecraft 1.21.11, **in a template whose `DataVersion` is the pin (4671) or later** — no datafix runs on such a file, so the game loads the block as air (error). The game datafixes every structure it loads against the file's own `DataVersion`, so invalidity-at-pin alone is not the rule; the pre-pin case is `DW0734`. Rule lives in `delvewright_schem::blocks::BlockRegistry::judge_at`. |
+| `DW0734` | `delve-admit` | Audit (warning): a **pre-pin** template carries a block state the pin does not know. Load-time datafixing is expected to migrate it (`minecraft:chain` → `iron_chain` is schema 4541; `hero-temple-ruin-arch.nbt` at DataVersion 2975 is the shipped proof that refusing this case is a false positive) — but an id no fixer maps (a typo) still loads as air at any DataVersion, so the audit says so out loud and passes. Defined in `delvewright_schem::blocks` with the rest of the family. |
+| `DW0735` | `delve-admit` / `delve-grammar` | A block state omits a **shape-carrying** property: one named by a `multipart` selector in the block's own blockstate definition (`crates/compiler/data/blockstate-shape-props-1.21.11.json`, derived from the client jar by `tools/extract-shape-properties.py`). A `variants` property the state omits picks the complete default model — benign, the default is what the author meant (`waterlogged`, `snowy`, `powered`, a chain's `axis`) — but a `multipart` property *assembles* the model, so the omitted default drops geometry: a `cobblestone_wall`/`iron_bars`/`oak_fence` with none written places as an isolated post, silently. Error at admission (`delve-admit audit`), a red `shape-complete` gate plus an export refusal in the grammar back end. The class is the block's, derived from game data — never a hand-kept id list. |
+| `DW0736` | `delve-grammar` | An **orientation-sensitive block state filled into a scope whose frame turns or reflects it, with no `orientation` guard**. A grammar frame permutes and reflects the *geometry* a rule describes and never rewrites block-state properties (`crates/grammar/src/orient.rs`), so a **world-frame** literal `facing`/`axis`/connection/`rotation` state lands however the scope was framed — and a pure reflection is the case that reads as safe to a check that looks only at the axis permutation, because a reflection HAS the identity permutation. Two mechanisms answer it: write the state in the scope's own axis frame (`Paint::Local`, resolved at fill time — one binding, every frame) or pin the frame with `Cond::Orientation` and write one alternative per frame, reflections included. This fires when a fill uses neither. Checked during expansion (where scope frames exist), sensitivity derived from the registry's own value vocabulary (`BlockRegistry::oriented_mismatch`; `rotation`, `hinge` and a handed `shape` are the documented residue and count as mismatched whenever the frame moves **or reflects** a horizontal axis). Surfaces as a red `oriented-fills` gate — whose detail states fills examined, fills carrying properties, and how many of those were resolved out of the local frame — plus an export refusal. A passed guard licenses a fill only while the frame it asserted still holds: a reorientation below the guard voids it. |
+| `DW0737` | `delve-grammar` | A placed block state **omits a property the block has**, so its geometry is whatever a 1.21.11 server derives from the block's default state and no reader upstream of the server can know which. Vanilla's `BlockState` codec fills an omitted property in, so a partial state is legal and the game resolves it correctly — but the review render, the navigation walk, the diff a reviewer reads and the machine gates each have to guess, and the guesses disagree. `DW0735` is the strict subset that also drops geometry outright; this is the whole class, and it fires on the benign-looking half too: an `oak_stairs[facing=east]` with no `half` and no `shape` is not "the author meant the default", it is a stair whose geometry no document states, and vanilla recomputes `shape` from its neighbours on every block update. Rule lives in `delvewright_schem::blocks::BlockRegistry::omitted_properties` with the rest of the family. Surfaces as a red `states-complete` gate, with the placed-state count as its binding. Not an export refusal: unlike `DW0735` the omission costs no geometry in the emitted template, so it is a gate on what was AUTHORED. |
+| `DW0738` | `delve-grammar` | A block state written in the **scope's own axis frame** (`Paint::Local`) carries a property the pinned vocabulary cannot map onto the world frame the scope was given. A frame is a signed permutation — which world axis each local axis names, and whether it runs backwards along it — so a **direction** (by key, as a connection flag, or by value, as a `facing`), an **`axis`** and a `<dir>_<dir>` pair all have exact images under every frame, and a reflection is simply the sign. What has no image is the frame-relative residue. A 16-step `rotation` and a handedness (`hinge`, a stair's corner `shape`, a double chest's `type`) are stated against a fixed vertical AND a fixed handedness, so they are determined only under a **pure turn about the vertical** — the identity, or the horizontal transposition `x↔z`, which is itself a reflection of the horizontal plane and sends a yaw `r` to `(12 − r) mod 16` and left to right. Under any frame that reflects an axis, or moves the vertical, they are refused; so is a `top`/`bottom`/`upper`/`lower` half under a frame that moves **or reverses** the vertical, a horizontal connection turned onto a block with no `up` key, and a rail's direction-composed `shape`. A value that names no handedness (`straight`, `single`) and a `double` slab are their own image under every frame and are never refused. Refused at expansion, naming the state, the property and the frame (with a `-` on a reflected axis); the fill never writes a substitute. Rule lives in `delvewright_schem::blocks::BlockRegistry::permuted_properties` — the same classifier `DW0736` judges with, so a state one of them calls wrong is never one the other quietly rewrites. Fix: keep the scope's vertical on the world's and unreflected, or write the state in the world frame under an `orientation` guard. |
 | `DW0740` | `delve-admit` | Catalog card schema/field validation failure. |
 | `DW0741` | `delve-admit` | Catalog card license not in the ADR-0013 allowlist. |
 | `DW0750` | `delve-admit` | Admission tooling (socket/anchor/lighting) failure. |
 | `DW0751` | `delve-admit` | Lighting probe: a `dark` interior was measured (advisory; no longer gates — spec-0010). |
 | `DW0760` | `delve-admit` | Gallery emission / curation failure. |
+| `DW0770` | `delvec fmt` | Authored JSON is not valid JSON, located at `line:col` (exit 1). Reported instead of formatted — `fmt` never guesses at a repair. |
+| `DW0771` | `delvec fmt` | **A duplicate object key.** JSON's grammar allows one and `serde_json` silently keeps the LAST, so one of the two values is already being discarded without a word; formatting would make that loss permanent and invisible, so `fmt` refuses and writes nothing (exit 1). Delete or rename whichever occurrence is wrong. |
+| `DW0772` | `delvec fmt` | Internal error: the formatter's own output is not equivalent to its input, so nothing was written (exit 1). The self-check runs on **every** file `fmt` writes — it re-parses the rendered text and compares arrays index-wise, objects as maps. Its whole purpose is that an array reordering (which changes the game) fails here instead of shipping. A `DW0772` is a compiler bug; report it. |
+| `DW0773` | `delvec fmt --check` | A file is not in canonical form, with the line of the first difference (exit 1). Fix by running `delvec fmt <path>` — never by hand. |
+| `DW0774` | `delvec fmt` | The given paths matched **zero** JSON files (exit 1). A formatter or a `--check` that binds to nothing is vacuous, not a pass (CLAUDE.md), and a stale path in a CI step is exactly how this gate would rot into a green no-op. |
+| `DW0780` | `compiler::faces` | **Two placed pieces whose declared exterior faces do not mate.** One piece declares a way in or out on the face it shares with its neighbour, and the neighbour declares nothing there, declares an opening elsewhere along the same wall, or declares a different class (a sightline where the first declares a walk). Build-tier (exit 3), `compiler::plan`, checked after placement. Both pieces pass every prefab gate individually — the pair is what is wrong, which is why no single-piece check can see it. The message names both areas, both prefabs, both faces with their world extents, and what the neighbour offers instead. Compared over the **declared** face contract (`spatial_contract.faces` in prefab metadata), never re-derived from the assembled voxels. A face that opens onto no placed piece is not a finding: a box garden has an outside. |
+| `DW0782` | `delve-admit audit` | **A piece's declared spatial contract disagrees with its own blocks** (spec-0036 §2) — the second of the contract checker's two doors; the first is `delve-grammar expand`, which writes no `.nbt` when a gate is red. Each failed obligation is reported as one error line naming the gate, **its binding count** and what it found; each opt-out instance (an open envelope, a sightline, an out-of-walk region with its computed kind, a bar the walk had to open, an exterior face) is reported as one advisory line, always, because a list is what a reviewer reads and a count is what a blind script satisfies. Raised only for a piece that declares a contract; a piece that declares none is not checked and says so. Exit 1. |
+| `DW0781` | `compiler::faces` | Advisory: the piece-mating check examined **zero** abutting faces, so `DW0780` proved nothing about this world. Raised when no declared face of any placed piece touches another placed piece — usually because the pieces predate the spatial contract and declare none. Advisory rather than a red because old documents keep compiling (version-adoption discipline); the adoption round that gives the library contracts is what turns this binding into a number. |
 
 `delve-render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
@@ -4575,3 +4646,118 @@ The patch is **never applied here**: nothing writes to a stage document from the
 game. The agent applies it, reruns `delvec build`, and the normal proofs
 (`DW0308` air corridors, `DW0347` angular budget) gate the result exactly as
 they gate a hand-written shot.
+
+---
+
+## 9. `delvec fmt` — canonical form for authored JSON
+
+Owner directive 2026-08-07 (task #52), from a live accident: a **three-key**
+insertion into `nobodys-cave-island/l10n/zh-cn.json` produced a
+**103-insertion / 100-deletion** diff, because the file was not canonically
+ordered and the writing tool's `sort_keys` re-laid it out. Canonical order makes
+an insertion a one-line insertion, and makes two authors editing different keys a
+non-conflict.
+
+```
+delvec fmt <path>…            # rewrite in canonical form
+delvec fmt --check <path>…    # report; write nothing; exit 1 if anything is off
+```
+
+A formatter **and** a check, in that order and for a reason: a `--check`-only
+gate makes an author hand-sort a 900-key sidecar, which nobody does twice, so the
+gate ends up waived. `cargo fmt` is the shape that works.
+
+### The hard constraint
+
+**Only object keys may be sorted. Array order is semantic** — `quests[]`,
+`objectives[]`, `effects[]`, `options[]`, `steps[]` are ordered, and reordering
+one changes the game. So this is a correctness property, not a style property,
+and it is *proved* rather than promised: `delvewright_dsl::fmt::format_text`
+re-parses its own output and runs `fmt::equivalent`, which compares **arrays
+index-wise** and objects as key→value maps. A renderer that sorted an array fails its own check
+and writes nothing (`DW0772`). The guard is demonstrated firing — the unit test
+`the_guard_catches_a_renderer_that_sorts_arrays` injects a deliberately
+array-sorting renderer and asserts `DW0772`.
+
+### The canonical form
+
+| rule | why (argued from *minimal diff on insertion* / *no semantic change ever*) |
+|---|---|
+| object keys sorted by Unicode scalar value | an inserted key lands in exactly one place. UTF-8 byte order == code-point order, so Rust's `str` `Ord` and Python's `sorted()` agree and the existing Python authoring tools already emit this order. |
+| 2-space indent, one value per line | the motivating file and every `tools/*.py` writer already use `indent=2` (also `serde_json`'s pretty default), so the one-time normalization is smallest exactly where the files are largest. One value per line makes an inserted array element a whole-line insertion, not a rewrite of a long line. |
+| non-ASCII written raw, never `\uXXXX` | the campaigns are half Chinese; escaping would triple every sidecar and make its diffs unreadable — a direct defeat of the motivation. |
+| control characters escaped in the shortest legal form (`\n`, `\t`, `\b`, `\f`, `\r`, else `\u00xx` lowercase) | required by JSON, and it is the form every other writer here already emits, so it is the fixed point. |
+| **number literals preserved byte-for-byte** | the one rule that is not about diffs. Re-rendering through `f64` loses integers above 2^53 and can move a decimal's last digit — a silent semantic change. `9007199254740993`, `1.50`, `1e3` and `-0.0` all survive unchanged. |
+| exactly one trailing newline | POSIX text, and without it appending anything rewrites the last line. |
+| duplicate object keys refused (`DW0771`) | see the catalog row: the data loss is already happening silently; formatting would make it permanent. |
+| empty containers stay on one line (`[]`, `{}`) | matches `serde_json` and `json.dumps`. |
+
+Not canonicalized, deliberately: number literals (above), and Unicode
+normalization of string contents (NFC vs NFD is the author's text, not the
+formatter's). The formatter knows the **JSON grammar and nothing about the DSL** —
+it must handle an l10n sidecar, a stage document, a prefab metadata card and
+whatever stage 8 turns out to be, with no per-schema list to keep in step.
+
+### Which files, and how they are found
+
+A path argument may be a file (taken as given — you pointed at it) or a
+directory, walked recursively for `*.json` with entries **sorted**, never
+`read_dir` order (ADR-0006). Two things are skipped:
+
+- dot-directories (`.git`, `.github`);
+- any directory holding a `manifest.json` — the marker `delvec build` itself
+  stamps on an output root. Emitted trees are not authored content, several are
+  checked in (`campaigns/*/out/`), and rewriting one would break the
+  byte-identity record it exists to hold.
+
+Symlinked directories are not followed (`campaigns/` is a symlink to the content
+repo in a dev tree; a walk that followed it would silently reach a second
+repository).
+
+**Out of scope, by decision**: `crates/compiler/data/*.json` — harvested game
+registries with their own generator contract (`tools/extract-*.py`,
+`data/PROVENANCE.md`), not content anyone authors by hand.
+
+### What formatting does and does not change in a build
+
+Proved end-to-end by `crates/compiler/tests/fmt.rs::formatting_a_campaign_changes_only_the_manifest_input_hashes`,
+and measured on `nobodys-cave-island` in both languages: **every emitted file is
+byte-identical** (609 EN / 594 ZH outputs). The single exception is stated rather
+than smoothed — `manifest.json`'s `inputs` map is the sha256 of the **source**
+bytes, i.e. provenance of exactly what the author checked in, so it *must* move
+when the sources are rewritten. `manifest.json`'s `outputs` map, and every other
+key, are unchanged. A formatter that left `inputs` alone would have broken the
+provenance record instead of preserving it.
+
+### One canonical form, one implementation
+
+The formatter lives in `crates/dsl` (`delvewright_dsl::fmt`), not in the
+compiler, because a canonical form belongs to the **format** rather than to
+whichever writer needed it first — and `delvewright-dsl` is the crate whose
+published description already is "the format the delvec compiler reads"
+(ADR-0018 §4).
+
+That placement is load-bearing, not tidiness. `delvewright_dsl::to_canonical_string`
+already claimed the name "canonical" and is what **`delvec edit apply` writes
+`world-edits.json` with**. Its form was serde's — struct-declaration field order.
+Had `fmt` shipped a second, key-sorted form, the compiler would have written a
+file its own `fmt --check` immediately rejected, and an author running both in
+one loop could not have satisfied both. So `to_canonical_string` now serializes
+with serde and puts the bytes through `fmt`: one definition, two doors.
+
+The pre-existing fixture gate `crates/dsl/tests/roundtrip.rs` is unchanged by
+this and now proves two things at once — serde loses no field on a round trip,
+**and** the fixture on disk is in `delvec fmt` canonical form.
+
+### CI
+
+A step of the `rust (fmt, clippy, test)` job (a step, not a job: every job name
+in `ci.yml` is a required status context). It runs `--check` over this repo's
+authored JSON corpus and states its binding count on every run.
+
+**Not yet covering the content repo.** `campaigns/` is pinned by
+`versions.toml [content].sha`, so a `--check` over it here could only go green
+after a content-repo normalization merges and the pin moves — an ordering this
+repo cannot perform. The same one-line `--check` belongs in the content repo's
+own CI, which is where its files are gated; until then, the accident this tool
+exists to prevent is prevented for engine fixtures only.

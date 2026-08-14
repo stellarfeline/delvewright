@@ -66,9 +66,11 @@ dist/
 
 # Contact sheets + their score files, same rule: candidate renders laid out for
 # the owner to curate massing from (`delve-render contact-sheet`,
-# `tools/refscore.py`). Generation-time working material — never shipped, never
-# in the content repo, so nothing on a sheet can carry licensing into a delve
-# (ADR-0013) or move its bytes (ADR-0006).
+# `tools/refscore.py`), and the palette swatch sheets under `.sheets/palette/`
+# (`tools/block-appearance.py --sheet`), which are tiled Mojang texture pixels.
+# Generation-time working material — never shipped, never in the content repo, so
+# nothing on a sheet can carry licensing into a delve (ADR-0013) or move its
+# bytes (ADR-0006). The tool refuses to write a sheet anywhere else in the repo.
 .sheets/
 
 # The opt-in local virtualenv holding the similarity-metric backends

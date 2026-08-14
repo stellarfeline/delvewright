@@ -213,6 +213,57 @@ fn every_zone_program_is_structurally_valid() {
     }
 }
 
+/// The blockstate family at zone scale (`DW0735`, `DW0736`): every zone judges
+/// green on `shape-complete` and `oriented-fills` at its campaign region and
+/// seed. This is what makes the two gates INVOKED over the bell zones rather
+/// than only over bare pieces — Z2 (`gate_ward`) reorients at its root and its
+/// included pieces reorient again, which is exactly the double turn a literal
+/// `facing`/connection state lands wrong under; the pieces that carry oriented
+/// states (`far_side_bar`'s bars, `broken_grate`'s bars, `cliff_path`'s skull)
+/// do so behind `orientation` guards, and this sweep is where that keeps being
+/// true. Binding counts pinned per the file's own rule.
+#[test]
+fn every_zone_passes_the_shape_and_orientation_gates() {
+    use delvewright_grammar::gates;
+    let (mut states_bound, mut carrying) = (0usize, 0u64);
+    for ZoneFixture {
+        program,
+        region,
+        seed,
+        ..
+    } in zones()
+    {
+        let out = expand_at(&program, region, seed);
+        carrying += out.oriented.carrying;
+        let report = gates::judge(&out, gates::Options::default());
+        for id in ["shape-complete", "states-complete", "oriented-fills"] {
+            let gate = report
+                .gates
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap_or_else(|| panic!("{}: no `{id}` gate", program.name));
+            assert!(gate.pass, "{}: {}", program.name, gate.detail);
+            assert!(
+                gate.bound > 0,
+                "{}: gate `{id}` examined zero objects",
+                program.name
+            );
+            if id == "shape-complete" {
+                states_bound += gate.bound;
+            }
+        }
+    }
+    assert!(
+        states_bound >= 40,
+        "the zone sweep bound only {states_bound} placed states"
+    );
+    assert!(
+        carrying >= 3,
+        "only {carrying} zone fills carried block-state properties — the oriented \
+         predicate had almost nothing to bite on"
+    );
+}
+
 /// ADR-0006 at zone scale: same program, region and seed, byte-identical model
 /// *and* anchors.
 #[test]
@@ -276,7 +327,7 @@ fn every_zone_restyles_without_moving_a_block() {
             restyled
                 .set_role(
                     role,
-                    Paint::Block(BlockState::simple(SWATCH[i % SWATCH.len()])),
+                    Paint::block(BlockState::simple(SWATCH[i % SWATCH.len()])),
                 )
                 .unwrap();
         }
@@ -347,7 +398,11 @@ fn the_zone_fixtures_are_pinned() {
     // Every role each zone inherited from the pieces it includes. A role that
     // silently stopped arriving would restyle nothing and break no other gate,
     // so the count is pinned rather than bounded.
-    for (want, ZoneFixture { program, .. }) in [1, 3, 13, 7, 7, 13, 10, 12].into_iter().zip(zones())
+    // `far_side_bar`'s bar is a role again — one binding written in the
+    // scope's own axis frame, resolved at fill time — so the zone that
+    // includes it carries one more role than it did while the bar had to be
+    // per-orientation inline states.
+    for (want, ZoneFixture { program, .. }) in [1, 2, 13, 7, 7, 13, 9, 12].into_iter().zip(zones())
     {
         assert_eq!(
             program.palette.len(),

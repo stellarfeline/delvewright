@@ -1,0 +1,8 @@
+{
+  "pack": {
+    "description": "Delvewright SPIKE — area-effect / non-griefing-explosion arrow probes (1.21.11). Measurement only; never shipped.",
+    "pack_format": 94,
+    "min_format": [94, 1],
+    "max_format": [94, 1]
+  }
+}

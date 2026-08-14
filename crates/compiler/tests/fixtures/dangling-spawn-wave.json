@@ -1,39 +1,38 @@
 {
   "description": "A kill-less `spawn-wave` (spec-0008 SS4 'live threat' — no `kill` objective ever drains `wave/ambush`, exactly like v04-showcase's wave/ambush) whose `anchor` is not part of the single bound prefab (`prefab/hello-room`)'s metadata. Wave anchors are not resolved against prefab metadata at DSL validation time (no DW0142-style check exists for them), and a single-prefab area registers whatever anchors its one bound prefab declares without cross-checking campaign references — so this passes validate + analyze and only the build-time spawn-wave guard (DW0310) catches the dangling reference.",
-  "expect": "DW0310",
   "documents": {
     "quests": {
-      "dsl_version": "0.3.0",
       "campaign_id": "hello-world",
-      "stage": "quests",
       "content": {
         "quests": [
           {
             "id": "quest/open-the-door",
-            "trigger": {
-              "type": "campaign-start"
-            },
             "objectives": [
               {
-                "type": "talk-to",
                 "id": "obj/talk",
-                "npc": "npc/keeper"
+                "npc": "npc/keeper",
+                "type": "talk-to"
               },
               {
-                "type": "reach-anchor",
-                "id": "obj/exit",
-                "anchor": "anchor/exit",
-                "radius": 2,
                 "after": [
                   "obj/talk"
-                ]
+                ],
+                "anchor": "anchor/exit",
+                "id": "obj/exit",
+                "radius": 2,
+                "type": "reach-anchor"
+              }
+            ],
+            "on_complete": [
+              {
+                "type": "campaign-complete"
               }
             ],
             "on_objective_complete": {
               "obj/talk": [
                 {
-                  "type": "open-gate",
-                  "anchor": "anchor/door"
+                  "anchor": "anchor/door",
+                  "type": "open-gate"
                 },
                 {
                   "type": "spawn-wave",
@@ -41,23 +40,28 @@
                 }
               ]
             },
-            "on_complete": [
-              {
-                "type": "campaign-complete"
-              }
-            ]
+            "trigger": {
+              "type": "campaign-start"
+            }
           }
         ],
         "waves": [
           {
-            "id": "wave/ambush",
             "anchor": "anchor/does-not-exist",
+            "id": "wave/ambush",
             "mobs": [
-              { "entity": "minecraft:sheep", "count": 1, "name": "Startled Ewe" }
+              {
+                "count": 1,
+                "entity": "minecraft:sheep",
+                "name": "Startled Ewe"
+              }
             ]
           }
         ]
-      }
+      },
+      "dsl_version": "0.3.0",
+      "stage": "quests"
     }
-  }
+  },
+  "expect": "DW0310"
 }

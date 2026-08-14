@@ -1,54 +1,130 @@
 {
-  "dsl_version": "0.3.0",
   "campaign_id": "keep-trial",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/greet",
-        "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }
+          {
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/talk": [
-            { "type": "open-gate", "anchor": "anchor/gate" },
-            { "type": "spawn-wave", "wave": "wave/guards" },
-            { "type": "set-flag", "flag": "flag/summoned" }
+            {
+              "anchor": "anchor/gate",
+              "type": "open-gate"
+            },
+            {
+              "type": "spawn-wave",
+              "wave": "wave/guards"
+            },
+            {
+              "flag": "flag/summoned",
+              "type": "set-flag"
+            }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/trial",
-        "trigger": { "type": "quest-complete", "quest": "quest/greet" },
         "objectives": [
-          { "type": "kill", "id": "obj/slay", "title": "Clear the Guard", "hint": "The guard rises around you as the Keeper speaks — cut every one of them down.", "wave": "wave/guards", "requires_flags": ["flag/summoned"] },
-          { "type": "collect", "id": "obj/key", "title": "Take the Old Key", "hint": "The key sits in a chest in the small room off the hall.", "item": "minecraft:tripwire_hook", "count": 1, "anchor": "anchor/chest", "after": ["obj/slay"], "requires_flags": ["flag/cleared"] },
-          { "type": "interact", "id": "obj/door", "title": "Unbar the Inner Door", "hint": "The barred door stands in the corner room; use the old key on it.", "anchor": "anchor/door", "requires_item": "minecraft:tripwire_hook", "after": ["obj/key"] },
-          { "type": "reach-anchor", "id": "obj/shrine", "title": "Reach the Shrine", "hint": "Pass the opened gate and step onto the shrine at the hall's end.", "anchor": "anchor/objective", "radius": 2, "after": ["obj/door"], "requires_flags": ["flag/opened"] }
+          {
+            "hint": "The guard rises around you as the Keeper speaks — cut every one of them down.",
+            "id": "obj/slay",
+            "requires_flags": [
+              "flag/summoned"
+            ],
+            "title": "Clear the Guard",
+            "type": "kill",
+            "wave": "wave/guards"
+          },
+          {
+            "after": [
+              "obj/slay"
+            ],
+            "anchor": "anchor/chest",
+            "count": 1,
+            "hint": "The key sits in a chest in the small room off the hall.",
+            "id": "obj/key",
+            "item": "minecraft:tripwire_hook",
+            "requires_flags": [
+              "flag/cleared"
+            ],
+            "title": "Take the Old Key",
+            "type": "collect"
+          },
+          {
+            "after": [
+              "obj/key"
+            ],
+            "anchor": "anchor/door",
+            "hint": "The barred door stands in the corner room; use the old key on it.",
+            "id": "obj/door",
+            "requires_item": "minecraft:tripwire_hook",
+            "title": "Unbar the Inner Door",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/door"
+            ],
+            "anchor": "anchor/objective",
+            "hint": "Pass the opened gate and step onto the shrine at the hall's end.",
+            "id": "obj/shrine",
+            "radius": 2,
+            "requires_flags": [
+              "flag/opened"
+            ],
+            "title": "Reach the Shrine",
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "type": "campaign-complete"
+          }
         ],
         "on_objective_complete": {
-          "obj/slay": [
-            { "type": "set-flag", "flag": "flag/cleared" }
-          ],
           "obj/door": [
-            { "type": "set-flag", "flag": "flag/opened" }
+            {
+              "flag": "flag/opened",
+              "type": "set-flag"
+            }
+          ],
+          "obj/slay": [
+            {
+              "flag": "flag/cleared",
+              "type": "set-flag"
+            }
           ]
         },
-        "on_complete": [
-          { "type": "campaign-complete" }
-        ]
+        "trigger": {
+          "quest": "quest/greet",
+          "type": "quest-complete"
+        }
       }
     ],
     "waves": [
       {
-        "id": "wave/guards",
         "anchor": "anchor/keeper-stand",
+        "id": "wave/guards",
         "mobs": [
-          { "entity": "minecraft:zombie", "count": 2, "name": "Keep Guard" }
+          {
+            "count": 2,
+            "entity": "minecraft:zombie",
+            "name": "Keep Guard"
+          }
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.3.0",
+  "stage": "quests"
 }

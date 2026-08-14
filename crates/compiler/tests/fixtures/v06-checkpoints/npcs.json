@@ -1,23 +1,26 @@
 {
-  "dsl_version": "0.4.0",
   "campaign_id": "v06-checkpoints",
-  "stage": "npcs",
   "content": {
     "npcs": [
       {
+        "anchor": "anchor/keeper-stand",
+        "area": "area/keep",
+        "base_entity": "minecraft:villager",
         "id": "npc/keeper",
         "name": "The Keeper",
-        "role": "quest-giver",
-        "area": "area/keep",
-        "anchor": "anchor/keeper-stand",
-        "base_entity": "minecraft:villager",
         "persona": {
           "archetype": "grim warden of a dead keep",
-          "speech_style": "Clipped, soldierly; short imperatives.",
-          "motivation": "See the shrine reached before the moor takes the keep."
+          "motivation": "See the shrine reached before the moor takes the keep.",
+          "speech_style": "Clipped, soldierly; short imperatives."
         },
-        "skin": { "texture_id": "keeper", "model": "wide" }
+        "role": "quest-giver",
+        "skin": {
+          "model": "wide",
+          "texture_id": "keeper"
+        }
       }
     ]
-  }
+  },
+  "dsl_version": "0.4.0",
+  "stage": "npcs"
 }

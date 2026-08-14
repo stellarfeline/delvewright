@@ -1,37 +1,51 @@
 {
-  "dsl_version": "0.2.0",
   "campaign_id": "keep-crawl",
-  "stage": "quests",
   "content": {
     "quests": [
       {
         "id": "quest/greet-keeper",
-        "trigger": { "type": "campaign-start" },
         "objectives": [
-          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }
+          {
+            "id": "obj/talk",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
         ],
+        "on_complete": [],
         "on_objective_complete": {
           "obj/talk": [
-            { "type": "open-gate", "anchor": "anchor/gate" }
+            {
+              "anchor": "anchor/gate",
+              "type": "open-gate"
+            }
           ]
         },
-        "on_complete": []
+        "trigger": {
+          "type": "campaign-start"
+        }
       },
       {
         "id": "quest/reach-shrine",
-        "trigger": { "type": "quest-complete", "quest": "quest/greet-keeper" },
         "objectives": [
           {
-            "type": "reach-anchor",
-            "id": "obj/reach",
             "anchor": "anchor/objective",
-            "radius": 2
+            "id": "obj/reach",
+            "radius": 2,
+            "type": "reach-anchor"
           }
         ],
         "on_complete": [
-          { "type": "campaign-complete" }
-        ]
+          {
+            "type": "campaign-complete"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/greet-keeper",
+          "type": "quest-complete"
+        }
       }
     ]
-  }
+  },
+  "dsl_version": "0.2.0",
+  "stage": "quests"
 }

@@ -954,6 +954,16 @@
       "general_form": "the shipped server configuration is emitted from the campaign's declared difficulty, never hand-written beside it",
       "carrier": {"kind": "packtest", "template": "declared_difficulty"},
       "binding": {"kind": "out", "glob": "packtest-datapack/**/declared_difficulty.mcfunction"}
+    },
+    {
+      "id": "isl-61",
+      "campaign": "nobodys-cave-island",
+      "round": "post-release-2026-08-14",
+      "finding": "an admission step read a shipped prefab document, edited one part of it and wrote it back through a type that modelled fewer fields than the document has, so the ocean-datum declaration the released island pieces carry could be deleted with nothing failing and the invariant that reads it silently examining nothing",
+      "triage": "capability",
+      "general_form": "an admission step may change only the paths it declares it writes, at the depth it really writes them; and a check keyed off an optional metadata field reports how many objects it examined, so losing the field is a finding (DW0364) rather than a silence",
+      "carrier": {"kind": "dw", "code": "DW0364"},
+      "binding": {"kind": "dsl", "files": ["world.json"], "match": {"eq": {"horizon": "ocean"}}}
     }
   ]
 }
