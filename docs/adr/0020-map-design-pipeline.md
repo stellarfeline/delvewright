@@ -41,7 +41,7 @@ broken artifacts. Verified on the saved artifacts:
    gates green.)
 3. **Duplication grows with scale.** 26 % of run 0's rules and 30 % of run 1's
    are copies of another rule once role names and call targets are erased
-   (re-measured: 29 of 113, 44 of 145). Real, already filed (task #107), and
+   (re-measured: 29 of 113, 44 of 145). Real, recorded, and
    **not what this ADR fixes** — see "What this ADR does not decide".
 
 **The correction that bounds the design space**: run 1 was a single program
@@ -223,14 +223,15 @@ a machine form then (finding-to-diagnostic rule).
   ADR-0004 is extended and not superseded.
 - **The `traversable` gate** becomes a derived claim over declared exterior
   edges rather than a face heuristic (also retiring the
-  47-of-which-3-are-doors approach-binding miscount, task #108).
+  approach-binding miscount that counts any standable cell on a face, and so
+  reports 47 approaches where 3 are doors).
 
 ### 4. What this ADR does NOT decide
 
 - **No generation.** The contract constrains geometry; it never produces any.
 - **No inference.** Spaces are never read out of the voxels.
-- **IR ergonomics are separate.** Parameterised/cross-program `call`
-  (task #107), the local-direction `mark` facing, overlay, and the positional
+- **IR ergonomics are separate.** Parameterised/cross-program `call`, the
+  local-direction `mark` facing, overlay, and the positional
   index are real R4 findings on a different layer (authoring cost, not
   checked truth). Each proceeds on its own spec under the ADR-0018 §7 fence.
 - **Sightline, density, and craft claims stay out.** The bell zones' Rust

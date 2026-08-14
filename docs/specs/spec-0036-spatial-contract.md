@@ -7,7 +7,7 @@
   fixture seed; step 1, the declaration surface, is dispatched)
 - **ADRs**: 0020 (decision), 0004 (extended), 0006 (determinism), 0018 §7
   (the `Program` version fence this rides)
-- **Non-goals**: parameterised / cross-program `call` (task #107, own spec);
+- **Non-goals**: parameterised / cross-program `call` (its own spec);
   local-direction `mark` facing (`grammar.md` §7, own spec); overlay; the
   positional index; sightline/density/craft claims; campaign-side reachability
   diagnostics over unlock logic (follow-up fence); jigsaw connector emission
@@ -204,7 +204,8 @@ Both invocations are bound to the events they guard.
    finding). Binding: anchor count, by element kind.
 8. **exterior faces**: edges naming `exterior` are exported as the piece's
    face contract; `--traversable`'s claim is re-derived from them, retiring
-   the standable-face approach-count heuristic (task #108's miscount).
+   the standable-face approach-count heuristic, which counts any standable
+   cell on a face and so reports 47 approaches where 3 are doors.
 9. **vacuity reds**: a zero binding on closure, edge proof, or reachability
    is red. A `no_body` majority is red unless the contract carries
    `no_body_majority_ack` — the acknowledgement does not weaken §2.6, which
