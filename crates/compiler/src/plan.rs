@@ -1533,6 +1533,21 @@ impl<'a> Plan<'a> {
             warnings.push(finding);
         }
 
+        // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
+        //
+        // Bound here and nowhere else: every campaign build goes through
+        // `Plan::build`, so a world whose pieces contradict each other at the
+        // faces they share cannot be compiled, packaged or shipped. There is no
+        // flag and no separate command to remember.
+        let binding = crate::faces::check(&areas, prefabs).map_err(|e| {
+            let mut w = warnings.clone();
+            w.extend(e.warnings.clone());
+            PlanError::new(e.code, e.message).with_warnings(w)
+        })?;
+        if let Some(finding) = binding.finding(crate::faces::placed_pieces(&areas)) {
+            warnings.push(finding);
+        }
+
         // ---- classes ----
         let classes = campaign
             .classes
