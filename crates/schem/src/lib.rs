@@ -8,12 +8,14 @@
 //! NBT, and gzip mtime pinned to 0.
 //!
 //! A prefab is the `.nbt` plus the sibling metadata JSON that describes it, so
-//! this crate owns both halves of that pair: [`convert`] writes the bytes and
-//! [`prefab`] defines the document. Every tool that produces or edits a prefab —
-//! the grammar back end, the hand-written generators, `delve-admit` — reads and
-//! writes the metadata through [`prefab::PrefabMeta`] rather than a local copy of
-//! its shape, because a copy that models fewer fields deletes the rest on
-//! read-modify-write and reports nothing.
+//! this crate reaches both halves of that pair: [`convert`] writes the bytes and
+//! [`prefab`] is the document, re-exported from
+//! [`delvewright_dsl::prefab`] where it is defined. Every tool that produces,
+//! reads or edits a prefab — the grammar back end, the hand-written generators,
+//! `delve-admit`, `delve-render`, `delvec` — goes through that one definition
+//! rather than a local copy of its shape, because a copy that models fewer
+//! fields deletes the rest on read-modify-write and reports nothing, and a copy
+//! that refuses what it does not model turns a forward addition into an outage.
 
 pub mod blocks;
 pub mod convert;

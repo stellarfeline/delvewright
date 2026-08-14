@@ -328,8 +328,8 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
     let row = one
         .metadata
         .license
-        .generated_by
         .as_ref()
+        .and_then(|l| l.generated_by.as_ref())
         .expect("a grammar export always carries its regeneration inputs");
     assert_eq!(row.seed, 7);
     assert_eq!(row.generator, "grammar");
@@ -361,11 +361,16 @@ fn the_provenance_row_identifies_the_bytes_it_sits_beside() {
     )
     .unwrap();
     assert_ne!(
-        restyled.metadata.license.generated_by.unwrap().program_hash,
+        restyled
+            .metadata
+            .license
+            .and_then(|l| l.generated_by)
+            .unwrap()
+            .program_hash,
         one.metadata
             .license
-            .generated_by
             .clone()
+            .and_then(|l| l.generated_by)
             .unwrap()
             .program_hash
     );
