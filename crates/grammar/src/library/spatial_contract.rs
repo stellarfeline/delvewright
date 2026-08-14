@@ -50,9 +50,9 @@
 
 use crate::block::BlockState;
 use crate::geom::Axis;
-use crate::ir::{Bar, Contract, EXTERIOR, EdgeClass, Envelope, Node, Program};
+use crate::ir::{Bar, Contract, EXTERIOR, EdgeClass, Envelope, MarkAt, Node, Program};
 
-use super::{abs, call, claimed, fill, rel, split, void};
+use super::{abs, call, claimed, fill, marked_each, rel, split, split_repeat, void};
 
 /// Two rooms, a barred door and a corbel — the program that demonstrates the
 /// spatial contract.
@@ -110,12 +110,38 @@ pub fn spatial_contract() -> Program {
         .rule("far_hollow", claimed("far", void()))
         // A one-cell ledge with air over it. The air is what a body could stand
         // in, so the air is what the region names.
+        //
+        // The anchor is what makes the shelf `posted` rather than nothing. An
+        // out-of-walk region earns its exemption by a fact about the piece, and
+        // this one's fact is that something is placed there: the checker looks
+        // for an anchor inside the region and for every standable cell of it to
+        // be within reach of one. A shelf with no anchor is not decoration, it
+        // is floor nobody can address — and it reds.
         .rule(
             "corbel",
             split(
                 Axis::Y,
                 vec![abs(1), abs(1), rel(1)],
-                vec![void(), fill("shell"), claimed("shelf", void())],
+                vec![void(), fill("shell"), call("shelf_run")],
+            ),
+        )
+        // One perch per cell of the ledge's length, each claiming `shelf` and
+        // each carrying its own anchor. Claims of one name union, so the region
+        // is the whole ledge however many pieces describe it; marks number
+        // themselves.
+        //
+        // Every perch, not every other one: `posted` is proved per CELL, and a
+        // ledge anchored at alternating ends leaves cells no campaign can
+        // address — which is unfinished surface, not decoration.
+        .rule(
+            "shelf_run",
+            split_repeat(
+                Axis::Z,
+                vec![abs(1)],
+                vec![claimed(
+                    "shelf",
+                    marked_each("watcher", MarkAt::FloorCenter, void()),
+                )],
             ),
         )
         // Floor, doorway, lintel — and the bars are their own claimed region.

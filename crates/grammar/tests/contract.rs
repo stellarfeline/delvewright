@@ -364,7 +364,12 @@ fn the_exported_contract_is_the_one_this_expansion_resolved() {
     // contract licenses, and it is recorded with its stated reason.
     let shelf = &ca.no_body["shelf"];
     assert!(shelf.reason.contains("watcher"));
-    assert_eq!(shelf.boxes.len(), 1);
+    // One box per perch: the ledge is described by the boxes it is actually
+    // built from, and claims of one name union. `posted` is proved per cell, so
+    // the run that carries the anchors is the run that carries the claims.
+    assert_eq!(shelf.boxes.len(), 7);
+    assert_eq!(shelf.boxes[0].from, [1, 3, 0]);
+    assert_eq!(shelf.boxes[6].to, [1, 4, 6]);
 }
 
 /// A zone past the structure cap carries the same block on its manifest, in

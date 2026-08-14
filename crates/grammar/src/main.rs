@@ -598,6 +598,13 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
     for pocket in &r.largest_pockets {
         eprintln!("      pocket  {}", pocket.describe());
     }
+    // Every opt-out the contract used, by name and one per line. A count of
+    // out-of-walk regions is a number a blind script can satisfy; a list saying
+    // which shelf is `posted` on which anchors, and which bar the walk had to
+    // open, is a thing a reviewer reads and can disagree with.
+    for line in &report.enumeration {
+        eprintln!("  contract: {line}");
+    }
     for finding in &report.findings {
         eprintln!("  finding: {finding}");
     }

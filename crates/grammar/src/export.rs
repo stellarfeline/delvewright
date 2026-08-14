@@ -613,15 +613,23 @@ pub fn export_zone(
 /// The anchors an expansion declared, in the metadata shape. Zone-relative in
 /// both export shapes, because a mark is a fact about the building and a tile
 /// boundary is not part of the building.
+/// Each anchor also carries **which contract element it lands in**
+/// (spec-0036 §1b/§2.7): a campaign binds content to an anchor, and the thing
+/// that says whether that place is play space, a door or dressing is the
+/// contract. Resolved here, from the resolved contract alone, so the metadata a
+/// reader gets and the element the checker's anchor obligation reads are the
+/// same string.
 fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
+    let contract = contract_metadata(expansion);
     expansion
         .anchors
         .iter()
         .map(|(name, anchor)| {
-            (
-                name.clone(),
-                AnchorMetadata::point(anchor.pos, anchor.facing.to_string()),
-            )
+            let mut meta = AnchorMetadata::point(anchor.pos, anchor.facing.to_string());
+            meta.resolves_to = contract
+                .as_ref()
+                .and_then(|c| crate::contract::resolves_to(c, anchor.pos));
+            (name.clone(), meta)
         })
         .collect()
 }
@@ -636,7 +644,7 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
 /// the program's intent and come out as the boxes that intent resolved to; a
 /// space with no boxes is written with none, because a zero binding is a finding
 /// for whatever reads the contract and deleting it would hide the finding.
-fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
+pub fn contract_metadata(expansion: &Expansion) -> Option<SpatialContract> {
     let contract = expansion.contract.as_ref()?;
     let ranges = |boxes: &[Box3]| -> Vec<RegionMetadata> { boxes.iter().map(range).collect() };
     Some(SpatialContract {

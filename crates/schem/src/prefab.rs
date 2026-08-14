@@ -180,6 +180,17 @@ pub struct Anchor {
     /// Block id, for a gate anchor.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,
+    /// **Which element of the piece's spatial contract this anchor lands in** —
+    /// `space:<name>`, `no_body:<name>`, `via:<name>` or `bar:<name>`.
+    ///
+    /// A campaign binds content to an anchor by name; what says whether that
+    /// place is play space, a door or exterior dressing is the contract, and a
+    /// reader who has only the anchor list cannot tell. Absent on a piece that
+    /// declares no contract, and on an anchor that lands in nothing the contract
+    /// accounts for — which is a finding the checker raises rather than a
+    /// silence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolves_to: Option<String>,
 }
 
 impl Anchor {
@@ -190,6 +201,7 @@ impl Anchor {
             facing: Some(facing.into()),
             region: None,
             block: None,
+            resolves_to: None,
         }
     }
 }

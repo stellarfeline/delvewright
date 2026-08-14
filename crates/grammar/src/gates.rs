@@ -30,7 +30,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+use crate::contract;
 use crate::expand::Expansion;
+use crate::export;
 use crate::model::VoxelModel;
 use crate::nav;
 
@@ -252,6 +254,13 @@ pub struct Report {
     /// Things a reader must be told even though no gate went red — a gate that
     /// examined nothing, an expansion that declared no anchors.
     pub findings: Vec<String>,
+    /// **Every spatial-contract opt-out instance, by name** (spec-0036 §2.9):
+    /// each open envelope, each sightline, each out-of-walk region with its
+    /// computed kind, each bar the reachability walk had to open, each exterior
+    /// face. Enumerated rather than counted, because a count is a thing a blind
+    /// script can satisfy and a list is a thing a reviewer reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enumeration: Vec<String>,
 }
 
 impl Report {
@@ -334,42 +343,139 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // --- Gate (opt-in): a body can walk the piece end to end. --------------
     let standable = nav::standable_cells(model);
     let reach = reachability(model, &standable);
-    if options.traversable {
-        let (entry, exit) = nav::ends(model);
-        let bound = entry.len() + exit.len();
-        let walked = if options.allow_falls {
-            nav::reachable_with_fall(model, &standable, &entry, &exit)
-        } else {
-            nav::connected(&standable, &entry, &exit)
-        };
-        gates.push(Gate {
-            id: "traversable",
-            pass: walked && bound > 0,
-            bound,
-            // The piece's total standable count used to be quoted here, beside
-            // the word `pass`, and it read as coverage: a Notre-Dame zone said
-            // "4982 standable in all; walking connects them" while 58% of that
-            // floor had no route to anything. This gate is about the ROUTE and
-            // says so; how much floor the route reaches is the reachability
-            // measurement, which runs on every expansion.
-            detail: format!(
-                "{} standable cell(s) at the approach end, {} at the exit end; walking{} {}. A \
-                 claim about the route only — see the reachability measurement for how much of \
-                 the piece's floor a body reaches",
-                entry.len(),
-                exit.len(),
-                if options.allow_falls {
-                    " (with falls)"
-                } else {
-                    ""
-                },
-                if walked {
-                    "connects them"
-                } else {
-                    "does NOT connect them"
-                }
-            ),
+    // The declared face contract, when the piece has one. It is what
+    // `traversable` re-derives its claim from (spec-0036 §2.8): a door is a
+    // thing the author declared, and counting standable cells on a face counts
+    // louvres, parapets and window sills — 47 "approaches" where 3 were doors.
+    let resolved = export::contract_metadata(expansion);
+    let faces: Option<Vec<contract::ExteriorFace>> = resolved
+        .as_ref()
+        .map(|c| {
+            contract::exterior_faces(model, c)
+                .into_iter()
+                .filter(|f| f.class != "vision")
+                .collect()
         });
+    if options.traversable {
+        match &faces {
+            Some(faces) => {
+                let mouths: Vec<BTreeSet<[i32; 3]>> = faces
+                    .iter()
+                    .map(|f| mouth(model, &standable, f))
+                    .collect();
+                let bound = faces.len();
+                let mut severed: Vec<String> = Vec::new();
+                for (i, a) in mouths.iter().enumerate() {
+                    for (j, b) in mouths.iter().enumerate().skip(i + 1) {
+                        let walked = if options.allow_falls {
+                            nav::reachable_with_fall(model, &standable, a, b)
+                                || nav::reachable_with_fall(model, &standable, b, a)
+                        } else {
+                            nav::connected(&standable, a, b)
+                        };
+                        if !walked {
+                            severed.push(format!(
+                                "{} {} <-> {} {}",
+                                faces[i].dir.as_str(),
+                                faces[i].class,
+                                faces[j].dir.as_str(),
+                                faces[j].class
+                            ));
+                        }
+                    }
+                }
+                gates.push(Gate {
+                    id: "traversable",
+                    pass: bound >= 2 && severed.is_empty(),
+                    bound,
+                    detail: if bound < 2 {
+                        format!(
+                            "the contract declares {bound} exterior traversal edge(s). A \
+                             traversability claim is a claim that a body walks THROUGH the piece, \
+                             which needs two ways out"
+                        )
+                    } else if severed.is_empty() {
+                        format!(
+                            "{bound} declared way(s) in or out — {} — and a walk{} connects every \
+                             pair of them",
+                            faces
+                                .iter()
+                                .map(|f| format!("{} {}", f.dir.as_str(), f.class))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            if options.allow_falls { " (with falls)" } else { "" }
+                        )
+                    } else {
+                        format!(
+                            "{bound} declared way(s) in or out; no walk connects {}",
+                            severed.join(", ")
+                        )
+                    },
+                });
+            }
+            None => {
+                // Legacy: a piece that declares no contract has no doors to
+                // count, so the old face heuristic is all there is — and the
+                // detail says so rather than letting the number read as doors.
+                let (entry, exit) = nav::ends(model);
+                let bound = entry.len() + exit.len();
+                let walked = if options.allow_falls {
+                    nav::reachable_with_fall(model, &standable, &entry, &exit)
+                } else {
+                    nav::connected(&standable, &entry, &exit)
+                };
+                gates.push(Gate {
+                    id: "traversable",
+                    pass: walked && bound > 0,
+                    bound,
+                    detail: format!(
+                        "{} standable cell(s) at the approach end, {} at the exit end; walking{} \
+                         {}. This piece declares no spatial contract, so the binding count is \
+                         standable CELLS on two faces of the region, not declared ways in — \
+                         declare exterior edges and it counts doors",
+                        entry.len(),
+                        exit.len(),
+                        if options.allow_falls {
+                            " (with falls)"
+                        } else {
+                            ""
+                        },
+                        if walked {
+                            "connects them"
+                        } else {
+                            "does NOT connect them"
+                        }
+                    ),
+                });
+            }
+        }
+    }
+    // --- Gates: the spatial contract, whenever the piece declares one. ------
+    //
+    // Not opt-in, and that is the binding. An author who declares spaces has
+    // made a claim about the building; the obligations are the claim's own
+    // proof, and there is no flag that expands the piece without asking whether
+    // the claim is true. A red here writes no `.nbt` (`main.rs` judges before it
+    // freezes), so a piece whose blocks disagree with its contract cannot become
+    // an artifact anyone picks up later.
+    let mut enumeration = Vec::new();
+    if let Some(resolved) = &resolved {
+        let anchor_positions: BTreeMap<String, [i32; 3]> = expansion
+            .anchors
+            .iter()
+            .map(|(name, a)| (name.clone(), a.pos))
+            .collect();
+        let checked = contract::check(model, resolved, &anchor_positions);
+        gates.extend(checked.gates);
+        findings.extend(checked.findings);
+        enumeration = checked.enumeration;
+    } else {
+        findings.push(
+            "this piece declares no spatial contract: no space, edge or envelope is claimed, so \
+             every contract obligation examined nothing. What the building IS remains unstated, \
+             and nothing downstream can check that a placed piece fits its neighbours"
+                .to_string(),
+        );
     }
 
     // --- Gate (opt-in): every roofed cell of floor can be walked to. --------
@@ -402,7 +508,10 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     }
 
     for gate in &gates {
-        if gate.bound == 0 {
+        // The contract's own gates raise their zero bindings by name inside
+        // `contract::check`, which is where the second door reads them from too;
+        // repeating them here would print each twice.
+        if gate.bound == 0 && !gate.id.starts_with("contract-") {
             findings.push(format!(
                 "gate `{}` examined ZERO objects — its verdict binds to nothing",
                 gate.id
@@ -480,7 +589,49 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .map(|(name, a)| (name.clone(), a.pos))
             .collect(),
         findings,
+        enumeration,
     }
+}
+
+/// Where a body actually stands at a declared way in or out.
+///
+/// The face's own cells when a body can stand in them (a doorway at grade), and
+/// otherwise the standable cells one step inside it (a doorway whose floor
+/// course belongs to the wall). Empty only when the declared opening has no
+/// footing at all, which the traversability verdict then reports as a severed
+/// pair rather than as a pass.
+fn mouth(
+    model: &VoxelModel,
+    standable: &BTreeSet<[i32; 3]>,
+    face: &contract::ExteriorFace,
+) -> BTreeSet<[i32; 3]> {
+    let direct: BTreeSet<[i32; 3]> = face
+        .cells
+        .iter()
+        .filter(|c| standable.contains(*c))
+        .copied()
+        .collect();
+    if !direct.is_empty() {
+        return direct;
+    }
+    let mut near = BTreeSet::new();
+    for cell in &face.cells {
+        for d in [
+            [1, 0, 0],
+            [-1, 0, 0],
+            [0, 1, 0],
+            [0, -1, 0],
+            [0, 0, 1],
+            [0, 0, -1],
+        ] {
+            let n = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
+            if standable.contains(&n) {
+                near.insert(n);
+            }
+        }
+    }
+    let _ = model;
+    near
 }
 
 /// The plan view: how many columns carry a block, and how long the outline of
@@ -698,10 +849,18 @@ mod tests {
         .unwrap();
         let report = judge(&out, Options::default());
         assert!(report.is_pass());
-        // Two of them, and a solid cube earns both: nothing names a place in it,
-        // and there is nowhere in it to stand, so the reachability measurement
-        // examined nothing either.
-        assert_eq!(report.findings.len(), 2, "{:?}", report.findings);
+        // Three of them, and a solid cube earns all three: nothing names a place
+        // in it, there is nowhere in it to stand so the reachability measurement
+        // examined nothing either, and it makes no spatial claim at all.
+        assert_eq!(report.findings.len(), 3, "{:?}", report.findings);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.contains("no spatial contract")),
+            "{:?}",
+            report.findings
+        );
         assert!(
             report.findings.iter().any(|f| f.contains("no anchors")),
             "{:?}",

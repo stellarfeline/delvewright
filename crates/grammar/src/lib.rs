@@ -89,6 +89,7 @@
 
 pub mod block;
 pub mod compose;
+pub mod contract;
 pub mod coverage;
 pub mod eval;
 pub mod expand;
@@ -106,6 +107,7 @@ pub mod version;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
+pub use contract::{ContractReport, ExteriorFace, NoBodyKind, exterior_faces};
 pub use expand::{
     Anchor, ExpandError, ExpandOptions, Expansion, Limits, ResolvedBar, ResolvedContract,
     ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume, Stats, expand,
