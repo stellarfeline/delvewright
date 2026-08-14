@@ -463,7 +463,19 @@ jobs:
       # given that fetch; the script itself takes no further network action.
       # What it cannot see — another open PR that has not yet merged into
       # `origin/main` — is stated in the script's own docstring, not buried.
-      - name: fetch origin/main for the numbering-uniqueness gates
+      # `--depth=1` is CI-ONLY and is correct HERE for a reason that does not
+      # travel: `actions/checkout@v4` already left this a shallow checkout, so
+      # there is no full history to truncate, and one commit is fetched instead
+      # of the branch's whole ancestry (measured against this repository's own
+      # history under CI's merge-preview shape: 1 commit versus 400). Run the
+      # same line in a developer's full clone and it converts that clone — and
+      # every worktree sharing its object store — into a shallow one, after
+      # which merge-base, ahead/behind and every other ancestry answer is a
+      # confident wrong number rather than an error. That is why the gates below
+      # never print this line: they compute the remedy from the repository they
+      # are running in (`tools/lib/gitbase.py`), and a full clone is told to
+      # fetch plainly.
+      - name: fetch origin/main for the numbering-uniqueness gates (CI-only depth)
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
         run: python3 tools/check-numbered-doc-uniqueness.py
