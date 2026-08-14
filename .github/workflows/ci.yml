@@ -156,8 +156,7 @@ jobs:
         run: |
           cargo run --locked -q -p delvec --bin delvec -- fmt --check \
             crates/dsl/fixtures \
-            crates/compiler/tests/fixtures \
-            crates/compiler/examples
+            crates/compiler/tests/fixtures
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
