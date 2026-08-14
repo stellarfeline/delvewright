@@ -565,6 +565,38 @@ def check_modifier_holes(enums):
     return pairs, len(holes), fails
 
 
+AUDIT = "docs/notes/capability-ownership-audit.md"
+
+# `| A — every `summon ...` | **13** sites (…) |` — the check letter names the
+# row, and the first integer of the second cell is its stated binding count.
+AUDIT_ROW = re.compile(r"^\|\s*([A-Z])\s+\u2014[^|]*\|\s*\**(\d+)\b")
+
+
+def stated_bindings(root: pathlib.Path) -> tuple[dict[str, int], list[str]]:
+    """The binding count each row of the audit's table claims.
+
+    The table used to be hand-copied, which is the unbound fact the table
+    exists to prevent: three of its five rows sat below the build for weeks and
+    nothing could say so, because a number in prose is not measured by
+    anything. Reading it here makes the claim a gate — the doc and the build
+    disagree in exactly one direction, and the build wins.
+    """
+    path = root / AUDIT
+    if not path.exists():
+        return {}, [f"FAIL: {AUDIT} not found — the audit this ledger documents moved."]
+    rows: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = AUDIT_ROW.match(line.strip())
+        if m:
+            rows[m.group(1)] = int(m.group(2))
+    if not rows:
+        return {}, [
+            f"FAIL: {AUDIT} states no binding count this checker can read. A "
+            f"cross-check that matched zero rows is vacuous, not a pass."
+        ]
+    return rows, []
+
+
 def main() -> int:
     root = repo_root()
     if not (root / STAGES).exists():
@@ -601,6 +633,37 @@ def main() -> int:
             f"{'FAIL' if fails else 'OK'}: check {name} — {examined} {unit} "
             f"examined, {matched} matched, {len(fails)} unjustified."
         )
+
+    # The doc's own table is a claim about these numbers, so it is checked
+    # against them rather than trusted. Stated where it can be acted on: the
+    # remedy is to correct the doc, never to loosen this.
+    stated, doc_fails = stated_bindings(root)
+    for f in doc_fails:
+        print(f)
+    failed = failed or bool(doc_fails)
+    checked = 0
+    for name, unit, examined, matched, _ in results:
+        letter = name.split(" ", 1)[0]
+        if letter not in stated:
+            if not doc_fails:
+                print(
+                    f"FAIL: {AUDIT} has no `Binds today` row for check {letter}. "
+                    f"Every check states its binding count in one place a reader "
+                    f"reaches, or the ledger is a number nobody can check."
+                )
+                failed = True
+            continue
+        checked += 1
+        if stated[letter] != matched:
+            print(
+                f"FAIL: {AUDIT} says check {letter} binds {stated[letter]}; it "
+                f"binds {matched}. The build is the fact — correct the row."
+            )
+            failed = True
+    print(
+        f"{'FAIL' if failed else 'OK'}: audit table cross-check — {checked} of "
+        f"{len(results)} stated binding count(s) examined."
+    )
 
     if failed:
         print("\nThe audit and the three shapes: docs/notes/capability-ownership-audit.md")

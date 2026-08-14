@@ -1,0 +1,32 @@
+{
+  "campaign_id": "die-retry",
+  "content": {
+    "finale": "quest/trial",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Get the Keeper to name the trial, and mark the stone he stands on.",
+        "id": "quest/greet",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/greet"
+        ],
+        "goal": "Cut down the guard the Keeper summons.",
+        "id": "quest/trial",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.2.0",
+  "stage": "quest-plan"
+}

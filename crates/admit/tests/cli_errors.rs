@@ -134,11 +134,233 @@ fn stage_tile_set(dir: &std::path::Path) -> PathBuf {
                 "generator": "crates/grammar",
                 "parts": parts,
             },
+            "anchors": { "anchor/nave": { "pos": [3, 1, 3], "facing": "north" } },
+            "connectors": [],
+            "lighting": { "profile": "unmeasured" },
+            "license": {
+                "source": "original",
+                "spdx": "GPL-3.0-or-later",
+                "note": "n",
+                "provenance": "Generated deterministically by crates/grammar",
+                "generated_by": {
+                    "generator": "grammar",
+                    "program": "zone",
+                    "program_hash": "sha256:00",
+                    "seed": 1
+                }
+            }
         })
         .to_string(),
     )
     .unwrap();
     manifest
+}
+
+/// `lighting` on a tile-set manifest probes the WHOLE zone.
+///
+/// The documented procedure (`prefab-procedure.md` §7) is `audit`, `socket`,
+/// `lighting`, `audit` — and for every zone past the 48-per-axis cap the third
+/// step used to be unreachable: handed the manifest, `lighting` tried to gunzip
+/// JSON and died at `DW0732`. A building bigger than 48 blocks could not have
+/// its light measured at all.
+#[test]
+fn lighting_of_a_manifest_probes_the_whole_zone() {
+    let dir = tmp("lighting-manifest");
+    let manifest = stage_tile_set(&dir);
+
+    let out = Command::new(bin())
+        .args(["lighting"])
+        .arg(&manifest)
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["files"], 2, "both tiles were read");
+    let room = fixtures::clean_room();
+    assert_eq!(
+        report["size"],
+        serde_json::json!([room.size[0], room.size[1], room.size[2] * 2]),
+        "the probe sizes the zone, never a tile"
+    );
+    // Every artifact states its binding, and the binding is a subset chain.
+    let b = &report["binding"];
+    let (standable, reachable, measured) = (
+        b["standable_cells"].as_u64().unwrap(),
+        b["reachable_cells"].as_u64().unwrap(),
+        b["measured_cells"].as_u64().unwrap(),
+    );
+    assert!(measured > 0, "a zero binding is a finding, not a pass");
+    assert!(measured <= reachable && reachable <= standable, "{b}");
+}
+
+/// `--write` on a manifest edits the ZONE's own metadata, and leaves the rest of
+/// the document exactly as it found it.
+///
+/// The provenance row is the point. Before this, `--write` on a tiled zone was
+/// unreachable at all, and the tile it was pointed at instead got a manufactured
+/// skeleton claiming `spdx: UNKNOWN`.
+#[test]
+fn lighting_write_on_a_manifest_keeps_the_zones_provenance() {
+    let dir = tmp("lighting-manifest-write");
+    let manifest = stage_tile_set(&dir);
+    let before: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+
+    let out = Command::new(bin())
+        .args(["lighting"])
+        .arg(&manifest)
+        .arg("--write")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let after: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
+    assert_eq!(after["license"], before["license"], "provenance survives");
+    assert_eq!(after["structure_set"], before["structure_set"]);
+    assert_eq!(after["anchors"], before["anchors"]);
+    assert_eq!(after["lighting"]["profile"], "lit");
+    assert!(
+        after["lighting"]["method"]
+            .as_str()
+            .unwrap()
+            .contains("roofed floor cell"),
+        "the method states the binding the measurement was taken over: {after}"
+    );
+    // ...and no per-tile metadata was manufactured beside it.
+    assert!(!dir.join("zone.x0y0z0.json").exists());
+}
+
+/// `DW0739`: a whole-piece command handed ONE TILE is refused — and the refusal
+/// survives the tile being copied away from its manifest.
+///
+/// This is the general form. The old guard asked "is there a manifest beside
+/// this file naming it", so `cp tile.nbt elsewhere/` produced a fragment every
+/// tool accepted as a whole prefab: a guard that depends on a neighbouring file
+/// is not a property of the artifact. The tile's NAME is — `part_filename`
+/// writes it, and a copy, a move and an upload all carry it.
+#[test]
+fn a_detached_tile_is_still_refused_at_every_door() {
+    let dir = tmp("detached-tile");
+    stage_tile_set(&dir);
+    let elsewhere = dir.join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let orphan = elsewhere.join("zone.x0y0z1.nbt");
+    std::fs::copy(dir.join("zone.x0y0z1.nbt"), &orphan).unwrap();
+    assert!(
+        !elsewhere.join("zone.json").exists(),
+        "nothing beside it says what it is"
+    );
+
+    for args in [
+        vec!["audit".to_string()],
+        vec!["lighting".to_string()],
+        vec!["resolve-jigsaw".to_string()],
+    ] {
+        let out = Command::new(bin())
+            .args(&args)
+            .arg(&orphan)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {out:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("DW0739"), "{args:?}: {stderr}");
+        assert!(stderr.contains("separated from its set"), "{stderr}");
+    }
+
+    // ...and the editing commands, which would corrupt the set rather than
+    // merely misreport it.
+    let out = Command::new(bin())
+        .args(["socket"])
+        .arg(&orphan)
+        .args(["--pos", "3,1,0", "--facing", "north"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0739"));
+
+    // ...and the door nobody points at deliberately: a gallery over a directory
+    // that holds tiles would put slices of one building on five plinths.
+    let out = Command::new(bin())
+        .args(["gallery"])
+        .arg(&elsewhere)
+        .args(["-o"])
+        .arg(dir.join("gallery-out"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("DW0739"));
+}
+
+/// `DW0753`: `--write` with no metadata to write into REFUSES, and writes
+/// nothing.
+///
+/// It used to manufacture one: `source: unknown`, `spdx: UNKNOWN`, no
+/// `generated_by` row and `anchors: {}` — a document asserting that nothing is
+/// known about the asset, written silently and indistinguishable afterwards
+/// from a real admission record. A tool that cannot establish where something
+/// came from must refuse, never invent.
+#[test]
+fn lighting_write_without_metadata_is_dw0753_and_writes_nothing() {
+    let dir = tmp("no-provenance");
+    let nbt = dir.join("piece.nbt");
+    std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
+
+    let out = Command::new(bin())
+        .args(["lighting"])
+        .arg(&nbt)
+        .arg("--write")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("DW0753"), "{stderr}");
+    assert!(
+        !dir.join("piece.json").exists(),
+        "no metadata may be invented"
+    );
+    // The measurement itself is still printed — the refusal is about writing.
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["profile"], "lit");
+}
+
+/// `DW0752`: a probe that bound to ZERO cells is a finding, never a pass.
+///
+/// This is the sixth-mode question asked of this gate itself: what does it
+/// demand, and could the defect supply it? A pitch-black sealed crypt binds no
+/// cells — so if "nothing to measure" were a success, the darkest possible piece
+/// would be the one that passed most quietly.
+#[test]
+fn a_sealed_piece_binds_zero_cells_and_is_dw0752() {
+    let dir = tmp("sealed");
+    let nbt = dir.join("sealed.nbt");
+    std::fs::write(&nbt, fixtures::sealed_room().write()).unwrap();
+
+    let out = Command::new(bin())
+        .args(["lighting"])
+        .arg(&nbt)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("DW0752"), "{stderr}");
+    assert!(stderr.contains("no ground-level entrance"), "{stderr}");
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["profile"], "unbound");
+    assert_eq!(report["binding"]["measured_cells"], 0);
+    assert!(
+        report["binding"]["standable_cells"].as_u64().unwrap() > 0,
+        "there IS floor in it — what is missing is a way in: {report}"
+    );
 }
 
 /// `audit` on a tile-set manifest audits every tile and returns ONE zone
