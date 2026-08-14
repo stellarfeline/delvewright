@@ -24,8 +24,9 @@ Two renderers, one 1.21.11 **fidelity gate**:
 ```
 delve-render [--json] [--textures <jar>] [--size <px>] <command>
 
-piece <prefab.nbt> -o <dir>     deterministic multi-angle set for one prefab
-batch <dir> -o <dir>            piece set for every .nbt in a library dir
+piece <prefab.nbt> -o <dir>     planned multi-angle set for one prefab
+                                [--view SPEC]... cameras you aim yourself
+batch <dir> -o <dir>            piece set for every .nbt in a library dir [--view SPEC]...
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
 scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
 panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
@@ -55,12 +56,12 @@ and it is never redistributed.
 | Code | Meaning |
 | --- | --- |
 | `DW0720` | missing-texture (magenta) placeholder detected — the fidelity gate's failure |
-| `DW0721` | input error (unreadable/unparseable `.nbt` / metadata / render-plan / scores) |
+| `DW0721` | input error (unreadable/unparseable `.nbt` / metadata / render-plan / scores), or a `--view` that cannot be rendered as asked — refused before any frame |
 | `DW0722` | output error (cannot write) |
 | `DW0723` | renderer/GPU error or textures not found |
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
 | `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor and zero-blockstate bindings (warning) |
-| `DW0727` | an anchor's eye-level camera does not stand on the anchor's own cell, or could not be stood up at all (warning) |
+| `DW0727` | an anchor's eye-level camera does not stand on the anchor's own cell, or could not be stood up at all (warning); also any shot in the set that rendered as an empty frame, planned or `--view` |
 | `DW0790` | a blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
 | `DW0791` | a palette entry leaves shape-carrying properties unwritten, so the shape comes from the version's default state rather than from the file — warning, with the properties and the cell count |
 | `DW0792` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
@@ -88,6 +89,14 @@ inside a room. So the deterministic per-piece set is:
 Metadata is read from `<basename>.json` beside the `.nbt` (sockets from
 `connectors`, anchors from `anchors`, lighting from `lighting`); it **degrades
 gracefully** — a missing/partial file still yields the exterior + top-down set.
+
+Nothing in that set is **square-on at a face**, so `--view` (repeatable, on
+`piece` and `batch`) appends cameras the author aims: a bearing (`face=north` for
+a level elevation of that face of the subject box, or `yaw=<deg>`) on a subject
+(`of=model`, or any declared anchor), with optional `name=`, `pitch=`, `fov=`,
+`zoom=` and `cutaway=`. A `face=` view frames that face rather than the whole
+box, so an elevation of a deep building fills the frame without a hand-tuned
+zoom. Full key list: `docs/reference/tools.md` §4.
 
 True free-camera **in-room** shots are the **Chunky path** (`scene`), which places
 cameras anywhere in the built world. The per-piece cutaways are the fast

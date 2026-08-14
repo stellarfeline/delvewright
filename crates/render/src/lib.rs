@@ -8,6 +8,12 @@
 //! - [`viewer`] — prefabs → one self-contained interactive HTML page
 //!   (`delve-render viewer`), the camera a reviewer drives.
 //! - [`shots`] — per-piece shot planner (`delve-render piece`).
+//! - [`view`] — author-declared cameras (`piece --view`): a bearing and a
+//!   subject box, in the language `<stem>-shots.json` already writes back. Not
+//!   to be confused with [`viewer`], which is the interactive page: `view` aims
+//!   ONE still frame the renderer then bakes, `viewer` hands the camera to a
+//!   person at review time. Both answer "the planned set is not square-on at
+//!   this face"; only `view` answers it in a file a report can cite.
 //! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
@@ -44,4 +50,5 @@ pub mod scene;
 pub mod sheet;
 pub mod shots;
 pub mod tileset;
+pub mod view;
 pub mod viewer;
