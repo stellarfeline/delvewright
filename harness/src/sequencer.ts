@@ -29,7 +29,7 @@ export interface StepExecutor {
   kill(step: KillStep): Promise<void>;
   collect(step: CollectStep): Promise<void>;
   interact(step: InteractStep): Promise<void>;
-  /** Rest at a bonfire (compiler #220): click the affordance, then run the button's
+  /** Rest at a bonfire: click the affordance, then run the button's
    * command. Proves no objective — it performs the loop later steps are proven
    * under. Optional so existing fakes keep compiling; a path carrying a `rest`
    * step against an executor without it is a hard failure, never a silent skip. */
@@ -57,7 +57,7 @@ export interface StepExecutor {
    */
   recoverFromDeath?(): Promise<void>;
   /**
-   * Optional (task #120): put the kit back on after a respawn, WITHOUT moving the
+   * Optional: put the kit back on after a respawn, WITHOUT moving the
    * bot. Paired with {@link recoverFromDeath}.
    *
    * The sequencer used to re-run `select-class` here, on the premise that a respawn
@@ -203,7 +203,7 @@ export async function runSequence(
   // proves nothing itself, so it is the step before it (validateStepOrder has
   // already guaranteed exactly one assert-complete, last). Campaign completion is
   // due at this step and nowhere earlier.
-  // …and a `rest` step (compiler #220) stands for no objective at all, so a fire
+  // …and a `rest` step stands for no objective at all, so a fire
   // rested at just before the finale must not be mistaken for the beat the campaign
   // marker is due at.
   const finalObjectiveIndex = (() => {
@@ -251,7 +251,7 @@ export async function runSequence(
           try {
             await executor.recoverFromDeath();
             // Re-arm WHERE THE BOT STANDS. Re-running `select-class` here would
-            // teleport it to the campaign entry point (task #120), so the retried
+            // teleport it to the campaign entry point, so the retried
             // step would be walked from the start of the delve rather than from
             // the respawn the player actually got.
             await executor.rearmAfterRespawn?.();

@@ -21,19 +21,18 @@
 #
 # Fields
 #   id            campaign directory name under <content>/campaigns/
-#   task          the tracking item that will retire this entry
+#   task          what must happen for this entry to be retired, in a few words
 #   reason        why it cannot build today, in one sentence
 #   expect_codes  the complete set of DW error codes the build must emit
 
 [[exclusion]]
 id = "hollow-vigil"
-task = "#34"
+task = "rewrite the two over-wide dialogue option labels"
 reason = """
 Two dialogue option labels are authored over the 146 px a vanilla dialog button \
 fits (DW0331); vanilla scrolls an over-wide caption back and forth rather than \
 wrapping it, so the fix is a content rewrite of the labels, not an engine change. \
-Out of scope for the PR that introduced this gate — the gate exists to stop \
-ENGINE changes from breaking campaigns, and hollow-vigil was already red before \
-it.\
+This gate exists to stop ENGINE changes from breaking campaigns, and hollow-vigil \
+is red for a content reason that predates it.\
 """
 expect_codes = ["DW0331"]

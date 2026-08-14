@@ -91,8 +91,8 @@ where the party respawns, so `DW0478` forbids it inside any hostile's aggro
 range — and the elite kneels near the centre of the field with the documented
 16-block default reach. The tide bounds the piece at local z=33, so no cell on
 the centre line is more than 17 blocks from the kneel: clearing 16 with margin
-needs the lateral run west, and that is why the fire is where it is (19.8 blocks;
-owner ruling 2026-08-04, task #132). The driftwood spar moved off local x=11 with
+needs the lateral run west, and that is why the fire is where it is (19.8
+blocks). The driftwood spar moved off local x=11 with
 it — a log lying on the rest cell is a rest cell the anchor cannot stand on.
 
 The piece exists to stage the **optional elite**. Its legibility is geometry, not

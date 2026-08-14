@@ -1,6 +1,6 @@
 """The storybook version gate (`tools/check-storybook-version.py`).
 
-The drift this pins (owner directive, task #147): a campaign's storybook is what
+The drift this pins (owner directive): a campaign's storybook is what
 a server host reads before running the delve, and the one internal fact it is
 allowed to carry — which engine the delve needs — is a hand-typed number. Hand-
 typed numbers go stale the moment a campaign adopts a new `dsl_version`, and a
@@ -339,7 +339,7 @@ def test_a_localized_gloss_restating_the_markers_numbers_is_RED(gate, capsys):
 
 def test_a_localized_gloss_carrying_NO_number_is_green(gate):
     """A gloss may say what the untranslated line above it means — just not in
-    numbers, which is the fix content PR #39 shipped."""
+    numbers, which is what the content round shipped."""
     marker = gate.marker_line("0.9.0", ENGINE_DELVEC)
     gloss = "> (上一行是版本印记,不翻译:它声明本战役需要的引擎版本。)"
     make_campaign(
@@ -412,7 +412,7 @@ def test_a_malformed_marker_attempt_is_not_ALSO_an_unbound_literal(gate, capsys)
 
 def test_an_allowlisted_campaign_is_skipped_and_ANNOUNCED(gate, capsys, monkeypatch):
     """A temporary exemption nobody can see is an exemption nobody removes."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"blocked": "blocked by content PR #22"})
+    monkeypatch.setattr(gate, "ALLOWLIST", {"blocked": "blocked by an open content round"})
     make_campaign(gate, "blocked", readmes={"README.md": storybook(None)})
     make_campaign(
         gate,
@@ -422,13 +422,13 @@ def test_an_allowlisted_campaign_is_skipped_and_ANNOUNCED(gate, capsys, monkeypa
     assert run(gate) == 0
     out = capsys.readouterr().out
     assert "TEMPORARILY ALLOWLISTED (no marker required yet): blocked" in out
-    assert "blocked by content PR #22" in out
+    assert "blocked by an open content round" in out
     assert "1 campaign(s) checked" in out and "1 allowlisted" in out
 
 
 def test_an_allowlisted_campaign_that_now_PASSES_is_RED(gate, capsys, monkeypatch):
     """The exemption's own expiry: once the marker is right, the entry must go."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"fixed": "blocked by content PR #22"})
+    monkeypatch.setattr(gate, "ALLOWLIST", {"fixed": "blocked by an open content round"})
     make_campaign(
         gate,
         "fixed",
@@ -439,7 +439,7 @@ def test_an_allowlisted_campaign_that_now_PASSES_is_RED(gate, capsys, monkeypatc
 
 
 def test_an_allowlist_entry_for_an_absent_campaign_is_RED(gate, capsys, monkeypatch):
-    monkeypatch.setattr(gate, "ALLOWLIST", {"ghost": "blocked by content PR #22"})
+    monkeypatch.setattr(gate, "ALLOWLIST", {"ghost": "blocked by an open content round"})
     make_campaign(
         gate,
         "fine",
@@ -457,7 +457,7 @@ def test_zero_storybook_files_scanned_is_RED_even_with_campaigns_present(
 ):
     """The literal clauses' own binding count. Allowlist the only campaign that
     ships a storybook and they examine nothing — green, and proving nothing."""
-    monkeypatch.setattr(gate, "ALLOWLIST", {"only": "blocked by content PR #22"})
+    monkeypatch.setattr(gate, "ALLOWLIST", {"only": "blocked by an open content round"})
     make_campaign(gate, "only", readmes={"README.md": storybook(None)})
     assert run(gate) == 1
     assert "ZERO storybook files were read" in capsys.readouterr().err

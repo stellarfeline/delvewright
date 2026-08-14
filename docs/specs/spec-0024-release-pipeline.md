@@ -1,6 +1,6 @@
 # spec-0024: Release pipeline — from green campaign branch to joinable delve
 
-- **Status**: Approved (owner approval in conversation, 2026-08-03)
+- **Status**: Approved
 - **ADRs**: 0007 (split licensing), 0008 (CI as arbiter), 0009 (pinned MC),
   0010 (OCI packaging), 0014 (creator distribution)
 - **Depends on**: island content PR merge (first release candidate);
@@ -37,7 +37,7 @@ the tag is the release gate (ADR-0008).
 - **Auto-generated release notes**: campaign title/blurb (player-facing
   voice, audience-separation rule applies).
 
-**Language delivery** (owner ruling 2026-08-03, option a): v1 releases ship
+**Language delivery**: v1 releases ship
 the campaign baked in its primary authored language (today's `build --lang`
 path — the island ships zh-CN as playtested). Once i18n v2 lands (translate
 keys + per-language files in this same resource pack), a release carries
@@ -53,8 +53,8 @@ gate any release.
   offline stays a local-dev override.
 - EULA remains operator-supplied at run time (`-e EULA=TRUE`), never baked
   (ADR-0010).
-- Difficulty/world settings: unchanged, the compiler's (spec-0010/#209
-  entrypoint chain).
+- Difficulty/world settings: unchanged, the compiler's (spec-0010 entrypoint
+  chain).
 
 ### 4. Player-facing README (content repo)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build EVERY campaign in the pinned content repo. A break in one is a red here.
 
-WHY THIS EXISTS (task #44)
+WHY THIS EXISTS
 
 Nothing in CI ever built a real campaign. Every compiler gate ran against
 fixtures under `crates/**/tests/fixtures` and `crates/dsl/fixtures/valid` —
@@ -10,7 +10,7 @@ only artifacts a player ever sees, were built by hand on somebody's laptop when
 somebody remembered.
 
 The cost of that gap was found three separate times in one day; the most
-expensive instance is that PR #260 reached 10/10 green while stopping the
+expensive instance is a change that reached 10/10 green while stopping the
 flagship released campaign `nobodys-cave-island` from building at all — 26
 `DW0364` errors on cells at the ocean line. Ten required status checks, all
 green, and the product did not compile.

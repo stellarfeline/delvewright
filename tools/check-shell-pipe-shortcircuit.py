@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Forbid short-circuiting consumers on the right of a pipe in repo shell scripts.
 
-WHY THIS EXISTS (task #173 / #16, root-caused 2026-08-05)
+WHY THIS EXISTS
 
 `tools/playtest-server.sh` intermittently reported "server did not come up" for a
 server that was up, healthy, and had already logged `Done (` exactly once. The
@@ -60,7 +60,7 @@ EXCLUDED_PREFIXES = ("docs/experiments/",)
 # It is also not a live bug: the file sets `set -e` WITHOUT `pipefail`, and the
 # SIGPIPE lands on `sed`, whose status the pipeline discards. It is listed here so
 # the exemption is visible rather than absent, and it must be closed the next time
-# that entrypoint is touched under the player-facing gate (task #32).
+# that entrypoint is touched under the player-facing gate.
 # Empty on purpose, and it is the point: every early-exit-on-a-pipe in the repo
 # has been removed rather than allowlisted. The last entry here was
 # `validation/world-settings-entrypoint.sh`'s `prop()`, latent because that script

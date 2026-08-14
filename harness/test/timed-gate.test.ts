@@ -1,4 +1,4 @@
-// spec-0016 §4 timed-gate timing/geometry helpers (task #81).
+// spec-0016 §4 timed-gate timing/geometry helpers.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -105,7 +105,7 @@ test("the failure description names the gate and its cycle", () => {
   assert.match(text, /200t cycle/);
 });
 
-// --- task #140: crossing detection + window-margin arithmetic -----------------
+// --- crossing detection + window-margin arithmetic ----------------------------
 //
 // The tide-mill `timed-gate/tide` (36t open / 84t closed, phase 55, crush) killed
 // the bot because the harness only engaged its gate machinery AFTER a hop failed —

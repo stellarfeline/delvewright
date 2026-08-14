@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPIKE TOOLING (task #67 phase 1) — NOT part of the shipped pipeline.
+# SPIKE TOOLING (jump kinematics, phase 1) — NOT part of the shipped pipeline.
 #
 # Empirically measures Minecraft Java 1.21.11 player jump kinematics on a
 # throwaway vanilla server (the pinned itzg image from versions.toml), driven by

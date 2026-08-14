@@ -48,7 +48,7 @@ export interface Encounter {
   readonly respawnsOnRest: boolean;
   /** Absent when the campaign has set no checkpoint by this step (world spawn). */
   readonly checkpoint: Vec3Tuple | undefined;
-  /** The compiler-emitted tag-census probe for this wave (task #123). The names
+  /** The compiler-emitted tag-census probe for this wave. The names
    * come from the plan and are never re-derived here: `safe_local` is a compiler
    * naming rule, and reimplementing it in the harness is the downstream folklore
    * CLAUDE.md forbids. Required — a build too old to state them cannot be
@@ -68,7 +68,7 @@ export interface CensusProbe {
 
 /**
  * One beat that stages or unleashes an actor, as the plan states it (compiler
- * `ActorBeat`, #222).
+ * `ActorBeat`).
  *
  * This is what makes an actor fight *schedulable* at all. A wave encounter has a
  * `kill` step on the critical path, so the bot already knows when the fight
@@ -98,7 +98,7 @@ export interface ActorBeat {
  * Whether the compiler believes the inverted floor gate can measure a fight, and
  * — when it cannot — the reason, in the author's own terms.
  *
- * Carried verbatim into the run report. The whole point of the ledger (#222) is
+ * Carried verbatim into the run report. The whole point of the ledger is
  * that **silence must not read as a pass**: an encounter nobody fought and an
  * encounter fought and lost produce the same empty findings list, and only this
  * tells them apart.
@@ -108,7 +108,7 @@ export interface FloorCoverage {
   readonly reason?: string;
 }
 
-/** One tier-declaring stage-5 actor, as the validation ladder sees it (#222). */
+/** One tier-declaring stage-5 actor, as the validation ladder sees it. */
 export interface ActorEncounter {
   readonly actor: string;
   /** The vanilla entity puppeted and unleashed (`minecraft:wither_skeleton`). */
@@ -132,7 +132,7 @@ export interface FloorLedgerEntry {
   readonly kind: string;
   readonly id: string;
   /**
-   * The declared tier — `undefined` for an **untiered hostile** (task #121): an
+   * The declared tier — `undefined` for an **untiered hostile**: an
    * actor the campaign unleashes on the party without billing the fight at all.
    * It is always a `not_covered` entry, because nothing declared what the gate
    * was supposed to hold it to.
@@ -162,7 +162,7 @@ export interface BindingCount {
  * untiered hostile actor, split into what the gate covers and what it cannot.
  *
  * `present: false` means the build carried NO ledger (a plan from a delvec older
- * than #222) — deliberately distinct from a present-but-empty ledger, because
+ * than the ledger) — deliberately distinct from a present-but-empty ledger, because
  * "this campaign bills nothing hard" and "this build cannot tell you" are
  * different facts and only one of them is reassuring. `binding` is undefined
  * for the same reason `present` can be false: a plan from a delvec older than
@@ -182,7 +182,7 @@ export interface CombatPlan {
   /** The declared world difficulty the run is verified AT (spec-0023 §3). */
   readonly difficulty: string;
   readonly encounters: readonly Encounter[];
-  /** Tier-declaring stage-5 actors — the other shape an elite takes (#222). */
+  /** Tier-declaring stage-5 actors — the other shape an elite takes. */
   readonly actors: readonly ActorEncounter[];
   /** The compiler's coverage ledger, printed verbatim in the run report. */
   readonly floorGate: FloorLedger;
@@ -310,7 +310,7 @@ function parseBindingCount(v: unknown, pointer: string): BindingCount | undefine
 }
 
 /**
- * The census probe block (task #123). Required: measuring a wave by tag is how
+ * The census probe block. Required: measuring a wave by tag is how
  * the ladder counts anything at all now, so a plan that cannot name its census
  * functions is a plan this harness must refuse rather than quietly fall back to
  * counting silhouettes.
@@ -391,7 +391,8 @@ function parseCoverage(v: unknown, pointer: string): FloorCoverage {
 }
 
 /**
- * The plan's `actors[]`. Absent (a plan from a delvec older than #222) parses as
+ * The plan's `actors[]`. Absent (a plan from a delvec that predates the field)
+ * parses as
  * an empty list — the run then says the ledger is absent rather than pretending
  * the campaign declares no tiered actor.
  */
@@ -435,7 +436,7 @@ function parseLedgerSide(v: unknown, pointer: string, needReason: boolean): Floo
       throw new CombatPlanParseError(`${p}/reason`, "a not-covered entry must state why");
     }
     // `tier: null` (or absent) is the compiler saying the entry declares NO
-    // tier — the untiered hostile of task #121. Anything else present must
+    // tier — the untiered hostile. Anything else present must
     // still be a real tier, so a typo can never be read as "untiered".
     const tier = e["tier"];
     return {
@@ -545,10 +546,10 @@ export function assistPolicy(enc: Encounter): "unassisted-first" | "assisted" {
  * otherwise unreadable: no assist is taken on the first attempt at a billed
  * `elite`/`boss` (the inverted floor gate needs one honest unassisted try), so a
  * short array is possible per policy — and, before this field existed,
- * indistinguishable from an assist mechanism that was never wired at all (task
- * #102, the-drowned-bell round 3).
+ * indistinguishable from an assist mechanism that was never wired at all
+ * (the-drowned-bell round 3).
  *
- * The die-retry stage DOES take assist windows (task #121), which is a correction
+ * The die-retry stage DOES take assist windows, which is a correction
  * rather than a softening. It dies on purpose, but it needs the bot alive long
  * enough to SCHEDULE that death and to walk back afterwards; leaving those
  * segments bare made bot fencing skill decide whether the stage could run at all
@@ -645,7 +646,7 @@ export function floorFinding(
 }
 
 // ---------------------------------------------------------------------------
-// The floor gate on ACTORS (spec-0023's gate, #222's other encounter shape)
+// The floor gate on ACTORS (spec-0023's gate, the other encounter shape)
 // ---------------------------------------------------------------------------
 
 /**
@@ -827,8 +828,7 @@ export function respawnedAtCheckpoint(
  * is exactly what a player who dies to the last mob's parting hit experiences.
  * Reading "no hostile present" as a uniform red made the verdict depend on
  * whether the bot's timed melee happened to finish the wave — the same fixture
- * went red then green on consecutive runs (task #102 follow-up; planner ruling
- * 2026-08-03).
+ * went red then green on consecutive runs.
  *
  * The distinction that actually matters is whether the party can still FINISH:
  *
@@ -871,7 +871,7 @@ export interface WaveCensus {
  *    instantaneous — `fightWave` has always slept a second on arrival for exactly
  *    this reason — so three demonstrably-alive drowned read as "no hostile was
  *    there to fight" and the trial went red. The probe now SETTLES.
- *  * the fidelity failure (owner ruling 2026-08-03): a retry must never let the
+ *  * the fidelity failure: a retry must never let the
  *    party chip a wave down across lives. A re-seating wave must come back whole
  *    — the authored count, all-new entities, undamaged — never topped up around
  *    the survivors the last life left standing.
@@ -885,7 +885,7 @@ export interface ReengageObservation {
    * mobs just before the scripted death. On a re-seating wave every one of these
    * is a survivor that was not cleared — the chipped mob the ruling forbids
    * carrying across a life. Counted server-side by tag, so a neighbouring wave's
-   * mob or an ambush actor standing nearby can never be mistaken for one (#230). */
+   * mob or an ambush actor standing nearby can never be mistaken for one. */
   readonly carriedOver: number;
   /** How many had readable health, and how many of those were below full. The
    * census reads `Health` and `max_health` off each mob with vanilla's own
@@ -901,7 +901,7 @@ export interface ReengageObservation {
 }
 
 /**
- * Summarize one settled census (task #123).
+ * Summarize one settled census.
  *
  * Every count here is the SERVER's answer about entities carrying the wave's own
  * tag. The distances are computed here rather than server-side only because
@@ -935,10 +935,9 @@ export function observationOf(
  * The re-seat fidelity verdict for one trial, or `undefined` when the wave came
  * back whole. Only ever consulted for a `respawns_on_rest` wave that re-engaged.
  *
- * Owner ruling 2026-08-03: "打一半的怪要移除重新生成一模一样的,玩家满血了怪也满血了,
- * 不能通过每条命砍一刀磨过去" — a half-fought wave is REMOVED and regenerated
- * identically; the player comes back full, so the wave does too. Grinding a boss
- * down one swing per life is not a difficulty curve, it is a bug.
+ * A half-fought wave is REMOVED and regenerated identically; the player comes
+ * back full, so the wave does too. Grinding a boss down one swing per life is
+ * not a difficulty curve, it is a bug.
  */
 export function reseatFidelityFinding(
   wave: string,
@@ -985,21 +984,21 @@ export interface DeathTrial {
    * Where the bot respawned — MEASURED (`bot.entity.position` the moment the
    * respawn settled), never the plan's expectation. Nothing between the respawn
    * and this reading may move the bot, which is why the post-death re-arm no
-   * longer replays `select-class` (task #120: `class_apply_*` teleports).
+   * longer replays `select-class` (`class_apply_*` teleports).
    */
   readonly respawnPos: Vec3Tuple | undefined;
   /** Did it respawn at the governing checkpoint? Derived from {@link respawnPos}. */
   readonly atCheckpoint: boolean;
   /** Did the kit survive the death? The delve seals `gamerule keep_inventory true`,
    * so a bot that comes back empty-handed found that seal absent — and a player who
-   * must re-gear after every death has no cheap retry (task #120). */
+   * must re-gear after every death has no cheap retry. */
   readonly kitKept: boolean;
   /** Did it walk back to the encounter, from where it respawned? */
   readonly returned: boolean;
   /**
    * Raw observation behind {@link outcome}: was a wave mob standing there again?
    *
-   * **Only observed when {@link returned}** (task #120). The probe reads the
+   * **Only observed when {@link returned}**. The probe reads the
    * entities the CLIENT tracks, so a bot that never got back describes the place it
    * is stuck in, not the encounter. `returned: false` therefore forces
    * `reEngaged: false`, `reengage: undefined` and `outcome: "unproven"` — "not
@@ -1033,8 +1032,7 @@ export interface DeathTrial {
  * when the loop reaches its verdict, and every fact is written as it is learned.
  * A death that happened and went unrecorded is the one thing this artifact must
  * never do: the-drowned-bell round 3 shipped a report with `die_retry: []` and
- * `passed: true` beside a log line naming the death it had just taken (task
- * #102).
+ * `passed: true` beside a log line naming the death it had just taken.
  */
 export type DeathTrialRecord = { -readonly [K in keyof DeathTrial]: DeathTrial[K] };
 
@@ -1201,11 +1199,10 @@ export interface CheckpointPreconditionGap {
  *     before this fight, so a death respawns at world spawn and the retry loop is
  *     a full restart. Advisory: this is a content fact, and in a souls campaign a
  *     design smell, but the compiler's checkpoint/retry-cost rules are what judge
- *     it. Post-#223 this is no longer hypothetical — `fire_step < i` means a
- *     checkpoint armed by the encounter's own kill step is correctly NOT its
- *     governing one, and souls-bonfire's encounter now truthfully reports none.
- *     Before that fix the same case was silently "armed", which is the answer
- *     that would have flattered the campaign.
+ *     it. This is not hypothetical — `fire_step < i` means a checkpoint armed
+ *     by the encounter's own kill step is correctly NOT its governing one, and
+ *     souls-bonfire's encounter truthfully reports none. Reading it as "armed"
+ *     instead is the answer that flatters the campaign.
  */
 export function checkpointPrecondition(
   enc: Encounter,
@@ -1232,7 +1229,7 @@ export function checkpointPrecondition(
   // there later or never. Order only changes the sentence.
   const fire = bonfires.find((b) => near(b.pos, enc.checkpoint!, BONFIRE_MATCH_RADIUS));
   if (fire === undefined || rested.has(fire.bonfire)) return undefined;
-  // BOTH sides of this comparison are EXPORTED path indices (compiler #223): the
+  // BOTH sides of this comparison are EXPORTED path indices: the
   // combat plan's `step` is exported-coordinate now, and `beforeStep` is the index
   // the encounter is executing at. The rest splice inserts steps, so exported and
   // `plan.critical_path` indices drift by one per bonfire — which is exactly why
@@ -1267,8 +1264,8 @@ export function dieRetryFindings(trials: readonly DeathTrial[]): string[] {
  * mode they cannot see is silence: a stage that engaged an encounter and
  * recorded nothing produced an empty `die_retry` array, and an empty array of
  * findings, and therefore read `passed: true` — which is exactly how a run that
- * aborted at its first scripted death reported a green die-retry stage (task
- * #102). Coverage closes that: the stage owes `expected` COMPLETED trials for
+ * aborted at its first scripted death reported a green die-retry stage.
+ * Coverage closes that: the stage owes `expected` COMPLETED trials for
  * every encounter the compiler put in the plan, and anything less is a stage
  * that did not prove its property, whatever else went right.
  */
@@ -1309,7 +1306,7 @@ export function dieRetryCoverageFailures(
  * ## Why this exists
  *
  * The stage's precondition is an ARMED checkpoint before a mandatory encounter,
- * and an encounter that has none is excluded with an advisory (#223) — correctly,
+ * and an encounter that has none is excluded with an advisory — correctly,
  * because where a campaign puts its rest points is a content judgement the
  * compiler's rules own, not the bot's. But the arithmetic downstream of that
  * exclusion is `dieRetryCoverageFailures` over an already-emptied list, so a build

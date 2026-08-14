@@ -1,40 +1,32 @@
 # spec-0026: Horizon library — five pseudo-open-world bases
 
-- **Status**: Proposed (task #151; owner directive 2026-08-04: sky, flatland,
-  valley, cherry-valley, summit; rulings same day: flatland enforcement =
-  spec-0013 primitive, sky = archipelago of islands + bridges, sky backdrop
-  layer parameterized incl. vanilla-seed and imported maps. Second-round
-  rulings 2026-08-04: terrain/biome/tree layering confirmed; flatland is bare
-  grass blocks — no decorative vegetation, no boundary cue (the empty surround
-  IS the cue); perf is non-gating; summit README view-distance line,
-  `fall: lethal` default, `walk_y` datum + migration round, and backdrop v1
-  tiering all approved.)
+- **Status**: Proposed — five bases: sky, flatland, valley, cherry-valley, summit
 - **ADRs**: 0003 (vanilla-first), 0004 (prefabs+jigsaw), 0006 (determinism),
   0010 (OCI — no region files, bootstrap places everything)
 - **Depends on**: spec-0013 (generalizes its horizon/boundary; **supersedes its
-  single global placement datum**), spec-0012 + PR #251 (checkpoint re-seat),
+  single global placement datum**), spec-0012 (checkpoint re-seat),
   spec-0010 (relight scope unchanged)
 - **Research**: `docs/notes/horizon-library-dossier.md` (algorithms + licenses,
   perf math, solver analysis)
-- Non-goal boundary with task #73 (M6 macro-terrain): this spec is single-scene
+- Non-goal boundary with M6 macro-terrain: this spec is single-scene
   surrounds; journey-graph landforms, seamless multi-scene blending and carved
-  waterways stay in #73.
+  waterways stay there.
 
 ## Problem
 
 One horizon exists (`ocean`), and its placement rests on a single global datum
-(`plan::OCEAN_BASE_Y = 60`) authored for the island tileset. Task #149 (PR #251
-"separate finding") showed the bug class: an interior piece whose walk plane
-sits lower than the island convention lands under sea level, floods on boot,
-and `DW0344`'s `waterline_y` exemption means no proof ever looks — the model is
-wrong about walkability, lighting, and everything derived from them. New scenes
-need sky/flatland/valley/summit surrounds, and the generalization must make the
-#149 class impossible by construction, not add five more folklore datums.
+(`plan::OCEAN_BASE_Y = 60`) authored for the island tileset. The bug class it
+carries: an interior piece whose walk plane sits lower than the island
+convention lands under sea level, floods on boot, and `DW0344`'s `waterline_y`
+exemption means no proof ever looks — the model is wrong about walkability,
+lighting, and everything derived from them. New scenes need
+sky/flatland/valley/summit surrounds, and the generalization must make that
+class impossible by construction, not add five more folklore datums.
 
 ## 1. DSL surface (stage 1, next `dsl_version`)
 
-A horizon is a **composition of orthogonal axes**, not an enum of monoliths
-(owner addition 2026-08-04): a **base** (what surrounds the scene), base
+A horizon is a **composition of orthogonal axes**, not an enum of
+monoliths: a **base** (what surrounds the scene), base
 params, and — for `sky` only — a **backdrop** layer (what lies below the
 islands) plus **placement** coordinates over it. `horizon` accepts the
 existing strings (unchanged, byte-identical) or an object
@@ -54,11 +46,11 @@ flora:"cherry", palette:"stone-petal"}`.
 **Cherry-valley is a parameter row, not a base**: the compiler holds no
 cherry-specific code path; a fixture proves the emissions differ only in
 palette/flora blocks (acceptance criterion 6). Backdrop stays sky-only in this spec — blending a
-valley/summit surround into a backdrop terrain is task #73's seamless
+valley/summit surround into a backdrop terrain is M6's seamless
 heightfield blending (Non-goals).
 
-**Terrain, biome, and trees are three separable layers** (owner ruling
-2026-08-04): a surround emits (i) its blocks, (ii) a **vanilla-native biome
+**Terrain, biome, and trees are three separable layers**: a surround emits
+(i) its blocks, (ii) a **vanilla-native biome
 paint** over its columns via `/fillbiome` in the bootstrap path — the same
 channel vanilla uses for grass/foliage/water tint, ambience and sky; no
 resource pack involved — and (iii) an optional **tree layer**: seeded
@@ -91,12 +83,11 @@ Each horizon declares to `compiler::plan`/`nav`:
 `walk_ref_y − walk_y`, where `walk_y` is the area's tileset walk-plane
 convention, declared in pool/prefab metadata (island 3, keep 1, …). A piece
 placed in any non-void horizon without `walk_y` metadata is a build error
-(DW0367). This alone retires the #149 class: a keep-interior area (walk plane
+(DW0367). This alone retires that class: a keep-interior area (walk plane
 local 1) gets base `63 − 1 = 62`, landing its walk plane at 63 — one block
 above sea level, dry, with no author action; the island area (`walk_y = 3`)
 keeps base 60, byte-identical to today. `walk_y` backfill across existing
-tilesets is an in-milestone migration round (version-adoption discipline;
-owner-approved 2026-08-04).
+tilesets is an in-milestone migration round (version-adoption discipline).
 
 **Declarations position; proofs read reality.** After assembly the compiler
 checks **empirical geometry**, never metadata:
@@ -115,19 +106,19 @@ checks **empirical geometry**, never metadata:
   scene floor palettes by seeded noise threshold (dossier §2.4). Explicitly
   forbidden outcome: a clean vertical material wall (machine assertion,
   acceptance criterion 4).
-- **Bare by design** (owner ruling 2026-08-04): flatland is grass *blocks*
+- **Bare by design**: flatland is grass *blocks*
   only — no decorative vegetation, tufts, or scatter of any kind.
-- Boundary: spec-0013 return clock, **horizon-agnostic** (owner ruling
-  2026-08-04) — the region derivation and clock never branch on horizon kind.
-  **No visual boundary cue** (owner ruling, same day): the surround is
+- Boundary: spec-0013 return clock, **horizon-agnostic** — the region
+  derivation and clock never branch on horizon kind.
+  **No visual boundary cue**: the surround is
   deliberately empty of content and buildings, and that emptiness is itself
   the signal; nothing telegraphs the clock.
 
-## 4. Sky archipelago (owner ruling 2026-08-04)
+## 4. Sky archipelago
 
 - Multi-room sky areas assemble as **independent floating islands connected by
   narrow bridges** — never one monolithic island. Bridges are risk terrain:
-  falling = death (via the boundary catch below) → PR #251 checkpoint re-seat.
+  falling = death (via the boundary catch below) → the checkpoint re-seat.
 - **Solver**: prefab metadata gains a connection class `role: room | connector`.
   In a sky area the frontier attach enforces alternation (room sockets accept
   only connectors; connector–connector allowed). First-class solver rule, not
@@ -143,12 +134,12 @@ checks **empirical geometry**, never metadata:
   Crossing below the region's y-envelope floor (lowest placed block − 8) is
   out-of-region; the consequence is the `fall` param: `lethal` (default —
   the catch applies `damage @s 1000 minecraft:generic`, vanilla death fires,
-  the PR #251 re-seat lands the respawn on the armed checkpoint; full souls
+  the checkpoint re-seat lands the respawn on the armed checkpoint; full souls
   death costs, identical over every backdrop) or `return` (plain teleport
   back). Fall/void damage is never relied on: an ocean backdrop makes
   landings survivable, and the clock catches the faller well above any
   backdrop surface. The backdrop is unreachable **by invariant**.
-- **Backdrop** (owner addition 2026-08-04; dossier §7): what lies below the
+- **Backdrop** (dossier §7): what lies below the
   islands, creator-selectable: `void` (default) | `superflat` | `ocean` |
   `vanilla {seed}` | `imported {ref}`; `placement {x,z}` shifts the whole
   scene grid over it (position the delve above a chosen landmark).
@@ -185,7 +176,7 @@ checks **empirical geometry**, never metadata:
   the reachable walk region is the violation. Applies identically to island
   rims and bridge deck edges (no island may sit in a bridge's fall shadow).
   Aggregated like DW0322.
-- **Trials** (task #146 family, under `fall: lethal`): per connector style at
+- **Trials** (under `fall: lethal`): per connector style at
   PR tier, per placed connector at rc tier — step off the deck, assert death,
   assert re-seat onto the armed checkpoint.
 
@@ -225,26 +216,26 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
 
 ## 6. Parity, rendering, budgets
 
-- **World parity (task #84)**: worldgen flows only through emitted
+- **World parity**: worldgen flows only through emitted
   `server.properties` (`level-type` + `generator-settings`), which the
   toolserver/delve images already consume — the PackTest world is the shipped
   world by construction. `check-world-settings.sh` extends to every horizon.
 - **Render tier**: `render-plan.json` gains ≥1 establishing vista shot per
   horizon build (scene edge looking outward), joining the existing shot kinds.
-- **Perf is non-gating** (owner ruling 2026-08-04: the Pi 5 comfortably ran
-  100+-mod servers; no budget table, no spike gates). CI records shipped
+- **Perf is non-gating** (the Pi 5 comfortably runs 100+-mod servers; no
+  budget table, no spike gates). CI records shipped
   image size delta and first-boot time per horizon fixture *informationally*
   (dossier §4 + §7.5 keep the estimation math for reference). Summit ships
   server `view-distance` 12 and its campaign README states the client
-  view-distance floor (owner-approved player-facing line, 2026-08-04).
+  view-distance floor.
 
 ## Acceptance criteria (machine-checkable)
 
 1. Double-build byte-identity for one fixture per horizon kind (6 fixtures);
    `void`/`ocean`/absent campaigns byte-identical to the previous
    `dsl_version` output.
-2. Negative fixtures assert DW0364, DW0365, DW0366, DW0367 by code; a
-   #149-shaped fixture (interior walk plane below sea level, no `waterline_y`)
+2. Negative fixtures assert DW0364, DW0365, DW0366, DW0367 by code; a fixture
+   with an interior walk plane below sea level and no `waterline_y`
    is **red** with DW0364.
 3. Ocean island fixture placement is unchanged by the per-area datum (island
    `walk_y=3` → base 60, byte-identical).
@@ -274,8 +265,7 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
    deliberately-low `float_y` fixture is red; (d) the generated backdrop
    PackTest proves no non-scripted mob on sampled backdrop surfaces.
 10. CI records shipped image size delta and first-boot time per horizon and
-    backdrop fixture (informational — no thresholds; owner ruling
-    2026-08-04).
+    backdrop fixture (informational — no thresholds).
 11. `docs/reference/compiler.md` DW rows + `tools/check-dw-codes.py` green in
     the same PR as each landing.
 
@@ -284,8 +274,8 @@ gate and `docs/reference/compiler.md` stay authoritative (spec-0013 precedent).
 Vanilla density-function terrain as *modelled* surround (dossier §2.5 —
 unmodellable by proofs; recorded so it is not relitigated; the sky `vanilla`
 backdrop is the legitimate use: pure scenery behind a runtime-layer probe);
-backdrops for non-sky bases (task #73 seamless blending); pregenerated-region
+backdrops for non-sky bases (M6 seamless blending); pregenerated-region
 shipping + normalization tooling (own future spec, only if the Pi budget
-forces it); carved waterways and journey-graph landforms (#73); hydraulic
+forces it); carved waterways and journey-graph landforms; hydraulic
 erosion; ocean content; weather/lighting coupling beyond existing spec-0010
 declarations; cross-area bridges (inter-area travel stays transport-based).

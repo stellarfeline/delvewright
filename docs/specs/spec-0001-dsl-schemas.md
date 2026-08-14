@@ -1,8 +1,8 @@
 # spec-0001: Campaign DSL schemas (staged)
 
 - **Status**: v0.1 Approved & implemented (M1); **v0.2 Approved & implemented**
-  (M2 task #8 — six-document schema, structured persona, stage-6 dialogue,
-  prefab-pool binding + lighting metadata; pool *layout* assembly still M2 task #9);
+  (M2 — six-document schema, structured persona, stage-6 dialogue,
+  prefab-pool binding + lighting metadata; pool *layout* assembly still M2);
   **v0.3 Implemented** (M2 task `m2-gameplay-verbs` — the gameplay verbs: DSL
   types + validation, compiler emission, branching solver, pathfinding harness,
   and the `keep-trial` full ladder all landed — see the
@@ -12,19 +12,18 @@
 
 ## v0.1 → v0.2 changelog
 
-Owner decisions of 2026-07-30, now normative:
+Now normative:
 
 1. **Dialogue moves out of stage 2 into a new final stage 6** — stage 2 becomes
    casting sheets; each NPC's complete dialogue tree (flavor + task options) is
    generated in one pass conditioned on the casting sheet plus every quest involving
    that NPC. All cross-stage references become strictly backward.
 2. **`prefab_pool` is enabled in stage 1** (jigsaw multi-piece assembly, ADR-0004
-   proper; layout semantics in spec-0002/task #9).
+   proper; layout semantics in spec-0002).
 3. **Lighting profiles** codified in prefab metadata (contract below).
 4. `dsl_version = "0.2.0"`; six stages; the hello-world fixture migrates.
-5. **Quests stay mandatory-only** (owner confirmed 2026-07-30); optional quests
-   remain reserved until M3.
-6. **Structured persona** in stage 2 (owner decision 2026-07-30) — see stage 2.
+5. **Quests stay mandatory-only**; optional quests remain reserved until M3.
+6. **Structured persona** in stage 2 — see stage 2.
 
 ## Shared conventions
 
@@ -40,7 +39,7 @@ Owner decisions of 2026-07-30, now normative:
   artifacts, not hand-maintained.
 - **Seed**: `content.seed` (u64) in stage 1 is the only randomness source
   downstream (ADR-0006) — including jigsaw layout.
-- **No runtime LLM** (owner decision 2026-07-29): every player-visible string and
+- **No runtime LLM**: every player-visible string and
   branch is authored at generation time. Dialogue is a pre-written
   branching-options tree mapping onto the 1.21.11 dialog system (emission:
   `run_command` → `/trigger`, spec-0002 amended contract).
@@ -61,7 +60,7 @@ Owner decisions of 2026-07-30, now normative:
 - `areas[]`: 1..N. Each area binds **exactly one of** `prefab` (single piece) or
   `prefab_pool` (+ `pieces` min/max) — jigsaw assembly with the campaign seed
   (layout semantics, connectivity guarantees, and the seed-stability experiment
-  live in spec-0002 / M2 task #9).
+  live in spec-0002).
 - `target_minutes`: informational (pacing checks later).
 
 ## Stage 2 — `npcs` (casting sheets)
@@ -81,7 +80,7 @@ Owner decisions of 2026-07-30, now normative:
   } } ] }
 ```
 
-- **No dialogue here.** The **structured persona** (owner decision 2026-07-30) is
+- **No dialogue here.** The **structured persona** is
   the character contract stage 6 must honor — structure lives in the keys, values
   stay free text. Required: `archetype`, `speech_style`, `motivation`; optional:
   `demeanor`, `secret`, `backstory`, `relationships` (same-stage NPC refs,
@@ -142,7 +141,7 @@ prefabs and fails on any miss.
 
 ## Lighting contract (prefab metadata)
 
-As refined 2026-07-30 — darkness must be a declared decision, never a default:
+Darkness must be a declared decision, never a default:
 
 - Measured once at library admission (deterministic under sealed fixed time);
   metadata block: `"lighting": { "profile": "lit|dim|dark", "measured_min_light": n,
@@ -175,8 +174,8 @@ As refined 2026-07-30 — darkness must be a declared decision, never a default:
 - [x] `delvec schema --stage 6` exported and CI-verified against fixtures.
 - [x] A dark-prefab fixture without mitigation fails analysis; the same fixture
       with night-vision in the kit passes (`DW0210`).
-- [x] A multi-piece `prefab_pool` fixture compiles with seed-stable layout
-      (M2 task #9): the `keep-crawl` fixture (gatehouse single prefab +
+- [x] A multi-piece `prefab_pool` fixture compiles with seed-stable layout:
+      the `keep-crawl` fixture (gatehouse single prefab +
       `pool/stone-keep`) double-builds byte-identically, loads zero-error on a
       live 1.21.11 server, and the bot walks its critical path — which crosses
       piece and area boundaries — green. The compiler solves the layout and emits
@@ -267,7 +266,7 @@ resolved by the compiler** (full prefab metadata + the solver), not the DSL laye
 - [x] Emission + the `keep-trial` full-ladder fixture (bot walks it end-to-end,
       combat included; PackTest per-verb 7/7) — spec-0002 addendum.
 
-## i18n addendum — native localization (v0.3 addendum, owner-approved 2026-07-31)
+## i18n addendum — native localization (v0.3 addendum)
 
 Native i18n with **author-declared languages**. English is the canonical source;
 translations derive FROM English; no runtime LLM. **Stage docs stay pure English.**
@@ -302,7 +301,7 @@ Build/manifest behaviour is spec-0002's `--lang` addendum.
 - [x] The `zh-cn` build passes the full Docker ladder (PackTest 7/7, bot
       end-to-end with combat) unchanged — the bot contract is language-neutral.
 
-### Runtime client-language route — researched, deliberately deferred (owner, 2026-07-31)
+### Runtime client-language route — researched, deliberately deferred
 
 A one-build alternative (strings emitted as `translate` components resolved by
 each CLIENT's language, lang files delivered via server resource pack) was
@@ -323,8 +322,8 @@ Revisit when one-image-many-languages becomes a real distribution need.
 
 ## Open
 
-None — both v0.2 questions resolved by the owner 2026-07-30 (mandatory-only
-confirmed; structured persona adopted). v0.3 verb mapping is owner-approved; the
-emission details (chest-based `collect`, interaction-entity `interact`) are
-compiler choices within spec-0002's latitude. i18n (author-declared languages)
-owner-approved 2026-07-31.
+None — both v0.2 questions are resolved (mandatory-only confirmed; structured
+persona adopted). The v0.3 verb mapping is approved; the emission details
+(chest-based `collect`, interaction-entity `interact`) are compiler choices
+within spec-0002's latitude. The i18n surface (author-declared languages) is
+approved.

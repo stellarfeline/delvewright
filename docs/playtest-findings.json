@@ -1,7 +1,7 @@
 {
   "ledger_version": "2026-08-11",
   "_readme": [
-    "The findings ledger: every defect the owner reported after playing a build, on ANY campaign, from the first M2 dress rehearsal (2026-07-30) onward.",
+    "The findings ledger: every defect reported after playing a build, on ANY campaign, from the first M2 dress rehearsal (2026-07-30) onward.",
     "Read by tools/staging-gate.py, which refuses to stage a build while any row's general form is not a live, binding check on THAT build.",
     "One row per finding. `finding` is impersonal English (CLAUDE.md Conventions: no verbatim personal speech in repo artifacts).",
     "`carrier` names the CHECK that carries the finding's general form; `binding` is how many objects of the class that check quantifies over exist on the campaign being staged.",
@@ -709,7 +709,7 @@
       "id": "isl-57",
       "campaign": "nobodys-cave-island",
       "round": "staging-2026-08-06",
-      "finding": "a herded animal crossed a shut fence gate the owner's own character could not walk through, and appeared to climb a stone wall",
+      "finding": "a herded animal crossed a shut fence gate a player character could not walk through, and appeared to climb a stone wall",
       "triage": "capability",
       "general_form": "a walked leg's route contains no move the body walking it cannot make, per locomotion class",
       "carrier": {"kind": "artifact", "file": "traversal-gate.json", "path": "legs"},

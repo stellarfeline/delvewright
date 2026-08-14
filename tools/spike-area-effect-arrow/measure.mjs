@@ -3,7 +3,7 @@
 // shipped pipeline, NOT wired into CI. Same shape as
 // `tools/spike-death-teleport/` and `tools/spike-jump-arc/`.
 //
-// The question (owner, 2026-08-11): can a DATAPACK ALONE give the player an
+// The question: can a DATAPACK ALONE give the player an
 // arrow that, on impact, produces either (1) an explosion that damages but does
 // not break blocks, or (2) a splash-potion-style area effect — as an item that
 // sits in a chest as scavenged loot?

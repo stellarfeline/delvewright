@@ -1,6 +1,6 @@
 # spec-0032: Currency, trade, and the recovery stake
 
-- **Status**: Draft (owner design session 2026-08-08)
+- **Status**: Draft
 - **ADRs**: 0001 (the compiler emits everything), 0003 (vanilla-first)
 - **Depends on**: spec-0031 (runtime state; the `on_death` effect root; the
   region, effect and teleport verbs)
@@ -56,9 +56,8 @@ right-click**: an interaction entity for the hitbox, a glowing item display for
 the rendering, and `data storage` as the authority — entities in unloaded
 chunks are neither ticked nor selectable, storage is.
 
-Owner ruling, 2026-08-08. It also removes three failure modes an item entity
-has: despawn after 6000 ticks, destruction by lava or void, and pickup by
-another player.
+It also removes three failure modes an item entity has: despawn after 6000
+ticks, destruction by lava or void, and pickup by another player.
 
 It inherits the diagnostics that already govern this hardware class: the
 invisible-affordance softlock check, and the rule that the function permitted to
@@ -66,7 +65,7 @@ retire the hardware must be named — otherwise a collected stake does not vanis
 
 ### Placement — the rule
 
-**Owner ruling, 2026-08-08.** The stake is placed at the point **nearest the
+The stake is placed at the point **nearest the
 death point** on the walkable route the player has available between their
 respawn point and where they died.
 
@@ -112,8 +111,8 @@ site, configures it; they do not fork the engine.
 
 ### Scope
 
-**Per-player, not party-shared** (planner ruling, 2026-08-08, stated for
-correction rather than left to emerge): the stake is a personal wager, and one
+**Per-player, not party-shared** (stated explicitly rather than left to
+emerge): the stake is a personal wager, and one
 shared purse turns a teammate's death into a penalty on everyone. Recorded
 explicitly because an existing test forces party scope on anything classified as
 progression, which is the multiplayer decision most likely to be made by
@@ -145,7 +144,7 @@ declared option, default no.
    exercised by the bot tier on a fixture, with the amount asserted.
 10. Every gate above states its binding count; a zero binding is a failure.
 
-## Settled by live measurement (#349, pinned 1.21.11)
+## Settled by live measurement (pinned 1.21.11)
 
 The single load-bearing unknown in this spec resolves **favourably**, and the
 question it was phrased as was the wrong one. Full derivation in spec-0031;

@@ -3332,7 +3332,7 @@ fn collect_region_events(
 /// fires at ([`TeleportTransit`]), over the **same** general effect walk the
 /// region-write model uses — so a `teleport` nested in a `sequence` step, in a trap
 /// payload or in a shop offer is found by existing rather than by being
-/// remembered (`#301`/`#302`/`#321`).
+/// remembered.
 ///
 /// Unlike [`collect_region_events`] it draws no forced/optional distinction: a
 /// firing that may never happen must not be *leaned on* to prove a delve

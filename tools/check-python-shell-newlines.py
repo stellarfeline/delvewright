@@ -17,7 +17,7 @@ reaches bash through `tools/build-release-binaries.sh`'s `read_manifest()`, a
 strips the `\n` and keeps the `\r`, and `[ "$k" = "$t" ]` is then false forever.
 The four Linux/macOS targets were green, which is precisely why nobody saw it:
 the bug is invisible on every runner but one, and the eleven green checks on the
-PR that introduced the script (#318) never ran that one.
+PR that introduced the script never ran that one.
 
 THE RULE
 

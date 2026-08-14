@@ -1,5 +1,5 @@
 // The repo's ONE definition of "the server refused that command", for every
-// Node tool that drives a live Minecraft server (task #70).
+// Node tool that drives a live Minecraft server.
 //
 // ## Why this file exists
 //

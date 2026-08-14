@@ -2,7 +2,6 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-06
-- **Source**: owner decision in conversation, 2026-08-06
 - **Refines**: ADR-0014 (creator distribution), ADR-0016 (three-layer versioning)
 
 ## Context
@@ -91,8 +90,8 @@ publish is prevented **by construction**, not by convention:
 
 ### 5. `v1.0.0` is re-tagged onto the commit that carries this machinery
 
-**Owner ruling, 2026-08-06.** The `v1.0.0` tag and its GitHub Release already
-existed, with zero assets, on a commit that predates any of the above — so the
+The `v1.0.0` tag and its GitHub Release already existed, with zero assets, on a
+commit that predates any of the above — so the
 shelf could not be filled at that tag without inventing an engine version the
 engine had not changed to justify. The tag is therefore **force-moved** onto the
 commit that merges this ADR (`git tag -f v1.0.0 && git push -f origin v1.0.0`).
@@ -104,7 +103,7 @@ empty shelf forever.
 Moving a published tag in a public repository is a deliberate act and is only
 safe because the engine at `v1.0.0` is unchanged. That is not a claim, it is
 these four observations, recorded so a future reader can re-check them rather
-than take the ruling on trust:
+than take it on trust:
 
 1. **No compiler source moved.** `git diff origin/main...<merge> -- 'crates/*/src/'`
    is empty. The whole `crates/` diff is two `Cargo.toml` files, one README, and
@@ -119,9 +118,9 @@ than take the ruling on trust:
    `keep_crawl_builds_and_double_build_is_byte_identical`,
    `v04_showcase_double_build_is_byte_identical` — are green, alongside the full
    `cargo test --workspace` (153 test binaries).
-4. **All eleven required checks were green on the merging PR** (#318, Actions run
-   `31082398909`), including `tier 2` (datapack load + the generated PackTest
-   suite), which boots the emitted delve.
+4. **All eleven required checks were green on the merging pull request**
+   (Actions run `31082398909`), including `tier 2` (datapack load + the
+   generated PackTest suite), which boots the emitted delve.
 
 Only the release identity moves; a delve built at the old `v1.0.0` and one built
 at the new one are byte-identical, which is the property that makes the move a
