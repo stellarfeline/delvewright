@@ -95,11 +95,16 @@ pub struct PrefabMeta {
     /// different claim from `{"profile": "unmeasured"}` — the positive statement
     /// that a measurement is owed.
     ///
-    /// The block's own shape is [`Lighting`], and it keeps `deny_unknown_fields`
-    /// where the rest of this document drops it: the profile/measurement
-    /// agreement it enforces is a rule about the values, the DSL owns that rule,
-    /// and a reader that let an unknown key through here would be tolerating a
-    /// second spelling of a measurement rather than a newer block.
+    /// The block's own shape is [`Lighting`], and it is **the one part of this
+    /// document that still refuses a key it does not know**. Its job is a rule
+    /// about values — a measured profile must carry its measurement, an
+    /// `unmeasured` one must not — so a misspelled measurement key there is a
+    /// claim quietly becoming its own absence, which the profile/measurement
+    /// agreement alone does not catch for `rationale` or `method`. The cost is
+    /// real and is stated where an author will meet it
+    /// (`docs/reference/prefab-procedure.md` §9): a key added inside `lighting`
+    /// is a hard parse failure for an older engine, so adding one is a
+    /// `dsl_version` matter rather than a metadata edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lighting: Option<Lighting>,
     /// Licence, provenance prose, and the machine-readable provenance row.

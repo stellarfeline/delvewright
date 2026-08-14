@@ -580,6 +580,15 @@ are where this document has grown every time (`waterline_y`, `spatial_contract`;
 a licence block or a spatial contract is accepted and ignored, not preserved; the
 day one is added, it is captured at that level too.
 
+**The `lighting` block is the one exception, and it is a known cost.** Its type
+is the DSL's own `Lighting`, which is a closed schema because its job is a rule
+about *values*: a measured profile must carry its measurement and an
+`unmeasured` one must not, and a misspelled measurement key there is a claim
+quietly becoming its own absence. The price is that a key added inside
+`lighting` — and only there — is still a hard parse failure (`DW0346`) for an
+older engine. Adding one is therefore a `dsl_version` matter, not a metadata
+edit.
+
 ### Who reads it
 
 | Reader | Uses |
