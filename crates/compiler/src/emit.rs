@@ -5120,12 +5120,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // ONE command, and its selector is the volume — never the effect's
         // audience. `who` is deliberately unused here: a teleport moves what is
         // INSIDE the box, and a box does not have a party. The selector carries
-        // the six box terms and nothing else — no `type=`, no `tag=`, no
-        // `limit=`, no `sort=` — which is what makes the selection total, and
-        // `crates/compiler/tests/v10_teleport.rs` asserts exactly that against the
-        // emitted string. See `QuestEffect::Teleport` for why a machinery-type
-        // exemption (which `lethal_volumes[]` must carry) would be wrong here and
-        // what stands in its place.
+        // the six box terms plus the one class exclusion every box-narrowed
+        // entity selector in this engine carries — `tag=!dw_fixture`, and no
+        // `type=`, no `limit=`, no `sort=`. That is what makes the selection
+        // total over BODIES, and `crates/compiler/tests/v10_teleport.rs` asserts
+        // exactly that against the emitted string. See `QuestEffect::Teleport`
+        // for why a machinery-TYPE exemption (which `lethal_volumes[]` must
+        // carry) would be wrong here, and `crate::affordance` for the class that
+        // stands in its place.
         QuestEffect::Teleport { .. } => {
             // A call into the generated function, exactly as `volley` and
             // `collapse` do: the body is proven geometry, and a body that only
@@ -15433,11 +15435,14 @@ const TELEPORT_WITNESS_TYPES: [(&str, &str); 5] = [
 /// them arrived**.
 ///
 /// The compile-time test (`crates/compiler/tests/v10_teleport.rs`) proves the
-/// compiler wrote no filter. That is only half of "the selection is total": the
-/// other half is vanilla's own `@e[<box>]` semantics, which no Rust test can
-/// witness. This template is that half, and it calls the campaign's REAL
-/// generated `teleport_<key>` function — not a command it re-typed — so a
-/// selector that grows a filter reds here.
+/// compiler wrote no filter beyond the one class exclusion (`tag=!dw_fixture`,
+/// [`crate::affordance`]). That is only half of "the selection is total over
+/// bodies": the other half is vanilla's own `@e[<box>]` semantics, which no Rust
+/// test can witness. This template is that half, and it calls the campaign's
+/// REAL generated `teleport_<key>` function — not a command it re-typed — so a
+/// selector that grows a second filter reds here. Its witnesses carry no class
+/// tag, which is why "the box is then empty" is still the criterion: the
+/// exclusion is about the engine's own places, and this template puts none down.
 ///
 /// The assertion is a count, not a per-entity check: the witnesses go in tagged,
 /// the box is asserted to hold all of them first (a template whose entities
