@@ -57,10 +57,20 @@ INGREDIENT = "fastnbt::to_bytes"
 # every id and every property value is judged against the pinned registry before
 # the bytes are written. Two spellings of one rule — the source-included one the
 # generator workspaces share, and the registry method used inside the workspace.
+#
+# Matched through a whitespace-insensitive pattern rather than as literal text.
+# `rustfmt` wraps a long fluent call across lines, so `registry.validate(name,
+# &props)` becomes `registry\n    .validate(name, &props)` the moment the
+# receiver's line grows — and a file that judges every state it writes then
+# reads to a substring search as one that judges none. That is a FALSE
+# ACCUSATION, and its cheapest cure is the wrong one: a NOT_EMITTERS entry
+# claiming an emitter is not an emitter, which is a permanent hole in the gate
+# bought to silence a formatting artefact. An unjudged file still has no call
+# to match at all, so nothing is loosened here.
 BLOCK_RULE_MARKERS = (
-    "invariants::assert_blocks_are_real(",
-    "registry.validate(",
-    "BlockRegistry::validate",
+    r"invariants\s*::\s*assert_blocks_are_real\s*\(",
+    r"\bregistry\s*\.\s*validate\s*\(",
+    r"BlockRegistry\s*::\s*validate",
 )
 
 # Sites that serialise NBT and are NOT prefab emitters. Each is named
@@ -127,7 +137,7 @@ def check_emitters() -> tuple[list[str], int]:
             continue
         candidates += 1
         scope = emitter_scope(rel, text)
-        if any(m in s for m in BLOCK_RULE_MARKERS for s in scope):
+        if any(re.search(m, s) for m in BLOCK_RULE_MARKERS for s in scope):
             emitters.append(rel)
         elif rel in NOT_EMITTERS:
             honoured.append(rel)
