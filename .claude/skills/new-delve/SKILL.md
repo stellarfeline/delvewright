@@ -910,14 +910,17 @@ Symptom → tool:
      building in every exterior frame. Keys: `docs/reference/tools.md` §4.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
-     For a tile set, `audit` takes the manifest and returns one zone verdict —
-     but `socket`, `anchor` and `lighting` take a single structure template and
-     refuse a manifest (`DW0732`), so a zone past the axis cap gets `audit` and
-     nothing else, and keeps `"profile": "unmeasured"`. Do **not** run them on
-     one of its tiles to get round that: `lighting` on a tile succeeds and
-     writes a second, unprovenanced metadata file describing one slice of the
-     building. A grammar prefab has **no connectors and no lighting** until this
-     step, so it cannot enter a `prefab_pool` and will be dark, until you do it.
+     For a tile set, `audit` and `lighting` both take the **manifest** and
+     answer about one zone; handing any command a single tile is `DW0739`, and
+     so is handing it a tile copied away from its manifest.
+     A grammar prefab has **no connectors and no lighting** until this step, so
+     it cannot enter a `prefab_pool` and will be dark, until you do it.
+     `lighting` measures the roofed floor a body can walk to from outside and
+     reports the count it bound to. Two refusals to expect and not work around:
+     `DW0752` means the probe bound to **zero** cells — usually a piece whose
+     only way in is a socket that has not been carved yet, so run `socket`
+     first; `DW0753` means there is no metadata to write into, and the fix is to
+     create it, never to let the tool invent a `spdx: UNKNOWN` one.
 
   What the grammar cannot express — **escalate, do not work around**: block
   entities of any kind (chest loot, sign text, spawners — bind those in the

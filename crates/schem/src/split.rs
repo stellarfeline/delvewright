@@ -226,38 +226,114 @@ struct SplitManifest {
     parts: Vec<PartManifest>,
 }
 
-/// The tile-set manifest that names `nbt_path` as one of its tiles, if any.
+/// The base name and grid index a tile filename spells, if it spells one.
+///
+/// [`part_filename`] is the only thing that writes this shape, and it is the
+/// half of a tile's identity that **travels with the bytes**: a `cp`, an `mv`,
+/// an upload and a download all carry it, and nothing but a deliberate rename
+/// removes it.
+pub fn tile_filename(name: &str) -> Option<(&str, [i32; 3])> {
+    let stem = name.strip_suffix(".nbt")?;
+    let (base, suffix) = stem.rsplit_once('.')?;
+    let rest = suffix.strip_prefix('x')?;
+    let (i, rest) = rest.split_once('y')?;
+    let (j, k) = rest.split_once('z')?;
+    Some((base, [i.parse().ok()?, j.parse().ok()?, k.parse().ok()?]))
+}
+
+/// What a single `.nbt` path turned out to be: a whole template, or one tile of
+/// a tiling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TileEvidence {
+    /// Nothing about this file says it is a fragment.
+    Whole,
+    /// It is a tile. `manifest` is its set's manifest when that file is beside
+    /// it, and `None` when the tile has been separated from its set.
+    Tile {
+        /// The zone's base name.
+        base: String,
+        /// The manifest naming it, when one is beside it.
+        manifest: Option<std::path::PathBuf>,
+    },
+}
+
+/// Decide whether a single `.nbt` is one tile of a tiled zone.
 ///
 /// Every tool that takes a single `.nbt` needs this, because every one of them
 /// will otherwise be handed a tile some day and answer about the fragment: the
 /// renderer draws a building sliced at a packaging plane, the auditor returns
-/// `"pass"` over a fifth of a zone. Both are answers, both are wrong, and
-/// neither has any other detector. So the check lives here, once, beside the
-/// tiling it is about.
+/// `"pass"` over a fifth of a zone, the light probe measures a fifth of a
+/// building and writes the answer into a metadata file it had to invent. All
+/// are answers, all are wrong, and none has any other detector. So the check
+/// lives here, once, beside the tiling it is about.
 ///
-/// Membership is read out of the manifest rather than guessed from the
-/// filename: a name that merely looks like `<base>.x0y0z1.nbt` proves nothing,
-/// and a tile whose manifest is missing is an ordinary `.nbt` that should still
-/// be processed.
-pub fn manifest_claiming(nbt_path: &Path) -> Result<Option<std::path::PathBuf>, String> {
+/// **The evidence is the file's own name, and the manifest only adds to it.**
+/// Binding the check to a sibling file was the defect: `cp tile.nbt elsewhere/`
+/// left a fragment that every tool then accepted as a whole prefab, because the
+/// only thing that knew otherwise had been left behind in the old directory. A
+/// guard that a copy defeats is not a property of the artifact. The name is —
+/// it is written by [`part_filename`], it is carried by the bytes wherever they
+/// go, and a *whole* prefab cannot accidentally acquire it, because
+/// `<base>.x<i>y<j>z<k>.nbt` is a shape no author writes by hand.
+///
+/// The manifest is still looked up, because a diagnostic that can say *which*
+/// zone this is a tile of and what to run instead is worth far more than one
+/// that can only refuse. Its absence downgrades the message, never the verdict.
+pub fn tile_evidence(nbt_path: &Path) -> Result<TileEvidence, String> {
     let Some(name) = nbt_path.file_name().and_then(|s| s.to_str()) else {
-        return Ok(None);
+        return Ok(TileEvidence::Whole);
     };
-    let Some(stem) = name.strip_suffix(".nbt") else {
-        return Ok(None);
-    };
-    // `<base>.<grid-suffix>` — the only shape a tile filename has.
-    let Some((base, _)) = stem.rsplit_once('.') else {
-        return Ok(None);
+    let Some((base, _)) = tile_filename(name) else {
+        return Ok(TileEvidence::Whole);
     };
     let manifest = nbt_path.with_file_name(format!("{base}.json"));
-    if !manifest.exists() {
-        return Ok(None);
-    }
-    let Some(set) = read_tile_set(&manifest)? else {
-        return Ok(None);
+    let claimed = manifest.exists()
+        && read_tile_set(&manifest)?.is_some_and(|set| set.parts.iter().any(|p| p.file == name));
+    Ok(TileEvidence::Tile {
+        base: base.to_string(),
+        manifest: claimed.then_some(manifest),
+    })
+}
+
+/// The refusal a whole-piece tool owes a fragment: one sentence saying what the
+/// file is, what answering about it would mean, and what to do instead.
+///
+/// One text because it is one fact. `verb` is what the caller would have done
+/// ("audit", "probe", "render"), and `consequence` is what that answer would
+/// have been read as.
+pub fn fragment_refusal(
+    nbt_path: &Path,
+    evidence: &TileEvidence,
+    verb: &str,
+    consequence: &str,
+) -> Option<String> {
+    let TileEvidence::Tile { base, manifest } = evidence else {
+        return None;
     };
-    Ok(set.parts.iter().any(|p| p.file == name).then_some(manifest))
+    Some(match manifest {
+        Some(m) => format!(
+            "{} is one tile of the zone described by {} — to {verb} it would {consequence}. \
+             Use the whole zone: pass {}",
+            nbt_path.display(),
+            m.display(),
+            m.display()
+        ),
+        None => format!(
+            "{} is one tile of a tiled zone (`{base}`) that has been separated from its set — to \
+             {verb} it would {consequence}, and its manifest is not beside it, so there is \
+             nothing here to reassemble the zone from. Put the tile back with its `{base}.json` \
+             manifest and the rest of its tiles, and pass the manifest",
+            nbt_path.display()
+        ),
+    })
+}
+
+/// The tile-set manifest that names `nbt_path` as one of its tiles, if any.
+pub fn manifest_claiming(nbt_path: &Path) -> Result<Option<std::path::PathBuf>, String> {
+    match tile_evidence(nbt_path)? {
+        TileEvidence::Tile { manifest, .. } => Ok(manifest),
+        TileEvidence::Whole => Ok(None),
+    }
 }
 
 /// Render the split manifest as pretty JSON (deterministic — fixed field order,
@@ -399,6 +475,92 @@ mod tests {
     fn a_manifest_with_no_tiles_is_refused() {
         let empty = tile_set([4, 4, 4], vec![]);
         assert!(empty.validate().unwrap_err().contains("no tiles"));
+    }
+
+    /// A tile is recognised by the name it carries, so a copy or a move cannot
+    /// launder it into a whole prefab.
+    ///
+    /// This is the whole point of keying the check to the artifact. Under the
+    /// old sibling-lookup rule the second assertion here returned "not a tile",
+    /// and every whole-piece tool then answered confidently about a fragment.
+    #[test]
+    fn a_tile_is_recognised_by_its_own_name_wherever_it_is_put() {
+        let dir = std::env::temp_dir().join(format!("dw-split-evid-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("elsewhere")).unwrap();
+
+        let set = tile_set(
+            [4, 4, 60],
+            vec![([0, 0, 0], [4, 4, 48]), ([0, 0, 48], [4, 4, 12])],
+        );
+        std::fs::write(
+            dir.join("zone.json"),
+            serde_json::to_string(&serde_json::json!({ "structure_set": set })).unwrap(),
+        )
+        .unwrap();
+        for part in &set.parts {
+            std::fs::write(dir.join(&part.file), b"not really nbt").unwrap();
+        }
+
+        // beside its manifest: a tile, and the manifest is named.
+        assert_eq!(
+            tile_evidence(&dir.join("zone.x0y0z1.nbt")).unwrap(),
+            TileEvidence::Tile {
+                base: "zone".to_string(),
+                manifest: Some(dir.join("zone.json")),
+            }
+        );
+
+        // copied away from it: STILL a tile. Nothing beside it says so.
+        std::fs::copy(
+            dir.join("zone.x0y0z1.nbt"),
+            dir.join("elsewhere/zone.x0y0z1.nbt"),
+        )
+        .unwrap();
+        assert_eq!(
+            tile_evidence(&dir.join("elsewhere/zone.x0y0z1.nbt")).unwrap(),
+            TileEvidence::Tile {
+                base: "zone".to_string(),
+                manifest: None,
+            },
+            "a guard a `cp` defeats is not a property of the artifact"
+        );
+
+        // an ordinary prefab is untouched by any of this.
+        assert_eq!(
+            tile_evidence(&dir.join("keep-gate-room.nbt")).unwrap(),
+            TileEvidence::Whole
+        );
+        assert_eq!(tile_filename("keep-gate-room.nbt"), None);
+        assert_eq!(
+            tile_filename("zone.x0y10z2.nbt"),
+            Some(("zone", [0, 10, 2]))
+        );
+        assert_eq!(
+            tile_filename("cave.mouth.nbt"),
+            None,
+            "a dotted name is not a grid suffix"
+        );
+
+        // the refusal names what to do instead, and says which case it is.
+        let beside = tile_evidence(&dir.join("zone.x0y0z0.nbt")).unwrap();
+        let msg = fragment_refusal(&dir.join("zone.x0y0z0.nbt"), &beside, "audit", "lie").unwrap();
+        assert!(msg.contains("zone.json"), "{msg}");
+        let orphan = tile_evidence(&dir.join("elsewhere/zone.x0y0z0.nbt")).unwrap();
+        let msg = fragment_refusal(
+            &dir.join("elsewhere/zone.x0y0z0.nbt"),
+            &orphan,
+            "audit",
+            "lie",
+        )
+        .unwrap();
+        assert!(msg.contains("separated from its set"), "{msg}");
+        assert_eq!(
+            fragment_refusal(&dir, &TileEvidence::Whole, "audit", "lie"),
+            None
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// `read_tile_set` tells the two metadata shapes apart, and says so rather

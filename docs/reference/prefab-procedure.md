@@ -504,8 +504,9 @@ delve-admit audit    out/<id>.json         # again, after the edits
 
 A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
-a zone the first and last lines are the whole of this step, for the reason spelled
-out three paragraphs down.
+a zone every line above names `out/<id>.json`, for the reason spelled out three
+paragraphs down. `socket` is the exception: a socket is carved into one tile's
+bytes, so it is the one step a tiled zone still does not have.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
@@ -514,20 +515,24 @@ by construction for `DW0733` — the export already refused — but a *hand-buil
 or ingested piece does not, so `audit` is where that class is caught for
 everything else.
 
+A zone past the 48-per-axis cap hands its **manifest** to `audit` and `lighting`
+instead of an `.nbt`; both reassemble the tiles and answer about the whole
+building. Handing either one tile is `DW0739`, and so is handing it a tile that
+has been copied away from its manifest.
+
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
 
-**`audit` takes a tile set; `socket`, `anchor` and `lighting` take one structure
-template.** Handed the manifest of a zone past the axis cap (§6) they refuse it
-as unreadable bytes (`DW0732`, exit 2), so a zone that shipped as tiles has no
-lighting step and carries `"profile": "unmeasured"` into the campaign. Its own
-tiles are not a way round that: `lighting` on one **succeeds**, and `--write`
-puts an anchorless `spdx: UNKNOWN` metadata document beside the zone's correctly
-provenanced one — a second file claiming to describe a prefab that is one slice
-of a building. Leave the tiles alone; the manifest is the only file that
-describes the zone, and a lighting number for a slice of it would be a number
-about nothing.
+The minimum is taken over the **roofed floor a body can walk to from a
+ground-level entrance**, and the report states how many cells that was, out of
+how many are standable in the region box. Those two filters are what make the
+number readable: a free-standing building stands in a box with ground around it,
+and a minimum over the whole box is the unlit outdoors whatever the design does.
+A binding of zero is `DW0752` and fails the step — carve the sockets before
+probing a piece whose only way in is one. `--write` without metadata beside the
+piece is `DW0753`: the measurement still prints, but nothing is written, because
+a manufactured `spdx: UNKNOWN` skeleton is worse than an error.
 
 Each of these steps owns one block of the metadata — `socket` the connectors,
 `anchor` the anchors, `lighting` the lighting — and leaves the rest of the

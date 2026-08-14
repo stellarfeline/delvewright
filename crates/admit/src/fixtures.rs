@@ -10,14 +10,36 @@ use crate::structure::{PaletteEntry, Structure, synth};
 
 /// A shell of `wall` with a hollow air interior and a solid `floor` at y=0. Sizes
 /// are inclusive extents. `lights` place a glowstone at those cells.
+///
+/// The south wall (`z = sz - 1`) carries a two-course **doorway** at the middle
+/// column. A room is a place a player is in, and a fixture with no way in is a
+/// fixture no measurement of player space can bind to: the light probe measures
+/// the roofed floor a body can walk to from outside, so a sealed box would
+/// correctly report that it bound to nothing. The doorway is what makes these
+/// fixtures rooms rather than solid blocks with a cavity.
 pub fn room(size: [i32; 3], lights: &[[i32; 3]]) -> Structure {
+    shell(size, lights, true)
+}
+
+/// A room with **no way in** — the shell closed on all six faces.
+///
+/// The piece a light probe must refuse to grade: there is floor in it and a
+/// ceiling over it, and no body can reach either. A probe that answered anyway
+/// would be answering about a place nobody can be.
+pub fn sealed_room() -> Structure {
+    shell([7, 5, 7], &[[3, 4, 3]], false)
+}
+
+fn shell(size: [i32; 3], lights: &[[i32; 3]], doorway: bool) -> Structure {
     let [sx, sy, sz] = size;
+    let door = if doorway { [sx / 2, sz - 1] } else { [-1, -1] };
     let mut cells: Vec<([i32; 3], PaletteEntry, Option<Nbt>)> = Vec::new();
     for x in 0..sx {
         for y in 0..sy {
             for z in 0..sz {
                 let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
-                if shell {
+                let doorway = x == door[0] && z == door[1] && (y == 1 || y == 2);
+                if shell && !doorway {
                     cells.push((
                         [x, y, z],
                         PaletteEntry::simple("minecraft:stone_bricks"),

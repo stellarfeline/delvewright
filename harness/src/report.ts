@@ -19,11 +19,13 @@ import type {
   AssistWindow,
   BindingCount,
   DeathTrial,
+  DieRetryBinding,
   EncounterPhase,
   EncounterTier,
   FloorLedger,
   PerformedRest,
 } from "./combat.ts";
+import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
 import type { NamePreference } from "./executor.ts";
 
@@ -93,7 +95,7 @@ export interface BranchOutcome {
 }
 
 /** The ladder's labelled stages. */
-export const STAGES = ["branch-run", "critical-path", "die-retry"] as const;
+export const STAGES = ["branch-run", "critical-path", "die-retry", "death-loop"] as const;
 export type StageName = (typeof STAGES)[number];
 
 /** One stage's outcome. `findings` are advisory; `failures` are why it went red. */
@@ -122,6 +124,11 @@ export class RunReport {
   private readonly actors: ActorReport[] = [];
   private floorLedger: FloorLedger | undefined;
   private actorsGate: BindingCount | undefined;
+  /** task #68: every walk into a lethal volume, and what the stage examined. */
+  private readonly lethalTrials: LethalTrial[] = [];
+  private deathLoopBinding: DeathLoopBinding | undefined;
+  /** What the die-retry stage examined — recorded on EVERY run, zero included. */
+  private dieRetryBinding: DieRetryBinding | undefined;
   /** spec-0029: the name-preference binding, zero until the run records one. */
   private namePreference: NamePreference = {
     decisions: 0,
@@ -200,6 +207,34 @@ export class RunReport {
    */
   recordActorsGate(gate: BindingCount | undefined): void {
     this.actorsGate = gate;
+  }
+
+  /**
+   * Record the death loop: every walk into a lethal volume, and the binding count
+   * of what was examined (task #68).
+   *
+   * The binding is recorded even when it is all zeros — especially then. This is
+   * the one mechanic a souls-shaped delve is entirely made of, and a stage that
+   * examined nothing must be legible as such from the artifact alone rather than
+   * inferred from an empty trial list.
+   */
+  recordDeathLoop(binding: DeathLoopBinding, trials: readonly LethalTrial[]): void {
+    this.deathLoopBinding = binding;
+    this.lethalTrials.push(...trials);
+  }
+
+  /**
+   * Record what the die-retry stage examined (playtest-methodology rule 1).
+   *
+   * Recorded on every run, including — especially — a run where it is all zeros.
+   * The stage's per-encounter arithmetic runs over an already-emptied list when
+   * every encounter is excluded for want of a governing checkpoint, so it reports
+   * `passed: true` having scripted no death at all; measured 2026-08-11, that is
+   * the state of EVERY campaign and fixture in both repos. Without this a reader
+   * has to notice an empty `die_retry` array to learn it.
+   */
+  recordDieRetryBinding(binding: DieRetryBinding): void {
+    this.dieRetryBinding = binding;
   }
 
   /**
@@ -376,6 +411,58 @@ export class RunReport {
         elapsed_ms: a.trial?.elapsedMs ?? null,
         detail: a.trial?.detail ?? null,
       })),
+      // task #68 — the death loop, the one mechanic a PackTest can never witness
+      // (a fake player is permanently undamageable, measured twice). Every field
+      // is an OBSERVATION: the ledger before and after, the position the player
+      // came back at, the position the marker really stood at. `null` means the
+      // run never got far enough to look, which is deliberately distinct from a
+      // value that was looked at and found wrong.
+      //
+      // The binding is stated first and always, including all zeros: a stage that
+      // entered no volume examined nothing, and rule 1 makes that a finding rather
+      // than a pass.
+      death_loop: {
+        binding:
+          this.deathLoopBinding === undefined
+            ? null
+            : {
+                declared_volumes: this.deathLoopBinding.declaredVolumes,
+                volumes_entered: this.deathLoopBinding.volumesEntered,
+                deaths_observed: this.deathLoopBinding.deathsObserved,
+                stakes_examined: this.deathLoopBinding.stakesExamined,
+                seats_matched: this.deathLoopBinding.seatsMatched,
+                walks_back: this.deathLoopBinding.walksBack,
+                unbound: this.deathLoopBinding.deathsObserved === 0,
+              },
+        trials: this.lethalTrials.map((t) => ({
+          volume: t.volume,
+          entry_cell: [...t.entryCell],
+          stake: t.stake ?? null,
+          objective: t.objective ?? null,
+          died: t.died,
+          death_pos: t.deathPos ?? null,
+          // The volume's OWN promised line, seen by the player it was about.
+          wording_seen: t.wordingSeen,
+          balance_before: t.balanceBefore ?? null,
+          balance_after_death: t.balanceAfterDeath ?? null,
+          // Computed from the DECLARED forfeit rule, never from the emission.
+          expected_forfeit: t.expectedForfeit ?? null,
+          respawn_pos: t.respawnPos ?? null,
+          respawn_seat: t.respawnSeat ?? null,
+          // Where the compile-time placement table said the stake would be.
+          expected_anchor: t.expectedAnchor ?? null,
+          marker_pos: t.markerPos ?? null,
+          walked_back: t.walkedBack,
+          // Packets SENT in one event-loop turn, not collections adjudicated: a
+          // client cannot observe how many the server resolved in one tick, and
+          // vanilla's once-per-tick advancement grant usually absorbs the second.
+          // The claim is the outcome below, never this count.
+          collect_clicks_sent: t.collectClicks,
+          balance_after_collect: t.balanceAfterCollect ?? null,
+          marker_retired: t.markerRetired,
+          abandoned: t.abandoned ?? null,
+        })),
+      },
       assist_windows: this.assists.map((w) => ({
         encounter: w.encounter,
         wave: w.wave,
@@ -386,6 +473,23 @@ export class RunReport {
         opened_at_ms: w.openedAtMs,
         closed_at_ms: w.closedAtMs ?? null,
       })),
+      // What the die-retry stage EXAMINED, beside what it found. `unbound: true`
+      // means zero scripted deaths were taken, whatever the stage's `passed` says
+      // — the two are different questions and only this one answers "was anything
+      // about dying looked at".
+      die_retry_binding:
+        this.dieRetryBinding === undefined
+          ? null
+          : {
+              declared_encounters: this.dieRetryBinding.declared,
+              engaged: this.dieRetryBinding.engaged,
+              deaths_scripted: this.dieRetryBinding.deathsScripted,
+              trials_completed: this.dieRetryBinding.trialsCompleted,
+              skipped_no_checkpoint: this.dieRetryBinding.skippedNoCheckpoint,
+              skipped_unarmed_checkpoint: this.dieRetryBinding.skippedUnarmed,
+              unbound: this.dieRetryBinding.unbound,
+              reason: this.dieRetryBinding.reason ?? null,
+            },
       die_retry: this.trials.map((t) => ({
         encounter: t.encounter,
         wave: t.wave,

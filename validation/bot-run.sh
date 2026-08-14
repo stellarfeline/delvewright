@@ -68,6 +68,10 @@ fi
 mkdir -p "$here/${run_out#./}"
 
 export DELVE_OUTPUT="$output"
+# The image tag follows the project, because an image TAG is global to the daemon
+# in exactly the way a container name is: two ladders building different trees into
+# `delvewright/delve:local` race, and the loser boots the other ladder's delve.
+export DELVE_IMAGE="delvewright/delve:$project"
 export DW_BOT_OUT="$run_out"
 COMPOSE=(docker compose -p "$project" -f "$here/compose.yaml" --profile validate)
 
