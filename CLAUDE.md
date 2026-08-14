@@ -394,6 +394,19 @@ validation/          # docker compose: headless server + bot, same image as CI &
   detail cannot**. The review question is therefore always "does this read as
   the thing, and does the inside belong to it", never "is the detail right" —
   and a piece is not rejected for lacking detail it was never going to have.
+- **Work is routed to a tier by its CLASS, and the planner authors none of it**
+  (owner, 2026-08-13). Architecture and system design — **including writing specs
+  and ADRs** — go to a **Fable** worker; content design (story, beats, campaign
+  authoring) goes to an **Opus** worker; implementation, tests and validators are
+  unchanged. What stays with the planner is scheduling, dispatch briefs, review
+  of every diff, integration, bookkeeping, and the chat summaries the owner rules
+  on. The rule is structural because the failure it replaces was a judgement
+  call: the planner had been labelling design tasks *planner-personal*, which
+  caps the design at the planner's own tier and blocks the queue behind one
+  context. So the question at dispatch is **what class of work is this**, never
+  how confident the planner feels about it — *"I could do this myself"* is not a
+  reason to keep it. Retires the *planner-personal* label wherever it appears on
+  a design task.
 - **Every dispatched worker runs in its own git worktree** (owner, 2026-08-05),
   named in the dispatch prompt, never the main checkout — plus the content
   symlink, or two `analyze` tests fail on a fresh tree. Workers **add** a commit;
