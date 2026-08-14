@@ -124,6 +124,44 @@ pub struct Anchor {
     pub declared_by: String,
 }
 
+/// One orientation-unguarded fill: the `DW0736` finding
+/// (`delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+///
+/// A reorientation permutes the *geometry* a rule describes and never rewrites
+/// block-state properties ([`crate::orient`]); the intended mechanism for an
+/// oriented block is [`Cond::Orientation`] — the author writes one alternative
+/// per orientation and the guard selects the matching variant. This record is
+/// a fill that skipped that mechanism: it wrote a state whose
+/// `facing`/`axis`/connection property lands wrong under the scope's actual
+/// orientation, with no passed `orientation` guard pinning that orientation on
+/// the path to the fill.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OrientedFinding {
+    /// The rule whose fill wrote the state.
+    pub rule: String,
+    /// The state, vanilla string form.
+    pub state: String,
+    /// The property that lands wrong, as `key=value`.
+    pub property: String,
+    /// The scope's orientation, as `x->X,y->Y,z->Z` (local -> world).
+    pub orientation: String,
+}
+
+/// What the expander saw of orientation-sensitive fills — the binding record
+/// the `oriented-fills` gate reports (a green gate states what it examined;
+/// zero examined is a fact the report must carry, CLAUDE.md vacuity rule).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OrientedFillAudit {
+    /// Fill applications the predicate examined — every fill, because "carries
+    /// no properties" is itself the predicate's first question.
+    pub fills: u64,
+    /// Of those, the fills whose paint carries any block-state properties —
+    /// the population the mismatch test can bite on.
+    pub carrying: u64,
+    /// The unguarded oriented fills, deduplicated and sorted.
+    pub unguarded: Vec<OrientedFinding>,
+}
+
 /// The result of expanding a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expansion {
@@ -140,6 +178,8 @@ pub struct Expansion {
     pub anchors: BTreeMap<String, Anchor>,
     /// The derivation's shape.
     pub stats: Stats,
+    /// The orientation-sensitive fills seen, and which were unguarded.
+    pub oriented: OrientedFillAudit,
 }
 
 /// Why an expansion stopped.
@@ -349,12 +389,16 @@ pub fn expand(
         rng: Rng::new(options.seed),
         limits: options.limits,
         stats: Stats::default(),
+        oriented_fills: 0,
+        oriented_carrying: 0,
+        oriented_unguarded: std::collections::BTreeSet::new(),
     };
     expander.run_rule(
         &program.start,
         &ScopeState {
             region,
             orient: options.orientation,
+            pinned: None,
         },
         0,
     )?;
@@ -362,7 +406,24 @@ pub fn expand(
         model: expander.model,
         anchors: expander.anchors,
         stats: expander.stats,
+        oriented: OrientedFillAudit {
+            fills: expander.oriented_fills,
+            carrying: expander.oriented_carrying,
+            unguarded: expander.oriented_unguarded.into_iter().collect(),
+        },
     })
+}
+
+/// True when a passed `cond` **entails** a [`Cond::Orientation`]: the guard
+/// itself, or an `all` that contains one (recursively). `any`/`none_of` do not
+/// entail — the alternative may have been selected by a sibling condition, so
+/// the orientation was never proved.
+fn cond_pins_orientation(cond: &Cond) -> bool {
+    match cond {
+        Cond::Orientation { .. } => true,
+        Cond::All { of } => of.iter().any(cond_pins_orientation),
+        _ => false,
+    }
 }
 
 /// The box a node is expanding into, and what it calls its axes.
@@ -370,6 +431,14 @@ pub fn expand(
 struct ScopeState {
     region: Box3,
     orient: Orientation,
+    /// The orientation the innermost passed [`Cond::Orientation`] guard
+    /// asserted, if any. A fill of an orientation-sensitive state is guarded
+    /// exactly when this equals the scope's *current* orientation: the guard
+    /// proved the author wrote the state for this orientation. A later
+    /// reorientation leaves the pin recording the old value, so the equality
+    /// fails — which is right, because the guard said nothing about the new
+    /// orientation.
+    pinned: Option<Orientation>,
 }
 
 struct Expander<'a> {
@@ -382,6 +451,13 @@ struct Expander<'a> {
     rng: Rng,
     limits: Limits,
     stats: Stats,
+    /// Fill applications examined.
+    oriented_fills: u64,
+    /// Fill applications whose paint carries any properties.
+    oriented_carrying: u64,
+    /// `DW0736` findings, deduplicated (a rule in a repeat split would
+    /// otherwise report once per piece).
+    oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
 }
 
 impl<'a> Expander<'a> {
@@ -463,7 +539,18 @@ impl<'a> Expander<'a> {
             .weighted(&weights)
             .expect("validate() proved every weight is positive")];
         self.stats.rules_applied += 1;
-        self.run_node(symbol, &alts[picked].body, state, depth + 1)
+        // A passed guard that *entails* an orientation pins it: the author
+        // wrote this alternative for the orientation the guard names, which is
+        // what licenses the oriented block states inside it (`DW0736`).
+        let state = ScopeState {
+            pinned: if cond_pins_orientation(&alts[picked].when) {
+                Some(state.orient)
+            } else {
+                state.pinned
+            },
+            ..*state
+        };
+        self.run_node(symbol, &alts[picked].body, &state, depth + 1)
     }
 
     fn run_node(
@@ -497,6 +584,7 @@ impl<'a> Expander<'a> {
                         .expect("validate() proved every role is bound"),
                     Material::Inline(paint) => paint,
                 };
+                self.audit_oriented_fill(symbol, paint, state);
                 let full = |error| ExpandError::PaletteFull {
                     symbol: symbol.to_string(),
                     error,
@@ -535,6 +623,7 @@ impl<'a> Expander<'a> {
                 let child = ScopeState {
                     region: state.region,
                     orient,
+                    pinned: state.pinned,
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -545,6 +634,51 @@ impl<'a> Expander<'a> {
                 self.run_node(symbol, body, state, depth + 1)
             }
             Node::Split(split) => self.run_split(symbol, split, state, depth),
+        }
+    }
+
+    /// Record what one fill means for the `DW0736` audit.
+    ///
+    /// The predicate itself —
+    /// [`delvewright_schem::blocks::BlockRegistry::oriented_mismatch`] — lives
+    /// with the block-state model, derived from the registry's own value
+    /// vocabulary, so this method only supplies the two facts the expander
+    /// alone knows: the scope's orientation and whether a passed
+    /// [`Cond::Orientation`] guard pinned it.
+    fn audit_oriented_fill(&mut self, symbol: &str, paint: &Paint, state: &ScopeState) {
+        let states: Vec<&BlockState> = match paint {
+            Paint::Block(b) => vec![b],
+            Paint::Mix(mix) => mix.iter().map(|w| &w.block).collect(),
+        };
+        self.oriented_fills += 1;
+        if states.iter().all(|b| b.properties.is_empty()) {
+            return;
+        }
+        self.oriented_carrying += 1;
+        if state.pinned == Some(state.orient) {
+            return; // the guard proved the author wrote these for this orientation
+        }
+        let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+        let perm = [
+            state.orient.get(Axis::X).index(),
+            state.orient.get(Axis::Y).index(),
+            state.orient.get(Axis::Z).index(),
+        ];
+        for block in states {
+            if let Some(property) = registry.oriented_mismatch(&block.name, &block.properties, perm)
+            {
+                self.oriented_unguarded.insert(OrientedFinding {
+                    rule: symbol.to_string(),
+                    state: block.to_string(),
+                    property,
+                    orientation: format!(
+                        "x->{:?},y->{:?},z->{:?}",
+                        state.orient.get(Axis::X),
+                        state.orient.get(Axis::Y),
+                        state.orient.get(Axis::Z)
+                    ),
+                });
+            }
         }
     }
 
@@ -727,6 +861,7 @@ impl<'a> Expander<'a> {
             let child_state = ScopeState {
                 region: Box3::new(origin, size),
                 orient: child_orient,
+                pinned: state.pinned,
             };
             let child = &split.children[i % split.children.len()];
             self.run_node(symbol, child, &child_state, depth + 1)?;

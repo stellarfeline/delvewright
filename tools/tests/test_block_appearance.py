@@ -773,3 +773,41 @@ def test_jar_gated_inventory_is_named():
     assert defined == JAR_GATED, f"jar-gated set drifted: {sorted(defined)}"
     if JAR is None:
         print(f"\nJAR-GATED AND NOT RUN HERE: {sorted(JAR_GATED)}")
+
+
+# --------------------------------------------------------------------------
+# The registry-absence refusal, and why this test exists at all
+#
+# `load_registry()` arrived in one PR and a second PR rewrote this whole tool
+# from an older base, dropping it. Both branches were green, the conflict was in
+# one hunk, and resolving it as "take the rewrite, it is the superset" would have
+# deleted a merged fix with nothing anywhere going red — the rewrite carries a
+# refusal for the CLASSIFICATION table, which is what makes the omission easy to
+# read past. The behaviour is now asserted rather than remembered.
+#
+# It is deliberately not jar-gated: the registry path is the one input this tool
+# needs that CI does have, so the refusal is provable in CI.
+# --------------------------------------------------------------------------
+
+
+def test_a_missing_registry_is_a_named_refusal_not_a_traceback(monkeypatch, tmp_path):
+    monkeypatch.setattr(ba, "REGISTRY", tmp_path / "absent" / "blocks-1.21.11.json")
+    with pytest.raises(SystemExit) as excinfo:
+        ba.load_registry()
+    message = str(excinfo.value)
+    assert "no block registry at" in message
+    # The refusal must name the fallback, or it turns a mandatory step optional.
+    assert "delve-grammar" in message
+    assert "not optional" in message
+
+
+def test_the_registry_refusal_is_reachable_from_the_entry_point(monkeypatch, tmp_path):
+    """The refusal is worth nothing if `main` reads the file some other way."""
+    source = TOOL.read_text()
+    assert "json.loads(load_registry())" in source, (
+        "main() no longer routes the registry read through load_registry(); a bare "
+        "REGISTRY.read_text() gives back the traceback this refusal replaced"
+    )
+    assert "REGISTRY.read_text()" not in source.replace(
+        "return REGISTRY.read_text()", ""
+    ), "a second, unrefused read of the registry has appeared"

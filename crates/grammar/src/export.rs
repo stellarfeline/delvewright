@@ -348,6 +348,19 @@ pub enum ExportError {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
+    /// The model contains block states omitting shape-carrying (multipart)
+    /// properties (`DW0735`, `delvewright_schem::blocks::DW_SHAPE_OMITTED`).
+    ShapeOmissions {
+        /// One line per offending block state, with the cells it covers.
+        reasons: Vec<String>,
+    },
+    /// The expansion filled orientation-sensitive block states into reoriented
+    /// scopes with no `orientation` guard (`DW0736`,
+    /// `delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED`).
+    UnguardedOrientedFills {
+        /// One line per finding.
+        reasons: Vec<String>,
+    },
 }
 
 impl fmt::Display for ExportError {
@@ -382,6 +395,24 @@ impl fmt::Display for ExportError {
                 f,
                 "the expanded model paints block states Minecraft {} does not have: {}",
                 delvewright_schem::blocks::MC_VERSION,
+                reasons.join("; ")
+            ),
+            ExportError::ShapeOmissions { reasons } => write!(
+                f,
+                "{}: the expanded model paints block states that omit shape-carrying \
+                 (multipart) properties, which place disconnected — a wall with no \
+                 connection state written is an isolated post: {}",
+                delvewright_schem::blocks::DW_SHAPE_OMITTED,
+                reasons.join("; ")
+            ),
+            ExportError::UnguardedOrientedFills { reasons } => write!(
+                f,
+                "{}: the expansion filled orientation-sensitive block states into \
+                 reoriented scopes with no `orientation` guard, so their literal \
+                 facing/axis/connections land however the scope was turned: {}. Write one \
+                 alternative per orientation, each guarded with the `orientation` cond \
+                 and carrying the matching state",
+                delvewright_schem::blocks::DW_ORIENTED_FILL_UNGUARDED,
                 reasons.join("; ")
             ),
         }
@@ -447,6 +478,7 @@ pub fn export_prefab(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    refuse_unguarded_oriented_fills(&expansion)?;
     let nbt = part_nbt(&expansion.model, &palette, region)?;
 
     let size = [
@@ -530,6 +562,7 @@ pub fn export_zone(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    refuse_unguarded_oriented_fills(&expansion)?;
 
     let mut tiles = Vec::with_capacity(plan.parts.len());
     let mut parts = Vec::with_capacity(plan.parts.len());
@@ -720,11 +753,60 @@ fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<()
                 .map(|e| format!("{e} ({cells} cell(s))"))
         })
         .collect();
-    if unknown.is_empty() {
+    if !unknown.is_empty() {
+        return Err(ExportError::UnknownBlocks { reasons: unknown });
+    }
+
+    // The shape half of the same spelling rule (`DW0735`): a state that omits
+    // a multipart property compiles, loads, and places disconnected. Checked
+    // by the emitter for the same task-#70 reason the id check is.
+    let omissions: Vec<String> = palette
+        .states
+        .iter()
+        .zip(&cells_per_state)
+        .filter(|&(_, &cells)| cells > 0)
+        .filter_map(|(state, &cells)| {
+            let omitted = registry.omitted_shape_carrying(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "{} omits {} ({cells} cell(s))",
+                    state.to_state_string(),
+                    omitted.join(", ")
+                ))
+            }
+        })
+        .collect();
+    if omissions.is_empty() {
         Ok(())
     } else {
-        Err(ExportError::UnknownBlocks { reasons: unknown })
+        Err(ExportError::ShapeOmissions { reasons: omissions })
     }
+}
+
+/// Refuse an expansion that filled orientation-sensitive states unguarded
+/// (`DW0736`). The findings were collected during expansion, where the scope
+/// orientations exist; freezing them into a `.nbt` is what would make the
+/// wrong facing permanent, so the export is where the refusal bites for
+/// callers that skip the gate report.
+fn refuse_unguarded_oriented_fills(expansion: &Expansion) -> Result<(), ExportError> {
+    if expansion.oriented.unguarded.is_empty() {
+        return Ok(());
+    }
+    Err(ExportError::UnguardedOrientedFills {
+        reasons: expansion
+            .oriented
+            .unguarded
+            .iter()
+            .map(|f| {
+                format!(
+                    "rule {:?} fills {} whose {} lands wrong under {}",
+                    f.rule, f.state, f.property, f.orientation
+                )
+            })
+            .collect(),
+    })
 }
 
 /// Render one box of a model as a gzip-framed vanilla structure template.

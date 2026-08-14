@@ -394,3 +394,51 @@ fn every_library_program_paints_only_blocks_that_exist() {
         "the gate examined only {examined} block states — it is bound to almost nothing"
     );
 }
+
+/// The other two members of the blockstate family (`DW0735`, `DW0736`),
+/// asserted over the whole corpus the same way: every library program judges
+/// green on `shape-complete` and `oriented-fills` at its documented region.
+///
+/// This is the invocation that keeps the two gates from being UNRUN over the
+/// corpus (CLAUDE.md's fourth vacuity mode): a new library piece that fills a
+/// bare wall/fence/pane, or an oriented state without its `orientation` guard,
+/// reds here — which is exactly how `broken_grate`'s bare `iron_bars` (an
+/// isolated-post row, shipped since the piece landed) was caught and fixed.
+/// Binding counts are summed and asserted, per the vacuity rule.
+#[test]
+fn every_library_program_passes_the_shape_and_orientation_gates() {
+    use delvewright_grammar::gates;
+    let (mut states_bound, mut fills_bound, mut carrying) = (0usize, 0usize, 0u64);
+    for (program, region) in programs() {
+        let out = expand(&program, region, &ExpandOptions::seeded(1))
+            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+        carrying += out.oriented.carrying;
+        let report = gates::judge(&out, gates::Options::default());
+        for id in ["shape-complete", "oriented-fills"] {
+            let gate = report
+                .gates
+                .iter()
+                .find(|g| g.id == id)
+                .unwrap_or_else(|| panic!("{}: no `{id}` gate", program.name));
+            assert!(gate.pass, "{}: {}", program.name, gate.detail);
+            assert!(
+                gate.bound > 0,
+                "{}: gate `{id}` examined zero objects",
+                program.name
+            );
+            match id {
+                "shape-complete" => states_bound += gate.bound,
+                _ => fills_bound += gate.bound,
+            }
+        }
+    }
+    assert!(
+        states_bound >= 60 && fills_bound >= 100,
+        "the sweep bound {states_bound} placed states / {fills_bound} fills — almost nothing"
+    );
+    assert!(
+        carrying >= 3,
+        "only {carrying} fills in the whole corpus carried block-state properties — the \
+         oriented predicate had almost nothing to bite on"
+    );
+}
