@@ -366,11 +366,11 @@ fn the_press_ledger_counts_the_compilers_own_press() {
     );
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&c, &prefabs);
-    let l: serde_json::Value =
-        serde_json::from_slice(out.get("validation/press-bodies.json").expect(
-            "every build that assembles a world states this proof's binding count",
-        ))
-        .unwrap();
+    let l: serde_json::Value = serde_json::from_slice(
+        out.get("validation/press-bodies.json")
+            .expect("every build that assembles a world states this proof's binding count"),
+    )
+    .unwrap();
     assert_eq!(l["code"], "DW0426");
     assert_eq!(
         l["examined"], 1,
