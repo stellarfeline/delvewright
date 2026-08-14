@@ -14,12 +14,12 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use delvewright_render::assets::Assets;
-use delvewright_render::blockcolor::{Appearances, Deriver, PaletteTable};
+use delvewright_render::blockcolor::Deriver;
 use delvewright_render::cache;
 use delvewright_render::detect;
 use delvewright_render::diag::{
     DW_ANCHOR_EYE, DW_BINDING, DW_INPUT, DW_MISSING_TEXTURE, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER,
-    DW_UNRESOLVED_BLOCK, Diagnostic, exit,
+    DW_UNDERSPECIFIED_STATE, DW_UNRESOLVED_BLOCK, DW_VIEWER_RESOURCES, Diagnostic, exit,
 };
 use delvewright_render::fidelity;
 use delvewright_render::index;
@@ -142,13 +142,15 @@ enum Command {
         #[arg(long)]
         title: Option<String>,
     },
-    /// Turn one or more prefab `.nbt`s into ONE self-contained interactive HTML
-    /// page: a camera the reviewer drives, preset points of view including
-    /// player eye height at the way in, and every block coloured by what it
-    /// actually is.
+    /// Turn one or more prefabs into ONE self-contained interactive HTML page: a
+    /// camera the reviewer drives, preset points of view including player eye
+    /// height at the way in, and every block drawn from the pinned version's own
+    /// model and textures.
     Viewer {
-        /// Prefab `.nbt` files, or directories of them. Each prefab's
-        /// `<basename>.json` is read when present — that is where anchors live.
+        /// Prefab `.nbt` files, tile-set manifests (`.json`), or directories of
+        /// them. Each prefab's `<basename>.json` is read when present — that is
+        /// where anchors live. A directory holding a tiled zone shows the zone,
+        /// never its tiles.
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Output `.html`.
@@ -157,13 +159,6 @@ enum Command {
         /// Page title. Defaults to the prefab id, or a count when several.
         #[arg(long)]
         title: Option<String>,
-        /// Biome whose grass, foliage and water tints colour the model.
-        #[arg(long, default_value = delvewright_render::blockcolor::DEFAULT_BIOME)]
-        biome: String,
-        /// Use a precomputed appearance table (`delve-render palette`) instead
-        /// of deriving one, so a page can be built with no client jar present.
-        #[arg(long)]
-        palette: Option<PathBuf>,
     },
     /// Derive the appearance table (colour, coverage and model bounds per
     /// blockstate) for some prefabs, as JSON — the `viewer`'s `--palette` input.
@@ -225,20 +220,7 @@ fn main() -> ExitCode {
             title.as_deref(),
             &cli,
         ),
-        Command::Viewer {
-            inputs,
-            out,
-            title,
-            biome,
-            palette,
-        } => run_viewer(
-            inputs,
-            out,
-            title.as_deref(),
-            biome,
-            palette.as_deref(),
-            &cli,
-        ),
+        Command::Viewer { inputs, out, title } => run_viewer(inputs, out, title.as_deref(), &cli),
         Command::Palette { inputs, out, biome } => run_palette(inputs, out, biome, &cli),
         Command::Index { build_dir, out } => run_index(build_dir, out, &cli),
     }
@@ -993,28 +975,59 @@ fn fail(d: Diagnostic, json: bool, code: u8) -> ExitCode {
 
 /// Collect prefab `.nbt` paths from files and/or directories, sorted by name so
 /// a page built from a directory is the same page on every machine.
-fn collect_nbt(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Diagnostic> {
+/// Resolve the paths an author passed into the pieces to show.
+///
+/// A file is taken as given — `tileset::load_piece` decides whether it is a
+/// prefab, a manifest, or a lone tile of a set (which it refuses).
+///
+/// A DIRECTORY is where the care is. Walking `*.nbt` in a directory that holds a
+/// tiled zone would put each tile on the page as if it were a prefab, which is
+/// the same defect `piece` and `batch` each close on their own door: a page of a
+/// building sliced at a packaging boundary is a review that passes and means
+/// nothing. So the manifests are collected first and every `.nbt` they claim is
+/// dropped in favour of its manifest.
+fn collect_pieces(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Diagnostic> {
     let mut out: Vec<PathBuf> = Vec::new();
     for input in inputs {
-        if input.is_dir() {
-            let mut found: Vec<PathBuf> = std::fs::read_dir(input)
-                .map_err(|e| {
-                    Diagnostic::error(DW_INPUT, format!("read dir {}: {e}", input.display()))
-                })?
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|e| e == "nbt"))
-                .collect();
-            found.sort();
-            out.extend(found);
-        } else {
+        if !input.is_dir() {
             out.push(input.clone());
+            continue;
         }
+        let entries: Vec<PathBuf> = std::fs::read_dir(input)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read dir {}: {e}", input.display())))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+
+        let mut manifests: Vec<PathBuf> = Vec::new();
+        let mut claimed: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
+        for path in &entries {
+            if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                continue;
+            }
+            match delvewright_schem::split::read_tile_set(path) {
+                Ok(Some(set)) => {
+                    for part in &set.parts {
+                        claimed.insert(path.with_file_name(&part.file));
+                    }
+                    manifests.push(path.clone());
+                }
+                // An ordinary prefab's metadata: its `.nbt` stands on its own.
+                Ok(None) => {}
+                Err(e) => return Err(Diagnostic::error(DW_INPUT, e)),
+            }
+        }
+
+        let mut found: Vec<PathBuf> = entries
+            .into_iter()
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("nbt"))
+            .filter(|p| !claimed.contains(p))
+            .collect();
+        found.extend(manifests);
+        found.sort();
+        out.extend(found);
     }
     if out.is_empty() {
-        return Err(Diagnostic::error(
-            DW_INPUT,
-            "no prefab `.nbt` files in the given paths",
-        ));
+        return Err(Diagnostic::error(DW_INPUT, "no prefabs in the given paths"));
     }
     Ok(out)
 }
@@ -1038,17 +1051,57 @@ fn open_assets(cli: &Cli) -> Result<Assets, Diagnostic> {
         .map_err(|e| Diagnostic::error(DW_RENDER, format!("open asset source: {e}")))
 }
 
-/// Report every blockstate that could not be resolved, with its cell count, and
-/// state the anchor binding. A page that silently drew an unknown block grey
-/// would hide exactly the finding it exists to surface.
+/// Report what the page could not draw as the game draws it, and every binding
+/// count behind that verdict. A page that silently drew an unknown block grey
+/// would hide exactly the finding it exists to surface — and one that reported
+/// nothing over a palette full of under-specified states would be worse, because
+/// it would read as a clean bill of health.
 fn report_page(stats: &viewer::BuildStats, models: usize, json: bool) {
-    for (state, (reason, count)) in &stats.unresolved {
+    for u in &stats.unresolved {
         Diagnostic::warning(
             DW_UNRESOLVED_BLOCK,
             format!(
-                "{state}: {reason} — {count} cell(s) drawn as the missing-texture \
-                 placeholder. The block does not exist in this asset source at all, \
-                 so a server pinned to the same version does not have it either"
+                "{}: {} ({}) — {} cell(s) draw as the missing-texture placeholder. \
+                 The pinned asset source does not have it, so a server pinned to the \
+                 same version does not have it either",
+                u.state, u.reason, u.detail, u.cells
+            ),
+        )
+        .print(json);
+    }
+    for u in &stats.under_specified {
+        let filled: Vec<String> = u.filled.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let consequence = if u.multipart {
+            "this block's definition is `multipart`, so an unwritten property matches no \
+             case at all and the block is drawn from the default state rather than from \
+             what the file says"
+        } else {
+            "the variant is selected from the default state rather than from what the \
+             file says"
+        };
+        Diagnostic::warning(
+            DW_UNDERSPECIFIED_STATE,
+            format!(
+                "{}: leaves {} unwritten — {} cell(s). Minecraft {} fills {}, and {}",
+                u.state,
+                u.filled.keys().cloned().collect::<Vec<_>>().join(", "),
+                u.cells,
+                delvewright_schem::blocks::MC_VERSION,
+                filled.join(", "),
+                consequence
+            ),
+        )
+        .print(json);
+    }
+    // Binding counts. Each of the checks above is capable of reporting nothing
+    // for two very different reasons, and only these numbers tell them apart.
+    if stats.states == 0 {
+        Diagnostic::warning(
+            DW_BINDING,
+            format!(
+                "0 blockstates bound over {models} prefab(s): the resolution and \
+                 completeness checks examined nothing, so a clean page here means \
+                 the prefabs are empty, not that they are sound"
             ),
         )
         .print(json);
@@ -1066,15 +1119,8 @@ fn report_page(stats: &viewer::BuildStats, models: usize, json: bool) {
     }
 }
 
-fn run_viewer(
-    inputs: &[PathBuf],
-    out: &Path,
-    title: Option<&str>,
-    biome: &str,
-    palette: Option<&Path>,
-    cli: &Cli,
-) -> ExitCode {
-    let paths = match collect_nbt(inputs) {
+fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, cli: &Cli) -> ExitCode {
+    let paths = match collect_pieces(inputs) {
         Ok(p) => p,
         Err(d) => return fail(d, cli.json, exit::INPUT),
     };
@@ -1091,49 +1137,39 @@ fn run_viewer(
         }
     });
 
-    // Either a table someone derived earlier (no jar needed) or a live
-    // derivation from the client jar.
-    let table;
-    let assets;
-    let deriver;
-    let colors: &dyn Appearances = match palette {
-        Some(p) => {
-            let bytes = match std::fs::read(p) {
-                Ok(b) => b,
-                Err(e) => {
-                    return fail(
-                        Diagnostic::error(DW_INPUT, format!("read {}: {e}", p.display())),
-                        cli.json,
-                        exit::INPUT,
-                    );
-                }
-            };
-            table = match serde_json::from_slice::<PaletteTable>(&bytes) {
-                Ok(t) => t,
-                Err(e) => {
-                    return fail(
-                        Diagnostic::error(DW_INPUT, format!("parse {}: {e}", p.display())),
-                        cli.json,
-                        exit::INPUT,
-                    );
-                }
-            };
-            &table
-        }
-        None => {
-            assets = match open_assets(cli) {
-                Ok(a) => a,
-                Err(d) => return fail(d, cli.json, exit::RENDER),
-            };
-            deriver = Deriver::with_biome(&assets, biome);
-            &deriver
-        }
+    // The page draws real block models, so it needs the real resources: the
+    // pinned client jar is not an optimisation here, it is the content.
+    let assets = match open_assets(cli) {
+        Ok(a) => a,
+        Err(d) => return fail(d, cli.json, exit::RENDER),
     };
 
-    let (html, stats) = match viewer::build_page(&models, colors, &title) {
+    let (html, stats) = match viewer::build_page(&models, &assets, &title) {
         Ok(v) => v,
-        Err(e) => {
+        Err(viewer::BuildError::Input(e)) => {
             return fail(Diagnostic::error(DW_INPUT, e), cli.json, exit::INPUT);
+        }
+        Err(e @ viewer::BuildError::Bundle(_)) => {
+            return fail(
+                Diagnostic::error(DW_VIEWER_RESOURCES, e.to_string()),
+                cli.json,
+                exit::INTERNAL,
+            );
+        }
+        Err(e @ viewer::BuildError::SpecialTextures(_)) => {
+            return fail(
+                Diagnostic::error(
+                    DW_VIEWER_RESOURCES,
+                    format!(
+                        "{e}. A block-entity texture is asked for by id and never by a model \
+                         file, so a wrong id is invisible: the block renders as the \
+                         missing-texture checker and nothing is said. Fix the table in \
+                         crates/render/src/viewer/resources.rs against the pinned version."
+                    ),
+                ),
+                cli.json,
+                exit::INTERNAL,
+            );
         }
     };
     if let Some(parent) = out.parent()
@@ -1162,15 +1198,24 @@ fn run_viewer(
             "prefabs": models.len(),
             "bytes": stats.bytes,
             "anchors": stats.anchors,
+            "states": stats.states,
+            "textures": stats.textures,
             "unresolved": stats.unresolved.len(),
+            "under_specified": stats.under_specified.len(),
+            "special_textures_bound": stats.special_bound,
         });
         println!("{summary}");
     } else {
         println!(
-            "{} — {} prefab(s), {} anchors, {} KiB",
+            "{} — {} prefab(s), {} anchors, {} blockstates, {} textures, \
+             {} unresolved, {} under-specified, {} KiB",
             out.display(),
             models.len(),
             stats.anchors,
+            stats.states,
+            stats.textures,
+            stats.unresolved.len(),
+            stats.under_specified.len(),
             stats.bytes / 1024
         );
     }
@@ -1178,7 +1223,7 @@ fn run_viewer(
 }
 
 fn run_palette(inputs: &[PathBuf], out: &Path, biome: &str, cli: &Cli) -> ExitCode {
-    let paths = match collect_nbt(inputs) {
+    let paths = match collect_pieces(inputs) {
         Ok(p) => p,
         Err(d) => return fail(d, cli.json, exit::INPUT),
     };

@@ -265,9 +265,9 @@ delve-render index <build-dir> -o <file>     # image <-> expect pairs for a revi
 delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
-delve-render viewer <nbt|dir>... -o <page.html> [--title T] [--biome minecraft:plains]
-                                             # [--palette palette.json]
-                                             # ONE interactive page: a camera the reviewer drives
+delve-render viewer <nbt|dir|manifest.json>... -o <page.html> [--title T]
+                                             # ONE interactive page: a camera the reviewer drives,
+                                             # every block drawn from the pinned version's own model
 delve-render palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains]
                                              # the derived colour/shape table `viewer` reads
 ```
@@ -408,16 +408,30 @@ delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.ht
 delve-render viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
 ```
 
-**Colour is derived, never typed.** Each palette blockstate is resolved the way
-the game resolves it — `blockstates/<id>.json` → variant (or every satisfied
-`multipart` case) → the model's `parent` chain → its `elements` and `textures` →
-the `.png`s — and the block's colour is the alpha-weighted mean of those
-textures. The model's element bounds come across too, so a slab is half-height, a
-carpet is a sheet and a chain is a thin post rather than everything being a cube.
-Grass, foliage and water are tinted from `data/**/worldgen/biome/<id>.json` in
-the same jar (`temperature`/`downfall` index the vanilla colormaps;
-`effects.water_color` colours water), which is why `--biome` is a real knob: a
-swamp, a desert and a cherry grove each produce their own table.
+**The blocks are real blocks.** The page carries the pinned client jar's own
+resources for every blockstate it contains — `blockstates/<id>.json`, the whole
+`parent` chain of every model they name, and every `.png` those models reference,
+all inline — and [deepslate](https://github.com/misode/deepslate) (MIT, vendored
+and embedded) draws them by walking that chain exactly as the game does. So a
+wall is a wall, a stair is a stair, a chest is a chest, a torch has a flame and a
+pane of glass is a pane. Typically a hundred textures and two hundred models for
+a library page.
+
+Two facts the client jar does not carry come from elsewhere. Per-block render
+flags are derived from model geometry and texture alpha. Per-block **default
+state** — what the game reads an unwritten property as — comes from the pinned
+block registry, never from a guess: a bare `minecraft:cobblestone_wall` is a wall
+POST (`up=true`, every side `none`), and "the first legal value" would give
+`up=false` with `east=low`, which is a different block.
+
+`--textures` accepts an unpacked resource directory as well as the jar, which is
+how a page is built with **no client jar present** (CI does exactly this), and
+the seam a creator uses to point the page at their own resource pack.
+
+Rebuild the vendored renderer with `tools/build-deepslate-bundle.sh` (needs
+`npm`; installs into a scratch directory, never into the repo). It pins the
+versions, applies one local patch, and refuses if upstream has moved the ids it
+patches. Two consecutive builds are byte-identical.
 
 **The page is walked.** It opens on a pair of feet and it stays there: `W`/`A`/`S`/`D`
 walk, the mouse looks, `Space` and `C` rise and sink, `Shift` moves faster, arrow
@@ -451,27 +465,68 @@ snapshot's semantics sidecar loads through the same reader. Point anchors and
 region anchors both draw. **Zero anchors is a stated finding** (`DW0726`), not a
 quiet success: the page says so and offers exterior and plan only.
 
-**Unresolved blocks are surfaced, never silently coloured** (`DW0780`, a
-warning, with the cell count): they draw in the missing-texture magenta and are
-listed on the page. An id the client jar does not have is an id the pinned
-server does not have either — which is how `minecraft:chain` was found (1.21.11
-renamed it `minecraft:iron_chain`).
+**A tiled zone is one building.** A zone past the 48-per-axis structure-template
+cap ships as several `.nbt` files and one manifest. `viewer` reassembles it
+before it draws anything, exactly as `piece` does, and a lone tile passed by name
+is refused with the manifest named. Pointed at a directory holding such a set,
+the page shows the zone and never its tiles — a review of a building sliced at a
+packaging boundary passes and means nothing.
+
+**Fidelity is reported, never assumed.** Three findings, each with its cell
+count, on the page and on stderr:
+
+- `DW0780` — **a blockstate the pinned version does not have**: the id, its
+  model, or one of its textures is absent. An id the client jar does not have is
+  an id the pinned server does not have either, which is how `minecraft:chain`
+  was found (1.21.11 renamed it `minecraft:iron_chain`).
+- `DW0781` — **a palette entry that leaves unwritten a property its own
+  blockstate definition selects a model with**. Legal, and a running server
+  places the right block; but the page can only draw it from the version's
+  default state, so what the file says and what the reviewer is looking at are
+  different blocks. Worst on a `multipart` definition, where an unwritten
+  property matches no case at all: a `cobblestone_wall` with nothing written drew
+  a **solid cube** where a wall post stands, and every tool reported it resolved.
+  Measured over the committed library: **31 palette entries across 9 of the
+  36 prefabs**, which is 15 distinct blockstates — every one a wall, a fence,
+  iron bars, a vine, glow lichen, a barrel's `open`, a grass block's `snowy`,
+  a button's `powered` or a fence gate's `in_wall`. Counting every unwritten
+  property instead of only the selecting ones gives 65 entries across 20
+  prefabs; the difference is `waterlogged`, `distance` and `persistent` —
+  real, and invisible.
+- **drawn as nothing, or drawn as the missing-texture checker** — measured in the
+  browser by meshing each blockstate alone, because neither is visible from the
+  resources. The checker case is how a wrong block-entity texture id presents:
+  those ids are asked for by code and never by a model file, so the block renders
+  magenta and nothing is said.
+
+Beside them the page states **what each check examined** — how many blockstates,
+how many textures at what atlas size, how many block-entity texture ids resolved
+against the source, and which Minecraft version. A page that examined nothing
+must not read like a page that examined everything and found nothing.
+
+`DW0782` is the toolchain's own failure rather than the prefab's, and refuses
+(exit 10): the vendored renderer has lost its texture-id patch, or a
+block-entity texture id the emitter asks for is absent from a source that
+declares itself to be the pinned game. Which of those an absence means is
+decided by the source — a jar that says it is 1.21.11 is complete by definition,
+a resource pack is entitled to be partial and gets `DW0780` instead.
 
 **Size.** Geometry is never JSON: the grid is run-length encoded as
 `(palette index u16, run length u16)` and base64'd, so the payload tracks how
 complicated the building is rather than how big its box is, and only exposed
-faces are meshed — in the browser, from that grid. Measured: `island-mountain`
-(36×28×42, 42,336 cells) **83 KiB**; a zone-sized 41×14×125 box (71,750 cells)
-**80 KiB**; all 36 committed prefabs on one page **176 KiB**. The ceiling is
-16 MB.
+faces become triangles — in the browser, from that grid, rebuilt through the
+renderer's own `addBlock`. Measured: `keep-gate-room` **368 KiB**;
+`island-mountain` (36×28×42, 42,336 cells) **464 KiB**; all 36 committed prefabs
+on one page **656 KiB**, of which **281 KiB** is the vendored renderer, present
+once however many prefabs a page holds. The ceiling is 16 MB.
 
 Two runs over the same input produce the same page byte for byte (ADR-0006).
 `#model=<id>&preset=<id>&cut=<y>` in the URL opens a specific view, so a link
 points at the thing being discussed.
 
-`palette` writes the derived table on its own. It is the `--palette` input, which
-lets a page be built with **no client jar present** (CI does exactly this), and
-it is the seam a creator uses to supply their own resource pack's colours.
+`palette` writes the derived per-blockstate colour and shape table on its own —
+the input the snapshot chart, the palette-selection tooling and the fidelity gate
+read.
 
 ## 4a. Chunky — the official renderer (external process) · agent + human
 
@@ -575,6 +630,8 @@ Never shipped inside a delve.
 | Tool | Class | Invocation |
 |---|---|---|
 | `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list) [-n N] [--full-cube-only] [--technical] [--jar <client.jar>] [--json]` — **what a block actually looks like**, measured from the pinned client jar: alpha-weighted mean texture colour, coverage, and whether the model fills the cell. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2 — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar`. Stdlib only — no packages to install |
+| `tools/extract-block-defaults.py` | agent (rare) | `python3 tools/extract-block-defaults.py <blocks/data.min.json> crates/compiler/data/block-defaults-1.21.11.json` — regenerate the pinned 1.21.11 block **default-state** table from the same `misode/mcmeta` summary its sibling reads: that file keeps the source entry's legal values, this one keeps its default state. It is what lets a reader that is not a running server know what a palette entry leaving properties out actually means. Pins and checks the source SHA-256 and the block count, and refuses a default that is not one of its own property's legal values. Only ever run when ADR-0009's revisit triggers fire |
+| `tools/build-deepslate-bundle.sh` | agent (rare) | `tools/build-deepslate-bundle.sh` — rebuild the renderer the prefab review page embeds (`crates/render/src/viewer/deepslate.bundle.js`). Needs `npm` and network; installs into a scratch directory, never into the repo. Pins deepslate, gl-matrix and esbuild by exact version, applies the local banner/shield texture-id patch with an exact expected hit count, and prints the licence of everything in the bundle. Two consecutive builds are byte-identical, which is what keeps the page byte-identical (ADR-0006). Refuses if upstream has moved the ids it patches — which is the signal to drop the patch rather than widen it |
 | `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/extract-shape-properties.py` | agent (rare) | `python3 tools/extract-shape-properties.py <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json` — regenerate the shape-carrying (multipart) property table behind `DW0735` from the client jar's blockstate definitions. Pins the jar's `version.json` to 1.21.11 / DataVersion 4671 and cross-checks every derived property against the block registry; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |

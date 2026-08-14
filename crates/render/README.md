@@ -34,9 +34,9 @@ index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision r
 contact-sheet <dir> -o <png>    many candidate renders on ONE page, for curation
                                 [--scores f] [--shot ext-se] [--columns N]
                                 [--thumb 256] [--title T]
-viewer <nbt|dir>... -o <html>   ONE self-contained interactive page: a camera the
-                                reviewer drives [--title T] [--biome id]
-                                [--palette f]
+viewer <nbt|dir|manifest>... -o <html>
+                                ONE self-contained interactive page: a camera the
+                                reviewer drives [--title T]
 palette <nbt|dir>... -o <json>  the derived per-blockstate colour/shape table
                                 [--biome id]
 ```
@@ -59,13 +59,16 @@ and it is never redistributed.
 | `DW0722` | output error (cannot write) |
 | `DW0723` | renderer/GPU error or textures not found |
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
-| `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor binding (warning) |
+| `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor and zero-blockstate bindings (warning) |
 | `DW0727` | an anchor's eye-level camera does not stand on the anchor's own cell, or could not be stood up at all (warning) |
-| `DW0780` | a prefab blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
+| `DW0780` | a blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
+| `DW0781` | a palette entry leaves shape-carrying properties unwritten, so the shape comes from the version's default state rather than from the file — warning, with the properties and the cell count |
+| `DW0782` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
-except `DW0724`, which the compiler's visual tier holds. Take the next unused
-number from `docs/reference/compiler.md`, not from the highest constant here.)
+except `DW0724`, which the compiler's visual tier holds — plus `DW078x` for the
+review page's resource findings. Take the next unused number from
+`docs/reference/compiler.md`, not from the highest constant here.)
 
 ## `piece` — per-prefab shot set
 
@@ -340,24 +343,40 @@ delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.ht
 delve-render viewer campaigns/prefabs -o .sheets/library.html   # all of them, one page
 ```
 
-**The renderer is hand-written WebGL**, because a voxel model is axis-aligned
-boxes and that is nearly all a scene graph would be used for. The alternative
-was vendoring a general 3D library, and the sizes decided it: three.js r164's
-minified build measures **674,422 bytes**, against **47,891 bytes** for this
-page's entire front end (renderer, styles and markup together) — 14x, for
-geometry that is six quads per box. The CSP rules out loading it from a CDN, and
-an inline `<script>` gets no transfer compression, so that 659 KB would land in
-every page whole: eight times the size of the whole `island-mountain` page as it
-stands. Vendoring would also have owed an ACKNOWLEDGEMENTS entry; the hand-
-written path owes none.
+**The blocks are drawn by [deepslate](https://github.com/misode/deepslate)**
+(MIT), vendored as `src/viewer/deepslate.bundle.js` and embedded in the page. It
+walks the same chain the game does — `blockstates/<id>.json` → the matching
+variant or `multipart` case → the model's `parent` chain → `elements` and
+`textures` → the `.png`s — so a wall is a wall, a stair is a stair, a chest is a
+chest and a torch has a flame. `viewer/resources.rs` extracts that slice of the
+pinned client jar for the blockstates a page contains: typically a hundred
+textures and two hundred models, all inline.
 
-**Colour is derived from the pinned jar, never typed out.** `blockcolor.rs`
-resolves each palette blockstate the way the game does — variant or `multipart`
-→ `parent` chain → `elements` + `textures` → the `.png`s — and takes the
-alpha-weighted mean. Element bounds come with it, so a slab is half-height and a
-chain is a thin post. Grass, foliage and water tint from
-`data/**/worldgen/biome/<id>.json` in the same jar, which is why `--biome` is a
-real knob rather than decoration.
+Two things the client jar cannot supply come from elsewhere. Per-block render
+flags (`opaque` / `semi_transparent` / `self_culling`) are derived from model
+geometry and texture alpha. Per-block **default state** — what the game reads an
+unwritten property as — comes from the pinned block registry
+(`delvewright_schem::blocks`), never from a guess: a bare
+`minecraft:cobblestone_wall` is a wall POST, and "the first legal value" would
+give `up=false` with `east=low`, which is a different block.
+
+Rebuild the bundle with `tools/build-deepslate-bundle.sh`. It pins the versions,
+applies one local patch — deepslate asks for `entity/banner/banner_base` and
+`entity/shield/shield_base_nopattern`, paths no Minecraft version ships, while
+1.21.11 has both at the jar's top level — and refuses if upstream has moved the
+ids again. Every page build re-checks that the patch is present, because an
+unpatched bundle renders every banner and shield as the missing-texture checker
+and says nothing.
+
+**Fidelity is reported, never assumed.** The page lists, with cell counts: a
+blockstate the pinned version does not have (`DW0780`), a palette entry that
+leaves properties unwritten so the shape comes from the default state rather than
+from the file (`DW0781`), and — measured in the browser, by meshing each
+blockstate alone — any block the renderer draws as nothing or draws with the
+missing-texture checker. Beside them the page states what each check examined:
+how many blockstates, how many textures and at what atlas size, how many
+block-entity texture ids resolved. A page that examined nothing must not read
+like a page that examined everything and found nothing.
 
 **Controls**: `W`/`A`/`S`/`D` walk, the mouse looks, `Space`/`C` rise and sink,
 `Shift` moves faster, arrow keys turn a little at a time, right- or middle-drag
@@ -388,19 +407,36 @@ hand-built prefabs work today and a grammar snapshot's semantics sidecar loads
 through the same reader. Zero anchors is a stated finding (`DW0726`), and the
 page still renders with exterior and plan only.
 
+**A tiled zone is one building.** A zone past the 48-per-axis structure-template
+cap ships as several `.nbt` files and one manifest; `viewer` reassembles it
+before it draws anything, exactly as `piece` does, and a lone tile passed by name
+is refused and told which manifest claims it. Pointed at a directory holding such
+a set, the page shows the zone and never its tiles.
+
 **Packing**: the grid is run-length encoded as `(palette index u16, run length
-u16)` and base64'd — 4 bytes per *run*, not per cell — and only exposed faces
-are meshed, in the browser. `island-mountain` (42,336 cells) is an 83 KiB page;
-a zone-sized 41×14×125 box (71,750 cells) is 80 KiB; all 36 committed prefabs on
-one page is 176 KiB. Two runs over one input are byte-identical (ADR-0006).
+u16)` and base64'd — 4 bytes per *run*, not per cell — and the structure is
+rebuilt in the browser through the renderer's own `addBlock`. Measured over the
+36 committed prefabs: `keep-gate-room` is a 368 KiB page, `island-mountain`
+(42,336 cells) 464 KiB, and all 36 on one page 656 KiB — of which 281 KiB is the
+vendored renderer, present once however many prefabs a page holds. Two runs over
+one input are byte-identical (ADR-0006).
 
 `#model=<id>&preset=<id>&cut=<y>` opens a specific view, so a link points at the
 thing being discussed — and so a headless check can open any preset without
 driving the UI.
 
-`palette` writes that derived table on its own. It is `viewer --palette`'s input,
-which is how a page is built with **no client jar** (what CI does), and how a
-creator supplies their own resource pack's colours.
+`--textures` accepts an unpacked resource directory as well as a jar, which is
+how the tests build pages with no client jar, and how a creator points the page
+at their own resource pack. What an absent texture MEANS depends on which it is,
+and the source says which: a jar declaring itself to be the pinned game is
+complete by definition, so a block-entity texture it does not have is the
+emitter's table and that version disagreeing (`DW0782`, exit 10), while a
+resource pack is entitled to be partial and the same absence is an ordinary
+`DW0780`.
+
+`palette` writes the derived per-blockstate colour and shape table on its own —
+the input the snapshot chart, the palette-selection tooling and the fidelity gate
+read.
 
 ## Stability (double-render)
 

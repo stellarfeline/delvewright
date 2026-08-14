@@ -3,8 +3,16 @@
 //! A still render answers "is the set pretty". Only a camera the reviewer drives
 //! answers "what is it like to stand in here" — where the way in is, which face
 //! the party walks on, what the interior reads as from eye height. This emits
-//! that: the voxels, a derived colour per blockstate, the declared anchors, and a
-//! small WebGL renderer, in one file with **no external references of any kind**.
+//! that: the voxels, the pinned version's own block models and textures, the
+//! declared anchors, and a renderer, in one file with **no external references
+//! of any kind**.
+//!
+//! # What draws the blocks
+//!
+//! deepslate (MIT), vendored as `viewer/deepslate.bundle.js`. It reads the same
+//! `blockstates` → `models` → `textures` chain the game does, so a wall is a
+//! wall, a stair is a stair and a chest is a chest. [`resources`] extracts that
+//! chain from the pinned client jar; this module packs it beside the geometry.
 //!
 //! # Packing
 //!
@@ -15,9 +23,10 @@
 //! air and long runs of wall, so the encoded size tracks how complicated the
 //! building is, not how big its box is.
 //!
-//! Meshing happens in the browser, from that grid: a face is emitted only where
-//! the neighbouring cell does not hide it, so interior faces — the overwhelming
-//! majority — never become triangles.
+//! The page rebuilds the structure from that grid through the renderer's own
+//! public `addBlock`, so a zone that ships as several tiles and one manifest is
+//! one building on the page: reassembly happens here, in [`ViewerModel::load`],
+//! and nothing downstream knows a tile existed.
 //!
 //! # Determinism
 //!
@@ -25,17 +34,25 @@
 //! encoder is a pure function of the parsed structure, and nothing reads the
 //! clock, the environment, or an absolute path.
 
+pub mod resources;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Serialize;
 
-use crate::blockcolor::{Appearance, Appearances, PaletteTable, Unresolved, is_air};
+use crate::assets::Assets;
+use crate::blockcolor::is_air;
 use crate::meta::PrefabMeta;
 use crate::nbt::Structure;
+use resources::{Flags, PageResources, Texture, UnderSpecified, Unresolved};
 
 /// Schema id of the model block embedded in the page.
-pub const SCHEMA: &str = "delvewright.prefab-viewer/1";
+///
+/// `/2` carries resources — blockstate definitions, models, textures — where
+/// `/1` carried one mean colour and one bounding box per state. Nothing about
+/// the two payloads is compatible, so the id says so.
+pub const SCHEMA: &str = "delvewright.prefab-viewer/2";
 
 /// A player's eye height above the floor of the cell they stand in, in blocks.
 /// A "player POV" preset that floats is not a player POV.
@@ -46,19 +63,36 @@ pub const EYE_HEIGHT: f32 = 1.62;
 /// the first question a reviewer asks is what the place looks like on arrival.
 pub const WAY_IN_STEMS: [&str; 4] = ["spawn", "entry", "entrance", "threshold"];
 
-/// One block's appearance as the page carries it.
+/// The vendored renderer, and the two texture ids it is patched to ask for.
+///
+/// deepslate 0.26.0 asks for `entity/banner/banner_base` and
+/// `entity/shield/shield_base_nopattern`, paths no Minecraft version has ever
+/// shipped; 1.21.11 has both at the jar's top level. `tools/build-deepslate-
+/// bundle.sh` rewrites the two ids when it vendors the bundle. The check below
+/// is bound to page emission rather than to a test, because a bundle that lost
+/// the patch renders every banner and every shield as the missing-texture
+/// checker and says nothing.
+const BUNDLE: &str = include_str!("viewer/deepslate.bundle.js");
+const PATCHED_TEXTURE_IDS: [&str; 2] = ["entity/banner_base", "entity/shield_base_nopattern"];
+const UNPATCHED_TEXTURE_IDS: [&str; 2] = [
+    "entity/banner/banner_base",
+    "entity/shield/shield_base_nopattern",
+];
+
+/// One block's palette entry as the page carries it: what to place, not what
+/// colour to paint.
 #[derive(Debug, Clone, Serialize)]
 struct PaletteEntry {
-    /// Blockstate string, for the legend and the hover readout.
+    /// Block id, `minecraft:oak_stairs`.
     name: String,
-    rgb: [u8; 3],
-    /// Mean alpha, 0–255.
-    cov: u8,
-    /// Model bounds in sixteenths: `[x0, y0, z0, x1, y1, z1]`.
-    #[serde(rename = "box")]
-    shape: [u8; 6],
+    /// The properties the palette entry writes, and only those. What the game
+    /// would fill in is in [`PageData::defaults`], where the renderer reads it.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    props: BTreeMap<String, String>,
     /// How many cells of this model carry this state.
     count: u32,
+    /// The blockstate string, for the legend and the findings list.
+    state: String,
 }
 
 /// An anchor as the page draws it: either a point with a facing, or a region.
@@ -79,16 +113,6 @@ struct AnchorOut {
     socket: bool,
 }
 
-/// A blockstate the colour deriver could not resolve, with how many cells it
-/// covers. Reported on the page rather than silently drawn grey: a block that
-/// cannot be resolved is a finding about the prefab or the pinned version.
-#[derive(Debug, Clone, Serialize)]
-struct UnresolvedOut {
-    reason: Unresolved,
-    detail: String,
-    count: u32,
-}
-
 /// One prefab in the page.
 #[derive(Debug, Clone, Serialize)]
 struct ModelOut {
@@ -102,20 +126,42 @@ struct ModelOut {
     runs: u32,
     /// Cells that are not air.
     filled: u32,
+    /// How many structure templates this model was reassembled from. `1` for an
+    /// ordinary prefab; more for a zone past the 48-per-axis template cap, which
+    /// the page shows as one building.
+    tiles: usize,
     anchors: Vec<AnchorOut>,
-    unresolved: BTreeMap<String, UnresolvedOut>,
 }
 
 /// The whole page payload.
 #[derive(Debug, Clone, Serialize)]
 struct PageData {
     schema: &'static str,
-    biome: String,
+    /// The version the resources were read from.
+    mc_version: &'static str,
     /// `eye_height` travels with the data so the page and this crate cannot
     /// disagree about what a player POV is.
     eye_height: f32,
     way_in_stems: Vec<String>,
     models: Vec<ModelOut>,
+    /// `minecraft:stone` → its blockstate definition.
+    blockstates: BTreeMap<String, serde_json::Value>,
+    /// `minecraft:block/stone` → its model, parents included.
+    block_models: BTreeMap<String, serde_json::Value>,
+    /// `minecraft:block/stone` → the `.png`.
+    textures: BTreeMap<String, Texture>,
+    /// Per-block render flags.
+    flags: BTreeMap<String, Flags>,
+    /// Per-block default state: what the renderer fills an unwritten property
+    /// with, from the pinned registry rather than from a guess.
+    defaults: BTreeMap<String, BTreeMap<String, String>>,
+    /// Blockstates the page cannot draw as the game draws them.
+    unresolved: Vec<Unresolved>,
+    /// Palette entries that leave properties unwritten.
+    under_specified: Vec<UnderSpecified>,
+    /// How many block-entity texture ids the emitter resolved against the jar.
+    /// Stated on the page: a check that examined nothing is not a pass.
+    special_bound: usize,
 }
 
 /// Everything one prefab contributes to a page.
@@ -123,17 +169,28 @@ pub struct ViewerModel {
     id: String,
     structure: Structure,
     meta: Option<PrefabMeta>,
+    tiles: usize,
 }
 
 impl ViewerModel {
-    /// Read a prefab `.nbt` and its `<basename>.json` metadata sidecar when
-    /// present. The sidecar is where anchors live — for hand-built prefabs today
-    /// and for grammar snapshots — so a missing one costs anchors and nothing
-    /// else.
-    pub fn load(nbt_path: &Path) -> Result<ViewerModel, String> {
-        let structure = crate::nbt::parse_structure(nbt_path).map_err(|e| e.to_string())?;
-        let meta = PrefabMeta::beside_nbt(nbt_path)?;
-        let id = nbt_path
+    /// Read a prefab `.nbt` — or a tile-set manifest `.json` — and the metadata
+    /// sidecar beside it, which is where anchors live. A missing sidecar costs
+    /// anchors and nothing else.
+    ///
+    /// A zone past the structure-template cap ships as several `.nbt` files and
+    /// one manifest. It is reassembled here, so the page shows the building and
+    /// never a packaging boundary; and a lone tile of such a set is refused,
+    /// because a page of a building sliced at an arbitrary plane is a review
+    /// that passes and means nothing.
+    pub fn load(input: &Path) -> Result<ViewerModel, String> {
+        let (piece, meta_path) = crate::tileset::load_piece(input).map_err(|e| e.to_string())?;
+        let tiles = match &piece {
+            crate::tileset::PieceInput::Single(_) => 1,
+            crate::tileset::PieceInput::Zone { tiles, .. } => *tiles,
+        };
+        let structure = piece.structure().clone();
+        let meta = PrefabMeta::at_path(&meta_path)?;
+        let id = input
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "prefab".to_string());
@@ -141,6 +198,7 @@ impl ViewerModel {
             id,
             structure,
             meta,
+            tiles,
         })
     }
 
@@ -156,6 +214,11 @@ impl ViewerModel {
             .as_ref()
             .map_or(0, |m| m.anchors.len() + m.connectors.len())
     }
+
+    /// How many structure templates this model was reassembled from.
+    pub fn tiles(&self) -> usize {
+        self.tiles
+    }
 }
 
 /// What a built page measured, for the caller's diagnostics.
@@ -165,69 +228,202 @@ pub struct BuildStats {
     pub bytes: usize,
     /// Anchors plus sockets over every model.
     pub anchors: usize,
-    /// Distinct blockstates that could not be resolved, over every model.
-    pub unresolved: BTreeMap<String, (Unresolved, u32)>,
+    /// Blockstates the page cannot draw faithfully.
+    pub unresolved: Vec<Unresolved>,
+    /// Palette entries that leave properties unwritten.
+    pub under_specified: Vec<UnderSpecified>,
+    /// Block-entity texture ids resolved against the jar — a binding count.
+    pub special_bound: usize,
+    /// Distinct blockstates on the page, air excluded. The binding count of
+    /// every check above: zero means nothing was examined.
+    pub states: usize,
+    /// Distinct textures the page carries.
+    pub textures: usize,
+}
+
+/// The page could not be built.
+#[derive(Debug)]
+pub enum BuildError {
+    /// Something about the input.
+    Input(String),
+    /// The vendored renderer is not the one this crate was built against — the
+    /// local texture-id patch is missing. Not an input error: the toolchain is
+    /// wrong, and every banner and shield on every page it emits would be the
+    /// missing-texture checker with nothing said.
+    Bundle(String),
+    /// A block-entity texture id the emitter asks for does not exist **in the
+    /// pinned game**, which the asset source declared itself to be. The pinned
+    /// jar is complete by definition, so this is the emitter's table and that
+    /// version disagreeing, and no picture built from it can be trusted.
+    SpecialTextures(Vec<(String, String)>),
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildError::Input(m) | BuildError::Bundle(m) => write!(f, "{m}"),
+            BuildError::SpecialTextures(ids) => {
+                write!(
+                    f,
+                    "the block-entity texture table and Minecraft {} disagree: ",
+                    delvewright_schem::blocks::MC_VERSION
+                )?;
+                let body: Vec<String> = ids
+                    .iter()
+                    .map(|(block, id)| {
+                        format!("{block} asks for {id}, which the jar does not have")
+                    })
+                    .collect();
+                write!(f, "{}", body.join("; "))
+            }
+        }
+    }
+}
+
+/// Refuse a bundle that does not carry the local texture-id patch.
+///
+/// Bound to page emission, not to a test: the operator building a page does not
+/// run `cargo test`, and the failure this catches is invisible in the output.
+fn check_bundle() -> Result<(), BuildError> {
+    check_bundle_text(BUNDLE)
+}
+
+/// [`check_bundle`] over arbitrary text, so both verdicts are demonstrable.
+fn check_bundle_text(bundle: &str) -> Result<(), BuildError> {
+    for wrong in UNPATCHED_TEXTURE_IDS {
+        if bundle.contains(wrong) {
+            return Err(BuildError::Bundle(format!(
+                "the vendored renderer still asks for `{wrong}`, a path no Minecraft version \
+                 ships — every banner and shield would draw as the missing-texture checker. \
+                 Rebuild it with tools/build-deepslate-bundle.sh, which applies the patch and \
+                 refuses if upstream has moved the id again."
+            )));
+        }
+    }
+    for right in PATCHED_TEXTURE_IDS {
+        if !bundle.contains(right) {
+            return Err(BuildError::Bundle(format!(
+                "the vendored renderer never mentions `{right}`, so it is not the bundle this \
+                 crate was built against. Rebuild it with tools/build-deepslate-bundle.sh."
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Build the page for one or more prefabs.
-///
-/// `deriver` supplies colours; `title` names the page. The result is a complete
-/// HTML document with every byte inline.
 pub fn build_page(
     models: &[ViewerModel],
-    colors: &dyn Appearances,
+    assets: &Assets,
     title: &str,
-) -> Result<(String, BuildStats), String> {
+) -> Result<(String, BuildStats), BuildError> {
+    check_bundle()?;
     if models.is_empty() {
-        return Err("no prefabs to show".to_string());
+        return Err(BuildError::Input("no prefabs to show".to_string()));
     }
     let mut stats = BuildStats::default();
     let mut out = Vec::with_capacity(models.len());
 
+    // Cell counts per blockstate over the whole page, so a finding says how many
+    // blocks a reviewer would be looking at rather than how many palette entries
+    // mention it.
+    let mut states: BTreeMap<String, u32> = BTreeMap::new();
     for m in models {
-        let built = build_model(m, colors)?;
+        let built = build_model(m, &mut states)?;
         stats.anchors += built.anchors.len();
-        for (state, u) in &built.unresolved {
-            let e = stats
-                .unresolved
-                .entry(state.clone())
-                .or_insert((u.reason, 0));
-            e.1 += u.count;
-        }
         out.push(built);
     }
+    states.retain(|s, _| !is_air(s));
+    stats.states = states.len();
+
+    let PageResources {
+        blockstates,
+        models: block_models,
+        textures,
+        flags,
+        defaults,
+        mut unresolved,
+        under_specified,
+        special_unresolved,
+        special_bound,
+    } = resources::extract(assets, &states);
+
+    stats.under_specified = under_specified.clone();
+    stats.special_bound = special_bound;
+    stats.textures = textures.len();
+
+    // What an absent block-entity texture MEANS depends on what the source is,
+    // and the source says which it is. A jar that declares itself to be the
+    // pinned game is complete by definition, so a texture it does not have is
+    // the emitter's private table disagreeing with the version — an error, and
+    // silent otherwise, since the block would simply render magenta. Any other
+    // source is a resource pack, which is entitled to be partial, and the same
+    // absence is the ordinary unresolved-resource finding.
+    if !special_unresolved.is_empty() {
+        if assets.declared_version().as_deref() == Some(delvewright_schem::blocks::MC_VERSION) {
+            return Err(BuildError::SpecialTextures(special_unresolved));
+        }
+        for (block, id) in &special_unresolved {
+            unresolved.push(Unresolved {
+                state: block.clone(),
+                reason: resources::Missing::Texture,
+                detail: format!(
+                    "{id} (a block-entity texture, named by the renderer and by no model file)"
+                ),
+                cells: *states.get(block).unwrap_or(&0),
+            });
+        }
+        unresolved.sort_by(|a, b| (&a.state, &a.detail).cmp(&(&b.state, &b.detail)));
+    }
+    stats.unresolved = unresolved.clone();
 
     let data = PageData {
         schema: SCHEMA,
-        biome: colors.biome().to_string(),
+        mc_version: delvewright_schem::blocks::MC_VERSION,
         eye_height: EYE_HEIGHT,
         way_in_stems: WAY_IN_STEMS.iter().map(|s| s.to_string()).collect(),
         models: out,
+        blockstates,
+        block_models,
+        textures,
+        flags,
+        defaults,
+        unresolved,
+        under_specified,
+        special_bound,
     };
-    let json = serde_json::to_string(&data).map_err(|e| format!("serialise page data: {e}"))?;
+    let json = serde_json::to_string(&data)
+        .map_err(|e| BuildError::Input(format!("serialise page data: {e}")))?;
     let html = render_html(title, &json);
     stats.bytes = html.len();
     Ok((html, stats))
 }
 
 /// Build one model's payload: palette, packed grid, anchors.
-fn build_model(m: &ViewerModel, colors: &dyn Appearances) -> Result<ModelOut, String> {
+fn build_model(
+    m: &ViewerModel,
+    states: &mut BTreeMap<String, u32>,
+) -> Result<ModelOut, BuildError> {
     let st = &m.structure;
     let [sx, sy, sz] = st.size;
     if sx <= 0 || sy <= 0 || sz <= 0 {
-        return Err(format!("{}: structure size {:?} is empty", m.id, st.size));
+        return Err(BuildError::Input(format!(
+            "{}: structure size {:?} is empty",
+            m.id, st.size
+        )));
     }
     let (sxu, syu, szu) = (sx as usize, sy as usize, sz as usize);
     let cells = sxu
         .checked_mul(syu)
         .and_then(|v| v.checked_mul(szu))
-        .ok_or_else(|| format!("{}: structure size {:?} overflows", m.id, st.size))?;
+        .ok_or_else(|| {
+            BuildError::Input(format!("{}: structure size {:?} overflows", m.id, st.size))
+        })?;
 
     // Palette index 0 is air. Every other blockstate gets an index in the
     // structure's own palette order, so the mapping is stable per input.
     let mut index_of: Vec<u16> = vec![0; st.palette.len()];
     let mut entries: Vec<Option<PaletteEntry>> = vec![None];
-    let mut unresolved: BTreeMap<String, UnresolvedOut> = BTreeMap::new();
     let mut counts: Vec<u32> = vec![0];
 
     for (i, state) in st.palette.iter().enumerate() {
@@ -235,35 +431,19 @@ fn build_model(m: &ViewerModel, colors: &dyn Appearances) -> Result<ModelOut, St
             index_of[i] = 0;
             continue;
         }
-        let appearance = match colors.appearance(state) {
-            Ok(a) => a,
-            Err(reason) => {
-                unresolved.entry(state.clone()).or_insert(UnresolvedOut {
-                    reason,
-                    detail: reason.to_string(),
-                    count: 0,
-                });
-                // An unresolved block is still SOMETHING the reviewer must see —
-                // drawing nothing would hide a hole in the building. It gets the
-                // missing-texture magenta the fidelity gate already means by
-                // "this did not resolve", and is listed on the page.
-                Appearance {
-                    rgb: [255, 0, 255],
-                    coverage: 255,
-                    shape: [0, 0, 0, 16, 16, 16],
-                }
-            }
-        };
         if entries.len() >= u16::MAX as usize {
-            return Err(format!("{}: more than 65534 distinct blockstates", m.id));
+            return Err(BuildError::Input(format!(
+                "{}: more than 65534 distinct blockstates",
+                m.id
+            )));
         }
         index_of[i] = entries.len() as u16;
+        let (ns, id) = crate::blockcolor::base_id(state);
         entries.push(Some(PaletteEntry {
-            name: state.clone(),
-            rgb: appearance.rgb,
-            cov: appearance.coverage,
-            shape: appearance.shape,
+            name: format!("{ns}:{id}"),
+            props: resources::state_properties(state),
             count: 0,
+            state: state.clone(),
         }));
         counts.push(0);
     }
@@ -288,13 +468,7 @@ fn build_model(m: &ViewerModel, colors: &dyn Appearances) -> Result<ModelOut, St
     for (i, e) in entries.iter_mut().enumerate() {
         if let Some(e) = e {
             e.count = counts[i];
-        }
-    }
-    for (state, u) in unresolved.iter_mut() {
-        // Count cells, not palette entries: "2 blocks of chain" is the number a
-        // reviewer can act on.
-        if let Some(pi) = st.palette.iter().position(|p| p == state) {
-            u.count = counts[index_of[pi] as usize];
+            *states.entry(e.state.clone()).or_insert(0) += counts[i];
         }
     }
 
@@ -306,8 +480,8 @@ fn build_model(m: &ViewerModel, colors: &dyn Appearances) -> Result<ModelOut, St
         voxels: base64(&packed),
         runs,
         filled,
+        tiles: m.tiles,
         anchors: collect_anchors(m.meta.as_ref()),
-        unresolved,
     })
 }
 
@@ -395,9 +569,10 @@ fn base64(data: &[u8]) -> String {
     s
 }
 
-/// The page shell. Styles and script are compiled in, so the emitted file
-/// references nothing outside itself — the Artifact CSP blocks every external
-/// host, and a viewer that needs a CDN is a viewer the owner cannot open.
+/// The page shell. Styles, renderer and script are compiled in, so the emitted
+/// file references nothing outside itself — the Artifact CSP blocks every
+/// external host, and a viewer that needs a CDN is a viewer the owner cannot
+/// open.
 fn render_html(title: &str, data_json: &str) -> String {
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
@@ -405,6 +580,7 @@ fn render_html(title: &str, data_json: &str) -> String {
          <title>{title}</title>\n<style>\n{css}</style>\n</head>\n<body>\n\
          {body}\n\
          <script type=\"application/json\" id=\"delve-model\">{data}</script>\n\
+         <script>\n{bundle}</script>\n\
          <script>\n{controls}</script>\n\
          <script>\n{js}</script>\n</body>\n</html>\n",
         title = escape_html(title),
@@ -413,9 +589,12 @@ fn render_html(title: &str, data_json: &str) -> String {
         // The payload sits in a `application/json` block, so the only sequence
         // that could break out of it is a literal `</script`.
         data = data_json.replace("</", "<\\/"),
-        // The control mapping loads first and in its own block: it is shared
-        // with whatever else drives this viewer, and it depends on nothing the
-        // renderer defines. Which key does what is decided in exactly one file.
+        // deepslate (MIT), vendored and patched — see `check_bundle`.
+        bundle = BUNDLE,
+        // The control mapping loads before the page and in its own block: it is
+        // shared with whatever else drives this viewer, and it depends on
+        // nothing the renderer defines. Which key does what is decided in
+        // exactly one file.
         controls = include_str!("viewer/controls.js"),
         js = include_str!("viewer/page.js"),
     )
@@ -433,14 +612,14 @@ fn escape_html(s: &str) -> String {
 pub fn palette_for(
     models: &[ViewerModel],
     deriver: &crate::blockcolor::Deriver<'_>,
-) -> PaletteTable {
+) -> crate::blockcolor::PaletteTable {
     let mut states: Vec<&str> = Vec::new();
     for m in models {
         for s in &m.structure.palette {
             states.push(s.as_str());
         }
     }
-    PaletteTable::derive(deriver, states)
+    crate::blockcolor::PaletteTable::derive(deriver, states)
 }
 
 #[cfg(test)]
@@ -519,13 +698,93 @@ mod tests {
         assert!(!html.contains("<title><script>"));
     }
 
-    /// The page must reference nothing outside itself: the Artifact CSP blocks
-    /// every external host, so a single `src`/`href` to one is a broken page.
+    /// The page must FETCH nothing outside itself: the Artifact CSP blocks every
+    /// external host, so one external reference is a broken page.
+    ///
+    /// The property is about what the browser goes and gets, not about whether
+    /// the letters `https` occur anywhere — the vendored renderer's bundled
+    /// licence notices name their projects' repositories, and a URL inside a
+    /// comment fetches nothing. So this looks for the attributes and functions
+    /// that actually reach a host.
     #[test]
-    fn the_page_shell_is_self_contained() {
+    fn the_page_fetches_nothing_from_outside_itself() {
         let html = render_html("t", "{}");
-        for probe in ["http://", "https://", "//cdn", "src=\"", "href=\""] {
-            assert!(!html.contains(probe), "page references {probe}");
+        for probe in [
+            "src=\"http",
+            "src='http",
+            "href=\"http",
+            "href='http",
+            "<script src",
+            "<link ",
+            "@import",
+            "url(http",
+            "fetch(",
+            "XMLHttpRequest",
+            "importScripts",
+            "new WebSocket",
+        ] {
+            assert!(
+                !html.contains(probe),
+                "page reaches outside itself via {probe}"
+            );
         }
+        // Every `<script>` and `<style>` is inline: as many opening tags as
+        // there are closing ones, and no `src` on any of them.
+        assert_eq!(
+            html.matches("<script").count(),
+            html.matches("</script>").count()
+        );
+    }
+
+    /// The vendored renderer carries the local texture-id patch, and the check
+    /// that says so runs on every page this crate emits.
+    ///
+    /// Both verdicts are demonstrated: a check that has only ever been seen to
+    /// pass is a check nobody has watched fail.
+    #[test]
+    fn the_vendored_renderer_is_the_patched_one() {
+        check_bundle().expect("the vendored bundle is unpatched or absent");
+        for wrong in UNPATCHED_TEXTURE_IDS {
+            assert!(!BUNDLE.contains(wrong));
+        }
+        for right in PATCHED_TEXTURE_IDS {
+            assert!(BUNDLE.contains(right));
+        }
+
+        // Upstream's own ids, which are the paths the patch removes.
+        let unpatched = "const t={0:\"entity/banner/banner_base\"},\
+                         u={0:\"entity/shield/shield_base_nopattern\"};";
+        match check_bundle_text(unpatched) {
+            Err(BuildError::Bundle(m)) => assert!(m.contains("entity/banner/banner_base"), "{m}"),
+            other => panic!("an unpatched bundle must be refused, got {other:?}"),
+        }
+        // And a bundle that mentions neither is not this crate's bundle at all.
+        match check_bundle_text("var deepslate={};") {
+            Err(BuildError::Bundle(m)) => assert!(m.contains("entity/banner_base"), "{m}"),
+            other => panic!("a foreign bundle must be refused, got {other:?}"),
+        }
+    }
+
+    /// deepslate's own `TextureAtlas.fromBlobs` sizes its canvas from
+    /// `upperPowerOfTwo(sqrt(n + 1))` and then writes the first texture at index
+    /// 1, so at a count whose square root is already a power of two the last
+    /// texture is placed one row past the bottom edge and is silently lost. A
+    /// jar-scale atlas is squarely in that range. The page packs its own atlas
+    /// and hands the renderer a finished image; this pins that it never reaches
+    /// for the broken constructor, which is the only way the defect could
+    /// return.
+    #[test]
+    fn the_page_never_uses_the_upstream_atlas_builder() {
+        let page = include_str!("viewer/page.js");
+        assert!(
+            !page.contains("fromBlobs("),
+            "the page builds its own atlas; `fromBlobs` drops trailing textures at some counts"
+        );
+        // The page's own packer states what it placed, so a drop cannot be silent.
+        assert!(page.contains("auditPacking("));
+        assert!(
+            page.contains("new D.TextureAtlas("),
+            "the page must hand the renderer a finished atlas"
+        );
     }
 }

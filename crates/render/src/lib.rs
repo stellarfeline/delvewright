@@ -15,9 +15,6 @@
 //! - [`occupancy`] — where a body fits inside a prefab, and where its eye goes.
 //! - [`tileset`] — a zone too big for one structure template, reassembled from
 //!   its manifest so an author reviews one scene and never a fragment.
-//! - [`occupancy`] — where a body fits inside a prefab, and where its eye goes.
-//! - [`tileset`] — a zone too big for one structure template, reassembled from
-//!   its manifest so an author reviews one scene and never a fragment.
 //! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
 //!   (free-camera path — the renderer for the first-person player-POV shots).
 //! - [`panorama`] — the whole-map 45° oblique release panorama.

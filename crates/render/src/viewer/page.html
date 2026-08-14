@@ -58,10 +58,11 @@
       <ul id="legend" class="legend"></ul>
     </section>
 
-    <section id="unresolved-section" hidden>
-      <h2 class="warn">Unresolved blocks</h2>
-      <p class="hint">These blockstates have no definition in the asset source they were coloured from, so they are drawn in magenta. A block that cannot be resolved is a finding about the prefab or the pinned version.</p>
-      <ul id="unresolved" class="unresolved"></ul>
+    <section id="findings-section">
+      <h2>Fidelity <span id="findings-count" class="badge"></span></h2>
+      <p class="hint">Where the picture and the file disagree: a block the pinned version does not have, a palette entry that leaves properties unwritten so the shape comes from the default state, or a block the renderer draws as nothing.</p>
+      <ul id="findings" class="findings"></ul>
+      <p class="stats" id="fidelity"></p>
     </section>
   </aside>
 </div>

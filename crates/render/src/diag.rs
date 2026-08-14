@@ -38,7 +38,8 @@ pub const DW_ANCHOR_EYE: &str = "DW0727";
 
 // The rest of the `DW072x` block is spoken for — take the next unused number
 // from the catalog in `docs/reference/compiler.md`, never from the highest
-// constant here — so the review page's findings take their own `DW078x` block.
+// constant here — so the asset-resolution diagnostics below take their own
+// `DW078x` block.
 
 /// A blockstate has no definition in the pinned asset source: the id does not
 /// exist at this version, or its model or one of its textures is absent.
@@ -47,6 +48,23 @@ pub const DW_ANCHOR_EYE: &str = "DW0727";
 /// detail — `minecraft:chain` is `minecraft:iron_chain` in 1.21.11, and a prefab
 /// still naming the old id places a block the pinned server does not have.
 pub const DW_UNRESOLVED_BLOCK: &str = "DW0780";
+
+/// A palette entry leaves shape-carrying properties unwritten. The state is
+/// legal — a server fills the rest from the block's default state — but every
+/// reader that is not a running server has to guess, and the guess is a full
+/// cube: a `cobblestone_wall` with no `north`/`east`/`south`/`west` matches no
+/// multipart case at all. Reported per state with the properties it omits and
+/// the cell count, and it is what stops the page reporting a clean resolution
+/// over a building whose walls are the wrong shape.
+pub const DW_UNDERSPECIFIED_STATE: &str = "DW0781";
+
+/// The resource bundle the page carries did not survive its own completeness
+/// self-check: the texture atlas holds fewer cells than were packed into it, or a
+/// block-entity texture id the emitter asks for resolves to nothing at the pin.
+/// A finding about this toolchain, not about the prefab — both failures are
+/// silent by construction, since a dropped atlas cell and a wrong id both render
+/// as magenta and neither raises anything on its own.
+pub const DW_VIEWER_RESOURCES: &str = "DW0782";
 
 /// Process exit codes (mirrors schem/compiler: 0 ok · 2 input/usage · 3 output ·
 /// ≥10 internal). Render adds `4` for a fidelity-gate failure (a real

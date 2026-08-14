@@ -1,17 +1,20 @@
 /* Interactive prefab viewer.
  *
- * A voxel model is axis-aligned boxes, so this draws it directly rather than
- * carrying a general 3D library: the whole renderer is smaller than a minified
- * scene graph's licence header, and the page must inline every byte it uses
- * because the CSP it is reviewed under blocks external hosts outright.
+ * The blocks are drawn by deepslate, from the pinned version's own blockstate
+ * definitions, models and textures — the same chain the game walks. This file is
+ * everything that is not that: the atlas the library does not pack for
+ * non-16×16 textures, the resource provider, the camera, the overlays (anchors,
+ * bounds, ground), the panel, and the checks that say whether what the reviewer
+ * is looking at is the building the file describes.
  *
- * Geometry arrives run-length encoded over the grid. Meshing happens here, and
- * only exposed faces become triangles — the interior of a building is the vast
- * majority of its cells and none of it is ever visible.
+ * Geometry arrives run-length encoded over the grid and is rebuilt through the
+ * renderer's own `addBlock`, so a zone reassembled from several structure
+ * templates is one building here and nothing downstream knows a tile existed.
  */
 "use strict";
 
 (function () {
+  const D = deepslate;
   const DATA = JSON.parse(document.getElementById("delve-model").textContent);
   const EYE = DATA.eye_height;
   const WAY_IN = DATA.way_in_stems || [];
@@ -38,14 +41,6 @@
 
   function mat4() { return new Float32Array(16); }
 
-  function perspective(out, fovy, aspect, near, far) {
-    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
-    out.fill(0);
-    out[0] = f / aspect; out[5] = f; out[11] = -1;
-    out[10] = (far + near) * nf; out[14] = 2 * far * near * nf;
-    return out;
-  }
-
   function lookAt(out, eye, center, up) {
     let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
     let zl = Math.hypot(zx, zy, zz) || 1;
@@ -61,6 +56,14 @@
     out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
     out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
     out[15] = 1;
+    return out;
+  }
+
+  function perspective(out, fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    out.fill(0);
+    out[0] = f / aspect; out[5] = f; out[11] = -1;
+    out[10] = (far + near) * nf; out[14] = 2 * far * near * nf;
     return out;
   }
 
@@ -100,128 +103,169 @@
     return grid;
   }
 
-  /* -------------------------------------------------------------- meshing -- */
+  /* ----------------------------------------------------------- the atlas -- */
+  /*
+   * Packed here rather than by the library. `TextureAtlas.fromBlobs` crops every
+   * texture to 16×16, which destroys a chest (64×64) and every sign and bed —
+   * and it sizes its canvas from `upperPowerOfTwo(sqrt(n + 1))` while writing
+   * the first texture at index 1, so at a count whose square root is already a
+   * power of two the LAST textures land one row past the bottom edge and vanish
+   * with nothing said. A jar-scale atlas is squarely in that range.
+   *
+   * So: shelf-pack at native size, then check the packing. Both failures are
+   * invisible in a finished picture — a dropped texture is magenta, which is
+   * exactly what a prefab naming a block the version dropped also looks like —
+   * so the check reports a count and the page states it.
+   */
+  const ATLAS_MAX = 8192;
 
-  // Face order: +X, -X, +Y, -Y, +Z, -Z. Shade per normal, the way a voxel game
-  // does, so edges read without any lighting model.
-  // Ambient floor, so a face turned away from the light keeps its material
-  // legible instead of crushing toward black. A reviewer judging a dark
-  // interior needs to see what the walls are MADE of; the relative face shades
-  // still carry the form.
-  const AMBIENT = 0.36;
-  const lit = (s) => AMBIENT + (1 - AMBIENT) * s;
-
-  const FACES = [
-    { d: [1, 0, 0], shade: lit(0.60), corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
-    { d: [-1, 0, 0], shade: lit(0.60), corners: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
-    { d: [0, 1, 0], shade: lit(1.00), corners: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
-    { d: [0, -1, 0], shade: lit(0.45), corners: [[0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1]] },
-    { d: [0, 0, 1], shade: lit(0.80), corners: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
-    { d: [0, 0, -1], shade: lit(0.80), corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
-  ];
-
-  const FULL_CUBE = [0, 0, 0, 16, 16, 16];
-
-  function isFullCube(box) {
-    for (let i = 0; i < 6; i++) if (box[i] !== FULL_CUBE[i]) return false;
-    return true;
+  function shelfPack(cells, size) {
+    // Tallest first, ties by id, so the packing is a pure function of the input.
+    const sorted = cells.slice().sort((a, b) => b.h - a.h || (a.id < b.id ? -1 : 1));
+    const out = [];
+    // The first 16×16 cell is reserved for the invalid-texture checker, so an
+    // id nobody supplied reads as magenta rather than as some other block.
+    let x = 16, y = 0, shelf = 16;
+    for (const c of sorted) {
+      if (c.w > size || c.h > size) return null;
+      if (x + c.w > size) { x = 0; y += shelf; shelf = 0; }
+      if (y + c.h > size) return null;
+      out.push({ id: c.id, x, y, w: c.w, h: c.h });
+      x += c.w;
+      if (c.h > shelf) shelf = c.h;
+    }
+    return out;
   }
 
   /**
-   * Build vertex + colour arrays for a model at a given cutaway height.
-   * Two passes: count the faces, then fill exactly-sized typed arrays.
+   * Every way the packing can be wrong, as a list of complaints.
+   *
+   * Counted, in bounds, non-overlapping, and clear of the checker cell. That is
+   * the whole of what "correctly placed" means, and a page that reported nothing
+   * here without checking would be reporting that it had not looked.
    */
-  function buildMesh(model, cutY) {
-    const [sx, sy, sz] = model.size;
-    const grid = model.grid;
-    const pal = model.palette;
-    const solid = model.solid;   // per palette index: opaque full cube
-    const full = model.full;     // per palette index: full cube (any coverage)
-    const alpha = model.alpha;   // per palette index: 0..1
-
-    const topY = Math.min(cutY, sy - 1);
-    const at = (x, y, z) => (y * sz + z) * sx + x;
-
-    // A neighbour hides a face only when this block fills its cell, the
-    // neighbour is an opaque full cube, and the neighbour is not cut away.
-    function hidden(x, y, z) {
-      if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return false;
-      if (y > topY) return false;
-      return solid[grid[at(x, y, z)]] === 1;
+  function auditPacking(placed, ids, size) {
+    const bad = [];
+    if (placed.length !== ids.length) {
+      bad.push("packed " + placed.length + " of " + ids.length + " textures");
     }
-
-    let faceCount = 0;
-    const emit = [];
-    for (let y = 0; y <= topY; y++) {
-      for (let z = 0; z < sz; z++) {
-        for (let x = 0; x < sx; x++) {
-          const p = grid[at(x, y, z)];
-          if (p === 0) continue;
-          const canCull = full[p] === 1;
-          for (let f = 0; f < 6; f++) {
-            const d = FACES[f].d;
-            if (canCull && hidden(x + d[0], y + d[1], z + d[2])) continue;
-            faceCount++;
-            emit.push((at(x, y, z) << 3) | f);
-          }
+    for (const p of placed) {
+      if (p.x < 0 || p.y < 0 || p.x + p.w > size || p.y + p.h > size) {
+        bad.push(p.id + " is placed outside the atlas");
+      }
+      if (p.x < 16 && p.y < 16) bad.push(p.id + " overlaps the invalid-texture cell");
+    }
+    // Overlap, on the shelf structure rather than pairwise over everything: two
+    // rects can only collide within a row band, and the rows are what the packer
+    // builds.
+    const byRow = new Map();
+    for (const p of placed) {
+      if (!byRow.has(p.y)) byRow.set(p.y, []);
+      byRow.get(p.y).push(p);
+    }
+    for (const row of byRow.values()) {
+      row.sort((a, b) => a.x - b.x);
+      for (let i = 1; i < row.length; i++) {
+        if (row[i].x < row[i - 1].x + row[i - 1].w) {
+          bad.push(row[i].id + " overlaps " + row[i - 1].id);
         }
       }
     }
-
-    const positions = new Float32Array(faceCount * 6 * 3);
-    const colors = new Uint8Array(faceCount * 6 * 4);
-    // Where each vertex sits on its own quad, so the fragment shader can draw
-    // the block edge. Without it a wall of one material is a single flat
-    // expanse and the reviewer cannot read its form at all.
-    const quadUV = new Float32Array(faceCount * 6 * 2);
-    const QUAD = [[0, 0], [0, 1], [1, 1], [1, 0]];
-    let vi = 0, ci = 0, ui = 0, opaqueFaces = 0;
-
-    // Opaque faces first, then translucent, so one buffer can be drawn as two
-    // passes without sorting per frame.
-    for (const pass of [0, 1]) {
-      for (const packed of emit) {
-        const f = packed & 7;
-        const cell = packed >> 3;
-        const x = cell % sx, z = ((cell / sx) | 0) % sz, y = ((cell / (sx * sz)) | 0);
-        const p = grid[at(x, y, z)];
-        const translucent = alpha[p] < 0.99 ? 1 : 0;
-        if (translucent !== pass) continue;
-        if (pass === 0) opaqueFaces++;
-
-        const e = pal[p];
-        const b = e.box;
-        const x0 = x + b[0] / 16, y0 = y + b[1] / 16, z0 = z + b[2] / 16;
-        const x1 = x + b[3] / 16, y1 = y + b[4] / 16, z1 = z + b[5] / 16;
-        const face = FACES[f];
-        const s = face.shade;
-        const r = Math.round(e.rgb[0] * s), g = Math.round(e.rgb[1] * s), bl = Math.round(e.rgb[2] * s);
-        const a = Math.round(Math.max(alpha[p], 0.25) * 255);
-
-        // Two triangles from the quad's four corners.
-        const q = face.corners;
-        const order = [0, 1, 2, 0, 2, 3];
-        for (const k of order) {
-          const c = q[k];
-          positions[vi++] = c[0] ? x1 : x0;
-          positions[vi++] = c[1] ? y1 : y0;
-          positions[vi++] = c[2] ? z1 : z0;
-          colors[ci++] = r; colors[ci++] = g; colors[ci++] = bl; colors[ci++] = a;
-          quadUV[ui++] = QUAD[k][0]; quadUV[ui++] = QUAD[k][1];
-        }
-      }
-    }
-
-    return { positions, colors, quadUV, faces: faceCount, opaqueVerts: opaqueFaces * 6 };
+    return bad;
   }
 
-  /* ------------------------------------------------------------- program -- */
+  function buildAtlas(textures, done) {
+    const ids = Object.keys(textures).sort();
+    const cells = ids.map((id) => ({ id, w: textures[id].w, h: textures[id].ch }));
+    let size = 64, placed = null;
+    while (size <= ATLAS_MAX) {
+      placed = shelfPack(cells, size);
+      if (placed) break;
+      size *= 2;
+    }
+    if (!placed) {
+      done(null, size, ["no atlas up to " + ATLAS_MAX + "px holds " + ids.length + " textures"]);
+      return;
+    }
+    const complaints = auditPacking(placed, ids, size);
 
-  let prog = null, aPos = 0, aCol = 0, aUV = 0, uMVP = null;
-  let posBuf = null, colBuf = null, uvBuf = null;
-  // A quad coordinate every non-block primitive can share: lines and markers
-  // want no edge darkening, so they bind the middle of a quad everywhere.
-  let flatUV = null, flatUVCount = 0;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = size;
+    const ctx = cv.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "black"; ctx.fillRect(0, 0, 16, 16);
+    ctx.fillStyle = "magenta"; ctx.fillRect(0, 0, 8, 8); ctx.fillRect(8, 8, 8, 8);
+
+    const idMap = {};
+    for (const p of placed) {
+      idMap[p.id] = [p.x / size, p.y / size, (p.x + p.w) / size, (p.y + p.h) / size];
+    }
+
+    let pending = placed.length;
+    const finish = () => {
+      const img = ctx.getImageData(0, 0, size, size);
+      done(new D.TextureAtlas(img, idMap), size, complaints);
+    };
+    if (pending === 0) { finish(); return; }
+    for (const p of placed) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, p.w, p.h, p.x, p.y, p.w, p.h);
+        if (--pending === 0) finish();
+      };
+      img.onerror = () => {
+        complaints.push(p.id + " could not be decoded");
+        if (--pending === 0) finish();
+      };
+      img.src = "data:image/png;base64," + textures[p.id].b64;
+    }
+  }
+
+  /* -------------------------------------------------------- the resources -- */
+
+  const blockDefs = {}, blockModels = {};
+  for (const k of Object.keys(DATA.blockstates)) {
+    blockDefs[k] = D.BlockDefinition.fromJson(DATA.blockstates[k]);
+  }
+  for (const k of Object.keys(DATA.block_models)) {
+    blockModels[k] = D.BlockModel.fromJson(DATA.block_models[k]);
+  }
+
+  function makeResources(atlas) {
+    const res = {
+      getBlockDefinition(id) { return blockDefs[id.toString()] || null; },
+      getBlockModel(id) { return blockModels[id.toString()] || null; },
+      getTextureUV(id) { return atlas.getTextureUV(id); },
+      getTextureAtlas() { return atlas.getTextureAtlas(); },
+      getPixelSize() { return atlas.getPixelSize(); },
+      getBlockFlags(id) { return DATA.flags[id.toString()] || null; },
+      // The legal values of every property, from the pinned registry. Nothing on
+      // the render path reads it; it is part of the interface and is answered
+      // honestly rather than with a null.
+      getBlockProperties(id) {
+        const d = DATA.defaults[id.toString()];
+        if (!d) return null;
+        const out = {};
+        for (const k of Object.keys(d)) out[k] = [d[k]];
+        return out;
+      },
+      // What the game fills an unwritten property with. From the pinned block
+      // registry, never from a guess: a bare cobblestone_wall is a POST, and
+      // "the first legal value" would make it something else.
+      getDefaultBlockProperties(id) { return DATA.defaults[id.toString()] || null; },
+    };
+    for (const k of Object.keys(blockModels)) blockModels[k].flatten(res);
+    return res;
+  }
+
+  /* ------------------------------------------------------------- overlays -- */
+  /*
+   * Anchors, the bounding box and the ground grid, drawn by this page's own
+   * program on the same context. deepslate re-binds its program and its
+   * attributes on every draw call, so the two coexist as long as this one puts
+   * its attribute arrays back when it is done.
+   */
+  let ovProg = null, ovPos = 0, ovCol = 0, ovMVP = null, ovPosBuf = null, ovColBuf = null;
 
   function compile(type, src) {
     const s = gl.createShader(type);
@@ -233,56 +277,52 @@
     return s;
   }
 
-  function initGL() {
+  function initOverlay() {
     const vs = compile(gl.VERTEX_SHADER,
-      "attribute vec3 aPos;attribute vec4 aCol;attribute vec2 aUV;uniform mat4 uMVP;"
-      + "varying vec4 vCol;varying vec2 vUV;"
-      + "void main(){vCol=aCol;vUV=aUV;gl_Position=uMVP*vec4(aPos,1.0);}");
-    // Darken the rim of every quad. The seam between two blocks of one material
-    // is otherwise invisible, and a wall the reviewer cannot count the courses
-    // of is the grey box this tool exists to replace. `fwidth` keeps the line
-    // one pixel wide at any distance where the extension is available; without
-    // it a fixed inset still separates the blocks, only less evenly.
-    const deriv = gl.getExtension("OES_standard_derivatives");
+      "attribute vec3 aPos;attribute vec4 aCol;uniform mat4 uMVP;varying vec4 vCol;"
+      + "void main(){vCol=aCol;gl_Position=uMVP*vec4(aPos,1.0);}");
     const fs = compile(gl.FRAGMENT_SHADER,
-      (deriv ? "#extension GL_OES_standard_derivatives : enable\n" : "")
-      + "precision mediump float;varying vec4 vCol;varying vec2 vUV;"
-      + "void main(){"
-      + "vec2 d=min(vUV,1.0-vUV);float e=min(d.x,d.y);"
-      + (deriv
-        ? "float w=min(max(fwidth(vUV.x),fwidth(vUV.y)),0.06);float k=smoothstep(0.0,w*1.5,e);"
-        : "float k=smoothstep(0.0,0.045,e);")
-      + "gl_FragColor=vec4(vCol.rgb*mix(0.74,1.0,k),vCol.a);}");
-    prog = gl.createProgram();
-    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(prog) || "program link failed");
+      "precision mediump float;varying vec4 vCol;void main(){gl_FragColor=vCol;}");
+    ovProg = gl.createProgram();
+    gl.attachShader(ovProg, vs); gl.attachShader(ovProg, fs); gl.linkProgram(ovProg);
+    if (!gl.getProgramParameter(ovProg, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(ovProg) || "overlay program link failed");
     }
-    gl.useProgram(prog);
-    aPos = gl.getAttribLocation(prog, "aPos");
-    aCol = gl.getAttribLocation(prog, "aCol");
-    aUV = gl.getAttribLocation(prog, "aUV");
-    uMVP = gl.getUniformLocation(prog, "uMVP");
-    posBuf = gl.createBuffer();
-    colBuf = gl.createBuffer();
-    uvBuf = gl.createBuffer();
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
-    gl.cullFace(gl.BACK);
-    gl.clearColor(0.078, 0.086, 0.110, 1);
+    ovPos = gl.getAttribLocation(ovProg, "aPos");
+    ovCol = gl.getAttribLocation(ovProg, "aCol");
+    ovMVP = gl.getUniformLocation(ovProg, "uMVP");
+    ovPosBuf = gl.createBuffer();
+    ovColBuf = gl.createBuffer();
+  }
+
+  function drawOverlay(mode, positions, colors, count, mvp) {
+    if (!ovProg || !count) return;
+    gl.useProgram(ovProg);
+    gl.uniformMatrix4fv(ovMVP, false, mvp);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ovPosBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(ovPos);
+    gl.vertexAttribPointer(ovPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ovColBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(ovCol);
+    gl.vertexAttribPointer(ovCol, 4, gl.UNSIGNED_BYTE, true, 0, 0);
+    gl.drawArrays(mode, 0, count);
+    gl.disableVertexAttribArray(ovPos);
+    gl.disableVertexAttribArray(ovCol);
   }
 
   /* --------------------------------------------------------------- state -- */
 
   const state = {
     model: null,
-    mesh: null,
+    renderer: null,
+    resources: null,
     cutY: 0,
     // "walk" is the page's resting state and its opening state. Orbit exists,
     // but only because a button that says so was pressed — never as the mode a
     // reviewer discovers by finding that W does nothing.
     mode: "walk",
-    // orbit
     target: [0, 0, 0],
     dist: 30,
     // shared angles: yaw 0 looks toward +Z, pitch is up-positive
@@ -291,6 +331,9 @@
     eye: [0, 0, 0],
     preset: "",
     show: { anchors: true, labels: true, bounds: false, ground: true },
+    atlasSize: 0,
+    atlasComplaints: [],
+    noGeometry: [],
   };
 
   const FACING_YAW = { south: 0, west: -Math.PI / 2, north: Math.PI, east: Math.PI / 2 };
@@ -315,6 +358,8 @@
     ];
   }
 
+  // The renderer's own field of view, so the overlay geometry and the blocks
+  // share one projection instead of two that agree by coincidence.
   const FOV = 70 * Math.PI / 180;
 
   /**
@@ -347,8 +392,6 @@
       out.push({
         id: "pov:" + a.name,
         label: (a.socket ? "▸ " : "") + a.name.replace(/^anchor\//, ""),
-        kind: "pov",
-        anchor: a,
       });
     }
     return out;
@@ -401,6 +444,10 @@
     return out;
   }
 
+  function centerOf(model) {
+    return [model.size[0] / 2, model.size[1] / 2, model.size[2] / 2];
+  }
+
   function applyPreset(id) {
     const model = state.model;
     state.preset = id;
@@ -443,10 +490,6 @@
     updateReadout();
   }
 
-  function centerOf(model) {
-    return [model.size[0] / 2, model.size[1] / 2, model.size[2] / 2];
-  }
-
   /**
    * Orbit is a switch the reviewer throws, never a state the page puts them in.
    *
@@ -481,7 +524,6 @@
 
   function buildOverlays(model) {
     const [sx, sy, sz] = model.size;
-    // Ground grid at y=0, one line per block boundary.
     const lines = [];
     for (let x = 0; x <= sx; x++) lines.push(x, 0, 0, x, 0, sz);
     for (let z = 0; z <= sz; z++) lines.push(0, 0, z, sx, 0, z);
@@ -508,37 +550,13 @@
     }
   }
 
-  /** Bind position, colour and quad coordinate, then draw. `uv` may be null,
-   *  in which case the primitive is drawn without edge darkening. */
-  function drawArray(mode, positions, colors, count, uv) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(aCol);
-    gl.vertexAttribPointer(aCol, 4, gl.UNSIGNED_BYTE, true, 0, 0);
-    if (!uv) {
-      if (!flatUV || flatUVCount < count) {
-        flatUVCount = Math.max(count, 1024);
-        flatUV = new Float32Array(flatUVCount * 2).fill(0.5);
-      }
-      uv = flatUV;
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, uv, gl.DYNAMIC_DRAW);
-    gl.enableVertexAttribArray(aUV);
-    gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(mode, 0, count);
-  }
-
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
     const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w; canvas.height = h;
+      if (state.renderer) state.renderer.setViewport(0, 0, w, h);
     }
   }
 
@@ -546,57 +564,29 @@
   function invalidate() { needsDraw = true; }
 
   function draw() {
-    if (!gl || !state.mesh) return;
+    if (!gl || !state.renderer) return;
     resize();
     gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.078, 0.086, 0.110, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
 
     const aspect = canvas.width / Math.max(1, canvas.height);
     perspective(proj, FOV, aspect, 0.05, 4000);
     lookAt(view, cameraEye(), cameraCenter(), [0, 1, 0]);
     multiply(mvp, proj, view);
-    gl.uniformMatrix4fv(uMVP, false, mvp);
 
     if (state.show.ground && groundCount) {
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
-      drawArray(gl.LINES, groundVerts, groundColors, groundCount);
+      drawOverlay(gl.LINES, groundVerts, groundColors, groundCount, mvp);
     }
 
-    const m = state.mesh;
-    if (m.faces > 0) {
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
-      if (m.opaqueVerts > 0) drawArray(gl.TRIANGLES, m.positions, m.colors, m.opaqueVerts, m.quadUV);
-      const rest = m.faces * 6 - m.opaqueVerts;
-      if (rest > 0) {
-        // Translucent faces last, without writing depth, so glass shows what is
-        // behind it without needing a per-frame sort.
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        gl.depthMask(false);
-        gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.DYNAMIC_DRAW);
-        gl.enableVertexAttribArray(aPos);
-        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-        gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, m.colors, gl.DYNAMIC_DRAW);
-        gl.enableVertexAttribArray(aCol);
-        gl.vertexAttribPointer(aCol, 4, gl.UNSIGNED_BYTE, true, 0, 0);
-        gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, m.quadUV, gl.DYNAMIC_DRAW);
-        gl.enableVertexAttribArray(aUV);
-        gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 0, 0);
-        gl.drawArrays(gl.TRIANGLES, m.opaqueVerts, rest);
-        gl.depthMask(true);
-        gl.disable(gl.BLEND);
-      }
-    }
+    // The renderer keeps its own projection, taken from the canvas' CSS size at
+    // the last `setViewport`, so it is handed only the view.
+    state.renderer.drawStructure(view);
 
     if (state.show.bounds && boundsCount) {
-      drawArray(gl.LINES, boundsVerts, boundsColors, boundsCount);
+      drawOverlay(gl.LINES, boundsVerts, boundsColors, boundsCount, mvp);
     }
-
     if (state.show.anchors) drawAnchors();
     positionLabels();
   }
@@ -634,10 +624,8 @@
         }
       }
     }
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
-    if (tri.length) drawArray(gl.TRIANGLES, new Float32Array(tri), new Uint8Array(col), tri.length / 3);
-    if (lin.length) drawArray(gl.LINES, new Float32Array(lin), new Uint8Array(lcol), lin.length / 3);
+    if (tri.length) drawOverlay(gl.TRIANGLES, new Float32Array(tri), new Uint8Array(col), tri.length / 3, mvp);
+    if (lin.length) drawOverlay(gl.LINES, new Float32Array(lin), new Uint8Array(lcol), lin.length / 3, mvp);
   }
 
   const labelEls = new Map();
@@ -901,11 +889,11 @@
     cutValue: document.getElementById("cut-value"),
     anchorList: document.getElementById("anchor-list"),
     anchorCount: document.getElementById("anchor-count"),
-    anchorSection: document.getElementById("anchor-section"),
     legend: document.getElementById("legend"),
     legendCount: document.getElementById("legend-count"),
-    unresolved: document.getElementById("unresolved"),
-    unresolvedSection: document.getElementById("unresolved-section"),
+    findings: document.getElementById("findings"),
+    findingsCount: document.getElementById("findings-count"),
+    fidelity: document.getElementById("fidelity"),
     panel: document.getElementById("panel"),
     app: document.getElementById("app"),
     panelToggle: document.getElementById("panel-toggle"),
@@ -963,66 +951,101 @@
       : "orbiting  ·  " + fmt(state.dist) + " blocks out  ·  " + heading.toFixed(0) + "°";
   }
 
-  function rebuildMesh() {
-    if (!gl) return;
-    state.mesh = buildMesh(state.model, state.cutY);
-    updateStats();
-    invalidate();
-  }
+  /* -------------------------------------------------------- the structure -- */
 
-  function updateStats() {
-    const m = state.model;
-    const [sx, sy, sz] = m.size;
-    const parts = [
-      sx + "×" + sy + "×" + sz,
-      m.filled.toLocaleString() + " blocks",
-      m.palette.length - 1 + " states",
-    ];
-    if (state.mesh) parts.push(state.mesh.faces.toLocaleString() + " faces drawn");
-    els.stats.textContent = parts.join("  ·  ");
-  }
-
-  function selectModel(index) {
-    const m = DATA.models[index];
-    const [sx, sy, sz] = m.size;
-    if (!m.grid) {
-      m.grid = decodeGrid(m.voxels, sx * sy * sz);
-      m.solid = new Uint8Array(m.palette.length);
-      m.full = new Uint8Array(m.palette.length);
-      m.alpha = new Float32Array(m.palette.length);
-      for (let i = 1; i < m.palette.length; i++) {
-        const e = m.palette[i];
-        const fullCube = isFullCube(e.box);
-        m.full[i] = fullCube ? 1 : 0;
-        m.solid[i] = fullCube && e.cov >= 250 ? 1 : 0;
-        m.alpha[i] = Math.min(1, e.cov / 255);
+  /**
+   * The grid, as a structure the renderer can mesh, up to `maxY`.
+   *
+   * Built through the public `addBlock` rather than from structure NBT, because
+   * a zone reassembled from several templates has no single file — and because
+   * the cutaway needs a second structure over the same palette.
+   */
+  function structureUpTo(model, maxY) {
+    const [sx, sy, sz] = model.size;
+    const top = Math.min(maxY, sy - 1);
+    const st = new D.Structure([sx, sy, sz]);
+    const grid = model.grid;
+    for (let y = 0; y <= top; y++) {
+      for (let z = 0; z < sz; z++) {
+        const row = (y * sz + z) * sx;
+        for (let x = 0; x < sx; x++) {
+          const p = grid[row + x];
+          if (p === 0) continue;
+          const e = model.palette[p];
+          st.addBlock([x, y, z], e.name, e.props || {});
+        }
       }
     }
-    state.model = m;
-    state.cutY = sy - 1;
-    els.cut.max = String(sy - 1);
-    els.cut.value = String(sy - 1);
-    els.cutValue.textContent = String(sy - 1);
-    buildOverlays(m);
-    buildPresetButtons(m);
-    buildAnchorList(m);
-    buildLegend(m);
-    buildUnresolved(m);
-    const hash = fromHash();
-    if (hash.cut !== undefined && hash.cut !== "") {
-      const y = Math.max(0, Math.min(sy - 1, Number(hash.cut)));
-      if (Number.isFinite(y)) {
-        state.cutY = y;
-        els.cut.value = String(y);
-        els.cutValue.textContent = String(y);
+    return st;
+  }
+
+  /**
+   * What the renderer actually does with each blockstate, meshed one at a time.
+   *
+   * Two failures, both invisible in a finished picture and neither reachable
+   * from the resources alone:
+   *
+   *   - **nothing is drawn.** Every resource resolved and the block still has no
+   *     geometry, because the definition selects no model for these properties.
+   *   - **the missing-texture checker is drawn.** A face landed on the atlas cell
+   *     reserved for "no such texture", which means some id the renderer asked
+   *     for is not an id the page was given. This is the failure mode of the
+   *     block-entity texture table: those ids are asked for by code, never by a
+   *     model file, so a wrong one renders magenta and says nothing. It cost
+   *     three wrong ids to learn, and it is why this probe runs on every page
+   *     rather than being a line in a document.
+   *
+   * Alone, so an empty result is about the block and not about what happens to
+   * sit beside it.
+   */
+  function probeGeometry(model, res) {
+    const out = [];
+    const seen = new Set();
+    const checkerUV = 16 / Math.max(1, state.atlasSize);
+    for (let p = 1; p < model.palette.length; p++) {
+      const e = model.palette[p];
+      if (!e || e.count === 0 || seen.has(e.state)) continue;
+      seen.add(e.state);
+      const id = D.Identifier.parse(e.name);
+      try {
+        const def = res.getBlockDefinition(id);
+        const props = Object.assign({}, res.getDefaultBlockProperties(id) || {}, e.props || {});
+        const mesh = new D.Mesh();
+        if (def) mesh.merge(def.getMesh(id, props, res, res, D.Cull.none()));
+        mesh.merge(D.SpecialRenderers.getBlockMesh(new D.BlockState(id, props), undefined, res, D.Cull.none()));
+        if (mesh.isEmpty()) {
+          out.push({
+            state: e.state,
+            cells: e.count,
+            why: def
+              ? "draws nothing — the definition selects no model for these properties"
+              : "draws nothing — no blockstate definition",
+          });
+          continue;
+        }
+        let checker = 0, total = 0;
+        for (const q of mesh.quads) {
+          for (const vert of q.vertices()) {
+            total++;
+            if (vert.texture && vert.texture[0] < checkerUV && vert.texture[1] < checkerUV) checker++;
+          }
+        }
+        if (checker > 0) {
+          out.push({
+            state: e.state,
+            cells: e.count,
+            why: "draws the missing-texture checker on " + checker + " of " + total
+              + " vertices — the renderer asked for a texture this page was not given",
+          });
+        }
+      } catch (err) {
+        out.push({ state: e.state, cells: e.count, why: "the renderer threw: " + err });
       }
     }
-    rebuildMesh();
-    const want = hash.preset;
-    const known = want && (want === "ground" || want === "exterior" || want === "plan"
-      || (want.startsWith("pov:") && m.anchors.some((a) => a.name === want.slice(4) && a.pos)));
-    applyPreset(known ? want : defaultPreset(m));
+    return out;
   }
+
+  /* --------------------------------------------------------------- panel -- */
 
   function buildPresetButtons(model) {
     els.presets.textContent = "";
@@ -1077,24 +1100,30 @@
     }
   }
 
-  function buildLegend(model) {
+  /**
+   * The block list, each row swatched with the colour that block occupies in the
+   * atlas — sampled from the picture the reviewer is looking at, so a swatch and
+   * its block cannot disagree.
+   */
+  function buildLegend(model, sample) {
     els.legend.textContent = "";
     const rows = [];
     for (let i = 1; i < model.palette.length; i++) {
       const e = model.palette[i];
       if (e.count > 0) rows.push(e);
     }
-    rows.sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+    rows.sort((a, b) => b.count - a.count || (a.state < b.state ? -1 : 1));
     els.legendCount.textContent = String(rows.length);
     for (const e of rows) {
       const li = document.createElement("li");
       const sw = document.createElement("span");
       sw.className = "swatch";
-      sw.style.background = "rgb(" + e.rgb[0] + "," + e.rgb[1] + "," + e.rgb[2] + ")";
+      const rgb = sample ? sample(e.name) : null;
+      if (rgb) sw.style.background = "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")";
       const nm = document.createElement("span");
       nm.className = "name";
-      nm.textContent = e.name.replace(/^minecraft:/, "");
-      nm.title = e.name;
+      nm.textContent = e.state.replace(/^minecraft:/, "");
+      nm.title = e.state;
       const ct = document.createElement("span");
       ct.className = "count";
       ct.textContent = e.count.toLocaleString();
@@ -1103,21 +1132,227 @@
     }
   }
 
-  function buildUnresolved(model) {
-    const keys = Object.keys(model.unresolved || {});
-    els.unresolvedSection.hidden = keys.length === 0;
-    els.unresolved.textContent = "";
-    for (const k of keys) {
-      const u = model.unresolved[k];
+  /**
+   * Everything the page knows about how faithful the picture is, in one list,
+   * with the binding count of each check beside it.
+   *
+   * A page that showed nothing here would be claiming a clean bill of health,
+   * and a clean bill of health from a check that examined nothing is the failure
+   * this section exists to make impossible to miss.
+   */
+  function buildFindings() {
+    const rows = [];
+    for (const u of DATA.unresolved || []) {
+      rows.push({
+        bad: true,
+        head: u.state + "  ×" + u.cells,
+        why: u.reason.replace(/_/g, " ") + " — " + u.detail
+          + ". The pinned version does not have it, so a server pinned to the same version does not either.",
+      });
+    }
+    for (const u of DATA.under_specified || []) {
+      const filled = Object.keys(u.filled).map((k) => k + "=" + u.filled[k]).join(", ");
+      rows.push({
+        bad: u.multipart,
+        head: u.state + "  ×" + u.cells,
+        why: "leaves " + Object.keys(u.filled).join(", ") + " unwritten; drawn from the "
+          + "version's default state (" + filled + ")"
+          + (u.multipart
+            ? ". This block's definition is multipart, where an unwritten property matches no case at all — what the file says and what you are looking at are different blocks."
+            : "."),
+      });
+    }
+    for (const g of state.noGeometry) {
+      rows.push({ bad: true, head: g.state + "  ×" + g.cells, why: g.why });
+    }
+    for (const c of state.atlasComplaints) {
+      rows.push({ bad: true, head: "texture atlas", why: c });
+    }
+
+    els.findingsCount.textContent = String(rows.length);
+    els.findings.textContent = "";
+    if (!rows.length) {
       const li = document.createElement("li");
+      li.className = "hint";
+      li.textContent = "Every blockstate on this page resolved, wrote every property it has, and produced geometry.";
+      els.findings.appendChild(li);
+    }
+    for (const r of rows) {
+      const li = document.createElement("li");
+      if (r.bad) li.className = "bad";
       const head = document.createElement("span");
-      head.textContent = k + "  ×" + u.count;
+      head.textContent = r.head;
       const why = document.createElement("span");
       why.className = "why";
-      why.textContent = u.detail;
+      why.textContent = r.why;
       li.append(head, why);
-      els.unresolved.appendChild(li);
+      els.findings.appendChild(li);
     }
+
+    // The binding counts. Each number is what the corresponding check looked at;
+    // a zero means it examined nothing, which is a finding and not a pass.
+    const states = countStates();
+    const bind = [
+      states + " blockstate" + (states === 1 ? "" : "s") + " examined",
+      Object.keys(DATA.textures).length + " textures packed into a "
+        + state.atlasSize + "×" + state.atlasSize + " atlas",
+      DATA.special_bound + " block-entity texture id"
+        + (DATA.special_bound === 1 ? "" : "s") + " resolved against the jar",
+      "Minecraft " + DATA.mc_version,
+    ];
+    els.fidelity.textContent = bind.join("  ·  ");
+    els.fidelity.classList.toggle("warn", states === 0);
+  }
+
+  function countStates() {
+    const seen = new Set();
+    for (const m of DATA.models) {
+      for (let i = 1; i < m.palette.length; i++) {
+        if (m.palette[i] && m.palette[i].count > 0) seen.add(m.palette[i].state);
+      }
+    }
+    return seen.size;
+  }
+
+  function updateStats() {
+    const m = state.model;
+    const [sx, sy, sz] = m.size;
+    const parts = [
+      sx + "×" + sy + "×" + sz,
+      m.filled.toLocaleString() + " blocks",
+      m.palette.length - 1 + " states",
+    ];
+    if (m.tiles > 1) parts.push(m.tiles + " templates reassembled");
+    els.stats.textContent = parts.join("  ·  ");
+  }
+
+  /** The atlas colour of a block, for its legend swatch. */
+  function makeSampler(atlasImage, size) {
+    const cache = new Map();
+    return function (name) {
+      if (cache.has(name)) return cache.get(name);
+      let rgb = null;
+      const model = DATA.blockstates[name];
+      if (model && atlasImage) {
+        // The first texture any of this block's models names, via the model
+        // chain the renderer itself walks.
+        const id = firstTexture(name);
+        if (id) {
+          const uv = state.resources.getTextureUV(D.Identifier.parse(id));
+          const px = Math.floor(((uv[0] + uv[2]) / 2) * size);
+          const py = Math.floor(((uv[1] + uv[3]) / 2) * size);
+          const at = (py * size + px) * 4;
+          rgb = [atlasImage.data[at], atlasImage.data[at + 1], atlasImage.data[at + 2]];
+        }
+      }
+      cache.set(name, rgb);
+      return rgb;
+    };
+  }
+
+  function firstTexture(blockName) {
+    const def = DATA.blockstates[blockName];
+    if (!def) return null;
+    const refs = [];
+    const push = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) v.forEach((x) => x && x.model && refs.push(x.model));
+      else if (v.model) refs.push(v.model);
+    };
+    if (def.variants) for (const k of Object.keys(def.variants)) push(def.variants[k]);
+    if (def.multipart) for (const p of def.multipart) push(p.apply);
+    for (const r of refs) {
+      const t = textureOf(qualify(r), 0);
+      if (t) return t;
+    }
+    return null;
+  }
+
+  function qualify(id) { return id.indexOf(":") >= 0 ? id : "minecraft:" + id; }
+
+  function textureOf(modelId, depth) {
+    if (depth > 8) return null;
+    const m = DATA.block_models[modelId];
+    if (!m) return null;
+    if (m.textures) {
+      for (const key of ["all", "texture", "side", "top", "particle", "end", "cross", "wall", "bottom"]) {
+        const v = m.textures[key];
+        if (typeof v === "string" && v.charAt(0) !== "#" && DATA.textures[qualify(v)]) return qualify(v);
+      }
+      for (const key of Object.keys(m.textures)) {
+        const v = m.textures[key];
+        if (typeof v === "string" && v.charAt(0) !== "#" && DATA.textures[qualify(v)]) return qualify(v);
+      }
+    }
+    return m.parent ? textureOf(qualify(m.parent), depth + 1) : null;
+  }
+
+  /* ---------------------------------------------------------------- boot -- */
+
+  function selectModel(index) {
+    const m = DATA.models[index];
+    const [sx, sy, sz] = m.size;
+    if (!m.grid) {
+      m.grid = decodeGrid(m.voxels, sx * sy * sz);
+      m.solid = new Uint8Array(m.palette.length);
+      for (let i = 1; i < m.palette.length; i++) {
+        const f = DATA.flags[m.palette[i].name];
+        m.solid[i] = f && f.opaque ? 1 : 0;
+      }
+    }
+    state.model = m;
+    els.select.value = String(index);
+    state.cutY = sy - 1;
+    els.cut.max = String(sy - 1);
+    els.cut.value = String(sy - 1);
+    els.cutValue.textContent = String(sy - 1);
+    buildOverlays(m);
+    buildPresetButtons(m);
+    buildAnchorList(m);
+
+    const hash = fromHash();
+    if (hash.cut !== undefined && hash.cut !== "") {
+      const y = Math.max(0, Math.min(sy - 1, Number(hash.cut)));
+      if (Number.isFinite(y)) {
+        state.cutY = y;
+        els.cut.value = String(y);
+        els.cutValue.textContent = String(y);
+      }
+    }
+
+    if (state.resources) {
+      const st = structureUpTo(m, state.cutY);
+      if (state.renderer) {
+        state.renderer.setStructure(st);
+        state.renderer.updateStructureBuffers();
+      } else {
+        state.renderer = new D.StructureRenderer(gl, st, state.resources, {
+          chunkSize: 16,
+          // The invisible-block markers walk the whole volume and draw a wire
+          // cube per empty cell — 42,000 of them on a zone, over a review that
+          // is about the building rather than about where the air is.
+          useInvisibleBlockBuffer: false,
+        });
+        state.renderer.setViewport(0, 0, canvas.width, canvas.height);
+      }
+      state.noGeometry = probeGeometry(m, state.resources);
+      buildFindings();
+    }
+    buildLegend(m, state.sampler);
+    updateStats();
+
+    const want = hash.preset;
+    const known = want && (want === "ground" || want === "exterior" || want === "plan"
+      || (want.startsWith("pov:") && m.anchors.some((a) => a.name === want.slice(4) && a.pos)));
+    applyPreset(known ? want : defaultPreset(m));
+    invalidate();
+  }
+
+  function rebuildStructure() {
+    if (!state.renderer) return;
+    state.renderer.setStructure(structureUpTo(state.model, state.cutY));
+    state.renderer.updateStructureBuffers();
+    invalidate();
   }
 
   buildControlsHelp();
@@ -1134,7 +1369,7 @@
   els.cut.addEventListener("input", () => {
     state.cutY = Number(els.cut.value);
     els.cutValue.textContent = els.cut.value;
-    rebuildMesh();
+    rebuildStructure();
   });
 
   for (const [id, key] of [["opt-anchors", "anchors"], ["opt-labels", "labels"],
@@ -1166,31 +1401,64 @@
   }
   els.select.value = String(startIndex);
 
+  let ready = false;
+  function boot() {
+    if (!gl) { selectModel(startIndex); buildFindings(); return; }
+    initOverlay();
+    resize();
+    buildAtlas(DATA.textures, (atlas, size, complaints) => {
+      try {
+        state.atlasSize = size;
+        state.atlasComplaints = complaints;
+        if (!atlas) throw new Error(complaints.join("; "));
+        state.resources = makeResources(atlas);
+        state.sampler = makeSampler(atlas.getTextureAtlas(), size);
+        selectModel(startIndex);
+        ready = true;
+        invalidate();
+        requestAnimationFrame(step);
+      } catch (err) {
+        canvas.hidden = true;
+        fallback.hidden = false;
+        fallback.textContent = "The model could not be drawn: " + err
+          + " — the block list and the findings in the panel are still readable.";
+        selectModel(startIndex);
+        buildFindings();
+      }
+    });
+  }
+
   try {
-    if (gl) initGL();
-    selectModel(startIndex);
-    if (gl) { invalidate(); requestAnimationFrame(step); }
+    boot();
   } catch (err) {
     if (fallback) {
       canvas.hidden = true;
       fallback.hidden = false;
-      fallback.textContent = "The model could not be drawn: " + err.message;
+      fallback.textContent = "The model could not be drawn: " + err;
     }
   }
 
   // A headless check needs to read what was built without a screenshot, so the
-  // mesh statistics are reachable from the page rather than only on screen.
+  // page's own measurements are reachable from it rather than only on screen.
   window.delveViewer = {
     data: DATA,
     state: state,
+    ready: () => ready,
     stats: () => ({
       id: state.model && state.model.id,
       size: state.model && state.model.size,
       filled: state.model && state.model.filled,
       runs: state.model && state.model.runs,
-      faces: state.mesh ? state.mesh.faces : 0,
+      tiles: state.model && state.model.tiles,
       anchors: state.model ? state.model.anchors.length : 0,
-      unresolved: state.model ? Object.keys(state.model.unresolved || {}).length : 0,
+      states: countStates(),
+      textures: Object.keys(DATA.textures).length,
+      atlas: state.atlasSize,
+      atlasComplaints: state.atlasComplaints,
+      specialBound: DATA.special_bound,
+      unresolved: (DATA.unresolved || []).length,
+      underSpecified: (DATA.under_specified || []).length,
+      noGeometry: state.noGeometry,
       preset: state.preset,
       mode: state.mode,
       eye: cameraEye(),

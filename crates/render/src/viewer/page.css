@@ -226,7 +226,7 @@ h2.warn { color: var(--warn); }
 input[type="range"] { width: 100%; padding: 0; }
 
 ul { list-style: none; margin: 0; padding: 0; }
-.anchors li, .legend li, .unresolved li {
+.anchors li, .legend li, .findings li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -252,9 +252,13 @@ ul { list-style: none; margin: 0; padding: 0; }
   border: 1px solid #0006;
 }
 .legend .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.legend .count, .unresolved .count { color: var(--ink-dim); }
-.unresolved li { display: block; color: var(--bad); }
-.unresolved .why { display: block; color: var(--ink-dim); }
+.legend .count { color: var(--ink-dim); }
+.findings li { display: block; color: var(--ink); }
+.findings li.bad { color: var(--bad); }
+.findings li.hint { font-family: inherit; color: var(--ink-dim); }
+.findings .why { display: block; color: var(--ink-dim); }
+#fidelity { margin-top: 8px; }
+#fidelity.warn { color: var(--bad); }
 
 @media (max-width: 860px) {
   #app { grid-template-columns: 1fr; grid-template-areas: "header" "stage" "panel"; grid-template-rows: auto 1fr auto; }

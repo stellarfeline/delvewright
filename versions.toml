@@ -243,6 +243,26 @@ chunky_update_url = "https://chunkyupdate.lemaik.de"
 chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
 chunky_license = "GPL-3.0"
 
+# deepslate (MIT) — the rendering core of the prefab review page
+# (`delve-render viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
+# one self-contained file, so the renderer ships inside it as
+# `crates/render/src/viewer/deepslate.bundle.js`. Vendored, never forked — the
+# bundle carries one local patch, of two block-entity texture ids upstream points
+# at paths no Minecraft version ships.
+#
+# The SHA-256 is of the committed bundle, so this pin binds to the BYTES rather
+# than to a version string: a hand-edited bundle, or one rebuilt at a different
+# version without updating this file, is a red. Rebuild with
+# `tools/build-deepslate-bundle.sh` (which pins the same versions) and update the
+# digest in the same commit.
+# Consumed by: tools/build-deepslate-bundle.sh + crates/render/src/viewer/.
+deepslate_version = "0.26.0"
+deepslate_license = "MIT"
+deepslate_bundle = "crates/render/src/viewer/deepslate.bundle.js"
+deepslate_bundle_sha256 = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
+gl_matrix_version = "3.4.4"
+esbuild_version = "0.28.2"
+
 # Textures come from the pinned 1.21.11 client jar (the same MC version as
 # [minecraft]). Never committed (EULA); resolved at run time from --textures,
 # $DELVEWRIGHT_CLIENT_JAR, or ~/.chunky/resources/minecraft.jar.

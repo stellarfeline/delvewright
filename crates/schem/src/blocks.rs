@@ -50,6 +50,20 @@ const REGISTRY_JSON: &str = include_str!("../../compiler/data/blocks-1.21.11.jso
 /// complete model, so omitting it renders the author's default; a `multipart`
 /// property *assembles* the model, so omitting it drops geometry — wall arms,
 /// pane connections, vine faces. That is the class line `DW0735` fires on.
+/// The pinned **default state** of every block: the value the game resolves each
+/// unwritten property to.
+///
+/// A third table because it answers a third question. The registry says which
+/// properties are legal; the shape table says which of them the model is
+/// assembled from; this says what a palette entry that leaves one out actually
+/// MEANS. A structure template may leave properties out — vanilla fills them on
+/// load, so the file is legal and the server places the right block — and every
+/// reader that is not a running server then has to work it out. Guessing is not
+/// close: a bare `minecraft:cobblestone_wall` is a wall POST (`up=true`, every
+/// side `none`), and "the first legal value" yields `up=false` with `east=low`,
+/// which is a different block.
+const DEFAULTS_JSON: &str = include_str!("../../compiler/data/block-defaults-1.21.11.json");
+
 const SHAPE_JSON: &str = include_str!("../../compiler/data/blockstate-shape-props-1.21.11.json");
 
 /// The Minecraft version this registry describes (ADR-0009).
@@ -190,6 +204,7 @@ impl std::error::Error for BlockError {}
 pub struct BlockRegistry {
     blocks: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     shape: BTreeMap<String, Vec<String>>,
+    defaults: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl BlockRegistry {
@@ -201,6 +216,8 @@ impl BlockRegistry {
                 .expect("the vendored block registry is valid JSON"),
             shape: serde_json::from_str(SHAPE_JSON)
                 .expect("the vendored shape-property table is valid JSON"),
+            defaults: serde_json::from_str(DEFAULTS_JSON)
+                .expect("the vendored block default-state table is valid JSON"),
         })
     }
 
@@ -280,6 +297,44 @@ impl BlockRegistry {
             Err(e) if data_version >= PIN_DATA_VERSION => StateJudgement::InvalidAtPin(e),
             Err(e) => StateJudgement::PrePin(e),
         }
+    }
+
+    /// Every property of `name` with its legal values, or `None` for an id the
+    /// pinned version does not have.
+    pub fn properties(&self, name: &str) -> Option<&BTreeMap<String, Vec<String>>> {
+        self.blocks.get(namespace(name).as_ref())
+    }
+
+    /// The block's default state — what the game resolves each unwritten
+    /// property to. `None` for an id the pinned version does not have; an empty
+    /// map for a block that has no properties at all.
+    pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
+        self.defaults.get(namespace(name).as_ref())
+    }
+
+    /// The properties `written` leaves out, each with the value the game would
+    /// fill it with. Empty when the state is complete — and empty, too, for an
+    /// id this registry does not know, which has no defaults to offer and is
+    /// already an [`BlockError::UnknownBlock`] to [`Self::validate`].
+    ///
+    /// Broader than [`Self::omitted_shape_carrying`] on purpose, and the two
+    /// answer different questions: that one asks whether the block's *model* is
+    /// assembled from parts the property selects, this one asks what a reader
+    /// that is not a running server would have to fill in to know what the file
+    /// means at all.
+    pub fn unwritten(
+        &self,
+        name: &str,
+        written: &BTreeMap<String, String>,
+    ) -> BTreeMap<String, String> {
+        let Some(default) = self.defaults.get(namespace(name).as_ref()) else {
+            return BTreeMap::new();
+        };
+        default
+            .iter()
+            .filter(|(k, _)| !written.contains_key(*k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// The shape-carrying properties of `name` — the properties its blockstate
@@ -542,6 +597,66 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    /// The default-state table is only useful if it covers the same blocks the
+    /// property registry does and agrees with it on every value. A binding count
+    /// is asserted, because a table that failed to cover anything would make
+    /// every completion a silent no-op.
+    #[test]
+    fn every_block_has_a_legal_default_state() {
+        let reg = BlockRegistry::v1_21_11();
+        let mut with_properties = 0usize;
+        for (name, properties) in &reg.blocks {
+            let default = reg
+                .default_state(name)
+                .unwrap_or_else(|| panic!("{name} has no default state"));
+            assert_eq!(
+                default.keys().collect::<Vec<_>>(),
+                properties.keys().collect::<Vec<_>>(),
+                "{name}: the default state and the property list name different properties"
+            );
+            if !properties.is_empty() {
+                with_properties += 1;
+            }
+            for (property, value) in default {
+                assert!(
+                    properties[property].contains(value),
+                    "{name}[{property}={value}] is not one of that property's legal values"
+                );
+            }
+        }
+        assert_eq!(reg.defaults.len(), reg.blocks.len());
+        assert_eq!(
+            with_properties, 777,
+            "1.21.11 has 777 blocks with at least one property"
+        );
+    }
+
+    /// The instance that makes this table worth vendoring: a bare
+    /// `cobblestone_wall` is a POST, and the guess a reader would otherwise make
+    /// — the first legal value of each property — is a different block.
+    #[test]
+    fn a_bare_wall_completes_to_a_post_not_to_the_first_legal_value() {
+        let reg = BlockRegistry::v1_21_11();
+        let unwritten = reg.unwritten("minecraft:cobblestone_wall", &BTreeMap::new());
+        assert_eq!(unwritten["up"], "true");
+        assert_eq!(unwritten["east"], "none");
+        // The alphabetically-first legal value disagrees on both.
+        let properties = reg.properties("minecraft:cobblestone_wall").unwrap();
+        assert_eq!(properties["up"].first().unwrap(), "false");
+        assert_eq!(properties["east"].first().unwrap(), "low");
+        // A property the palette DID write is never reported as unwritten.
+        let written = props(&[("up", "false")]);
+        assert!(
+            !reg.unwritten("minecraft:cobblestone_wall", &written)
+                .contains_key("up")
+        );
+        // A block with no properties is complete the moment it is named.
+        assert!(
+            reg.unwritten("minecraft:stone", &BTreeMap::new())
+                .is_empty()
+        );
     }
 
     #[test]

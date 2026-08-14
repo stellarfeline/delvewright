@@ -134,6 +134,20 @@ impl Assets {
         self.read_json(&format!("data/{ns}/worldgen/biome/{id}.json"))
     }
 
+    /// The Minecraft version this source declares, from the `version.json` a
+    /// client jar carries at its root. `None` for a resource pack or an
+    /// unpacked directory that has none.
+    ///
+    /// This is what tells "the pinned game" apart from "some resource pack", and
+    /// the difference is a difference in what an absent entry MEANS: the pinned
+    /// jar is complete by definition, so a texture it does not have is a defect
+    /// in whatever asked for it, while a pack is entitled to be partial. The
+    /// distinction is decided by the source rather than chosen by the caller.
+    pub fn declared_version(&self) -> Option<String> {
+        let v = self.read_json("version.json")?;
+        v.get("id")?.as_str().map(|s| s.to_string())
+    }
+
     /// Decode `assets/<ns>/textures/<path>.png` to RGBA8 `(width, height, pixels)`.
     ///
     /// An animated texture is a vertical strip of square frames; only the first
@@ -180,6 +194,17 @@ mod tests {
         // A miss is `None`, not an error, and is cached as a miss.
         assert!(a.blockstate("minecraft", "no_such_block").is_none());
         assert!(a.blockstate("minecraft", "no_such_block").is_none());
+    }
+
+    #[test]
+    fn a_source_with_no_version_json_declares_no_version() {
+        let root = tmp("noversion");
+        std::fs::create_dir_all(root.join("assets/minecraft")).unwrap();
+        let a = Assets::open(&root).unwrap();
+        assert_eq!(a.declared_version(), None);
+        std::fs::write(root.join("version.json"), br#"{"id":"1.21.11"}"#).unwrap();
+        let a = Assets::open(&root).unwrap();
+        assert_eq!(a.declared_version().as_deref(), Some("1.21.11"));
     }
 
     #[test]
