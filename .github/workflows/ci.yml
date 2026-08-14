@@ -364,16 +364,17 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: every diagnostic message is a whole sentence
         run: python3 tools/check-diagnostic-messages.py
-      # Every owner decision this repo has written down is bound to the place it
-      # landed, both directions. A `landed` row whose implementation is deleted
-      # or renamed reds here; a decision written into an ADR, an owner-approved
-      # spec's Status, or a dated `(owner …)` rule in CLAUDE.md with no ledger
-      # row also reds. It rides in THIS job rather than a new one on purpose:
-      # a new job needs a new required context, and an advisory gate is a gate
-      # that does not gate (task #31). It also PRINTS the open and unenforced
-      # decisions on every run — those lists are the deliverable, not a warning.
-      - name: every recorded owner decision is bound to where it landed
-        run: python3 tools/check-decisions.py
+      # The decision ledger and its checker used to run here. They are now
+      # gitignored — a ledger of one person's decisions is not a repository
+      # artifact (CLAUDE.md *Privacy in repo artifacts*) — so CI cannot see the
+      # file it would check, and a CI step is not what binds them any more.
+      # `tools/planner-state.sh` does, on `SessionStart` and on
+      # `UserPromptSubmit --if-stale 12`, and it REFUSES by name when either the
+      # ledger or the operating-practice page is absent. That is a weaker gate
+      # than a pull-request red and is stated as such rather than papered over:
+      # a broken binding now surfaces at the first prompt of the session that
+      # broke it instead of on the PR. Nothing in the required-context list
+      # changed — this was a STEP of `docs (local link check)`, never a job.
       # The same document's VERSION HEADER was bound to nothing. It claimed
       # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
       # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body

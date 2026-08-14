@@ -613,7 +613,7 @@ settled and the pieces it needs exist, **you deliver an Artifact and stop.**
 The Artifact tells the **complete story** and walks through **every scene's
 design**, and each scene carries images at **both near view and far view**. Not a
 document with pictures in it — a visual walkthrough, in the medium the owner
-actually reviews in. She does not read long documents (CLAUDE.md PR policy); a
+actually reviews in. She does not read long documents (the review protocol); a
 design she cannot see is a design she cannot approve, and every problem it would
 have caught gets paid for twice once stages 5–6 are written against it.
 

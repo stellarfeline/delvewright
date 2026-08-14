@@ -48,8 +48,8 @@ series later is one entry here, not a new script.
 
 ## Series considered and NOT covered here, and why
 
-- **`DEC-NNNN`** (`docs/decisions.md`; one row per id in a single markdown
-  table; `tools/check-decisions.py` already refuses two rows sharing an id
+- **`DEC-NNNN`** (the local decision ledger; one row per id in a single
+  markdown table; its own checker already refuses two rows sharing an id
   WITHIN one tree). Deliberately not covered by this script: a `DEC-NNNN` is
   an INSERTION into one shared file, not a new file. Two branches racing the
   same next id at the same table location produce an ordinary textual merge
@@ -261,7 +261,7 @@ def main() -> int:
             lines.append(
                 "    Fix: rename ONE of these files to the next number that is "
                 f"free on BOTH this branch and {base}, and update anything that "
-                "cites its old number (cross-references, docs/decisions.md). "
+                "cites its old number (cross-references, the decision ledger). "
                 "Never renumber a file the other side is not touching."
             )
             findings.append("\n".join(lines))
