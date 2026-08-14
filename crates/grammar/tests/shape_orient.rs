@@ -1,6 +1,7 @@
 //! The grammar half of the blockstate diagnostic family: `DW0735` (a state
-//! omitting a shape-carrying property) and `DW0736` (an oriented state filled
-//! into a reoriented scope with no `orientation` guard).
+//! omitting a shape-carrying property), `DW0736` (an oriented state filled into
+//! a reoriented scope with no `orientation` guard) and `DW0737` (a state
+//! omitting any property at all).
 //!
 //! Both are demonstrated red→green on the **real** defect this family was
 //! ruled from: `broken_grate`'s bars. The shipped rule filled a bare
@@ -102,9 +103,84 @@ fn the_shipped_grate_writes_its_connections_and_passes() {
             .palette()
             .iter()
             .any(|s| s.to_string()
-                == "minecraft:iron_bars[east=false,north=true,south=true,west=false]"),
+                == "minecraft:iron_bars[east=false,north=true,south=true,waterlogged=false,west=false]"),
         "the row along Z must connect north/south"
     );
+}
+
+// ---------------------------------------------------------------------------
+// DW0737 — the under-specification defect, of which DW0735 is the hard half
+// ---------------------------------------------------------------------------
+
+/// RED: a state that omits a property whose default is benign for the MODEL is
+/// still a state no reader upstream of a running server can resolve.
+///
+/// `oak_stairs[facing=east]` is the live shape and it is deliberately not a
+/// `DW0735`: `half`, `shape` and `waterlogged` are `variants` properties, so
+/// the game picks one complete model and nothing falls off. What no document
+/// then states is WHICH model — and vanilla recomputes `shape` from the stair's
+/// neighbours on every block update, so the reviewer's render, the navigation
+/// walk and the server can each hold a different stair. The church's roof
+/// shipped four of these for as long as the port existed.
+#[test]
+fn a_state_that_omits_a_property_reds_the_completeness_gate() {
+    let mut program = broken_grate();
+    program.rules.insert(
+        "grate_bars".to_string(),
+        vec![delvewright_grammar::ir::Alternative::new(fill_state(
+            "oak_stairs[facing=east]",
+        ))],
+    );
+    let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
+    let report = gates::judge(&out, gates::Options::default());
+
+    let g = gate(&report, "states-complete");
+    assert!(!g.pass, "{}", g.detail);
+    assert!(g.bound > 0, "the gate bound nothing");
+    assert!(g.detail.contains("DW0737"), "{}", g.detail);
+    assert!(
+        g.detail.contains("half, shape, waterlogged"),
+        "{}",
+        g.detail
+    );
+
+    // ...and the class line holds: this is NOT a shape defect, so the harder
+    // gate stays green. A `DW0737` that also reds `DW0735` would mean the two
+    // are one rule and one of them is redundant.
+    assert!(gate(&report, "shape-complete").pass);
+}
+
+/// GREEN: the same stair with every property written passes, and the corpus it
+/// came from passes with it.
+#[test]
+fn a_fully_written_state_passes_the_completeness_gate() {
+    let mut program = broken_grate();
+    program.rules.insert(
+        "grate_bars".to_string(),
+        vec![delvewright_grammar::ir::Alternative::new(fill_state(
+            "oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+        ))],
+    );
+    let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
+    let report = gates::judge(&out, gates::Options::default());
+    let g = gate(&report, "states-complete");
+    assert!(g.pass, "{}", g.detail);
+    assert!(g.bound >= 4, "bound {} states", g.bound);
+}
+
+/// A bare wall is BOTH: the shape half fires and so does the whole class. This
+/// is what pins `DW0735` as a strict subset rather than a sibling rule.
+#[test]
+fn a_bare_wall_reds_both_halves_of_the_family() {
+    let program = grate_with_bare_bars();
+    let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
+    let report = gates::judge(&out, gates::Options::default());
+    assert!(!gate(&report, "shape-complete").pass);
+    let whole = gate(&report, "states-complete");
+    assert!(!whole.pass);
+    assert!(whole.detail.contains("DW0737"), "{}", whole.detail);
+    // The whole class names every omitted property; the shape half names four.
+    assert!(whole.detail.contains("waterlogged"), "{}", whole.detail);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +241,7 @@ fn the_shipped_grate_selects_the_matching_variant_under_a_turned_box() {
             .palette()
             .iter()
             .any(|s| s.to_string()
-                == "minecraft:iron_bars[east=true,north=false,south=false,west=true]"),
+                == "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]"),
         "the row along X must connect east/west: {:?}",
         out.model
             .palette()

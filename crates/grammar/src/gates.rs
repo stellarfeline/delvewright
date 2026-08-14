@@ -365,6 +365,51 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         },
     });
 
+    // --- Gate: every placed state writes EVERY property it has. -------------
+    //
+    // The whole class `shape-complete` is the hard half of (`DW0737`). Vanilla
+    // fills an omitted property from the block's default state, so a partial
+    // state is legal and the SERVER resolves it correctly; nothing upstream of
+    // the server can. The review image, the navigation walk, the diff a
+    // reviewer reads and the machine gates themselves each have to guess, and
+    // the guesses disagree — which is the whole reason this project renders a
+    // build before believing it. An `oak_stairs[facing=east]` with no `half`
+    // and no `shape` is not "the author meant the default"; it is a stair whose
+    // geometry no document states.
+    //
+    // Same binding as `shape-complete` — the states cells actually use — so a
+    // palette entry a later fill fully overwrote is not held against the piece.
+    let under: Vec<String> = used
+        .iter()
+        .filter_map(|state| {
+            let omitted = registry.omitted_properties(&state.name, &state.properties);
+            if omitted.is_empty() {
+                None
+            } else {
+                Some(format!("{state} omits {}", omitted.join(", ")))
+            }
+        })
+        .collect();
+    gates.push(Gate {
+        id: "states-complete",
+        pass: under.is_empty(),
+        bound: used.len(),
+        detail: if under.is_empty() {
+            format!(
+                "{} placed block state(s), every property of every block written",
+                used.len()
+            )
+        } else {
+            format!(
+                "{}: {} — a state that omits a property means whatever a 1.21.11 server \
+                 decides, and no reader upstream of the server can know which. Write the \
+                 property the design means, including when it is the block's default",
+                delvewright_schem::blocks::DW_STATE_UNDER_SPECIFIED,
+                under.join("; ")
+            )
+        },
+    });
+
     // --- Gate: oriented block states were guarded where the scope turns. ----
     //
     // A reorientation permutes geometry and never rewrites properties

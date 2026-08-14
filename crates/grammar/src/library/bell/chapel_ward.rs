@@ -133,7 +133,7 @@ pub fn chapel_ward() -> Program {
         .param("strip_depth", 9)
         .param("junction_run", 8)
         .param("hearth_run", 8)
-        .role("margin", BlockState::simple("deepslate"))
+        .role("margin", BlockState::with("deepslate", [("axis", "y")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "chapel_ward",

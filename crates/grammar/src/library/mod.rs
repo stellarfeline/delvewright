@@ -332,10 +332,88 @@ fn alt_else(body: Node) -> Alternative {
     Alternative::new(body).when(Cond::Otherwise)
 }
 
-/// One library entry: its stable id and the function that builds it.
-pub type LibraryProgram = (&'static str, fn() -> Program);
+/// One library entry: its stable id, the function that builds it, **and the
+/// expansion it is judged at**.
+///
+/// The last part is why this is a struct rather than the `(id, build)` pair it
+/// was. A program is region-polymorphic — that is the point of a grammar — so
+/// "which region" is not a property of the program. It is a property of the
+/// *entry*: the corpus demonstrates this piece at this size, and that is the
+/// expansion any sweep over the corpus must judge. While it lived in prose
+/// (`grammar.md` §5) and in three hand-written tables in `tests/`, no sweep
+/// could be driven from the registry, so every sweep enumerated its own subset
+/// — 22 of 33 in `tests/library.rs`, 10 of 33 in `tests/idioms.rs`, and
+/// `negated-guard` in neither. Carrying it here makes the omission
+/// unexpressible: a new program cannot reach `PROGRAMS` without saying where it
+/// is judged, and the sweeps iterate `PROGRAMS`.
+pub struct LibraryProgram {
+    /// The stable id `delve-grammar list` prints and `--program` takes.
+    pub id: &'static str,
+    /// Build the program.
+    pub build: fn() -> Program,
+    /// The region the corpus demonstrates it at, `[X, Y, Z]`.
+    pub region: [u32; 3],
+    /// The seed it is demonstrated at.
+    pub seed: u64,
+    /// Which optional gates the entry CLAIMS. `traversable` is a claim that the
+    /// piece is a route, not a licence to skip a check: a piece that is not a
+    /// route has no approach and exit face to join, and asserting one would
+    /// bind the gate to a fiction. The claim is stated per entry rather than
+    /// defaulted so that adding a program is a decision about what it is.
+    pub gates: crate::gates::Options,
+    /// Which corpus this belongs to.
+    pub kind: Kind,
+}
 
-/// **Every program in this library, by id.**
+/// What a library entry IS — a thing to build with, or a thing to learn from.
+///
+/// Carried on the entry rather than inferred from the id. The `idiom-` prefix
+/// looked like the discriminator and is not one: `negated-guard` is a language
+/// example that carries no prefix, and a sweep keyed on the prefix asserted
+/// "that is a cube, not a building" against a program whose whole job is to
+/// fill its box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A piece of the building vocabulary: a zone composes these.
+    Piece,
+    /// A minimal example of one IR construct or technique. It demonstrates;
+    /// it does not have to look like anything.
+    Example,
+}
+
+/// The entry claims no optional gate: not a route, roofs nothing. Commonest.
+const NO_CLAIM: crate::gates::Options = crate::gates::Options {
+    traversable: false,
+    allow_falls: false,
+    reachable_floor: false,
+};
+
+/// A piece a body walks end to end on the level.
+const ROUTE: crate::gates::Options = crate::gates::Options {
+    traversable: true,
+    allow_falls: false,
+    reachable_floor: false,
+};
+
+const fn entry(
+    id: &'static str,
+    build: fn() -> Program,
+    region: [u32; 3],
+    seed: u64,
+    kind: Kind,
+    gates: crate::gates::Options,
+) -> LibraryProgram {
+    LibraryProgram {
+        id,
+        build,
+        region,
+        seed,
+        gates,
+        kind,
+    }
+}
+
+/// **Every program in this library, by id, with the expansion it is judged at.**
 ///
 /// A registry rather than a `match`, for the reason a tool exists at all: a
 /// creator has to be able to *discover* what the back end can build without
@@ -345,53 +423,255 @@ pub type LibraryProgram = (&'static str, fn() -> Program);
 /// The `bell::` zone programs are deliberately absent: a zone is one campaign's
 /// composition of these, not a piece of the general vocabulary, and listing a
 /// campaign's own material as if it were library surface is the "authored
-/// content wearing a primitive's clothes" shape CLAUDE.md names.
+/// content wearing a primitive's clothes" shape CLAUDE.md names. A campaign's
+/// zones declare their own expansions, in the campaign, at
+/// `design/programs/zones.toml`.
 pub const PROGRAMS: &[LibraryProgram] = &[
-    ("ambush-door", ambush_door),
-    ("bait-stand", bait_stand),
-    ("boulder-stair", boulder_stair),
-    ("broken-grate", broken_grate),
-    ("castle", castle),
-    ("causeway", causeway),
-    ("church", church),
-    ("cliff-path", cliff_path),
-    ("disarm-stand", disarm_stand),
-    ("drop-shaft", drop_shaft),
-    ("dumbwaiter", dumbwaiter),
-    ("elite-ground", elite_ground),
-    ("far-side-bar", far_side_bar),
-    ("hearth-ward", hearth_ward),
+    entry(
+        "ambush-door",
+        ambush_door,
+        [11, 5, 13],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "bait-stand",
+        bait_stand,
+        [9, 8, 14],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "boulder-stair",
+        boulder_stair,
+        [9, 6, 27],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "broken-grate",
+        broken_grate,
+        [3, 5, 14],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry("castle", castle, [41, 14, 25], 1, Kind::Piece, NO_CLAIM),
+    entry("causeway", causeway, [7, 10, 9], 1, Kind::Piece, NO_CLAIM),
+    entry("church", church, [15, 16, 30], 1, Kind::Piece, NO_CLAIM),
+    entry(
+        "cliff-path",
+        cliff_path,
+        [3, 6, 30],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "disarm-stand",
+        disarm_stand,
+        [9, 7, 16],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "drop-shaft",
+        drop_shaft,
+        [4, 8, 6],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "dumbwaiter",
+        dumbwaiter,
+        [6, 8, 8],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "elite-ground",
+        elite_ground,
+        [19, 5, 25],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "far-side-bar",
+        far_side_bar,
+        [5, 5, 7],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "hearth-ward",
+        hearth_ward,
+        [8, 6, 14],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
     // The idiom index (`idioms`): one minimal program per technique, plus one
     // composition demonstration. They are here because `delve-grammar list` and
-    // `show` are the only way an author reaches the corpus at all.
-    ("idiom-composition-arcade", idioms::composition_arcade),
-    ("idiom-erosion", idioms::erosion),
-    ("idiom-erosion-graded", idioms::graded_erosion),
-    ("idiom-light", idioms::light),
-    ("idiom-mirror", idioms::mirror),
-    ("idiom-priority", idioms::priority),
-    ("idiom-repetition", idioms::repetition),
-    ("idiom-shape", idioms::shape),
-    ("idiom-skip", idioms::skip),
-    ("idiom-surface-detail", idioms::surface_detail),
-    ("lift-shaft", lift_shaft),
+    // `show` are the only way an author reaches the corpus at all. Their
+    // regions, seeds and route claims are the ones `grammar.md` §2c documents.
+    entry(
+        "idiom-composition-arcade",
+        idioms::composition_arcade,
+        [3, 14, 20],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-erosion",
+        idioms::erosion,
+        [9, 5, 3],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-erosion-graded",
+        idioms::graded_erosion,
+        [9, 13, 3],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-light",
+        idioms::light,
+        [5, 6, 13],
+        1,
+        Kind::Example,
+        ROUTE,
+    ),
+    entry(
+        "idiom-mirror",
+        idioms::mirror,
+        [15, 11, 2],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-priority",
+        idioms::priority,
+        [13, 6, 2],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-repetition",
+        idioms::repetition,
+        [3, 5, 17],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-shape",
+        idioms::shape,
+        [15, 9, 3],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "idiom-skip",
+        idioms::skip,
+        [7, 5, 5],
+        1,
+        Kind::Example,
+        ROUTE,
+    ),
+    entry(
+        "idiom-surface-detail",
+        idioms::surface_detail,
+        [9, 12, 9],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "lift-shaft",
+        lift_shaft,
+        [5, 16, 7],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
     // A corpus example rather than an idiom-index entry (spec-0033 §4.8):
     // every IR construct owes `delve-grammar list` one example, and `none_of`
-    // is a language feature rather than a technique.
-    ("negated-guard", negated_guard::negated_guard),
-    ("rafter-hall", rafter_hall),
-    ("stair-flight", stair_flight),
-    ("store-room", store_room),
-    ("tee-passage", tee_passage),
-    ("temple", temple),
-    ("threshold-motif", threshold_motif),
-    ("watch-bay", watch_bay),
+    // is a language feature rather than a technique. Its region is the one
+    // `tests/idioms.rs` demonstrates the guard holding at.
+    entry(
+        "negated-guard",
+        negated_guard::negated_guard,
+        [5, 4, 12],
+        1,
+        Kind::Example,
+        NO_CLAIM,
+    ),
+    entry(
+        "rafter-hall",
+        rafter_hall,
+        [13, 6, 25],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "stair-flight",
+        stair_flight,
+        [5, 14, 22],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "store-room",
+        store_room,
+        [7, 5, 14],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry(
+        "tee-passage",
+        tee_passage,
+        [5, 5, 12],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry("temple", temple, [13, 14, 21], 1, Kind::Piece, NO_CLAIM),
+    entry(
+        "threshold-motif",
+        threshold_motif,
+        [9, 6, 13],
+        1,
+        Kind::Piece,
+        NO_CLAIM,
+    ),
+    entry("watch-bay", watch_bay, [7, 7, 24], 1, Kind::Piece, NO_CLAIM),
 ];
+
+/// Look one library entry up by its `PROGRAMS` id.
+pub fn entry_by_id(id: &str) -> Option<&'static LibraryProgram> {
+    PROGRAMS.iter().find(|p| p.id == id)
+}
 
 /// Look one library program up by its `PROGRAMS` id.
 pub fn by_id(id: &str) -> Option<Program> {
-    PROGRAMS
-        .iter()
-        .find(|(name, _)| *name == id)
-        .map(|(_, build)| build())
+    entry_by_id(id).map(|p| (p.build)())
 }

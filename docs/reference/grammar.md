@@ -27,9 +27,11 @@ Two library modules exist for the tool and are public for it:
   **measurement** is a number with no threshold, and the two are never mixed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
   `shape-complete` (every placed state writes its shape-carrying `multipart`
-  properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
-  is filled only under identity orientation or a passed `orientation` guard —
-  `DW0736`, §4b), `non-empty`, and opt-in `traversable` and `reachable-floor`.
+  properties — `DW0735`, §4b), `states-complete` (every placed state writes
+  EVERY property the block has — `DW0737`, §4b), `oriented-fills` (an
+  orientation-sensitive state is filled only under identity orientation or a
+  passed `orientation` guard — `DW0736`, §4b), `non-empty`, and opt-in
+  `traversable` and `reachable-floor`.
   Measurements:
   fill, distinct states, standable cells, footprint area/perimeter, silhouette
   complexity, per-block shares, and **reachability** (§4c) — how much of the
@@ -42,6 +44,14 @@ zone programs are deliberately not in it: a zone is one campaign's composition,
 not general vocabulary. The `idiom-*` programs **are** in it, and are neither
 vocabulary nor content — they are the teaching set of §2c, and they are there
 because `list` / `show` is the only way an author reaches the corpus at all.
+
+Each entry carries **the expansion it is judged at** — region, seed, which
+optional gates it claims, and whether it is a piece of the vocabulary or a
+language example. A program is region-polymorphic, so "which region" is not a
+property of the program; it is a property of the entry, and carrying it there is
+what lets a sweep be driven from the registry instead of from a list somebody
+wrote out. `delve-grammar list` prints it, so an author reaching for a piece gets
+its region from the tool rather than from this page.
 
 ## 1. Model
 
@@ -559,8 +569,7 @@ curtain — the entire point of that rule — had been 14 cells of air.
 `tests/library.rs` asserts it over every program in the library with its binding
 count, and `gates::judge` reports the same verdict without exporting.
 
-Two more members of the same spelling rule ride the same sites, gate and
-export refusal both:
+Three more members of the same spelling rule ride the same sites:
 
 - **Shape completeness (`DW0735`).** A placed state must write every property
   named by a `multipart` selector in its block's own blockstate definition
@@ -571,6 +580,21 @@ export refusal both:
   row of isolated posts. When this gate was first run over the corpus it found
   `broken_grate` and `far_side_bar` both painting bare `iron_bars` — every
   grate and every sealed doorway they had ever built.
+- **State completeness (`DW0737`).** The whole class `DW0735` is the hard half
+  of. A placed state must write every property its block has, including the
+  ones whose default is benign for the model. Vanilla fills an omitted property
+  from the block's default state, so a partial state is legal and a running
+  server resolves it correctly — and nothing upstream of the server can: the
+  review render, the navigation walk, the diff a reviewer reads and the machine
+  gates each have to guess, and the guesses disagree with each other and with
+  the game. An `oak_stairs[facing=east]` with no `half` and no `shape` is a
+  stair whose geometry no document states, and vanilla recomputes `shape` from
+  the stair's neighbours on every block update. First run over the corpus, this
+  found fourteen authoring sites across nine of the thirty-three programs — the
+  church's four roof stairs and both its door pairs among them — and fifteen in
+  the drowned-bell zone programs. A gate and not an export refusal: unlike
+  `DW0735` the omission costs no geometry in the emitted template, so what it
+  judges is what was AUTHORED.
 - **Oriented fills (`DW0736`).** A reorientation permutes geometry and never
   rewrites block-state properties, so a literal `facing`/`axis`/connection/
   `rotation` state inside a reoriented scope lands however the scope was
@@ -586,9 +610,46 @@ export refusal both:
   `broken_grate`, `far_side_bar` and `cliff_path` carry theirs as guarded
   inline states (an oriented-role surface is a named gap, §7).
 
-`tests/shape_orient.rs` demonstrates both red→green on `broken_grate`'s bars;
-`tests/library.rs` and `tests/zones.rs` sweep both gates over every library
-program and every bell zone with summed binding counts.
+`tests/shape_orient.rs` demonstrates all three red→green on `broken_grate`'s
+bars; `tests/library.rs` and `tests/zones.rs` sweep them over every library
+program and every bell zone with summed binding counts. `delve-grammar audit`
+(§4d) runs the same sweep over a campaign's own zone programs, which is where a
+zone that has left the engine's copy behind is caught.
+
+## 4d. `audit` — the sweep that makes the gates invoked
+
+`expand` judges the one program an operator names. That left the corpus judged
+only when somebody remembered to walk it, and a campaign's zone programs — the
+artifacts of record — had no caller at all: nine machine gates written over one
+zone read 1 of 9 on the unmodified program with five at zero binding, and then
+stopped running, because nothing invoked them.
+
+```sh
+delve-grammar audit --library                       # the rule library
+delve-grammar audit --campaign-root ../content      # every campaign's zones
+```
+
+It enumerates a corpus, expands every member at the expansion that corpus
+declares, runs the same `gates::judge` `expand` runs, prints a binding count per
+gate over the whole sweep, and writes nothing. It reds when any gate fails, when
+any gate examined zero objects, and when the corpus it was pointed at was empty.
+
+A campaign declares its zones in `design/programs/zones.json`, beside the
+programs it governs: per zone an id, the program file, the region, the seed and
+which optional gates the zone claims. That file exists because a grammar program
+is region-polymorphic — a program alone cannot be expanded, and while the region
+lived in a design page nothing could check a zone program at all. The mapping is
+a bijection: a programs directory with no manifest is a finding, a program file
+no entry names is a finding, and an entry naming no file is a finding. Without
+those three, "add a zone program" and "add a zone program nothing will ever
+check" are the same action.
+
+A zone that is known red is recorded in the pipeline repo's
+`.github/zone-audit-exclusions.json` with the exact diagnostic codes it must fail
+with and the capability gap that keeps it red. The record INVERTS the assertion
+rather than removing it: the zone is still expanded and still judged, and it is a
+finding if it passes, if it fails with a different code, or if it fails with one
+more.
 
 ## 4c. Reachability — how much of the floor a body can get to
 

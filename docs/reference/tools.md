@@ -123,6 +123,7 @@ delve-grammar expand (--program <id> | --file <p.json>) --region XxYxZ -o <dir>
     [--seed N] [--param NAME=VALUE]... [--role ROLE=BLOCKSTATE]...
     [--id <prefab-id>] [--traversable [--allow-falls]] [--reachable-floor]
 delve-grammar coverage [--json <path>]   # which IR constructs no example demonstrates
+delve-grammar audit [--library] [--campaign-root <path>]... [--exclusions <path>]
 ```
 
 **There is no maximum region.** A vanilla structure template holds 48 blocks per
@@ -137,6 +138,20 @@ the IR plus one composition, each documented at a region and seed in
 [`grammar.md`](grammar.md) §2c. `show --program idiom-shape` prints one, and it
 is the fastest way to see how a taper, an erosion mix or a symmetric aperture is
 actually written. Read that block before starting a piece.
+
+`delve-grammar audit` is the sweep: it expands and judges EVERY program of a
+corpus at the expansion that corpus declares, prints a binding count per gate,
+and writes nothing. `--library` walks the rule library, whose registry carries
+each entry's region and seed; `--campaign-root <content repo>` walks every
+`campaigns/<campaign>/design/programs/` there, driven by that campaign's own
+`zones.json` manifest. It reds on a failed gate, on a gate that examined zero
+objects, on a programs directory with no manifest, on a program file the manifest
+does not name, and on a corpus that turned out empty. `--exclusions` takes the
+record of zones that are known red with the exact codes each must fail with; it
+inverts those assertions and never removes them, so a recorded zone that starts
+passing is a finding too. Both repos' CI run it — the pipeline repo's `campaign
+builds` job against the pinned content SHA, and the content repo's `zone
+programs` job against the branch under review, with no paths filter.
 
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". `check` validates structure with no

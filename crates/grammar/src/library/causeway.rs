@@ -147,7 +147,7 @@ pub fn causeway() -> Program {
         .param("berm_gate", 0)
         .param("obstruct", 0)
         .role("stone", BlockState::simple("stone"))
-        .role("water", BlockState::simple("water"))
+        .role("water", BlockState::with("water", [("level", "0")]))
         // --- frame -----------------------------------------------------------
         .rule(
             "ward_plan",

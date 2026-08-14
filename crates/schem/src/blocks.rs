@@ -61,7 +61,7 @@ pub const MC_VERSION: &str = "1.21.11";
 pub const PIN_DATA_VERSION: i32 = 4671;
 
 // ---------------------------------------------------------------------------
-// The blockstate diagnostic family (one model, three rules). Codes are defined
+// The blockstate diagnostic family (one model, four rules). Codes are defined
 // here — the crate every emitter and auditor of a block state already depends
 // on — so the next consumer reuses the rule instead of rewriting the unchecked
 // version (CLAUDE.md, task #70: the rule lived, correct, inside ONE spike).
@@ -76,6 +76,9 @@ pub const DW_SHAPE_OMITTED: &str = "DW0735";
 /// A grammar fill wrote an orientation-sensitive block state into a reoriented
 /// scope with no `orientation` guard pinning it (error).
 pub const DW_ORIENTED_FILL_UNGUARDED: &str = "DW0736";
+/// An authored block state omits a property the block has, so its geometry is
+/// whatever a 1.21.11 server derives and no other reader can know it (error).
+pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
 
 /// The verdict on one block state, judged against the pin **and** the
 /// `DataVersion` of the file that carries it.
@@ -292,6 +295,36 @@ impl BlockRegistry {
             .get(namespaced.as_ref())
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// **Every** property of `name` the state omits, sorted — the `DW0737`
+    /// predicate, and a superset of [`Self::omitted_shape_carrying`].
+    ///
+    /// Vanilla's `BlockState` codec fills an omitted property from the block's
+    /// default state, so a partial state is a legal thing to write and the game
+    /// resolves it correctly. Nothing else can: a renderer, a review image, a
+    /// navigation walk or a diff has to guess, and the guesses disagree with
+    /// each other and with the server. The shape half of that (`DW0735`) drops
+    /// geometry outright and is the harder error; this is the whole class, and
+    /// it is the rule an AUTHORED program is held to — a state whose meaning
+    /// only a running server knows cannot be reviewed before it runs.
+    ///
+    /// Empty for a propertyless block, for a foreign namespace and for an id
+    /// the pin does not know (the unknown-block diagnostics own that case).
+    pub fn omitted_properties(
+        &self,
+        name: &str,
+        properties: &BTreeMap<String, String>,
+    ) -> Vec<String> {
+        let namespaced = namespace(name);
+        let Some(known) = self.blocks.get(namespaced.as_ref()) else {
+            return Vec::new();
+        };
+        known
+            .keys()
+            .filter(|p| !properties.contains_key(*p))
+            .cloned()
+            .collect()
     }
 
     /// The shape-carrying properties a state omits, sorted. Empty when the

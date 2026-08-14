@@ -1,0 +1,54 @@
+{
+  "_": [
+    "Zone programs that are KNOWN red, and the exact diagnostic codes each must fail with.",
+    "",
+    "This file INVERTS an assertion; it never removes one. A recorded program is still",
+    "expanded and still judged, and three things are findings: it passes (the record has",
+    "expired), it fails with a different code (a second defect was hiding behind the first),",
+    "or it fails with one more. A plain skip would be satisfied by the very defect it",
+    "excuses, which is the vacuity mode this project has shipped six times.",
+    "",
+    "Every entry below has ONE cause. An orientation-sensitive block state cannot be a",
+    "palette role: a role binds one state to one name, and a connection, facing or rotation",
+    "property names a WORLD direction that a reorientation does not rewrite. So a zone that",
+    "wants bars or a mounted skull has two moves and both are red. Leave the role bare and",
+    "the state omits its connections (DW0735 isolated post, DW0737 under-specified); write",
+    "the connections into the role and the state lands turned wherever the scope turned",
+    "(DW0736). z3/z4/z6 took the first horn and z1/z2 took the second, which is why the",
+    "same gap shows up under three different codes.",
+    "",
+    "The mechanism that DOES express it — one alternative per orientation under a",
+    "`Cond::Orientation` guard, carrying the state that matches — is inline-only, so",
+    "reaching for it costs the campaign the role surface it restyles the material through.",
+    "grammar.md names the missing surface (an oriented palette role) as a gap. Closing it is",
+    "engine work, and until it lands these five zones stay recorded here rather than being",
+    "hand-turned by whoever notices, because which way a bar faces is a design decision."
+  ],
+  "exclusion": [
+    {
+      "id": "the-drowned-bell-r2/z1-cliff-road",
+      "capability_gap": "an oriented block state cannot be a palette role (`path/corpse` is a skeleton_skull carrying `rotation`)",
+      "expect_codes": ["DW0736"]
+    },
+    {
+      "id": "the-drowned-bell-r2/z2-gate-ward",
+      "capability_gap": "an oriented block state cannot be a palette role (`sally/bar` writes iron_bars connections)",
+      "expect_codes": ["DW0736"]
+    },
+    {
+      "id": "the-drowned-bell-r2/z3-drowned-ward",
+      "capability_gap": "an oriented block state cannot be a palette role (`shortcut/bar` leaves iron_bars bare rather than turned)",
+      "expect_codes": ["DW0735", "DW0737"]
+    },
+    {
+      "id": "the-drowned-bell-r2/z4-chapel-ward",
+      "capability_gap": "an oriented block state cannot be a palette role (`shortcut/bar` leaves iron_bars bare rather than turned)",
+      "expect_codes": ["DW0735", "DW0737"]
+    },
+    {
+      "id": "the-drowned-bell-r2/z6-cistern-deep",
+      "capability_gap": "an oriented block state cannot be a palette role (`sally/bar` and `vent/grate` leave iron_bars bare rather than turned)",
+      "expect_codes": ["DW0735", "DW0737"]
+    }
+  ]
+}

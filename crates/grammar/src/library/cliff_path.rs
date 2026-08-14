@@ -209,11 +209,17 @@ pub fn cliff_path() -> Program {
             vec![
                 alt_when(
                     oriented(Axis::X, Axis::Y, Axis::Z),
-                    fill_block(BlockState::with("skeleton_skull", [("rotation", "8")])),
+                    fill_block(BlockState::with(
+                        "skeleton_skull",
+                        [("powered", "false"), ("rotation", "8")],
+                    )),
                 ),
                 alt_when(
                     oriented(Axis::Z, Axis::Y, Axis::X),
-                    fill_block(BlockState::with("skeleton_skull", [("rotation", "4")])),
+                    fill_block(BlockState::with(
+                        "skeleton_skull",
+                        [("powered", "false"), ("rotation", "4")],
+                    )),
                 ),
             ],
         )

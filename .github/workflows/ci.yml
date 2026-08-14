@@ -627,6 +627,23 @@ jobs:
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
         run: python3 tools/build-every-campaign.py --delvec target/debug/delvec
+      # A campaign's ZONE PROGRAMS are not reached by the step above: they are
+      # the grammar IR a zone's prefab is expanded from, they live under
+      # `design/programs/`, and a campaign that has them may carry no
+      # `world.json` at all yet (the drowned-bell remake is exactly that). So
+      # nothing ran a check against a zone program — the artifact ADR-0018 calls
+      # the record — until this step. It is bound to the same event as the
+      # campaign build: a content re-pin cannot land without it.
+      #
+      # `--library` in the same call because the vocabulary and the zones that
+      # compose it fail together, and one command means one thing to remember.
+      # The exclusions file INVERTS the assertion for zones that are known red;
+      # see its header for why that is not a skip.
+      - name: every zone program expands and judges green
+        run: |
+          cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- \
+            audit --library --campaign-root campaigns \
+            --exclusions .github/zone-audit-exclusions.json
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors

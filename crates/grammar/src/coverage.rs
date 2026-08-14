@@ -408,9 +408,9 @@ pub fn measure(corpus: &[LibraryProgram]) -> Report {
 fn measure_with(corpus: &[LibraryProgram], allowlist: &[(&'static str, &'static str)]) -> Report {
     let mut tally = Tally::default();
     let mut ids = Vec::new();
-    for (id, build) in corpus {
-        ids.push((*id).to_string());
-        tally.program(id, &build());
+    for program in corpus {
+        ids.push(program.id.to_string());
+        tally.program(program.id, &(program.build)());
     }
 
     let exempt: BTreeMap<&str, &str> = allowlist.iter().copied().collect();
@@ -540,11 +540,29 @@ mod tests {
         Program::new("nothing", "all").rule("all", Node::Void)
     }
 
+    /// A corpus entry for a program written by a test. The region and seed
+    /// are the registry's obligation, not this measurement's: coverage reads
+    /// a program's TEXT and never expands it.
+    fn test_entry(id: &'static str, build: fn() -> Program) -> crate::library::LibraryProgram {
+        crate::library::LibraryProgram {
+            id,
+            build,
+            region: [1, 1, 1],
+            seed: 0,
+            gates: crate::gates::Options {
+                traversable: false,
+                allow_falls: false,
+                reachable_floor: false,
+            },
+            kind: crate::library::Kind::Example,
+        }
+    }
+
     /// Every kind reaches the report, and the ids are the ones a reader greps
     /// for. This is the list that would otherwise be hand-kept.
     #[test]
     fn every_construct_kind_appears_in_the_report() {
-        let report = measure(&[("empty", empty)]);
+        let report = measure(&[test_entry("empty", empty)]);
         let ids: Vec<&str> = report.constructs.iter().map(|c| c.id).collect();
         assert_eq!(
             ids.len(),
@@ -560,7 +578,7 @@ mod tests {
     /// corpus small enough to reason about.
     #[test]
     fn a_construct_no_example_writes_is_a_finding_and_a_red() {
-        let report = measure(&[("empty", empty)]);
+        let report = measure(&[test_entry("empty", empty)]);
         assert!(!report.is_pass());
         let skip = report
             .constructs
@@ -619,7 +637,7 @@ mod tests {
                 })],
             )
         }
-        let report = measure(&[("nested", nested)]);
+        let report = measure(&[test_entry("nested", nested)]);
         let bound = |id: &str| report.constructs.iter().find(|c| c.id == id).unwrap().bound;
         assert_eq!(bound("node:skip"), 1, "under mark/reorient/split");
         assert_eq!(bound("cond:cmp"), 1, "under none_of/any");
@@ -651,7 +669,7 @@ mod tests {
                 .rule("all", Node::fill("wall"))
                 .rule("again", Node::fill("wall"))
         }
-        let report = measure(&[("eroded", eroded)]);
+        let report = measure(&[test_entry("eroded", eroded)]);
         let mix = report
             .constructs
             .iter()
@@ -675,7 +693,7 @@ mod tests {
                 },
             )
         }
-        let report = measure(&[("inline", inline)]);
+        let report = measure(&[test_entry("inline", inline)]);
         assert_eq!(
             report
                 .constructs
@@ -691,7 +709,7 @@ mod tests {
     #[test]
     fn an_exemption_excuses_a_zero() {
         let why = "no example writes it yet, and here is why that is acceptable";
-        let report = measure_with(&[("empty", empty)], &[("node:skip", why)]);
+        let report = measure_with(&[test_entry("empty", empty)], &[("node:skip", why)]);
         let skip = report
             .constructs
             .iter()
@@ -719,7 +737,10 @@ mod tests {
     /// corpus demonstrates is a red, not a silent pass.
     #[test]
     fn an_exemption_that_has_been_paid_off_is_a_red() {
-        let report = measure_with(&[("empty", empty)], &[("node:void", "stale reason")]);
+        let report = measure_with(
+            &[test_entry("empty", empty)],
+            &[("node:void", "stale reason")],
+        );
         let void = report
             .constructs
             .iter()
@@ -744,7 +765,10 @@ mod tests {
     /// it behind — is a red on its own, so the allowlist cannot outlive the IR.
     #[test]
     fn an_exemption_for_a_construct_that_does_not_exist_is_a_red() {
-        let report = measure_with(&[("empty", empty)], &[("node:teleport", "invented")]);
+        let report = measure_with(
+            &[test_entry("empty", empty)],
+            &[("node:teleport", "invented")],
+        );
         assert!(!report.is_pass());
         let ghost = report
             .constructs

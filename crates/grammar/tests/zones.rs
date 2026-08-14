@@ -236,7 +236,7 @@ fn every_zone_passes_the_shape_and_orientation_gates() {
         let out = expand_at(&program, region, seed);
         carrying += out.oriented.carrying;
         let report = gates::judge(&out, gates::Options::default());
-        for id in ["shape-complete", "oriented-fills"] {
+        for id in ["shape-complete", "states-complete", "oriented-fills"] {
             let gate = report
                 .gates
                 .iter()

@@ -777,12 +777,24 @@ Symptom → tool:
      to walk around. A red gate writes no `.nbt` (exit 4). **Read the `findings`
      in the report** — a gate that bound to zero objects, or a program that
      declared no anchors, is a finding, not a pass.
+     Three of the always-on gates are about how a block state is SPELLED —
+     `shape-complete` (`DW0735`), `states-complete` (`DW0737`) and
+     `oriented-fills` (`DW0736`). Write every property of every block state you
+     paint, including the ones whose default looks obvious: a state that omits
+     one means whatever a running server decides, and the render you are about
+     to check the piece against cannot know which.
      **Read the `reachability` line too**, which prints whether you asked or not:
      `traversable` joins two ground-level faces and says nothing about the
      storeys above, so a building can pass every gate with half its floor
      stranded. Unreachable floor **under a roof** is a room with no way in, and
      the report gives you the box to go and look at. Unreachable floor open to
      the sky is a roof, and is nobody's defect.
+     If the piece is one of a campaign's **zones**, its program belongs to the
+     campaign: put it in `campaigns/<campaign>/design/programs/` and name it in
+     `zones.json` there with the region, seed and gate claims it is built at.
+     `delve-grammar audit --campaign-root <content repo>` judges every zone a
+     campaign declares, and CI in both repos runs it — a program that directory
+     carries and the manifest does not name is a red.
   5. **Look at it**: `delve-render piece out/<id>.nbt -o shots/`, and compare
      against step 1. The gates prove it is buildable and walkable; they say
      nothing about whether it is the scene you asked for. If the expand wrote a
