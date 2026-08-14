@@ -156,6 +156,26 @@ jobs:
       # A STEP, not a job: every job name here is a required status context.
       - name: the published crates would build standing alone
         run: bash tools/check-publishable.sh
+      # The same crates ship a FRONT PAGE, and it is the only document in this
+      # repo whose reader has never seen this repo. `crates/compiler/README.md`
+      # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
+      # `delvec` page used to open with "The deterministic compiler (spec-0002,
+      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. #388 rewrote
+      # them and nothing stopped that regressing — the rule behind it (CLAUDE.md
+      # *Audience separation in docs*) was held by memory alone. Six unambiguous
+      # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
+      # repo-relative markdown link (crates.io serves the markdown with no
+      # repository around it). It deliberately does NOT check the present-tense
+      # half of the rule — "now"/"still"/"since" are ordinary English and a
+      # checker for them would red on honest prose, which is worse than no
+      # checker. The file set is DERIVED from the manifests (every crate whose
+      # `publish` is not false, through its `readme` key), so a crate that
+      # becomes publishable inherits this with no edit; examining zero pages is
+      # a red. It rides HERE because this is the job that already owns what
+      # crates.io receives. A STEP, not a job: every job name here is a required
+      # status context. Deterministic, offline, stdlib-only python3.
+      - name: no internal reference reaches a crates.io front page
+        run: python3 tools/check-crates-io-readmes.py
 
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for musl,
@@ -350,7 +370,16 @@ jobs:
       # the build moves), and a gate that only rejects "newer than the build" is
       # exactly what let a storybook ship a v1.0 marker through the whole v1.1
       # release green (engine #342). Deterministic, offline, stdlib-only python3.
-      - name: compiler reference version header matches the build (both directions)
+      #
+      # The same script now binds the same constants on the crates.io FRONT
+      # PAGES, over the same derived publishable-crate set the README gate uses
+      # (`tools/lib/publishable.py`). Those pages state the Minecraft version,
+      # the `dsl_version` window and the minimum Rust — the facts a stranger acts
+      # on — and they were bound to nothing, so the next `dsl_version` bump would
+      # have made a published page wrong. Extending the checker that already owns
+      # the question, rather than adding a second one, is deliberate: a parallel
+      # mechanism is the privately-re-implemented-general-mechanism defect.
+      - name: documented versions match the build (reference + crates.io pages)
         run: python3 tools/check-reference-versions.py
       # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
       # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
