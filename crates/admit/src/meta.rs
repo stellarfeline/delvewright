@@ -16,7 +16,8 @@
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
-    Anchor, Connector, GeneratedBy, License, Lighting, PrefabMeta, Region, StructureMeta,
+    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabMeta,
+    Region, StructureMeta,
 };
 
 use crate::light::LightProbe;
@@ -24,22 +25,41 @@ use crate::light::LightProbe;
 /// Write a probe result into `meta`'s `lighting` block, marked as a static
 /// estimate.
 ///
-/// `measured` is present and empty: `delvewright_dsl`'s `Lighting` refuses a
+/// `measured` is present and empty on a measured profile: `Lighting` refuses a
 /// `lit`/`dim`/`dark` profile that does not carry both `measured_min_light` and
 /// `measured`, so omitting it would produce metadata the compiler then rejects.
 /// The value is empty because a static estimate has no measurement date to
 /// state, and `method` says in full that it is not a live probe.
+///
+/// A piece with no walkable floor has nothing to measure, and that is
+/// `unmeasured` — a positive statement that the measurement is owed — carrying
+/// no measurement fields, because a claim and its absence cannot both be true.
 pub fn set_lighting_from_probe(meta: &mut PrefabMeta, p: &LightProbe) {
-    meta.lighting = Lighting {
-        profile: p.profile.to_string(),
-        measured_min_light: p.measured_min_light,
-        measured: Some(String::new()),
-        rationale: None,
-        method: Some(format!(
-            "static block-light BFS estimate (delve-admit): min over {} walkable floor cells; \
-             doorways treated as sealed edge (sky-light=0). NOT a live-server probe; \
-             dark_threshold={}. Re-probe live for borderline pieces.",
-            p.floor_cells, p.dark_threshold
-        )),
-    };
+    let method = Some(format!(
+        "static block-light BFS estimate (delve-admit): min over {} walkable floor cells; \
+         doorways treated as sealed edge (sky-light=0). NOT a live-server probe; \
+         dark_threshold={}. Re-probe live for borderline pieces.",
+        p.floor_cells, p.dark_threshold
+    ));
+    meta.lighting = Some(match (p.profile, p.measured_min_light) {
+        ("dark", Some(m)) => Lighting {
+            profile: LightingProfile::Dark,
+            measured_min_light: Some(m as i64),
+            measured: Some(String::new()),
+            rationale: None,
+            method,
+        },
+        ("lit", Some(m)) => Lighting {
+            profile: LightingProfile::Lit,
+            measured_min_light: Some(m as i64),
+            measured: Some(String::new()),
+            rationale: None,
+            method,
+        },
+        // No floor to stand on, so no minimum to report.
+        _ => Lighting {
+            method,
+            ..Lighting::unmeasured()
+        },
+    });
 }

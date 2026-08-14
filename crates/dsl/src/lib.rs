@@ -26,6 +26,7 @@ pub mod gate;
 pub mod ids;
 pub mod l10n;
 pub mod mclang;
+pub mod prefab;
 pub mod registry;
 pub mod schema;
 pub mod stages;
@@ -59,6 +60,7 @@ pub use l10n::{
     validate_marker_channel, validate_tr_sigil,
 };
 pub use mclang::mc_lang_code;
+pub use prefab::PrefabMeta;
 pub use registry::{
     AnchorRegistry, BlockRegistry, EffectRegistry, EntityRegistry, ItemBackedBlockRegistry,
     ItemRegistry, Lighting, LightingProfile, VendoredAnchorRegistry, VendoredEffectRegistry,
