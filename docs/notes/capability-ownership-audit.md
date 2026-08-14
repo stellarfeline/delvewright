@@ -235,20 +235,22 @@ job (an existing required context — no new job name, so no branch-protection
 deadlock). Four ledger checks; each prints its binding count and **fails on a zero
 binding**, because a gate that matched nothing is vacuous, not a pass.
 
-> **These are the numbers the tool prints, re-measured 2026-08-10** by running
-> `python3 tools/check-capability-ownership.py` on `main` and reading its own
-> `N matched` column. Three of the five rows had drifted below the build (A
-> 11→13, D 7→6, E 10→11) — a hand-copied binding count is exactly the unbound
-> fact this table exists to prevent, so read it as a snapshot and re-run the
-> tool rather than quoting the row.
+> **This table is checked against the build, not copied from it.**
+> `tools/check-capability-ownership.py` reads each row's number and reds when it
+> disagrees with what the check binds, naming the row and both figures. A
+> hand-copied binding count is exactly the unbound fact this table exists to
+> prevent, and three of these five rows had sat below the build with nothing
+> able to say so; the cross-check is what makes the row a claim rather than a
+> decoration. It states how many rows it examined, and a row it cannot find is
+> a failure rather than a silent skip.
 
 | Check | Binds today |
 |---|---|
-| A — every `summon minecraft:interaction`, keyed by enclosing fn | **13** sites (was 9, then 11; the shortcut wrong-side lift added `ws_arm_fns`) |
-| B — every compiler-baked player-facing English string | 3 constants (was 5; spec-0029 closed two) |
+| A — every `summon minecraft:interaction`, keyed by enclosing fn | 13 sites |
+| B — every compiler-baked player-facing English string | 3 constants (spec-0029 moved two behind `dsl::chrome`) |
 | C — DSL structs declared separately with an identical field set | 2 groups |
-| D — cross-cutting modifier absent from some variants of a tagged enum | **6** (enum, field) pairs (was 6, then 8; `QuestEffect.happening` left the ledger at spec-0031 — see finding 12, which is still open) |
-| E — every `Vec<QuestEffect>` bundle is reachable by some enumeration | **11** `Vec<QuestEffect>` fields |
+| D — cross-cutting modifier absent from some variants of a tagged enum | 6 (enum, field) pairs (`QuestEffect.happening` left the ledger at spec-0031 — see finding 12, which is still open) |
+| E — every `Vec<QuestEffect>` bundle is reachable by some enumeration | 11 `Vec<QuestEffect>` fields |
 
 Demonstrated firing on the live instances: with `seal_fns` and
 `SEAL_HINT_DEFAULT` removed from the ledger — i.e. simulating `sealed_hint` being

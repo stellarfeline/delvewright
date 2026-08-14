@@ -4,16 +4,6 @@
   — adopt Box-Split Grammars as the prefab back end, drop the Tome-rebuild
   option (B1); craft rules enter as machine diagnostics, not prompt text,
   per the sandbox probe finding same day)
-- **Implemented**: **partially, and shipping** — measured on `main` 2026-08-10.
-  `Status` above records APPROVAL and says nothing about existence; this line is
-  the fact. AC1/AC2 (phase 1, `crates/grammar`, PR #266), AC4 (phase 2a,
-  `.nbt` + provenance through `PrefabRegistry`, PR #277 `cbd322a`; the `mark`
-  primitive, phase 2b, PR #286) and AC5 (`docs/ACKNOWLEDGEMENTS.md`) are
-  discharged. **AC3 is NOT built**: no §4 craft diagnostic exists, and
-  `crates/grammar/tests/staging.rs:1316` still carries a *test-local mirror* of
-  the §4 palette-role budget standing in for it (task #10 obligation A — when
-  the real diagnostic lands, both mirrors are replaced, never left beside it).
-  AC6 (owner contact-sheet viewing) is an owner act and is not asserted here.
 - **ADRs**: 0003 (vanilla-first — this is generation-time tooling, nothing
   ships in delves), 0004 (prefabs+jigsaw — this spec produces the `.nbt`
   library those pools draw from), 0006 (determinism), 0013 (licensing)

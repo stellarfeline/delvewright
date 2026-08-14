@@ -1,17 +1,6 @@
 # spec-0032: Currency, trade, and the recovery stake
 
 - **Status**: Draft (owner design session 2026-08-08)
-- **Implemented**: **compile-time yes, bot tier no** — measured 2026-08-10.
-  `Status` records APPROVAL and nothing about existence (task #76). The currency
-  ledger, the price-as-shared-gate, the shop and the compile-time recovery-stake
-  placement table landed in PR #355 (`58bd060`); `crates/compiler/tests/v10_economy.rs`
-  asserts the placement chain has no runtime search and that the shop is in the
-  `eclipse` affordance authority. **AC9 is NOT met**: nothing in `harness/`
-  exercises die-in-a-lethal-volume → respawn → walk back → collect, because a
-  PackTest fake player cannot die and no bot-tier assertion was written
-  (task #68). Two findings the implementation surfaced are open: a teleport
-  moves a stake marker out from under its own ledger (task #74), and the two
-  affordance authorities can disagree silently (task #73).
 - **ADRs**: 0001 (the compiler emits everything), 0003 (vanilla-first)
 - **Depends on**: spec-0031 (runtime state; the `on_death` effect root; the
   region, effect and teleport verbs)
