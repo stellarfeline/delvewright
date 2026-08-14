@@ -2244,6 +2244,14 @@ Gates:
 
 ## 5c. Zone programs — the vocabulary composed
 
+> **Where `REMAKE` is.** Every `REMAKE §n` citation in this file and in
+> `crates/grammar/src/library/bell/` names
+> `campaigns/the-drowned-bell/REMAKE.md` in the **content** repo
+> (`delvewright-campaigns`), which a dev checkout reaches through the
+> `campaigns/` symlink at `campaigns/campaigns/the-drowned-bell/REMAKE.md`.
+> §3 is the zone list, §4 the lettered staging catalogue (K, R, O, W, …),
+> §7 the engine prerequisites.
+
 `library::bell::{barrow_shore, cliff_road, gate_ward, drowned_ward,
 chapel_ward, hall_keep, cistern_deep, bell_tower}` are the drowned-bell remake's
 **zone programs** (REMAKE §3;
