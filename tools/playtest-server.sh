@@ -70,7 +70,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-rcon() { docker exec "$NAME" rcon-cli --password "$RCON_PW" "$@"; }
+# Checked by default (tools/lib/rcon.sh, task #70): a staging command the server
+# refused must not pass for one that worked. `rcon_raw` is the unjudged form, for
+# the one call whose failure is genuinely uninteresting.
+# shellcheck source=tools/lib/rcon.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/tools/lib/rcon.sh"
+DW_RCON_ARGS=(--password "$RCON_PW")
+rcon() { dw_rcon "$NAME" "$1"; }
+rcon_raw() { dw_rcon_probe "$NAME" "$1"; }
 
 if [ "$cmd" = "status" ]; then
   docker ps --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
@@ -166,7 +173,7 @@ OBJECTIVES="$(rcon "scoreboard objectives list")"
 [[ $OBJECTIVES == *"dw."* ]] || die "no dw.* objectives — datapack not loaded"
 NPC_PROBE="$(rcon "execute if entity @e[tag=dw_npc]")"
 [[ $NPC_PROBE == *"Test passed"* ]] || die "no dw_npc entities found"
-rcon "scoreboard objectives setdisplay sidebar" >/dev/null || true
+rcon_raw "scoreboard objectives setdisplay sidebar" >/dev/null || true
 
 PACK_NOTE="no resource pack in this build"
 if [ -f "$OUT_DIR/resourcepack.zip" ]; then

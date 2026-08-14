@@ -51,13 +51,113 @@ jobs:
       - uses: ./.github/actions/checkout-content
       # rust-toolchain.toml pins the channel + clippy/rustfmt components,
       # which rustup on the runner installs automatically.
+      #
+      # Two workspaces since `crates/render` was excluded from the root one
+      # (/Cargo.toml): each needs its own target dir cached, or the render steps
+      # below recompile wgpu from scratch on every run.
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            crates/render
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
+      # spec-0033 §4.7. `prefab-procedure.md` §3 sends an author to the corpus
+      # rather than to the schema, so an IR construct no example writes does not
+      # exist in practice — which was measured by hand once and would otherwise
+      # never be measured again.
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited. As a step it
+      # gates from the moment it merges.
+      #
+      # BINDING — the review question CLAUDE.md asks of every gate ("what calls
+      # this, and what happens if someone does the guarded thing without calling
+      # it?") has two answers here, and neither is a doc line:
+      #   * an IR change cannot COMPILE past it. The construct list is assigned
+      #     by exhaustive matches over `Node`/`Cond`/`Paint`
+      #     (`crates/grammar/src/coverage.rs`), so a new variant reds `cargo
+      #     build`, `clippy`, `test` and this step alike until it is classified,
+      #     and it then begins life at zero bindings.
+      #   * a CORPUS change cannot be pushed past it. The same assertion is a
+      #     `#[test]` in that module, so it runs inside `cargo test --workspace`
+      #     above as well as here. This step exists on top of the test because a
+      #     table is what a reader acts on and an assertion message is not.
+      # `if: always()` so the table reaches the log even when an unrelated test
+      # above went red.
+      - name: grammar demonstration coverage (no IR construct is undemonstrated)
+        if: always()
+        run: cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- coverage
+
+      # `crates/render` is its own workspace so that its git dependency stops
+      # being a precondition for every cargo command in the repo (/Cargo.toml).
+      # Excluding it from `--workspace` would have taken its coverage with it, so
+      # the same three checks run against its manifest — this is the ONLY place in
+      # CI that builds the render crate, and the only place that needs its
+      # dependency. `fmt` first: rustfmt resolves nothing, so a formatting error
+      # reds without waiting on a network reach.
+      - name: cargo fmt --check (render workspace)
+        run: cargo fmt --manifest-path crates/render/Cargo.toml --all -- --check
+      # The one git fetch in this repo's CI, in a step that says so. Nucleation is
+      # pinned by rev, so a warm rust-cache satisfies this without touching the
+      # network at all (measured: 0.47s and zero `Updating git repository` lines
+      # against a populated db); a cold cache clones 227 MB. Either way it happens
+      # HERE, named, and never inside a step named for clippy or for a test —
+      # which is what a docs-only PR hit as a raw TLS error in a step called
+      # "build the hello-world delve output" (#388).
+      - name: fetch — the render workspace's pinned git dependency
+        run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
+      # BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS).
+      # `--offline` is what makes the fetch step above load-bearing: if it did not
+      # populate the cache, these red immediately instead of quietly re-fetching
+      # and leaving the job as exposed as it was while green.
+      - name: cargo clippy -D warnings (render workspace)
+        run: |
+          cargo clippy --locked --offline --manifest-path crates/render/Cargo.toml \
+            --all-targets -- -D warnings
+      - name: cargo test (render workspace)
+        run: cargo test --locked --offline --manifest-path crates/render/Cargo.toml
+      # The viewer's interactive layer is JavaScript, so `cargo test` cannot run
+      # it — and for as long as that was the whole story the camera had NO
+      # executable coverage at all. A and D shipped swapped; the mapping was
+      # reported wrong a second time by the owner, from her own hands, because
+      # every check this repo had could still be green with the page unwalkable.
+      # These tests press keys and check where the body ends up. Stdlib `node
+      # --test`, no dependencies and no browser, so it is a step in the job that
+      # already builds this crate rather than a new required context (renaming or
+      # adding one is a three-part change — see required-status-checks.txt).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: the viewer's key and mouse mapping does what it says (node --test)
+        run: node --test crates/render/tests/controls.test.mjs
+      # task #52 (owner directive 2026-08-07): authored JSON has ONE canonical
+      # form, so an insertion is a one-line diff instead of a whole-file rewrite
+      # — a three-key insertion into a non-canonical zh-cn sidecar once produced
+      # a 103-insertion/100-deletion diff. `delvec fmt --check` is the `cargo fmt
+      # --check` half of that; the formatter itself is what stops authors
+      # hand-sorting (docs/reference/compiler.md §9).
+      #
+      # A STEP, not a job: every job name here is a required status context, and
+      # a new one is advisory until branch protection is edited — which is the
+      # shape CLAUDE.md rejects. As a step it gates from the moment it merges.
+      #
+      # The roots are named explicitly rather than `.`: `crates/compiler/data/`
+      # is harvested game registries with their own generator contract, and
+      # `campaigns/` is a pinned checkout of another repository (its own CI is
+      # where its files are gated). `fmt` exits 1 if these paths ever match zero
+      # files (DW0774), so a renamed fixture directory reds here instead of
+      # turning this into a green no-op.
+      - name: authored JSON is in canonical form (delvec fmt --check)
+        run: |
+          cargo run --locked -q -p delvec --bin delvec -- fmt --check \
+            crates/dsl/fixtures \
+            crates/compiler/tests/fixtures \
+            crates/compiler/examples
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
@@ -70,6 +170,26 @@ jobs:
       # A STEP, not a job: every job name here is a required status context.
       - name: the published crates would build standing alone
         run: bash tools/check-publishable.sh
+      # The same crates ship a FRONT PAGE, and it is the only document in this
+      # repo whose reader has never seen this repo. `crates/compiler/README.md`
+      # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
+      # `delvec` page used to open with "The deterministic compiler (spec-0002,
+      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. #388 rewrote
+      # them and nothing stopped that regressing — the rule behind it (CLAUDE.md
+      # *Audience separation in docs*) was held by memory alone. Six unambiguous
+      # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
+      # repo-relative markdown link (crates.io serves the markdown with no
+      # repository around it). It deliberately does NOT check the present-tense
+      # half of the rule — "now"/"still"/"since" are ordinary English and a
+      # checker for them would red on honest prose, which is worse than no
+      # checker. The file set is DERIVED from the manifests (every crate whose
+      # `publish` is not false, through its `readme` key), so a crate that
+      # becomes publishable inherits this with no edit; examining zero pages is
+      # a red. It rides HERE because this is the job that already owns what
+      # crates.io receives. A STEP, not a job: every job name here is a required
+      # status context. Deterministic, offline, stdlib-only python3.
+      - name: no internal reference reaches a crates.io front page
+        run: python3 tools/check-crates-io-readmes.py
 
   # ADR-0017: the release shelf must stay buildable as the repo grows, and the
   # way it silently stops is a new dependency that does not compile for musl,
@@ -225,7 +345,7 @@ jobs:
         run: pip install "mecha==0.104.1" beet
       - name: build the hello-world delve
         run: |
-          cargo run -p delvec --bin delvec -- \
+          cargo run --locked -p delvec --bin delvec -- \
             build crates/dsl/fixtures/valid/hello-world \
             -o out --prefabs campaigns/prefabs
       - name: mecha validates every emitted mcfunction
@@ -244,6 +364,31 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # The step above proves a diagnostic's CODE exists, is documented, is
+      # unique and is asserted by a test. Nothing proved anything about the
+      # SENTENCE, and `delve-grammar expand` refused an author's export with "…
+      # would put a  on disk …" — a dropped noun, sitting across a `\`-newline
+      # continuation so no line of the file contained the gap. It survived every
+      # required status check, because the message is the one part of a
+      # diagnostic nothing ever read. This renders every message the source can
+      # produce — including `crates/render`, a workspace of its own that no
+      # `cargo test` here builds — and refuses a gap in one. It states its
+      # binding count and names every expression it could not render, so a
+      # message out of reach is a line in the log, never a silent pass.
+      # Deterministic, offline, stdlib-only python3.
+      - name: every diagnostic message is a whole sentence
+        run: python3 tools/check-diagnostic-messages.py
+      # The decision ledger and its checker used to run here. They are now
+      # gitignored — a ledger of one person's decisions is not a repository
+      # artifact (CLAUDE.md *Privacy in repo artifacts*) — so CI cannot see the
+      # file it would check, and a CI step is not what binds them any more.
+      # `tools/planner-state.sh` does, on `SessionStart` and on
+      # `UserPromptSubmit --if-stale 12`, and it REFUSES by name when either the
+      # ledger or the operating-practice page is absent. That is a weaker gate
+      # than a pull-request red and is stated as such rather than papered over:
+      # a broken binding now surfaces at the first prompt of the session that
+      # broke it instead of on the PR. Nothing in the required-context list
+      # changed — this was a STEP of `docs (local link check)`, never a job.
       # The same document's VERSION HEADER was bound to nothing. It claimed
       # `delvec 0.1.0`, `dsl 0.8.0` and listed dsl_version 0.2.0..0.8.0 while the
       # build was at delvec 1.1.0 / dsl 0.9.0 and accepted 0.9.0 — with the body
@@ -254,7 +399,16 @@ jobs:
       # the build moves), and a gate that only rejects "newer than the build" is
       # exactly what let a storybook ship a v1.0 marker through the whole v1.1
       # release green (engine #342). Deterministic, offline, stdlib-only python3.
-      - name: compiler reference version header matches the build (both directions)
+      #
+      # The same script now binds the same constants on the crates.io FRONT
+      # PAGES, over the same derived publishable-crate set the README gate uses
+      # (`tools/lib/publishable.py`). Those pages state the Minecraft version,
+      # the `dsl_version` window and the minimum Rust — the facts a stranger acts
+      # on — and they were bound to nothing, so the next `dsl_version` bump would
+      # have made a published page wrong. Extending the checker that already owns
+      # the question, rather than adding a second one, is deliberate: a parallel
+      # mechanism is the privately-re-implemented-general-mechanism defect.
+      - name: documented versions match the build (reference + crates.io pages)
         run: python3 tools/check-reference-versions.py
       # The bot tier's dsl_version allowlist (harness/src/critical-path.ts) must
       # never trail the compiler's own SUPPORTED_DSL_VERSION ceiling
@@ -291,6 +445,85 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # The same merge class one level up from a duplicated row: a NUMBER stated
+      # in prose whose subject the tree enumerates. One branch adds a tenth
+      # teaching technique and moves the count in four places; another, which
+      # never touches the library, adds a paragraph three lines above the index
+      # table opening "Not a tenth technique … the nine below". `git merge-tree`
+      # resolves them with no conflict — different regions of one file — and the
+      # merged page says nine over its own table of ten. Measured on that tree:
+      # `check-doc-dupes`, `check-dw-codes`, `check-reference-versions` and
+      # `check-grammar-ir-compat` are all green, and so is this gate on either
+      # branch ALONE. Bound as a registry of oracles rather than as an idiom
+      # counter, so the next stated count is a row and not a second script
+      # (CLAUDE.md: a capability belongs to the object class it acts on). States
+      # its binding count; a page that has stopped stating its count is a red,
+      # not a pass. Deterministic, offline, stdlib-only python3.
+      - name: every count stated in the reference matches what decides it
+        run: python3 tools/check-stated-counts.py
+      # task #111: `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
+      # picked by listing the directory and writing the next integer. Two new
+      # files never produce a git conflict, so a per-branch "no duplicate number
+      # in this tree" check is green on every branch that collides — the
+      # collision exists only in the UNION of two trees, and nothing computed
+      # that union. PR #361 (`spec-0033-declared-body-traversal.md`, opened
+      # 2026-08-09, left open) and a later PR (`spec-0033-grammar-corpus.md`,
+      # listed `docs/specs/` on a `main` that did not yet have #361's file)
+      # held number 0033 for three days; a human reading PR titles caught it.
+      # This gate fetches `origin/main` (same host `actions/checkout@v4` above
+      # already reached — not a new external dependency) and diffs this
+      # checkout's numbered files against it directly, rather than trusting
+      # that the checked-out tree already IS the merge preview. Deterministic
+      # given that fetch; the script itself takes no further network action.
+      # What it cannot see — another open PR that has not yet merged into
+      # `origin/main` — is stated in the script's own docstring, not buried.
+      # `--depth=1` is CI-ONLY and is correct HERE for a reason that does not
+      # travel: `actions/checkout@v4` already left this a shallow checkout, so
+      # there is no full history to truncate, and one commit is fetched instead
+      # of the branch's whole ancestry (measured against this repository's own
+      # history under CI's merge-preview shape: 1 commit versus 400). Run the
+      # same line in a developer's full clone and it converts that clone — and
+      # every worktree sharing its object store — into a shallow one, after
+      # which merge-base, ahead/behind and every other ancestry answer is a
+      # confident wrong number rather than an error. That is why the gates below
+      # never print this line: they compute the remedy from the repository they
+      # are running in (`tools/lib/gitbase.py`), and a full clone is told to
+      # fetch plainly.
+      - name: fetch origin/main for the numbering-uniqueness gates (CI-only depth)
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - name: no spec or ADR number collides with origin/main after this merges
+        run: python3 tools/check-numbered-doc-uniqueness.py
+      # The same defect one layer down, on a different kind of number. A version
+      # ledger is picked exactly the way a spec number is — list what exists,
+      # write the next one — so two branches take the same number for different
+      # surfaces and both are green. PR #413 wrote `MIRROR_SINCE = "1.1.0"` and
+      # PR #417 wrote `CONTRACT_SINCE = "1.1.0"` into the same new file. Those
+      # two DO conflict textually; the hazard is the resolution, because
+      # unioning both constants under one `1.1.0` compiles, passes clippy, and
+      # ships an engine that accepts a `1.1.0` document written against the
+      # construct it does not implement and silently drops it — ADR-0018 §7's
+      # failure, reintroduced by the fence's own numbering. Covers every version
+      # ledger in the repo (grammar `Program` version, campaign `dsl_version`),
+      # not one crate. Uses the fetch above; no further network action. What it
+      # cannot see, and where `dsl_version`'s anchors are self-naming so its
+      # first rule cannot bind, are both in the script's own docstring.
+      - name: no version number names two surfaces after this merges
+        run: python3 tools/check-version-ledger-uniqueness.py
+      # A required status check answers for the uptime of every host it reaches,
+      # and a git dependency is the reach nothing in cargo's surface lets a job
+      # decline: it is cloned during RESOLUTION of the workspace that declares it,
+      # a workspace resolves all its members, and neither `-p <crate>` nor
+      # `--locked` nor `optional` narrows that (all three measured). So one git
+      # dependency put `cargo run -p delvec` — five required jobs, none of which
+      # build the crate that declared it — behind 227 MB of clone from two
+      # repositories, and a transient TLS failure there reddened `tier 2` on a
+      # docs-only PR (#388). Same class as this job's own `lychee --offline` and
+      # as task #41's single Mojang fetch, now as a gate rather than as three
+      # separate lessons. States its binding count; an allowlisted lock that has
+      # stopped carrying one is a finding too. Deterministic, offline,
+      # stdlib-only python3.
+      - name: no workspace resolves a git dependency it does not quarantine
+        run: python3 tools/check-workspace-git-deps.py
       # Isolation by construction (task #185, validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
@@ -310,6 +543,19 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
+      # A command whose response nobody reads cannot fail. `delve-admit`'s gallery
+      # emitted four legacy camelCase gamerules and a `text_opacity:255b`; 1.21.11
+      # refused `admit:load` and `admit:finish` outright, so the gallery world came
+      # up with no objectives, nothing forceloaded and nothing placed — and every
+      # test was green, because nothing had ever read a reply. The jump-arc rig set
+      # `gamerule fallDamage false` one line above a comment asserting the bot took
+      # no fall damage; the warden pad used `doMobSpawning`/`randomTickSpeed`. This
+      # binds two rules to the tree: a live command site goes through the shared
+      # rejection rule (tools/lib/rcon.{sh,mjs}), and a `gamerule` line names a rule
+      # the PINNED command tree actually has, so it can never drift from ADR-0009.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no command is issued to a server that cannot answer back (task #70)
+        run: python3 tools/check-live-commands.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
       #
@@ -337,6 +583,23 @@ jobs:
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
         run: python3 tools/check-shell-redirect-dirs.py
+      # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
+      # the two ways it grows new surface are not equally safe. A new variant of a
+      # tagged enum is safe — an older engine meets an `"op"` it does not know and
+      # fails loud at serde, and every exhaustive match forces an arm. A
+      # `#[serde(default)]` STRUCT FIELD is not: it rides through every walk
+      # untouched in both directions, so an engine that predates the field
+      # deserialises the document with the field's default, expands, passes every
+      # gate, and writes different geometry with nothing to say about it. That is
+      # what `reorient.mirror` would have done. ADR-0018 §7 answers it with closed
+      # schemas plus a version fence, and neither is worth anything as a
+      # convention: this is what makes "someone added an optional field and did
+      # not fence it" an ordinary red instead of a silently different world two
+      # engines apart. Bidirectional against `grammar.md` §2e, and a version above
+      # the floor must be REFUSED by name in `ir.rs` — a constant nothing enforces
+      # is not a fence. Deterministic, offline, stdlib-only python3.
+      - name: every optional field of the grammar IR is closed or fenced
+        run: python3 tools/check-grammar-ir-compat.py
       # EVERY job here is a required status check (owner decision 2026-08-05; it was
       # three, so `tier 2` — datapack load plus the whole PackTest suite — never
       # blocked a merge). Branch protection matches a required context by its NAME
@@ -372,6 +635,19 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: the /new-delve skill's declared delvec range is true
         run: python3 tools/check-skill-version.py
+      # A trial's rubric answer is a judgement, and a judgement is bounded by the
+      # instrument that took the picture. Trial 0001 answered R1 `partial` for
+      # run 1 and, three paragraphs later, recorded that the renderer had no
+      # camera an author could aim and that this "alone is the whole of R1's
+      # partial". The verdict is what later rounds cite; the disclaimer is not.
+      # Re-photographed square-on from the same delivered bytes, the answer was
+      # `yes` — the record understated its own result for as long as it existed.
+      # So every judged verdict declares `artifact-bound`, or `instrument-bound`
+      # with the blocker NAMED so it can be fixed and the verdict re-taken. It
+      # rides in this job because a new job needs a new required context, and an
+      # advisory gate does not gate. Deterministic, offline, stdlib-only python3.
+      - name: every judged trial verdict declares what bounded it
+        run: python3 tools/check-trial-verdicts.py
       # --offline: check only local/internal links — the ones this repo can
       # actually keep true. This used to be justified by the repo being private;
       # it is PUBLIC, so that premise was false, but the flag is still right for
@@ -454,6 +730,23 @@ jobs:
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
         run: python3 tools/build-every-campaign.py --delvec target/debug/delvec
+      # A campaign's ZONE PROGRAMS are not reached by the step above: they are
+      # the grammar IR a zone's prefab is expanded from, they live under
+      # `design/programs/`, and a campaign that has them may carry no
+      # `world.json` at all yet (the drowned-bell remake is exactly that). So
+      # nothing ran a check against a zone program — the artifact ADR-0018 calls
+      # the record — until this step. It is bound to the same event as the
+      # campaign build: a content re-pin cannot land without it.
+      #
+      # `--library` in the same call because the vocabulary and the zones that
+      # compose it fail together, and one command means one thing to remember.
+      # The exclusions file INVERTS the assertion for zones that are known red;
+      # see its header for why that is not a skip.
+      - name: every zone program expands and judges green
+        run: |
+          cargo run --locked -q -p delvewright-grammar --bin delve-grammar -- \
+            audit --library --campaign-root campaigns \
+            --exclusions .github/zone-audit-exclusions.json
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
@@ -497,9 +790,18 @@ jobs:
         run: bash validation/server-bootstrap-cache.sh
 
       - uses: Swatinem/rust-cache@v2
+      # Built ONCE and handed to the nine build steps below, the same shape the
+      # `campaign builds` job uses. Every one of those steps is named for a
+      # fixture, and a `cargo run` per step let any of them fail for a reason with
+      # nothing to do with its fixture: #388 reddened "build the hello-world delve
+      # output" with a TLS error from cargo's dependency resolution. Resolution is
+      # now one step that says it is the compiler build, and `--locked` forbids it
+      # from re-resolving (and so from reaching the network) at all.
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
       - name: build the hello-world delve output
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/dsl/fixtures/valid/hello-world \
             -o validation/delve-output --prefabs campaigns/prefabs
 
@@ -608,7 +910,7 @@ jobs:
       # the compiler is already built, so there is no new pull and no new compile.
       - name: build the cast-ledger delve output (spec-0020)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/cast-ledger \
             -o validation/delve-output-cast --prefabs campaigns/prefabs
 
@@ -628,7 +930,7 @@ jobs:
       # pull, no new compile.
       - name: build the keep-trial delve output (held-item interact)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/dsl/fixtures/valid/keep-trial \
             -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
 
@@ -647,7 +949,7 @@ jobs:
       # no new compile.
       - name: build the souls-bonfire delve output (spec-0016 §1)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-bonfire \
             -o validation/delve-output-bonfire --prefabs campaigns/prefabs
 
@@ -667,7 +969,7 @@ jobs:
       # here, on the re-summon itself, rather than through a rest.
       - name: build the souls-td-lanes delve output (spec-0016 §6)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-td-lanes \
             -o validation/delve-output-lanes --prefabs campaigns/prefabs
 
@@ -703,7 +1005,7 @@ jobs:
       # no new compile.
       - name: build the lethal-volume delve output (spec-0031)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/lethal-volume \
             -o validation/delve-output-lethal --prefabs campaigns/prefabs
 
@@ -728,7 +1030,7 @@ jobs:
       # pull, no new compile.
       - name: build the teleport-volume delve output (spec-0031)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/teleport-volume \
             -o validation/delve-output-teleport --prefabs campaigns/prefabs
 
@@ -750,7 +1052,7 @@ jobs:
       # compile.
       - name: build the economy delve output (spec-0032)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/economy \
             -o validation/delve-output-economy --prefabs campaigns/prefabs
 
@@ -794,7 +1096,7 @@ jobs:
       # toolserver boot, no new pull, no new compile.
       - name: build the lift delve output (spec-0031 AC9)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/lift \
             -o validation/delve-output-lift --prefabs campaigns/prefabs
 
@@ -841,7 +1143,7 @@ jobs:
 
       - name: build the souls-timed-gate-disarm delve output (task #184)
         run: |
-          cargo run -p delvec --bin delvec -- \
+          target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-timed-gate-disarm \
             -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
 

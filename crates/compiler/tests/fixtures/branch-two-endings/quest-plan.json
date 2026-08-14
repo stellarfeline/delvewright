@@ -1,74 +1,74 @@
 {
-  "dsl_version": "0.8.0",
   "campaign_id": "hello-world",
-  "stage": "quest-plan",
   "content": {
-    "quests": [
-      {
-        "id": "quest/decide",
-        "goal": "Choose whether to hold the gate or bolt for the moor road.",
-        "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
-        "depends_on": [],
-        "mandatory": true,
-        "act": 1
-      },
-      {
-        "id": "quest/bolt",
-        "goal": "Bolt for the road and end the delve early (the abandoned ending).",
-        "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
-        "depends_on": [
-          "quest/decide"
-        ],
-        "mandatory": true,
-        "act": 2
-      },
-      {
-        "id": "quest/hold",
-        "goal": "Hold the gate with the Keeper and walk out the front door.",
-        "area": "area/keep",
-        "npcs": [
-          "npc/keeper"
-        ],
-        "depends_on": [
-          "quest/decide",
-          "quest/bolt"
-        ],
-        "mandatory": true,
-        "act": 2
-      }
-    ],
-    "finale": "quest/hold",
     "branch_points": [
       {
-        "id": "branch-point/gate",
-        "opens_at": "quest/decide",
+        "branches": [
+          {
+            "flags": [
+              "flag/wait"
+            ],
+            "id": "branch/hold",
+            "leads_to": "ending/held"
+          },
+          {
+            "flags": [
+              "flag/flee"
+            ],
+            "id": "branch/bolt",
+            "leads_to": "ending/abandoned"
+          }
+        ],
         "forks_on": [
           "flag/wait",
           "flag/flee"
         ],
-        "branches": [
-          {
-            "id": "branch/hold",
-            "flags": [
-              "flag/wait"
-            ],
-            "leads_to": "ending/held"
-          },
-          {
-            "id": "branch/bolt",
-            "flags": [
-              "flag/flee"
-            ],
-            "leads_to": "ending/abandoned"
-          }
+        "id": "branch-point/gate",
+        "opens_at": "quest/decide"
+      }
+    ],
+    "finale": "quest/hold",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Choose whether to hold the gate or bolt for the moor road.",
+        "id": "quest/decide",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/decide"
+        ],
+        "goal": "Bolt for the road and end the delve early (the abandoned ending).",
+        "id": "quest/bolt",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/decide",
+          "quest/bolt"
+        ],
+        "goal": "Hold the gate with the Keeper and walk out the front door.",
+        "id": "quest/hold",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
         ]
       }
     ]
-  }
+  },
+  "dsl_version": "0.8.0",
+  "stage": "quest-plan"
 }

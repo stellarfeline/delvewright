@@ -82,7 +82,10 @@ pub const MIN_LINE: i64 = 3;
 pub fn store_room() -> Program {
     Program::new("store_room", "stores")
         .role("stone", BlockState::simple("stone_bricks"))
-        .role("barrel", BlockState::with("barrel", [("facing", "up")]))
+        .role(
+            "barrel",
+            BlockState::with("barrel", [("facing", "up"), ("open", "false")]),
+        )
         // The same spruce, without the bands. A different block rather than a
         // different block *state* on purpose: `barrel[open=true]` is the obvious
         // mimic-breath pun and vanilla closes it again the moment the structure

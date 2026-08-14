@@ -1,45 +1,45 @@
 {
   "description": "dialogue effect references an unknown objective",
-  "expect": "DW0122",
   "documents": {
     "dialogue": {
-      "dsl_version": "0.2.0",
       "campaign_id": "hello-world",
-      "stage": "dialogue",
       "content": {
         "dialogues": [
           {
-            "npc": "npc/keeper",
-            "root": "dlg/greeting",
             "nodes": [
               {
                 "id": "dlg/greeting",
-                "text": "Halt, traveler.",
                 "options": [
                   {
-                    "label": "Open the door, please.",
                     "effects": [
                       {
-                        "type": "complete-objective",
-                        "objective": "obj/talk"
+                        "objective": "obj/talk",
+                        "type": "complete-objective"
                       }
-                    ]
+                    ],
+                    "label": "Open the door, please."
                   },
                   {
-                    "label": "Something else.",
                     "effects": [
                       {
-                        "type": "complete-objective",
-                        "objective": "obj/nonexistent"
+                        "objective": "obj/nonexistent",
+                        "type": "complete-objective"
                       }
-                    ]
+                    ],
+                    "label": "Something else."
                   }
-                ]
+                ],
+                "text": "Halt, traveler."
               }
-            ]
+            ],
+            "npc": "npc/keeper",
+            "root": "dlg/greeting"
           }
         ]
-      }
+      },
+      "dsl_version": "0.2.0",
+      "stage": "dialogue"
     }
-  }
+  },
+  "expect": "DW0122"
 }

@@ -21,7 +21,18 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+# `delve-grammar` (spec-0027 §3): the entry point the back end never had. The
+# crate was reachable only from `cargo test`, so "the model authors rules, the
+# expander does geometry, machine gates judge" had nowhere to be run from.
+[[bin]]
+name = "delve-grammar"
+path = "src/main.rs"
+
 [dependencies]
+# The CLI. Same version and derive style as `delve-schem` and `delve-render`.
+# MIT/Apache-2.0.
+clap = { version = "4", features = ["derive"] }
+
 # The grammar program is a typed JSON IR (spec-0027 §3), like every other DSL
 # stage. Both MIT/Apache-2.0.
 serde = { version = "1", features = ["derive"] }

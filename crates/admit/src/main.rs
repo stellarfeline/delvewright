@@ -12,12 +12,12 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use delvewright_admit::allowlist::Allowlist;
-use delvewright_admit::audit::audit;
+use delvewright_admit::audit::{self, audit};
 use delvewright_admit::catalog::CatalogCard;
-use delvewright_admit::diag::{DW_GALLERY, DW_INPUT, DW_TOOLING, Diagnostic};
+use delvewright_admit::diag::{DW_CONTRACT, DW_GALLERY, DW_INPUT, DW_TOOLING, Diagnostic};
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD};
-use delvewright_admit::meta::{Anchor, License, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
 
@@ -43,7 +43,8 @@ struct Cli {
 enum Command {
     /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
     Audit {
-        /// Input structure `.nbt`.
+        /// Input structure `.nbt`, or the `.json` manifest of a zone that ships
+        /// as a tile set — which audits every tile and returns ONE zone verdict.
         nbt: PathBuf,
         /// A JSON allowlist override (replaces the built-in default).
         #[arg(long)]
@@ -210,14 +211,6 @@ fn main() -> ExitCode {
 // -------------------------------------------------------------------------
 
 fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: bool) -> ExitCode {
-    let bytes = match std::fs::read(nbt) {
-        Ok(b) => b,
-        Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
-    };
-    let structure = match Structure::read(&bytes) {
-        Ok(s) => s,
-        Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
-    };
     let allow = match allowlist {
         Some(p) => match std::fs::read_to_string(p)
             .map_err(|e| e.to_string())
@@ -229,7 +222,80 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         None => Allowlist::default_building(),
     };
 
-    let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
+    // The spatial contract's second door (spec-0036 §1c), run before the palette
+    // audit's verdict is printed so that a piece whose blocks disagree with its
+    // own declared spaces cannot be admitted. Bound to `audit` and not to a flag
+    // of its own: `audit` is what CI runs over the prefab library and what the
+    // admission procedure runs on every piece, so a contract that is declared is
+    // a contract that is checked.
+    let mut contract_failed = false;
+    if nbt.extension().and_then(|s| s.to_str()) != Some("json")
+        && let Ok(bytes) = std::fs::read(nbt)
+        && let Ok(structure) = Structure::read(&bytes)
+        && let Ok(Some(meta)) = PrefabMeta::beside_nbt(nbt)
+        && let Some(verdict) = delvewright_admit::spatial::audit(&structure, &meta)
+    {
+        for line in &verdict.enumeration {
+            Diagnostic::warning(DW_CONTRACT, format!("contract: {line}")).print(json);
+        }
+        for finding in &verdict.findings {
+            Diagnostic::warning(DW_CONTRACT, finding.clone()).print(json);
+        }
+        for gate in &verdict.gates {
+            if !gate.pass {
+                contract_failed = true;
+                Diagnostic::error(
+                    DW_CONTRACT,
+                    format!(
+                        "{} FAILED (examined {} object(s)): {}",
+                        gate.id, gate.bound, gate.detail
+                    ),
+                )
+                .print(json);
+            }
+        }
+    }
+
+    // A tile-set manifest audits the whole zone. Handing this command one tile
+    // of a set would audit a fragment and print `"verdict": "pass"` over it,
+    // which is the failure mode this command exists to prevent one layer up.
+    let (rep, diags) = if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
+        match audit_zone(nbt, &allow) {
+            Ok(pair) => pair,
+            Err(e) => return input_err(&e, json),
+        }
+    } else {
+        // ...and pointing it at ONE tile of a set is refused. The verdict would
+        // be correct about that file and would be read as a verdict about the
+        // zone — a gate bound to a fifth of what it is believed to cover, which
+        // is the shape that stays green for a year.
+        match delvewright_schem::split::manifest_claiming(nbt) {
+            Ok(Some(manifest)) => {
+                return input_err(
+                    &format!(
+                        "{} is one tile of the zone described by {} — auditing it would return a \
+                         verdict over one file and read as a verdict over the zone. Audit the \
+                         whole zone: `delve-admit audit {}`",
+                        nbt.display(),
+                        manifest.display(),
+                        manifest.display()
+                    ),
+                    json,
+                );
+            }
+            Ok(None) => {}
+            Err(e) => return input_err(&e, json),
+        }
+        let bytes = match std::fs::read(nbt) {
+            Ok(b) => b,
+            Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
+        };
+        let structure = match Structure::read(&bytes) {
+            Ok(s) => s,
+            Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
+        };
+        audit(&nbt.display().to_string(), &structure, &allow)
+    };
     for d in &diags {
         d.print(json);
     }
@@ -241,11 +307,55 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     } else {
         print!("{out_json}");
     }
-    if rep.is_pass() {
+    if rep.is_pass() && !contract_failed {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(EXIT_FAIL)
     }
+}
+
+/// Audit every tile a manifest names, and return the zone's verdict.
+fn audit_zone(
+    manifest: &Path,
+    allow: &Allowlist,
+) -> Result<(audit::AuditReport, Vec<Diagnostic>), String> {
+    let Some(set) = delvewright_schem::split::read_tile_set(manifest)? else {
+        return Err(format!(
+            "{} is a single-template prefab's metadata, not a tile-set manifest — audit the \
+             `.nbt` beside it",
+            manifest.display()
+        ));
+    };
+    let dir = manifest.parent().unwrap_or(Path::new("."));
+    let mut tiles = Vec::with_capacity(set.parts.len());
+    for part in &set.parts {
+        let path = dir.join(&part.file);
+        let bytes =
+            std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let structure =
+            Structure::read(&bytes).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+        if structure.size != part.size {
+            return Err(format!(
+                "{}: the tile is {}x{}x{} but {} declares {}x{}x{} — the manifest and the tiles \
+                 beside it are not the same export",
+                path.display(),
+                structure.size[0],
+                structure.size[1],
+                structure.size[2],
+                manifest.display(),
+                part.size[0],
+                part.size[1],
+                part.size[2]
+            ));
+        }
+        tiles.push((part.clone(), structure));
+    }
+    Ok(audit::audit_tile_set(
+        &manifest.display().to_string(),
+        set.size,
+        &tiles,
+        allow,
+    ))
 }
 
 struct SocketArgs {
@@ -359,9 +469,15 @@ fn run_anchor(
     if pos.is_none() && region.is_none() {
         return input_err("anchor needs --pos or --region", json);
     }
-    meta.set_anchor(
+    // This command declares one thing: where the anchor is. Which contract
+    // element it lands in is resolved by the exporter from the piece's own
+    // contract, and the dispenser cell and trigger block are hardware the prefab
+    // wired — none of that is something the operator types, so none of it is
+    // this edit's to write, and re-annotating an anchor that already exists
+    // keeps all of it (`PrefabMeta::edit_anchor`).
+    meta.edit_anchor(
         name,
-        Anchor {
+        AnchorEdit {
             pos,
             facing,
             region: region.map(|(from, to)| Region { from, to }),
@@ -411,7 +527,7 @@ fn run_lighting(nbt: &Path, write: bool, dark_threshold: i32, json: bool) -> Exi
             Ok(None) => skeleton_for(nbt, &structure),
             Err(e) => return input_err(&e, json),
         };
-        meta.set_lighting_from_probe(&probe);
+        meta::set_lighting_from_probe(&mut meta, &probe);
         if let Err(e) = write_meta(nbt, &meta) {
             return output_err(&format!("cannot write metadata: {e}"), json);
         }
@@ -495,7 +611,28 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
             Err(e) => return input_err(&format!("{}: {e}", p.display()), json),
         }
     }
-    let tree = gallery::emit(&gallery_id, &cands, cols);
+    // Emission validates every line it wrote against the pinned 1.21.11 command
+    // tree, so a gallery that the server would refuse to load is never written
+    // at all (task #70: four legacy gamerules and an out-of-range byte had been
+    // silently costing `admit:load` and `admit:finish` in their entirety).
+    let tree = match gallery::emit(&gallery_id, &cands, cols) {
+        Ok(t) => t,
+        Err(errors) => {
+            for e in &errors {
+                Diagnostic::error(
+                    DW_GALLERY,
+                    format!(
+                        "emitted command is not valid on Minecraft {}: `{}` — {}",
+                        delvewright_compiler::MC_VERSION,
+                        e.line.trim(),
+                        e.reason
+                    ),
+                )
+                .print(json);
+            }
+            return ExitCode::from(EXIT_OUTPUT);
+        }
+    };
     if let Err(e) = write_tree(out, &tree) {
         Diagnostic::error(DW_GALLERY, format!("cannot write gallery: {e}")).print(json);
         return ExitCode::from(EXIT_OUTPUT);
@@ -618,11 +755,15 @@ fn skeleton_for(nbt: &Path, structure: &Structure) -> PrefabMeta {
         &id,
         structure.size,
         structure.data_version,
+        "delve-admit (external admission)",
         License {
             source: "unknown".to_string(),
             spdx: "UNKNOWN".to_string(),
             note: "set at admission — see catalog card".to_string(),
             provenance: "external admission via delve-admit".to_string(),
+            // Nothing regenerates an ingested piece: there is no program and no
+            // seed, so the row is absent rather than invented.
+            generated_by: None,
         },
     )
 }
