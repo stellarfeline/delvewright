@@ -92,6 +92,7 @@ pub mod compose;
 pub mod coverage;
 pub mod eval;
 pub mod expand;
+pub mod explain;
 pub mod export;
 pub mod gates;
 pub mod geom;
@@ -105,7 +106,11 @@ pub mod split;
 
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
-pub use expand::{Anchor, ExpandError, ExpandOptions, Expansion, Limits, Stats, expand};
+pub use expand::{
+    Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ScopeAt, Stats,
+    expand,
+};
+pub use explain::GuardLeaf;
 pub use export::{
     AnchorMetadata, ExportError, PrefabExport, PrefabMetadata, export_prefab, program_hash,
 };

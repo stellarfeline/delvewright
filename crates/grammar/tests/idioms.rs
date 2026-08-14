@@ -315,7 +315,7 @@ fn repetition_without_its_otherwise_arm_is_a_refusal() {
     )
     .unwrap_err();
     assert!(
-        matches!(&err, ExpandError::NoApplicableRule { symbol } if symbol == "recursed_row"),
+        matches!(&err, ExpandError::NoApplicableRule { symbol, .. } if symbol == "recursed_row"),
         "{err}"
     );
 }
