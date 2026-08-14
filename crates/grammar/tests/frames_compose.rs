@@ -266,16 +266,48 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
             reachable_floor: false,
         },
     );
-    assert!(report.is_pass(), "{:#?}", report.gates);
     let symmetric = report
         .gates
         .iter()
         .find(|g| g.id.contains("symmetric"))
         .expect("the symmetry gate ran");
+    assert!(symmetric.pass, "{}", symmetric.detail);
     assert!(
         symmetric.bound > 0,
         "the symmetry gate examined zero cell pairs — {}",
         symmetric.detail
+    );
+    // This hall's contract is deliberately the smallest one that can carry a
+    // claim: one `open` space, one way out, no floor. Every obligation that has
+    // nothing to look at is therefore RED, not quietly green — closure has no
+    // envelope to examine, no edge runs between two spaces, and no declared
+    // space holds a cell to stand in. That is the spec-0036 §2.9 vacuity rule
+    // doing its job on a fixture that is about the mirror, not about the
+    // building, and asserting it here is what stops the rule being softened the
+    // next time a fixture trips it.
+    let red: Vec<&str> = report
+        .gates
+        .iter()
+        .filter(|g| !g.pass)
+        .map(|g| g.id)
+        .collect();
+    assert_eq!(
+        red,
+        vec![
+            "contract-closure",
+            "contract-edge-proof",
+            "contract-reachability"
+        ],
+        "{:#?}",
+        report.gates
+    );
+    assert!(
+        report
+            .gates
+            .iter()
+            .filter(|g| !g.pass)
+            .all(|g| g.bound == 0),
+        "every red here is a zero binding, not a disagreement about geometry"
     );
 
     // The falsifiable direction: without the reflection the same program is not
