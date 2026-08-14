@@ -479,7 +479,9 @@ fn run_anchor(
             // Which contract element the anchor lands in is a fact about the
             // piece's contract, not something the operator types: `audit`
             // resolves it against the declared contract and writes it back.
-            resolves_to: None,
+            // Everything else an anchor can carry is prefab hardware this
+            // command does not declare.
+            ..Anchor::default()
         },
     );
     if let Err(e) = write_meta(nbt, &meta) {

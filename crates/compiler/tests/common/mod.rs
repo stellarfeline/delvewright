@@ -132,10 +132,11 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// sees is `DW0300` "no matching prefab metadata" — a message that then states,
 /// confidently and wrongly, "this is a prefab-library/naming issue".
 ///
-/// The live case is an engine/content pair mid-flight: `PrefabMeta` is
-/// `deny_unknown_fields`, so an engine that predates a metadata field drops
-/// **every** prefab carrying it. Thirty-seven files, silently, reported as a
-/// naming problem.
+/// A key newer than this engine is no longer one of those cases — the document
+/// has one definition, it keeps what it does not model, and the report is a
+/// `DW0543` warning. What remains is a genuinely malformed file: a wrong-typed
+/// value, an absent required block, a tile-set manifest this delvec cannot
+/// place.
 ///
 /// So this checks it once and says what actually happened. Docs are the weakest
 /// form a lesson can take (CLAUDE.md debug doctrine); a tooling default that
@@ -151,15 +152,25 @@ pub fn prefabs_dir() -> PathBuf {
             // something else.
             return;
         };
-        let diags = reg.load_diagnostics();
+        // Errors only, and the distinction is the point: an ERROR means the
+        // file did not parse and the prefab is absent from the registry, which
+        // is the state that impersonates a naming problem. A warning (`DW0543`,
+        // a key newer than this engine) leaves the prefab loaded and usable, so
+        // it cannot produce that impersonation — and it has its own test, which
+        // states its binding count, in `tests/registry_load.rs`.
+        let diags: Vec<_> = reg
+            .load_diagnostics()
+            .iter()
+            .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+            .collect();
         assert!(
             diags.is_empty(),
             "the prefab library at {} has {} file(s) this delvec cannot parse, so those \
              prefabs are ABSENT from the registry and every fixture binding one will fail \
              as DW0300 \"no matching prefab metadata\" — which is not what went wrong.\n\n\
-             Almost always: the `campaigns/` symlink points at a content checkout NEWER \
-             than this engine (PrefabMeta is deny_unknown_fields, so one unknown field \
-             drops the whole file). Point it at the SHA `versions.toml` [content].sha \
+             Look first at whether the `campaigns/` symlink points at a content checkout \
+             this engine cannot read: a wrong-typed value or an absent required block \
+             drops the whole file. Point it at the SHA `versions.toml` [content].sha \
              pins, which is what CI builds against.\n\n{}",
             dir.display(),
             diags.len(),

@@ -244,8 +244,12 @@ delve-admit catalog validate <card.json ...>
 
 `socket`, `anchor` and `lighting --write` each own one block of the prefab's
 metadata and rewrite the file with everything else — anchors, sockets, licence,
-and the `license.generated_by` row that says what regenerates the `.nbt` —
-byte-for-byte as they found it. They can be run in any order and repeatedly.
+the `license.generated_by` row that says what regenerates the `.nbt`, the
+declared `waterline_y`, and any key this version of the tool does not model — as
+they found it. They can be run in any order and repeatedly. That holds because
+these tools and the compiler share one definition of the document
+([`prefab-procedure.md`](prefab-procedure.md) §9); a tool with its own copy of
+the shape deletes whatever its copy omits, silently, on the way out.
 
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:
