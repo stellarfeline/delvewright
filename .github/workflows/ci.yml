@@ -138,12 +138,18 @@ jobs:
       # where its files are gated). `fmt` exits 1 if these paths ever match zero
       # files (DW0774), so a renamed fixture directory reds here instead of
       # turning this into a green no-op.
+      # `crates/compiler/examples` is NOT in this list, and its absence is the
+      # point: the hello-room generator moved out of it into its own
+      # `prefabs/hello-room-generator` workspace, so the directory no longer
+      # exists and `fmt --check` refuses a path it cannot read. That refusal is
+      # right — a step that shrugged at a missing directory is a step a typo
+      # silences — but it made this a red that only appears once the step above
+      # it goes green, which is the worst place to leave one.
       - name: authored JSON is in canonical form (delvec fmt --check)
         run: |
           cargo run --locked -q -p delvec --bin delvec -- fmt --check \
             crates/dsl/fixtures \
-            crates/compiler/tests/fixtures \
-            crates/compiler/examples
+            crates/compiler/tests/fixtures
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
