@@ -4,10 +4,14 @@
 - **Date**: 2026-08-13
 - **Source**: owner request, 2026-08-13 — re-derive the toolchain shape under the
   dependencies as they are today, not as they were when ADR-0017/0018 were
-  written; DEC-0075 (client jar is a creator prerequisite), DEC-0077 (never
-  trade a user decision for disk space); owner rulings 2026-08-13 (binary size
-  under 100 MB and build time are not concerns; client-jar download is the
-  default and any disk scan is explicit opt-in)
+  written. Owner rulings it rests on: the client jar is a creator prerequisite
+  and visual validation is indispensable (2026-08-13); a download is never
+  re-split to save the creator disk space (2026-08-13); binary size under
+  100 MB and build time are not concerns (2026-08-13); client-jar download is
+  the default and any disk scan is explicit opt-in (2026-08-13); every
+  validation the pipeline needs must be runnable on the creator's own machine,
+  with a source build as the guarantee and binary distribution only an
+  optimisation of it (2026-08-14)
 - **Refines**: ADR-0017 (its §3 revisit trigger has fired), ADR-0018
 - **Constrained by**: ADR-0006 (determinism), ADR-0013 (licence allowlist),
   ADR-0010 (EULA: never redistribute Mojang jars)
@@ -32,10 +36,10 @@ re-checked, and each has moved:
    plus all **5 `#[ignore]`d GPU tests** (`cargo test --test gpu --
    --ignored`: 5 passed in 1.25 s, real Metal adapter, real 1.21.11 client
    jar) — and its `Cargo.lock` then carries **zero** `git+` sources.
-2. **"It needs the EULA-gated client jar."** DEC-0075 rules the creator must
-   have the client jar — visual validation is indispensable. Possession is now
-   a premise, not a blocker; only the *acquisition mechanism* was unsettled
-   (§5).
+2. **"It needs the EULA-gated client jar."** The creator must have the client
+   jar — visual validation is indispensable (owner ruling, 2026-08-13).
+   Possession is now a premise, not a blocker; only the *acquisition
+   mechanism* was unsettled (§5).
 3. **"It needs a GPU/driver stack."** True of **three subcommands** — `piece`,
    `batch`, `fidelity-gate` — the only arms reaching
    `nucleation`/`wgpu` (`grep -ln nucleation crates/render/src/*.rs` →
@@ -51,8 +55,8 @@ Two more premises checked:
   inside `delvec`** (`snapshot` / `blocking-chart`;
   `docs/reference/distribution-size.md` §2). The skill's `delve-render` steps
   say "skip with a note if unavailable" (`SKILL.md`, visual-review step) —
-  a degraded branch DEC-0075 no longer permits, the same shape ADR-0018 §3
-  refused for skins.
+  a degraded branch an indispensable visual channel no longer permits, the same
+  shape ADR-0018 §3 refused for skins.
 - **The size record replicates.** Same commands as `distribution-size.md`, this
   tree, 2026-08-13: stripped release `delvec` 8,756,464 B in 32.3 s (doc:
   8,756,512 B at `main` `374bbfb`); stable toolchain 1,477,376 KB and pinned
@@ -107,15 +111,28 @@ cross-build shelf gate compiles only `delvec`'s own graph
 (`cargo check -p delvec --bin delvec`, `tools/build-release-binaries.sh`), so
 §3's blocker 1 stays out of its reach.
 
-### 3. GPU rendering stays pipeline-internal
+### 3. The GPU arms are built from a checkout, not shipped on the shelf
 
 `piece`/`batch`/`fidelity-gate` remain in `crates/render` (binary
-`delve-render`), built from a checkout, never distributed. Two grounds:
+`delve-render`) and are not part of the distributed archive. This is a
+statement about *distribution*, not about capability: every validation the
+pipeline needs is runnable on the creator's own machine, and the source build
+is what guarantees that — a prebuilt binary is only an optimisation of it
+(owner ruling, 2026-08-14). The skill's Init section is what makes the
+guarantee real: it establishes a complete toolchain before work begins, and
+where the shelf cannot carry an arm, Init builds it from the checkout at the
+step that needs it rather than leaving the step to degrade.
 
-- DEC-0075's indispensable visual channel is fully served CPU: `delvec
-  snapshot`/`blocking-chart` (layout), the `viewer` page (interiors, player
-  POV, real models per §4), and Chunky via `scene`/`panorama` (beauty tier,
-  already out-of-process).
+Two grounds for keeping that split:
+
+- **Nothing on the creator's required path needs a GPU.** `delvec
+  snapshot`/`blocking-chart` (layout) and the `viewer` page (interiors, player
+  POV, real models per §4) are CPU, and Chunky via `scene`/`panorama` is
+  already out-of-process. What genuinely needs the GPU arms is the massing
+  channel — `contact-sheet` composites what `batch` renders — and the fidelity
+  gate; those are steps the creator reaches from a checkout, which the previous
+  paragraph makes unconditional. So the CPU surface is not the whole visual
+  channel — it is the part that ships prebuilt.
 - The shelf's Linux targets are **musl-static** on purpose (no glibc floor),
   and a fully static musl binary cannot `dlopen` a Vulkan loader, which is how
   wgpu reaches a Linux GPU. **Verified on a real Linux host, end to end with
@@ -148,12 +165,16 @@ stronger than the claim above (same note, "Beyond the claim"):
    Debian `musl-dev` empty `libdl.a` was injected by hand. Nothing in the
    release recipe supplies that.
 
-The falsifying branch exists and is **deliberately not decided here**: a
-*dynamically linked* musl build passes the fidelity gate with a PNG
-byte-identical to the glibc one across two distros — so dropping `crt-static`
-does buy Linux GPU rendering, at the price of a binary that no longer starts
-on a machine without musl's loader (the exact property the shelf exists for).
-Whether that trade is acceptable is the owner's call, unmade.
+The falsifying branch was measured and is **decided against**: a *dynamically
+linked* musl build passes the fidelity gate with a PNG byte-identical to the
+glibc one across two distros, so dropping `crt-static` does buy Linux GPU
+rendering — at the price of a binary that no longer starts on a machine without
+musl's loader, which is the exact property the shelf exists for. **`crt-static`
+stays.** The trade is refused because it pays with the shelf's only reason to
+exist and buys something the creator already has by another route: source build
+is the guarantee of completeness (owner ruling, 2026-08-14), so a Linux creator
+who needs the GPU arms builds them, and the archive keeps its
+no-loader-floor property for everyone who does not.
 
 ### 4. The viewer's rendering core is `deepslate` (MIT), not hand-written WebGL
 
@@ -166,7 +187,7 @@ drawing each blockstate as a mean-colour box. An off-the-shelf core exists:
 | licence | MIT (npm metadata + repo) — ADR-0013 allowlist |
 | maintained | npm 0.26.0 published 2026-05-20; repo push same day; 250 stars |
 | deps | `gl-matrix`, `md5`, `pako` |
-| needs client jar | resources are caller-supplied — built from the creator's own jar (DEC-0075), never fetched, never redistributed |
+| needs client jar | resources are caller-supplied — built from the creator's own jar, which is a declared prerequisite, never fetched, never redistributed |
 
 Adopting it replaces the bespoke mesher/renderer with maintained code and
 **raises** fidelity (real block models instead of coloured boxes). The page
@@ -175,22 +196,26 @@ jar-derived resources are embedded, so byte-determinism is unchanged (same
 pinned bytes in → same page out). Costs, named: a jar→resources extraction
 step (the crate already reads the jar as a zip for `blockcolor`); the
 `docs/ACKNOWLEDGEMENTS.md` entry (MIT, verified above) in the adopting PR; and
-a **gate before adoption** — a spike must render the committed prefab fixtures
-at 1.21.11 from jar-derived resources, judged against the current viewer's
-output. If the spike fails, §4 is struck and the bespoke page stands; the rest
-of this ADR does not depend on it.
+a **gate before adoption** — a spike rendering the committed prefab fixtures at
+1.21.11 from jar-derived resources, judged against the current viewer's output.
+The rest of this ADR does not depend on §4 either way.
 
 **The spike has run and passed** (2026-08-13), across eleven prefabs plus a
-49-block torture fixture; the owner's own judgement of the pages is still the
-adoption gate. Three things it established that change this section rather than
-merely confirming it:
+49-block torture fixture, and the owner has judged the pages and ruled for
+adoption (2026-08-14). Three things it established that change this section
+rather than merely confirming it:
 
 - **The suspected failure category was the wrong one.** deepslate is not a plain
   model renderer — `SpecialRenderer.js` covers chests, signs, banners, bells,
   beds, skulls, shulker boxes, conduits, decorated pots and fluids. Of those,
-  only **banners** fail, and for a texture-path reason (it asks for
-  `entity/banner/banner_base`; 1.21.11 ships `entity/banner/base.png`), fixable
-  by a one-line alias in our extractor.
+  only **banners** fail — and the cause is upstream's, not the pinned game's:
+  it requests `entity/banner/banner_base`, a path no Minecraft version has ever
+  shipped. 1.21.11 has `entity/banner_base.png` (cloth plus the pole strip the
+  renderer's own UVs address) at the top level, while `entity/banner/` holds
+  only the 43 pattern textures. Shields carry the identical edit. Fixed by a
+  local patch of the two texture ids, reported upstream, **not forked** (owner
+  ruling, 2026-08-14): we look after our own build and do not commit to
+  maintaining theirs.
 - **Two data sources the client jar cannot supply**, and adoption depends on
   both: a `BlockPropertiesProvider` for **multipart** blocks — obtainable from
   the pinned *server* jar's `--reports` output, generated locally and never
@@ -201,7 +226,9 @@ merely confirming it:
 - **Two capabilities the swap deletes**, named so they are decided rather than
   discovered: biome tint (deepslate's colour table is fixed, so `--biome` and
   the colormap sampling stop affecting the picture) and `--palette`, the
-  jar-free page — acceptable under DEC-0075, but a real loss.
+  jar-free page. Both are accepted (owner ruling, 2026-08-14): biome tint does
+  not carry any judgement this page exists to support, and the jar-free page is
+  redundant once the jar is a declared prerequisite.
 
 Measured cost: vendored bundle 287,920 B (82 KB gzipped, byte-identical across
 repeated builds); pages 320–518 KB against 48–85 KB today; browser load 31 ms at
@@ -259,9 +286,10 @@ else is either a wheel kept in its upstream language or CI-only Python.
 - **Full one-binary including the GPU arms**: blocked three ways on the shelf
   as it stands — verified dlopen failure under `crt-static`, nucleation's C
   build script with no musl cross-compiler in the recipe, and the missing
-  `libdl.a` (§3) — and no creator need requires it once the CPU channel covers
-  DEC-0075. The dynamic-musl variant that would unblock it trades away the
-  no-loader-floor property and awaits an owner ruling.
+  `libdl.a` (§3) — and no creator need requires it, because the source build
+  already guarantees completeness on the creator's machine. The dynamic-musl
+  variant that would unblock it trades away the no-loader-floor property and is
+  refused (§3).
 - **`delve-render` as a second shelf item**: a second distributed binary and a
   second version line (ADR-0016 arms grow) for a tool whose creator-facing
   need §1 just absorbed.
@@ -274,16 +302,19 @@ else is either a wheel kept in its upstream language or CI-only Python.
 - ADR-0017 §3's revisit trigger has fired; on acceptance this ADR supersedes
   that section's exclusion (the rest of ADR-0017 stands).
 - The skill's visual-review step loses its skip-with-a-note branch: with the
-  surface inside `delvec` and the jar a declared prerequisite (DEC-0075),
-  visual review becomes an unconditional step. Same-PR skill/docs sync per the
-  tooling-sync rule; `docs/reference/{tools,distribution-size,compiler}.md`
-  re-measure and re-describe in the implementing PRs.
+  surface inside `delvec` and the jar a declared prerequisite, visual review
+  becomes an unconditional step. What replaces the branch is the skill's Init
+  section, which establishes the toolchain — including a source build of any
+  arm the shelf does not carry — before authoring begins. Same-PR skill/docs
+  sync per the tooling-sync rule;
+  `docs/reference/{tools,distribution-size,compiler}.md` re-measure and
+  re-describe in the implementing PRs.
 - `delvec` grows by the CPU render surface — unmeasured until implemented.
   Binary size under 100 MB and build time are not concerns (owner ruling,
   2026-08-13), so the number is a record, not a gate: the implementing PR
   re-measures into `distribution-size.md` per that file's own convention.
-- The shelf archives stay whole per target: DEC-0077 forbids re-splitting the
-  download to save disk.
+- The shelf archives stay whole per target: a download is never re-split to
+  save the creator disk space (owner ruling, 2026-08-13).
 - PR #392 (viewer) and PR #422 (aimable camera) rebase onto whichever half of
   this lands first. **§4 changes the viewer's emitted-page contract and the
   `SCHEMA` id must bump** — an earlier draft of this ADR asserted the opposite,
@@ -293,17 +324,18 @@ else is either a wheel kept in its upstream language or CI-only Python.
 
 ## Revisit triggers
 
-- The owner rules on `crt-static`: accepting a dynamically-linked musl (or a
-  gnu) Linux shelf target removes one of §3's three blockers and reopens the
-  placement of the GPU arms — the other two (nucleation's C build script, the
-  missing `libdl.a`) would still need their own answers.
+- A Linux shelf target stops being static-musl for a reason unrelated to
+  rendering: that removes one of §3's three blockers and reopens the placement
+  of the GPU arms — the other two (nucleation's C build script, the missing
+  `libdl.a`) would still need their own answers. §3 refuses to make that change
+  *for* the GPU arms; it does not prejudge a change made for another reason.
 - What the verification left open: `x86_64` static musl was exercised with the
   `dlopen` probe only (mechanism is in libc, not the architecture, but the
   full render binary was not built for it), and no real GPU was involved
   anywhere (lavapipe is a software ICD) — driver-specific behaviour is
   unspoken for.
-- §4's spike fails on the 1.21.11 fixtures → strike §4, keep the bespoke page,
-  record the failure beside the spike.
+- Upstream deepslate takes the banner/shield texture ids back to paths the jar
+  supplies → the local patch is dropped rather than carried.
 - Nucleation's registry cadence stops carrying the API this repo needs → the
   separate-workspace quarantine plus `check-workspace-git-deps.py` allowlist
   is the recorded fallback, already proven to work.
