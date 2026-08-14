@@ -344,8 +344,11 @@ the crate that needs it; `tools/check-workspace-git-deps.py` is what keeps it
 confined.
 
 ```
-delve-render piece <nbt|manifest.json> -o <dir>   # deterministic multi-angle set for one prefab
-delve-render batch <prefab-dir> -o <dir>     # the same for a whole library
+delve-render piece <nbt|manifest.json> -o <dir> [--view SPEC]…
+                                             # planned multi-angle set for one prefab, plus any
+                                             #   camera you aim yourself
+delve-render batch <prefab-dir> -o <dir> [--view SPEC]…
+                                             # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
 delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
 delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
@@ -354,6 +357,11 @@ delve-render index <build-dir> -o <file>     # image <-> expect pairs for a revi
 delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
+delve-render viewer <nbt|dir|manifest.json>... -o <page.html> [--title T]
+                                             # ONE interactive page: a camera the reviewer drives,
+                                             # every block drawn from the pinned version's own model
+delve-render palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains]
+                                             # the derived per-blockstate colour/shape table
 ```
 
 Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
@@ -361,16 +369,18 @@ review policy: [`compiler.md` §5](compiler.md).
 
 ### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
 
-Two camera kinds per prefab, and a `<stem>-shots.json` manifest naming every one.
+Three kinds of camera per prefab, and a `<stem>-shots.json` manifest naming every
+one. Two are planned for you; the third you aim.
 
-**The cameras are fixed and cannot be aimed.** Yaw, pitch and field of view
-belong to the shot kind; `--size` and `--textures` are the only knobs the
-command has. `<stem>-shots.json` is the reference for what each one did — it
+**The planned cameras cannot be aimed.** Yaw, pitch and field of view belong to
+the shot kind; `--size` and `--textures` change the pixels and not the
+viewpoint. `<stem>-shots.json` is the reference for what each one did — it
 records kind, yaw, pitch and field of view per shot, and the eye height, on
 every run. The consequence worth planning around: the four exteriors sit at yaw
-45/135/225/315 and `top` looks straight down, so **the set contains no square-on
-elevation of any face**, and the only level camera is the eye camera, which
-stands inside the piece. A facade is only ever seen at a slant.
+45/135/225/315 and `top` looks straight down, so **the planned set contains no
+square-on elevation of any face**, and its only level camera is the eye camera,
+which stands inside the piece. A facade is otherwise only ever seen at a slant;
+`--view` below is the one flag that photographs one flat-on.
 
 **Orbit** (`ext-ne/-se/-sw/-nw`, `top`, `door-<i>`, `anchor-<name>`) fit
 themselves to the model from outside: massing, silhouette, floor plan, where a
@@ -398,6 +408,50 @@ standing cell and offset, the camera point, the facing, whether the cell has a
 floor, and how many open cells lie ahead before the view is stopped (and by
 what). A camera that stepped back is invisible in its own frame, so it is written
 down rather than implied.
+
+**Views** (`--view`, repeatable) are cameras you aim, appended to the planned set
+under a name you choose. A view is a **bearing** plus a **subject box**:
+
+```sh
+delve-render piece out/notre-dame.json -o shots/ \
+    --view name=west-front,face=north \
+    --view name=north-flank,face=west
+```
+
+| Key | Meaning |
+|---|---|
+| `face=` | `north\|south\|east\|west\|up\|down` — square-on at that face of the subject box |
+| `yaw=` | any other bearing, in degrees (`face` and `yaw` are alternatives; one is required) |
+| `of=` | the subject box: `model` (default) or a declared anchor's full name |
+| `name=` | shot name and file stem; defaults to `view-<face>` / `view-yaw<deg>` |
+| `pitch=` | degrees, default 0 — a face view is level |
+| `fov=` | degrees, default 45 (the orbit lens, so a view is comparable with `ext-*`) |
+| `zoom=` | 1 frames the whole framed box; >1 closer, <1 further back |
+| `cutaway=` | `true` strips the top Y layer, as `top` and `anchor-*` do |
+
+A `face=` view frames **that face**, not the whole box, which is what makes it a
+usable elevation of a deep building: the west front of a 31×64×93 cathedral fills
+the frame at `zoom=1` instead of retreating behind ninety blocks of nave. `of=`
+narrows the framed box further, so `face=east,of=anchor/altar` is a close-up of
+one anchor's east side.
+
+This is the only camera in the set that is **square-on at a face**. A building
+whose identity is one elevation — a west front, a gatehouse, a castle's approach
+face — has no picture in the planned set, and the near workaround does not work:
+a level eye camera with a 70° field reaches ≈ `0.7 × distance` above eye height,
+so framing a 20-block front needs ≈26 blocks of standoff, and a forecourt long
+enough to hold it shrinks the building in every orbit frame instead.
+
+A view is refused, before a single frame is rendered, when its spec is malformed,
+when it names a subject the piece does not declare (the error lists the anchors
+that exist), or when its name is already a planned shot's — which would overwrite
+that image (`DW0721`, exit 2). A view that renders as nothing but background is
+reported as an empty frame under `DW0727`, the same code an anchor's blank eye
+shot gets, and says which bearing and zoom produced it. Every run states its view
+binding count, in the summary line and in the manifest, beside the anchor counts.
+
+The manifest records a view's `spec` verbatim along with its face, subject, aim
+point and zoom, so any frame in a review set can be re-asked for exactly.
 
 **On a tiled zone the eye shots are the zone's.** Pass the manifest and the
 tiles are reassembled before anything is planned, so a body stands at the
@@ -476,6 +530,153 @@ bearing, chunk list = the layout's own chunks, and — iff the plan states
 `horizon: ocean` — Chunky's ambient water plane at the compiler's sea level. One
 scene per bearing (`<campaign>_panorama_<bearing>.json`), so four bearings coexist
 in one scene dir.
+
+### `viewer` — the page the reviewer drives · agent builds it, owner decides from it
+
+A still render answers *is the set pretty*. Only a camera the reviewer drives
+answers *what is it like to be in here* — where the way in is, which face the
+party walks on, where the interactables sit, how the interior reads at eye
+height. `viewer` turns one prefab (or a directory of them, with a switcher) into
+**one self-contained `.html`**: no CDN, no external stylesheet, no fetch, so it
+opens from `file://` and survives the strict CSP a Claude Artifact is published
+under. Every byte is inline.
+
+```sh
+delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
+delve-render viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
+```
+
+**The blocks are real blocks.** The page carries the pinned client jar's own
+resources for every blockstate it contains — `blockstates/<id>.json`, the whole
+`parent` chain of every model they name, and every `.png` those models reference,
+all inline — and [deepslate](https://github.com/misode/deepslate) (MIT, vendored
+and embedded) draws them by walking that chain exactly as the game does. So a
+wall is a wall, a stair is a stair, a chest is a chest, a torch has a flame and a
+pane of glass is a pane. Typically a hundred textures and two hundred models for
+a library page.
+
+Two facts the client jar does not carry come from elsewhere. Per-block render
+flags are derived from model geometry and texture alpha. Per-block **default
+state** — what the game reads an unwritten property as — comes from the pinned
+block registry, never from a guess: a bare `minecraft:cobblestone_wall` is a wall
+POST (`up=true`, every side `none`), and "the first legal value" would give
+`up=false` with `east=low`, which is a different block.
+
+`--textures` accepts an unpacked resource directory as well as the jar, which is
+how a page is built with **no client jar present** (CI does exactly this), and
+the seam a creator uses to point the page at their own resource pack.
+
+Rebuild the vendored renderer with `tools/build-deepslate-bundle.sh` (needs
+`npm`; installs into a scratch directory, never into the repo). It pins the
+versions, applies one local patch, and refuses if upstream has moved the ids it
+patches. Two consecutive builds are byte-identical.
+
+**The page is walked.** It opens on a pair of feet and it stays there: `W`/`A`/`S`/`D`
+walk, the mouse looks, `Space` and `C` rise and sink, `Shift` moves faster, arrow
+keys turn a little at a time, right- or middle-drag slides the camera without
+turning, and the wheel moves along the view axis. Nothing is conditional — there
+is no camera state in which a movement key does nothing, and no gesture that
+changes meaning depending on which view was picked. `Orbit the whole piece` is a
+labelled button that swings the camera around the outside for a look at the
+massing; while it is on, dragging orbits, and any movement key puts the reviewer
+back on their feet with the button visibly released.
+
+The whole mapping lives in one file, `crates/render/src/viewer/controls.js`,
+which knows nothing about how the page draws. `crates/render/tests/controls.test.mjs`
+executes it — pressing keys and checking where the body ends up in each of the
+four cardinal facings — and CI runs it as a step of `rust (fmt, clippy, test)`.
+
+**Cameras.** `Ground level`, `Exterior ¾` and `Plan` always exist; every declared
+anchor and jigsaw socket adds a **point of view** — eye at **1.62 blocks** above
+the floor of that cell, the height a standing player actually sees from. A
+socket's facing points *out* of the piece, so its point of view looks the other
+way. The page opens on the first anchor whose name stem is a reserved way in
+(`spawn`, `entry`, `entrance`, `threshold`), else the first socket, skipping any
+whose eye would land inside a block; a prefab that declares none stands the
+reviewer on the ground off the south face, still walkable from the first frame.
+The **cutaway** slider hides everything above a Y level and re-meshes, which is
+how a roofed interior gets read at all.
+
+**Anchors come from `<basename>.json` beside the `.nbt`** — the same metadata
+`piece` already reads, so hand-built prefabs carry them today and a grammar
+snapshot's semantics sidecar loads through the same reader. Point anchors and
+region anchors both draw. **Zero anchors is a stated finding** (`DW0726`), not a
+quiet success: the page says so and offers exterior and plan only.
+
+**A tiled zone is one building.** A zone past the 48-per-axis structure-template
+cap ships as several `.nbt` files and one manifest. `viewer` reassembles it
+before it draws anything, exactly as `piece` does, and a lone tile passed by name
+is refused with the manifest named. Pointed at a directory holding such a set,
+the page shows the zone and never its tiles — a review of a building sliced at a
+packaging boundary passes and means nothing. `piece --view` frames a tiled zone
+the same way and off the same anchors, so an elevation of a zone is asked for
+exactly as an elevation of a single template is.
+
+**`viewer` and `piece --view` answer the same question differently**, and the
+difference is the artifact. Both put a camera where the planned set has none;
+the page hands it to a person for as long as they want it, and a view hands back
+**a PNG and a manifest line** — something a trial record, a review report or a
+byte-comparison can cite. Drive the page to decide what the picture should be;
+declare the view to keep it.
+
+**Fidelity is reported, never assumed.** Three findings, each with its cell
+count, on the page and on stderr:
+
+- `DW0790` — **a blockstate the pinned version does not have**: the id, its
+  model, or one of its textures is absent, so the page draws a placeholder. It is
+  a finding about the picture; whether the same id is a defect in the world is
+  `DW0734`'s question, decided by the template's own `DataVersion`. That is how
+  `minecraft:chain` was found (1.21.11 renamed it `minecraft:iron_chain`): the
+  page cannot draw it, and the pre-pin template carrying it is datafixed on load,
+  so the game does.
+- `DW0791` — **a palette entry that leaves unwritten a property its own
+  blockstate definition selects a model with**. Legal, and a running server
+  places the right block; but the page can only draw it from the version's
+  default state, so what the file says and what the reviewer is looking at are
+  different blocks. Worst on a `multipart` definition, where an unwritten
+  property matches no case at all: a `cobblestone_wall` with nothing written drew
+  a **solid cube** where a wall post stands, and every tool reported it resolved.
+  Measured over the committed library: **31 palette entries across 9 of the
+  36 prefabs**, which is 15 distinct blockstates — every one a wall, a fence,
+  iron bars, a vine, glow lichen, a barrel's `open`, a grass block's `snowy`,
+  a button's `powered` or a fence gate's `in_wall`. Counting every unwritten
+  property instead of only the selecting ones gives 65 entries across 20
+  prefabs; the difference is `waterlogged`, `distance` and `persistent` —
+  real, and invisible.
+- **drawn as nothing, or drawn as the missing-texture checker** — measured in the
+  browser by meshing each blockstate alone, because neither is visible from the
+  resources. The checker case is how a wrong block-entity texture id presents:
+  those ids are asked for by code and never by a model file, so the block renders
+  magenta and nothing is said.
+
+Beside them the page states **what each check examined** — how many blockstates,
+how many textures at what atlas size, how many block-entity texture ids resolved
+against the source, and which Minecraft version. A page that examined nothing
+must not read like a page that examined everything and found nothing.
+
+`DW0792` is the toolchain's own failure rather than the prefab's, and refuses
+(exit 10): the vendored renderer has lost its texture-id patch, or a
+block-entity texture id the emitter asks for is absent from a source that
+declares itself to be the pinned game. Which of those an absence means is
+decided by the source — a jar that says it is 1.21.11 is complete by definition,
+a resource pack is entitled to be partial and gets `DW0790` instead.
+
+**Size.** Geometry is never JSON: the grid is run-length encoded as
+`(palette index u16, run length u16)` and base64'd, so the payload tracks how
+complicated the building is rather than how big its box is, and only exposed
+faces become triangles — in the browser, from that grid, rebuilt through the
+renderer's own `addBlock`. Measured: `keep-gate-room` **368 KiB**;
+`island-mountain` (36×28×42, 42,336 cells) **464 KiB**; all 36 committed prefabs
+on one page **656 KiB**, of which **281 KiB** is the vendored renderer, present
+once however many prefabs a page holds. The ceiling is 16 MB.
+
+Two runs over the same input produce the same page byte for byte (ADR-0006).
+`#model=<id>&preset=<id>&cut=<y>` in the URL opens a specific view, so a link
+points at the thing being discussed.
+
+`palette` writes the derived per-blockstate colour and shape table on its own —
+the input the snapshot chart, the palette-selection tooling and the fidelity gate
+read.
 
 ## 4a. Chunky — the official renderer (external process) · agent + human
 
@@ -579,9 +780,11 @@ Never shipped inside a delve.
 | Tool | Class | Invocation |
 |---|---|---|
 | `tools/block-appearance.py` | agent | `python3 tools/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list \| --screen \| --mix <spec> \| --program <p.json>) [--where EXPR]... [-n N] [--full-cube-only] [--exclude-tinted] [--technical] [--sheet [PATH]] [--seed N] [--jar <client.jar>] [--json]` — **what a block actually looks like, and what a palette made of them reads as**, measured from the pinned client jar. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2, and it is three steps, not one. **Query**: `--id` measures named blocks, `--near` ranks by colour, `--list` dumps the shelf — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. **Screen**: `--screen` plus repeatable `--where` narrows by measured axes in the order given — `full_cube`, `not tinted`, `not gravity`, `L>=0.75` (Oklab lightness), `C_mean<0.02` (how coloured), `texture_range<=0.30` (how loud the pattern), `form=slab`, `family=minecraft:sandstone`. Constraints **eliminate, never score**; the cascade prints its survivor count at every step, and the worked screen takes 1146 blocks to 14. An unknown or malformed facet is refused, never ignored. **Measure the mix**: `--mix 'a=3,b=3,c=4'` (repeatable) or `--program p.json` (every `palette` role AND every inline `fill` material) reports `chroma_mass`, `chromatic_area`, the **named** `loudest_member` with its area share, `dominant_hue`, and `void_area` — `minecraft:air` is a paint member like any other (it is the whole of decay in the grammar), so it is counted as area with no colour rather than dropped, and the mean is renormalised over the solid share. A mean colour is printed and is **never the verdict** — swapping half a sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units while the chromatic area falls 60% → 30%. Every report states its **binding count** (paints examined, mixes with ≥ 2 members) and calls a zero binding a FINDING. **Look**: `--sheet` writes a PNG to `.sheets/palette/` (gitignored) — each survivor tiled and labelled, each mix as its seeded weighted tiling, i.e. the wall at distance zero. No GPU, no Chunky, no world; byte-identical at one seed; a path inside the repo but outside `.sheets/palette` is refused before any measurement runs (ADR-0006/ADR-0013). Per-block JSON carries Oklab `L`, `L_p05`, `L_p95`, `L_sd`, `texture_range`, `C_mean`, `C_p90`, `C_max`, `hue`, plus `family`/`form` from the vendored classification table and the `gravity`/`technical`/`tinted` flags. Ids are checked against `crates/compiler/data/blocks-1.21.11.json`, and **a missing registry is a named refusal naming the fallback** (take role names from the corpus via `delve-grammar show`) rather than a traceback, because this tool is run from checkouts that do not carry `crates/`; technical blocks are excluded unless `--technical`. Jar resolution is `delve-render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar` — **without it the tool refuses**, because an answer given without the textures is the recollection it exists to remove. Stdlib only — no packages to install. What it cannot decide is stated on the artifact: whether a palette reads as its cultural referent, and role fitness (light emission is in no vanilla data branch, so a screen for "pale neutral wall" returns `pearlescent_froglight`) |
+| `tools/extract-block-defaults.py` | agent (rare) | `python3 tools/extract-block-defaults.py <blocks/data.min.json> crates/compiler/data/block-defaults-1.21.11.json` — regenerate the pinned 1.21.11 block **default-state** table from the same `misode/mcmeta` summary its sibling reads: that file keeps the source entry's legal values, this one keeps its default state. It is what lets a reader that is not a running server know what a palette entry leaving properties out actually means. Pins and checks the source SHA-256 and the block count, and refuses a default that is not one of its own property's legal values. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/extract-block-classification.py` | agent (rare) | `python3 tools/extract-block-classification.py <tag/block/data.min.json> <recipe/data.min.json> crates/compiler/data/block-classification-1.21.11.json [--report] [--family-tags] [--loose]` — derives every block's **form** and material **family** from the pinned `misode/mcmeta` 1.21.11 summary; no client jar, so the result is vendored and available in CI. Form comes from vanilla's shape tags (`#slabs`, `#stairs`, `#walls`, `#fences`, `#doors`, `#trapdoors`, `#buttons`, `#pressure_plates`, `#all_signs`), resolved transitively; `pane` has no vanilla tag and is read off the blockstate connection signature, which reaches iron and copper bars too. Family is the connected components of the derivation graph — stonecutting, cooking, and crafting recipes with **exactly one ingredient, and it a block** — which is what keeps a compound from reading as a derivation (`granite` is diorite + quartz). 1166 blocks → 788 families, largest 20 (deepslate). `--report` prints the largest families and the stats; `--family-tags` and `--loose` are measurement switches for the two rules **not** shipped (they give largest families of 87 and 41). Pins and checks both source SHA-256s and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/extract-block-registry.py` | agent (rare) | `python3 tools/extract-block-registry.py <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json` — regenerate the pinned 1.21.11 block-state registry from a `misode/mcmeta` summary. Pins and checks the source SHA-256 and the block count; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
 | `tools/extract-shape-properties.py` | agent (rare) | `python3 tools/extract-shape-properties.py <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json` — regenerate the shape-carrying (multipart) property table behind `DW0735` from the client jar's blockstate definitions. Pins the jar's `version.json` to 1.21.11 / DataVersion 4671 and cross-checks every derived property against the block registry; see `crates/compiler/data/PROVENANCE.md`. Only ever run when ADR-0009's revisit triggers fire |
+| `tools/build-deepslate-bundle.sh` | agent (rare) | `tools/build-deepslate-bundle.sh` — rebuild the renderer the prefab review page embeds (`crates/render/src/viewer/deepslate.bundle.js`). Needs `npm` and network; installs into a scratch directory, never into the repo. Pins deepslate, gl-matrix and esbuild by exact version, applies the local banner/shield texture-id patch with an exact expected hit count, and prints the licence of everything in the bundle. Two consecutive builds are byte-identical, which is what keeps the page byte-identical (ADR-0006). Refuses if upstream has moved the ids it patches — which is the signal to drop the patch rather than widen it |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
 | `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |

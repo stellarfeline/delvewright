@@ -630,6 +630,13 @@ have caught gets paid for twice once stages 5–6 are written against it.
   puts them all on one page, optionally ordered by similarity to this gate's
   reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
   score only ORDERS the page, it never removes a candidate from it.
+  A still image cannot answer where the way in is or how a room reads from
+  standing height; when that is the question,
+  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` gives her one
+  self-contained page she drives — orbit, plan, a player point of view at every
+  anchor, and a cutaway for roofed interiors. Every block is drawn from the
+  pinned version's own model and textures, so a wall is a wall and a stair is a
+  stair. Advisory, human-in-the-loop.
 
 - **Near view** = the scene as a player stands in it. **Far view** = the same
   scene in its surroundings, so staging and sightlines read.
@@ -877,8 +884,17 @@ Symptom → tool:
      which cell each body is standing in: a camera whose anchor cell held a gate
      or a barrel steps back along the facing and says so (`DW0727`), and an
      anchor with no body cell gets no eye shot at all — the run states that count.
-     A flat grey frame is outside the piece, and an eye shot that is *only* that
-     is reported as an empty frame: the anchor is aimed at nothing.
+     A flat grey frame is outside the piece, and a shot that is *only* that
+     is reported as an empty frame: the camera is aimed at nothing.
+     **When the piece is a building whose identity is one elevation** — a west
+     front, a gatehouse, an approach face — add the camera for it: `--view
+     name=west-front,face=north` (repeatable) appends a level, square-on shot of
+     that face of the model, and no planned camera is square-on at a face. `of=`
+     aims it at a declared anchor instead of the whole model; `zoom=` tightens or
+     backs off. Do not build a forecourt and stand an anchor on it: a 70° eye
+     camera reaches only ≈0.7 × its distance above eye height, so it looks
+     through the doorway instead of at the façade, and the forecourt shrinks the
+     building in every exterior frame. Keys: `docs/reference/tools.md` §4.
   6. **Admit it**: the whole `delve-admit` chain (`audit` → `socket` →
      `anchor` → `lighting --write` → `catalog validate`), then `audit` again.
      For a tile set, `audit` and `lighting` both take the **manifest** and
@@ -955,6 +971,24 @@ Symptom → tool:
   human-optional. Say plainly that the score only orders the page: every
   candidate is on it, and the low scorer is present, last — she is the selector,
   the number is not.
+- **She cannot tell from a picture what a prefab is like to be inside**: mention
+  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` — one
+  self-contained HTML page with a camera she drives: exterior, plan, and a player
+  point of view at eye height (1.62) standing at every declared anchor and
+  doorway, plus a cutaway slider that takes the roof off. Blocks are drawn from
+  the pinned client jar's own models and textures, so a wall reads as a wall. A
+  zone that ships as several tiles and a manifest shows as one building. Pass a
+  directory to put a whole library on one page. One line, human-optional.
+
+  **Read its fidelity list before showing her the page.** It names every
+  blockstate the page cannot draw as the game draws it: a block the pinned
+  version does not have (`DW0790`), and — the one that reads as fine and is not
+  — a palette entry that leaves shape-carrying properties unwritten (`DW0791`),
+  where the shape comes from the version's default state rather than from the
+  file. That is a defect in the prefab, not in the page: fix it by writing the
+  property at the value the message names, then rebuild. Showing her a page whose
+  walls are the wrong shape spends her hour on the tool instead of on the
+  building.
 
 ### Localization stage (only when the prompt asks for other languages)
 
