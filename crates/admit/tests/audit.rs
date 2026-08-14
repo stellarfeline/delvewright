@@ -190,11 +190,13 @@ fn report_json_is_machine_readable() {
     assert!(json.ends_with("}\n"));
 }
 
-/// `DW0733`: a block the pinned game does not have.
+/// `DW0733`: a block the pinned game does not have, in a template at the pin.
 ///
-/// The allowlist cannot catch this and the test says why: `minecraft:chain` is
-/// in the built-in allowlist to this day, because an allowlist is a list of
-/// names somebody once approved and nothing re-checks a name against the game.
+/// The allowlist cannot catch this class and the test says why: an allowlist
+/// is a list of names somebody once approved, and nothing re-checks a name
+/// against the game — `minecraft:chain` sat in the built-in allowlist long
+/// after 1.21.11 renamed it (the entry is `iron_chain` now, but that was a
+/// hand edit, which is exactly what cannot be relied on).
 #[test]
 fn a_block_the_pinned_version_does_not_have_fails_the_audit() {
     let s = fixtures::renamed_block_piece();
