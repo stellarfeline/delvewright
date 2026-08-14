@@ -475,8 +475,9 @@ delve-admit audit    out/<id>.json         # again, after the edits
 
 A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
-a zone the first and last lines are the whole of this step, for the reason spelled
-out three paragraphs down.
+a zone every line above names `out/<id>.json`, for the reason spelled out three
+paragraphs down. `socket` is the exception: a socket is carved into one tile's
+bytes, so it is the one step a tiled zone still does not have.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
