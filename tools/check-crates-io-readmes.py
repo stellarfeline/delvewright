@@ -49,8 +49,8 @@ disagree" wants "so"; "still" and "since" appear in any comparison). A checker
 for them would red on correct content — and **a gate that reds correct prose is
 worse than no gate**, because it teaches the people who see it that this
 particular red means nothing, and the next red they ignore is a real one. The
-present-tense rule stays a review obligation and stays `unenforced` in
-`docs/decisions.md`, which is the honest record of it.
+present-tense rule stays a review obligation, recorded as such in the local
+decision ledger, which is the honest record of it.
 
 What IS mechanically checkable about that rule is its obvious leak — an internal
 reference number on a crates.io front page — and that is precisely the six
