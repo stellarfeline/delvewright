@@ -1371,8 +1371,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `waterline_y` is a *declaration checked against* that datum (`DW0344`), never
   an input that moves it. Everything downstream (nav/critical path, boundary
   region, checkpoint storage, POV shots, PackTests) derives from placement and
-  simply follows the new Y. The water-flood model is unaffected: it seeds only
-  from authored `minecraft:water` cells inside placed pieces and never climbs,
+  simply follows the new Y. The flood model is unaffected: it seeds only
+  from authored free-fluid cells inside placed pieces and never climbs,
   so the walk plane one block above the waterline stays dry by construction —
   the world ocean is backdrop, not a flood source.
 - Prefab metadata may declare **`waterline_y`** (optional, integer, local y of
@@ -2284,7 +2284,8 @@ is exercised by the harness bot wherever it rests at a bonfire or talks to an NP
 `move-npc` paths and the critical path are routed by A* over the placed-world
 block data (obstacles per the collision classes above — full-cube solids, 1.5-tall
 fence/wall barriers, closed fence gates for walkers that cannot use them;
-**water-flooded cells are impassable and are never valid floor**; compiler gate
+**fluid-flooded cells — water and lava alike (`assembled::is_fluid`) — are
+impassable and are never valid floor**; compiler gate
 regions are passable). Steps are cardinal, one cell up or down.
 
 **Step cost is terrain-shaped, not distance-only (round 8).** A step costs
