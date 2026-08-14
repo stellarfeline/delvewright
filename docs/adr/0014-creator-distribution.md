@@ -2,7 +2,6 @@
 
 - **Status**: Accepted (implementation deferred to M4)
 - **Date**: 2026-07-31
-- **Source**: owner decision in conversation, 2026-07-31
 - **Refines**: ADR-0012 (product form)
 
 ## Context

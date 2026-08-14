@@ -48,7 +48,7 @@ Reproduce: build the image (`Dockerfile`, bakes `datapack/` with structures from
 binaries. The scan function is generated with:
 `for y in -60: for x in -48..48: for z in -48..48: for each marker: emit "execute if block x y z <marker> run say M …"`.
 
-**Known defect in the recorded method** (found task #70, 2026-08-11, NOT
+**Known defect in the recorded method** (found 2026-08-11, NOT
 corrected here). Both harnesses set `gamerule maxCommandChainLength 2147483647`
 during boot. 1.21.11 renamed that rule to `max_command_sequence_length`, so the
 legacy spelling answers "Incorrect argument for command" and changes nothing —

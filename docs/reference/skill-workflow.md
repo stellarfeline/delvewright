@@ -96,7 +96,7 @@ something it does not check is how a green run ships a broken delve.
 
 | # | Gate | Proves | Does **not** prove |
 |---|---|---|---|
-| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images** (owner correction, 2026-08-07): concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names (owner ruling, 2026-08-11) | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
+| 4b | design-alignment Artifact | that the owner has seen the design **in the medium she reviews in** — the whole story, every scene, near view and far — and said yes. The images at *this* gate are **reference images**: concept art drawn from the scene description before any prefab exists, optionally by `tools/refimg.py`. A render is a candidate prefab imaged by `delve-render`, and belongs to curation later. **The approved images are then committed to `campaigns/<id>/design/`** with the approval date and the approved names | nothing, if it was built from orbit renders. "Is the set pretty" is a different question from "what does a player walking in experience". And **nothing at all in a later session, if the approval was never persisted**: `refimg` writes to a gitignored directory, so an approval left in a published page is unreachable by every round that follows it — which is how a whole campaign round got authored against no design and had to be abandoned |
 | 5 | `delvec analyze` | the quest graph is reachable, no deadlock, darkness is mitigated | that any of it is *good* |
 | 6 | `delvec build` | the DSL compiles to a datapack | nothing about play |
 | 7 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
@@ -119,8 +119,8 @@ compiler emit that shows the reviewer the compiled reality in their medium?* If
 the answer is "they read the DSL", the step is designed wrong, because nobody —
 model or human — reliably compiles DSL in their head.
 
-The same rule has a second edge, from the 2026-08-05 maturity ruling: **a
-structural device enters a campaign only behind a green machine gate.** Never
+The same rule has a second edge: **a structural device enters a campaign only
+behind a green machine gate.** Never
 author it now and prove it later. The owner's QA hour is the scarce resource
 this pipeline exists to protect, and an unproven device spends it on something a
 test should have caught. A design wanting a device whose gate does not exist is
@@ -140,7 +140,7 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 
 ## 6. Tools come in two classes
 
-Owner ruling, 2026-08-02, and it decides how a tool enters this file:
+The class decides how a tool enters this file:
 
 - **LLM-facing tools are workflow steps, not options.** Where the skill says
   "always", skipping it is skipping validation.

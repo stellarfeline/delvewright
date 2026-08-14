@@ -1,8 +1,7 @@
 # Capability ceiling of mod-free (vanilla datapack) gameplay
 
-Reference note for ADR-0003. Written 2026-07-29 when the owner asked how high the
-mod-free ceiling actually is, against a pinned MC 1.21.11 (ADR-0009). Delve designs
-and DSL features must stay inside the "available" column; the "out of reach" list is
+Reference note for ADR-0003: how high the mod-free ceiling reaches, against a
+pinned MC 1.21.11 (ADR-0009). Delve designs and DSL features must stay inside the "available" column; the "out of reach" list is
 the honest price of the vanilla-first decision.
 
 ## Available on 1.21.11 (datapack + resource pack + commands)

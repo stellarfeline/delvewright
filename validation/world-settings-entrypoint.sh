@@ -16,7 +16,7 @@ if [ ! -f "$props" ]; then
 fi
 # First match wins, and `sed` stops by itself rather than being cut off by a
 # reader. It used to be `sed -n "s/^$1=//p" "$props" | head -1`, which is the
-# SIGPIPE+pipefail shape (task #173): `head` exits at line one, `sed` dies of
+# SIGPIPE+pipefail shape: `head` exits at line one, `sed` dies of
 # SIGPIPE, and a pipeline status of 141 becomes the function's. This script sets
 # `set -e` WITHOUT `pipefail`, so that was latent rather than live — which is
 # exactly why it is worth removing. Adding one `set -o pipefail` here would have

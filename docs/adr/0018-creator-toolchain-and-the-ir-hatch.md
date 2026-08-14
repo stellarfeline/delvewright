@@ -2,7 +2,6 @@
 
 - **Status**: Accepted
 - **Date**: 2026-08-07
-- **Source**: owner decisions in conversation, 2026-08-06 / 2026-08-07
 - **Refines**: ADR-0017 (toolchain distribution), ADR-0015 (schema promotion policy)
 - **Constrained by**: ADR-0001 (LLM never writes mcfunction), ADR-0006 (determinism),
   ADR-0007 (content lives outside this repo), ADR-0012 (product form)
@@ -10,9 +9,8 @@
 ## Context
 
 `crates/grammar/src/library/bell/` holds ~1131 lines that are the zones of one
-specific campaign, inside the engine crate — the exact thing the owner's
-2026-08-06 general-engine ruling forbids (`CLAUDE.md`, Methodology). Moving them
-required answering where one-off campaign complexity is allowed to live, and two
+specific campaign, inside the engine crate — the exact thing the general-engine
+rule forbids (`CLAUDE.md`, Methodology). Moving them required answering where one-off campaign complexity is allowed to live, and two
 routes were argued:
 
 - **A** — improve the DSL until the zone programs are expressible in it; content
@@ -108,8 +106,8 @@ classification is by audience, not a blanket rule:
 
 ### 3. Python is a declared prerequisite too, for skins — `delve_skin` is not ported
 
-**Owner ruling, 2026-08-07**: do not reinvent the wheel. `delve_skin` vendors
-skinpy-extended and a skinview3d-lineage headless renderer; a Rust port buys
+Do not reinvent the wheel. `delve_skin` vendors skinpy-extended and a
+skinview3d-lineage headless renderer; a Rust port buys
 nothing a creator can perceive. Skipping skin generation when Python is absent was
 considered and **declined**: a missing skin is a build error today (`DW0309`, and
 `read_skins` says so deliberately — "not a silent skip", so `edit` proves exactly

@@ -35,7 +35,7 @@ jobs:
       # (shipped delve image + PackTest runner) must derive difficulty/seed/
       # level-type/generator-settings from the compiler's server.properties, via the
       # one shared entrypoint. Hardcoding them has twice made a server boot a world
-      # the campaign never declared (tasks #103, #84).
+      # the campaign never declared.
       - name: every server derives its world from the build
         run: bash validation/check-world-settings.sh
 
@@ -108,7 +108,7 @@ jobs:
       # against a populated db); a cold cache clones 227 MB. Either way it happens
       # HERE, named, and never inside a step named for clippy or for a test —
       # which is what a docs-only PR hit as a raw TLS error in a step called
-      # "build the hello-world delve output" (#388).
+      # "build the hello-world delve output".
       - name: fetch — the render workspace's pinned git dependency
         run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
       # BINDING (CLAUDE.md: a green gate that binds to nothing is VACUOUS).
@@ -135,8 +135,8 @@ jobs:
           node-version: "24"
       - name: the viewer's key and mouse mapping does what it says (node --test)
         run: node --test crates/render/tests/controls.test.mjs
-      # task #52 (owner directive 2026-08-07): authored JSON has ONE canonical
-      # form, so an insertion is a one-line diff instead of a whole-file rewrite
+      # Authored JSON has ONE canonical form, so an insertion is a one-line
+      # diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced
       # a 103-insertion/100-deletion diff. `delvec fmt --check` is the `cargo fmt
       # --check` half of that; the formatter itself is what stops authors
@@ -173,10 +173,10 @@ jobs:
       # The same crates ship a FRONT PAGE, and it is the only document in this
       # repo whose reader has never seen this repo. `crates/compiler/README.md`
       # and `crates/dsl/README.md` are rendered verbatim on crates.io; the
-      # `delvec` page used to open with "The deterministic compiler (spec-0002,
-      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. #388 rewrote
-      # them and nothing stopped that regressing — the rule behind it (CLAUDE.md
-      # *Audience separation in docs*) was held by memory alone. Six unambiguous
+      # `delvec` page may not open with "The deterministic compiler (spec-0002,
+      # ADR-0001/0006/0011)", a citation a visitor cannot resolve. This gate is
+      # what holds that; the rule behind it (CLAUDE.md *Audience separation in
+      # docs*) is otherwise held by memory alone. Six unambiguous
       # patterns only: spec-NNNN, ADR-NNNN, DWNNNN, `task #N`, `PR #N`, and a
       # repo-relative markdown link (crates.io serves the markdown with no
       # repository around it). It deliberately does NOT check the present-tense
@@ -223,7 +223,7 @@ jobs:
   # walkability, stair-flank sealing, anchor sanity, gravity substrate, sightlines
   # — so simply running each generator IS the gate: it either emits or panics.
   # Wired after the drowned-bell shipped a tileset with 132 reversed stair blocks
-  # (`DW0430`, owner playtest 2026-08-03) through a green pipeline.
+  # (`DW0430`) through a green pipeline.
   prefab-generators:
     name: prefab generators (invariants + determinism)
     runs-on: ubuntu-latest
@@ -398,7 +398,7 @@ jobs:
       # the stale-OLDER direction is the one that happens (docs are written once,
       # the build moves), and a gate that only rejects "newer than the build" is
       # exactly what let a storybook ship a v1.0 marker through the whole v1.1
-      # release green (engine #342). Deterministic, offline, stdlib-only python3.
+      # release green. Deterministic, offline, stdlib-only python3.
       #
       # The same script now binds the same constants on the crates.io FRONT
       # PAGES, over the same derived publishable-crate set the README gate uses
@@ -415,7 +415,7 @@ jobs:
       # (crates/dsl/src/envelope.rs) — nothing else in the repo relates the two
       # files, so a compiler version bump landed with zero signal to the harness
       # and the bot tier refused every campaign at the newest dsl_version, after
-      # the server booted and the bot connected (task #157). Deterministic,
+      # the server booted and the bot connected. Deterministic,
       # offline, stdlib-only python3.
       - name: harness dsl_version allowlist covers the compiler ceiling
         run: python3 tools/check-harness-dsl-version.py
@@ -432,9 +432,10 @@ jobs:
       # Merge artifacts in the docs tree: a table row duplicated under one key, a
       # doubled heading, a stray conflict marker. Two branches appending rows at
       # the same table anchor merge cleanly and silently, so this class is
-      # invisible to every other gate (owner finding 2026-08-03 — `shortcuts[]`
-      # and `waves[].respawns_on_rest` each twice in the stage-5 table, one copy
-      # naming the wrong diagnostic). Deterministic, offline, stdlib-only python3.
+      # invisible to every other gate (`shortcuts[]` and
+      # `waves[].respawns_on_rest` have each appeared twice in the stage-5 table,
+      # one copy naming the wrong diagnostic). Deterministic, offline,
+      # stdlib-only python3.
       # A capability must belong to the object class it acts on, not to the verb
       # that first needed it. Five ledgers — interaction bodies, baked
       # player-facing English, structural twins, cross-cutting modifiers with
@@ -445,6 +446,23 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # The sanctioned identifiers are ADR numbers, spec numbers and DW codes
+      # (CLAUDE.md *Privacy in repo artifacts*). A task id, a pull-request number
+      # and a dated attribution are not: a stranger cannot resolve any of them,
+      # the last records who decided something and when, and all three turn a
+      # present-tense page into a changelog. A sweep alone does not hold — the
+      # count refilled twice inside a week of the first one, because a merged
+      # branch carries its own in and no gate looked. `FLOOR` is compared by
+      # EQUALITY in both directions, so a new citation reds AND a floor that has
+      # fallen must be lowered in the same change; it cannot become an amnesty.
+      # This is the step that binds it to the event: every push to `main` and
+      # every pull request. The other entry point is the tagged tree a release
+      # publishes from, which this workflow never sees — `engine-release.yml`'s
+      # `crates-preflight` runs the same gate there. `release.yml` is NOT a third
+      # site: it ships a world and an image, and carries no repository prose.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no artifact carries an identifier a reader cannot resolve
+        run: python3 tools/check-unsanctioned-identifiers.py
       # The same merge class one level up from a duplicated row: a NUMBER stated
       # in prose whose subject the tree enumerates. One branch adds a tenth
       # teaching technique and moves the count in four places; another, which
@@ -461,15 +479,15 @@ jobs:
       # not a pass. Deterministic, offline, stdlib-only python3.
       - name: every count stated in the reference matches what decides it
         run: python3 tools/check-stated-counts.py
-      # task #111: `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
+      # `docs/specs/spec-NNNN-*.md` and `docs/adr/NNNN-*.md` are both
       # picked by listing the directory and writing the next integer. Two new
       # files never produce a git conflict, so a per-branch "no duplicate number
       # in this tree" check is green on every branch that collides — the
       # collision exists only in the UNION of two trees, and nothing computed
-      # that union. PR #361 (`spec-0033-declared-body-traversal.md`, opened
-      # 2026-08-09, left open) and a later PR (`spec-0033-grammar-corpus.md`,
-      # listed `docs/specs/` on a `main` that did not yet have #361's file)
-      # held number 0033 for three days; a human reading PR titles caught it.
+      # that union. Two open branches (`spec-0033-declared-body-traversal.md`,
+      # and `spec-0033-grammar-corpus.md`, which listed `docs/specs/` on a `main`
+      # that did not yet carry the first file) held number 0033 for three days;
+      # a human reading PR titles caught it.
       # This gate fetches `origin/main` (same host `actions/checkout@v4` above
       # already reached — not a new external dependency) and diffs this
       # checkout's numbered files against it directly, rather than trusting
@@ -496,8 +514,8 @@ jobs:
       # The same defect one layer down, on a different kind of number. A version
       # ledger is picked exactly the way a spec number is — list what exists,
       # write the next one — so two branches take the same number for different
-      # surfaces and both are green. PR #413 wrote `MIRROR_SINCE = "1.1.0"` and
-      # PR #417 wrote `CONTRACT_SINCE = "1.1.0"` into the same new file. Those
+      # surfaces and both are green. One branch wrote `MIRROR_SINCE = "1.1.0"`
+      # and another wrote `CONTRACT_SINCE = "1.1.0"` into the same new file. Those
       # two DO conflict textually; the hazard is the resolution, because
       # unioning both constants under one `1.1.0` compiles, passes clippy, and
       # ships an engine that accepts a `1.1.0` document written against the
@@ -517,19 +535,19 @@ jobs:
       # dependency put `cargo run -p delvec` — five required jobs, none of which
       # build the crate that declared it — behind 227 MB of clone from two
       # repositories, and a transient TLS failure there reddened `tier 2` on a
-      # docs-only PR (#388). Same class as this job's own `lychee --offline` and
-      # as task #41's single Mojang fetch, now as a gate rather than as three
-      # separate lessons. States its binding count; an allowlisted lock that has
-      # stopped carrying one is a finding too. Deterministic, offline,
-      # stdlib-only python3.
+      # docs-only PR. Same class as this job's own `lychee --offline` and as the
+      # server-bootstrap overlay's single Mojang fetch, held as a gate rather
+      # than as three separate lessons. States its binding count; an allowlisted
+      # lock that has stopped carrying one is a finding too. Deterministic,
+      # offline, stdlib-only python3.
       - name: no workspace resolves a git dependency it does not quarantine
         run: python3 tools/check-workspace-git-deps.py
-      # Isolation by construction (task #185, validation/README.md): container
+      # Isolation by construction (validation/README.md): container
       # names and host ports are Docker-GLOBAL — the only two things `docker
       # compose -p <project>` does not isolate — so validation/compose.yaml
       # carries neither, and two ladders run side by side with no mutex. Only
-      # owner-play.yaml may bind 25565. Re-introducing a pin cost a run twice
-      # under the old override regime (`server` #190, then `bot`).
+      # owner-play.yaml may bind 25565. Re-introducing a pin costs a run, and
+      # has cost one twice — once on `server`, then on `bot`.
       # Deterministic, offline, stdlib-only python3.
       - name: validation compose carries no Docker-global name or port
         run: python3 tools/check-compose-isolation.py
@@ -539,7 +557,7 @@ jobs:
       # on a live server that was up and had logged `Done (`: 28 false negatives in
       # 30 runs. It cost two owner playtest stagings ("server did not come up") and
       # it silently disarmed the 25565 guards — the same shape decides whether the
-      # owner's mutex may be released while a human is playing (task #173/#16).
+      # owner's mutex may be released while a human is playing.
       # Deterministic, offline, stdlib-only python3.
       - name: no early-exit consumer on the right of a pipe (SIGPIPE + pipefail)
         run: python3 tools/check-shell-pipe-shortcircuit.py
@@ -554,7 +572,7 @@ jobs:
       # rejection rule (tools/lib/rcon.{sh,mjs}), and a `gamerule` line names a rule
       # the PINNED command tree actually has, so it can never drift from ADR-0009.
       # Deterministic, offline, stdlib-only python3.
-      - name: no command is issued to a server that cannot answer back (task #70)
+      - name: no command is issued to a server that cannot answer back
         run: python3 tools/check-live-commands.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
@@ -600,9 +618,9 @@ jobs:
       # is not a fence. Deterministic, offline, stdlib-only python3.
       - name: every optional field of the grammar IR is closed or fenced
         run: python3 tools/check-grammar-ir-compat.py
-      # EVERY job here is a required status check (owner decision 2026-08-05; it was
-      # three, so `tier 2` — datapack load plus the whole PackTest suite — never
-      # blocked a merge). Branch protection matches a required context by its NAME
+      # EVERY job here is a required status check — an advisory gate is one
+      # nobody has to obey, and `tier 2` (datapack load plus the whole PackTest
+      # suite) is not one. Branch protection matches a required context by its NAME
       # STRING: rename a job and its context stops reporting forever, blocking
       # every PR including the one that would fix it. This keeps ci.yml's job names
       # and `.github/required-status-checks.txt` in lockstep, in BOTH directions —
@@ -662,8 +680,8 @@ jobs:
 
   storybook-version:
     # A campaign's storybook is what a server host reads before running the
-    # delve, and the ONE piece of internal machinery it may carry (owner ruling,
-    # task #147) is which engine the delve needs. That is a hand-typed number, so
+    # delve, and the ONE piece of internal machinery it may carry is which
+    # engine the delve needs. That is a hand-typed number, so
     # it goes stale the moment the campaign adopts a new `dsl_version` — and a
     # stale one is worse than none: it waves a host on an old engine through.
     # This gate re-derives it from the campaign's own stage documents.
@@ -687,7 +705,7 @@ jobs:
 
   # Every gate above this line builds a FIXTURE. Nothing in CI had ever built a
   # real campaign, so the product could stop compiling with the whole board
-  # green: PR #260 reached 10/10 while stopping the flagship released campaign
+  # green: one change reached 10/10 while stopping the flagship released campaign
   # `nobodys-cave-island` from building at all (26 × `DW0364` on standable cells
   # at the ocean line). Fixtures exercise one verb each; a campaign is where the
   # verbs meet a real prefab library, a real layout solve and a real translation
@@ -724,8 +742,8 @@ jobs:
       # Built once and handed to the driver, rather than a `cargo run` per
       # campaign per language: the gate's subject is WHICH engine built the
       # campaign, so the binary is named explicitly and the script never infers
-      # one. Dev profile — the workspace sets `opt-level = 1` for it (PR #313),
-      # which is what makes a real layout solve affordable on every push.
+      # one. Dev profile — the workspace sets `opt-level = 1` for it, which is
+      # what makes a real layout solve affordable on every push.
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
@@ -768,13 +786,13 @@ jobs:
       # delvec copies the prefab .nbt into the datapack — from the content repo
       - uses: ./.github/actions/checkout-content
 
-      # ---------------------------------------------------------------- task #41 --
+      # --------------------------------------------------- server-jar overlay --
       # THE one live Mojang fetch of this job. The server jar is never baked into an
       # image (ADR-0010, EULA), so each server bootstraps it at first boot — and this
       # job boots SEVEN of them over seven fresh volumes (the datapack-load check
       # plus six PackTest suites, each its own compose project). That was seven
       # independent chances for one Mojang blip to red a REQUIRED status check for a
-      # reason with nothing to do with the delve: PR #312 died on the 5th of 6 suites
+      # reason with nothing to do with the delve: a run died on the 5th of 6 suites
       # at `launchermeta.mojang.com ... Network is unreachable`, before any datapack
       # was evaluated, on the same runner and digest four suites had just passed on.
       #
@@ -793,8 +811,8 @@ jobs:
       # Built ONCE and handed to the nine build steps below, the same shape the
       # `campaign builds` job uses. Every one of those steps is named for a
       # fixture, and a `cargo run` per step let any of them fail for a reason with
-      # nothing to do with its fixture: #388 reddened "build the hello-world delve
-      # output" with a TLS error from cargo's dependency resolution. Resolution is
+      # nothing to do with its fixture: a TLS error from cargo's dependency
+      # resolution once reddened "build the hello-world delve output". Resolution is
       # now one step that says it is the compiler build, and `--locked` forbids it
       # from re-resolving (and so from reaching the network) at all.
       - name: build the engine under test
@@ -842,7 +860,7 @@ jobs:
       # runner fetches piston-data at >100 MB/s (<1s for the jar), so the cache
       # optimized nothing and added a failure mode.
       #
-      # 2026-08-05 (task #41): that note is still binding, and this is not it coming
+      # 2026-08-05: that note is still binding, and this is not it coming
       # back. The jar is never bind-mounted — the bootstrap overlay is COPIED into a
       # writable world volume, so itzg's rename-into-place still works. And the point
       # is not speed (the note is right that there was none to win): it is that this
@@ -892,7 +910,7 @@ jobs:
           echo "datapack loaded with zero errors."
 
       # Every PackTest pass below goes through `packtest-run.sh --project <id>`:
-      # the entry script REQUIRES the project id (task #185), which is the only
+      # the entry script REQUIRES the project id, which is the only
       # name a ladder has now that compose.yaml pins none — and it tears its own
       # project down and proves it clean, so no pass can leave state for the next.
       - name: PackTest suite (headless, exit code = failed tests)
@@ -919,7 +937,7 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-cast \
             --output ./delve-output-cast
 
-      # `requires_item` is HELD, not carried (owner ruling, 2026-08-03) — and the
+      # `requires_item` is HELD, not carried — and the
       # template that proves it, `verb_interact_held`, is emitted only for a campaign
       # that HAS a gated `interact`. hello-world has no `interact` objective at all,
       # so without this pass neither it nor `verb_interact` ever runs on a real
@@ -943,7 +961,7 @@ jobs:
       # never actually RUN. hello-world has no bonfire, so `souls_bonfire_rest`,
       # `souls_bonfire_reseat`, `souls_bonfire_options`, `souls_reseat_stationed`
       # and `wave_census` existed as generated files nothing executed. The
-      # stationed-re-seat ruling (owner, 2026-08-04) is a claim about what a live
+      # stationed re-seat rule is a claim about what a live
       # server does with a re-summoned wave, so it is proven on one. Same cost
       # profile as the two passes above: one extra toolserver boot, no new pull,
       # no new compile.
@@ -978,7 +996,7 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lanes \
             --output ./delve-output-lanes
 
-      # task #184 — the timed-gate `disarm` (the hazard ladder's third rung). The
+      # The timed-gate `disarm` (the hazard ladder's third rung). The
       # claim is about what a live server does across cycle boundaries AFTER the
       # jam: that no scheduled close ever re-seals the span. A static test can only
       # read the guard; only a server proves it holds. Measured red->green on the
@@ -1105,7 +1123,7 @@ jobs:
           bash validation/packtest-run.sh --project dw-ci-lift \
             --output ./delve-output-lift
 
-      - name: build the souls-timed-gate-disarm delve output (task #184)
+      - name: build the souls-timed-gate-disarm delve output
         run: |
           target/debug/delvec \
             build crates/compiler/tests/fixtures/souls-timed-gate-disarm \

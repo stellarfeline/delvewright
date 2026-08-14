@@ -146,8 +146,8 @@ pub fn build(g: &mut Grid, seed: u64) {
     // Hearth in the SOUTH wall, at the far (east) end of the nave, beside the
     // undercroft door — the last fire before the drowned way down.
     //
-    // Where it may stand is a `DW0478` constraint (owner ruling 2026-08-04, task
-    // #132), not composition: the gate-breach siege lane (`aggro_radius` 16) ends
+    // Where it may stand is a `DW0478` constraint, not composition: the
+    // gate-breach siege lane (`aggro_radius` 16) ends
     // at `anchor/l2-lane-gate-3` (16,_,19) out in the yard, and a marching squad
     // is a corridor around its polyline — the measured 7.9-block drift — so the
     // fire must clear the lane by more than 23.9 blocks. The hearth's first home

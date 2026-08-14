@@ -1,6 +1,6 @@
 # spec-0002: Compiler CLI contract
 
-- **Status**: Approved (v0, owner-approved 2026-07-29)
+- **Status**: Approved (v0)
 - **ADRs**: 0001, 0004, 0006, 0009 (MC 1.21.11), 0010, 0011 (Rust-native)
 
 The deterministic compiler (`crates/compiler`, binary `delvec`): staged DSL in,
@@ -58,7 +58,7 @@ and spawns/initializes NPCs, gates, and markers.
   PackTest + the bot verify (ADR-0005).
 - **Scoping note (owner visibility)**: single-prefab areas make jigsaw unnecessary in
   M1 — `/place template` is the degenerate assembly. Multi-piece `prefab_pool`
-  assembly landed in M2 task #9: **the compiler is the jigsaw** — it solves the
+  assembly landed in M2: **the compiler is the jigsaw** — it solves the
   layout from the campaign seed and emits `/place template <piece> <pos>
   <rotation>` per piece (ADR-0004 amendment; solver design + the `DW03xx`
   build/solver diagnostics in `crates/compiler/README.md`). Multi-area delves add
@@ -96,7 +96,7 @@ and spawns/initializes NPCs, gates, and markers.
   `sidebar` display slot by the compiler so the bot can observe its score.
 - One step per critical-path objective, in a valid topological order.
 
-## Environment sealing (owner QA finding 2026-07-30; emission requirement, lands M2)
+## Environment sealing (emission requirement, lands M2)
 
 A delve is a box garden: **every dynamic in it is authored; nothing is left to
 vanilla chance.** The M1 playtest found natural hostile spawning uncontrolled (no
@@ -282,7 +282,7 @@ stair piece and campaigns that already solved are unchanged (`hello-world`,
 - [x] `hello-world`, `keep-crawl`, `keep-trial` remain byte-identical (no stair in
       their pools).
 
-## i18n addendum — `--lang` build & the language manifest field (owner-approved 2026-07-31)
+## i18n addendum — `--lang` build & the language manifest field
 
 Implements spec-0001's i18n addendum on the build side. The DSL layer owns the
 sidecar schema, key inventory and coverage codes (`DW0180`/`DW0181`); the compiler

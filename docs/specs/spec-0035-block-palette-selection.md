@@ -2,10 +2,10 @@
 
 - **Status**: Proposed
 - **Date**: 2026-08-12
-- **Source**: owner decision, 2026-08-12 — research the field first, then design a
-  layered classification whose leaves are textures, so the last step is a LOOK.
-- **Motivating defects**: PR #397 (`packed_mud` / `dried_kelp_block` /
-  `lightning_rod` chosen from memory; all three compiled and rendered clean);
+- **Approach**: research the field first, then design a layered classification
+  whose leaves are textures, so the last step is a LOOK.
+- **Motivating defects**: `packed_mud` / `dried_kelp_block` /
+  `lightning_rod` chosen from memory (all three compiled and rendered clean);
   Notre-Dame trial finding F8 (a "pale ashlar" mix whose mean sat ~15 RGB units
   from target read as an Egyptian desert temple because 60% of its area was
   sandstone-family).

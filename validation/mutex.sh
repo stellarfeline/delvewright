@@ -10,7 +10,7 @@
 # binders — `docker compose … -f validation/owner-play.yaml` and
 # `tools/playtest-server.sh` — and a human at the keyboard behind either of them.
 #
-# ## What this lock is NOT, since task #185
+# ## What this lock is NOT
 #
 # It used to guard the whole validation stack, because `compose.yaml` pinned
 # `container_name: delvewright-server` and a fixed `127.0.0.1:25565` binding, so
@@ -30,7 +30,7 @@
 # nothing left for it to contend over. If you find yourself waiting on this lock
 # to run a ladder, the ladder is wrong, not the lock.
 #
-# ## Why it still exists, and the rules it enforces (owner incident, 2026-08-02)
+# ## Why it still exists, and the rules it enforces
 #
 # A hand-rolled waiter took the lock with `mkdir` and then guarded with
 # `if [ ! -d "$LOCK" ]; then exit 1; fi`, meaning "bail if I did not get it".
@@ -51,8 +51,8 @@
 #    is us, so a crashed script can never free someone else's lock — and no
 #    teardown trap is ever installed before acquisition succeeds.
 #
-# The lock path is unchanged across #185 on purpose: renaming it would make a new
-# shell blind to a lock a live session had already taken.
+# The lock path never changes, on purpose: renaming it would make a new shell
+# blind to a lock a live session had already taken.
 set -uo pipefail
 
 DW_MUTEX_DIR="${DW_MUTEX_DIR:-/private/tmp/delvewright-validation.lock.d}"
@@ -82,7 +82,7 @@ dw_mutex_port_bound() {
 # Hard stop before binding 25565: refuse while a human is playing.
 #
 # A worker ladder does NOT need to call this — it publishes no host port and
-# cannot reach the owner's session (isolation by construction, task #185). It is
+# cannot reach the owner's session (isolation by construction). It is
 # for the 25565 binders, and for a spike heavy enough that running it beside a
 # live playtest would be rude (`warden-probe.sh`).
 dw_mutex_assert_not_owner_session() {
@@ -126,9 +126,9 @@ dw_mutex_acquire() {
 # ran dw_mutex_acquire ($DW_MUTEX_ME does not survive a new shell). A caller
 # operating across shells — every agent tool invocation is a fresh shell — MUST
 # use dw_mutex_release_named instead. The no-op below stays silent-successful
-# because `trap dw_mutex_release EXIT` relies on it, but it now says so on
-# stderr: a real incident (2026-08-03) had a planner shell "release" a lock,
-# echo its own success message, and leave the lock in place for hours.
+# because `trap dw_mutex_release EXIT` relies on it, but it says so on stderr:
+# a shell that "releases" a lock it never took would otherwise echo its own
+# success message and leave the lock in place for hours.
 dw_mutex_release() {
   if [ -z "$DW_MUTEX_ME" ]; then
     echo "dw_mutex_release: nothing was acquired in THIS shell — no-op." >&2
@@ -149,9 +149,9 @@ dw_mutex_release() {
 # shell (agent tool calls never share shell state). Releasing
 # owner-play-session is additionally guarded: it is refused while ANY container
 # still publishes host 25565 — the name is sacred because a HUMAN may be behind
-# it, so the end of their session must be verifiable, not assumed. (Before #185
-# this looked for the container NAME `delvewright-server`; the port is the
-# resource, and `tools/playtest-server.sh` binds it under a different name.)
+# it, so the end of their session must be verifiable, not assumed. The PORT is
+# the resource, never a container name — `tools/playtest-server.sh` binds it
+# under a name of its own.
 dw_mutex_release_named() {
   local name="${1:?dw_mutex_release_named needs the holder name to release}"
   local holder; holder="$(dw_mutex_holder)"

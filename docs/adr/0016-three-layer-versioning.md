@@ -1,6 +1,6 @@
 # ADR-0016 — Three-layer versioning: format, engine, skill
 
-Status: Accepted (owner decision in conversation, 2026-08-06)
+Status: Accepted
 
 ## Context
 

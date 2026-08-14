@@ -30,7 +30,7 @@ import type { ClassifiedDeath } from "./teardown.ts";
 import type { NamePreference } from "./executor.ts";
 
 /**
- * One tiered actor, and what this run did about it (#114).
+ * One tiered actor, and what this run did about it.
  *
  * Every actor in the plan gets a row, fought or not — an actor missing from the
  * report is the silence the floor-gate ledger exists to end. A row that did not
@@ -53,7 +53,7 @@ export interface ActorReport {
 /**
  * One planned encounter, and how the run actually approached it.
  *
- * Added by task #102. `assist_windows: []` on a run where the bot demonstrably
+ * `assist_windows: []` on a run where the bot demonstrably
  * died was unreadable: spec-0023 takes NO assist while the die-retry stage is
  * deliberately dying, and none on a billed `elite`/`boss`'s honest first
  * attempt, so an empty ledger is often exactly per policy — but it looks
@@ -124,7 +124,7 @@ export class RunReport {
   private readonly actors: ActorReport[] = [];
   private floorLedger: FloorLedger | undefined;
   private actorsGate: BindingCount | undefined;
-  /** task #68: every walk into a lethal volume, and what the stage examined. */
+  /** Every walk into a lethal volume, and what the stage examined. */
   private readonly lethalTrials: LethalTrial[] = [];
   private deathLoopBinding: DeathLoopBinding | undefined;
   /** What the die-retry stage examined — recorded on EVERY run, zero included. */
@@ -185,8 +185,7 @@ export class RunReport {
    * would have to be read as "no branches" rather than "no branch machinery".
    */
   /**
-   * Record the compiler's floor-gate ledger and every tiered actor's outcome
-   * (#222 emission, #114 surfacing).
+   * Record the compiler's floor-gate ledger and every tiered actor's outcome.
    *
    * The ledger is printed VERBATIM, both sides: what the inverted floor gate
    * covers, and what it cannot with the reason. Before this the ladder's only
@@ -211,7 +210,7 @@ export class RunReport {
 
   /**
    * Record the death loop: every walk into a lethal volume, and the binding count
-   * of what was examined (task #68).
+   * of what was examined.
    *
    * The binding is recorded even when it is all zeros — especially then. This is
    * the one mechanic a souls-shaped delve is entirely made of, and a stage that
@@ -307,7 +306,7 @@ export class RunReport {
           failures: [...r.failures],
         };
       }),
-      // The bonfires the bot actually RESTED at (compiler #220). A bonfire only
+      // The bonfires the bot actually RESTED at. A bonfire only
       // arms an affordance; the respawn point moves when the party rests, so this
       // list is what makes every `at_checkpoint` below mean anything.
       rests: this.rests.map((r) => ({
@@ -331,7 +330,7 @@ export class RunReport {
       // is approached under and the phase the run actually reached. Without this
       // an empty `assist_windows` says nothing: it is the expected reading for a
       // run that never got past the die-retry stage, and also the reading for an
-      // assist mechanism that was never wired (task #102).
+      // assist mechanism that was never wired.
       encounters: this.encounters.map((e) => ({
         encounter: e.encounter,
         wave: e.wave,
@@ -342,7 +341,7 @@ export class RunReport {
       })),
       // spec-0023 §3: "the run artifact names every assist window (encounter id,
       // ticks)". Loudly, and including any the harness failed to close.
-      // The compiler's floor-gate ledger, verbatim (#222/#114). `present: false`
+      // The compiler's floor-gate ledger, verbatim. `present: false`
       // means the build shipped NO ledger — a plan from a delvec older than the
       // ledger — which is a different fact from a campaign that bills nothing
       // hard, and the two must never be read as one. `not_covered` carries the
@@ -355,7 +354,7 @@ export class RunReport {
           id: e.id,
           tier: e.tier ?? null,
         })),
-        // `tier: null` is an UNTIERED hostile (task #121) — an actor the
+        // `tier: null` is an UNTIERED hostile — an actor the
         // campaign unleashes on the party while declaring nothing about the
         // fight. It is written as an explicit null, never dropped: a key that
         // vanishes is the same silence this ledger exists to end.
@@ -411,7 +410,7 @@ export class RunReport {
         elapsed_ms: a.trial?.elapsedMs ?? null,
         detail: a.trial?.detail ?? null,
       })),
-      // task #68 — the death loop, the one mechanic a PackTest can never witness
+      // The death loop, the one mechanic a PackTest can never witness
       // (a fake player is permanently undamageable, measured twice). Every field
       // is an OBSERVATION: the ledger before and after, the position the player
       // came back at, the position the marker really stood at. `null` means the
@@ -501,7 +500,7 @@ export class RunReport {
         outcome: t.outcome,
         cause: t.cause ?? null,
         // MEASURED, never planned: the bot's own position read the moment the
-        // respawn settled, before anything else could move it (task #120).
+        // respawn settled, before anything else could move it.
         // `at_checkpoint` is derived from it and from nothing else.
         respawn_pos: t.respawnPos ?? null,
         at_checkpoint: t.atCheckpoint,

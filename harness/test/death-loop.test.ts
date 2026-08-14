@@ -1,4 +1,4 @@
-// The death loop's pure half (task #68): the contract parser, the forfeit rule
+// The death loop's pure half: the contract parser, the forfeit rule
 // re-derived from spec-0032's text, the seat/row lookups, and the verdicts.
 //
 // Every assertion here is about a PROMISE the campaign made. Nothing consults the

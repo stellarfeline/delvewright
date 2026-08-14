@@ -6,7 +6,7 @@
 #     docker compose -f validation/compose.yaml -f validation/owner-play.yaml \
 #       --profile playtest up --build
 #
-# `compose.yaml` is Docker-global-free by construction (task #185): no pinned
+# `compose.yaml` is Docker-global-free by construction: no pinned
 # container name, no published port, so any number of worker ladders run beside
 # each other without a lock. The owner's client, however, needs exactly one fixed
 # address — `localhost:25565` — and that is a genuinely shared resource. It lives

@@ -1,8 +1,7 @@
 # spec-0011 — Traps (lethal & non-lethal environmental hazards)
 
-- **Status**: Approved (task #43, owner-initiated 2026-07-31; open decisions
-  resolved by owner in conversation, 2026-07-31) — **signal half superseded by
-  spec-0022** (owner directive 2026-08-03). Redstone keeps exactly one job, the
+- **Status**: Approved — **signal half superseded by
+  spec-0022**. Redstone keeps exactly one job, the
   **trigger**; signal transmission and the consequence itself are now commands
   (`traps[].payload`). Everything else in this spec **stands**: the trigger
   hardware layer (pressure plate / tripwire / trapped chest at an `anchor/trap`
@@ -96,7 +95,7 @@ cannot prove otherwise, so it is not a completability-bearing trigger).
 | Dispenser: fire charge / lava bucket | payload | fire is bounded by sealing `fire_spread_radius_around_player 0`; lava placement is a modeled `setblock` | **constrained** (compiler must model the lava/fire cell as hazard geometry) |
 | Mob release | reuse `spawn-wave` from a trigger's `effects` | already modeled & seated (DW0312) | **supported** |
 | Lava release | `set-block` to lava at a modeled anchor | deterministic; lava-flow cells must be pre-modeled as hazard, not left to fluid tick | **constrained** |
-| Falling-block hazard (suspended gravel/anvil ceiling) | **static**, settled by the gravity model (PR #75) | now provable — the assembled model already settles it | **supported, static only** |
+| Falling-block hazard (suspended gravel/anvil ceiling) | **static**, settled by the gravity model | now provable — the assembled model already settles it | **supported, static only** |
 | Released / dynamically-dropped falling block | runtime `falling_block` entity | landing cell + terrain change are **unmodeled** by the assembled model | **excluded** |
 | **TNT** | primed TNT / ignited block | **block destruction deforms the sealed jigsaw world; determinism/integrity breach** | **excluded** |
 | Crusher / dynamic piston terrain | moving blocks change the voxel grid at runtime | unmodeled world mutation | **excluded** |
@@ -204,7 +203,7 @@ honored).
    refuses with DW0733.
 8. TNT / released-falling-block / crusher `effect` → rejected at validation
    (not in the `effect` enum); documented non-goals stay non-goals.
-9. Static gravity-hazard (suspended gravel ceiling) settled by the PR-#75 model
+9. Static gravity-hazard (suspended gravel ceiling) settled by the gravity model
    is modeled as hazard geometry and does not desync the assembled world.
 
 ## Non-goals
@@ -218,7 +217,7 @@ honored).
   (owner decision 2).
 - Trap "balance" tuning beyond `lethality` + payload; randomized/timed traps.
 
-## Resolved by owner (2026-07-31, in conversation)
+## Resolved decisions
 
 1. **Lethal traps ARE allowed on the forced critical path**, gated by the hard
    proof obligations: every critical-path trigger cell must discharge
@@ -231,7 +230,7 @@ honored).
 3. **Dispenser payload is DSL-authored** (compiler fills the prefab dispenser,
    mirroring `collect` item syntax). Prefab-baked payloads rejected.
 
-## Owner design direction — souls-mode (2026-07-31, recorded post-approval)
+## Design direction — souls-mode
 
 Target expressiveness (owner, verbatim intent): Dark-Souls-grade malice —
 corner kills, door-opening kills, alcove mobs that knock players off ledges,

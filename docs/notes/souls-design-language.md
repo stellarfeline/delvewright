@@ -1,7 +1,5 @@
 # Souls design language — a working dossier
 
-Written 2026-08-02 for the planner authoring the M4 souls campaign, after the
-owner's verdict that the spec-0016 draft's souls understanding was shallow.
 This is a **working reference**, not an essay: what the grammar actually is,
 what the real games measure, and which of our primitives can stage each piece.
 
@@ -583,7 +581,7 @@ Miyazaki, on Elden Ring (developer primary, short quote):
 > "when making the game I rediscovered my love for making poison swamps. I know
 > how people feel about them, but you know, suddenly I realize I'm in the middle
 > of making one and I just can't help myself."
-> — [Game Informer, 2022-01-28](https://gameinformer.com/2022/01/28/hidetaka-miyazaki-rediscovered-his-love-of-creating-poison-swamps-in-elden-ring)
+> — [Game Informer, 28 January 2022](https://gameinformer.com/2022/01/28/hidetaka-miyazaki-rediscovered-his-love-of-creating-poison-swamps-in-elden-ring)
 > (also covered by [PC Gamer](https://www.pcgamer.com/elden-ring-has-multiple-poison-swamps-because-i-cant-help-myself-miyazaki-says/))
 
 He later judged that he "went a little too far" with Elden Ring's swamps and
