@@ -244,6 +244,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   where one option is plainly right, it is a **recommendation with its reason**,
   not a menu: presenting a settled thing as a choice spends her attention to buy
   the planner cover.
+- **A decision session is ONE question at a time, and no work starts inside it**
+  (owner, 2026-08-14). The owner's time is the project's scarcest resource, so
+  when she sits down to decide, the planner's entire job is **helping her
+  understand and recording what she rules** — nothing else. The loop: present one
+  decision at the detail the rule above demands; she answers; **record the ruling
+  immediately and present the next one as fast as possible**. Her waiting time is
+  the thing being minimised, so the gap between her answer and the next question
+  is the number to keep small — never fill it by starting the work she just
+  authorised. Execution begins **after the whole pending set is decided**, in one
+  batch, unless she says to do a specific thing now. A batch of decisions costs
+  her one context-load; the same decisions interleaved with implementation cost
+  her one per item, and the implementation blocks the next question behind it.
 - **Audience separation in docs** (owner, 2026-08-02): every document has ONE
   target reader. Agent-facing docs (CLAUDE.md, ADRs, specs, `docs/reference/`,
   skills) may be arbitrarily technical. User/player-facing docs (READMEs,
