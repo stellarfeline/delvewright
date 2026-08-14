@@ -1304,6 +1304,23 @@ declares, runs the same `gates::judge` `expand` runs, prints a binding count per
 gate over the whole sweep, and writes nothing. It reds when any gate fails, when
 any gate examined zero objects, and when the corpus it was pointed at was empty.
 
+**The two corpora are counted apart**, because they have different owners and a
+zero means a different thing in each:
+
+```
+corpus: library N program(s)
+corpus: campaign N program(s) over R root(s)[ — FINDING: zero binding, …]
+```
+
+The rule library is this repo's own (`library::PROGRAMS`), so `--library` over an
+empty one is a defect here and reds. The campaign corpus belongs to the content
+repo, where an in-progress campaign lives on its own development branch until the
+owner has played it, so a root carrying no zone program is a fact about that
+checkout: the run says so as a named finding and stays green. Whether that zero is
+the RIGHT zero is a separate question with a separate answer, §4f. Summing the two
+totals is what let a full library carry an empty campaign root to a green board
+with the word *campaign* nowhere in the output.
+
 A campaign declares its zones in `design/programs/zones.json`, beside the
 programs it governs: per zone an id, the program file, the region, the seed and
 which optional gates the zone claims (`traversable`, `allow_falls`,
@@ -1328,6 +1345,58 @@ The sweep also totals the **local-frame binding count** — how many fills read
 their states in the scope's own axes — beside the gate whose population they
 come out of, so a green `oriented-fills` that got greener by writing fewer
 world literals says so in numbers rather than by silence.
+
+## 4f. The pinned campaign corpus, enumerated
+
+`.github/content-zone-corpus.json` names the campaigns the pinned content repo
+carries and how many zone programs each declares.
+`crates/grammar/tests/campaign_zones.rs` checks every number in it against the
+content checkout, inside `cargo test`.
+
+It exists because the campaign corpus is not this repo's to produce. An
+in-progress campaign lives on its own content-repo development branch and reaches
+content `main` only after the owner has played it, and CI checks the content out
+at `versions.toml` `[content].sha`. So the pinned tree can legitimately carry no
+zone program at all. "The sweep found nothing, so it passes" would then be an
+opt-out the defect itself supplies: deleting every zone program of every campaign
+produces exactly that state. Enumeration is the different demand — a campaign that
+loses its programs reds on a count, and a pin that genuinely carries none passes
+with its inventory printed.
+
+| Field | Meaning |
+|---|---|
+| `content_sha` | must equal `versions.toml` `[content].sha` |
+| `on_pin[]` | `campaign`, `zone_programs`, `note` — a campaign the pin carries |
+| `off_pin[]` | `campaign`, `zone_programs`, `branch`, `note` — a campaign known to own zone programs somewhere this repo cannot see |
+
+Five assertions, and the last two are what keep the enumeration from becoming a
+choice the author makes:
+
+1. `content_sha` equals the pin. This is what binds the record to the event it
+   guards: a re-pin cannot land without the inventory being restated at the new
+   pin, and a restated inventory is checked against the tree, so writing a number
+   the tree disagrees with is a red rather than a shortcut.
+2. Every `on_pin` count equals the number of program files in
+   `campaigns/<c>/design/programs/` **and** the number of entries in that
+   campaign's `zones.json`.
+3. Every campaign the checkout carries is named. An unnamed one would sweep as
+   zero and say nothing.
+4. Every `on_pin` entry is present in the checkout. A campaign emptied of both
+   `world.json` and `design/` stops being a campaign directory, and this is what
+   notices.
+5. Every `off_pin` entry is **absent** from the checkout. `off_pin` is a queue,
+   not an exemption: an entry that has landed must move across and have its count
+   checked, so a campaign cannot be parked in the queue to avoid the count. Which
+   list an entry belongs to is decided by the tree, never by the author.
+
+Every sweep in that file prints the corpus it examined, its binding count, and the
+pin it was measured at; a zero is printed as a named zero rather than left to
+silence.
+
+This repo can gate only what the pin lets it see. A campaign's zone programs on a
+content development branch are gated there, by the content repo's own
+`zone-audit.yml`, which runs `delve-grammar audit` against a pinned checkout of
+this repo on every push and pull request.
 
 ## 5. Rule library — ported buildings
 

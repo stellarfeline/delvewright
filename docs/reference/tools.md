@@ -167,6 +167,18 @@ passing is a finding too. Both repos' CI run it — the pipeline repo's `campaig
 builds` job against the pinned content SHA, and the content repo's `zone
 programs` job against the branch under review, with no paths filter.
 
+The two corpora are **counted apart** (`corpus: library N` / `corpus: campaign N
+over R root(s)`). The rule library is the pipeline repo's own, so `--library` over
+an empty one reds. A campaign root that carries no zone program is a fact about a
+checkout — an in-progress campaign lives on a content development branch until the
+owner has played it — so the run names that zero as a finding and stays green.
+Which campaigns a pinned checkout is expected to carry, and how many zone programs
+each declares, is enumerated in the pipeline repo's
+`.github/content-zone-corpus.json` and checked against the tree by
+`crates/grammar/tests/campaign_zones.rs` inside `cargo test`
+([`grammar.md`](grammar.md) §4f). Counting the corpora together is what let a full
+library carry an empty campaign root to a green board.
+
 `--file` is the authoring form: a grammar program written as JSON, which is what
 spec-0027 means by "the LLM authors rules". Every program declares its own
 `version` (`grammar.md` §2); a version this build does not know, or a construct

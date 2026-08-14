@@ -204,7 +204,12 @@ targets = [
 # depend on this pin — only reproducible/CI builds do.
 #
 # RE-PIN CONVENTION: after a content-repo PR merges, update `sha` to the new
-# content `main` tip in a normal follow-up PR.
+# content `main` tip in a normal follow-up PR — and restate the ZONE INVENTORY at
+# the new pin in `.github/content-zone-corpus.json`, which names the campaigns the
+# pin carries and how many zone programs each declares. Every number there is
+# checked against the content checkout, so a campaign that lost its zone programs
+# reds on a count instead of sweeping as a silent zero. Moving this `sha` without
+# it is a tier-1 red (validation/check-versions.sh).
 repo = "stellarfeline/delvewright-campaigns"
 # Content `main` tip after the island's respawn-seat fix (content #42) and the
 # bell remake's design leaving main for its own branch (content #41).

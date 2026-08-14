@@ -1004,6 +1004,15 @@ fn run_audit(
             ));
         }
     }
+    // The two corpora are counted apart, because they have different owners and
+    // a zero means a different thing in each. The LIBRARY lives in this repo, so
+    // its size is a fact of this tree and a zero is a defect here. The CAMPAIGN
+    // corpus lives in the content repo, where an in-progress campaign sits on its
+    // own development branch, so a root that carries no zone program is a fact
+    // about that checkout. Summing them lets a full library carry an empty
+    // campaign root to green with nothing in the output naming it, which is what
+    // the pinned content did.
+    let library_count = work.len();
     for root in campaign_roots {
         match collect_campaign_zones(root) {
             Ok(mut zones) => work.append(&mut zones),
@@ -1015,6 +1024,7 @@ fn run_audit(
             }
         }
     }
+    let campaign_count = work.len() - library_count;
 
     // A sweep that found nothing to sweep is the shape this whole command
     // exists to stop, so it is a red and never a silent zero.
@@ -1028,6 +1038,37 @@ fn run_audit(
             } else {
                 ""
             }
+        );
+        return ExitCode::from(EXIT_GATE);
+    }
+
+    // Stated before any verdict, so the reader of a green log knows what the
+    // green was over.
+    if library_flag {
+        println!("corpus: library {library_count} program(s)");
+    }
+    if !campaign_roots.is_empty() {
+        println!(
+            "corpus: campaign {campaign_count} program(s) over {} root(s){}",
+            campaign_roots.len(),
+            if campaign_count == 0 {
+                " — FINDING: zero binding, no campaign zone program was examined. Which \
+                 campaigns a checkout is expected to carry, and how many zone programs each \
+                 declares, is enumerated per pin in the pipeline repo's \
+                 .github/content-zone-corpus.json and checked against the tree there; this \
+                 command judges programs, not whether the right ones are present"
+            } else {
+                ""
+            }
+        );
+    }
+    // The library floor, which nothing outside this repo can move: `--library`
+    // asks for a corpus this tree defines, so an empty one is this tree's defect
+    // and never a fact about somebody's checkout.
+    if library_flag && library_count == 0 {
+        eprintln!(
+            "error: --library found 0 programs. The rule library is this repo's own corpus \
+             (library::PROGRAMS); an empty one is a defect here, not a fact about a checkout."
         );
         return ExitCode::from(EXIT_GATE);
     }
