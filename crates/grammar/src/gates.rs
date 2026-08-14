@@ -360,21 +360,17 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // thing the author declared, and counting standable cells on a face counts
     // louvres, parapets and window sills — 47 "approaches" where 3 were doors.
     let resolved = export::contract_metadata(expansion);
-    let faces: Option<Vec<contract::ExteriorFace>> = resolved
-        .as_ref()
-        .map(|c| {
-            contract::exterior_faces(model, c)
-                .into_iter()
-                .filter(|f| f.class != "vision")
-                .collect()
-        });
+    let faces: Option<Vec<contract::ExteriorFace>> = resolved.as_ref().map(|c| {
+        contract::exterior_faces(model, c)
+            .into_iter()
+            .filter(|f| f.class != "vision")
+            .collect()
+    });
     if options.traversable {
         match &faces {
             Some(faces) => {
-                let mouths: Vec<BTreeSet<[i32; 3]>> = faces
-                    .iter()
-                    .map(|f| mouth(model, &standable, f))
-                    .collect();
+                let mouths: Vec<BTreeSet<[i32; 3]>> =
+                    faces.iter().map(|f| mouth(model, &standable, f)).collect();
                 let bound = faces.len();
                 let mut severed: Vec<String> = Vec::new();
                 for (i, a) in mouths.iter().enumerate() {
@@ -415,7 +411,11 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                                 .map(|f| format!("{} {}", f.dir.as_str(), f.class))
                                 .collect::<Vec<_>>()
                                 .join(", "),
-                            if options.allow_falls { " (with falls)" } else { "" }
+                            if options.allow_falls {
+                                " (with falls)"
+                            } else {
+                                ""
+                            }
                         )
                     } else {
                         format!(

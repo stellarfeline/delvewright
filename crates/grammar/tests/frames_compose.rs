@@ -293,11 +293,7 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         .collect();
     assert_eq!(
         red,
-        vec![
-            "contract-closure",
-            "contract-edge-proof",
-            "contract-reachability"
-        ],
+        vec!["contract-closure", "contract-reachability"],
         "{:#?}",
         report.gates
     );
