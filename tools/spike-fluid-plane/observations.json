@@ -1,0 +1,320 @@
+{
+  "meta": {
+    "date": "2026-08-13T09:50:58.665Z",
+    "mc": "1.21.11",
+    "world": "ocean superflat (delve emission literal), water top y=62",
+    "view_distance": 8,
+    "simulation_distance": 8
+  },
+  "fill_ceiling": {
+    "oversize_refusal": "Too many blocks in the specified area (maximum 32768, but specified 262144)",
+    "gamerule_default": "Gamerule max_block_modifications is currently set to: 32768",
+    "single_command_512x512_stone": {
+      "reply": "Successfully filled 262144 block(s)",
+      "ms": 591,
+      "placed": 262144
+    },
+    "single_command_undo": {
+      "ms": 1053,
+      "cleared": 262144
+    }
+  },
+  "player_in_rising_column": {
+    "before": {
+      "pos": "[0.5d, 63.0d, 0.5d]",
+      "air": 300
+    },
+    "after": [
+      {
+        "t_s": 0,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 280,
+        "hp": 20
+      },
+      {
+        "t_s": 2,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 240,
+        "hp": 20
+      },
+      {
+        "t_s": 4,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 200,
+        "hp": 20
+      },
+      {
+        "t_s": 6,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 159,
+        "hp": 20
+      },
+      {
+        "t_s": 8,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 119,
+        "hp": 20
+      },
+      {
+        "t_s": 10,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 79,
+        "hp": 20
+      },
+      {
+        "t_s": 12,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": 39,
+        "hp": 20
+      },
+      {
+        "t_s": 14,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": -1,
+        "hp": 20
+      },
+      {
+        "t_s": 16,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": -2,
+        "hp": 17.5
+      },
+      {
+        "t_s": 18,
+        "pos": "[0.5d, 63.0d, 0.5d]",
+        "air": -2,
+        "hp": 15
+      }
+    ],
+    "note": "pad top y=62, feet y=63: a 2-layer raise (63,64) fully submerges the head"
+  },
+  "plane_raise_512": {
+    "mspt": {
+      "before": 2.5,
+      "mid": 7.2,
+      "after_fill": 12.1,
+      "settled_15s": 6.9
+    },
+    "layer_63": {
+      "ms": 1175,
+      "blocks": 262144,
+      "commands": 8
+    },
+    "layer_64": {
+      "ms": 1642,
+      "blocks": 261120,
+      "commands": 8
+    },
+    "interior_flowing_after_15s": {
+      "y63": {
+        "flowing": 0,
+        "byLevel": {}
+      },
+      "y64": {
+        "flowing": 0,
+        "byLevel": {}
+      }
+    },
+    "rim16_flowing_after_15s": {
+      "y63": 0,
+      "y64": 0
+    },
+    "spill_beyond_rim_samples": {
+      "y63_sampled192": 3,
+      "y64_sampled192": 3
+    }
+  },
+  "plane_lower_ticking_edge": {
+    "cleared": {
+      "ms": 110,
+      "blocks": 36864,
+      "commands": 2
+    },
+    "note": "192x192 y=62 layer cleared; edges 32 blocks inside a ticking (forceloaded) extent; ambient y=62 sea all around; y=61 sources below",
+    "centerline_transect_over_time": [
+      {
+        "t_s": 0,
+        "source": 0,
+        "flowing": 0,
+        "other": 192
+      },
+      {
+        "t_s": 5,
+        "source": 40,
+        "flowing": 0,
+        "other": 152
+      },
+      {
+        "t_s": 10,
+        "source": 80,
+        "flowing": 0,
+        "other": 112
+      },
+      {
+        "t_s": 20,
+        "source": 160,
+        "flowing": 0,
+        "other": 32
+      },
+      {
+        "t_s": 40,
+        "source": 192,
+        "flowing": 0,
+        "other": 0
+      },
+      {
+        "t_s": 60,
+        "source": 192,
+        "flowing": 0,
+        "other": 0
+      },
+      {
+        "t_s": 90,
+        "source": 192,
+        "flowing": 0,
+        "other": 0
+      }
+    ],
+    "after_90s_full_census": {
+      "flowing": {
+        "flowing": 0,
+        "byLevel": {}
+      },
+      "sources_regenerated": 36864
+    }
+  },
+  "transition_window": {
+    "unloaded_fill_refusal": "That position is not loaded",
+    "window": {
+      "ms": 287,
+      "replies": [
+        "Successfully filled 32768 block(s)",
+        "Successfully filled 32768 block(s)",
+        "Unmarked 256 chunks in minecraft:overworld from [504, -8] to"
+      ]
+    },
+    "rim_after_reload_t0": {
+      "source": 16,
+      "flowing": 0,
+      "other": 0
+    },
+    "rim_after_reload_t15s": {
+      "source": 16,
+      "flowing": 0,
+      "other": 0
+    },
+    "water_beyond_rim_sampled42": 21,
+    "note": "rim y=63 water borders untouched y=62 ocean to the west; if pending ticks fire on reload, flowing appears at/beyond x=8063"
+  },
+  "basin_saturated": {
+    "flowing_after_10s": 0,
+    "byLevel": {}
+  },
+  "basin_settle": {
+    "flowing_after_90s": 50,
+    "byLevel": {
+      "1": 5,
+      "2": 4,
+      "3": 5,
+      "4": 6,
+      "5": 7,
+      "6": 8,
+      "7": 9,
+      "8": 6
+    },
+    "sources_after_90s": 1,
+    "interior_cells": 432
+  },
+  "basin_interior_gap": {
+    "gap_cell_over_time": [
+      {
+        "t_s": 1,
+        "gapIsSource": true,
+        "gapIsWater": true
+      },
+      {
+        "t_s": 3,
+        "gapIsSource": true,
+        "gapIsWater": true
+      },
+      {
+        "t_s": 5,
+        "gapIsSource": true,
+        "gapIsWater": true
+      },
+      {
+        "t_s": 10,
+        "gapIsSource": true,
+        "gapIsWater": true
+      },
+      {
+        "t_s": 20,
+        "gapIsSource": true,
+        "gapIsWater": true
+      }
+    ],
+    "flowing_after_30s": 0,
+    "byLevel": {}
+  },
+  "waterloggables": {
+    "fill_replace_air_waterlogs_stairs": true,
+    "stairs_left_dry_inside_body": false,
+    "clear_replace_water_leaves_waterlogged": true,
+    "waterlogged_leaks_into_cleared_layer_flowing_cells": 3
+  },
+  "solid_fill_entombment": {
+    "hp_before": 20,
+    "hp_over_time": [
+      {
+        "t_s": 1,
+        "hp": 18
+      },
+      {
+        "t_s": 2,
+        "hp": 16
+      },
+      {
+        "t_s": 3,
+        "hp": 13
+      },
+      {
+        "t_s": 4,
+        "hp": 12
+      },
+      {
+        "t_s": 5,
+        "hp": 10
+      },
+      {
+        "t_s": 6,
+        "hp": 8
+      },
+      {
+        "t_s": 7,
+        "hp": 6
+      },
+      {
+        "t_s": 8,
+        "hp": 5
+      }
+    ]
+  },
+  "plane_lower_512_full": {
+    "ms": 1484,
+    "layer_64": {
+      "ms": 771,
+      "blocks": 262119,
+      "commands": 8
+    },
+    "layer_63": {
+      "ms": 713,
+      "blocks": 262144,
+      "commands": 8
+    },
+    "interior_flowing_after_10s": {
+      "flowing": 0,
+      "byLevel": {}
+    },
+    "note": "lowering back to the generator level: below is y=62 ambient water everywhere, so cleared cells sit above a still surface"
+  }
+}
