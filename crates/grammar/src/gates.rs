@@ -36,6 +36,7 @@ use crate::export;
 use crate::geom::Axis;
 use crate::model::VoxelModel;
 use crate::nav;
+use crate::settle;
 
 /// One gate's verdict over one expansion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -76,6 +77,19 @@ pub struct Measurements {
     pub silhouette_complexity: f64,
     /// The five commonest non-air block states, with their share of filled cells.
     pub top_blocks: Vec<(String, f64)>,
+    /// **Stairs in the piece.** A number, not a verdict: a piece with no stair
+    /// is not a piece that passed the stair rule, and the `stair-shape` gate
+    /// is emitted only when there is a stair to judge (see [`judge`]).
+    pub stairs: usize,
+    /// **Fluid cells in the piece** — `water`/`lava` blocks, the fluid that
+    /// runs. The `fluid-contained` gate is emitted only when this is non-zero.
+    pub fluid_cells: usize,
+    /// Cells written `waterlogged=true`: wet, measured not to spread, and so
+    /// under no containment obligation of their own.
+    pub fluid_held_cells: usize,
+    /// Run directions in which a body of fluid leaves the piece's own outer
+    /// face, where these bytes decide nothing. Counted, never judged.
+    pub fluid_at_edge: usize,
     /// How much of the floor a body can actually get to, and where the rest is.
     pub reachability: Reachability,
 }
@@ -425,6 +439,50 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         },
     });
 
+    // --- Gates: what the world will settle these bytes into. ---------------
+    //
+    // Every gate above judges the model as written. These two judge it as the
+    // game will hold it, and they are the only gates here that can go red on a
+    // piece every other reader agrees with: a stair's `shape` is re-derived by
+    // vanilla from its neighbours, and a body of fluid runs the moment a chunk
+    // ticks. Always on, and for the reason the contract gates are: an author
+    // who writes a stair or a pond has made a claim about the world, and there
+    // is no flag that expands the piece without asking whether it is true.
+    // Each is emitted only when the piece HOLDS what it judges. A gate over
+    // zero objects is not a pass (CLAUDE.md), and most buildings hold no water
+    // — so the honest report for them carries the count as a MEASUREMENT and
+    // makes no claim at all, rather than a green line that reads like one.
+    let shapes = settle::stair_shapes(model);
+    if shapes.bound > 0 {
+        gates.push(Gate {
+            id: "stair-shape",
+            pass: shapes.mismatches.is_empty(),
+            bound: shapes.bound,
+            detail: if shapes.mismatches.is_empty() {
+                format!(
+                    "{} stair(s), every written `shape` the one vanilla derives from that stair's \
+                     own neighbours",
+                    shapes.bound
+                )
+            } else {
+                settle::shape_detail(&shapes)
+            },
+        });
+    }
+    let fluid = settle::fluid_bodies(model);
+    if fluid.bound > 0 {
+        gates.push(Gate {
+            id: "fluid-contained",
+            pass: fluid.leaks.is_empty(),
+            bound: fluid.bound,
+            detail: if fluid.leaks.is_empty() {
+                settle::fluid_summary(&fluid)
+            } else {
+                settle::fluid_detail(&fluid)
+            },
+        });
+    }
+
     // --- Gate: the expansion built something. ------------------------------
     let filled = model.filled_cells();
     let region_cells = model.region().positions().count();
@@ -695,6 +753,10 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             region_cells,
             distinct_states: model.palette().len(),
             standable_cells: standable.len(),
+            stairs: shapes.bound,
+            fluid_cells: fluid.bound,
+            fluid_held_cells: fluid.held,
+            fluid_at_edge: fluid.at_edge.len(),
             footprint_area,
             footprint_perimeter,
             silhouette_complexity: complexity(footprint_area, footprint_perimeter),
@@ -1007,6 +1069,18 @@ mod tests {
         // in it, there is nowhere in it to stand so the reachability measurement
         // examined nothing either, and it makes no spatial claim at all.
         assert_eq!(report.findings.len(), 3, "{:?}", report.findings);
+        // ...and the two settling rules are ABSENT rather than green: the cube
+        // holds no stair and no fluid, so there is nothing for them to judge
+        // and their counts are measurements instead.
+        for id in ["stair-shape", "fluid-contained"] {
+            assert!(
+                !report.gates.iter().any(|g| g.id == id),
+                "`{id}` claimed a verdict over nothing: {:?}",
+                report.gates
+            );
+        }
+        assert_eq!(report.measurements.stairs, 0);
+        assert_eq!(report.measurements.fluid_cells, 0);
         assert!(
             report
                 .findings

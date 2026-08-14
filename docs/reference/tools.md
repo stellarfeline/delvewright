@@ -761,6 +761,34 @@ an empty event loop to exit 0 on, and channel start is a retried handshake
 (the readiness probe passing and the next connection being accepted are two
 events with a measured race between them).
 
+`tools/spike-block-settling/run.sh` (`EULA=TRUE
+tools/spike-block-settling/run.sh [--out <path>]`) measures, on a throwaway
+pinned server booted on a DRY superflat, the two facts the `stair-shape`
+(`DW0739`) and `fluid-contained` (`DW0738`) gates encode — so that neither rests
+on a recalled reading of vanilla.
+
+A field of 758 random stairs (two stair blocks, both halves, all four facings,
+air holes) is placed, settled and read back cell by cell; the result rides in
+`observations.json` and `crates/schem/tests/stair_shape_measured.rs` **replays
+every cell of it** against `delvewright_schem::stairs::derive_shape` in CI, with
+no server. Nine water rigs decide what "a body of fluid stays where it was
+written" has to mean: a source sealed, a source with one open cell, a source
+against a `waterlogged=false` stair (both orientations) and a grate, a source
+each side of a dry waterloggable, a source above one, and a `waterlogged=true`
+block beside open air both before and after a block update is forced next to it.
+
+Two things this rig is worth keeping for. Its **settling pass** is the subtle
+part: `/setblock` writes a state literally and `StairBlock` only re-derives its
+shape on a HORIZONTAL neighbour update, so the obvious rig (set each stair to
+air and back) settles a cell's neighbours and RESETS the cell — the first run
+left 10 of 758 cells carrying their authored value, a number small enough to
+read as "the implementation is wrong about ten corner cases" rather than "the
+rig lied". The poke therefore never touches a stair: a temporary stone goes into
+a NON-stair cell beside it and comes out again. And the rig carries its own
+falsifier — the field is read twice with a further round of updates in between
+and must not move, because a settled field is a fixpoint and an unsettled one is
+exactly what moves.
+
 `tools/spike-area-effect-arrow/run.sh` (`EULA=TRUE
 tools/spike-area-effect-arrow/run.sh [--out <path>]`) answers whether a datapack
 alone can give a projectile a non-block-breaking explosion or a splash-potion

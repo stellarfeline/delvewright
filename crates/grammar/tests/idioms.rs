@@ -213,7 +213,10 @@ fn every_documented_example_expands_green_at_its_documented_region() {
         );
         assert_eq!(
             report.gates.len(),
-            4 + usize::from(case.traversable) + usize::from(case.symmetric.is_some()),
+            4 + usize::from(case.traversable)
+                + usize::from(case.symmetric.is_some())
+                + usize::from(report.measurements.stairs > 0)
+                + usize::from(report.measurements.fluid_cells > 0),
             "{}",
             case.id
         );

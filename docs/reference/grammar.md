@@ -30,10 +30,14 @@ Two library modules exist for the tool and are public for it:
   properties — `DW0735`, §4b), `oriented-fills` (an orientation-sensitive state
   is filled only under the identity frame or a passed `orientation` guard —
   `DW0736`, §4b), `non-empty`, and the opt-in `traversable`, `symmetric` and
-  `reachable-floor` (§4c). Measurements: fill, distinct states, standable cells,
-  footprint area/perimeter, silhouette complexity, per-block shares, and
-  **reachability** (§4d) — how much of the floor a body reaches on foot and
-  where the rest of it sits. A zero binding count, and a program declaring no
+  `reachable-floor` (§4c). Two more are emitted **only over a piece that holds
+  what they judge** (§4e): `stair-shape` (every written stair `shape` is the one
+  vanilla derives at that cell — `DW0739`) and `fluid-contained` (every body of
+  fluid is saturated and walled — `DW0738`). Measurements: fill, distinct
+  states, standable cells, footprint area/perimeter, silhouette complexity,
+  per-block shares, stairs, fluid cells, still (`waterlogged`) cells, run
+  directions leaving the piece, and **reachability** (§4d) — how much of the
+  floor a body reaches on foot and where the rest of it sits. A zero binding count, and a program declaring no
   anchors, are reported
   as findings rather than folded into a pass.
 

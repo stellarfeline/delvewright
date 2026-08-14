@@ -354,7 +354,9 @@ fn a_copy_edited_out_of_step_is_green_on_every_gate() {
     assert_eq!(
         report.gates.len(),
         4,
-        "the four always-on gates: blocks-exist, shape-complete, oriented-fills, non-empty"
+        "the four always-on gates: blocks-exist, shape-complete, oriented-fills, non-empty. The \
+         two settling gates are emitted only over a piece that holds a stair or a body of fluid, \
+         and this one holds neither"
     );
     for gate in &report.gates {
         println!(

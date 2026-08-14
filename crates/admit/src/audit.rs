@@ -94,6 +94,19 @@ pub struct AuditReport {
     /// a wall/fence/pane/vine whose connection properties are unwritten loads
     /// as an isolated post, silently.
     pub underspecified: usize,
+    /// **Stairs examined** by the `stair-shape` rule (`DW0739`) — its binding
+    /// count. Zero means this piece has no stairs and the rule said nothing
+    /// about it, which is a different fact from "the rule holds here".
+    pub stairs_examined: usize,
+    /// **Fluid cells examined** by the `fluid-contained` rule (`DW0738`) — its
+    /// binding count, over the fluid that runs (`water`/`lava` blocks).
+    pub fluid_cells_examined: usize,
+    /// Cells written `waterlogged=true`: wet, measured not to spread, and so
+    /// under no containment obligation.
+    pub fluid_held_cells: usize,
+    /// Run directions that leave the piece's own outer face, where these bytes
+    /// decide nothing. Counted, never judged.
+    pub fluid_at_edge: usize,
     pub findings: Vec<Finding>,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
@@ -146,9 +159,44 @@ fn to_finding(d: &Diagnostic) -> Finding {
     }
 }
 
-/// Audit a parsed structure against `allow`. Returns the report and the raw
-/// diagnostics (for stderr printing).
+/// **Audit a parsed structure**: its palette, and what the world will settle
+/// its blocks into.
+///
+/// The two halves are separate functions because a TILE SET runs them at
+/// different scales — the palette per tile, the settling rules over the
+/// assembled zone. Both settling rules read a cell's neighbours, and a seam
+/// between two tiles is packaging rather than geometry. Everything holding a
+/// `Structure` gets both halves by calling this.
 pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec<Diagnostic>) {
+    let (mut report, mut diags) = audit_palette(asset, s, allow);
+    fold_in(
+        &mut report,
+        &mut diags,
+        crate::settling::judge(&crate::spatial::grid(s)),
+    );
+    (report, diags)
+}
+
+/// Fold a settling verdict into a report: its counts always, its diagnostics
+/// when it has any.
+fn fold_in(
+    report: &mut AuditReport,
+    diags: &mut Vec<Diagnostic>,
+    settling: crate::settling::Settling,
+) {
+    report.stairs_examined = settling.stairs_examined;
+    report.fluid_cells_examined = settling.fluid_cells_examined;
+    report.fluid_held_cells = settling.fluid_held_cells;
+    report.fluid_at_edge = settling.fluid_at_edge;
+    diags.extend(settling.diagnostics);
+    if diags.iter().any(|d| d.is_error()) {
+        report.verdict = "fail";
+    }
+    report.findings = diags.iter().map(to_finding).collect();
+}
+
+/// The palette half: every rule that judges one block state at a time.
+fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec<Diagnostic>) {
     let mut diags: Vec<Diagnostic> = Vec::new();
     let mut forbidden = 0usize;
     let mut not_allowlisted = 0usize;
@@ -328,6 +376,10 @@ pub fn audit(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport, Vec
         unknown_blocks,
         pre_pin_unknown,
         underspecified,
+        stairs_examined: 0,
+        fluid_cells_examined: 0,
+        fluid_held_cells: 0,
+        fluid_at_edge: 0,
         findings: diags.iter().map(to_finding).collect(),
         tiles: None,
     };
@@ -359,7 +411,7 @@ pub fn audit_tile_set(
     let (mut pre_pin_unknown, mut underspecified) = (0, 0);
 
     for (part, structure) in tiles {
-        let (rep, diags) = audit(&part.file, structure, allow);
+        let (rep, diags) = audit_palette(&part.file, structure, allow);
         block_count += rep.block_count;
         forbidden += rep.forbidden;
         not_allowlisted += rep.not_allowlisted;
@@ -386,6 +438,12 @@ pub fn audit_tile_set(
         }));
     }
 
+    // The settling rules read neighbours, so they judge the ASSEMBLED zone and
+    // never a tile: a channel or a stair run that crosses a seam is one piece
+    // of geometry that happens to be packaged in two files.
+    let settling = crate::settling::judge(&crate::settling::zone_grid(zone_size, tiles));
+    all_diags.extend(settling.diagnostics);
+
     let verdict = if all_diags.iter().any(|d| d.is_error()) {
         "fail"
     } else {
@@ -402,6 +460,10 @@ pub fn audit_tile_set(
         unknown_blocks,
         pre_pin_unknown,
         underspecified,
+        stairs_examined: settling.stairs_examined,
+        fluid_cells_examined: settling.fluid_cells_examined,
+        fluid_held_cells: settling.fluid_held_cells,
+        fluid_at_edge: settling.fluid_at_edge,
         findings: all_diags.iter().map(to_finding).collect(),
         tiles: Some(audits),
     };

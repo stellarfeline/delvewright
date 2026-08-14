@@ -593,6 +593,16 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
     for (block, share) in &m.top_blocks {
         eprintln!("      {:>5.1}%  {block}", share * 100.0);
     }
+    // The settling counts, printed on every expansion whether or not either
+    // rule had anything to judge. A gate is emitted only over the objects it
+    // judges, so THIS line is where a reader learns that a piece holds no
+    // stair and no water — the difference between "the rule held here" and
+    // "the rule said nothing here", which is the whole of the vacuity rule.
+    eprintln!(
+        "  settling       {} stair(s) · {} fluid cell(s), {} still (waterlogged), {} run \
+         direction(s) leaving the piece",
+        m.stairs, m.fluid_cells, m.fluid_held_cells, m.fluid_at_edge
+    );
     // Printed on every expansion, gate or no gate. This is the whole binding of
     // the reachability work: a report nobody has to ask for cannot be the report
     // nobody ran (CLAUDE.md, "a gate nothing INVOKES is not a gate").
