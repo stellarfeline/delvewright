@@ -1,0 +1,30 @@
+{
+  "campaign_id": "region-offset",
+  "content": {
+    "finale": "quest/ride",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Find the hoist and learn how it is called.",
+        "id": "quest/board",
+        "mandatory": true,
+        "npcs": []
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/board"
+        ],
+        "goal": "Ride the cage and come back to the landing you started from.",
+        "id": "quest/ride",
+        "mandatory": true,
+        "npcs": []
+      }
+    ]
+  },
+  "dsl_version": "0.7.0",
+  "stage": "quest-plan"
+}
