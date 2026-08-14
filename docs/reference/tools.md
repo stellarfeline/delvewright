@@ -753,6 +753,21 @@ to one moment per piece. `assert_attachments_are_supported` refuses a vine or a
 lichen face with nothing behind it — vanilla deletes such a face at the first
 block update, so it is in the template and not in the game.
 
+**Where an attachable block may hold on is the same module's question.**
+`attachable_faces(block, cell, at)` answers it: every face of *that block* with
+a supporting neighbour, best first — a wall before the ceiling, the ceiling
+before the floor. A decoration pass asks it and takes the first answer, and an
+empty answer means the cell can hold no decal and none is placed. The faces come
+from the pinned shape table, so a vine is asked about its five and a lichen about
+its six, and each face is paired with the direction it looks in by the module
+rather than by the caller. Both halves are load-bearing: a pass that pairs its
+own offsets can name the face pointing *away* from the rock, and a pass that
+lists its own faces lists the four horizontals — so a decal whose only rock is
+overhead has nowhere to hang and is dropped instead of hung from it. This is a
+query for a placer, not a repair: a multiface face is a placement decision, so
+re-hanging an already-emitted state would turn the post-condition above into a
+silent rewrite.
+
 The one input vanilla publishes nowhere is `isFaceSturdy`: it is code, not data,
 so `face_support` decides from the pinned tables plus a **declared** list of full
 cubes and **refuses** — naming the block and the piece — outside it. There is no

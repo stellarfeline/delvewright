@@ -1652,30 +1652,31 @@ fn mountain_dressing(_spec: &Spec, g: &mut Grid, seed: u64) {
                 if !g.is_air(x, y, z) {
                     continue;
                 }
-                // `face` is the face of THIS cell that touches the rock — the
-                // same side the offset points at, which is what a multiface
-                // state names. The test is the rock's own face, not "is there a
-                // block": a dripstone tip or a lantern cannot hold a lichen, and
-                // vanilla deletes an unheld face at the first block update.
-                for (dx, dz, face) in [
-                    (-1, 0, "west"),
-                    (1, 0, "east"),
-                    (0, -1, "north"),
-                    (0, 1, "south"),
-                ] {
-                    let Some((name, props)) = neighbour_state(g, x + dx, y, z + dz) else {
-                        continue;
-                    };
-                    if connections::can_attach(&name, &props, face) {
-                        let ln = value_noise(seed, x, y, z, 0.5, 105);
-                        if ln > 0.95 {
-                            g.blk(x, y, z, "minecraft:glow_lichen", Some(vec![(face, "true")]));
-                        } else if ln < 0.08 && y >= M_CEIL - 3 {
-                            g.blk(x, y, z, "minecraft:vine", Some(vec![(face, "true")]));
-                        }
-                        break;
-                    }
-                }
+                // What would grow here is decided first, because which faces a
+                // decal can hold on to is a fact about the block: a vine has
+                // five, a lichen six.
+                let ln = value_noise(seed, x, y, z, 0.5, 105);
+                let decal = if ln > 0.95 {
+                    "minecraft:glow_lichen"
+                } else if ln < 0.08 && y >= M_CEIL - 3 {
+                    "minecraft:vine"
+                } else {
+                    continue;
+                };
+                // Where it may hold on is `connections`' question, not this
+                // scan's: the module owns which faces the block has and pairs
+                // each with the direction it looks in, so this pass can neither
+                // name a face pointing away from the rock nor forget that rock
+                // overhead is rock. The first answer is the best one — a wall
+                // if there is one, the ceiling if there is not.
+                let Some(face) = connections::attachable_faces(decal, [x, y, z], |p| {
+                    neighbour_state(g, p[0], p[1], p[2])
+                })
+                .first()
+                .copied() else {
+                    continue;
+                };
+                g.blk(x, y, z, decal, Some(vec![(face, "true")]));
             }
         }
     }
@@ -1765,13 +1766,21 @@ fn mountain_modules(g: &mut Grid, seed: u64) {
         g.blk(px0, M_SHELF_TOP + 1, z, "minecraft:oak_fence", None);
         g.blk(px1, M_SHELF_TOP + 1, z, "minecraft:oak_fence", None);
     }
+    // The gate stands in the pz1 rail, which runs along X, and a fence gate is
+    // joinable only from the two sides its panel spans — vanilla's
+    // `FenceGateBlock.connectsToDirection`, i.e. across `facing.getClockWise()`.
+    // So `facing` must be north or south for the rail to reach it: facing east
+    // spans Z, leaves both rail ends unjoined, and opens a permanent gap in the
+    // pen with daylight on either side of the gate. Of the two, north is the
+    // one vanilla places for a player who walks in off the shelf apron at
+    // pz1 + 1 — the pen's only approach, since the rails close every other side.
     let gx = (px0 + px1) / 2;
     g.blk(
         gx,
         M_SHELF_TOP + 1,
         pz1,
         "minecraft:oak_fence_gate",
-        Some(vec![("facing", "east"), ("open", "false")]),
+        Some(vec![("facing", "north"), ("open", "false")]),
     );
     g.blk(
         px0 + 1,

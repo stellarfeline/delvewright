@@ -1131,31 +1131,31 @@ fn detail_pass(spec: &Spec, g: &mut Grid, seed: u64) {
                 if !matches!(g.get(x, y, z), Cell::Air) {
                     continue;
                 }
-                // Find a wall face the decal can actually hold on to. `face` is
-                // the face of THIS cell that touches the rock — the same side
-                // the offset points at, which is what a multiface state names.
-                // The test is the rock's own face, not "is there a block": a
-                // dripstone tip or a lantern cannot hold a lichen, and vanilla
-                // deletes an unheld face at the first block update.
-                for (dx, dz, face) in [
-                    (-1, 0, "west"),
-                    (1, 0, "east"),
-                    (0, -1, "north"),
-                    (0, 1, "south"),
-                ] {
-                    let Some((name, props)) = neighbour_state(g, x + dx, y, z + dz) else {
-                        continue;
-                    };
-                    if connections::can_attach(&name, &props, face) {
-                        let ln = value_noise(seed, x, y, z, 0.5, 71);
-                        if ln > 0.88 {
-                            g.blk(x, y, z, "minecraft:glow_lichen", Some(vec![(face, "true")]));
-                        } else if ln < 0.05 && y >= sy - 2 {
-                            g.blk(x, y, z, "minecraft:vine", Some(vec![(face, "true")]));
-                        }
-                        break;
-                    }
-                }
+                // What would grow here is decided first, because which faces a
+                // decal can hold on to is a fact about the block: a vine has
+                // five, a lichen six.
+                let ln = value_noise(seed, x, y, z, 0.5, 71);
+                let decal = if ln > 0.88 {
+                    "minecraft:glow_lichen"
+                } else if ln < 0.05 && y >= sy - 2 {
+                    "minecraft:vine"
+                } else {
+                    continue;
+                };
+                // Where it may hold on is `connections`' question, not this
+                // scan's: the module owns which faces the block has and pairs
+                // each with the direction it looks in, so this pass can neither
+                // name a face pointing away from the rock nor forget that rock
+                // overhead is rock. The first answer is the best one — a wall
+                // if there is one, the ceiling if there is not.
+                let Some(face) = connections::attachable_faces(decal, [x, y, z], |p| {
+                    neighbour_state(g, p[0], p[1], p[2])
+                })
+                .first()
+                .copied() else {
+                    continue;
+                };
+                g.blk(x, y, z, decal, Some(vec![(face, "true")]));
             }
         }
     }
