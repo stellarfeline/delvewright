@@ -13,7 +13,7 @@ use std::path::Path;
 
 /// Cross-tileset generator invariants, shared by source include so a lesson
 /// learned in one tileset does not have to be re-learned in the other four
-/// (the five generators are separate Cargo workspaces on purpose).
+/// (the generators are separate Cargo workspaces on purpose).
 #[path = "../../invariants.rs"]
 mod invariants;
 

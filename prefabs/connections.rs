@@ -1,5 +1,5 @@
 //! **Connection states are derived from the piece's own neighbours, at the
-//! emitter — one authority, six generators.**
+//! emitter — one authority, every generator.**
 //!
 //! A `multipart` blockstate definition *assembles* its model out of the
 //! properties its selectors name, so a palette entry that omits one does not
@@ -468,7 +468,7 @@ where
 // The piece, as every generator's `Structure` can be viewed
 // ---------------------------------------------------------------------------
 
-/// A piece's palette and block list, in the one shape all six generators share.
+/// A piece's palette and block list, in the one shape every generator shares.
 /// Each generator converts its own `Structure` into this and back — the types
 /// are per-workspace (they are separate Cargo workspaces on purpose), the rule
 /// is not.
@@ -1298,6 +1298,52 @@ mod tests {
             face_support("minecraft:stone_brick_stairs", &corner, "north"),
             None
         );
+    }
+
+    /// **The interaction that belongs to neither half of this integration.**
+    ///
+    /// The `stair-shape` gate (`DW0801`) judges a *claim*: a stair that writes
+    /// no `shape` makes none, so nothing can disagree with it, and
+    /// `prefab-procedure.md` says so. This module needs a *fact* — which of the
+    /// stair's faces are full — and a stair with no `shape` has none to give.
+    ///
+    /// So the two are not in conflict but they are not independent either, and
+    /// the boundary is here: a shape-less stair standing alone is fine, and a
+    /// shape-less stair with a fence beside it is a red naming the cell. It is
+    /// latent in the shipped library (every stair there writes `shape`, `facing`
+    /// and `half`), which is exactly why it is pinned rather than left to be
+    /// discovered by the first piece that stops.
+    #[test]
+    #[should_panic(expected = "no verdict on whether that block presents a full face")]
+    fn a_stair_that_writes_no_shape_refuses_rather_than_guessing_its_faces() {
+        let mut cells = Cells::new();
+        cell(&mut cells, [0, 0, 0], "minecraft:oak_fence", &[]);
+        cell(
+            &mut cells,
+            [1, 0, 0],
+            "minecraft:stone_brick_stairs",
+            // `facing` and `half` are written; `shape` is not. Vanilla derives
+            // it on the first block update, which is precisely why the file can
+            // omit it and precisely why this module cannot read it back.
+            &[("facing", "north"), ("half", "bottom")],
+        );
+        resolved(&cells);
+    }
+
+    /// The same stair with nothing beside it that joins is never asked, so it
+    /// passes — the refusal above is about the pair, not about the stair.
+    #[test]
+    fn a_stair_that_writes_no_shape_is_fine_when_nothing_joins_it() {
+        let mut cells = Cells::new();
+        cell(
+            &mut cells,
+            [0, 0, 0],
+            "minecraft:stone_brick_stairs",
+            &[("facing", "north"), ("half", "bottom")],
+        );
+        cell(&mut cells, [1, 0, 0], "minecraft:stone", &[]);
+        let out = resolved(&cells);
+        assert_eq!(out.len(), 2);
     }
 
     /// A jigsaw is a full cube in the file and air in the world, so nothing

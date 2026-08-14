@@ -767,7 +767,7 @@ gate *fails* — run by the same CI job.
 
 **Connections are derived, never defaulted.**
 [`../../prefabs/connections.rs`](../../prefabs/connections.rs) is source-included
-the same way and runs at the same six emitters. Before the bytes are written it
+the same way and runs at the same emitters. Before the bytes are written it
 fills every shape-carrying property a state *leaves out* — a fence's, a wall's,
 a pane's or a bar's connections, a vine's or a lichen's absent faces — from the
 blocks actually beside the cell, by the rule vanilla applies itself

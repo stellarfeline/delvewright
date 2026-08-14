@@ -634,13 +634,23 @@ prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
 through `prefabs/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
 
-`prefabs/connections.rs` runs at the same six emitters, just before those gates.
+`prefabs/connections.rs` runs at those same emitters, just before those gates.
 It fills the shape-carrying properties a state leaves unwritten — connections
 for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
 piece's own neighbours, by vanilla's rule, and never overwrites a value the
 generator wrote. The `DW0735` verdict and a vine/lichen attachment check are
 emitter post-conditions there, so a generator cannot write a disconnected
 grille and wait for admission to notice.
+
+The derivation asks each neighbour whether it presents a full face, and a
+**stair** answers from its own `shape`: a straight stair is full on the side it
+faces, a corner stair is refused outright because its second quarter moves which
+faces are full. So a stair that writes no `shape` has no answer to give, and a
+fence, wall or bars beside it stops the generator with a red naming the cell
+rather than guessing. This is narrower than the `stair-shape` gate above, where a
+stair writing no `shape` makes no claim and nothing disagrees with it: that gate
+judges a claim, this one needs a fact. A stair standing alone may still say
+nothing; a stair standing next to something that joins must say what it is.
 
 A pass that *places* a vine or a lichen asks the same module where the block may
 hold on — `attachable_faces(block, cell, at)`, which returns every supported
