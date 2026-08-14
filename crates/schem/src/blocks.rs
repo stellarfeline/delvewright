@@ -16,9 +16,16 @@
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
 //! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
 //!
-//! So this module is the block half of the command rule. It is deliberately in
-//! `delvewright-schem` — the one crate that writes structure `.nbt` bytes — so
-//! that a new emitter reaches it by depending on the writer it already needs.
+//! So this module is the block half of the command rule. It lives in
+//! `delvewright-schem` because that is where the structure-template reader and
+//! writer already are — but this crate is **not** the only site that turns a
+//! palette into `.nbt` bytes, and reasoning as though it were is what left the
+//! sixth emitter unguarded. The six `prefabs/*-generator` workspaces cannot
+//! depend on this crate at all and reach the same rule through
+//! `prefabs/invariants.rs`. Which sites owe it is therefore not remembered: it
+//! is discovered from the ingredient by `tools/check-structure-emitters.py`,
+//! which treats every tracked file that calls the NBT serialiser as a
+//! candidate, and requires each to name the rule or declare why it need not.
 //!
 //! # What it validates
 //!

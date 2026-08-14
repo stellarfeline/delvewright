@@ -66,6 +66,21 @@ pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
 /// exist. Derived from a counterfactual: the leg is re-routed over the identical
 /// world with lethality removed, and the volumes covering that route are named.
 pub const DW_LETHAL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0510");
+/// `DW0544`: a forced critical-path leg depends on standing where a runtime region
+/// write leaves **fluid** — water or lava.
+///
+/// A `fill-region` / `close-gate` / shortcut seal whose block is a fluid does not
+/// build floor: it replaces whatever was in the box with something a body sinks
+/// through ([`crate::plan::RegionWrite::Flood`]). Sibling of
+/// [`DW_LETHAL_ON_CRITICAL_PATH`] and derived the same way — the leg is re-routed
+/// over the identical world with every runtime fluid fill treated as solid, and if
+/// *that* world routes, the fluid is what closed the leg and the boxes are named.
+///
+/// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the
+/// reason `DW0510` is: the prefab is innocent. The author is looking at a box they
+/// filled on purpose and needs to be told that filling it with water is what took
+/// the footing away — not sent hunting for a wedged doorway that is not there.
+pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544");
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
@@ -776,6 +791,19 @@ pub struct World {
     /// world and `DW0445` would go quietly green — a new verb weakening an existing
     /// check, which is the one thing a new verb may never do.
     pinned: BTreeSet<[i32; 3]>,
+    /// Cells a **runtime fluid fill** has flooded on this view
+    /// ([`crate::plan::RegionWrite::Flood`], [`World::with_flooded`]) — a subset of
+    /// `flooded`, kept apart from the prefab-authored water only so the
+    /// counterfactual [`World::without_runtime_flood`] can put exactly these cells
+    /// back and no others. Empty on the base world and on every campaign that never
+    /// fills a region with a fluid, which is what keeps every other campaign's
+    /// proofs byte-identical.
+    flood_written: BTreeSet<[i32; 3]>,
+    /// The boxes behind `flood_written`, in region order — who to blame for a route
+    /// that only exists when a fluid is mistaken for floor. Same job as
+    /// `lethal_regions`, for the same reason: without it the author gets "no
+    /// collision-free path" over geometry that looks open.
+    flood_regions: Vec<([i32; 3], [i32; 3])>,
     /// What the *unmodelled* columns contain (spec-0013 `horizon`). Defaults to
     /// [`Ambient::Void`] — the pre-0.6 world and every synthetic test world —
     /// and is set from the plan by [`World::from_plan`] /
@@ -852,6 +880,8 @@ impl World {
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
             pinned: self.pinned.clone(),
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -900,6 +930,8 @@ impl World {
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
             pinned: BTreeSet::new(),
+            flood_written: BTreeSet::new(),
+            flood_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -957,6 +989,8 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned,
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -988,6 +1022,8 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
         };
         for c in extra {
@@ -1002,8 +1038,51 @@ impl World {
         w
     }
 
+    /// A copy of this world with `extra` cells holding **free fluid** — the third
+    /// thing a runtime region write can leave behind
+    /// ([`crate::plan::RegionWrite::Flood`]), beside [`World::with_sealed`]'s wall
+    /// and [`World::with_cleared`]'s empty box.
+    ///
+    /// A flooded cell is impassable and **never floor**, so this is not a weaker
+    /// seal: it blocks passage exactly as a wall does, and additionally denies the
+    /// footing a wall would have provided. Which is the whole point — `fill-region
+    /// … minecraft:water` was previously routed as a wall *and* walked on top of.
+    ///
+    /// The written cells stop being any block class (a fill carries no `replace`
+    /// filter, so it overwrites whatever was there), are recorded in
+    /// `flood_written`/`flood_regions` for [`World::without_runtime_flood`], and are
+    /// **pinned** for the same reason a seal is: they are this proof's premise, and
+    /// a later `clear-region` laid over them may not quietly delete the water.
+    fn with_flooded(&self, extra: &BTreeSet<[i32; 3]>, regions: &[([i32; 3], [i32; 3])]) -> World {
+        let mut w = World {
+            solid: self.solid.clone(),
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
+            flooded: self.flooded.clone(),
+            partial: self.partial.clone(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            pinned: self.pinned.clone(),
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
+            ambient: self.ambient.clone(),
+        };
+        for c in extra {
+            w.solid.remove(c);
+            w.tall.remove(c);
+            w.use_gates.remove(c);
+            w.partial.remove(c);
+            w.flooded.insert(*c);
+            w.pinned.insert(*c);
+            w.flood_written.insert(*c);
+        }
+        w.flood_regions.extend_from_slice(regions);
+        w
+    }
+
     /// This world as of one point in the quest DAG: every region a runtime write
-    /// has filled forced solid, every region a runtime write has cleared emptied
+    /// has filled forced solid, every region a runtime write has cleared emptied,
+    /// every region a runtime write has filled with a fluid flooded
     /// ([`RegionState`]).
     ///
     /// **The one place** that knows what a runtime region write does to the
@@ -1012,10 +1091,82 @@ impl World {
     /// [`crate::plan::RegionEvent`]s and none of them carries its own copy of the
     /// rule.
     fn with_region_state(&self, st: &RegionState) -> World {
-        // Fills are applied last, so where two regions overlap the wall wins: a
-        // proof that survives the seal is the conservative answer, and it is
-        // deterministic without needing a tie-break on declaration order.
-        self.with_cleared(&st.cleared).with_sealed(&st.solid)
+        // Writes are applied last-to-strictest, so where two regions overlap the
+        // more restrictive answer wins and the result needs no tie-break on
+        // declaration order (ADR-0006). A fill beats a clear — a proof that
+        // survives the seal is the conservative answer — and a flood beats a fill,
+        // because a flooded cell is everything a walled cell is (impassable) and
+        // one thing more (not floor).
+        self.with_cleared(&st.cleared)
+            .with_sealed(&st.solid)
+            .with_flooded(&st.flooded, &st.flood_regions)
+    }
+
+    /// Whether any cell of this world was flooded by a **runtime** fluid fill.
+    /// Call sites skip the counterfactual clone entirely when it is false, which is
+    /// every campaign that does not fill a region with water or lava.
+    pub fn has_runtime_flood(&self) -> bool {
+        !self.flood_written.is_empty()
+    }
+
+    /// A copy of this world in which every runtime fluid fill is treated as a
+    /// **solid** fill instead — the counterfactual the fluid diagnostic is derived
+    /// from, and precisely the model's behaviour before a written block's identity
+    /// was consulted at all.
+    ///
+    /// A route that fails on the real world and succeeds on this one failed
+    /// *because* the campaign filled a region with a fluid and something needed to
+    /// stand there. Without the counterfactual the author is handed "no
+    /// collision-free path" over a box they can see is full — the reachability
+    /// report that sends someone to fix a prefab that was never wrong.
+    fn without_runtime_flood(&self) -> World {
+        let mut w = World {
+            solid: self.solid.clone(),
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
+            flooded: self.flooded.clone(),
+            partial: self.partial.clone(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            pinned: self.pinned.clone(),
+            flood_written: BTreeSet::new(),
+            flood_regions: Vec::new(),
+            ambient: self.ambient.clone(),
+        };
+        for c in &self.flood_written {
+            w.flooded.remove(c);
+            w.solid.insert(*c);
+        }
+        w
+    }
+
+    /// The runtime fluid-fill boxes a walk over `cells` **depends on**, in region
+    /// order — who to blame for a route that only exists when a fluid is mistaken
+    /// for floor.
+    ///
+    /// A route cell is where the body IS; the cell below it is what holds the body
+    /// up, and that is the one a fluid fill usually takes away — `fill … water` at
+    /// y=64 leaves the walk at y=65 standing on nothing while the route polyline
+    /// never enters the box at all. Blaming only the occupied cells reports "(none)"
+    /// for the commonest case there is, which is how a correct diagnostic still
+    /// tells the author nothing. Both are checked; a box that covers either is
+    /// named.
+    ///
+    /// Deterministic: region order, no hashing (ADR-0006).
+    fn flood_regions_over(&self, cells: &[[i32; 3]]) -> Vec<([i32; 3], [i32; 3])> {
+        let touched: Vec<[i32; 3]> = cells
+            .iter()
+            .flat_map(|c| [*c, [c[0], c[1] - 1, c[2]]])
+            .collect();
+        self.flood_regions
+            .iter()
+            .filter(|(lo, hi)| {
+                touched
+                    .iter()
+                    .any(|c| (0..3).all(|i| lo[i] <= c[i] && c[i] <= hi[i]))
+            })
+            .copied()
+            .collect()
     }
 
     /// A copy of this world for **autonomous** walkers that cannot use gates —
@@ -1040,6 +1191,8 @@ impl World {
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             pinned: self.pinned.clone(),
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
         }
     }
@@ -1069,6 +1222,8 @@ impl World {
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
             pinned: BTreeSet::new(),
+            flood_written: BTreeSet::new(),
+            flood_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -1085,6 +1240,8 @@ impl World {
             lethal: BTreeSet::new(),
             lethal_regions: Vec::new(),
             pinned: BTreeSet::new(),
+            flood_written: BTreeSet::new(),
+            flood_regions: Vec::new(),
             ambient: Ambient::Void,
         }
     }
@@ -2893,19 +3050,32 @@ pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
 /// off" is the shape the capability had while `close-gate` owned it privately, and
 /// it is why the other half — "what is now open" — had no answer for anything but a
 /// gate, whose cells the assembled model happens to hold open unconditionally.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct RegionState {
     /// Cells a runtime fill has made solid by this point.
     solid: BTreeSet<[i32; 3]>,
     /// Cells a runtime clear has emptied by this point.
     cleared: BTreeSet<[i32; 3]>,
+    /// Cells a runtime fill has filled with **fluid** by this point
+    /// ([`crate::plan::RegionWrite::Flood`]) — impassable, and never floor.
+    ///
+    /// A third set rather than a flag on `solid`, because the two answers differ in
+    /// the direction that matters: a body cannot walk through either, and can stand
+    /// on only one. Folding a water fill into `solid` is what let the route proof
+    /// walk a party across a pond in mid-air.
+    flooded: BTreeSet<[i32; 3]>,
+    /// The boxes behind `flooded`, in region order — carried so a route failure can
+    /// NAME the write that caused it instead of reporting unroutable geometry that
+    /// looks perfectly open, exactly as [`World::lethal_regions`] does for a lethal
+    /// volume.
+    flood_regions: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl RegionState {
     /// Nothing has been written by this point — the caller routes the base world
     /// and clones nothing.
     fn is_empty(&self) -> bool {
-        self.solid.is_empty() && self.cleared.is_empty()
+        self.solid.is_empty() && self.cleared.is_empty() && self.flooded.is_empty()
     }
 }
 
@@ -2942,12 +3112,16 @@ fn region_state_at(
     }
     let mut st = RegionState::default();
     for (region, (_, write)) in latest {
-        // An `Unseal` contributes to neither set: it removes only the gate's own
+        // An `Unseal` contributes to no set: it removes only the gate's own
         // block, which the assembled world already holds absent. It mattered
         // above, in latest-write-wins, where it is what cancels an earlier fill.
         let into = match write {
             RegionWrite::Fill => &mut st.solid,
             RegionWrite::Clear => &mut st.cleared,
+            RegionWrite::Flood => {
+                st.flood_regions.push(region);
+                &mut st.flooded
+            }
             RegionWrite::Unseal => continue,
         };
         into.extend(crate::assembled::region_cells(region.0, region.1));
@@ -2997,10 +3171,11 @@ pub fn reachable_under_every_quest_state(
         let st = region_state_at(&plan.region_events, arrival, &ancestor);
         // Distinct configurations only. The number of them over a whole critical
         // path is small, and re-flooding an identical one would only cost time.
-        if seen
-            .iter()
-            .any(|p| p.solid == st.solid && p.cleared == st.cleared)
-        {
+        // Compared WHOLE, never field by field. Two states that differ only in what
+        // a runtime write flooded are two different worlds, and a hand-written
+        // subset of the fields silently drops the newest one — which is exactly how
+        // a third set gets added and the dedup keeps answering for two.
+        if seen.contains(&st) {
             continue;
         }
         let w = if st.is_empty() {
@@ -3124,6 +3299,29 @@ fn names_of(ids: &[&str]) -> String {
         .join(", ")
 }
 
+/// Render a blamed-region list for a `DW0544` message. A runtime region write has
+/// no author-given id — `fill-region` names a box, not itself — so the box IS the
+/// name, and it identifies the effect uniquely. The empty case is the same honest
+/// admission [`names_of`] makes: the counterfactual found a route that touches no
+/// fluid box, which would be a defect in this proof rather than in the campaign.
+fn boxes_of(regions: &[([i32; 3], [i32; 3])]) -> String {
+    if regions.is_empty() {
+        return "(none — the counterfactual route touches no fluid-filled box; this is a \
+                compiler defect, escalate it)"
+            .to_string();
+    }
+    regions
+        .iter()
+        .map(|(lo, hi)| {
+            format!(
+                "[{}, {}, {}]..[{}, {}, {}]",
+                lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn route_visited(
     world: &World,
     positions: &[VisitedPos],
@@ -3145,6 +3343,7 @@ fn route_visited(
             &leg_world_owned
         };
         let sealed = st.solid;
+        let flooded = st.flooded;
         // The lethal-free view of this same leg, built once and only when the
         // campaign declares a volume at all. Every failure below asks it first:
         // a leg that routes here and nowhere else failed *because of* lethality,
@@ -3172,10 +3371,40 @@ fn route_visited(
                 ),
             })
         };
+        // The same move for the other premise that closes a leg while the geometry
+        // reads open: a runtime fill of water or lava. Built once, and only for a
+        // campaign that fills a region with a fluid at all — every other campaign
+        // pays nothing and routes byte-identically.
+        let dry_owned;
+        let dry: Option<&World> = if leg_world.has_runtime_flood() {
+            dry_owned = leg_world.without_runtime_flood();
+            Some(&dry_owned)
+        } else {
+            None
+        };
+        let fluid_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+            let dry = dry?;
+            let cell = dry.snap_endpoint(at, talk_to)?;
+            let boxes = boxes_of(&leg_world.flood_regions_over(&[cell]));
+            Some(NavError {
+                code: DW_FLUID_FILL_ON_CRITICAL_PATH,
+                message: format!(
+                    "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                     anchor {at:?} is a cell a runtime region write fills with FLUID {boxes} — \
+                     a body does not stand on water or lava, so the party arrives at this \
+                     objective and sinks. Fill the box with a block that is floor, put the \
+                     floor one cell below the fluid, or move the objective; do NOT silence \
+                     this by filling with a solid you do not want in the world."
+                ),
+            })
+        };
         let start = match leg_world.snap_endpoint(from, false) {
             Some(c) => c,
             None => {
                 if let Some(e) = lethal_snap_err(from, false) {
+                    return Err(e);
+                }
+                if let Some(e) = fluid_snap_err(from, false) {
                     return Err(e);
                 }
                 return Err(NavError {
@@ -3194,6 +3423,9 @@ fn route_visited(
             Some(c) => c,
             None => {
                 if let Some(e) = lethal_snap_err(to, pair[1].talk_to) {
+                    return Err(e);
+                }
+                if let Some(e) = fluid_snap_err(to, pair[1].talk_to) {
                     return Err(e);
                 }
                 return Err(NavError {
@@ -3232,7 +3464,45 @@ fn route_visited(
                     ),
                 });
             }
-            let gate_hint = if sealed.is_empty() {
+            // Then the fluid fill, for the same reason and with the same shape: the
+            // route the author believes in exists, and what closed it is a box they
+            // filled with water or lava. Asked after lethality only because a
+            // campaign that has both wants the answer that kills the party told
+            // first; the two are otherwise independent.
+            if let Some(dry) = dry
+                && let (Some(s2), Some(g2)) = (
+                    dry.snap_endpoint(from, false),
+                    dry.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = dry.find_path(s2, g2)
+            {
+                let boxes = boxes_of(&leg_world.flood_regions_over(&cells));
+                return Err(NavError {
+                    code: DW_FLUID_FILL_ON_CRITICAL_PATH,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) needs footing inside FLUID-filled region(s) \
+                         {boxes} — a runtime write fills that box with water or lava, and a \
+                         body walks on neither. The geometry would carry the party if the box \
+                         held a block; the fluid is what closes it. Fill with a block that is \
+                         floor, drop the walkable surface to the cell below the fluid, or route \
+                         the forced path around the box; do NOT swap in a solid you do not want \
+                         in the world just to get green."
+                    ),
+                });
+            }
+            // A leg the fluid did not *uniquely* close is still a leg a fluid may
+            // have walled: `DW0544` fires only when the box supplied FOOTING, and a
+            // flood laid across a corridor blocks it whether or not it is wet. That
+            // is an unroutable leg the campaign built on purpose, so it may not be
+            // reported as a wedged doorway — the "go and fix a prefab that was never
+            // wrong" answer this whole family exists to avoid.
+            let gate_hint = if !flooded.is_empty() && sealed.is_empty() {
+                "a runtime region write has filled a box with FLUID on/before this leg, and it \
+                 blocks the forced path. Water and lava are impassable to a walker, so a filled \
+                 box is a wall whatever its block. Move the box off the forced path, fire the \
+                 fill later, or clear it before this leg — do NOT delete the proof."
+            } else if sealed.is_empty() {
                 "this is a wedged doorway seam, a void gap in the assembled layout, or an \
                  unbroken 1.5-tall barrier (fence/wall) ring — a walking player can neither pass \
                  through nor stand on top of a fence, so a pen needs a fence-gate opening (or, if \
@@ -7308,6 +7578,160 @@ mod tests {
         assert!(
             route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
             "a region cleared before the leg must route again"
+        );
+    }
+
+    // --- what a write LEAVES: fluid is not floor ----------------------------
+
+    /// A runtime fill of a **fluid** takes the floor away, and the model says so.
+    ///
+    /// The corridor's floor at `[2,64,0]` is the only footing between the two ends.
+    /// A `Fill` there is a no-op (the cell was already solid) and the leg routes. A
+    /// `Flood` there — the same box, the same fire step, the same verb, a different
+    /// block — replaces the floor with water, and a body does not stand on water.
+    ///
+    /// This is the whole defect in four lines: with `Flood` folded into `Fill`, the
+    /// second case routed too, and the compiler proved a party walking across a
+    /// pond in mid-air.
+    #[test]
+    fn a_fluid_fill_takes_the_floor_away_and_a_solid_fill_does_not() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let floor_box = ([2, 64, 0], [2, 64, 0]);
+        let solid_fill = RegionEvent {
+            region: floor_box,
+            write: RegionWrite::Fill,
+            fire_step: 0,
+        };
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&solid_fill), &linear).is_ok(),
+            "filling a floor cell with a block leaves it floor"
+        );
+        let fluid_fill = RegionEvent {
+            region: floor_box,
+            write: RegionWrite::Flood,
+            fire_step: 0,
+        };
+        let err =
+            route_visited(&world, &[a, b], std::slice::from_ref(&fluid_fill), &linear).unwrap_err();
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
+        assert!(
+            err.message.contains("[2, 64, 0]..[2, 64, 0]"),
+            "the message must name the box that took the footing: {}",
+            err.message
+        );
+    }
+
+    /// A flooded cell blocks passage as hard as a wall does, on top of not being
+    /// floor — so a fluid fill laid **across** the corridor closes it exactly as a
+    /// `close-gate` would.
+    ///
+    /// The code here is `DW0311`, not `DW0544`, and that is the counterfactual being
+    /// honest rather than a gap. `DW0544` answers one question — *would this route
+    /// exist if the box held a block?* — and for a box laid across the path the
+    /// answer is no: the campaign built a wall, and calling the fluid the culprit
+    /// would send the author to change a block that changes nothing. What the fluid
+    /// must still buy them is the right HINT: not "your prefab has a wedged
+    /// doorway", which is the geometry-is-innocent misattribution this family exists
+    /// to prevent.
+    #[test]
+    fn a_fluid_fill_across_the_corridor_is_a_wall_and_says_which() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent {
+            region: ([2, 65, 0], [2, 66, 0]),
+            write: RegionWrite::Flood,
+            fire_step: 0,
+        };
+        let err =
+            route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear).unwrap_err();
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
+        assert!(
+            err.message.contains("FLUID"),
+            "an unroutable leg the campaign flooded must not be reported as a wedged \
+             doorway: {}",
+            err.message
+        );
+    }
+
+    /// Where a fluid fill and a solid fill overlap, the **fluid** wins.
+    ///
+    /// Not a tie-break picked for convenience: a flooded cell is everything a walled
+    /// cell is (impassable) and one thing more (not floor), so taking it is the
+    /// conservative answer in the same sense that "a fill beats a clear" is. It also
+    /// makes the result independent of declaration order, which ADR-0006 requires.
+    #[test]
+    fn where_a_fluid_fill_overlaps_a_solid_fill_the_fluid_wins() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let over_floor = RegionEvent {
+            region: ([2, 64, 0], [2, 64, 0]),
+            write: RegionWrite::Flood,
+            fire_step: 0,
+        };
+        // A solid fill over a box that covers the same cell, declared either side of
+        // the flood. Both orders must refuse.
+        let wider_solid = RegionEvent {
+            region: ([1, 64, 0], [3, 64, 0]),
+            write: RegionWrite::Fill,
+            fire_step: 0,
+        };
+        for events in [
+            vec![over_floor.clone(), wider_solid.clone()],
+            vec![wider_solid, over_floor],
+        ] {
+            let err = route_visited(&world, &[a, b], &events, &linear).unwrap_err();
+            assert_eq!(
+                err.code, DW_FLUID_FILL_ON_CRITICAL_PATH,
+                "a solid fill over the same cells must not dry the fluid out"
+            );
+        }
+    }
+
+    /// A runtime **clear** declared over a box a different write floods does not dry
+    /// it: within one quest state the order is clear → fill → flood, so the wettest
+    /// answer is the one that survives.
+    ///
+    /// This is [`World::with_cleared`]'s stated rule reaching a case it could not
+    /// reach before — a `fill … air` against a wet cell lets the water back in
+    /// rather than removing it, and the water may now be water a runtime write put
+    /// there rather than only water a prefab did. What the ordering guards is a
+    /// reorder of [`World::with_region_state`]: run the clear last and this campaign
+    /// silently proves a dry floor again.
+    #[test]
+    fn a_clear_over_a_flooded_box_does_not_dry_it() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent {
+            region: ([2, 64, 0], [2, 64, 0]),
+            write: RegionWrite::Flood,
+            fire_step: 0,
+        };
+        // A different box (so it is a different region, with its own latest write)
+        // covering the flooded floor cell and the air above it.
+        let clear = RegionEvent {
+            region: ([2, 64, 0], [2, 65, 0]),
+            write: RegionWrite::Clear,
+            fire_step: 1,
+        };
+        let err = route_visited(&world, &[a, b], &[flood, clear], &linear).unwrap_err();
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
+    }
+
+    /// A campaign that writes no fluid pays nothing: the counterfactual is never
+    /// built, and every existing verdict is the verdict it always was.
+    #[test]
+    fn a_world_with_no_runtime_flood_reports_none() {
+        let world = floored(5, 1, 65, &[]);
+        assert!(!world.has_runtime_flood());
+        let sealed = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
+        assert!(
+            !sealed.has_runtime_flood(),
+            "a seal is not a flood, however many cells it forces"
         );
     }
 
