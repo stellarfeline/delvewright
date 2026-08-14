@@ -732,6 +732,28 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             named.join(" · ")
         ));
     }
+    // The one thing the fluid rule deliberately does not judge, said out loud
+    // rather than left as a number in the measurement line. A body that reaches
+    // the piece's own outer face is a claim about the piece's NEIGHBOUR, and
+    // these bytes cannot make it — a shoreline piece's water is the sea. It is
+    // also the direction in which this gate could be answered rather than
+    // fixed, by dragging a body out to the region face, so the count belongs
+    // where a reviewer reads it.
+    if !fluid.at_edge.is_empty() {
+        let named: Vec<String> = fluid
+            .at_edge
+            .iter()
+            .take(3)
+            .map(|e| format!("{},{},{}", e.from[0], e.from[1], e.from[2]))
+            .collect();
+        findings.push(format!(
+            "a body of fluid reaches this piece's own outer face in {} run direction(s) (from {}) \
+             — what is beyond a face is not in these bytes, so `fluid-contained` counted them and \
+             judged nothing. Whatever this piece is placed against decides where that water goes",
+            fluid.at_edge.len(),
+            named.join(", ")
+        ));
+    }
     if expansion.anchors.is_empty() {
         findings.push(
             "the program declared no anchors: nothing in a campaign can name a place inside this \

@@ -107,6 +107,26 @@ pub fn judge(grid: &VoxelModel) -> Settling {
             settle::fluid_detail(&bodies),
         ));
     }
+    // The one thing this rule deliberately does not judge, said out loud. A
+    // body that reaches the piece's own outer face is a claim about the piece's
+    // NEIGHBOUR, and these bytes cannot make it — a shoreline piece's water is
+    // the sea. It is also the direction in which the gate could be answered
+    // rather than fixed, so a reviewer is told the count every time.
+    if !bodies.at_edge.is_empty() {
+        let from = bodies.at_edge[0].from;
+        diagnostics.push(
+            Diagnostic::warning(
+                fluid::DW_FLUID_ESCAPES,
+                format!(
+                    "a body of fluid reaches this piece's own outer face in {} run direction(s) \
+                     — what is beyond a face is not in these bytes, so this is counted and not \
+                     judged. Whatever this piece is placed against decides where that water goes",
+                    bodies.at_edge.len()
+                ),
+            )
+            .at(from),
+        );
+    }
 
     Settling {
         stairs_examined: shapes.bound,
