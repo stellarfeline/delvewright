@@ -350,6 +350,20 @@ jobs:
       # (ubuntu-latest ships >=3.11).
       - name: DW-code catalog matches the compiler reference (both directions)
         run: python3 tools/check-dw-codes.py
+      # The step above proves a diagnostic's CODE exists, is documented, is
+      # unique and is asserted by a test. Nothing proved anything about the
+      # SENTENCE, and `delve-grammar expand` refused an author's export with "…
+      # would put a  on disk …" — a dropped noun, sitting across a `\`-newline
+      # continuation so no line of the file contained the gap. It survived every
+      # required status check, because the message is the one part of a
+      # diagnostic nothing ever read. This renders every message the source can
+      # produce — including `crates/render`, a workspace of its own that no
+      # `cargo test` here builds — and refuses a gap in one. It states its
+      # binding count and names every expression it could not render, so a
+      # message out of reach is a line in the log, never a silent pass.
+      # Deterministic, offline, stdlib-only python3.
+      - name: every diagnostic message is a whole sentence
+        run: python3 tools/check-diagnostic-messages.py
       # Every owner decision this repo has written down is bound to the place it
       # landed, both directions. A `landed` row whose implementation is deleted
       # or renamed reds here; a decision written into an ADR, an owner-approved
