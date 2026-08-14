@@ -763,6 +763,69 @@ over every program in the library, by wrapping every rule of each in a claim.
 
 `spatial-contract` is the corpus example: two rooms, a barred door and a corbel.
 
+### The obligations — what the blocks have to agree with
+
+The declaration is the author's; the blocks are the evidence; a gate is the
+disagreement between them. **Nothing is read out of the voxels.** A space's kind,
+an edge's class and an envelope's claim all come from the document, and the
+checker's only job is to prove the building agrees.
+
+`crates/grammar/src/contract.rs` is that checker, over one pair — a block grid
+and a resolved contract. It runs from two doors and is the same code at both:
+`delve-grammar expand`, where a red writes no `.nbt`, and `delve-admit audit`,
+where a red is `DW0782` and exit 1. It runs whenever a piece declares a
+contract; there is no flag.
+
+| gate | what it proves | what it binds to |
+| --- | --- | --- |
+| `contract-well-formed` | entry carries an exterior traversal edge; no two spaces overlap; each space is one floor (standable span ≤ 2 levels, out-of-walk cells excluded); each out-of-walk region nests wholly in one space or none; each opening lies on the boundary its endpoints share; each transit volume is disjoint from every space and touches both ends; `rise` present, absent and signed per class | spaces + regions + edges |
+| `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume | standable cells |
+| `contract-closure` | every boundary cell of an `enclosed` space (and the side faces of `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region; and an `open`/`open_top` claim is refused over a cell with this piece's own blocks overhead | boundary cells examined |
+| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `drop` falls forward and does not walk back; `barred` does not connect while its bar stands and does connect with the bar voided; and in every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
+| `contract-no-body` | every out-of-walk region earns a **computed** kind — `sealed` (the union of sealed regions is itself closed), `posted` (an anchor inside it, and every standable cell within Chebyshev 2 of one), `facade` (not nested in a space, and every standable cell touched by the air outside the piece). A region earning none is red, and so is one holding no standable cell | regions |
+| `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — bars standing, drops forward only. A space behind a bar is re-walked with bars opened and the required set is named | target cells |
+| `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
+| `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face | exterior edges |
+| `contract-no-body-majority` | a piece mostly out of walk says so | standable cells |
+
+A binding of zero is red on closure, edge proof and reachability, and is stated
+by name as a finding on every gate. One space and no interior edge is the
+exception the vacuity rule names: a room with a door has no traversal claim to
+prove, and that is a printed finding rather than a red.
+
+The verdict also **enumerates every opt-out instance**: each open envelope, each
+sightline, each out-of-walk region with its computed kind and its anchors, each
+bar the walk had to open, each exterior face. A count is a thing a script can
+satisfy; a list is a thing a reviewer disagrees with.
+
+### An opening is claimed, never discovered
+
+The only thing that excuses a passable boundary cell in an `enclosed` envelope is
+a **claimed** region: a declared opening, a neighbouring space, or an abutting
+out-of-walk region. An edge on its own excuses nothing.
+
+The reason is the rule every escape hatch here answers to — *an opt-out must be
+secured by a property the defect cannot supply.* Between two declared spaces an
+undeclared opening costs nothing, because an abutting space is already an excuse
+and crossing into one without an edge still fails the confined walk. Toward
+`exterior` it would be an unsecured hatch: the demand would be "declare an edge",
+and a wall that is simply missing declares one as easily as a door does. So an
+opening to the outside is named, its cells are claimed, and the checker then
+requires them to touch the space and to be reached by the air outside the piece —
+which a wall claimed as a door in the middle of a room cannot supply.
+
+What a piece leaves open at its own outer face is not a closure question at all.
+That is the **face contract**, and assembly consumes it (§6).
+
+### The acknowledgement, and what it cannot buy
+
+`no_body_majority_ack` silences the majority gate. As written it demands a
+string, which is a property the failure it excuses supplies for free — so it is
+narrowed by a fact the author cannot write: it silences a majority made of
+`sealed` and `facade` cells, whose demands are facts about the blocks, and never
+one made of `posted` cells, which is the kind an author secures by placing
+something. It never weakens any region's own proof.
+
 ## 2e. The document version, and what an optional field owes
 
 §2 has the ledger — every number the format has and the surface each names.
@@ -927,10 +990,16 @@ count, and `gates::judge` reports the same verdict without exporting.
 Three gates run only when the author says the piece makes their claim, because
 each is a claim about a *kind* of piece rather than about every piece.
 
-- **`traversable`** — a body can walk from the region's world `Z`-max face to its
-  `Z`-min face. `allow_falls` adds a one-way fall edge, for a piece entered by
-  stepping off a ledge. A room with one door has no far end and would fail this
-  correctly and uselessly, which is why it is opt-in.
+- **`traversable`** — a walk joins every pair of the piece's **declared ways in
+  and out**: its `exterior` edges, read as the face contract (§2d). The binding
+  count is doors. `allow_falls` adds a one-way fall edge, for a piece entered by
+  stepping off a ledge. A piece with fewer than two declared ways out has nothing
+  to walk *through* and the gate says so rather than passing. A room with one
+  door would fail this correctly and uselessly, which is why it is opt-in.
+  A piece that declares **no** contract has no doors to count, so the gate falls
+  back to the region's world `Z`-max and `Z`-min faces and its detail says in
+  full that the number beside it is standable cells on two faces and not ways in
+  — the count that reports 47 approaches where three are doors.
 - **`symmetric`** — the piece is its own mirror image across the mid-plane of a
   named world axis. It compares **presence, not block state**: a stair placed
   correctly on both sides of a mirror plane is a different state on each side,
@@ -2279,6 +2348,20 @@ does not itself model:
   a contract with nothing in it. A tiled zone carries the same block on its
   manifest, in zone coordinates, because a tile boundary is not part of the
   building.
+- **`spatial_contract.faces` is the piece's face contract**: every `exterior`
+  edge, as the side of the piece it is on (`east`/`west`/`up`/`down`/`south`/
+  `north`), the edge's class, and the opening it leaves there. Derived from the
+  edges and the blocks at export and written down, so that **assembly asks the
+  metadata rather than reopening the `.nbt`** — which is what `delvec` does with
+  it: two placed pieces whose declared faces do not answer each other are
+  refused (`DW0780`), naming both areas, both prefabs and both faces. That
+  refusal is the one no single-piece gate can reach, because each piece is
+  correct and the pair is not.
+- **Every anchor carries `resolves_to`**: which element of the contract it lands
+  in (`space:<name>`, `no_body:<name>`, `via:<name>`, `bar:<name>`). A campaign
+  binds content to an anchor by name, and what says whether that place is play
+  space, a door or exterior dressing is the contract. Absent on a piece that
+  declares none.
 - **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
   tileset conventions; a guessed socket is worse than none. The key is present
   and empty rather than absent, because "this piece has no sockets" and "this

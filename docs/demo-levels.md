@@ -42,6 +42,7 @@ Rules of the queue:
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |
 | Grammar frame reflection + `symmetric` gate (grammar.md §2, §4c) | **The Mirrored Hall** — a small symmetric hall whose every paired feature (twin transept arms, twin stairs, a rose window) is one rule and its reflection; the level's README shows the program, and the build gates on `--symmetric x` so a forgotten reflection is a red rather than a hole in a flank | pending |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
+| Spatial contract — declared spaces checked against the blocks (0036, ADR-0020) | **The Two Wards** — two pieces that each pass every gate alone and refuse to assemble: ward A declares a gate on its east face, ward B declares its own a course higher, and `delvec` refuses the pair by name (`DW0780`) before anything is built. The level's README then shows the same two pieces corrected, and walks the contract of one of them — an `enclosed` nave, an `open_top` yard, a `barred` shortcut, a `posted` gallery — beside the verdict block that names each opt-out | pending |
 
 ## M5 theme suite (owner-approved 2026-08-03, all five)
 

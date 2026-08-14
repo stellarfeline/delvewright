@@ -22,7 +22,9 @@
 //! Neither half judges anything here. The claims are the author's statement of
 //! intent, and they are recorded — resolved to this expansion's boxes — in the
 //! exported metadata. Whether the blocks agree with the statement is a question
-//! about a model, and it is asked elsewhere.
+//! about a model, and `crate::contract` is what asks it: this program is green
+//! on all nine obligations at the region below, and the writer refuses to freeze
+//! it at any region where it is not.
 //!
 //! # The piece
 //!
@@ -45,8 +47,10 @@
 //!   standable by construction and is where a watcher is placed, not part of the
 //!   walk. It nests inside `near`, which is the one overlap a contract licenses.
 //!
-//! Smallest region that expands: 7 × 4 × 5 (each room needs a hollow, and the
-//! partition needs a door). Documented at **11 × 6 × 15, seed 1**.
+//! Smallest region whose **contract holds**: 7 × 6 × 9 — each room needs a
+//! hollow, the partition needs a door, and the corbel needs headroom over it, or
+//! the shelf holds no standable cell and is a region whose kind would be decided
+//! over an empty set. Documented at **11 × 6 × 15, seed 1**.
 
 use crate::block::BlockState;
 use crate::geom::Axis;

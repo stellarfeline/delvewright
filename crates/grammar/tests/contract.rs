@@ -333,7 +333,12 @@ fn the_resolved_contract_is_stable_across_expansions() {
 #[test]
 fn the_exported_contract_is_the_one_this_expansion_resolved() {
     let program = spatial_contract();
-    let small = Box3::at_origin([9, 5, 11]);
+    // Six tall, not five: the corbel shelf needs headroom over it, and an
+    // out-of-walk region with no standable cell in it is a region whose kind
+    // would be decided over an empty set — which `export_prefab` refuses rather
+    // than freezing (spec-0036 §2.6). A program's minimum region is the one
+    // where its CONTRACT holds, not the one where its rules merely expand.
+    let small = Box3::at_origin([9, 6, 11]);
 
     let a = export_prefab(&program, PIECE, &ExpandOptions::seeded(1), "piece").unwrap();
     let b = export_prefab(&program, small, &ExpandOptions::seeded(1), "piece").unwrap();

@@ -354,6 +354,18 @@ pub enum ExportError {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
+    /// The expansion's blocks disagree with the spatial contract it declares.
+    ///
+    /// Refused **here**, at the writer, and not only in `gates::judge`. The
+    /// event this guards is "a `.nbt` whose metadata claims something untrue of
+    /// its own bytes exists on disk", and freezing is that event; a check that
+    /// lived only in the CLI's judging step would be skipped by every other
+    /// caller of this function, which is the shape of a gate that protects
+    /// nothing (CLAUDE.md).
+    Contract {
+        /// One line per failed obligation, with its binding count.
+        gates: Vec<String>,
+    },
 }
 
 impl fmt::Display for ExportError {
@@ -389,6 +401,13 @@ impl fmt::Display for ExportError {
                 "the expanded model paints block states Minecraft {} does not have: {}",
                 delvewright_schem::blocks::MC_VERSION,
                 reasons.join("; ")
+            ),
+            ExportError::Contract { gates } => write!(
+                f,
+                "the expanded model disagrees with the spatial contract this program declares, so \
+                 freezing it would put a  on disk whose metadata describes a building it is \
+                 not true of: {}",
+                gates.join("; ")
             ),
         }
     }
@@ -453,6 +472,7 @@ pub fn export_prefab(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    refuse_broken_contract(&expansion)?;
     let nbt = part_nbt(&expansion.model, &palette, region)?;
 
     let size = [
@@ -537,6 +557,7 @@ pub fn export_zone(
     let expansion = expand(program, region, options)?;
     let palette = zone_palette(&expansion.model);
     refuse_unknown_states(&expansion.model, &palette)?;
+    refuse_broken_contract(&expansion)?;
 
     let mut tiles = Vec::with_capacity(plan.parts.len());
     let mut parts = Vec::with_capacity(plan.parts.len());
@@ -828,6 +849,36 @@ fn zone_palette(model: &VoxelModel) -> ZonePalette {
 /// It runs over the **whole model**, once, before any tiling: the cell counts it
 /// reports are the zone's, so a set's refusal reads identically to a single
 /// prefab's and never depends on which tile a bad block landed in.
+/// Refuse to freeze an expansion whose blocks disagree with the contract it
+/// declares.
+///
+/// Every writer goes through here, so the guarded event — a prefab on disk whose
+/// metadata describes a building it is not true of — cannot happen without the
+/// obligations having run. The CLI judges first and prints a report; a library
+/// caller that never judges is refused here instead of shipping the artifact.
+fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
+    let Some(contract) = contract_metadata(expansion) else {
+        return Ok(());
+    };
+    let anchors: std::collections::BTreeMap<String, [i32; 3]> = expansion
+        .anchors
+        .iter()
+        .map(|(name, a)| (name.clone(), a.pos))
+        .collect();
+    let verdict = crate::contract::check(&expansion.model, &contract, &anchors);
+    let failed: Vec<String> = verdict
+        .gates
+        .iter()
+        .filter(|g| !g.pass)
+        .map(|g| format!("{} (examined {}): {}", g.id, g.bound, g.detail))
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(ExportError::Contract { gates: failed })
+    }
+}
+
 fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<(), ExportError> {
     let mut cells_per_state = vec![0usize; palette.states.len()];
     for pos in model.region().positions() {

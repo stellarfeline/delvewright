@@ -133,6 +133,17 @@ packaging detail and reaches no author and no flag (DEC-0069). `piece` and
 `audit` below take that manifest and treat the zone as one thing; both refuse a
 lone tile of a set and name the manifest instead.
 
+**A program that declares a spatial contract is checked against its own blocks,
+with no flag** (spec-0036). The nine obligations — coverage, closure, edge proof
+per class with its declared `rise`, graph-confined per-cell reachability, the
+computed out-of-walk kinds, anchors, exterior faces — run inside `expand`, each
+with its binding count, and a red writes no `.nbt`. `--traversable` then reads
+its claim off the declared `exterior` edges, so its binding count is doors.
+Every opt-out the contract used is printed by name: which shelf is `posted` on
+which anchors, which bar the walk had to open, which envelope claims sky.
+`delve-admit audit` is the same checker's second door, for a piece nobody
+generated.
+
 `list` names an **`idiom-*` block**: eleven teaching programs, one per technique
 of the IR plus one composition, each documented at a region and seed in
 [`grammar.md`](grammar.md) §2c. `show --program idiom-shape` prints one, and it
@@ -209,6 +220,9 @@ Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**
 
 ```
 delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
+    # also: the spatial contract's second door — a piece whose metadata declares
+    # spaces is judged against its own bytes by the same checker `delve-grammar
+    # expand` uses, and a disagreement is DW0782 (exit 1)
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]
