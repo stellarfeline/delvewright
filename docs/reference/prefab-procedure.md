@@ -619,3 +619,16 @@ program. Running one is `cargo run --release --manifest-path
 prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
 through `prefabs/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
+
+`prefabs/connections.rs` runs at the same six emitters, just before those gates.
+It fills the shape-carrying properties a state leaves unwritten — connections
+for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
+piece's own neighbours, by vanilla's rule, and never overwrites a value the
+generator wrote. The `DW0735` verdict and a vine/lichen attachment check are
+emitter post-conditions there, so a generator cannot write a disconnected
+grille and wait for admission to notice.
+
+A regeneration replaces the `.nbt` only. The `.json` beside it is the document
+of record and several carry anchors no generator models, so rewriting one to
+pick up a `.nbt` change deletes campaign content; regenerate metadata only when
+the generator is what changed it.

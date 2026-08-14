@@ -731,7 +731,35 @@ plant), because wear on a walked surface belongs *in* the surface, as a weathere
 variant of the same shape (`invariants::weathered`), never as a lump on top of
 it. Owner playtest, island round 13: stray stone sitting on the cave-mouth steps.
 The shared file carries its own unit tests — including the cases that prove the
-gate *fails* — run by the same CI job. Debug flags, all
+gate *fails* — run by the same CI job.
+
+**Connections are derived, never defaulted.**
+[`../../prefabs/connections.rs`](../../prefabs/connections.rs) is source-included
+the same way and runs at the same six emitters. Before the bytes are written it
+fills every shape-carrying property a state *leaves out* — a fence's, a wall's,
+a pane's or a bar's connections, a vine's or a lichen's absent faces — from the
+blocks actually beside the cell, by the rule vanilla applies itself
+(`FenceBlock.connectsTo`, `IronBarsBlock.attachsTo`, `WallBlock.connectsTo` /
+`shouldRaisePost`, `MultifaceBlock.canAttachTo`). A value the generator wrote is
+never overwritten, so a fully-specified state emits unchanged and an author who
+means a lone post says so. Filling with the block's *defaults* would be the
+opposite of this and worse than silence: the default of every connection
+property is disconnected, so it would assert the isolated post rather than
+merely fail to deny it.
+
+Two emitter post-conditions come with it. `assert_shape_is_stated` is the
+`DW0735` verdict where the bytes are made rather than at admission, which binds
+to one moment per piece. `assert_attachments_are_supported` refuses a vine or a
+lichen face with nothing behind it — vanilla deletes such a face at the first
+block update, so it is in the template and not in the game.
+
+The one input vanilla publishes nowhere is `isFaceSturdy`: it is code, not data,
+so `face_support` decides from the pinned tables plus a **declared** list of full
+cubes and **refuses** — naming the block and the piece — outside it. There is no
+conservative direction to guess in; connecting where vanilla would not and
+failing to connect where it would are equally visible.
+
+Debug flags, all
 `tidal-keep-generator`: `TK_DEBUG_LIGHT=1` (per-region measured light + darkest
 cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
 (every flank the seal pass closed).

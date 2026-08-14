@@ -38,6 +38,11 @@ use std::path::Path;
 #[path = "../../invariants.rs"]
 mod invariants;
 
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
+
 use flate2::{Compression, GzBuilder};
 
 use common::*;
@@ -208,11 +213,17 @@ fn write_piece(out: &Path, spec: &Spec) {
         _ => None,
     };
 
-    let structure = serialize(&g);
+    let mut structure = serialize(&g);
+    // Connections before the gates: what a fence, a wall, a pane or a lichen
+    // joins is derived from the blocks beside it, never left to the defaults.
+    resolve_connections(spec.id, &mut structure);
     let cells = invariant_cells(&structure);
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(spec.id, &cells);
+    connections::assert_attachments_are_supported(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

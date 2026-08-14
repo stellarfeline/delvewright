@@ -32,6 +32,11 @@ use serde::Serialize;
 #[path = "../../invariants.rs"]
 mod invariants;
 
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
+
 /// MC 1.21.11 data version (ADR-0009); see `crates/compiler/data/PROVENANCE.md`.
 const DATA_VERSION: i32 = 4671;
 
@@ -208,12 +213,45 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in [`connections`]; only the conversion
+/// between it and this workspace's own `Structure` types is local.
+fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 fn write_piece(out: &Path) {
-    let s = build();
+    let mut s = build();
+    // Connections before the gates: what the door's bars join is derived from
+    // the blocks beside them, never left to vanilla's defaults.
+    resolve_connections(ID, &mut s);
     let cells = invariant_cells(&s);
     invariants::assert_distress_never_stacks(ID, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(ID, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(ID, &cells);
+    connections::assert_attachments_are_supported(ID, &cells);
 
     let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
     // gzip-frame it (MC reads structure files as gzip-compressed NBT). Pin mtime

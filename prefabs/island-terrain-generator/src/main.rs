@@ -42,6 +42,11 @@ use std::path::Path;
 #[path = "../../invariants.rs"]
 mod invariants;
 
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
+
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
@@ -114,6 +119,25 @@ fn value_noise(seed: u64, x: i32, y: i32, z: i32, freq: f64, salt: u64) -> f64 {
 // ---------------------------------------------------------------------------
 
 type Props = Option<Vec<(&'static str, &'static str)>>;
+
+/// A neighbouring cell as `(block id, properties)`, or `None` when it is
+/// outside the grid or holds no block. The shape [`connections`] asks about.
+fn neighbour_state(g: &Grid, x: i32, y: i32, z: i32) -> Option<(String, BTreeMap<String, String>)> {
+    if !g.inb(x, y, z) {
+        return None;
+    }
+    match g.get(x, y, z) {
+        Cell::Block(name, props) => Some((
+            name.clone(),
+            props
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )),
+        _ => None,
+    }
+}
 
 struct Recipe {
     name: &'static str,
@@ -1628,13 +1652,21 @@ fn mountain_dressing(_spec: &Spec, g: &mut Grid, seed: u64) {
                 if !g.is_air(x, y, z) {
                     continue;
                 }
+                // `face` is the face of THIS cell that touches the rock — the
+                // same side the offset points at, which is what a multiface
+                // state names. The test is the rock's own face, not "is there a
+                // block": a dripstone tip or a lantern cannot hold a lichen, and
+                // vanilla deletes an unheld face at the first block update.
                 for (dx, dz, face) in [
-                    (-1, 0, "east"),
-                    (1, 0, "west"),
-                    (0, -1, "south"),
-                    (0, 1, "north"),
+                    (-1, 0, "west"),
+                    (1, 0, "east"),
+                    (0, -1, "north"),
+                    (0, 1, "south"),
                 ] {
-                    if g.is_solid(x + dx, y, z + dz) {
+                    let Some((name, props)) = neighbour_state(g, x + dx, y, z + dz) else {
+                        continue;
+                    };
+                    if connections::can_attach(&name, &props, face) {
                         let ln = value_noise(seed, x, y, z, 0.5, 105);
                         if ln > 0.95 {
                             g.blk(x, y, z, "minecraft:glow_lichen", Some(vec![(face, "true")]));
@@ -1832,6 +1864,33 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in [`connections`]; only the conversion
+/// between it and this workspace's own `Structure` types is local.
+fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     // Build at the ground datum (walk = 1), measure light there, then lift every
     // piece to the shared island datum (walk = 3, socket floor_y = 2) with a solid
@@ -1848,11 +1907,17 @@ fn write_piece(out: &Path, spec: &Spec) {
     let grid = lift_substrate(&grid0, yoff);
     assert_no_unsupported_gravity(spec.id, &grid);
 
-    let structure = serialize(&grid);
+    let mut structure = serialize(&grid);
+    // Connections before the gates: what a fence, a wall, a pane or a lichen
+    // joins is derived from the blocks beside it, never left to the defaults.
+    resolve_connections(spec.id, &mut structure);
     let cells = invariant_cells(&structure);
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(spec.id, &cells);
+    connections::assert_attachments_are_supported(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)
