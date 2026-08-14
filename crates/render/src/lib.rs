@@ -25,7 +25,7 @@
 //!   spec-0028 §3).
 //! - [`font`] — the built-in 5×7 bitmap font the sheet labels cells with.
 //! - [`diag`] — diagnostics + exit codes (`DW072x`, plus the review page's
-//!   `DW078x` pair).
+//!   `DW079x` block).
 
 pub mod assets;
 pub mod blockcolor;

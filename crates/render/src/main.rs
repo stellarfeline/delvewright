@@ -161,7 +161,8 @@ enum Command {
         title: Option<String>,
     },
     /// Derive the appearance table (colour, coverage and model bounds per
-    /// blockstate) for some prefabs, as JSON — the `viewer`'s `--palette` input.
+    /// blockstate) for some prefabs, as JSON — what a palette actually looks
+    /// like, measured rather than recalled.
     Palette {
         /// Prefab `.nbt` files, or directories of them.
         #[arg(required = true)]
@@ -1062,8 +1063,10 @@ fn report_page(stats: &viewer::BuildStats, models: usize, json: bool) {
             DW_UNRESOLVED_BLOCK,
             format!(
                 "{}: {} ({}) — {} cell(s) draw as the missing-texture placeholder. \
-                 The pinned asset source does not have it, so a server pinned to the \
-                 same version does not have it either",
+                 The pinned asset source has no definition for it. Whether a pinned \
+                 SERVER loads the block is a separate question, decided by the \
+                 template's own DataVersion — a pre-pin file is datafixed on load — \
+                 and `delve-admit audit` is what answers it",
                 u.state, u.reason, u.detail, u.cells
             ),
         )

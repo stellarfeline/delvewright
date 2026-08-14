@@ -43,8 +43,8 @@ palette <nbt|dir>... -o <json>  the derived per-blockstate colour/shape table
 
 **Exit codes**: `0` ok · `2` input/usage · `3` output · `4` **fidelity-gate
 failure** (missing-texture placeholder detected) · `5` renderer/GPU/textures
-error · `≥10` internal. Diagnostics (`DW072x`) go to stderr, one JSON object per
-line under `--json`.
+error · `≥10` internal. Diagnostics (`DW072x` and `DW079x`) go to stderr, one
+JSON object per line under `--json`.
 
 **Textures** (the 1.21.11 client jar — never committed, EULA) resolve from
 `--textures <path>`, then `$DELVEWRIGHT_CLIENT_JAR`, then
@@ -61,12 +61,12 @@ and it is never redistributed.
 | `DW0725` | contact-sheet ordering is not a total order over the candidates — the score RANKS, it never gates (exit 10) |
 | `DW0726` | a contact sheet's score set bound to fewer candidates than the sheet holds; zero = error (exit 2), partial = warning. Also the `viewer`'s zero-anchor and zero-blockstate bindings (warning) |
 | `DW0727` | an anchor's eye-level camera does not stand on the anchor's own cell, or could not be stood up at all (warning) |
-| `DW0780` | a blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
-| `DW0781` | a palette entry leaves shape-carrying properties unwritten, so the shape comes from the version's default state rather than from the file — warning, with the properties and the cell count |
-| `DW0782` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
+| `DW0790` | a blockstate has no definition in the pinned asset source (`viewer` / `palette`) — warning, with its cell count |
+| `DW0791` | a palette entry leaves shape-carrying properties unwritten, so the shape comes from the version's default state rather than from the file — warning, with the properties and the cell count |
+| `DW0792` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
-except `DW0724`, which the compiler's visual tier holds — plus `DW078x` for the
+except `DW0724`, which the compiler's visual tier holds — plus `DW079x` for the
 review page's resource findings. Take the next unused number from
 `docs/reference/compiler.md`, not from the highest constant here.)
 
@@ -369,9 +369,9 @@ unpatched bundle renders every banner and shield as the missing-texture checker
 and says nothing.
 
 **Fidelity is reported, never assumed.** The page lists, with cell counts: a
-blockstate the pinned version does not have (`DW0780`), a palette entry that
+blockstate the pinned version's assets do not define (`DW0790`), a palette entry that
 leaves properties unwritten so the shape comes from the default state rather than
-from the file (`DW0781`), and — measured in the browser, by meshing each
+from the file (`DW0791`), and — measured in the browser, by meshing each
 blockstate alone — any block the renderer draws as nothing or draws with the
 missing-texture checker. Beside them the page states what each check examined:
 how many blockstates, how many textures and at what atlas size, how many
@@ -430,9 +430,9 @@ how the tests build pages with no client jar, and how a creator points the page
 at their own resource pack. What an absent texture MEANS depends on which it is,
 and the source says which: a jar declaring itself to be the pinned game is
 complete by definition, so a block-entity texture it does not have is the
-emitter's table and that version disagreeing (`DW0782`, exit 10), while a
+emitter's table and that version disagreeing (`DW0792`, exit 10), while a
 resource pack is entitled to be partial and the same absence is an ordinary
-`DW0780`.
+`DW0790`.
 
 `palette` writes the derived per-blockstate colour and shape table on its own —
 the input the snapshot chart, the palette-selection tooling and the fidelity gate

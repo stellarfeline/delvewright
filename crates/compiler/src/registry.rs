@@ -324,6 +324,47 @@ pub struct PrefabMeta {
     /// License/provenance (opaque here; validated by review + `LICENSE-ASSETS.md`).
     #[serde(default)]
     pub license: serde_json::Value,
+    /// The piece's spatial contract (ADR-0020). Only the **face contract** is
+    /// read here, because that is the half assembly consumes: a piece's declared
+    /// ways in and out are what a neighbour has to answer.
+    ///
+    /// Deliberately not `deny_unknown_fields`, unlike its parent: the contract
+    /// block carries spaces, out-of-walk regions and edges that are the prefab
+    /// checker's business and not the compiler's, and a reader that refused
+    /// every field it does not consume would make the two halves of the pipeline
+    /// unable to share one document.
+    #[serde(default)]
+    pub spatial_contract: Option<SpatialContractMeta>,
+}
+
+/// The half of a prefab's spatial contract the compiler consumes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SpatialContractMeta {
+    /// The declared ways in and out, as sides of the piece.
+    #[serde(default)]
+    pub faces: Vec<ContractFaceMeta>,
+}
+
+/// One declared way in or out, on one side of a piece.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContractFaceMeta {
+    /// The space it belongs to.
+    pub space: String,
+    /// `walk` | `stair` | `drop` | `barred` | `vision`.
+    pub class: String,
+    /// `east` | `west` | `up` | `down` | `south` | `north`.
+    pub dir: String,
+    /// The opening, an inclusive local cell range flat in the face's own axis.
+    pub opening: FaceOpening,
+}
+
+/// An inclusive local cell range.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FaceOpening {
+    /// Low corner.
+    pub from: [i32; 3],
+    /// High corner.
+    pub to: [i32; 3],
 }
 
 /// One keep-socket-v1 connector (a jigsaw doorway) declared by a prefab. See
@@ -417,6 +458,14 @@ pub struct AnchorMeta {
     /// The block filling a gate region (e.g. `minecraft:iron_bars`).
     #[serde(default)]
     pub block: Option<String>,
+    /// Which element of the piece's spatial contract this anchor lands in
+    /// (`space:<name>`, `no_body:<name>`, `via:<name>`, `bar:<name>`).
+    ///
+    /// Read here so a contract-carrying prefab still loads — the campaign-side
+    /// diagnostic that would consume it (content bound to a place no unlock
+    /// reaches) is a follow-up fence, not this one.
+    #[serde(default)]
+    pub resolves_to: Option<String>,
     /// The pre-wired dispenser socket cell (local coords) for an `anchor/trap`
     /// marker (DSL v0.6, spec-0011). `pos` is the trap's trigger/hazard cell (the
     /// plate/tripwire/chest the compiler models as a hazard); `dispenser` is the

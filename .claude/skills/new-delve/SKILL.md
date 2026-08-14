@@ -1,7 +1,7 @@
 ---
 name: new-delve
 description: Generate a complete playable Minecraft delve from a creative prompt — staged DSL authoring with validation-loop self-repair, deterministic compile, machine validation, joinable output. Use when the user asks to create/generate a new delve or campaign. Args = the creative prompt (theme one-liner or detailed brief).
-version: 1.2.0
+version: 1.3.0
 requires:
   delvec: ">=1.0.0 <2.0.0"
 verified_with: 1.1.0
@@ -755,23 +755,44 @@ Symptom → tool:
   1. **Write the scene description first** (one or two sentences: what a body
      does in the space, the material feeling, what the campaign will attach).
      Written after the render, it is a description of the render.
-  2. **Choose the palette by measurement, never from memory.**
-     `python3 tools/block-appearance.py --near '#rrggbb' -n 10 --full-cube-only`
-     — a block's name is not its appearance (`packed_mud` is orange, 142/107/80).
-     Record the measured hex beside each role. The tool needs the pinned block
-     registry from `crates/compiler/data/` **and** a 1.21.11 client jar, and
-     refuses by name when either is absent. That does not make the step optional:
-     take role names from the corpus instead (`delve-grammar list`, then
-     `delve-grammar show --program <nearest>`), which is a palette somebody
-     already measured, and record where each name came from. Never invent one —
-     a block that does not exist is refused at export, and one that exists but
-     looks nothing like its name is caught only by eye at step 5.
+  2. **Choose the palette by measurement, never from memory** — and it is
+     three steps, not one. A block's name is not its appearance (`packed_mud`
+     is orange, 142/107/80).
+     **Screen** the shelf by constraints rather than by a guessed hex:
+     `python3 tools/block-appearance.py --screen --where full_cube --where
+     'L>=0.75' --where 'C_mean<0.02' --where 'texture_range<=0.30'` takes 1146
+     blocks to a handful (`L` = Oklab lightness, `C_mean` = how coloured,
+     `texture_range` = how loud the pattern; `form=`, `family=`, `not tinted`,
+     `not gravity` are facets too). Then **measure the mix**:
+     `--mix 'a=3,b=3,c=4'` or `--program p.json` reports `chroma_mass`,
+     `chromatic_area`, the **named** `loudest_member` with its area share, and
+     `dominant_hue` — never a mean as the verdict, because a mean cannot see
+     that 60% of a wall is one loud family when the craft rule gives it 10%.
+     Then **LOOK**: `--sheet` writes `.sheets/palette/swatches.png`, every
+     survivor tiled and every mix rendered as its seeded weighted tiling —
+     **read that PNG before binding anything.** A shortlist is not a choice,
+     and the screen will hand you blocks that are right on every measured axis
+     and wrong for the job (a light source, a gravity block, wool). Record the
+     measured hex beside each role.
+     The tool needs the pinned block registry from `crates/compiler/data/`
+     **and** a 1.21.11 client jar, and refuses by name when either is
+     absent. That does not make the step optional: take role names from the
+     corpus instead (`delve-grammar list`, then `delve-grammar show
+     --program <nearest>`), which is a palette somebody already measured,
+     and record where each name came from. Never invent one — a block that
+     does not exist is refused at export, and one that exists but looks
+     nothing like its name is caught only by eye at step 5.
   3. **Author a grammar program.** Read the **idiom index** first
-     (`docs/reference/grammar.md` §2c): nine techniques with a runnable program
+     (`docs/reference/grammar.md` §2c): ten techniques with a runnable program
      each — repetition, `otherwise`, taper/arch/gable (one recursion),
      air-in-a-mix erosion, graded erosion, surface detail, symmetry without
-     reflection, `skip`, light. It is the part of the language no type signature
-     shows, and a scene that looks impossible is usually one of the nine.
+     reflection, `skip`, light, and arguments (`bind` — one rule called with
+     different content). It is the part of the language no type signature
+     shows, and a scene that looks impossible is usually one of the ten.
+     **Never copy a rule to change its paint, its size or its axis**: a caller
+     passes a paint or a size with `bind`, an axis with `reorient`, and anything
+     derivable from the box with an expression over `dim` — a copied rule family
+     is one nothing keeps in step and no gate reads.
      `delve-grammar show --program idiom-shape` prints one. Then start from the
      corpus: `delve-grammar list`, `delve-grammar show --program <nearest> >
      p.json`, edit, and `delve-grammar check --file p.json` after every edit.
@@ -782,10 +803,13 @@ Symptom → tool:
      floors** — the default truncates and an unwritten cell is air, which no
      gate reads; a palette role may be a **weighted list with `minecraft:air` in
      it**, which is the whole of decay and the cure for a piece that renders as
-     one flat material; and a `facing=` block state **does not turn** when
-     `largest` turns the piece.
+     one flat material; and a `facing=` block state **does not turn when the frame
+     turns and does not flip when it reflects** — `oriented-fills` (`DW0736`)
+     refuses the piece rather than shipping it facing the wrong way, and the
+     answer is one alternative per frame under an `orientation` guard, which
+     names the reflection as well as the axes.
      **Decide the split order before the first rule** (`grammar.md` §2c, the
-     section before the nine). A split's children copy the parent box on the two
+     section before the ten). A split's children copy the parent box on the two
      axes it does not cut, so siblings of a split are the only two things
      guaranteed to line up, and there is no way to say "this opening is the same
      cells as that one". Hence: **the last axis you split is the only axis on
@@ -925,8 +949,8 @@ Symptom → tool:
 
   **Read its fidelity list before showing her the page.** It names every
   blockstate the page cannot draw as the game draws it: a block the pinned
-  version does not have (`DW0780`), and — the one that reads as fine and is not
-  — a palette entry that leaves shape-carrying properties unwritten (`DW0781`),
+  version does not have (`DW0790`), and — the one that reads as fine and is not
+  — a palette entry that leaves shape-carrying properties unwritten (`DW0791`),
   where the shape comes from the version's default state rather than from the
   file. That is a defect in the prefab, not in the page: fix it by writing the
   property at the value the message names, then rebuild. Showing her a page whose

@@ -65,31 +65,76 @@ chosen region and seed beside the program — in the campaign's `GENERATION.md`,
 since the program JSON does not yet carry its own region (queued engine
 surface).
 
-## 2. Choose the palette by MEASUREMENT
+## 2. Choose the palette by MEASUREMENT — screen, measure the mix, then LOOK
 
 **Never name a block from memory.** Block names are not descriptions of block
 appearance and repeatedly are not close: `packed_mud` is orange (142, 107, 80),
 `lightning_rod` is signal orange (197, 111, 83), `dried_kelp_block` is a woven
 olive-green (46, 55, 36).
 
+Three steps, in this order. Do not stop after the first.
+
+**2a. Screen the shelf.** State the fiction as constraints on measured axes, not
+as a guessed hex. Constraints eliminate; they never score.
+
 ```sh
-python3 tools/block-appearance.py --near '#3a4038' -n 10 --full-cube-only
-python3 tools/block-appearance.py --id minecraft:packed_mud \
-                                  --id minecraft:deepslate_tiles   # --id repeats
+python3 tools/block-appearance.py --screen \
+    --where full_cube --where 'L>=0.75' --where 'L<=0.95' \
+    --where 'C_mean<0.02' --where 'texture_range<=0.30'
 ```
 
-Rules:
+`L` is Oklab lightness, `C_mean` is how coloured the block is (0.03 is the
+shelf's own 30th percentile — below it a block reads as a neutral), and
+`texture_range` is how loud its pattern is (`white_concrete` 0.006,
+`stone_bricks` 0.221, `dried_kelp_block` 0.419). `form=slab`,
+`family=minecraft:sandstone`, `not tinted` and `not gravity` are facets too. The
+example above takes 1146 blocks to 14.
 
-- Pick the target colour from the fiction, then take candidates from the ranked
-  list. Record the measured hex beside each role in the program.
-- `--full-cube-only` for anything structural: a wall made of a block whose model
-  is mostly air is not a wall.
-- The tool ranks; it cannot choose. A mean colour cannot see pattern or scale,
-  and it has no idea what a block *is* — it will rank `structure_block` next to
-  deepslate. Technical blocks are excluded by default; everything else you
-  **see** at step 5 before believing.
+`--near '#rrggbb'` still ranks by colour when you genuinely have a target hex,
+and `--id` still answers "what colour IS this".
+
+**2b. Measure the mix, and never trust its mean.** A weighted paint is reported
+by four numbers:
+
+```sh
+python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
+```
+
+`chroma_mass`, `chromatic_area` (what fraction of the wall is coloured rather
+than neutral), `loudest_member` **named with its area share**, `dominant_hue`,
+and `void_area` — `minecraft:air` is a member like any other, so a role that is
+45% holes says so instead of reporting a solid wall's numbers. The mean is printed and is never the verdict: swapping half a
+sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units —
+nothing — while the chromatic area falls 60% → 30%, which is a different
+building. The craft rule the numbers serve is 60/30/10: **the loud member gets
+10%, not 60%.** Every report states its binding count, and a zero binding is a
+finding, not a pass.
+
+**2c. Look at it.** A shortlist is not a choice.
+
+```sh
+python3 tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \
+    --mix 'calcite=6,diorite=3,white_concrete=1' --sheet --seed 7
+```
+
+writes `.sheets/palette/swatches.png` — every survivor tiled and labelled, and
+every candidate mix as its seeded weighted tiling, which is the wall at distance
+zero. No GPU, no world, under a second. **Then read the PNG.** Measurement can
+prove a mix is not warm; only a look decides it is right.
+
+What the numbers cannot decide, stated so you do not wait for them to:
+
+- **Whether the palette reads as the referent.** "Île-de-France limestone" vs
+  "Egyptian sandstone" is cultural reference; no statistic contains it.
+- **Role fitness.** The screen above returns a light source, a gravity block,
+  wool and a metal — all right on every measured axis, all wrong for a wall.
+  Light emission lives in game code and is in no vanilla data branch at all.
+- **Pattern at distance.** Whether `stone_bricks` still reads as masonry twenty
+  blocks away is a render question — step 5's contact sheet.
 - Biome-tinted blocks (`*_leaves`, grass, water) are flagged: their number is
-  the untinted texture and the world will not look like it.
+  the untinted texture and the world will not look like it. `--exclude-tinted`
+  drops them.
 
 **When the tool cannot run.** It needs two things that are not always there: the
 pinned block registry at `crates/compiler/data/blocks-1.21.11.json`, and a
@@ -107,11 +152,18 @@ caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
-**Read the idiom index first** (`grammar.md` §2c). It is nine techniques with a
+**Read the idiom index first** (`grammar.md` §2c). It is ten techniques with a
 runnable program each, and it is the part of the language that no type signature
 shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
-aperture and a sconce are actually written. A scene that looks impossible is
-usually one of the nine.
+aperture, a sconce and one rule called with different content are actually
+written. A scene that looks impossible is usually one of the ten.
+
+**A second instance of a shape is never a second copy of its rules.** Three
+things a caller can hand a callee, cheapest first: nothing, because an
+`absolute` size takes an expression over the scope's own extents; a turned frame
+via `reorient`; and a paint, a size or a role via `bind` (idiom 10). Copying a
+rule to change one of those is how a program grows a family that nothing keeps in
+step.
 
 ```sh
 delve-grammar list                                # what exists — incl. `idiom-*`
@@ -152,14 +204,17 @@ you write:
 delve-grammar check --file my-piece.json          # structure only; fast
 ```
 
-`check` finds unknown rules, unknown roles, split/child mismatches and
-unmatchable guards without a region or a seed. Run it after every edit — it
-costs nothing.
+`check` finds unknown rules, unknown roles, split/child mismatches, unmatchable
+guards, an unknown document `version`, and a construct newer than the version the
+program declares — all without a region or a seed. Run it after every edit — it
+costs nothing. A program started from `show` already declares the current
+version, so the version refusals only fire on one hand-edited by someone who
+lowered it.
 
 **It is a typo check, not a design review, and it will not once tell you the
-piece is wrong.** Every defect it can see is a name or an arity: a role that is
-not bound, a rule that is not defined, a split with the wrong number of
-children. It has no region and no seed, so it never sees geometry. Call the
+piece is wrong.** Every defect it can see is a name, an arity or a version: a
+role that is not bound, a rule that is not defined, a split with the wrong number
+of children. It has no region and no seed, so it never sees geometry. Call the
 mirrored rule on both sides of a symmetric split and the aperture chamfers the
 wrong way for half its height — `ok`. Move a sconce course five courses up the
 wall — `ok`. Build a parapet two courses high so the anchor behind it looks
@@ -204,6 +259,7 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `blocks-exist` | every block state the model paints exists in 1.21.11, properties and values included |
 | `non-empty` | the expansion built something |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
+| `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
 
 `--traversable` is opt-in because it is a claim about a *kind* of piece: a room
@@ -374,10 +430,10 @@ Each of these was established by running it, except the two marked otherwise:
     wall are one recursion whose per-step extent is arithmetic on the remaining
     dimension — `grammar.md` §2c idiom 3 — and with the paint inverted the same
     program is the opening rather than the mass;
-  - **any shape with a mirror plane.** An orientation is a permutation without
-    reflection, so `reorient` cannot mirror a piece — but a rule *body* can be
-    written mirrored, and a size list reversed is exactly that. Two such rules
-    give a chamfered octagon that re-centres itself at any width (idiom 7);
+  - **any shape with a mirror plane.** A frame carries a direction as well as a
+    mapping, so `reorient`'s `mirror` hands a body its own reflection: one rule
+    and a reflection of it give a chamfered octagon that re-centres itself at any
+    width (idiom 7), and `--symmetric <axis>` gates the claim;
   - **two roofs meeting in a valley.** Two prisms crossing union to a
     plus-shaped course, and a plus is a partition: the recursion peels the ring
     of its box instead of insetting it, and the two pairs of ring slabs are the

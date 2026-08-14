@@ -206,11 +206,7 @@ fn a_reorientation_below_the_guard_voids_the_pin() {
                     orient: Reorient::KEEP.z(AxisSpec::LocalX),
                     body: Box::new(fill_state("oak_stairs[facing=north,half=bottom]")),
                 })
-                .when(Cond::Orientation {
-                    x: Axis::X,
-                    y: Axis::Y,
-                    z: Axis::Z,
-                }),
+                .when(Cond::orientation(Axis::X, Axis::Y, Axis::Z)),
             ],
         );
     let out = expand(

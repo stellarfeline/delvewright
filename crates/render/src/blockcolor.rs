@@ -750,7 +750,7 @@ impl Appearances for PaletteTable {
     }
 }
 
-/// A derived appearance table, and the format `--palette` reads.
+/// A derived appearance table: the format the `palette` command writes.
 ///
 /// Keyed by full blockstate string so `oak_slab[type=top]` and
 /// `oak_slab[type=bottom]` are different shapes. Serialization is a `BTreeMap`,

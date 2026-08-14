@@ -278,7 +278,11 @@ ORACLES: dict[str, dict] = {
             (rf"\bany of the ({CARD})\b(?![-\w])", 0),
             (rf"\busually one of the ({CARD})\b(?![-\w])", 0),
             (rf"\bof the ({CARD}) at once\b", 0),
-            (rf"\bnot a ({ORD}) technique\b", 1),
+            # `an?`, because the ordinal that follows it decides the article:
+            # "not a tenth technique" and "not an eleventh technique" are the
+            # same claim, and a pattern that only reads `a` stops binding the
+            # sentence at exactly the count where the sentence changed.
+            (rf"\bnot an? ({ORD}) technique\b", 1),
         ],
     },
 }

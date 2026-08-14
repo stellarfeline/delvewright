@@ -255,7 +255,7 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
 /// cell count — never a block silently drawn as if it were fine. This is the
 /// general form of the `minecraft:chain` case.
 #[test]
-fn an_unresolvable_blockstate_is_dw0780_with_its_cell_count() {
+fn an_unresolvable_blockstate_is_dw0790_with_its_cell_count() {
     let Some(nbt) = prefab("keep-gate-room.nbt") else {
         eprintln!("skip: no content symlink");
         return;
@@ -269,7 +269,7 @@ fn an_unresolvable_blockstate_is_dw0780_with_its_cell_count() {
     // to see the rest of the building.
     assert_eq!(r.status.code(), Some(0), "{r:?}");
     let stderr = String::from_utf8_lossy(&r.stderr);
-    assert!(stderr.contains("DW0780"), "expected DW0780: {stderr}");
+    assert!(stderr.contains("DW0790"), "expected DW0790: {stderr}");
     assert!(
         stderr.contains("minecraft:glowstone"),
         "the finding names the block: {stderr}"
@@ -291,7 +291,7 @@ fn an_unresolvable_blockstate_is_dw0780_with_its_cell_count() {
 /// cube where a wall post stands while reporting nothing at all. The page may
 /// not report a clean resolution over such a palette.
 #[test]
-fn an_under_specified_state_is_dw0781_and_names_what_gets_filled_in() {
+fn an_under_specified_state_is_dw0791_and_names_what_gets_filled_in() {
     let Some(nbt) = prefab("keep-gate-room.nbt") else {
         eprintln!("skip: no content symlink");
         return;
@@ -303,7 +303,7 @@ fn an_under_specified_state_is_dw0781_and_names_what_gets_filled_in() {
     let r = viewer(&nbt, &out, &pack);
     assert_eq!(r.status.code(), Some(0), "{r:?}");
     let stderr = String::from_utf8_lossy(&r.stderr);
-    assert!(stderr.contains("DW0781"), "expected DW0781: {stderr}");
+    assert!(stderr.contains("DW0791"), "expected DW0791: {stderr}");
     assert!(
         stderr.contains("minecraft:iron_bars"),
         "the finding names the block: {stderr}"
@@ -580,7 +580,7 @@ fn a_tiled_zone_is_one_building_on_the_page() {
 ///
 /// Both verdicts, over the same prefab and the same missing texture.
 #[test]
-fn a_block_entity_texture_the_pinned_version_lacks_is_dw0782() {
+fn a_block_entity_texture_the_pinned_version_lacks_is_dw0792() {
     let Some(nbt) = prefab("hero-galleon-oak.nbt") else {
         eprintln!("skip: no content symlink");
         return;
@@ -598,7 +598,7 @@ fn a_block_entity_texture_the_pinned_version_lacks_is_dw0782() {
         "a partial pack is not a refusal: {r:?}"
     );
     let stderr = String::from_utf8_lossy(&r.stderr);
-    assert!(stderr.contains("DW0780"), "expected DW0780: {stderr}");
+    assert!(stderr.contains("DW0790"), "expected DW0790: {stderr}");
     assert!(
         stderr.contains("entity/chest/normal"),
         "the finding names the texture: {stderr}"
@@ -616,7 +616,7 @@ fn a_block_entity_texture_the_pinned_version_lacks_is_dw0782() {
     let r = viewer(&nbt, &out, &pack);
     assert_eq!(r.status.code(), Some(10), "{r:?}");
     let stderr = String::from_utf8_lossy(&r.stderr);
-    assert!(stderr.contains("DW0782"), "expected DW0782: {stderr}");
+    assert!(stderr.contains("DW0792"), "expected DW0792: {stderr}");
     assert!(
         stderr.contains("entity/chest/normal"),
         "the refusal names the id: {stderr}"
