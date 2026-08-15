@@ -196,7 +196,7 @@ def test_pane_form_is_the_connection_model_and_reaches_bars(table):
 
 
 def test_every_block_is_classified(table):
-    registry = json.loads((REPO / "crates" / "compiler" / "data" / "blocks-1.21.11.json").read_text())
+    registry = json.loads((REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json").read_text())
     assert set(table["blocks"]) == set(registry)
     assert table["stats"]["blocks"] == 1166
 
@@ -862,7 +862,7 @@ def shelf():
         pytest.skip("no client jar")
     jar = ba.Jar(JAR)
     classification = ba.load_classification()
-    registry = json.loads((REPO / "crates" / "compiler" / "data" / "blocks-1.21.11.json").read_text())
+    registry = json.loads((REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json").read_text())
     rows = []
     for block in sorted(registry):
         if block in ba.TECHNICAL:

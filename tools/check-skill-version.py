@@ -172,7 +172,16 @@ def unquote(value: str) -> str:
 
 # A clap subcommand enum: `#[derive(Subcommand)] enum <Name> { ... }`. Variants
 # sit at four spaces, their fields at eight — the shape rustfmt guarantees.
-ENUM_RE = re.compile(r"(?ms)^#\[derive\(Subcommand\)\]\s*\nenum\s+(\w+)\s*\{(.*?)\n\}")
+ENUM_RE = re.compile(
+    r"(?ms)^#\[derive\(Subcommand\)\]\s*\n(?:pub\s+)?enum\s+(\w+)\s*\{(.*?)\n\}"
+)
+# `#[command(flatten)] View(some::path::ViewCommand),` — the flattened enum's own
+# variants ARE top-level subcommands, so a parser that stopped at the variant
+# name would report a subcommand (`view`) the CLI does not have and miss the six
+# it does. The enum may live in any module of the crate, so its declaration is
+# looked up across the crate's sources rather than in `main.rs` alone.
+FLATTEN_ATTR_RE = re.compile(r"^\s*#\[command\(flatten\)\]")
+FLATTEN_VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\((?P<ty>[\w:]+)\)")
 VARIANT_RE = re.compile(r"^    (?P<name>[A-Z]\w*)\s*(?P<open>\{)?")
 FIELD_RE = re.compile(r"^        (?P<name>[a-z]\w*)\s*:")
 ARG_ATTR_RE = re.compile(r"^\s*#\[(?:arg|clap)\((?P<body>.*)")
@@ -214,6 +223,7 @@ def parse_cli(source: str) -> tuple[dict[str, set[str]], set[str]]:
     """
     enums: dict[str, dict[str, set[str]]] = {}
     nested: dict[str, dict[str, str]] = {}
+    flattened: dict[str, set[str]] = {}
 
     for enum_name, body in ENUM_RE.findall(source):
         variants: dict[str, set[str]] = {}
@@ -222,6 +232,7 @@ def parse_cli(source: str) -> tuple[dict[str, set[str]], set[str]]:
         pending_long: str | None = None
         pending_is_long = False
         pending_subcommand = False
+        pending_flatten = False
         for line in body.splitlines():
             attr = ARG_ATTR_RE.match(line)
             if attr is not None:
@@ -244,6 +255,19 @@ def parse_cli(source: str) -> tuple[dict[str, set[str]], set[str]]:
                 pending_long, pending_is_long = None, False
                 pending_subcommand = False
                 continue
+            if FLATTEN_ATTR_RE.match(line):
+                pending_flatten = True
+                continue
+            if pending_flatten:
+                flat = FLATTEN_VARIANT_RE.match(line)
+                if flat is not None:
+                    flattened.setdefault(enum_name, set()).add(
+                        flat.group("ty").split("::")[-1]
+                    )
+                    pending_flatten = False
+                    variant = None
+                    continue
+                pending_flatten = False
             var = VARIANT_RE.match(line)
             if var is not None:
                 variant = kebab(var.group("name"))
@@ -259,6 +283,10 @@ def parse_cli(source: str) -> tuple[dict[str, set[str]], set[str]]:
     for variant, child in nested.get(top_name, {}).items():
         for flags in enums.get(child, {}).values():
             subcommands.setdefault(variant, set()).update(flags)
+    # A flattened enum contributes its OWN variants as top-level subcommands.
+    for child in flattened.get(top_name, set()):
+        for name, flags in enums.get(child, {}).items():
+            subcommands.setdefault(name, set()).update(flags)
 
     globals_: set[str] = set()
     struct = GLOBAL_STRUCT_RE.search(source)
@@ -523,7 +551,25 @@ def main() -> int:
         )
 
     # -- 4. every command the skill names exists -----------------------------
-    subcommands, globals_ = parse_cli(COMPILER_MAIN_RS.read_text(encoding="utf-8"))
+    # `main.rs` first, so its `Cli` struct decides which enum is top-level and
+    # what the globals are; then every other module of the same directory tree,
+    # because a `#[command(flatten)]`ed subcommand enum may be declared anywhere
+    # in the crate — `delvec`'s CPU render arms are in `src/view/cli.rs` — and a
+    # parser that stopped at `main.rs` would report a subcommand named after the
+    # flattening variant and miss the six that actually exist.
+    #
+    # The scan root is DERIVED from `COMPILER_MAIN_RS` rather than named
+    # separately, so that redirecting that one path redirects the whole parse.
+    # A second constant pointing at the real crate would let this gate's own
+    # "an unparseable CLI is a failure, not a pass" case find real enums beside
+    # the stub and go green having parsed something else entirely.
+    sources = [COMPILER_MAIN_RS.read_text(encoding="utf-8")]
+    sources += [
+        f.read_text(encoding="utf-8")
+        for f in sorted(COMPILER_MAIN_RS.parent.rglob("*.rs"))
+        if f != COMPILER_MAIN_RS
+    ]
+    subcommands, globals_ = parse_cli("\n".join(sources))
     if not subcommands:
         print(
             "check-skill-version: FAIL — parsed 0 subcommands from "

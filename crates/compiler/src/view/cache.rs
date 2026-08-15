@@ -16,7 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::diag::{DW_OUTPUT, Diagnostic};
+use crate::view::diag::{DW_OUTPUT, Diagnostic};
 
 /// The extensions Chunky derives from a scene's chunk set, all invalidated the
 /// moment the scene description changes.

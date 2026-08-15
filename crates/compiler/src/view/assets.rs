@@ -3,7 +3,7 @@
 //!
 //! The GPU path ([`crate::render`]) hands the same path to Nucleation, whose
 //! loader eagerly parses every `assets/` entry and exposes nothing under `data/`.
-//! The colour derivation ([`crate::blockcolor`]) needs both halves — block models
+//! The colour derivation ([`crate::view::blockcolor`]) needs both halves — block models
 //! and textures live in `assets/`, while the biome that decides grass, foliage and
 //! water tint lives in `data/minecraft/worldgen/biome/` — and it needs perhaps a
 //! hundred entries out of the jar's twenty-eight thousand. So it reads the archive

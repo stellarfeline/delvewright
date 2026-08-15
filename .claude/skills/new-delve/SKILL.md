@@ -13,6 +13,44 @@ You are authoring a delve campaign as staged DSL documents. You NEVER write
 mcfunction, dialogs, or datapack files — `delvec` compiles everything (ADR-0001).
 Read `CLAUDE.md` first if you haven't; forbidden zones apply in full.
 
+## Init — establish the toolchain BEFORE any authoring
+
+Run this first, every time, and finish it before writing a line of DSL. The
+floor is deliberately low and always available: clone the repo and build from
+source. Binary distribution is an optimisation of that, never the guarantee, so
+a tool that cannot be downloaded is BUILT at the step that needs it rather than
+skipped (ADR-0021 §3).
+
+1. **`delvec`** — one binary, and it carries the whole authoring surface
+   including the CPU render arms (`viewer`, `palette`, `scene`, `panorama`,
+   `contact-sheet`, `index`). Either path is fine:
+   - from a pipeline checkout: `cargo build --release -p delvec`
+   - standalone: `cargo install delvec`
+   Then `delvec --version` must print an engine version inside this skill's
+   declared `requires.delvec` range. It is a hard stop if it does not.
+
+2. **The 1.21.11 client jar** — a declared prerequisite of visual review, and
+   never downloaded, bundled or redistributed by this toolchain (ADR-0010).
+   Resolve it once: pass `--textures <jar>`, or set `$DELVEWRIGHT_CLIENT_JAR`,
+   or leave it at `~/.chunky/resources/minecraft.jar`. Confirm the ladder
+   answers before authoring:
+   `delvec palette campaigns/prefabs/<any>.nbt -o /tmp/palette.json`.
+
+3. **`delve-render`** — the three GPU arms (`piece`, `batch`, `fidelity-gate`).
+   They are not on the release shelf, so this one is always a source build:
+   `cargo build --release --manifest-path crates/render/Cargo.toml`
+   (`--manifest-path`, not `-p`: it is its own cargo workspace). Then
+   `delve-render fidelity-gate` must exit 0. Needing a checkout for this is the
+   expected shape, not a degraded one — the visual-review step depends on it and
+   does not skip.
+
+4. **Python 3** — the skin toolchain is a declared prerequisite too, and a
+   missing skin is a build error rather than a silent skip.
+
+If any step here cannot be completed, say so and stop. Authoring against a
+half-built toolchain produces a campaign whose visual half was never reviewed,
+and nothing downstream will report that.
+
 ## Inputs
 
 The user's prompt is a **constraint set over the DSL stages**: honor everything it
@@ -646,13 +684,13 @@ written against it.
   configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
   human in the loop for prompt iteration.
   When candidate prefabs DO exist and the reviewer is choosing between them, that
-  later step has its own tool: `delve-render contact-sheet <renders> -o <png>`
+  later step has its own tool: `delvec contact-sheet <renders> -o <png>`
   puts them all on one page, optionally ordered by similarity to this gate's
   reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
   score only ORDERS the page, it never removes a candidate from it.
   A still image cannot answer where the way in is or how a room reads from
   standing height; when that is the question,
-  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` gives the reviewer
+  `delvec viewer <nbt|dir|manifest.json> -o <page.html>` gives the reviewer
   one self-contained page they drive — orbit, plan, a player point of view at
   every anchor, and a cutaway for roofed interiors. Every block is drawn from the
   pinned version's own model and textures, so a wall is a wall and a stair is a
@@ -982,7 +1020,7 @@ Symptom → tool:
   the pinned core and the parallel/tiered-SPP doctrine are in
   `docs/reference/tools.md` §4a.
 - **A picture of the whole map** (storybook hero image, release asset):
-  `delve-render panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw] [--spp N]`
+  `delvec panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw] [--spp N]`
   — a 45° oblique scene framing the entire layout, computed from the plan. Never
   hand-edit a scene JSON to get one.
 - **Re-running the machine ladder after a fix**: the ladder entry scripts
@@ -1005,14 +1043,14 @@ Symptom → tool:
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
   line, human-optional.
 - **Several candidate prefabs for one slot, and a human has to pick**: mention
-  `delve-render contact-sheet <renders> -o <png>` — all the candidates on one
+  `delvec contact-sheet <renders> -o <png>` — all the candidates on one
   page, each labelled with its rank and id, with `tools/refscore.py` optionally
   ordering the page by similarity to the design-gate reference image. One line,
   human-optional. Say plainly that the score only orders the page: every
   candidate is on it, and the low scorer is present, last — the human is the
   selector, the number is not.
 - **A picture cannot say what a prefab is like to be inside**: mention
-  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` — one
+  `delvec viewer <nbt|dir|manifest.json> -o <page.html>` — one
   self-contained HTML page with a camera the reviewer drives: exterior, plan, and
   a player
   point of view at eye height (1.62) standing at every declared anchor and
@@ -1229,10 +1267,14 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    from the DSL). Render the per-prefab sets with Nucleation and read them against
    each shot's `expect`:
    - `cargo run -q --manifest-path crates/render/Cargo.toml --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
-     (`--manifest-path`, not `-p`: the render crate is its own cargo workspace)
-     (needs the 1.21.11 client jar via `--textures`/`$DELVEWRIGHT_CLIENT_JAR`;
-     skip with a note if unavailable locally).
+     (`--manifest-path`, not `-p`: the GPU arms are their own cargo workspace).
+     **This step does not skip.** `Init` has already built the binary and
+     resolved the client jar; if either is missing, go back to `Init` rather
+     than past this step. A visual channel that fails soft is a review that
+     passed without looking.
    - `delve-render fidelity-gate` must exit 0 before trusting any render.
+   - `delvec viewer <nbt|dir|manifest.json> -o <page.html>` is the CPU half of
+     the same channel and needs no GPU — it is in the binary you already have.
    - Open the exterior/top/interior/anchor PNGs and check each against its
      `expect` line (marker visible? room not dark? NPC faces camera and its name
      is text not JSON? seam clean?). Findings are **DSL-level** — fix the campaign
@@ -1252,7 +1294,7 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    render, and treat it as the primary evidence. A scene that photographs well
    from outside and reads as a corridor of grey stone from the doorway is a
    finding, not a pass. Whole-scene and player-POV shots come from
-   `validation/render-shots.sh <build-dir>` (`delve-render scene` + `index`);
+   `validation/render-shots.sh <build-dir>` (`delvec scene` + `delvec index`);
    path-tracing those scenes is Chunky, run as a separate process
    (`docs/reference/tools.md` §4a) — not wired into CI. The best of these frames
    are also what the design-alignment Artifact (step 4b) should have been built
@@ -1272,7 +1314,7 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    right thing in frame, from the right side, at the right distance. Then produce
    the shipped image with Chunky: emit the scene set with
    `validation/render-shots.sh <build-dir>` and pick your scene, plus
-   `delve-render panorama <build-dir> -o <dir>` for the whole-map hero shot every
+   `delvec panorama <build-dir> -o <dir>` for the whole-map hero shot every
    release owes (`--bearing` picks the corner). Render each scene as its own
    `java -jar ChunkyLauncher.jar … -render` process — parallel, `-target 64` for
    a look, ~300 for the shipped frame — then `-snapshot <scene> <out>.png`;
@@ -1566,7 +1608,7 @@ here:
   are native AI; if a beat needs lane-then-fight movement, that is the
   routed-then-feral primitive, which does not exist — not a follow_range trick.
 - **Player-POV review**: the build's `render-plan.json` POV shots
-  render through Chunky (see `validation/render-shots.sh`, `delve-render scene`
+  render through Chunky (see `validation/render-shots.sh`, `delvec scene`
   emission). Review the set against
   each shot's `expect` before handing the delve over. Declared-dark interiors
   render faithfully dark — review those in-game (night-vision mitigation);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Derive the shape-carrying block-state properties from the 1.21.11 client jar.
 
-Writes ``crates/compiler/data/blockstate-shape-props-1.21.11.json``: block id →
+Writes ``crates/dsl/data/blockstate-shape-props-1.21.11.json``: block id →
 the properties named by ``multipart`` selectors in the block's own blockstate
 definition (``assets/minecraft/blockstates/<block>.json``).
 
@@ -22,7 +22,7 @@ lists, no timestamps.
 
 Usage:
     python3 tools/extract-shape-properties.py <minecraft-1.21.11-client.jar> \
-        crates/compiler/data/blockstate-shape-props-1.21.11.json
+        crates/dsl/data/blockstate-shape-props-1.21.11.json
 """
 
 import json
@@ -69,7 +69,7 @@ def main():
     # wrong data.
     registry_path = (
         Path(__file__).resolve().parent.parent
-        / "crates/compiler/data/blocks-1.21.11.json"
+        / "crates/dsl/data/blocks-1.21.11.json"
     )
     registry = json.loads(registry_path.read_text())
 

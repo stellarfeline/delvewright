@@ -2,11 +2,11 @@
 # Visual-tier shot-set producer (spec-0003; player-POV shots).
 #
 # Turns a `delvec build` output into the two artifacts a scene review consumes:
-#   1. the Chunky scene set  — `delve-render scene`  (one free-camera scene JSON per
+#   1. the Chunky scene set  — `delvec scene`  (one free-camera scene JSON per
 #      shot; the first-person player-POV shots render here, since Nucleation is an
 #      orbit/turntable renderer and cannot place a free camera at eye height inside a
 #      room — see crates/render/README.md).
-#   2. the shot index        — `delve-render index`  (image ↔ expect pairs, so a
+#   2. the shot index        — `delvec index`  (image ↔ expect pairs, so a
 #      reviewing agent / vision model is handed pairs directly).
 #
 # This is the ladder step; it does NOT call a vision model — the review stays
@@ -29,16 +29,16 @@ if [ ! -f "$build_dir/render-plan.json" ]; then
   exit 2
 fi
 
-# Prefer a prebuilt binary; fall back to `cargo run` from the repo.
+# Every arm this script runs is a CPU arm, so it is `delvec` — one binary, and
+# the one a creator already has (ADR-0021 §1). Prefer a prebuilt binary; fall
+# back to `cargo run` from the repo.
 render() {
-  if command -v delve-render >/dev/null 2>&1; then
-    delve-render "$@"
-  elif [ -x "$repo/target/debug/delve-render" ]; then
-    "$repo/target/debug/delve-render" "$@"
+  if command -v delvec >/dev/null 2>&1; then
+    delvec "$@"
+  elif [ -x "$repo/target/debug/delvec" ]; then
+    "$repo/target/debug/delvec" "$@"
   else
-    # `--manifest-path`, not `-p`: this crate is its own workspace (/Cargo.toml).
-    ( cd "$repo" && cargo run -q --manifest-path crates/render/Cargo.toml \
-        --bin delve-render -- "$@" )
+    ( cd "$repo" && cargo run -q -p delvec --bin delvec -- "$@" )
   fi
 }
 

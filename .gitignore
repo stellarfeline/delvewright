@@ -65,7 +65,7 @@ dist/
 .refimg/
 
 # Contact sheets + their score files, same rule: candidate renders laid out for
-# the owner to curate massing from (`delve-render contact-sheet`,
+# the owner to curate massing from (`delvec contact-sheet`,
 # `tools/refscore.py`), and the palette swatch sheets under `.sheets/palette/`
 # (`tools/block-appearance.py --sheet`), which are tiled Mojang texture pixels.
 # Generation-time working material — never shipped, never in the content repo, so

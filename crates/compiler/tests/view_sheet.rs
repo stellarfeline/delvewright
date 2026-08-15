@@ -14,9 +14,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use delvewright_render::sheet::{self, Candidate, Layout, ScoreSet, SheetOptions};
+use delvewright_compiler::view::sheet::{self, Candidate, Layout, ScoreSet, SheetOptions};
 
-const BIN: &str = env!("CARGO_BIN_EXE_delve-render");
+const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
 fn tmp(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("delve-sheet-{}-{tag}", std::process::id()));

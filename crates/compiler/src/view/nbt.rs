@@ -1,5 +1,5 @@
-//! Vanilla-structure `.nbt` → Nucleation adapter (productionized from the
-//! spike-render-fidelity spike).
+//! Vanilla-structure `.nbt` reader for the render surface (productionized from
+//! the spike-render-fidelity spike).
 //!
 //! Nucleation 0.9 has **no importer** for the *binary gzip* vanilla structure
 //! `.nbt` our prefab generator/compiler emit — its format manager only detects
@@ -10,8 +10,11 @@
 //! public `set_block` API. Textures come from a resource pack (the pinned 1.21.11
 //! client jar) — that is what actually determines block fidelity.
 //!
-//! The parse ([`parse_structure`]) is pure (no GPU / no nucleation) and unit
-//! tested against committed prefabs; only [`build_schematic`] touches nucleation.
+//! The parse is pure — no GPU, no nucleation — and unit tested against
+//! committed prefabs, which is why it lives on this side of ADR-0021 §1's split:
+//! the CPU render arms `delvec` now carries all read structures, and none of them
+//! meshes one. The one nucleation-typed function that used to sit here,
+//! `build_schematic`, went to `delvewright_render::render`, its only caller.
 
 use std::collections::HashMap;
 use std::io::Read as _;
@@ -143,33 +146,6 @@ pub fn parse_structure_bytes(raw: &[u8]) -> Result<Structure, NbtError> {
         palette: states,
         blocks: placed,
     })
-}
-
-/// Rebuild a parsed [`Structure`] as a Nucleation `UniversalSchematic`. When
-/// `strip_ceiling` is set, blocks at the top Y layer are omitted, yielding a
-/// "dollhouse" cutaway so an orbit camera can see the (roofed) interior — used
-/// for the per-piece interior/anchor shots (a validation artifact, never
-/// shipped). `air` states are skipped (they carry no mesh).
-pub fn build_schematic(
-    st: &Structure,
-    strip_ceiling: bool,
-) -> Result<nucleation::UniversalSchematic, NbtError> {
-    use nucleation::{BlockState, UniversalSchematic};
-    let mut schem = UniversalSchematic::new("delve-prefab".to_string());
-    let top_y = st.size[1] - 1;
-    for (pos, idx) in &st.blocks {
-        if strip_ceiling && pos[1] >= top_y {
-            continue;
-        }
-        let state_str = &st.palette[*idx];
-        if state_str == "minecraft:air" {
-            continue;
-        }
-        let bs = BlockState::from_block_string(state_str)
-            .map_err(|e| NbtError(format!("cannot parse block state `{state_str}`: {e:?}")))?;
-        schem.set_block(pos[0], pos[1], pos[2], &bs);
-    }
-    Ok(schem)
 }
 
 #[cfg(test)]

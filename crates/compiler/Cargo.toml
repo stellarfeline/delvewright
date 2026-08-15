@@ -69,6 +69,26 @@ flate2 = "1"
 # (ADR-0006). MIT/Apache-2.0.
 crc32fast = "1"
 
+# The CPU render arms (`viewer`, `scene`, `panorama`, `contact-sheet`, `index`)
+# came into this crate with ADR-0021 §1, and they decode and composite PNGs:
+# block textures out of the client jar for the derived colour table, and the
+# contact sheet's tiled and labelled cells.
+#
+# Pure Rust, and that is the load-bearing property rather than a nicety: this is
+# the crate the cross-build shelf compiles for five targets, two of them
+# static-musl (`versions.toml [engine].targets`), and a dependency with a C build
+# script reds both of them with no cross-compiler in the release recipe. Default
+# features carry every decoder the crate has; the render surface reads and writes
+# PNG only, so the rest is turned off rather than shipped. MIT/Apache-2.0.
+image = { version = "0.24", default-features = false, features = ["png"] }
+
+# The client jar is a zip, and `view::assets` reads block textures straight out
+# of it — the jar is a creator prerequisite, never redistributed (ADR-0010), so
+# the reader has to live in the binary the creator installs. `deflate` only: the
+# jar uses no other method, and the default feature set drags bzip2/zstd C
+# libraries that would red the static-musl shelf targets. MIT.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 [dev-dependencies]
 # Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive
 # the assembled-world / gravity-despawn checks against a real plan.
