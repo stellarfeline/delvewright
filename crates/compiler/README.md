@@ -1,13 +1,16 @@
 # delvec
 
-A deterministic compiler for **Minecraft Java Edition 1.21.11** adventure maps.
+The delve creator for **Minecraft Java Edition 1.21.11** adventure maps: one
+binary holding everything you do to a map, from the first document to the
+pictures you judge it by.
 
 You describe a map as JSON — the world and its areas, the NPCs, the classes
 players pick from, the quest plan, the quests, the dialogue. `delvec` type-checks
 those documents, proves every objective is reachable and every quest completable,
 assembles the world from a library of structure prefabs, and writes a datapack
-plus the world and server assets that make it playable. Nobody hand-writes an
-`.mcfunction`: every command in the output comes from the compiler.
+plus the world and server assets that make it playable. It also renders what you
+have built, so you look at a map before you believe it. Nobody hand-writes an
+`.mcfunction`: every command in the output is emitted for you.
 
 The same documents and the same seed always produce byte-identical output.
 
