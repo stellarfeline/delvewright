@@ -1,13 +1,12 @@
-//! The translation inventory reaches every effect root emission reaches
-//! (task #168).
+//! The translation inventory reaches every effect root emission reaches.
 //!
 //! `l10n::each_string` is the single traversal [`inventory`] and [`localize`]
 //! share, so a player-visible string it does not visit is a string that is neither
 //! demanded of a translator (`DW0180`) nor swapped at build time — it ships
-//! **English-only in a translated build**, silently. It used to stop at three
-//! effect roots where emission reaches five, so a `narrate` inside a
+//! **English-only in a translated build**, silently. A walk that stops at three
+//! effect roots where emission reaches five drops a `narrate` inside a
 //! `traps[].payload` or a dialogue option's `set-checkpoint` `on_respawn` bundle
-//! fell through exactly that hole.
+//! through exactly that hole.
 
 mod common;
 

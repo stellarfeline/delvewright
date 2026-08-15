@@ -194,7 +194,7 @@ fn typod_cutscene_waypoint_anchor_is_dw0360() {
 }
 
 // ---------------------------------------------------------------------------
-// The two roots the seal did not reach (task #24)
+// The two roots the seal did not reach
 // ---------------------------------------------------------------------------
 //
 // The seal's own doc calls it "the backstop that makes the rule total", but its
@@ -286,8 +286,8 @@ fn open_gate_in_a_trap_payload_emits_its_fill() {
 
 /// A typo'd anchor in a `traps[].payload` is `DW0360`.
 ///
-/// Red before task #24: the seal never walked root 4, so this built **clean** and
-/// `trap_fire_alarm_chest.mcfunction` shipped with the `open-gate` simply absent —
+/// A seal that does not walk root 4 builds this **clean**, and
+/// `trap_fire_alarm_chest.mcfunction` ships with the `open-gate` simply absent —
 /// a trap that springs and does nothing, with no diagnostic anywhere.
 #[test]
 fn typod_anchor_in_a_trap_payload_is_dw0360() {
@@ -347,7 +347,7 @@ fn set_block_in_a_dialogue_respawn_bundle_emits_its_setblock() {
 /// A typo'd anchor in a dialogue option's `set-checkpoint` `on_respawn` bundle is
 /// `DW0360`.
 ///
-/// Red before task #24 for the same reason as root 4, and quieter still: the
+/// The same gap as root 4, and quieter still: the
 /// bundle only runs after a death, so nothing before the party's first respawn
 /// could even hint that the block was never placed.
 #[test]

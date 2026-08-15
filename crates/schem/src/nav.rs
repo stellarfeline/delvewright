@@ -6,7 +6,7 @@
 //! "Can a body stand on this cell, and can it walk from that one to this one" is
 //! the same question whatever produced the blocks — a grammar expansion, a
 //! structure template read off disk, a zone reassembled from tiles. It had been
-//! answered privately seven times over (task #102), each copy keyed to the type
+//! answered privately seven times over, each copy keyed to the type
 //! that happened to need it first, so a fix to one reached none of the others
 //! and the light probe in `delve-admit` could not use the walk that
 //! `delvewright-grammar` had already written.

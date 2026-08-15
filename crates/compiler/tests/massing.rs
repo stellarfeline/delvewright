@@ -1,4 +1,4 @@
-//! L2 massing verbs (spec-0017 PR 3): the `v06-massing` fixture's five-verb
+//! L2 massing verbs (spec-0017): the `v06-massing` fixture's five-verb
 //! net-identity tour, the ADR-0006 determinism gate over massing, `DW0324`
 //! application failures, and the full-assembly-revalidation proof (a massing
 //! edit that seals the critical path fails `DW0311`, not QA).

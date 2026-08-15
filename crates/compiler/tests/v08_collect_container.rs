@@ -1,4 +1,4 @@
-//! DSL v0.8 `collect` container adoption at the build tier (task #95).
+//! DSL v0.8 `collect` container adoption at the build tier.
 //!
 //! The DSL tier cannot know whether an anchor's cell holds a barrel — that needs
 //! the assembled world — so "the container is really there" is the build error

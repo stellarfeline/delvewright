@@ -14,8 +14,8 @@
 //!
 //! This test is what keeps the decision from decaying. It does **not** read a
 //! hand-written list of consumers — a hand-written list is the exact defect this
-//! project has paid for six times over in the `for_each_effect_root` family
-//! (#301, #302, #321). It enumerates the consumers **from the generated JSON
+//! project has paid for six times over in the `for_each_effect_root` family.
+//! It enumerates the consumers **from the generated JSON
 //! Schema**, which `schemars` derives from the Rust types, and requires every
 //! object schema that declares `requires_flags` to declare `requires_state` too.
 //!
@@ -54,8 +54,8 @@ use serde_json::Value;
 /// `give-effect`, `clear-effect`, `teleport`.
 ///
 /// Ledger of the moves: 28 (spec-0031 §1, the gate's third field) → 30
-/// (`fill-region` / `clear-region`, #354) → 33 (`give-effect` / `clear-effect` /
-/// `teleport`, #353) → **35** (spec-0032's `drop-stake`, and the **seventh gate
+/// (`fill-region` / `clear-region`) → 33 (`give-effect` / `clear-effect` /
+/// `teleport`) → **35** (spec-0032's `drop-stake`, and the **seventh gate
 /// consumer**, `ShopOffer`).
 ///
 /// The consumer is the interesting half of this step. A shop's price is *"may

@@ -454,7 +454,7 @@ fn strip_flag_gates(q: &mut serde_json::Value) {
 }
 
 // ---------------------------------------------------------------------------
-// optional participation (`DW0205`, task #174)
+// optional participation (`DW0205`)
 // ---------------------------------------------------------------------------
 //
 // The owner's contract: *the mainline must be completable with zero optional

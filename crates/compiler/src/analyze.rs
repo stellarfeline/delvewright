@@ -51,7 +51,7 @@
 //! contain an AND-join the party can actually split n ways
 //! ([`crate::flow::Flow::divide`]).
 //!
-//! ## Optional participation (task #174)
+//! ## Optional participation
 //!
 //! The owner's contract — *the mainline must be completable with zero optional
 //! participation* — is proven in two halves, both on the same critical path.
@@ -76,7 +76,7 @@ pub mod codes {
     pub const OBJECTIVE_DEADLOCK: DwCode = DwCode::every_version("DW0203");
     /// The exported critical path is not a walkable playthrough.
     pub const PATH_INCOHERENT: DwCode = crate::flow::DW_PATH_INCOHERENT;
-    /// Optional participation can skip a load-bearing mainline beat (task #174).
+    /// Optional participation can skip a load-bearing mainline beat.
     pub const OPTIONAL_GATES_MAINLINE: DwCode = crate::flow::DW_OPTIONAL_GATES_MAINLINE;
     /// A declared `min_players: n` has no n-agent division of labour (spec-0018).
     pub const PARTY_UNDIVIDABLE: DwCode = DwCode::every_version("DW0358");
@@ -175,7 +175,7 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
                 f.message(),
             ));
         } else {
-            // DW0205 (task #174): the mainline must be completable with ZERO
+            // DW0205: the mainline must be completable with ZERO
             // optional participation. The producer half is the replay just
             // proven; this is the order half — every beat the campaign lets a
             // player walk past while the graph still needs it.

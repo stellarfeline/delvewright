@@ -1,6 +1,6 @@
 //! Native i18n: author-declared languages, l10n sidecar documents, the
 //! authoritative key inventory, and the localization pass (spec-0001 i18n
-//! addendum; owner-approved 2026-07-31).
+//! addendum).
 //!
 //! **English is canonical.** Stage docs stay pure English; the strings the
 //! compiler emits to players come from the stage docs. A campaign that declares
@@ -113,7 +113,7 @@ fn effect_strings(
     match eff {
         QuestEffect::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text, entry),
         QuestEffect::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n, entry),
-        // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's rest dialog is
+        // spec-0016 §1: the bonfire's rest dialog is
         // read by the player like any other on-screen line, so its authored
         // strings translate like any other. Unauthored fields are absent from the
         // inventory — the compiler bakes its canonical English, exactly as
@@ -287,10 +287,9 @@ pub fn local_id(id: &str) -> &str {
 /// an old campaign in two ways, only one of which is a per-diagnostic question. A
 /// NEW check is fenced by its code (`DwCode::since`). But [`each_string`] widening
 /// raises no new code at all: `DW0180` was always allowed to fire, and simply
-/// started demanding more keys. That is what happened in PR #317 — the walk was
-/// widened onto an actor's own `name`, a v0.6 surface that older campaigns
-/// already emitted — and `nobodys-cave-island` went red mid-staging with nothing
-/// in its own documents changed (task #51).
+/// started demanding more keys when the walk widened onto an actor's own `name`,
+/// a v0.6 surface that older campaigns already emitted — which sends a shipped
+/// campaign red mid-staging with nothing in its own documents changed.
 ///
 /// So the binding is versioned at the granularity the binding has: **per key**.
 /// A key whose entry version the campaign has not reached is still inventoried,
@@ -390,15 +389,13 @@ impl StageVersions {
 
 /// **The one key in the walk whose obligation is younger than its surface.**
 ///
-/// `actors[].name` is DSL v0.6 surface. PR #317 widened [`each_string`] onto it —
-/// correctly, a puppet's nameplate is as player-visible as an NPC's — but with no
-/// version gate, so at the next engine build every campaign at every declared
-/// version owed a translation for a string its own documents had not touched.
-/// `nobodys-cave-island` (0.6.0/0.8.0) went red mid-staging and was unblocked
-/// with a three-string patch instead of an adoption round (task #51, found
-/// 2026-08-07).
+/// `actors[].name` is DSL v0.6 surface, and [`each_string`] reaches it —
+/// correctly, a puppet's nameplate is as player-visible as an NPC's. Widened
+/// with no version gate, that makes every campaign at every declared version owe
+/// a translation for a string its own documents had not touched, on the next
+/// engine build.
 ///
-/// 0.10.0 is the version current when the widening landed, so that is the version
+/// 0.10.0 is the version current at the widening, so that is the version
 /// that owes it: campaigns at 0.10.0 and above translate actor nameplates,
 /// campaigns below are grandfathered and adopt it with their own version bump,
 /// which is what CLAUDE.md's version-adoption discipline asks for.
@@ -420,7 +417,7 @@ fn effect_stage(stage: &str) -> Stage {
 ///
 /// The third argument is not decoration. Every site must state its [`KeyEntry`],
 /// which is what stops a widening from silently creating a coverage obligation
-/// on campaigns that predate it (task #51); there is no way to add a site without
+/// on campaigns that predate it; there is no way to add a site without
 /// answering the question, because there is no `f` that takes two arguments.
 pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEntry)) {
     // Entity display names (a nameplate over a body) are keyed by their canonical
@@ -531,7 +528,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEnt
                     KeyEntry::always(Stage::Quests),
                 );
             }
-            // Stage 5 — v0.8 `collect.item_name` (task #95): the display name the
+            // Stage 5 — v0.8 `collect.item_name`: the display name the
             // collected item carries as a `custom_name` component. A player reads
             // it off the stack in the barrel and off their own hotbar, so it is as
             // player-visible as a `title` and translates like one. Absent on every
@@ -609,7 +606,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEnt
                     KeyEntry::always(Stage::Quests),
                 );
             }
-            // Stage 5 — v0.9 declared quest-item drops (task #179). The name
+            // Stage 5 — v0.9 declared quest-item drops. The name
             // rides the dropped stack's `custom_name`, so the player reads it off
             // the ground and off their own hotbar: as player-visible as a wave
             // mob's own name, and translated like one.
@@ -624,8 +621,8 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEnt
             }
         }
     }
-    // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops (task
-    // #179), keyed off the actor id exactly as a wave mob's drop is keyed off its
+    // Stage 5 — actors: the nameplate over the puppet, then its v0.9 drops,
+    // keyed off the actor id exactly as a wave mob's drop is keyed off its
     // wave.
     for a in &mut c.quests.content.actors {
         let al = local(a.id.as_str()).to_string();
@@ -635,7 +632,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEnt
         // as the stage-2 NPC name it usually duplicates, and shares that NPC's key
         // when the two texts are identical (module header).
         //
-        // `ACTOR_NAME_ENTRY` is the whole of task #51: the field is v0.6 but the
+        // `ACTOR_NAME_ENTRY` carries the whole fence: the field is v0.6 but the
         // walk only reached it in the 0.10 era, so the coverage obligation is
         // 0.10's and not v0.6's.
         if let Some(name) = a.name.as_mut() {
@@ -731,7 +728,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String, KeyEnt
     }
     // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
     // dialog, a seal's answer — over **every** root emission can lower an effect
-    // from, not just the quests stage's three ([`effect_roots_mut`], task #168).
+    // from, not just the quests stage's three ([`effect_roots_mut`]).
     // Nesting inside each root is descended by `effect_strings_deep`, so a narrate
     // in a `sequence` step of a trap payload is inventoried like any other.
     for (stage, _path, keybase, eff) in effect_roots_mut(c) {
@@ -758,8 +755,8 @@ fn entity_name_key(claimed: &mut BTreeMap<String, String>, text: &str, own: Stri
 /// This walk consults the campaign document and **never its `dsl_version`**.
 /// For the surface itself that is right — a campaign at 0.6.0 cannot use a 0.9
 /// surface, so those keys simply never appear — but it has a consequence worth
-/// stating, and one already paid for twice (tasks #167 and #168, which widened
-/// [`each_string`] onto `traps[].payload` and `on_respawn` bundles):
+/// stating, and one already paid for twice — by the widenings of
+/// [`each_string`] onto `traps[].payload` and onto `on_respawn` bundles:
 ///
 /// **when a widening reaches strings that OLDER surfaces already emitted**, the
 /// inventory grows for campaigns of every declared version at once, and
@@ -798,7 +795,7 @@ pub fn inventory(c: &Campaign) -> BTreeMap<String, String> {
 /// reached.
 ///
 /// The two differ only by keys added to the walk over surface older campaigns
-/// already had — the widening shape of task #51. A key outside this set is still
+/// already had — the widening shape. A key outside this set is still
 /// inventoried, still tagged into its text component and still translated when a
 /// sidecar carries one, so nothing about emission or about an already-adopted
 /// sidecar moves; it simply may not be *demanded* of a campaign that never opted
@@ -959,8 +956,8 @@ pub fn dialogue_option_labels(c: &Campaign) -> Vec<OptionLabel> {
     out
 }
 
-/// Every **authored** bonfire rest-dialog label (spec-0016 §1, owner ruling
-/// 2026-08-03), in the same fixed effect order the inventory uses. A bonfire's
+/// Every **authored** bonfire rest-dialog label (spec-0016 §1), in the same
+/// fixed effect order the inventory uses. A bonfire's
 /// two options are drawn on exactly the same 150-GUI-px `multi_action` button a
 /// dialogue option is, so they carry exactly the same width budget (`DW0331`) —
 /// the check follows the widget, not the stage the string was authored in.
@@ -1227,7 +1224,7 @@ pub fn has_tr_sigil(s: &str) -> bool {
 ///
 /// Runs on the exact same traversal as [`inventory`] and [`localize`]
 /// ([`each_string`]), so the tagged set and the translated set are the same set by
-/// construction — the property task #168 bought and spec-0029 keeps.
+/// construction — the property spec-0029 keeps.
 ///
 /// The campaign handed to the compiler is tagged **once**, before the plan is
 /// built; from there the tag is the compiler's only evidence that a string it is

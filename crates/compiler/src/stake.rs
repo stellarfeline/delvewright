@@ -3,7 +3,7 @@
 //!
 //! # The rule, and why it is a table
 //!
-//! Owner ruling, 2026-08-08:
+//! The rule:
 //!
 //! > The stake anchor is the point, on the walkable path from the respawn point in
 //! > force at the moment of death to the death point under the quest state in force
@@ -352,7 +352,7 @@ pub fn runtime_mutable_regions(plan: &Plan) -> Vec<LabelledBox> {
     //
     // Read through `timeline::walk`, the one traversal that reaches every effect
     // at every root including nested `sequence` steps — a hand-rolled walk here
-    // would be the #301/#302/#321 defect in a new place.
+    // would be the three-of-five defect in a new place.
     for (eff, _) in crate::timeline::walk(plan) {
         if let Some((zone, block)) = eff.region_write()
             && let Some(r) = plan.zone_box(zone)

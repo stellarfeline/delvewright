@@ -39,7 +39,7 @@
 //!
 //! ## Dialogue option labels (`DW0331`) — the same measurement, a harder limit
 //!
-//! Owner directive, 2026-08-03. A dialogue option is a **button caption**, not a
+//! A dialogue option is a **button caption**, not a
 //! sentence. [`crate::emit`]'s `build_node_dialog` emits each node as a
 //! `minecraft:multi_action` dialog with `columns: 1` and **no `width` override**, so
 //! every option button is vanilla's default [`DIALOG_BUTTON_WIDTH`]. Vanilla draws a
@@ -378,7 +378,7 @@ fn percent_of(budget: u32, width: u32) -> String {
 /// about the player's screen.
 pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Diagnostic> {
     let mut d = Vec::new();
-    // spec-0016 §1 (owner ruling 2026-08-03): a bonfire's two rest options are
+    // spec-0016 §1: a bonfire's two rest options are
     // drawn on exactly the same 150-GUI-px `multi_action` button, so they carry
     // exactly the same budget. The check follows the widget, not the stage the
     // string happened to be authored in.

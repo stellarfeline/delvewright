@@ -341,7 +341,7 @@ fn replay_with(
                         *min_light,
                     )?;
                 }
-                // L2 massing verbs (spec-0017 PR 3) were applied at PLAN time
+                // L2 massing verbs (spec-0017) were applied at PLAN time
                 // (`crate::massing`, inside `Plan::build`) — the assembly this
                 // replay started from already reflects them. Their batch
                 // bounds come from `plan.massing_bounds` below.
@@ -783,7 +783,7 @@ pub fn anchor_starts(plan: &Plan) -> Vec<crate::nav::AnchorRoot> {
 
 /// Write one cell: the assembled model and the batch write-log both keep the
 /// **full blockstate-carrying** form — the model because waterlogging, slab
-/// halves and snow layers change the fluid and step models (task #78), the
+/// halves and snow layers change the fluid and step models, the
 /// write-log because it is the runtime `setblock`/`fill` line. An air write
 /// removes the cell (absent = air); any write replaces the whole block, state
 /// included, so the cell's open-gate marking is re-derived from what was just
@@ -1153,7 +1153,7 @@ fn is_dressing_candidate(assembled: &Assembled, c: [i32; 3]) -> bool {
     !assembled.blocks.contains_key(&c) && assembled.blocks.contains_key(&[c[0], c[1] - 1, c[2]])
 }
 
-/// The `scatter` verb (spec-0017 PR 2): seeded dressing over a region's
+/// The `scatter` verb (spec-0017): seeded dressing over a region's
 /// standable cells, honoring keep-clear envelopes. Ported from the greenfield
 /// meadow's flower/dressing pass (`prefabs/island-terrain-generator`): raw
 /// white-noise gates (dressing wants speckle, not the fill verbs' clustered
@@ -1232,7 +1232,7 @@ fn scatter(
 }
 
 // ---------------------------------------------------------------------------
-// The lean-or-grow canopy rules (#121), ported from
+// The lean-or-grow canopy rules, ported from
 // `prefabs/island-terrain-generator` — spec-0017's `plant` verb. The corridor
 // rule is STRUCTURAL, never a cut: a canopy that would reach a keep-clear
 // column first leans one block away; failing that the tree grows tall enough
@@ -1334,7 +1334,7 @@ fn place_oak(
     leaf(assembled, batch_writes, [cx, base + 3, cz]);
 }
 
-/// The `plant` verb (spec-0017 PR 2): choose up to `count` trunk cells from
+/// The `plant` verb (spec-0017): choose up to `count` trunk cells from
 /// the region's highest-noise standable candidates (the generators' oak
 /// selection: noise-descending with a both-axes spacing rule, salt 41), then
 /// place each tree via the lean-or-grow canopy rules.
@@ -1376,7 +1376,7 @@ fn plant(
     }
 }
 
-/// The `fragment` verb (spec-0017 PR 2): stamp a library prefab's non-air
+/// The `fragment` verb (spec-0017): stamp a library prefab's non-air
 /// cells at a frame-resolved position, optionally quarter-turned. The fragment
 /// is a first-class library prefab — provenance/license live in its metadata
 /// exactly like every placed prefab (ADR-0013), so nothing outside the
@@ -1530,7 +1530,7 @@ fn first_yaw_dependent(
     None
 }
 
-/// The `relight` verb (spec-0017 PR 2): run the spec-0010 fixture-placement
+/// The `relight` verb (spec-0017): run the spec-0010 fixture-placement
 /// pass over ONE region and bake the resulting fixtures into the edit script's
 /// writes — authorial control of where fixtures land. Uses the exact
 /// whole-area machinery (`light::relight_area`) constrained to the region's
@@ -2131,7 +2131,7 @@ mod tests {
         );
     }
 
-    /// The #121 structural rule: a canopy that cannot lean clear of a
+    /// The structural rule: a canopy that cannot lean clear of a
     /// keep-clear column grows tall instead — nothing the tree writes sits in
     /// a keep-clear column below full clearance (trunk floor + 3), and no
     /// leaf is ever sliced to fake it.

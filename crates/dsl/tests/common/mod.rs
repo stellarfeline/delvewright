@@ -102,7 +102,7 @@ pub fn load_invalid() -> Vec<(String, InvalidFixture)> {
 /// `str::replace` that matches nothing returns its input unchanged, so a test
 /// built on textual splicing goes on to assert against an **unpatched**
 /// campaign and passes for the wrong reason. Canonical reformatting of the
-/// fixtures (task #52) exposed several such silent no-ops. A structural patch
+/// fixtures exposed several such silent no-ops. A structural patch
 /// panics instead.
 pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
     let mut v: serde_json::Value = serde_json::from_str(text).expect("fixture is valid JSON");

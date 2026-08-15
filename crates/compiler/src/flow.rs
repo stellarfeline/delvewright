@@ -47,11 +47,11 @@
 //! Which effect **lists** those rows range over is not this module's to decide:
 //! both the producer scan in [`Flow::new`] and the reader inventory
 //! ([`gate_flags`]) walk [`crate::plan::for_each_effect_root`], the single
-//! enumeration of the five roots emission can lower an effect from. Before task
-//! #170 each of them hand-listed three, so a `set-flag` in a `traps[].payload`
-//! was not a producer *anywhere* in the proof while the emitted
-//! `trap_fire_<trap>.mcfunction` set it, and a `requires_flags` inside such a
-//! payload never entered the branch model. The table above is a **policy** per
+//! enumeration of the five roots emission can lower an effect from. A
+//! hand-listed subset is what lets a `set-flag` in a `traps[].payload` be no
+//! producer *anywhere* in the proof while the emitted
+//! `trap_fire_<trap>.mcfunction` sets it, and keeps a `requires_flags` inside
+//! such a payload out of the branch model. The table above is a **policy** per
 //! root; the roots themselves are inherited.
 //!
 //! A quest/objective is reported unreachable only when it is unreachable in
@@ -74,7 +74,7 @@
 //! completable *at its position*, and that `campaign-complete` fires exactly at
 //! the final step. A failure is `DW0204` naming the first incoherent step.
 //!
-//! ## Optional participation (`DW0205`, task #174)
+//! ## Optional participation (`DW0205`)
 //!
 //! The owner's contract is that **the mainline must be completable with zero
 //! optional participation**: side content may never gate it. Two halves.
@@ -455,7 +455,7 @@ impl<'a> Flow<'a> {
         // The producer model, root by root. The roots come from
         // `plan::for_each_effect_root` — the ONE enumeration of what emission can
         // lower — so the proof cannot believe in fewer firings than the datapack
-        // performs (task #170). What each root means is the policy stated here,
+        // performs. What each root means is the policy stated here,
         // once, and the match is exhaustive: a sixth root cannot be added without
         // this file deciding what it is.
         let gate_of = |fs: &[delvewright_dsl::FlagId]| -> Vec<String> {
@@ -528,7 +528,7 @@ impl<'a> Flow<'a> {
                 });
             }
         }
-        // task #184: a timed gate's disarm produces its flag the same way — an
+        // A timed gate's disarm produces its flag the same way — an
         // optional player action nothing orders, so it is ambient, ungated.
         for g in &c.quests.content.timed_gates {
             if let Some(d) = &g.disarm {
@@ -1745,7 +1745,7 @@ fn choice_groups(trees: &[TreeModel]) -> (Vec<ChoiceGroup>, BTreeMap<(String, us
 ///
 /// The effect half therefore walks [`crate::plan::for_each_effect_root`], the one
 /// enumeration of the five roots emission lowers from, rather than a second
-/// hand-maintained list of three (task #170). Unlike the producer model above
+/// hand-maintained list of three. Unlike the producer model above
 /// this needs no per-root policy: whether a firing is guaranteed does not change
 /// whether its gate reads a flag, and the compiler emits that gate at all five
 /// roots alike.

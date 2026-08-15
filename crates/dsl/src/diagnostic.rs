@@ -6,14 +6,14 @@
 //! this field below version X" (`DW0141`). Until [`Binds`] existed nothing
 //! guarded **new obligations** — "you are now required to have X" — so whether a
 //! check respected a campaign's declared version depended on whether its author
-//! remembered. That is a convention, and the measured cost of it is task #51:
-//! `dsl::l10n::each_string` was widened onto an actor's own `name` with no
+//! remembered. That is a convention, and its measured cost is this:
+//! `dsl::l10n::each_string` widened onto an actor's own `name` with no
 //! version gate, `DW0180` compares key SETS and had no version gate either, and
 //! the obligation therefore reached every campaign at every declared version at
-//! once — `nobodys-cave-island` (0.6.0/0.8.0) went red mid-staging with nothing
+//! once — a 0.6.0/0.8.0 campaign went red mid-staging with nothing
 //! in its own documents changed.
 //!
-//! The owner's ruling (2026-08-10): **the compiler processes a campaign
+//! The rule: **the compiler processes a campaign
 //! according to its DECLARED `dsl_version`; a campaign that compiled before
 //! keeps its behaviour unchanged.** [`DwCode`] is how that stops being a
 //! convention: a diagnostic cannot be built from a bare string, only from a
@@ -47,7 +47,8 @@ use serde::Serialize;
 /// The distinction is not cosmetic and the safe-looking answer is not the safe
 /// one. Fencing a wellformedness rule would *stop rejecting* bad documents in
 /// old campaigns — `DW0141` fenced at 0.10 would let a 0.6 campaign use the 0.10
-/// surface. Failing to fence an obligation is task #51. Neither direction is a
+/// surface. Failing to fence an obligation is the opposite error, and reaches
+/// every campaign at once. Neither direction is a
 /// default; both are a decision, which is why there is no `Default` impl and no
 /// way to leave it unsaid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -336,13 +337,13 @@ pub mod codes {
     /// silent no-op. Either add the bonfire the re-seat is meant to hang off, or
     /// drop the field.
     pub const REST_RESEAT_NO_BONFIRE: DwCode = DwCode::every_version("DW0370");
-    /// (spec-0016 §1, owner ruling 2026-08-03) The campaign places a `bonfire`
+    /// (spec-0016 §1) The campaign places a `bonfire`
     /// but no class kit declares a `flask`. Resting replenishes the flask to its
     /// declared count; with no flask the rest interaction's whole recovery half
     /// is a no-op and the souls loop has no consumable to spend, so this is a
     /// build error rather than a design choice.
     pub const BONFIRE_NO_FLASK: DwCode = DwCode::every_version("DW0476");
-    /// (spec-0016 §1, owner directive 2026-08-03) A kit item's potion `contents`
+    /// (spec-0016 §1) A kit item's potion `contents`
     /// is not something 1.21.11 can pour: declared on an item that carries no
     /// `minecraft:potion_contents` component, empty (neither a named potion nor
     /// an effect), an unknown potion or status-effect id, an amplifier or
@@ -350,28 +351,28 @@ pub mod codes {
     /// `duration`, an instantaneous one *with* a duration, or a malformed
     /// `color`.
     pub const KIT_POTION_INVALID: DwCode = DwCode::every_version("DW0486");
-    /// (spec-0016 §1, owner directive 2026-08-03) A potion-bearing kit item
+    /// (spec-0016 §1) A potion-bearing kit item
     /// declares no `contents` at `dsl_version` 0.8.0 — the Uncraftable Potion, a
     /// bottle that pours nothing. The placeholder flask, as a build error.
     pub const KIT_POTION_MISSING: DwCode = DwCode::every_version("DW0487");
-    /// (task #179, owner ruling 2026-08-04) A `drops[]` `slot` entry does not
+    /// A `drops[]` `slot` entry does not
     /// name a distinct slot the same entity's `equipment` actually fills — the
     /// slot is empty, or the same slot is declared twice. A mob can only leave
     /// behind a piece it wears, and it can only leave it behind once.
     pub const DROP_SLOT_UNFILLED: DwCode = DwCode::every_version("DW0490");
-    /// (task #179, owner ruling 2026-08-04) `drops[]` on an encounter that is
+    /// `drops[]` on an encounter that is
     /// not billed `elite` or `boss`. Only a named fight leaves anything behind;
     /// an ordinary mob's kit is never farmable (no-grind constitution), so the
     /// declaration is refused rather than silently making rank-and-file gear
     /// lootable.
     pub const DROP_NOT_TIERED: DwCode = DwCode::every_version("DW0491");
-    /// (task #179) A `collect` `dropped_by` is not backed by the wave it names:
+    /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective
     /// also declares a `container` (the item cannot come out of a box *and* off
     /// a body).
     pub const DROP_COLLECT_UNSOURCED: DwCode = DwCode::every_version("DW0492");
-    /// (task #179) A `collect` `dropped_by` is not ordered after the fight that
+    /// A `collect` `dropped_by` is not ordered after the fight that
     /// produces it: no `kill` objective for that wave precedes this collect in
     /// the objective graph. Without that edge "kill the boss, take its key" is
     /// an authoring intention the quest graph cannot prove, and the collect
@@ -536,7 +537,7 @@ pub mod codes {
     /// that ambushes nobody), or the same actor listed twice (the second
     /// `spawn-actor` is a guarded no-op, so the author's intent silently halves).
     /// The telegraph is deliberately NOT required — an un-telegraphed ambush is
-    /// core souls vocabulary (owner ruling 2026-08-02).
+    /// core souls vocabulary.
     pub const AMBUSH_INVALID: DwCode = DwCode::every_version("DW0375");
     /// (spec-0016 §4) A `timed-gate` declaration is structurally invalid: a
     /// malformed or duplicate `timed-gate/<id>`, an `open_ticks` or
@@ -547,7 +548,7 @@ pub mod codes {
     /// area's prefab provides / one that IS the gate anchor (the jam lever cannot
     /// live inside the span it stops).
     pub const TIMED_GATE_INVALID: DwCode = DwCode::every_version("DW0377");
-    /// (task #184) A `close-gate` effect targets the gate of a `timed-gate` that
+    /// A `close-gate` effect targets the gate of a `timed-gate` that
     /// declares a `disarm`. A disarm suppresses the clock **permanently with the
     /// gate resting open** — a jammed portcullis stays up — so, exactly like a
     /// `shortcut` (`DW0372`), its permanence is structural: there is no verb that
@@ -644,14 +645,14 @@ pub mod codes {
     /// the hand-off onto the beat that a player completes. Validation-tier (exit 1).
     pub const PARTY_CARRIER_SCHEDULED: DwCode = DwCode::every_version("DW0357");
 
-    /// (v0.6, owner ruling 2026-08-03) `world.difficulty` is `peaceful`. On
+    /// (v0.6) `world.difficulty` is `peaceful`. On
     /// peaceful the server discards every hostile-category mob as it is ticked —
     /// `/summon`ed, `NoAI`, `PersistenceRequired`, all of it — so a peaceful delve
     /// is one in which every wave, every hostile actor and every ambush silently
     /// ceases to exist. There is no delve that wants that, so the keyword is
     /// refused rather than honoured. Validation-tier (exit 1).
     pub const DIFFICULTY_INVALID: DwCode = DwCode::every_version("DW0468");
-    /// (v0.6, owner ruling 2026-08-03) A campaign fields scripted `actors[]` (an
+    /// (v0.6) A campaign fields scripted `actors[]` (an
     /// ambush desugars into these too) but **no** `waves[]` and no declared
     /// `world.difficulty`, so the compiler's historical derivation ships
     /// `difficulty=peaceful` — under which every one of those actors that is a
@@ -783,4 +784,35 @@ pub mod codes {
     /// Warning-tier (exit 0). Prescription: move the gated effect ahead of the
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::every_version("DW0527");
+
+    /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
+    /// body to** — today exactly one value, `aquatic`.
+    ///
+    /// The declaration surface exists so an author can claim a capability and
+    /// have the claim PROVEN. `aquatic` is the one
+    /// class that carries no exemption and governs no rule: it is a ledger
+    /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
+    /// Declaring it could therefore never change a verdict, so it would always
+    /// land in `DW0454` — and a value whose only possible outcome is another
+    /// diagnostic is a trap, not a surface.
+    ///
+    /// The gap it names, stated rather than left to folklore (CLAUDE.md's
+    /// no-hack rule): the compiler routes **every** body on standable ground,
+    /// and `flooded` cells are impassable and never floor for every body. There
+    /// is no water-traversal model for a declaration to feed, so there is
+    /// nothing to hold an aquatic claim to. When routing grows one, this
+    /// refusal is what has to be deleted to enable the value.
+    ///
+    /// Error tier, raised in `validate_campaign_with`, so the run ends at the
+    /// validation tier (exit 1). Prescription: remove the declaration — a body whose
+    /// route crosses water is governed by the flooded-cell rules already, and
+    /// the derived aquatic class still reaches the binding ledger.
+    ///
+    /// [`Binds::EveryVersion`]: it judges what the document SAYS — an authored
+    /// value the engine refuses — so its verdict is a function of the campaign
+    /// alone and there is nothing to grandfather. The surface that carries the
+    /// value is itself fenced per stage at 0.11 by [`RESERVED`], which is where
+    /// the version gate belongs; fencing this code as well would only stop
+    /// rejecting a bad document, which is the direction [`Binds`] warns about.
+    pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::every_version("DW0455");
 }

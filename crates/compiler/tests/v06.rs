@@ -373,7 +373,7 @@ fn double_build_is_byte_identical_incl_resource_pack() {
     );
 }
 
-// --- nested-effect consumer recursion (task: 4th of the #102/#104 bug class) ----
+// --- nested-effect consumer recursion ------------------------------------------
 
 /// A `play-sound` with a bogus id **nested in a `sequence` step** fires `DW0326`
 /// — the sound-event scan (`sound_refs`) now descends nested effects, so a bad ref

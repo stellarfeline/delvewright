@@ -49,9 +49,9 @@ pub const DW_CAMERA_SPIN: DwCode = DwCode::every_version("DW0347");
 /// `DW0311`: a consecutive pair of player-visited critical-path anchors that no
 /// walkable path connects over the assembled geometry (with no inter-area
 /// transport between them) — the player would be stranded. Turns the whole
-/// "assembled seams aren't walkable" bug class (task #34: a prefab regen wedged a
-/// doorway shut / opened a void gap and only a runtime bot caught it) into a
-/// compile error.
+/// "assembled seams aren't walkable" bug class — a prefab regen that wedges a
+/// doorway shut or opens a void gap, which otherwise only a runtime bot catches
+/// — into a compile error.
 pub const DW_CRITICAL_UNROUTABLE: DwCode = DwCode::every_version("DW0311");
 /// `DW0510`: the party's only route to a critical-path objective runs through a
 /// declared **lethal volume** (DSL v0.10, spec-0031).
@@ -121,8 +121,8 @@ pub const DW_CHECKPOINT_STRANDED: DwCode = DwCode::every_version("DW0315");
 pub const DW_CHECKPOINT_UNSTANDABLE: DwCode = DwCode::every_version("DW0316");
 /// `DW0378`: a `timed-gate` (spec-0016 §4) that is a coin flip rather than a
 /// timing read — the set of entry phases from which a walking player clears the
-/// span before the gate shuts covers **less than 20% of the cycle** (owner ruling
-/// 2026-08-02). All-phase passability is explicitly NOT the requirement: a gate
+/// span before the gate shuts covers **less than 20% of the cycle**.
+/// All-phase passability is explicitly NOT the requirement: a gate
 /// that punishes bad timing is the point. A gate that punishes *every* timing is
 /// not a skill check, it is a slot machine, and no amount of learning the level
 /// makes it fair.
@@ -140,7 +140,7 @@ pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::every_version("DW0378");
 /// measures the ratio — the dossier's own verdict is that if only one of the two
 /// proofs can be afforded it should be this one, not the 20%.
 pub const DW_HAZARD_UNOBSERVABLE: DwCode = DwCode::every_version("DW0388");
-/// `DW0393`: a `timed-gate`'s `disarm` affordance (task #184) is not usable
+/// `DW0393`: a `timed-gate`'s `disarm` affordance is not usable
 /// **before** the gate is committed to — its cell has no standable footing, or is
 /// walkable from the campaign entry only through the gate span itself.
 ///
@@ -158,7 +158,7 @@ pub const DW_TIMED_GATE_DISARM_UNREACHABLE: DwCode = DwCode::every_version("DW03
 /// is sealed in a pocket with the ambush and can only trade blows blind.
 ///
 /// This is deliberately NOT a telegraph requirement. The un-telegraphed ambush is
-/// core souls vocabulary (owner ruling 2026-08-02): dying uninformed once is how
+/// core souls vocabulary: dying uninformed once is how
 /// the level teaches, and determinism guarantees the second attempt meets the same
 /// ambushers in the same cells. What the engine owes the informed player is a
 /// *play* — a retreat, luring ground, a positioning line — and that is what this
@@ -192,7 +192,7 @@ pub const DW_RETRY_COST: DwCode = DwCode::every_version("DW0379");
 /// the fight is mandatory in everything but the objective list.
 ///
 /// The Tree Sentinel pattern — a powerful optional enemy near the start, fight it
-/// or walk around it — is explicitly legitimate (owner ruling 2026-08-02), and
+/// or walk around it — is explicitly legitimate, and
 /// this is the one obligation it carries: the walk-around has to exist.
 pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380");
 /// `DW0386`: a TD `lane` (spec-0016 §6) whose polyline does not survive contact
@@ -203,9 +203,8 @@ pub const DW_OPTIONAL_ELITE_UNAVOIDABLE: DwCode = DwCode::every_version("DW0380"
 /// so a tighter lane is a lane the engine quietly stops following — the squad
 /// wanders, and it reads as working-but-drunk rather than as a bug.
 pub const DW_LANE_GEOMETRY: DwCode = DwCode::every_version("DW0386");
-/// `DW0478`: **the respawn-point safe zone** (spec-0016 §1, owner ruling
-/// 2026-08-04) — a cell the party comes back to life on sits inside some hostile
-/// force's aggro range.
+/// `DW0478`: **the respawn-point safe zone** (spec-0016 §1) — a cell the party
+/// comes back to life on sits inside some hostile force's aggro range.
 ///
 /// A respawn point is where the party returns after a death and where a
 /// `respawns_on_rest` wave is put back on its feet. If it stands inside a
@@ -512,7 +511,7 @@ pub const DEFAULT_SPEED: f64 = 0.15;
 /// occupies a single column; a taller entity needs more headroom (the warden, 2.9
 /// tall, needs 3 cells vs a player's 2 — so it cannot walk a 2-high gap a player
 /// fits). Drives footprint-aware standability + A* so a `move-actor` path is
-/// walkable for the ACTUAL puppet, not a generic 1×2 humanoid (spec-0014, task #46).
+/// walkable for the ACTUAL puppet, not a generic 1×2 humanoid (spec-0014).
 #[derive(Debug, Clone)]
 pub struct Footprint {
     /// Horizontal column offsets `[dx, dz]` the body occupies (feet cell = `[0, 0]`).
@@ -579,7 +578,7 @@ pub fn entity_dims(entity: &str) -> (f64, f64) {
 }
 
 /// The collision height of a vanilla fence / wall / closed fence gate, in blocks
-/// (task #59): 1.5, half a block above the cell it sits in.
+/// 1.5, half a block above the cell it sits in.
 pub const BARRIER_HEIGHT: f64 = 1.5;
 
 /// The entity id whose body a stage-2 NPC actually wears in the shipped delve.
@@ -632,7 +631,7 @@ pub const SNAP_RADIUS: i32 = 3;
 /// world, which is unsatisfiable by construction.
 ///
 /// This is the same leak [`World::confined_standable_cells`] closed for wave
-/// seating (task #41), one layer up: there a flood from a wave anchor crossed a
+/// seating, one layer up: there a flood from a wave anchor crossed a
 /// socket seam into the neighbouring piece, here a *snap* crosses a ceiling into
 /// nothing. The piece AABB is the boundary in both cases because it is the only
 /// shape that says "the room this anchor was authored inside".
@@ -776,10 +775,10 @@ impl Ambient {
 /// derived from the shared gravity-settled assembled-world model
 /// ([`crate::assembled`]): every placed prefab block, plus the solver's socket
 /// seals, with gate thresholds cleared and unsupported falling blocks settled
-/// (task #42). Cells absent from both sets are passable (interior air, opened
+/// Cells absent from both sets are passable (interior air, opened
 /// sockets, gate thresholds, and any cell a gravity block fell out of).
 ///
-/// Water is modelled separately from solids (task #45): `flooded` holds every cell
+/// Water is modelled separately from solids: `flooded` holds every cell
 /// a conservative superset of vanilla water flow reaches (see
 /// [`crate::assembled::assembled_occupancy`]). A flooded cell is **impassable** (a
 /// walker cannot stand or pass through it) yet is **not solid floor** (you cannot
@@ -787,7 +786,7 @@ impl Ambient {
 /// standability, so nav / wave seating / relight / waypoint export never treat a
 /// flooded cell as walkable ground.
 ///
-/// Collision classes (task #59, [`crate::assembled::Occupancy`]): `solid` holds
+/// Collision classes ([`crate::assembled::Occupancy`]): `solid` holds
 /// only full-cube cells (passage-blocking AND valid floor); `tall` holds 1.5-tall
 /// fence/wall cells (passage-blocking, **never** valid floor — a walking player
 /// cannot jump 1.5, so a fence-top is not standable and the old full-solid model's
@@ -799,7 +798,7 @@ impl Ambient {
 /// above it has no footing, which also models the barrier's upper half blocking
 /// walk-overs at `y+1` for free.
 ///
-/// Partial floor heights (task #78): `partial` records, for a `solid` cell whose
+/// Partial floor heights: `partial` records, for a `solid` cell whose
 /// walkable top face sits **below** the cell top (a bottom slab at 8/16, a snow
 /// drift, a `dirt_path` at 15/16), that true height. It is what makes
 /// [`World::neighbors_fp`] a physical step rule rather than a cell-adjacency rule
@@ -814,7 +813,7 @@ pub struct World {
     use_gates: BTreeSet<[i32; 3]>,
     flooded: BTreeSet<[i32; 3]>,
     /// For each `solid` cell whose walkable top face sits **below** the cell
-    /// top, that height in sixteenths (task #78). Absent = a full cube. Feeds
+    /// top, that height in sixteenths. Absent = a full cube. Feeds
     /// the physical step rule in [`World::neighbors_fp`].
     partial: BTreeMap<[i32; 3], u8>,
     /// Cells inside a declared **lethal volume** (DSL v0.10, spec-0031).
@@ -917,7 +916,7 @@ impl World {
     /// `.nbt` bytes, via the shared assembled-world model. Every non-air cell of
     /// that settled map is a solid cell here — so a `sand`/`gravel` floor that
     /// falls out of the void world is passable (a hole), exactly as in game
-    /// (task #42), not a phantom floor the model wrongly seats mobs on.
+    /// — not a phantom floor the model wrongly seats mobs on.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
         let assembled = crate::assembled::assemble(plan, structures);
         let seals = assembled.gate_seals.clone();
@@ -1089,7 +1088,7 @@ impl World {
     }
 
     /// Build the walkability model from a collision-classified [`Occupancy`]
-    /// (task #59) — the sets map across one-to-one.
+    /// — the sets map across one-to-one.
     pub fn from_occupancy(occ: crate::assembled::Occupancy) -> Self {
         World {
             solid: occ.solid,
@@ -1355,7 +1354,7 @@ impl World {
     }
 
     /// A copy of this world for **autonomous** walkers that cannot use gates —
-    /// wave mobs seated at spawn (task #59). Opening a fence gate is a right-click
+    /// wave mobs seated at spawn. Opening a fence gate is a right-click
     /// USE, so for a mob acting on its own a closed gate is exactly a 1.5-tall
     /// fence: the use-gate cells are folded into the tall-barrier set, and the
     /// seating flood neither seats a mob in a gate threshold nor spills through
@@ -1391,7 +1390,7 @@ impl World {
     }
 
     /// Whether `c` is a closed fence-gate cell — a "use-gate": the player walks
-    /// through it after an adventure-legal right-click (task #59). Exported per
+    /// through it after an adventure-legal right-click. Exported per
     /// leg in the critical-path waypoint metadata so the harness knows the edge.
     pub fn is_use_gate(&self, c: [i32; 3]) -> bool {
         self.use_gates.contains(&c)
@@ -1457,8 +1456,8 @@ impl World {
     /// The top face of the **full-cube-class solid** occupying `c`, in sixteenths
     /// of a block, or `None` when no such block is there. A bottom slab answers
     /// `8`, a `dirt_path` `15`, a plain stone `16` — i.e. exactly the collision
-    /// volume `c.y ..= c.y + top/16`, honouring the partial-floor table (task
-    /// #78). Public so the body-clearance proof ([`crate::clearance`]) can
+    /// volume `c.y ..= c.y + top/16`, honouring the partial-floor table.
+    /// Public so the body-clearance proof ([`crate::clearance`]) can
     /// intersect a real entity AABB against real block volumes rather than
     /// against whole cells.
     pub fn solid_top_16(&self, c: [i32; 3]) -> Option<u8> {
@@ -1546,7 +1545,7 @@ impl World {
     /// (spec-0010), and the cell set the lethal-trap proof calls "forced".
     ///
     /// Routed over the **causally-sealed** per-leg world, exactly like
-    /// [`check_critical_path`] (task #78). Before that fix this walked the base
+    /// [`check_critical_path`]. Before that fix this walked the base
     /// open world while completability was proven under seals, so the two
     /// disagreed about which cells the player is actually forced across: a leg the
     /// player can only walk as a detour *because* a `close-gate` shut the direct
@@ -1578,10 +1577,11 @@ impl World {
     /// [`World::required_path_cells`] (relight + the lethal-trap forced-cell set)
     /// and [`critical_path_routes`] (the exported harness waypoints).
     ///
-    /// Unifying these is task #78: the proof ran under `close-gate` seals while
-    /// the trap analysis and the waypoint export ran over the open world, so the
-    /// compiler could export a bot route through a gate the campaign had already
-    /// sealed, and could call a trap on a forced detour "avoidable". A leg that
+    /// They are unified on purpose. Were the proof to run under `close-gate`
+    /// seals while the trap analysis and the waypoint export ran over the open
+    /// world, the compiler could export a bot route through a gate the campaign
+    /// had already sealed, and could call a trap on a forced detour
+    /// "avoidable". A leg that
     /// fails to snap or route is omitted — it cannot occur once
     /// [`check_critical_path`] has passed, and before that the DW0311 error is the
     /// diagnostic that matters.
@@ -1609,10 +1609,10 @@ impl World {
     /// `anchor` (snapped to the nearest standable cell inside `bounds`), returned in
     /// ascending BFS step-distance order from that start with a fixed `(y, z, x)`
     /// tie-break. Seats spawn-wave mobs on validated footing near their anchor
-    /// (task #41): `bounds` is the anchor's own assembled piece, so the flood-fill
-    /// never leaves that room even where a mated socket is open air — a wave can no
-    /// longer string its mobs across a socket seam into the neighbouring piece (the
-    /// field bug: six sheep spread +x across the den↔mouth seam toward void). Empty
+    /// `bounds` is the anchor's own assembled piece, so the flood-fill
+    /// never leaves that room even where a mated socket is open air — a wave
+    /// cannot string its mobs across a socket seam into the neighbouring piece,
+    /// which is how a flock ends up spread toward void. Empty
     /// when no standable cell exists inside `bounds` within reach of the anchor.
     ///
     /// Deterministic (ADR-0006): BFS over a `VecDeque` with the fixed neighbour
@@ -1761,7 +1761,7 @@ impl World {
     /// target (`off_cell`), the anchor is the NPC's own occupied cell (the mannequin
     /// stands there and its interaction hitbox fills it): the player stands within
     /// interaction range *beside* the NPC, so exclude the anchor cell itself and
-    /// take the nearest OTHER standable cell (task #45). Flooded cells are already
+    /// take the nearest OTHER standable cell. Flooded cells are already
     /// excluded (they are not standable), so a shore NPC never resolves onto a
     /// water-tongue cell.
     fn snap_endpoint(&self, c: [i32; 3], off_cell: bool) -> Option<[i32; 3]> {
@@ -1777,14 +1777,14 @@ impl World {
     }
 
     /// Whether a cell contains block geometry a cutscene camera must not fly
-    /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate (task
-    /// #59). Water does not clip a camera (pre-#45 behaviour preserved).
+    /// through: a full-cube solid, a 1.5-tall fence/wall, or a fence gate.
+    /// Water does not clip a camera.
     fn blocks_camera(&self, c: [i32; 3]) -> bool {
         self.solid.contains(&c) || self.tall.contains(&c) || self.use_gates.contains(&c)
     }
 
     /// Whether a cell is occupied — a solid block, a 1.5-tall barrier (fence /
-    /// wall; task #59), **or** flooded by water (task #45). An occupied cell
+    /// wall), **or** flooded by water. An occupied cell
     /// cannot hold a walker's feet or head, and cannot be jumped through. Water
     /// blocks passage but, unlike a solid, is never a floor; a tall barrier
     /// likewise blocks passage but is never a floor (not standable on top). A
@@ -1802,7 +1802,7 @@ impl World {
     /// head-cell above it are both passable (neither solid nor flooded), with
     /// **solid** ground directly below (an entity is 2 blocks tall and needs a
     /// floor — a water surface is not standable, so the floor must be solid, not
-    /// merely occupied; task #45).
+    /// merely occupied).
     fn standable(&self, c: [i32; 3]) -> bool {
         self.standable_fp(c, &Footprint::player())
     }
@@ -1870,7 +1870,8 @@ impl World {
     /// The standing-cell convention is unchanged — the feet cell is the cell above
     /// the support — but the height it denotes is no longer assumed to be the cell
     /// floor: standing on a bottom slab puts the feet at `y - 0.5`, not `y`
-    /// (task #78). For a multi-column footprint the walker rests on the **highest**
+    /// — a bottom slab puts them half a block down. For a multi-column footprint
+    /// the walker rests on the **highest**
     /// supporting face, as vanilla's AABB does.
     fn feet_16_fp(&self, c: [i32; 3], fp: &Footprint) -> i64 {
         let base = (c[1] as i64 - 1) * FULL_16;
@@ -1891,14 +1892,13 @@ impl World {
     /// here — not just the destination's standability — keeps a routed/exported
     /// path actually walkable: an assembled seam that ramps up under a low ceiling
     /// becomes a `DW0311` build error instead of a runtime strand on geometry the
-    /// compiler wrongly "proved" connected (task #38).
+    /// compiler wrongly "proved" connected.
     fn neighbors(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
         self.neighbors_fp(c, &Footprint::player())
     }
 
     /// Footprint-aware standable neighbours (spec-0014), gated by the **physical
-    /// rise** between the two standing surfaces rather than by cell adjacency
-    /// (task #78):
+    /// rise** between the two standing surfaces rather than by cell adjacency:
     ///
     /// - rise ≤ [`MAX_AUTO_STEP_16`] — a walk-up. No jump, so no headroom is
     ///   required above the source cell. This is what admits the step onto a bottom
@@ -2197,7 +2197,7 @@ fn move_target(plan: &Plan, npc_id: &str, to_anchor: &str) -> Option<[i32; 3]> {
 /// content-keyed driver, planned from the first occurrence's origin (documented
 /// limitation of the content key).
 ///
-/// **Use-gate cells are walkable edges here** (task #59): routing through the
+/// **Use-gate cells are walkable edges here**: routing through the
 /// openable threshold is strictly more faithful than the old full-solid model,
 /// which "proved" the same legs by hopping the body over a fence-top. Only
 /// autonomous placement (wave seating) uses the no-gate-use view — a spawned mob
@@ -2435,7 +2435,7 @@ fn npc_spawn_yaw(plan: &Plan, npc_id: &str) -> i32 {
 
 /// A planned `move-actor` (spec-0014): resolved endpoints, the per-tick waypoint
 /// polyline the emitter teleports the puppet along, and a yaw per waypoint tangent
-/// to the path (a wrong yaw moonwalks — task #46). `ticks() + 1` entries.
+/// to the path (a wrong yaw moonwalks). `ticks() + 1` entries.
 #[derive(Debug, Clone)]
 pub struct ActorMovePlan {
     /// The moving actor id (`actor/…`).
@@ -2503,9 +2503,8 @@ fn yaw_of(dx: f64, dz: f64) -> Option<i32> {
 
 /// A yaw per waypoint, each the **exact bearing of the segment about to be
 /// walked** (no smoothing: a corner turns on the tick it is taken); the last
-/// reuses the previous. A body tp'd without a matching yaw moonwalks — proven for
-/// puppets by task #46 packet evidence and reported again for NPCs by the owner at
-/// island round 13 ("NPC 运动时身体朝向不一定是前进的方向").
+/// reuses the previous. A body tp'd without a matching yaw moonwalks — shown by
+/// packet evidence for puppets and visible in play for NPCs.
 ///
 /// `seed` is the facing the body already has, used for any leading waypoints with
 /// no horizontal motion of their own (a walk that opens with `resample`'s vertical
@@ -2636,7 +2635,7 @@ fn gate_timeline_error(
 /// Use-gate cells are walkable edges for a scripted puppet walk, exactly as for
 /// `move-npc` (see [`plan_moves`]): the island ram's pen→mouth leg crosses the pen
 /// gate the player has just opened — through the threshold, no longer over the
-/// fence-top the full-solid model wrongly proved (task #59).
+/// fence-top the full-solid model wrongly proved.
 ///
 /// **Timeline gates (round 8).** Each walk is planned over the world with the
 /// gates its own timeline already sealed forced solid ([`crate::timeline`]), so a
@@ -2655,7 +2654,7 @@ pub fn plan_actor_moves(plan: &Plan, world: &World) -> Result<Vec<ActorMovePlan>
     // (start == declared anchor == target), so the giant snapped instead of
     // walking on camera. Keyed by actor id, in campaign effect order (the same
     // deterministic order the dedup uses).
-    // Branch-aware, exactly as `plan_moves` (island round 16 / task #126): a
+    // Branch-aware, exactly as `plan_moves`: a
     // puppet leg inherits only an origin its own branch produced. The-wake's bier
     // walked to the tide line from the GROUND branch's grave for the same reason
     // the island's Eurylochus walked from the beach.
@@ -3003,7 +3002,7 @@ pub fn check_cutscenes(
 /// The first `(segment index, block cell)` where a camera dolly polyline passes
 /// through a solid block, or `None` if the whole path is air.
 ///
-/// **Exact, not sampled** (task #78). This used to step each segment at ≤ 0.25
+/// **Exact, not sampled**. This used to step each segment at ≤ 0.25
 /// blocks and floor the sample point, which misses any cell the segment only
 /// grazes: a shot can cut a block corner, enter and leave the cell entirely
 /// between two samples, and ship as "provably clear". The clip test is now a
@@ -3152,7 +3151,7 @@ struct VisitedPos {
     transport_before: bool,
     /// This position is a talk-to NPC anchor: the player stands *within interaction
     /// range beside* the NPC, never on the mannequin-occupied anchor cell, so the
-    /// goal snap must exclude that cell (task #45).
+    /// goal snap must exclude that cell.
     talk_to: bool,
     /// The originating `critical_path` step index (v0.6): lets the checkpoint /
     /// stealth proofs select the positions at or after a firing step.
@@ -3175,7 +3174,7 @@ fn critical_positions(plan: &Plan) -> Vec<VisitedPos> {
 }
 
 /// [`critical_positions`] over an arbitrary exported step list — the shared core,
-/// split out (task #117) so a spec-0025 **branch path** (a different sequence of
+/// split out so a spec-0025 **branch path** (a different sequence of
 /// the same step shapes, with its own transport markers) yields its own visited
 /// positions in its own step space. `src_step` indices are indices into `steps`.
 fn positions_of(steps: &[Step], transports: &[Option<[i32; 3]>]) -> Vec<VisitedPos> {
@@ -3371,8 +3370,8 @@ impl World {
     /// The runtime-region state for the walked leg `from_step → to_step` — the
     /// single definition of "which regions are filled and which are cleared while
     /// the player walks this leg", shared by the completability proof, the forced-
-    /// cell set the trap proof reasons about, and the exported harness waypoints
-    /// (task #78).
+    /// cell set the trap proof reasons about, and the exported harness
+    /// waypoints.
     ///
     /// Only a **causal** leg is written — one whose start objective is a DAG
     /// ancestor of the arrival objective, i.e. a step the player is genuinely
@@ -3994,7 +3993,7 @@ fn route_visited(
 ///    position that fires after the checkpoint — reconnecting the whole forward
 ///    path. The message names the checkpoint and that first unreachable anchor,
 ///    and prescribes moving the checkpoint or adding a return route (never
-///    deleting the checkpoint to silence the proof; #73 rubric).
+///    deleting the checkpoint to silence the proof).
 pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), NavError> {
     let cps: Vec<(String, [i32; 3], usize)> = plan
         .checkpoints
@@ -4073,7 +4072,7 @@ fn verify_checkpoints(
 }
 
 /// The minimum share of a `timed-gate` cycle that must admit a crossing
-/// (spec-0016 §4, owner ruling 2026-08-02). Below this the gate stops being a
+/// (spec-0016 §4). Below this the gate stops being a
 /// timing read and becomes a coin flip. Expressed as a percentage so the
 /// arithmetic below stays in integers — no float rounding in a proof (ADR-0006).
 const TIMED_GATE_MIN_ADMIT_PERCENT: u32 = 20;
@@ -4101,7 +4100,7 @@ pub fn check_timed_gates(plan: &Plan, world: &World) -> Result<(), NavError> {
 }
 
 /// Prove every `timed-gate` `disarm` affordance can be reached before the gate is
-/// crossed — [`DW_TIMED_GATE_DISARM_UNREACHABLE`] (`DW0393`), task #184.
+/// crossed — [`DW_TIMED_GATE_DISARM_UNREACHABLE`] (`DW0393`).
 ///
 /// One clause, the same one `DW0373` puts on a shortcut's unlock: the `via` cell
 /// must be walkable from the campaign entry over the world with the gate span
@@ -4151,7 +4150,7 @@ fn verify_timed_gate_disarms(
                  campaign entry while gate `{}` is closed, so the only way to the jam lever is \
                  THROUGH the portcullis. A disarm the party can reach only by first surviving the \
                  hazard disables nothing — it is a trophy for having beaten it, not the third rung \
-                 of the ladder (task #184, souls dossier §5.2: readable, avoidable, disable-able). \
+                 of the ladder (souls dossier §5.2: readable, avoidable, disable-able). \
                  Put the lever on ground the approach already touches — the stair head above the \
                  run, the alcove beside the doorway — or drop the `disarm` and let the clock \
                  stand. Do NOT leave the gate open at world-load to silence this.",
@@ -4189,8 +4188,8 @@ fn verify_timed_gates(world: &World, gates: &[crate::plan::TimedGatePlan]) -> Re
                     "timed gate `{}` is a coin flip, not a timing read: crossing its span takes \
                      {cross_ticks} ticks ({} blocks at {SPRINT_TICKS_PER_BLOCK} t/block), so only \
                      {admits} of its {cycle}-tick cycle ({percent}%) admit a player who starts \
-                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor (spec-0016 §4, \
-                     owner ruling 2026-08-02). Punishing bad timing is the point; punishing EVERY \
+                     walking then — under the {TIMED_GATE_MIN_ADMIT_PERCENT}% floor \
+                     (spec-0016 §4). Punishing bad timing is the point; punishing EVERY \
                      timing is a slot machine. Lengthen `open_ticks`, shorten `closed_ticks`, or \
                      narrow the span — never lower the floor.",
                     g.id,
@@ -4707,7 +4706,7 @@ pub fn plan_lanes(plan: &Plan, world: &World) -> Result<LaneRoutes, NavError> {
 /// not a line: a placement can clear the centre-line by 2 blocks and still stand
 /// inside the marching mobs' real aggro reach — run nine's live death at 17.7
 /// blocks from a 16-`follow_range` lane. `DW0478`'s lane term is therefore
-/// `follow_range + LANE_MARCH_DRIFT` (owner ruling 2026-08-04); stationary
+/// `follow_range + LANE_MARCH_DRIFT`; stationary
 /// spawn/staging cells keep the plain `follow_range` term.
 pub const LANE_MARCH_DRIFT: f64 = 7.9;
 
@@ -4731,7 +4730,7 @@ pub struct AggroSource {
 }
 
 /// `DW0478`: **no respawn point may sit inside any hostile's aggro range**
-/// (spec-0016 §1, owner ruling 2026-08-04).
+/// (spec-0016 §1).
 ///
 /// A **respawn point** is every resolved [`crate::plan::CheckpointPlan`] — a
 /// `bonfire` and a plain `set-checkpoint` alike. The proof is about the cell a
@@ -4743,7 +4742,7 @@ pub struct AggroSource {
 /// respawn cell to that hostile's spawn cell — or to any cell of its lane path —
 /// must EXCEED that hostile's `follow_range` (the declared attribute; the
 /// documented default when undeclared). For a **lane path cell** the term is
-/// `follow_range + `[`LANE_MARCH_DRIFT`] (owner ruling 2026-08-04): the squad
+/// `follow_range + `[`LANE_MARCH_DRIFT`]: the squad
 /// marches a measured corridor around the polyline, so the centre-line distance
 /// understates its real aggro reach. Stationary cells keep the plain term.
 ///
@@ -5157,8 +5156,8 @@ fn verify_respawn_safe_zone(
                      point is where the party comes back after a death — and, for a bonfire, \
                      where every `respawns_on_rest` wave is put back on its feet. With a hostile \
                      already perceiving that cell, dying delivers the party into contact on the \
-                     tick they arrive, and the retry loop becomes a soft-lock (spec-0016 §1, \
-                     owner ruling 2026-08-04). The rule is the same for a plain `set-checkpoint` \
+                     tick they arrive, and the retry loop becomes a soft-lock \
+                     (spec-0016 §1). The rule is the same for a plain `set-checkpoint` \
                      and for a `bonfire`: vanilla returns a dead player to either by the \
                      identical `spawnpoint` mechanism, so the hazard is a property of the CELL, \
                      never of the verb that named it. Move the respawn point out of the danger — \
@@ -5505,7 +5504,7 @@ fn verify_stealth(
                 pos[2] + extent[2] as i32,
             ];
             // EVERY standable cell of the zone box, not just the one nearest its
-            // centre (task #78). A zone whose centre snaps to a standable cell in a
+            // centre. A zone whose centre snaps to a standable cell in a
             // walled-off pocket while the rest of the box is perfectly reachable
             // used to raise a spurious `DW0327`; the obligation is "the player can
             // reach *somewhere* in this zone", so the proof is reachable-any.
@@ -5835,8 +5834,8 @@ fn verify_traps(
         }
         let tc = t.trigger_cell;
         // (a) Avoidable: the trigger cell is never a forced critical-path cell.
-        // `required` is now computed over the causally-sealed per-leg world (task
-        // #78), so a detour the player only has to walk BECAUSE a `close-gate`
+        // `required` is computed over the causally-sealed per-leg world,
+        // so a detour the player only has to walk BECAUSE a `close-gate`
         // shut the direct route counts as forced, exactly as it is in play.
         if !required.contains(&tc) {
             continue;
@@ -5924,7 +5923,7 @@ fn disarm_reachable_before(
 }
 
 /// A walked critical-path leg with the full A* cell route the compiler proved
-/// connects it — the export counterpart of [`check_critical_path`] (task #38).
+/// connects it — the export counterpart of [`check_critical_path`].
 /// `from`/`to` are the raw visited anchor cells (identical to the harness
 /// `critical-path.json` step positions, so the harness can key a leg by its
 /// destination); `cells` is the standable-cell polyline between their snapped floor
@@ -5944,17 +5943,17 @@ pub struct LegRoute {
     /// floor, inclusive of both endpoints.
     pub cells: Vec<[i32; 3]>,
     /// The cells of `cells` that are closed fence gates the player must right-click
-    /// open to pass ("use-gate" edges, task #59), in path order. Exported in the
+    /// open to pass ("use-gate" edges), in path order. Exported in the
     /// waypoint metadata so the harness bot knows the leg crosses a gate (its
-    /// pathfinder's `canOpenDoors` performs the adventure-legal click — harness
-    /// PR #110); always kept as thinned waypoints.
+    /// pathfinder's `canOpenDoors` performs the adventure-legal click); always
+    /// kept as thinned waypoints.
     pub use_gates: Vec<[i32; 3]>,
 }
 
 /// Compute the proven A* cell route for every WALKED critical-path leg (transport
 /// hops skipped), for export as validation metadata (see the `waypoints` module).
 /// Mirrors [`check_critical_path`]'s leg selection, endpoint snapping **and
-/// per-leg gate seals** exactly (task #78), so an exported leg is the same route
+/// per-leg gate seals** exactly, so an exported leg is the same route
 /// the DW0311 guard proved routable — and an exported waypoint can never cross a
 /// gate a `close-gate` has already shut by the time the bot walks that leg.
 /// Intended to be called only after [`check_critical_path`] has succeeded; a leg
@@ -5964,7 +5963,7 @@ pub fn critical_path_routes(plan: &Plan, world: &World) -> Vec<LegRoute> {
     world.walked_legs(plan)
 }
 
-/// Per-branch `DW0311` (spec-0025, task #117): prove every walked leg of ONE
+/// Per-branch `DW0311` (spec-0025): prove every walked leg of ONE
 /// branch's exported path is routable over the assembled geometry, under the
 /// branch's own causal gate seals.
 ///
@@ -5992,7 +5991,7 @@ pub fn check_branch_path(
 
 /// The proven A* cell routes of one branch's walked legs — the branch
 /// counterpart of [`critical_path_routes`], for export as that branch's waypoint
-/// artifact (`validation/branch-waypoints-<branch>.json`, task #117). Same leg
+/// artifact (`validation/branch-waypoints-<branch>.json`). Same leg
 /// selection, endpoint snapping and per-leg gate seals as [`check_branch_path`];
 /// call it only after that check has succeeded (a leg that fails to snap or
 /// route is omitted, which cannot occur once the check has passed).
@@ -6018,7 +6017,7 @@ pub fn branch_path_routes(
 /// assembled world (settled + water-flooded + relight fixtures). A build-time
 /// self-check over the very cells the harness will replay: it makes it structurally
 /// impossible to ship a waypoint the game floods or walls (the water-flow /
-/// post-nav-mutation divergence class — task #45). Every cell a leg exports comes
+/// post-nav-mutation divergence class). Every cell a leg exports comes
 /// from `find_path` over this same world, so this can only fire if a later pass
 /// mutates a cell nav relied on or an endpoint resolves off the walkable set — in
 /// which case it is a compiler/assembly defect to escalate, never a cell to nudge.
@@ -6029,7 +6028,7 @@ pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
 /// [`DW_WAYPOINT_NOT_STANDABLE`] (`DW0314`) naming the first offending cell/leg on
 /// violation. This is the structural guard the water-flood model exists to make
 /// enforceable: a waypoint in a flooded (or newly-walled) cell fails the build
-/// loudly instead of stranding the bot at runtime (task #45).
+/// loudly instead of stranding the bot at runtime.
 pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), NavError> {
     for leg in routes {
         for &cell in &leg.cells {
@@ -6126,7 +6125,7 @@ const OPEN_SEA_MARGIN: i32 = 2;
 /// plan's resolved anchors, each carrying the piece that declares it — see
 /// [`AnchorRoot`], and the same roots the relight pass floods from). Run after
 /// every edit batch, and once over the finished world for every campaign that
-/// assembles one (task #170).
+/// assembles one.
 ///
 /// The premise is the world's [`Ambient`] — what a column the compiler modelled
 /// nothing into actually contains — and the rule follows from it:
@@ -6169,7 +6168,7 @@ const OPEN_SEA_MARGIN: i32 = 2;
 ///
 /// ## Why the climb-out band stays **cell-level** under partial floor heights
 ///
-/// The step rule reasons in sixteenths ([`World::feet_16_fp`], task #78), but this
+/// The step rule reasons in sixteenths ([`World::feet_16_fp`]), but this
 /// band deliberately does not. A partial floor can only ever *lower* the standing
 /// surface inside its own cell (`feet_16(c) ≤ c.y · 16`), so:
 ///
@@ -6468,7 +6467,7 @@ fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
 
 /// `DW0442`: a `volley`'s gallery slot has no clear line of fire to a standable
 /// cell of its declared kill zone. The compile-time form of the owner's
-/// saturation ruling (2026-08-03) — a volley must BLANKET its zone, so a cell
+/// saturation ruling — a volley must BLANKET its zone, so a cell
 /// the slot cannot reach is a hole a player could stand in and be safe by
 /// accident. Escaping a volley must be a decision (leave the zone), never a
 /// lucky step.
@@ -7253,7 +7252,7 @@ mod tests {
         );
     }
 
-    /// The DRIFT half of the lane term (owner ruling 2026-08-04): a fire that
+    /// The DRIFT half of the lane term: a fire that
     /// clears the centre-line polyline by less than the measured marching drift
     /// is still inside the squad's real aggro reach, because the squad marches a
     /// corridor around the polyline (td-routing-spike dossier: followers max 7.9
@@ -7867,7 +7866,7 @@ mod tests {
 
     #[test]
     fn verify_exported_routes_rejects_a_flooded_waypoint_dw0314() {
-        // Synthetic negative for the DW0314 self-check (task #45): a hand-built leg
+        // Synthetic negative for the DW0314 self-check: a hand-built leg
         // whose polyline crosses a flooded cell must fail the standability guard.
         let mut solid = BTreeSet::new();
         for x in 0..4 {
@@ -8103,9 +8102,9 @@ mod tests {
         assert!(low.find_path([0, 65, 0], [2, 66, 0]).is_none());
     }
 
-    // --- collision-accurate standability: fences / walls / fence gates (task #59) ---
+    // --- collision-accurate standability: fences / walls / fence gates ---
 
-    /// A world from explicit collision classes (task #59): a flat solid floor at
+    /// A world from explicit collision classes: a flat solid floor at
     /// `y-1` over `[0,w) × [0,d)` with the given `tall` (fence/wall) and
     /// `use_gates` (closed fence gate) cells at stand level.
     fn classified(w: i32, d: i32, y: i32, tall: &[[i32; 3]], use_gates: &[[i32; 3]]) -> World {
@@ -8263,7 +8262,7 @@ mod tests {
     #[test]
     fn critical_path_route_returns_the_proven_cell_polyline() {
         // A flat connected floor: the walked leg's exported route is the A* cell
-        // path, inclusive of both snapped endpoints (task #38 export).
+        // path, inclusive of both snapped endpoints.
         let world = floored(8, 3, 65, &[]);
         let a = [0, 65, 1];
         let b = [6, 65, 1];
@@ -9024,7 +9023,7 @@ mod tests {
         g
     }
 
-    // --- timed-gate disarm reachability (task #184, DW0393) ---
+    // --- timed-gate disarm reachability (DW0393) ---
 
     /// The jam lever on the ENTRY side of the barred doorway: the party walks up
     /// to the portcullis, sees the clock, and can pull the lever without ever
@@ -9493,7 +9492,7 @@ mod tests {
         assert!(verify_traps(&world, &[t], &required, &[[0, 65, 1]], &[]).is_ok());
     }
 
-    // --- partial floor heights: a physical step rule (task #78) ---------------
+    // --- partial floor heights: a physical step rule ---------------
 
     /// A world from an explicit cell→block map, through the real classifier — the
     /// only way to exercise the partial-height model end to end.
@@ -9636,7 +9635,7 @@ mod tests {
         );
     }
 
-    // --- exact camera clip test (task #78) -----------------------------------
+    // --- exact camera clip test -----------------------------------
 
     #[test]
     fn first_clip_catches_a_corner_graze_the_old_sampler_missed() {
@@ -9672,7 +9671,7 @@ mod tests {
         );
     }
 
-    // --- stealth zones: reachable-ANY, not reachable-centre (task #78) --------
+    // --- stealth zones: reachable-ANY, not reachable-centre --------
 
     #[test]
     fn stealth_zone_passes_when_any_zone_cell_is_reachable() {
@@ -9712,7 +9711,7 @@ mod tests {
         );
     }
 
-    // --- causally-sealed waypoint export + trap forcing (task #78) ------------
+    // --- causally-sealed waypoint export + trap forcing ------------
 
     /// A 5-long, 3-wide room at y=65 whose only two lanes (z=0 and z=2) run from
     /// x=0 to x=4; the middle lane z=1 is walled. Sealing one lane's chokepoint
@@ -9810,11 +9809,11 @@ mod tests {
         assert_eq!(err.code, DW_TRAP_LETHAL_UNAVOIDABLE); // DW0342
     }
 
-    // --- partial heights x ocean horizon compose (#78 x #159) ----------------
+    // --- partial heights x ocean horizon compose ----------------
 
     /// The two world models are independent axes and must both stay live in one
-    /// `World`: `partial` (task #78) decides *which cells are reachable*, and
-    /// `ambient` (spec-0013, #159) decides *what the unmodelled columns contain*.
+    /// `World`: `partial` decides *which cells are reachable*, and
+    /// `ambient` (spec-0013) decides *what the unmodelled columns contain*.
     ///
     /// Geometry: an ocean island whose top plate is a course of BOTTOM SLABS, so
     /// the walk plane sits at `sea_level + 0.5` rather than `sea_level + 1`. The
@@ -9861,9 +9860,8 @@ mod tests {
         verify_boundary_safety(&world, &roots([3, 63, 3]))
             .expect("a slab-course beach is a climb-out, not a stranding");
 
-        // The control: the identical geometry under the void premise is still the
-        // void-drop error #159 kept byte-identical — partial heights did not
-        // disturb that verdict either.
+        // The control: the identical geometry under the void premise is still a
+        // void-drop error — partial heights do not disturb that verdict either.
         let voidish = World::from_occupancy(crate::assembled::occupancy_of(
             cells.iter().map(|(c, n)| (*c, (*n).to_string())).collect(),
             &BTreeSet::new(),

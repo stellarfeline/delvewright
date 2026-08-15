@@ -467,7 +467,7 @@ fn a_single_walk_body_carries_no_supersession_machinery() {
 }
 
 // ---------------------------------------------------------------------------
-// move-actor puppets — the same defect class, the same contract (task #28).
+// move-actor puppets — the same defect class, the same contract.
 // ---------------------------------------------------------------------------
 
 /// A later `move-actor` for the same puppet supersedes the leg still running: the
@@ -565,8 +565,8 @@ fn a_single_leg_puppet_carries_no_supersession_machinery() {
     }
 }
 
-/// The exact bytes a single-leg puppet's start function and driver emitted BEFORE
-/// task #28 — captured verbatim from the pre-fix build, every line of both functions.
+/// The exact bytes a single-leg puppet's start function and driver emit — every
+/// line of both functions, captured verbatim.
 /// Supersession is gated on a puppet owning two or more legs, so this campaign's
 /// output must not move by a single byte (ADR-0006). A deliberate change to the walk
 /// planner re-blesses this golden; a change to the driver's scaffolding does not.

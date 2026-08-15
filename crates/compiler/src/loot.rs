@@ -23,7 +23,7 @@ use delvewright_dsl::DwCode;
 const DW_LOOT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0431");
 
 /// A `collect` objective adopts a container the assembled world does not have —
-/// or one too small for its fill (DSL v0.8, task #95).
+/// or one too small for its fill (DSL v0.8).
 const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::every_version("DW0438");
 
 /// The container blocks a `loot` fill accepts, with their slot counts.
@@ -104,7 +104,7 @@ pub fn check_loot_containers(
 }
 
 /// Build-tier proof: every `collect` objective that **adopts** a container (DSL
-/// v0.8, task #95) points at a cell that really holds one, with room for the
+/// v0.8) points at a cell that really holds one, with room for the
 /// objective's stack plus its padding.
 ///
 /// The same silent failure `DW0431` exists for, reached through the other door.

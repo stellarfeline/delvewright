@@ -720,7 +720,7 @@ fn snapshot_renders_the_edited_world() {
     );
 }
 
-/// PR 2 verbs materialize through the same `world_edits` function: the
+/// The L1 verbs materialize through the same `world_edits` function: the
 /// scatter's dressing, the planted oak (logs + persistent leaves), the
 /// stamped fragment and the baked relight torch all lower to `fill`/`setblock`
 /// lines — and `setup` forceloads every batch's write AABB so a write that

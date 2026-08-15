@@ -123,7 +123,7 @@ fn stealth_judge_skips_players_in_a_cutscene() {
 }
 
 /// The restore leaves the stealth state entirely alone. Under the zone-presence
-/// model (owner ruling 2026-08-01 — no sneak stat, so no ack to re-sync) the
+/// model (no sneak stat, so no ack to re-sync) the
 /// judge reads only the player's position; `dw.st_grace` is frozen, not reset,
 /// so the beat resumes exactly where it paused.
 #[test]

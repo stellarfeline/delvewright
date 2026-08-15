@@ -1,5 +1,5 @@
-//! Which side of a sealed shortcut door a player is standing on (task #50, DSL
-//! v0.9 `shortcuts[].on_wrong_side`).
+//! Which side of a sealed shortcut door a player is standing on
+//! (DSL v0.9 `shortcuts[].on_wrong_side`).
 //!
 //! ## The gap this closes
 //!

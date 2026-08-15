@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -28,17 +28,19 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.10.0";
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
-/// authorable option strings and the class-kit `flask`; v0.9 (task #179) adds
+/// authorable option strings and the class-kit `flask`; v0.9 adds
 /// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
 /// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
 /// comparison on every gate consumer — the campaign-wide `on_death` effect
 /// root, the bundle that runs at the moment a player dies, and the stage-5
-/// `lethal_volumes` declaration.
+/// `lethal_volumes` declaration; v0.11 (spec-0034) adds the per-body
+/// `traversal` declaration — what a body can do when it moves — on the stage-2
+/// NPC and the stage-5 actor.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
-    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
+    "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
 ];
 
 /// True if `version` is a `dsl_version` this crate accepts.
@@ -69,6 +71,7 @@ fn ordinal(version: &str) -> u32 {
         "0.8.0" => 8,
         "0.9.0" => 9,
         "0.10.0" => 10,
+        "0.11.0" => 11,
         _ => 0,
     }
 }
@@ -128,7 +131,7 @@ pub fn is_v07(version: &str) -> bool {
 /// True if `version` enables the DSL v0.8 surface. Two specs land in it:
 /// spec-0025's stage-4 `branch_points` declaration, per-node `happening` and
 /// named `ending` on `campaign-complete`; and spec-0016 §1's bonfire **rest
-/// interaction** (owner rulings 2026-08-03) — the `bonfire` effect's authorable
+/// interaction** — the `bonfire` effect's authorable
 /// `prompt` / `rest_label` / `save_label` strings and the stage-3 kit item
 /// `flask` marker a rest replenishes. Additive over v0.7 — a campaign that
 /// declares none of it compiles byte-identically, and any use of the surface in
@@ -140,8 +143,8 @@ pub fn is_v08(version: &str) -> bool {
     ordinal(version) >= 8
 }
 
-/// True if `version` enables the DSL v0.9 surface (task #179, owner ruling
-/// 2026-08-04): declared **drops** on an elite/boss — the `drops[]` list on a
+/// True if `version` enables the DSL v0.9 surface: declared **drops** on an
+/// elite/boss — the `drops[]` list on a
 /// wave mob and on an actor, and the `collect` `dropped_by` that turns a boss's
 /// quest token into a proved link in the quest graph. Additive over v0.8: a
 /// campaign that declares none of it compiles byte-identically (every
@@ -184,6 +187,27 @@ pub fn is_v09(version: &str) -> bool {
 /// string, so the ledger is a sequence of minors and a patch would sort nowhere.
 pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
+}
+
+/// True if `version` enables the DSL v0.11 surface (spec-0034): the per-body
+/// **`traversal` declaration** — what a body can do
+/// when it moves — carried by the stage-2 NPC and the stage-5 actor through one
+/// shared [`crate::stages::BodyTraversal`] type.
+///
+/// Spiders really do climb, so the traversal proof's rules cannot be absolute;
+/// what was missing was the author's side of that. A declaration is not an
+/// exemption: the compiler compares the verdicts the body earns under the
+/// declared class against the ones it earns under its species' derived class,
+/// and a declaration that changes none of them is `DW0454`. It can never reach
+/// the error tier (`DW0452`), because that rule is a collision-and-interaction
+/// question with no authorable exemption.
+///
+/// Additive over v0.10: nothing obliges a body to declare traversal, a campaign
+/// that declares none compiles byte-identically (the derived class is exactly
+/// what every pre-0.11 build used), and declaring it in an earlier campaign is
+/// rejected with `DW0141`.
+pub fn is_v11(version: &str) -> bool {
+    ordinal(version) >= 11
 }
 
 /// Which stage a document belongs to.

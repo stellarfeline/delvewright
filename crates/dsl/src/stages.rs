@@ -64,7 +64,7 @@ pub struct WorldContent {
     /// thunder attenuate effective sky brightness in the assembled-light model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weather: Option<WorldWeather>,
-    /// Declared combat difficulty (DSL v0.6, owner ruling 2026-08-03). Absent =
+    /// Declared combat difficulty (DSL v0.6). Absent =
     /// the compiler's historical derivation — `easy` when the campaign fields any
     /// wave, `peaceful` when it fields none — which is what keeps every campaign
     /// written before this field byte-identical. Declaring it overrides the
@@ -107,7 +107,7 @@ pub struct WorldContent {
     ///
     /// Progression is party state either way (spec-0018), so this is a *declaration
     /// of intent*, not a mechanism: it makes a mandatory-n design first-class
-    /// (owner amendment 2026-08-02) and turns on the analyzer's n-agent division
+    /// and turns on the analyzer's n-agent division
     /// proof. Out of `1..=4` is `DW0370`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_players: Option<u8>,
@@ -137,7 +137,7 @@ pub enum Carrier {
 /// Vanilla's `/time set` primitive takes **either** one of four keywords or a raw
 /// tick count, and the tick form is the general one — so the states worth naming
 /// for a delve's pacing are not limited to the four keywords. `dusk` and `dawn`
-/// (owner ruling, 2026-08-03) are the tick form exposed first-class, per the
+/// are the tick form exposed first-class, per the
 /// no-hack rule: the DSL names the beat, the compiler emits `/time set <ticks>`.
 /// Every keyword-to-tick mapping lives in exactly one table ([`WorldTime::spec`]),
 /// and the four vanilla keywords still emit their keyword verbatim, so existing
@@ -221,14 +221,13 @@ impl WorldWeather {
     }
 }
 
-/// The declared combat difficulty of the delve (DSL v0.6, owner ruling
-/// 2026-08-03). Values are the vanilla `/difficulty` keywords.
+/// The declared combat difficulty of the delve (DSL v0.6). Values are the
+/// vanilla `/difficulty` keywords.
 ///
-/// Difficulty is the single largest lever on how hard a delve *feels*, and until
-/// this field existed the compiler chose it: `easy` for any campaign with a wave,
-/// `peaceful` for one without. Easy **halves incoming player damage** —
-/// `min(dmg / 2 + 1, dmg)` — so every combat number in a pre-0.6 campaign was
-/// tuned against a halved world without anyone declaring it. A campaign that
+/// Difficulty is the single largest lever on how hard a delve *feels*, so the
+/// campaign declares it rather than letting the compiler choose. Easy **halves
+/// incoming player damage** — `min(dmg / 2 + 1, dmg)` — so a campaign tuned
+/// under `easy` is tuned against a halved world. A campaign that
 /// raises this must redo that arithmetic.
 ///
 /// [`WorldDifficulty::Peaceful`] parses but is **rejected** by validation
@@ -394,7 +393,7 @@ pub enum AreaMitigation {
 /// An area binds **exactly one of** `prefab` (single piece) or `prefab_pool`
 /// (+ `pieces`, jigsaw multi-piece assembly, ADR-0004). The exclusivity and
 /// pool-existence rules are enforced by validation (`DW0160` / `DW0161`); the
-/// full jigsaw layout semantics land in M2 task #9 (spec-0002).
+/// full jigsaw layout semantics are spec-0002's.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Area {
@@ -437,6 +436,190 @@ pub struct Pieces {
     pub min: u32,
     /// Maximum number of pieces to assemble.
     pub max: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Body traversal — the declaration every body that moves carries (DSL v0.11,
+// spec-0034)
+// ---------------------------------------------------------------------------
+
+/// How a body gets around.
+///
+/// The compiler DERIVES this from the entity id for every body (spiders climb,
+/// ghasts fly, `#minecraft:aquatic` swims, and everything else — including every
+/// id the table has never heard of — is [`Locomotion::Ground`], the checked
+/// class). [`BodyTraversal`] is the author's side of the same vocabulary: one
+/// enum, so a declaration and a derivation can never mean different things.
+///
+/// The vocabulary lives in this crate rather than in the compiler because it is
+/// now DSL surface; the compiler re-exports it and owns the derivation table
+/// (`compiler::traversal`).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Locomotion {
+    /// Walks, steps and jumps — the default and the CHECKED class.
+    Ground,
+    /// Climbs sheer vertical surfaces (vanilla's `Spider` class).
+    Climber,
+    /// Leaves the ground under its own power.
+    Flier,
+    /// A member of vanilla's `#minecraft:aquatic` tag. A ledger classification
+    /// that exempts nothing, which is why it may not be **declared**
+    /// (`DW0455`) — see [`BodyTraversal`].
+    Aquatic,
+}
+
+impl Locomotion {
+    /// The stable kebab token this class is written and reported under.
+    pub fn token(self) -> &'static str {
+        match self {
+            Locomotion::Ground => "ground",
+            Locomotion::Climber => "climber",
+            Locomotion::Flier => "flier",
+            Locomotion::Aquatic => "aquatic",
+        }
+    }
+
+    /// Every class, in ledger order — so a report can never silently drop a row
+    /// when a class is added.
+    pub const ALL: [Locomotion; 4] = [
+        Locomotion::Ground,
+        Locomotion::Climber,
+        Locomotion::Flier,
+        Locomotion::Aquatic,
+    ];
+}
+
+/// What a body can do when it moves, **declared by the author** (DSL v0.11,
+/// spec-0034).
+///
+/// Carried by every object class in the DSL that has a body and a position and
+/// is walked by a compiler-emitted route — the stage-2 [`Npc`] and the stage-5
+/// [`Actor`]. It is deliberately one shared type on both rather than a field
+/// per consumer: traversal is a property of a body that moves, not of the verb
+/// that first needed it (CLAUDE.md), and a second bespoke field would be the
+/// defect rather than the fix.
+///
+/// **A declaration is a claim the build holds you to, never an opt-out.** The
+/// compiler compares the verdicts this body earns under the declared class
+/// against the ones it earns under its species' derived class; a declaration
+/// that changes no verdict is inert and is `DW0454`. So declaring `climber` on
+/// a sheep is only accepted where that sheep's route really does go over a
+/// barrier line — the exception is authored and proven, instead of happening by
+/// accident and merely rendering.
+///
+/// **What is deliberately NOT here: `opens_gates`.** Passing a closed fence gate
+/// is a right-click, a scripted walk is a compiler-emitted `tp` polyline whose
+/// puppet performs no interaction at all, and no runtime verb changes a fence
+/// gate's block state. Declaring it would not make it true, so the error tier
+/// (`DW0452`) has no authorable exemption and a declaration can never reach it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyTraversal {
+    /// How this body gets around, overriding what its entity id implies.
+    pub locomotion: Locomotion,
+}
+
+/// One object class that has a body, a position, and a compiler-emitted route —
+/// i.e. one consumer of [`BodyTraversal`].
+///
+/// A sum type rather than a flattened tuple, so **adding a body class is a
+/// compile error at every consumer** until each one says what it does with it.
+/// The alternative — each rule walking the classes it happens to remember — is
+/// the defect class CLAUDE.md names: a hand-rolled walk that
+/// enumerated three of five effect roots.
+///
+/// Deliberately NOT a member: [`WaveMob`]. A wave mob has a body and a position,
+/// but it is driven by **native vanilla AI**, never by a compiler-emitted route,
+/// so the compiler makes no claim about the moves it makes and a locomotion
+/// declaration on it could change no verdict. It becomes a consumer the day the
+/// lane proof reasons about how its bodies move — and it joins here, through
+/// this same type, rather than through a field of its own.
+#[derive(Clone, Copy, Debug)]
+pub enum BodyRef<'a> {
+    /// A stage-2 NPC, walked by `move-npc`.
+    Npc(&'a Npc),
+    /// A stage-5 scripted actor, walked by `move-actor`.
+    Actor(&'a Actor),
+}
+
+impl<'a> BodyRef<'a> {
+    /// The declaring stage's wire name (`npcs` / `quests`) — also the stage
+    /// whose `dsl_version` fences this body's declaration.
+    pub fn stage(self) -> &'static str {
+        match self {
+            BodyRef::Npc(_) => "npcs",
+            BodyRef::Actor(_) => "quests",
+        }
+    }
+
+    /// The body's declared id.
+    pub fn id(self) -> &'a str {
+        match self {
+            BodyRef::Npc(n) => n.id.as_str(),
+            BodyRef::Actor(a) => a.id.as_str(),
+        }
+    }
+
+    /// The entity id written on the body. **Not necessarily the body that
+    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin`, which is the
+    /// compiler's rule (`nav::npc_body_entity`) and stays there.
+    pub fn declared_entity(self) -> &'a str {
+        match self {
+            BodyRef::Npc(n) => n.base_entity.as_str(),
+            BodyRef::Actor(a) => a.entity.as_str(),
+        }
+    }
+
+    /// This body's traversal declaration, if it carries one.
+    pub fn traversal(self) -> Option<&'a BodyTraversal> {
+        match self {
+            BodyRef::Npc(n) => n.traversal.as_ref(),
+            BodyRef::Actor(a) => a.traversal.as_ref(),
+        }
+    }
+}
+
+/// A body that carries a [`BodyTraversal`] declaration, with the JSON pointer at
+/// it.
+#[derive(Clone, Debug)]
+pub struct BodyTraversalSite<'a> {
+    /// Which object class declared it, and the object itself.
+    pub body: BodyRef<'a>,
+    /// JSON pointer at the `traversal` field, for a diagnostic path.
+    pub path: String,
+    /// The declaration.
+    pub traversal: &'a BodyTraversal,
+}
+
+/// Every body in the campaign that DECLARES a traversal, in stage order.
+///
+/// The one enumeration of the declaration's consumers, shared by the DSL's value
+/// check (`DW0455`) and by the compiler's proof (`DW0454`), so "which object
+/// classes carry this" is answered in exactly one place.
+pub fn body_traversal_sites(c: &crate::envelope::Campaign) -> Vec<BodyTraversalSite<'_>> {
+    let mut out: Vec<BodyTraversalSite<'_>> = Vec::new();
+    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+        if let Some(t) = &n.traversal {
+            out.push(BodyTraversalSite {
+                body: BodyRef::Npc(n),
+                path: format!("/content/npcs/{i}/traversal"),
+                traversal: t,
+            });
+        }
+    }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        if let Some(t) = &a.traversal {
+            out.push(BodyTraversalSite {
+                body: BodyRef::Actor(a),
+                path: format!("/content/actors/{i}/traversal"),
+                traversal: t,
+            });
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +670,13 @@ pub struct Npc {
     /// init, byte-identical to pre-0.6.
     #[serde(default, skip_serializing_if = "is_false")]
     pub deferred: bool,
+    /// What this body can do when it moves (DSL v0.11, spec-0034). Absent = the
+    /// class the compiler derives from `base_entity` (or from `minecraft:mannequin`
+    /// when `skin` is set — the body that actually ships). See [`BodyTraversal`]:
+    /// the declaration must change a verdict or it is `DW0454`, and it can never
+    /// reach the error tier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traversal: Option<BodyTraversal>,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
@@ -525,7 +715,7 @@ impl SkinModel {
     }
 }
 
-/// A structured casting sheet (owner decision 2026-07-30). Structure lives in the
+/// A structured casting sheet. Structure lives in the
 /// keys; every value is free text. `archetype`, `speech_style` and `motivation`
 /// are required; the rest are optional.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -636,8 +826,8 @@ pub struct DialogueNode {
 pub struct DialogueOption {
     /// Button label.
     pub label: String,
-    /// The full line this button is the caption of (DSL v0.8, owner design
-    /// 2026-08-04; reserved `DW0141` earlier). Vanilla's dialog button codec
+    /// The full line this button is the caption of (DSL v0.8; reserved
+    /// `DW0141` earlier). Vanilla's dialog button codec
     /// (`CommonButtonData`) carries an optional `tooltip` component beside
     /// `label`, and the client hangs it on the button as a real hover tooltip —
     /// so a caption on the button and the sentence the character actually says
@@ -873,7 +1063,7 @@ pub struct KitItem {
     /// enters the party, given to the first player to pick this class.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carrier: Option<Carrier>,
-    /// **The flask** (DSL v0.8, spec-0016 §1, owner ruling 2026-08-03): this kit
+    /// **The flask** (DSL v0.8, spec-0016 §1): this kit
     /// entry is the class's recovery item, and resting at a bonfire replenishes
     /// it to exactly `count`. A campaign that places a `bonfire` and declares no
     /// flask anywhere in its kits is `DW0476` — the estus loop is what makes
@@ -881,8 +1071,8 @@ pub struct KitItem {
     /// a design choice. Absent on every pre-0.8 kit → emission byte-identical.
     #[serde(default, skip_serializing_if = "is_false")]
     pub flask: bool,
-    /// **What is in the bottle** (DSL v0.8, spec-0016 §1, owner directive
-    /// 2026-08-03): the vanilla `minecraft:potion_contents` component of a
+    /// **What is in the bottle** (DSL v0.8, spec-0016 §1): the vanilla
+    /// `minecraft:potion_contents` component of a
     /// potion-bearing item ([`POTION_BEARING_ITEMS`]). Without it a
     /// `minecraft:potion` is the *Uncraftable Potion* — a bottle that heals
     /// nothing — which is exactly the placeholder flask this field exists to
@@ -993,8 +1183,8 @@ pub const MAX_POTION_AMPLIFIER: u32 = 255;
 /// typed in *ticks* or in milliseconds is caught (`DW0541`).
 pub const MAX_EFFECT_SECONDS: u32 = MAX_POTION_DURATION_TICKS / 20;
 
-/// The canonical English title of the bonfire rest dialog (owner ruling
-/// 2026-08-03). Baked at emit time when the campaign authors no `prompt`, in the
+/// The canonical English title of the bonfire rest dialog. Baked at emit time
+/// when the campaign authors no `prompt`, in the
 /// `world.boundary.message` tradition: a compiler default is not inventoried, an
 /// authored line is — so a delve that wants this sentence in `zh-cn` authors it.
 pub const BONFIRE_PROMPT_EN: &str = "Bonfire";
@@ -1220,7 +1410,7 @@ pub struct QuestsContent {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<EnvTrigger>,
     /// Scripted actors (DSL v0.6, spec-0014): NoAI/Silent/no-loot puppets moved by
-    /// compiler-emitted per-tick teleport (task #46). Distinct from stage-2 NPCs
+    /// compiler-emitted per-tick teleport. Distinct from stage-2 NPCs
     /// (no dialogue, any mob type). Summoned/removed/moved/unleashed by the actor
     /// staging effects. Empty/absent before v0.6.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1737,8 +1927,8 @@ pub struct TrapDisarm {
 /// deterministic open/close clock, so passage is a timing read rather than a
 /// permanent state.
 ///
-/// **The proof is deliberately NOT all-phase passability** (owner ruling
-/// 2026-08-02) — a gate that punishes bad timing is the entire point. What the
+/// **The proof is deliberately NOT all-phase passability** — a gate that
+/// punishes bad timing is the entire point. What the
 /// compiler requires is that the gate is *readable*: the set of entry phases from
 /// which a walking player clears the span before it shuts must cover **≥ 20% of
 /// the cycle** (`DW0378`). Below that it is a coin flip, not a skill, and no
@@ -1761,7 +1951,7 @@ pub struct TimedGate {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub phase: u32,
     /// Whether the gate **kills** a player caught inside its region when it
-    /// shuts (owner directive 2026-08-03, spec-0016 §4 addendum). A portcullis
+    /// shuts (spec-0016 §4 addendum). A portcullis
     /// that merely shoves you aside teaches nothing; mistiming the crossing is
     /// supposed to be a death you learn from, which is the whole point of §4's
     /// ≥20%-of-cycle window proof — the window is fair, so the penalty can be
@@ -1776,7 +1966,7 @@ pub struct TimedGate {
     /// existed compiles byte-identically; a delve opts its portcullis in.
     #[serde(default, skip_serializing_if = "is_false")]
     pub crush: bool,
-    /// Optional **disarm** affordance (task #184, souls dossier §5.2): the third
+    /// Optional **disarm** affordance (souls dossier §5.2): the third
     /// rung of the hazard ladder — readable, avoidable, and finally *disable-able*.
     /// The real games' best timed hazards can be removed for good (Smouldering
     /// Lake's ballista, the Fringefolk chariot); a clock the party can only ever
@@ -1793,7 +1983,7 @@ pub struct TimedGate {
     pub disarm: Option<TimedGateDisarm>,
 }
 
-/// A [`TimedGate`]'s disarm affordance (task #184, souls dossier §5.2) — the
+/// A [`TimedGate`]'s disarm affordance (souls dossier §5.2) — the
 /// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
 /// grammar for every mechanism the party can switch off.
 ///
@@ -1821,8 +2011,8 @@ fn is_zero(n: &u32) -> bool {
 /// A stage-5 **ambush** (spec-0016 §3) — one declaration for a beat that
 /// otherwise takes a deferred actor set plus a hand-wired trigger.
 ///
-/// **`telegraph` is optional, and that is a design ruling, not an oversight**
-/// (owner, 2026-08-02). The un-telegraphed ambush — the shove off the cliff you
+/// **`telegraph` is optional, and that is a design ruling, not an oversight.**
+/// The un-telegraphed ambush — the shove off the cliff you
 /// could not have known about — is core souls vocabulary: 初见杀 is how the level
 /// teaches. The engine does not sand that edge off.
 ///
@@ -1849,7 +2039,7 @@ pub struct Ambush {
     pub trigger: TriggerOn,
     /// The **optional** tell, fired at the trigger before the ambushers exist:
     /// a sound, a shadow, a line of narration. Empty = un-telegraphed, which is
-    /// fully legal (owner ruling 2026-08-02).
+    /// fully legal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub telegraph: Vec<QuestEffect>,
 }
@@ -2090,8 +2280,8 @@ pub struct Wave {
     /// "elite" from how tuned a stack looks — is exactly the downstream folklore
     /// CLAUDE.md's no-hack rule forbids.
     ///
-    /// **It does reach emission in exactly one place** (spec-0016 §1, owner
-    /// ruling 2026-08-05): in a campaign with a `bonfire`, a billed `elite`/
+    /// **It does reach emission in exactly one place** (spec-0016 §1): in a
+    /// campaign with a `bonfire`, a billed `elite`/
     /// `boss` wave that does not declare `respawns_on_rest` is refreshed by a
     /// rest *while it is still standing* — deleted and re-seated at full count
     /// and full health, so chipping it down one life at a time is never a path.
@@ -2145,7 +2335,7 @@ pub enum WaveSummon {
     /// Standable cells around the wave `anchor`, nearest first — the pre-0.6
     /// behaviour and the default.
     Anchor,
-    /// **Spirit-summoned at the edge of perception** (owner design 2026-08-02):
+    /// **Spirit-summoned at the edge of perception**:
     /// each mob appears on the ring at its own `attributes.follow_range` from
     /// the wave `anchor`, so it acquires a target the instant it exists and
     /// closes under pure native AI. Species without patrol AI never march a
@@ -2209,17 +2399,17 @@ pub struct WaveMob {
     /// Optional permanent, ambient status effects (DSL v0.4).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<MobEffect>,
-    /// Optional worn/held equipment (DSL v0.6, task #65). A helmet is the
+    /// Optional worn/held equipment (DSL v0.6). A helmet is the
     /// sanctioned fix for daylight-burning undead (owner ruling) — never
     /// `set-time`. Item ids validate against the pinned 1.21.11 item registry
     /// (`DW0143`, the give-item family); every emitted slot carries drop
     /// chance 0 so players can never farm wave gear (no-grind constitution).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equipment: Option<MobEquipment>,
-    /// What this mob leaves behind when it dies (DSL v0.9, task #179; reserved
+    /// What this mob leaves behind when it dies (DSL v0.9; reserved
     /// `DW0141` earlier). Only an `elite`/`boss` wave may declare it (`DW0491`)
-    /// — an ordinary mob's kit is never farmable. Empty = today's behaviour,
-    /// drop chance 0 on every slot.
+    /// — an ordinary mob's kit is never farmable. Empty = drop chance 0 on
+    /// every slot.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
 }
@@ -2283,7 +2473,7 @@ impl MobEquipment {
 }
 
 /// One vanilla equipment slot, named exactly as the [`MobEquipment`] field that
-/// fills it (DSL v0.9, task #179). The DSL name and the summon-NBT key differ
+/// fills it (DSL v0.9). The DSL name and the summon-NBT key differ
 /// (`main_hand` vs `mainhand`), so both live here and nowhere else.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -2330,8 +2520,7 @@ impl EquipSlot {
     }
 }
 
-/// One declared drop of an elite or boss (DSL v0.9, task #179; owner ruling
-/// 2026-08-04).
+/// One declared drop of an elite or boss (DSL v0.9).
 ///
 /// A mob may wear many pieces; what it *leaves behind* is a **declared subset**,
 /// usually one piece and never automatically everything. Two forms, told apart
@@ -2723,7 +2912,7 @@ pub enum CastDialogueKeyword {
     /// world should answer; prefer a bark.
     None,
     /// Carry forward whatever this NPC's dialogue was at its **previous**
-    /// appearance in the quest-DAG ordering (owner amendment, 2026-08-03).
+    /// appearance in the quest-DAG ordering.
     ///
     /// The point is that carrying dialogue forward is a *conscious, declared
     /// act*. It is never an implicit default — an omitted `dialogue` is
@@ -2913,7 +3102,7 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
-        /// **Adopt the container the prefab already placed** (DSL v0.8, task #95;
+        /// **Adopt the container the prefab already placed** (DSL v0.8;
         /// reserved `DW0141` earlier): the anchor whose assembled-world cell holds
         /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
         /// conjuring its own chest at [`Objective::Collect::anchor`].
@@ -2930,7 +3119,7 @@ pub enum Objective {
         /// *this* block), and no chest is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         container: Option<AnchorId>,
-        /// **The item comes off a body, not out of a box** (DSL v0.9, task #179;
+        /// **The item comes off a body, not out of a box** (DSL v0.9;
         /// reserved `DW0141` earlier): the wave whose declared `drops[]` yield
         /// this objective's item. No container is placed — not the compiler's own
         /// chest at `anchor`, not a prefab one — and `container` is therefore
@@ -2952,7 +3141,7 @@ pub enum Objective {
         /// still declare `drops[]`; those drops just cannot gate a quest.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dropped_by: Option<WaveId>,
-        /// Display name for the collected item (DSL v0.8, task #95; reserved
+        /// Display name for the collected item (DSL v0.8; reserved
         /// `DW0141` earlier), emitted as the vanilla `custom_name` item component.
         ///
         /// A quest item is a *named thing* in the story ("Cheese", "Tide
@@ -2966,9 +3155,9 @@ pub enum Objective {
         /// stack still carries.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         item_name: Option<String>,
-        /// Padding stacks that make the container **read full** (DSL v0.8, task
-        /// #95; reserved `DW0141` earlier). Default `0` = the single required
-        /// stack, exactly as every pre-0.8 campaign emits.
+        /// Padding stacks that make the container **read full** (DSL v0.8;
+        /// reserved `DW0141` earlier). Default `0` = the single required
+        /// stack and nothing else.
         ///
         /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
         /// vanilla's notion of "full" is *occupied slots*, not stack size — so
@@ -3026,7 +3215,7 @@ pub enum Objective {
         /// Item the player must be **holding in the main hand** for the
         /// interaction to complete (optional).
         ///
-        /// Held, not merely possessed (owner ruling, 2026-08-03): presenting the
+        /// Held, not merely possessed: presenting the
         /// item IS the action — a player who right-clicks a sleeping giant with a
         /// sharpened stake buried in their backpack has not stabbed anything.
         /// Before this ruling the gate read the whole inventory, which made every
@@ -3161,8 +3350,8 @@ pub struct Actor {
     /// (`DW0477`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<EncounterTier>,
-    /// What this actor leaves behind when a player kills it (DSL v0.9, task
-    /// #179; reserved `DW0141` earlier). Only an `elite`/`boss` actor may
+    /// What this actor leaves behind when a player kills it (DSL v0.9;
+    /// reserved `DW0141` earlier). Only an `elite`/`boss` actor may
     /// declare it (`DW0491`). Emitted into BOTH the staged puppet and the
     /// unleashed twin, exactly as `equipment` is — the drop belongs to the body,
     /// not to one of its two lifecycles. A `despawn-actor` strips the
@@ -3170,6 +3359,13 @@ pub struct Actor {
     /// souls re-seat) never scatters its axe.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
+    /// What this body can do when it moves (DSL v0.11, spec-0034) — the same
+    /// [`BodyTraversal`] a stage-2 [`Npc`] carries, because traversal belongs to
+    /// the body and not to the stage that declares it. Absent = the class the
+    /// compiler derives from `entity` (or from `minecraft:mannequin` when `skin`
+    /// is set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traversal: Option<BodyTraversal>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -4072,8 +4268,8 @@ pub enum QuestEffect {
         /// idempotent (the same contract as `set-checkpoint`'s `on_respawn`).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         on_rest: Vec<QuestEffect>,
-        /// Title of the two-option rest dialog (DSL v0.8, owner ruling
-        /// 2026-08-03). Absent = the compiler's canonical English `Bonfire`,
+        /// Title of the two-option rest dialog (DSL v0.8).
+        /// Absent = the compiler's canonical English `Bonfire`,
         /// baked at emit time (the `world.boundary.message` precedent): an
         /// authored line is inventoried and translates like every other
         /// player-visible string.
@@ -4088,9 +4284,9 @@ pub enum QuestEffect {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         save_label: Option<String>,
     },
-    /// Begins a stealth beat (DSL v0.6, spec-0014; owner ruling 2026-08-01:
-    /// zone presence alone = hidden — no sneak requirement, which collided with
-    /// the spectator cutscene camera). While active, every player must be
+    /// Begins a stealth beat (DSL v0.6, spec-0014):
+    /// zone presence alone = hidden — no sneak requirement, which collides with
+    /// the spectator cutscene camera. While active, every player must be
     /// inside some `zone` each tick; a player outside every zone for
     /// `grace_ticks` fires `on_caught` (typically a kill → checkpoint respawn).
     /// Zone membership is read from the player's position. The compiler proves
@@ -4155,7 +4351,7 @@ pub enum QuestEffect {
     },
     /// Walks an actor's puppet to an anchor by A*-planned per-tick teleport over
     /// the assembled model, using the actor's hitbox footprint, yawed along the
-    /// path tangent (DSL v0.6, task #46). Concurrent movers are allowed (a herded
+    /// path tangent (DSL v0.6). Concurrent movers are allowed (a herded
     /// flock is N synchronized `move-actor`s). Unroutable → `DW0325`. `on_arrive`
     /// effects fire once the puppet reaches the destination cell.
     MoveActor {
@@ -4203,7 +4399,7 @@ pub enum QuestEffect {
     /// projectiles with real velocity vectors, fired from a gallery slot into a
     /// declared kill zone.
     ///
-    /// The contract is **saturation, not sniping** (owner ruling 2026-08-03).
+    /// The contract is **saturation, not sniping**.
     /// Every salvo puts one projectile on the trajectory to **every standable
     /// cell of `kill_zone`**, plus one aimed at the triggering player's
     /// fire-time position (which punishes standing still). A player therefore
@@ -4397,8 +4593,8 @@ pub enum QuestEffect {
     /// of the kind a `lethal_volumes[]` entry must carry was considered and
     /// **rejected**: an NPC is a body plus a co-located `minecraft:interaction`
     /// hitbox, so exempting `minecraft:interaction` — as the lethal volume does —
-    /// would teleport the speaker and leave its dialogue box behind. Owner ruling
-    /// 2026-08-08 is that everyone on the car travels, players and entities
+    /// would teleport the speaker and leave its dialogue box behind. Everyone on
+    /// the car travels, players and entities
     /// alike; totality over bodies is how that is true.
     ///
     /// The one narrowing is a **class the engine's own furniture declares about
@@ -5356,7 +5552,7 @@ impl CollectBy {
 ///
 /// # Where it lands is a compile-time answer
 ///
-/// The owner's rule (2026-08-08): *the anchor is the point, on the walkable path
+/// The owner's rule: *the anchor is the point, on the walkable path
 /// from the respawn point in force at the moment of death to the death point
 /// under the quest state in force at that moment, that minimises distance to the
 /// death point.* Every term already has an owner in the compiler — walkability is
@@ -5617,13 +5813,13 @@ impl ShotStyle {
 /// before `offset` is applied; an `anchor` subject aims at the block centre
 /// exactly like a [`CameraTarget`].
 /// Each variant's payload is a **named struct** carrying `deny_unknown_fields`
-/// (task #78). Serde has no variant-level `deny_unknown_fields`, so an untagged
+/// — serde has no variant-level `deny_unknown_fields`, so an untagged
 /// enum with inline struct variants silently *ignores* any key it does not
-/// recognise: `{"npc": …, "ofset": [0,1,0]}` deserialized happily with the offset
-/// dropped, and `{"anchor": …, "npc": …}` quietly matched `Anchor` and discarded
-/// the NPC. Lifting each variant into its own type restores the repo-wide
+/// recognise: `{"npc": …, "ofset": [0,1,0]}` would deserialize happily with the
+/// offset dropped, and `{"anchor": …, "npc": …}` would quietly match `Anchor`
+/// and discard the NPC. Lifting each variant into its own type keeps the repo-wide
 /// deny-unknown rule for both serde and the published JSON Schema
-/// (`additionalProperties: false`): a mistyped shot subject now fails the schema
+/// (`additionalProperties: false`): a mistyped shot subject fails the schema
 /// instead of rendering a shot pointed somewhere the author never asked for.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -6130,7 +6326,7 @@ impl QuestEffect {
 
     /// The bonfire's authored rest-dialog strings, each `None` when unauthored
     /// (the compiler then bakes its canonical English). `None` for every other
-    /// effect. spec-0016 §1, owner ruling 2026-08-03.
+    /// effect (spec-0016 §1).
     pub fn bonfire_labels(&self) -> Option<BonfireLabels<'_>> {
         match self {
             QuestEffect::Bonfire {
@@ -6542,7 +6738,7 @@ impl QuestEffect {
         }
     }
 
-    /// The per-effect flag gate (DSL v0.6, task #55): flags that must ALL be set
+    /// The per-effect flag gate (DSL v0.6): flags that must ALL be set
     /// (per player) for this effect to fire. Empty for an ungated effect and for
     /// the verbs that are not per-effect gatable — terminal `campaign-complete`
     /// and the party/session-global `set-checkpoint` / `begin-stealth` /
@@ -6875,7 +7071,7 @@ pub enum WorldEdit {
         /// The surface operation.
         op: MorphOp,
     },
-    /// Seeded dressing scatter (spec-0017 PR 2): drop weighted single-block
+    /// Seeded dressing scatter (spec-0017): drop weighted single-block
     /// dressing (flora, rocks, props) onto standable cells of a region —
     /// air cells with an occupied cell directly below — honoring keep-clear
     /// envelopes (`avoid`). Per-cell white-noise density gate (dressing wants
@@ -6902,8 +7098,8 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<u32>,
     },
-    /// Structural flora (spec-0017 PR 2): plant hand-shaped trees via the
-    /// lean-or-grow canopy rules (#121) — a canopy that would reach a
+    /// Structural flora (spec-0017): plant hand-shaped trees via the
+    /// lean-or-grow canopy rules — a canopy that would reach a
     /// keep-clear (`avoid`) column first leans one block away from it; if that
     /// still covers the corridor the tree grows tall instead, arching its
     /// whole canopy 3 blocks above the trunk's floor. No leaf is ever sliced.
@@ -6923,7 +7119,7 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         spacing: Option<u32>,
     },
-    /// Stamp a prefab fragment (spec-0017 PR 2): copy a library prefab's
+    /// Stamp a prefab fragment (spec-0017): copy a library prefab's
     /// non-air cells into the world at a frame-resolved position. The fragment
     /// is a first-class library prefab — its provenance/license metadata is
     /// recorded and validated exactly like any placed prefab (ADR-0013);
@@ -6940,7 +7136,7 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rotation: Option<FragmentRotation>,
     },
-    /// Explicit region relight (spec-0017 PR 2, spec-0010 machinery): run the
+    /// Explicit region relight (spec-0017, spec-0010 machinery): run the
     /// deterministic fixture-placement pass over ONE region and bake the
     /// resulting fixtures into the edit script's writes — authorial control of
     /// where fixtures land, instead of the whole-area pass's greedy siting.
@@ -6958,7 +7154,7 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         min_light: Option<u8>,
     },
-    /// L2 massing (spec-0017 PR 3): replace a placed piece with another
+    /// L2 massing (spec-0017): replace a placed piece with another
     /// library prefab that re-mates every currently-mated socket at its exact
     /// world pose (any rotation; overlap-checked). Applied at **plan** time —
     /// the whole downstream ladder (anchors, gate reachability, assembly,
@@ -6974,7 +7170,7 @@ pub enum WorldEdit {
         /// The library prefab to swap in.
         with: PrefabId,
     },
-    /// L2 massing (spec-0017 PR 3): attach a new piece at a specific **open**
+    /// L2 massing (spec-0017): attach a new piece at a specific **open**
     /// (unmated) socket of an existing piece — the targeted form of the
     /// solver's frontier attach. The socket opens (its seal becomes a
     /// passage); the new piece's other sockets seal.
@@ -6988,7 +7184,7 @@ pub enum WorldEdit {
         /// The library prefab to attach.
         insert: PrefabId,
     },
-    /// L2 massing (spec-0017 PR 3): remove a **leaf** piece (exactly one
+    /// L2 massing (spec-0017): remove a **leaf** piece (exactly one
     /// mated socket; never the entry piece). The neighbour's socket unmates
     /// and re-seals. Removal shifts later placement indices — order removals
     /// before other index-referencing massing verbs.
@@ -6998,7 +7194,7 @@ pub enum WorldEdit {
         /// The prefab the indexed piece must currently be (drift guard).
         prefab: PrefabId,
     },
-    /// L2 massing (spec-0017 PR 3): override one socket's seal — `open`
+    /// L2 massing (spec-0017): override one socket's seal — `open`
     /// clears the opening to a passage, `sealed` walls it up — independent of
     /// its mated state (sealing a mated doorway makes a wall between joined
     /// pieces; opening an unmated exterior socket exposes the outside, which
@@ -7013,7 +7209,7 @@ pub enum WorldEdit {
         /// The socket's new state.
         state: SocketState,
     },
-    /// L2 massing (spec-0017 PR 3): re-pick this piece from its area pool's
+    /// L2 massing (spec-0017): re-pick this piece from its area pool's
     /// compatible members (weighted, seeded from the campaign seed + this
     /// verb's script position — moving the verb deliberately re-rolls). The
     /// current prefab is excluded, so a reseed always changes the piece or
@@ -7026,7 +7222,7 @@ pub enum WorldEdit {
     },
 }
 
-/// A socket seal state for `rewire-socket` (spec-0017 PR 3).
+/// A socket seal state for `rewire-socket` (spec-0017).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SocketState {
@@ -7036,8 +7232,8 @@ pub enum SocketState {
     Sealed,
 }
 
-/// A tree species for the `plant` verb (spec-0017 PR 2). One species per
-/// canopy-rule implementation; the shipped rule set is the #121 oak.
+/// A tree species for the `plant` verb (spec-0017). One species per
+/// canopy-rule implementation; the shipped rule set is the lean-or-grow oak.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TreeKind {
@@ -7046,7 +7242,7 @@ pub enum TreeKind {
     Oak,
 }
 
-/// A `fragment` stamp rotation (spec-0017 PR 2) — the `/place template`
+/// A `fragment` stamp rotation (spec-0017) — the `/place template`
 /// quarter-turn set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]

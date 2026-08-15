@@ -1,8 +1,8 @@
 //! **A reflected frame under a world-space walk** — the pair neither branch had.
 //!
-//! `#413` makes a frame carry a direction, so one rule stands at both sites of a
-//! mirror plane. `#414` measures how much of a piece's floor a body reaches, and
-//! adds `--reachable-floor` beside `--symmetric`. Neither branch could test the
+//! A frame carries a direction, so one rule stands at both sites of a
+//! mirror plane. `--reachable-floor` measures how much of a piece's floor a body
+//! reaches, and stands beside `--symmetric`. Neither branch could test the
 //! other: the reflection did not exist when the measurement was written, and the
 //! measurement did not exist when the reflection was.
 //!
@@ -231,8 +231,9 @@ fn a_building_and_its_reflection_measure_the_same() {
     );
 }
 
-/// Claim 4: `#414`'s gate is **blind to the defect `#413` exists for**, so the
-/// two verdicts are independent and neither stands in for the other.
+/// Claim 4: the `--reachable-floor` gate is **blind to the defect `--symmetric`
+/// exists for**, so the two verdicts are independent and neither stands in for
+/// the other.
 ///
 /// The pair is the motivating story itself: one transept whose far arm is a bare
 /// `call` — the end wall on the wrong face, a 7x4x9 opening in the flank — and

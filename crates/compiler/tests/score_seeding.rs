@@ -1,6 +1,6 @@
 //! `DW0495` — no emitted comparison reads a score entry the pack never creates.
 //!
-//! The general form of the first-death defect (PR #371 found the instance): on
+//! The general form of the first-death defect: on
 //! the pinned 1.21.11 server a scoreboard entry that was never written is not
 //! zero, it is **false to every question**, so `execute if score @s dw.deaths >
 //! @s dw.death_ack` did not fire while `dw.death_ack` had no entry and every
@@ -89,7 +89,7 @@ fn shipped_fixtures_emit_only_backed_score_reads() {
         (fixture("souls-bonfire"), 300, 25),
         (fixture("v06-checkpoints"), 300, 25),
         (fixture("lethal-volume"), 30, 15),
-        // task #68: the die-retry fixture. A shipped fixture outside this sweep is a
+        // The die-retry fixture. A shipped fixture outside this sweep is a
         // hole in DW0495's binding, and this one emits the death edge the rule exists for.
         (fixture("die-retry"), 40, 15),
     ] {
