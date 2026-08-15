@@ -351,6 +351,12 @@ pub fn build_with_warnings(
     // that exists and reports `"modelled_as_sealed": 0` is a finding rather than
     // an absence.
     let mut gate_seal_ledger: Option<serde_json::Value> = None;
+    // The fluid-escape proof's binding ledger (`compiler::nav`, `DW0318`): how
+    // much water the assembled world holds and how much of it ended up outside
+    // every placed piece, stated against the horizon. Filled by every campaign
+    // that assembles a world — including a bone-dry one, which then ships a
+    // ledger reading zero rather than nothing at all.
+    let mut fluid_escape_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -463,7 +469,10 @@ pub fn build_with_warnings(
                     // island is one — would have got a vacuous green out of the
                     // completability model while every fixture went red.
                     crate::nav::World::from_occupancy(occ)
-                        .with_ambient(crate::nav::Ambient::of_plan(plan))
+                        .with_ambient(
+                            crate::nav::Ambient::of_plan(plan),
+                            crate::nav::built_volume(plan),
+                        )
                         .with_world_load_seals(plan, er.assembled.gate_seals.clone())
                 }
                 None => {
@@ -516,6 +525,41 @@ pub fn build_with_warnings(
             // that, while their twelve siblings — identical geometry, anchors one
             // block lower — were green, which is what proved the interior walk
             // region boundary-safe and the roof a disconnected component.
+            // `DW0318` over the finished world: fluid that ran out of the built
+            // volume. It runs BEFORE the boundary proof, and the order is
+            // load-bearing. Two independent reasons, and the second is why this
+            // is not a style choice:
+            //
+            // 1. The boundary proof cannot see this at all. It examines
+            //    reachable WALKABLE cells, and a flooded cell is impassable and
+            //    never floor, so escaped water is in neither the reachable set
+            //    nor its neighbour scan, under either horizon.
+            // 2. Worse, escaped water makes the boundary proof LIE. Its
+            //    per-column fall-arrest scan (`nav::boundary_void`'s `col_min`)
+            //    counts a flooded cell as arrest, so a bottomless column with a
+            //    waterfall running down it reads as supported — and the proof
+            //    goes quiet on precisely the columns the water escaped through.
+            //    Measured on the shipped `island-beach-camp` piece placed under
+            //    `horizon: void`: 9792 escaped cells, and `DW0322` silent.
+            //
+            // So escaping fluid is a false premise of the proof that runs next,
+            // exactly as an unsettled gravity block is a false premise of
+            // everything downstream of `DW0313`. Clear it first.
+            //
+            // The ledger is measured unconditionally and emitted below, even
+            // when the verdict is a pass and even when the world holds no water
+            // at all: "0 fluid cells examined" is the reading a dry campaign
+            // should be able to show, and a check whose only output is silence
+            // is one nobody can tell apart from a check that did not run.
+            let fluid_escape = crate::nav::measure_fluid_escape(&world);
+            fluid_escape_ledger = Some(fluid_escape.ledger());
+            if let Some(e) = fluid_escape.finding() {
+                return Err(BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                });
+            }
+
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
                     code: e.code,
@@ -1230,6 +1274,13 @@ pub fn build_with_warnings(
     // body regardless of class, so the count itself shows that rule is total.
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
+    // The fluid-escape binding ledger (`DW0318`): the horizon the verdict was
+    // stated against, the pieces and fluid cells examined, and how many cells
+    // ended up outside the built volume. `None` only for a campaign that
+    // assembles no world at all.
+    if let Some(ledger) = &fluid_escape_ledger {
+        put_json(&mut out, "validation/fluid-escape.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);

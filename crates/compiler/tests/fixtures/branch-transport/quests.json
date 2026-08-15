@@ -123,15 +123,15 @@
           }
         },
         "happening": {
-          "text": "The party pushes off from the drowned road and makes for the galley riding off the moor.",
+          "text": "The party pushes off from the drowned road and makes for the shore under the moor.",
           "verb": "departs"
         },
         "id": "quest/away",
         "objectives": [
           {
-            "anchor": "anchor/sea-deck",
+            "anchor": "anchor/exit",
             "happening": {
-              "text": "They set foot on the galley's deck and the keep shrinks to a smudge astern.",
+              "text": "They set foot on the shore and the keep shrinks to a smudge behind them.",
               "verb": "departs"
             },
             "id": "obj/away",

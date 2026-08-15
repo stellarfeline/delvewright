@@ -718,8 +718,8 @@ pub enum Ambient {
 
 /// The ocean horizon's ambient sea: a global water plane topping out at
 /// [`Sea::level`], solid ground from [`Sea::floor_top`] down, and air above —
-/// present in **every** column except those a placed piece overwrote
-/// ([`Sea::covered`]).
+/// present in **every** column except those a placed piece overwrote (the
+/// world's [`World::built`] volume).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sea {
     /// Y of the topmost ambient water block (`crate::plan::SEA_LEVEL`, 62).
@@ -728,47 +728,49 @@ pub struct Sea {
     /// (`crate::plan::SEA_FLOOR_TOP_Y`, 54). Ambient water occupies
     /// `floor_top+1 ..= level`.
     pub floor_top: i32,
-    /// Inclusive world AABBs of every placed piece. `/place template` writes the
-    /// whole box (air included), so inside a box the piece decides what is there
-    /// and the ambient does not apply; outside every box (and below them —
-    /// pieces sit *on* the sea, so the water under an island base is ambient) it
-    /// does. Deterministic order: plan area order, entry piece first.
-    pub covered: Vec<([i32; 3], [i32; 3])>,
-}
-
-impl Sea {
-    /// Whether `c` falls inside a placed piece's AABB (piece-authored, so the
-    /// ambient says nothing about it).
-    fn covered(&self, c: [i32; 3]) -> bool {
-        self.covered
-            .iter()
-            .any(|(lo, hi)| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
-    }
-
-    /// Whether `c` is ambient sea water: inside the generator's water layers and
-    /// not overwritten by a placed piece.
-    fn ambient_water(&self, c: [i32; 3]) -> bool {
-        c[1] > self.floor_top && c[1] <= self.level && !self.covered(c)
-    }
 }
 
 impl Ambient {
-    /// The ambient a campaign's `horizon` declares (spec-0013), with the placed
-    /// pieces of `plan` as the covered region.
+    /// The ambient a campaign's `horizon` declares (spec-0013). Purely the
+    /// generator's own facts: **where the content ends is not one of them** —
+    /// that is [`built_volume`], a property of the assembled world under every
+    /// horizon (see [`World::built`]).
     pub fn of_plan(plan: &Plan) -> Ambient {
         match plan.campaign.world.content.horizon {
             Some(delvewright_dsl::Horizon::Ocean) => Ambient::Ocean(Sea {
                 level: crate::plan::SEA_LEVEL,
                 floor_top: crate::plan::SEA_FLOOR_TOP_Y,
-                covered: plan
-                    .areas
-                    .iter()
-                    .flat_map(|a| a.pieces.iter().map(|p| p.bbox()))
-                    .collect(),
             }),
             _ => Ambient::Void,
         }
     }
+
+    /// The horizon's own name, for a message or a ledger.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Ambient::Void => "void",
+            Ambient::Ocean(_) => "ocean",
+        }
+    }
+}
+
+/// **Where the content decided what is there**: every placed piece's prefab id
+/// paired with its inclusive world AABB, in plan order (area order, entry piece
+/// first — deterministic, ADR-0006).
+///
+/// `/place template` writes the whole box, air included, so inside a box the
+/// piece's bytes decide and the world generator does not apply; outside every
+/// box the generator's [`Ambient`] does. Two proofs ask that one question — the
+/// ocean's `ambient_water`, and [`measure_fluid_escape`] — and it is a fact
+/// about the ASSEMBLED WORLD, not about the sea, which is why it lives on
+/// [`World`] rather than on [`Sea`]. It was a field of `Sea` first; a world
+/// under `horizon: void` therefore had no idea where its own content ended, and
+/// water that ran off the last piece met nothing that could judge it.
+pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
+    plan.areas
+        .iter()
+        .flat_map(|a| a.pieces.iter().map(|p| (p.prefab_id.clone(), p.bbox())))
+        .collect()
 }
 
 /// A collision/standability model of the assembled world (spec-0008 addendum),
@@ -806,6 +808,12 @@ impl Ambient {
 /// One declared lethal volume as the navigation model carries it: `(id, box)`,
 /// the box being inclusive world-space corners.
 type LethalRegion = (String, ([i32; 3], [i32; 3]));
+
+/// One placed piece as the built volume carries it: `(prefab id, box)`, the box
+/// being inclusive world-space corners. Same shape as [`LethalRegion`] and for
+/// the same reason — a proof that refuses over a region has to be able to NAME
+/// the region, or the author is sent to look at geometry that was never wrong.
+pub type BuiltPiece = (String, ([i32; 3], [i32; 3]));
 
 pub struct World {
     solid: BTreeSet<[i32; 3]>,
@@ -887,10 +895,19 @@ pub struct World {
     /// What the *unmodelled* columns contain (spec-0013 `horizon`). Defaults to
     /// [`Ambient::Void`] — the pre-0.6 world and every synthetic test world —
     /// and is set from the plan by [`World::from_plan`] /
-    /// [`World::with_ambient`]. Read only by [`verify_boundary_safety`]; it
-    /// deliberately does **not** feed the walkability sets, so routing,
-    /// standability and every other proof stay byte-identical.
+    /// [`World::with_ambient`]. Read only by [`verify_boundary_safety`] and
+    /// [`measure_fluid_escape`]; it deliberately does **not** feed the
+    /// walkability sets, so routing, standability and every other proof stay
+    /// byte-identical.
     ambient: Ambient,
+    /// **Where the content ends** ([`built_volume`]): every placed piece's
+    /// prefab id and inclusive world AABB. Empty on a synthetic test world,
+    /// which is the fail-CLOSED direction for [`measure_fluid_escape`] — a
+    /// world with no known built volume can prove nothing contained, rather than
+    /// proving everything contained. Set beside `ambient` by
+    /// [`World::with_ambient`], whose signature takes both so no call site can
+    /// set the premise and forget the extent.
+    built: Vec<BuiltPiece>,
 }
 
 /// The largest rise, in sixteenths of a block, a walker crosses **without
@@ -924,7 +941,7 @@ impl World {
             assembled.blocks,
             &assembled.open_gates,
         ))
-        .with_ambient(Ambient::of_plan(plan))
+        .with_ambient(Ambient::of_plan(plan), built_volume(plan))
         .with_lethal(plan)
         .with_world_load_seals(plan, seals)
     }
@@ -1052,6 +1069,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         }
     }
 
@@ -1105,15 +1123,42 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: Ambient::Void,
+            built: Vec::new(),
         }
     }
 
-    /// This world with its world-generator [`Ambient`] declared (spec-0013). The
-    /// occupancy sets are untouched — the ambient is a *premise*
-    /// ([`verify_boundary_safety`]), not geometry.
-    pub fn with_ambient(mut self, ambient: Ambient) -> Self {
+    /// This world with its world-generator [`Ambient`] declared (spec-0013) and
+    /// its [`built_volume`] recorded. The occupancy sets are untouched — both are
+    /// *premises* ([`verify_boundary_safety`], [`measure_fluid_escape`]), not
+    /// geometry.
+    ///
+    /// The two travel in one argument list on purpose. They answer the same
+    /// question from opposite sides — *what is in a column the content did not
+    /// build* and *which columns are those* — and a call site that declared the
+    /// first without the second is how a void world came to have no idea where
+    /// its own content ended.
+    pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
         self.ambient = ambient;
+        self.built = built;
         self
+    }
+
+    /// Whether `c` falls inside a placed piece's AABB — i.e. whether the
+    /// content, rather than the world generator, decided what is in that cell.
+    pub fn is_built(&self, c: [i32; 3]) -> bool {
+        self.built
+            .iter()
+            .any(|(_, (lo, hi))| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
+    }
+
+    /// Whether `c` is ambient sea water: inside the ocean generator's water
+    /// layers and not overwritten by a placed piece. Always `false` under
+    /// [`Ambient::Void`], which has no water anywhere.
+    fn ambient_water(&self, c: [i32; 3]) -> bool {
+        match &self.ambient {
+            Ambient::Void => false,
+            Ambient::Ocean(sea) => c[1] > sea.floor_top && c[1] <= sea.level && !self.is_built(c),
+        }
     }
 
     /// Build the occupancy model exactly like [`World::from_plan`], then add
@@ -1167,6 +1212,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         }
     }
 
@@ -1203,6 +1249,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         };
         for c in extra {
             if w.pinned.contains(c) {
@@ -1247,6 +1294,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         };
         for c in extra {
             w.solid.remove(c);
@@ -1316,6 +1364,7 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         };
         for c in &self.flood_written {
             w.flooded.remove(c);
@@ -1381,6 +1430,7 @@ impl World {
             flood_written: self.flood_written.clone(),
             flood_regions: self.flood_regions.clone(),
             ambient: self.ambient.clone(),
+            built: self.built.clone(),
         }
     }
 
@@ -1415,6 +1465,7 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: Ambient::Void,
+            built: Vec::new(),
         }
     }
 
@@ -1436,6 +1487,7 @@ impl World {
             flood_written: BTreeSet::new(),
             flood_regions: Vec::new(),
             ambient: Ambient::Void,
+            built: Vec::new(),
         }
     }
 
@@ -6289,7 +6341,7 @@ fn boundary_ocean(
     sea: &Sea,
 ) -> Result<(), NavError> {
     let level = sea.level;
-    let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world, sea) else {
+    let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world) else {
         return Ok(()); // nothing placed: open sea everywhere, nothing to strand
     };
     let w = (max_x - min_x + 1) as usize;
@@ -6299,7 +6351,7 @@ fn boundary_ocean(
     let blocked = |c: [i32; 3]| world.solid.contains(&c) || world.tall.contains(&c);
     let swimmable = |x: i32, z: i32| {
         let c = [x, level, z];
-        !blocked(c) && (world.flooded.contains(&c) || sea.ambient_water(c))
+        !blocked(c) && (world.flooded.contains(&c) || world.ambient_water(c))
     };
 
     // --- label the sea-surface bodies (deterministic scan + BFS) -------------
@@ -6434,7 +6486,7 @@ fn boundary_ocean(
 /// every modelled cell, inflated by [`OPEN_SEA_MARGIN`]. `None` when the world is
 /// completely empty. Beyond the window the ambient sea is uniform in every
 /// direction, so a body that reaches the edge is the open sea.
-fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
+fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
     let mut lo = [i32::MAX; 2];
     let mut hi = [i32::MIN; 2];
     let mut note = |x: i32, z: i32| {
@@ -6443,7 +6495,7 @@ fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
         hi[0] = hi[0].max(x);
         hi[1] = hi[1].max(z);
     };
-    for (bmin, bmax) in &sea.covered {
+    for (_, (bmin, bmax)) in &world.built {
         note(bmin[0], bmin[2]);
         note(bmax[0], bmax[2]);
     }
@@ -6459,6 +6511,186 @@ fn ocean_window(world: &World, sea: &Sea) -> Option<([i32; 2], [i32; 2])> {
         [lo[0] - OPEN_SEA_MARGIN, lo[1] - OPEN_SEA_MARGIN],
         [hi[0] + OPEN_SEA_MARGIN, hi[1] + OPEN_SEA_MARGIN],
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Fluid that leaves the built world (DW0318)
+// ---------------------------------------------------------------------------
+
+/// `DW0318`: **a body of fluid runs out of the built world**, stated against the
+/// world-generator [`Ambient`] the way [`DW_EDIT_BORDERS_VOID`] already is.
+///
+/// The piece-level containment rule (`DW0800`, `delve-grammar` /
+/// `delve-admit`) proves that every fluid source in a piece has something in
+/// each of the five cells it would run into — *within that piece's own bytes*.
+/// A run direction that leaves the piece's outer face it counts and explicitly
+/// does not judge, because what is beyond a face is not in those bytes:
+/// **whatever the piece is placed against decides where that water goes.** This
+/// is the check that decides it, and it is the reason that sentence is now true.
+///
+/// At placement the neighbour is known, and it is one of exactly three things:
+///
+/// * **another placed piece** — the water runs into cells that piece authored,
+///   and that piece's own `DW0800` governs them. Not a finding here.
+/// * **the ocean horizon's ambient** — the pinned superflat puts water from
+///   `floor_top+1` to sea level and stone below it in every column the content
+///   did not build, so a shore's water meets the sea it depicts. Not a finding:
+///   the same premise that makes the void branch of `DW0322` vacuous under
+///   `horizon: ocean` makes this one vacuous too.
+/// * **the void horizon's nothing** — and then the water falls out of the
+///   world. Vanilla runs it down, forever, on the server's own clock before any
+///   player arrives: an infinite waterfall off the edge of the map, in a delve
+///   nobody rendered it into. That is the finding.
+///
+/// It is the exact fluid analogue of [`crate::assembled::DW_GRAVITY_DESPAWN`]
+/// (`DW0313`), which fails the build when a placed *gravity* block falls out of
+/// a void world. The solid case was covered from the beginning; this is the
+/// fluid case, and the asymmetry is all that made it a hole rather than a
+/// policy.
+///
+/// Both branches **aggregate**, like `DW0322`: one report per run naming up to
+/// [`BOUNDARY_LIST_LIMIT`] cells plus the totals, so a one-cell dribble and a
+/// whole coastline pouring into nothing are distinguishable without re-probing.
+pub const DW_FLUID_LEAVES_WORLD: DwCode = DwCode::every_version("DW0318");
+
+/// **What the fluid-escape proof looked at**, so the verdict is readable as a
+/// measurement rather than as a silence (CLAUDE.md: every validation artifact
+/// states its binding count).
+///
+/// None of these three numbers is the length of the finding list:
+/// `pieces` is counted off the **plan** (how much world there is), `fluid_cells`
+/// off the **assembled occupancy model** (how much water there is), and only
+/// `outside` is this check's own conclusion. A build in which `fluid_cells` is
+/// zero examined nothing, and says so.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FluidEscape {
+    /// The horizon the verdict is stated against — `"void"` or `"ocean"`.
+    pub horizon: &'static str,
+    /// Placed pieces forming the built volume ([`World::built`]).
+    pub pieces: usize,
+    /// Every fluid cell in the assembled world: prefab-authored sources plus the
+    /// reach the shared flood model gives them
+    /// ([`crate::assembled::Occupancy::flooded`]). This is the binding count.
+    pub fluid_cells: usize,
+    /// The subset of those cells lying outside **every** placed piece's AABB,
+    /// sorted (ADR-0006). Under `void` this is the violation set; under `ocean`
+    /// it is water that reached the ambient sea, and is reported and not judged.
+    pub outside: Vec<[i32; 3]>,
+    /// The placed pieces whose AABB touches an escaped cell — where to fix it.
+    /// Fluid only ever moves cell to cell, so every escaped cell set is
+    /// 6-connected back into the volume it came from; sorted, deduplicated.
+    pub from_pieces: Vec<String>,
+}
+
+/// Measure where the assembled world's fluid ended up relative to the built
+/// volume. Pure: it re-derives nothing, reading `world.flooded` — the one
+/// placement-time fluid model this repo has ([`crate::assembled::flood`]'s
+/// product, via [`crate::assembled::occupancy_of`]) — and `world.built`.
+pub fn measure_fluid_escape(world: &World) -> FluidEscape {
+    let outside: Vec<[i32; 3]> = world
+        .flooded
+        .iter()
+        .copied()
+        .filter(|&c| !world.is_built(c))
+        .collect();
+    // Attribution: the piece an escaped cell is 6-adjacent to. Deterministic —
+    // `outside` is sorted (it comes from a `BTreeSet`) and the neighbour offsets
+    // are a fixed list, collected through a `BTreeSet`.
+    const NEIGHBOURS: [[i32; 3]; 6] = [
+        [-1, 0, 0],
+        [1, 0, 0],
+        [0, -1, 0],
+        [0, 1, 0],
+        [0, 0, -1],
+        [0, 0, 1],
+    ];
+    let mut from: BTreeSet<String> = BTreeSet::new();
+    for &c in &outside {
+        for d in NEIGHBOURS {
+            let n = [c[0] + d[0], c[1] + d[1], c[2] + d[2]];
+            for (id, (lo, hi)) in &world.built {
+                if (0..3).all(|a| lo[a] <= n[a] && n[a] <= hi[a]) {
+                    from.insert(id.clone());
+                }
+            }
+        }
+    }
+    FluidEscape {
+        horizon: world.ambient.name(),
+        pieces: world.built.len(),
+        fluid_cells: world.flooded.len(),
+        outside,
+        from_pieces: from.into_iter().collect(),
+    }
+}
+
+impl FluidEscape {
+    /// The `DW0318` violation, or `None`. A finding **only** under
+    /// [`Ambient::Void`]: under `ocean` the water met the sea, which is what a
+    /// shoreline piece's water is for.
+    pub fn finding(&self) -> Option<NavError> {
+        if self.horizon != "void" || self.outside.is_empty() {
+            return None;
+        }
+        let columns: BTreeSet<(i32, i32)> = self.outside.iter().map(|c| (c[0], c[2])).collect();
+        let lowest = self.outside.iter().map(|c| c[1]).min().unwrap_or(0);
+        let sample: Vec<String> = self
+            .outside
+            .iter()
+            .take(BOUNDARY_LIST_LIMIT)
+            .map(|c| format!("{c:?}"))
+            .collect();
+        let more = self.outside.len().saturating_sub(sample.len());
+        let blame = if self.from_pieces.is_empty() {
+            "no placed piece adjoins them".to_string()
+        } else {
+            format!("from placed piece(s) {}", self.from_pieces.join(", "))
+        };
+        Some(NavError {
+            code: DW_FLUID_LEAVES_WORLD,
+            message: format!(
+                "fluid leaves the built world: {n} fluid cell(s) in {cols} column(s) lie outside \
+                 every placed piece, {blame}. Under `horizon: void` a column the content did not \
+                 build is bottomless, so this water is not a pond that overhangs an edge — it is \
+                 a waterfall that runs down forever on the server's own clock, before any player \
+                 arrives, and nothing that draws the delve draws it. Cells: {sample}{extra}; the \
+                 model stops marking at y={lowest} (the lowest cell it holds), the game does not \
+                 stop at all. Examined {cells} fluid cell(s) across {pieces} placed piece(s). \
+                 WHERE to fix: the prefab or tileset generator that authored this water, or the \
+                 placement that put an open face against nothing — the piece-level rule counts a \
+                 run leaving a face and deliberately does not judge it, because only the \
+                 placement knows what is on the other side. HOW: wall the face the water runs \
+                 out of, pull the body back a cell, place a piece against that face, or declare \
+                 `horizon: ocean` if this water is meant to be a sea. Do NOT delete the water to \
+                 silence this: an authored pond is first-class content.",
+                n = self.outside.len(),
+                cols = columns.len(),
+                sample = sample.join(", "),
+                extra = if more > 0 {
+                    format!(" (+{more} more)")
+                } else {
+                    String::new()
+                },
+                cells = self.fluid_cells,
+                pieces = self.pieces,
+            ),
+        })
+    }
+
+    /// The binding ledger (`validation/fluid-escape.json`): what was examined,
+    /// not only what was found. Emitted for every campaign that assembles a
+    /// world, so a zero binding is a number a reader can act on rather than a
+    /// check nobody notices did nothing.
+    pub fn ledger(&self) -> serde_json::Value {
+        serde_json::json!({
+            "horizon": self.horizon,
+            "pieces_examined": self.pieces,
+            "fluid_cells_examined": self.fluid_cells,
+            "cells_outside_built_volume": self.outside.len(),
+            "from_pieces": self.from_pieces,
+            "verdict": if self.finding().is_some() { "fail" } else { "pass" },
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -6816,6 +7048,225 @@ mod tests {
         }]
     }
 
+    // -----------------------------------------------------------------------
+    // DW0318 — fluid that leaves the built world
+    // -----------------------------------------------------------------------
+
+    /// A 3x3 solid plate at y=63 with a water source standing on its `+x` edge
+    /// column, and a built volume covering exactly the plate. Vanilla runs that
+    /// source off the plate and down: the shape of every shoreline piece placed
+    /// against nothing.
+    fn plate_with_a_source_at_the_edge() -> World {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                blocks.insert([x, 63, z], "minecraft:stone".to_string());
+            }
+        }
+        blocks.insert([2, 64, 1], "minecraft:water".to_string());
+        let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
+        World::from_occupancy(occ)
+    }
+
+    /// The plate's own AABB — one "piece" covering the built cells and nothing
+    /// beyond them.
+    fn plate_built() -> Vec<(String, Bbox)> {
+        vec![("prefab/plate".to_string(), ([0, 63, 0], [2, 64, 2]))]
+    }
+
+    /// **The whole rule, both horizons, one geometry.** The piece is identical;
+    /// only the world-generator premise changes, exactly as `DW0322` is stated.
+    #[test]
+    fn fluid_off_the_built_world_is_a_finding_under_void_and_not_under_ocean_dw0318() {
+        // void: the water runs off the plate into columns nothing built.
+        let void = plate_with_a_source_at_the_edge().with_ambient(Ambient::Void, plate_built());
+        let m = measure_fluid_escape(&void);
+        assert_eq!(m.horizon, "void");
+        assert_eq!(m.pieces, 1, "the built volume is the plate");
+        assert!(
+            m.fluid_cells > m.outside.len(),
+            "the binding count is the world's water ({}), not the finding list ({})",
+            m.fluid_cells,
+            m.outside.len()
+        );
+        assert!(!m.outside.is_empty(), "water left the plate");
+        assert_eq!(
+            m.from_pieces,
+            vec!["prefab/plate".to_string()],
+            "the escape is attributed to the piece it came from"
+        );
+        let err = m.finding().expect("a void world does not hold this water");
+        assert_eq!(err.code, DW_FLUID_LEAVES_WORLD);
+        assert!(
+            err.message.contains("DW0318") || err.code.id() == "DW0318",
+            "the code is DW0318"
+        );
+        assert!(
+            err.message.contains("fluid leaves the built world"),
+            "names the hazard:\n{}",
+            err.message
+        );
+
+        // ocean: the same water meets the sea it depicts. Same cells, no finding.
+        let ocean = plate_with_a_source_at_the_edge().with_ambient(
+            Ambient::Ocean(Sea {
+                level: 62,
+                floor_top: 54,
+            }),
+            plate_built(),
+        );
+        let o = measure_fluid_escape(&ocean);
+        assert_eq!(o.horizon, "ocean");
+        assert_eq!(
+            o.outside, m.outside,
+            "the geometry is identical — only the premise moved"
+        );
+        assert!(
+            o.finding().is_none(),
+            "an ocean horizon puts sea under every column the content did not build"
+        );
+    }
+
+    /// Water that stays inside the pieces is not a finding, under either
+    /// horizon: a walled pond is first-class content, and the piece's own
+    /// `DW0800` already governs it.
+    #[test]
+    fn fluid_contained_within_the_built_volume_is_not_a_finding() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        // A 5x5 stone dish with a 3x3 rim: the source cannot get out.
+        for x in 0..5 {
+            for z in 0..5 {
+                blocks.insert([x, 63, z], "minecraft:stone".to_string());
+            }
+        }
+        for x in 0..5 {
+            for z in 0..5 {
+                if (1..4).contains(&x) && (1..4).contains(&z) {
+                    continue;
+                }
+                blocks.insert([x, 64, z], "minecraft:stone".to_string());
+            }
+        }
+        blocks.insert([2, 64, 2], "minecraft:water".to_string());
+        let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let world = World::from_occupancy(occ).with_ambient(
+            Ambient::Void,
+            vec![("prefab/dish".to_string(), ([0, 63, 0], [4, 64, 4]))],
+        );
+        let m = measure_fluid_escape(&world);
+        assert!(m.fluid_cells > 0, "the check BOUND to this world's water");
+        assert!(m.outside.is_empty(), "the dish holds it: {:?}", m.outside);
+        assert!(m.finding().is_none());
+        assert_eq!(m.ledger()["verdict"], "pass");
+        assert_eq!(m.ledger()["fluid_cells_examined"], m.fluid_cells);
+    }
+
+    /// Water that runs from one piece into the piece placed against it is the
+    /// deferral's other answer, and it must be a pass: the neighbour's own bytes
+    /// decide those cells, and the neighbour's own `DW0800` governs them.
+    #[test]
+    fn fluid_running_into_the_piece_next_door_is_that_pieces_business() {
+        let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..6 {
+            for z in 0..3 {
+                blocks.insert([x, 63, z], "minecraft:stone".to_string());
+            }
+        }
+        // A rim around the whole 6x3 slab so nothing leaves the pair.
+        for x in -1..7 {
+            for z in -1..4 {
+                if (0..6).contains(&x) && (0..3).contains(&z) {
+                    continue;
+                }
+                blocks.insert([x, 63, z], "minecraft:stone".to_string());
+                blocks.insert([x, 64, z], "minecraft:stone".to_string());
+                blocks.insert([x, 65, z], "minecraft:stone".to_string());
+            }
+        }
+        blocks.insert([2, 64, 1], "minecraft:water".to_string());
+        let occ = crate::assembled::occupancy_of(blocks, &BTreeSet::new());
+        let world = World::from_occupancy(occ).with_ambient(
+            Ambient::Void,
+            vec![
+                ("prefab/west".to_string(), ([-1, 63, -1], [2, 65, 3])),
+                ("prefab/east".to_string(), ([3, 63, -1], [6, 65, 3])),
+            ],
+        );
+        let m = measure_fluid_escape(&world);
+        assert_eq!(m.pieces, 2);
+        assert!(m.fluid_cells > 1, "the water spread across the seam");
+        assert!(
+            m.outside.is_empty(),
+            "water in the piece next door is that piece's business: {:?}",
+            m.outside
+        );
+    }
+
+    /// **The escape hatch a synthetic world could have opened, closed by
+    /// direction.** A `World` with no built volume knows of no content at all,
+    /// so it cannot prove any water contained. It must therefore report EVERY
+    /// fluid cell as outside — fail closed — rather than report none and pass.
+    /// The opposite default is the one that would have shipped: an empty list
+    /// read as "everything is inside".
+    #[test]
+    fn a_world_with_no_built_volume_proves_nothing_contained() {
+        let world = plate_with_a_source_at_the_edge();
+        let m = measure_fluid_escape(&world);
+        assert_eq!(m.pieces, 0, "nothing declared where the content is");
+        assert_eq!(
+            m.outside.len(),
+            m.fluid_cells,
+            "with no built volume, no cell can be shown contained"
+        );
+        assert!(
+            m.from_pieces.is_empty(),
+            "and nothing can be blamed for it either"
+        );
+        assert!(m.finding().is_some(), "fails closed under void");
+    }
+
+    /// **Why `DW0318` runs before `DW0322`, demonstrated rather than asserted.**
+    ///
+    /// `boundary_void` counts a flooded cell as fall-arrest, so a bottomless
+    /// column with a waterfall running down it reads as *supported*. The same
+    /// plate is a `DW0322` void drop when it is dry and passes `DW0322` when its
+    /// edge is leaking — the escaping water hides the hole it made. Only
+    /// `DW0318` sees it, which is why it is asked first.
+    #[test]
+    fn escaping_water_masks_the_boundary_proof_which_is_why_it_runs_first() {
+        // Dry: every rim cell borders a bottomless column → DW0322.
+        let mut dry: BTreeMap<[i32; 3], String> = BTreeMap::new();
+        for x in 0..3 {
+            for z in 0..3 {
+                dry.insert([x, 63, z], "minecraft:stone".to_string());
+            }
+        }
+        let dry_world = World::from_occupancy(crate::assembled::occupancy_of(
+            dry.clone(),
+            &BTreeSet::new(),
+        ))
+        .with_ambient(Ambient::Void, plate_built());
+        let err = verify_boundary_safety(&dry_world, &roots([1, 64, 1]))
+            .expect_err("a dry plate edge is a void drop");
+        assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
+
+        // Wet: one source on the plate floods every surrounding column, and
+        // `col_min` now finds arrest in each of them.
+        let mut wet = dry;
+        wet.insert([1, 64, 1], "minecraft:water".to_string());
+        let wet_world =
+            World::from_occupancy(crate::assembled::occupancy_of(wet, &BTreeSet::new()))
+                .with_ambient(Ambient::Void, plate_built());
+        assert!(
+            verify_boundary_safety(&wet_world, &roots([1, 64, 1])).is_ok(),
+            "the leak silences the boundary proof — this is the masking, not a pass"
+        );
+        assert!(
+            measure_fluid_escape(&wet_world).finding().is_some(),
+            "and DW0318 is the only proof left that sees it"
+        );
+    }
+
     /// Boundary safety (spec-0017 invariant 4): a walkable platform edge whose
     /// neighbour column has NOTHING below is a void drop → `DW0322`; ringing the
     /// platform with a 2-high (unjumpable) rim, or giving the neighbour column
@@ -6966,14 +7417,26 @@ mod tests {
     /// superflat `crate::plan::SEA_LEVEL` / `SEA_FLOOR_TOP_Y`), with `covered`
     /// standing in for the placed pieces' AABBs.
     fn ocean(solid: BTreeSet<[i32; 3]>, flooded: BTreeSet<[i32; 3]>, covered: Vec<Bbox>) -> World {
-        World::from_solid_and_flooded(solid, flooded).with_ambient(Ambient::Ocean(Sea {
-            level: 62,
-            floor_top: 54,
-            covered,
-        }))
+        World::from_solid_and_flooded(solid, flooded).with_ambient(
+            Ambient::Ocean(Sea {
+                level: 62,
+                floor_top: 54,
+            }),
+            built(covered),
+        )
     }
 
-    /// An inclusive world AABB, as `Sea::covered` carries it.
+    /// A built volume from bare AABBs, naming each box after its index — a
+    /// synthetic stand-in for the prefab ids [`built_volume`] reads off a plan.
+    fn built(boxes: Vec<Bbox>) -> Vec<(String, Bbox)> {
+        boxes
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| (format!("piece-{i}"), b))
+            .collect()
+    }
+
+    /// An inclusive world AABB, as [`World::built`] carries it.
     type Bbox = ([i32; 3], [i32; 3]);
 
     /// A `size`×`size` island of one solid plate whose top block is at `top`,
@@ -9842,11 +10305,13 @@ mod tests {
             Some(&8),
             "the slab course must be modelled as a half-height floor"
         );
-        let world = World::from_occupancy(occ).with_ambient(Ambient::Ocean(Sea {
-            level: 62,
-            floor_top: 54,
-            covered: vec![([0, 60, 0], [7, 62, 7])],
-        }));
+        let world = World::from_occupancy(occ).with_ambient(
+            Ambient::Ocean(Sea {
+                level: 62,
+                floor_top: 54,
+            }),
+            vec![("island".to_string(), ([0, 60, 0], [7, 62, 7]))],
+        );
 
         // …and BOTH axes are live on the same World: the step rule sees the true
         // feet height (62 + 0.5 → 62·16 + 8 sixteenths) …

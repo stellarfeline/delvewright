@@ -8,9 +8,9 @@
         "prefab": "prefab/hello-room"
       },
       {
-        "id": "area/galley",
-        "name": "The Galley",
-        "prefab": "prefab/island-galley"
+        "id": "area/landing",
+        "name": "The Landing",
+        "prefab": "prefab/cave-shore"
       }
     ],
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",

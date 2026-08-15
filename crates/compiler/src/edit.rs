@@ -441,17 +441,18 @@ fn check_batch_invariants(
     // hazard is stranding instead (`nav::verify_boundary_safety`). Deriving it
     // from the plan here is what keeps that proof from testing a false premise.
     let ambient = crate::nav::Ambient::of_plan(plan);
+    let built = crate::nav::built_volume(plan);
     let world = crate::nav::World::from_occupancy(assembled::occupancy_of(
         assembled.blocks.clone(),
         &assembled.open_gates,
     ))
-    .with_ambient(ambient.clone());
+    .with_ambient(ambient.clone(), built.clone());
     let with_fixtures = if relight.extra_solid.is_empty() {
         world
     } else {
         let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
         occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::nav::World::from_occupancy(occ).with_ambient(ambient)
+        crate::nav::World::from_occupancy(occ).with_ambient(ambient, built)
     };
     let ctx = |e: crate::nav::NavError| EditError {
         code: e.code,
@@ -460,6 +461,22 @@ fn check_batch_invariants(
     if crate::nav::needs_world(plan) {
         crate::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
+    }
+    // `DW0318` BEFORE the boundary proof, and the order is load-bearing rather
+    // than tidy: `nav::boundary_void` counts a flooded cell as fall-arrest, so a
+    // bottomless column with water pouring down it reads as *supported* and the
+    // boundary proof goes quiet on exactly the columns the water escaped
+    // through. Escaping fluid is therefore a false premise of the proof that
+    // runs next, the same way an unsettled gravity block is a false premise of
+    // everything downstream of `DW0313`. Clear it first, then ask about the
+    // player.
+    //
+    // A batch can create the condition either way round — `fill` with a fluid
+    // block, or a `carve` that opens the wall which was holding one — and the
+    // flood model re-runs over the edited world every batch regardless. Naming
+    // the batch is what this call site adds over the stage-10 floor.
+    if let Some(e) = crate::nav::measure_fluid_escape(&with_fixtures).finding() {
+        return Err(ctx(e));
     }
     let starts = anchor_starts(plan);
     crate::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
