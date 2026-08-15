@@ -146,6 +146,21 @@ DEFAULT_PRESSURE_GIB = 25
 
 LEASE_FILE = "dw-lease.json"
 
+# Links that are SUPPOSED to dangle. A running browser writes these four as
+# sentinels whose "target" is a hostname, a process id or a version string —
+# they were never paths and nothing resolves them. Reporting them as findings
+# would put six lines of noise above the one real dead dispatch link, and a
+# finding list that is mostly noise teaches its reader that the red means
+# nothing. They are counted and the count is printed, so the filter itself is
+# visible: a silently dropped class is how the next real one gets dropped too.
+BENIGN_DANGLING = {
+    "SingletonLock",
+    "SingletonCookie",
+    "SingletonSocket",
+    "RunningChromeVersion",
+    "lockfile",
+}
+
 
 # ---------------------------------------------------------------------------
 # process helpers
@@ -405,6 +420,7 @@ class LinkIndex:
     def __init__(self) -> None:
         self.links: list[tuple[Path, Path]] = []  # (link location, resolved target)
         self.broken: list[tuple[Path, str]] = []  # (link location, raw target)
+        self.benign_broken = 0
         self.roots: list[Path] = []
         self.examined = 0
 
@@ -432,7 +448,10 @@ class LinkIndex:
                     target = raw if os.path.isabs(raw) else str(here / raw)
                     resolved = real(target)
                     if not os.path.exists(str(resolved)):
-                        self.broken.append((p, raw))
+                        if p.name in BENIGN_DANGLING:
+                            self.benign_broken += 1
+                        else:
+                            self.broken.append((p, raw))
                     else:
                         self.links.append((p, resolved))
                 dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS and not (here / d).is_symlink()]
@@ -797,6 +816,12 @@ def render(
                 file=out,
             )
 
+    if index.benign_broken:
+        print(
+            f"\n  {index.benign_broken} dangling link(s) that are supposed to dangle "
+            "(browser sentinels) — counted, not listed",
+            file=out,
+        )
     if index.broken:
         print(f"\n  FINDING — {len(index.broken)} DANGLING SYMLINK(S):", file=out)
         for link, raw in index.broken:

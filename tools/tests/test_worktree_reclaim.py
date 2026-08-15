@@ -366,6 +366,25 @@ def test_dangling_links_are_loud(fx, tmp_path):
     assert "campaigns" in out
 
 
+def test_a_link_that_is_supposed_to_dangle_is_counted_not_listed(fx, tmp_path):
+    """A finding list that is mostly noise teaches its reader to skip it.
+
+    A running browser leaves sentinels whose target is a process id or a
+    hostname. They are filtered by name, counted, and the count printed — and a
+    real dead dispatch link beside them is still reported in full.
+    """
+    live = fx.worktree("wt-live", "inflight")
+    (live / "SingletonLock").symlink_to("Mac-55890")
+    (live / "RunningChromeVersion").symlink_to("151.0.7922.108:1")
+    (live / "campaigns").symlink_to(fx.scratch / "content-deleted-by-a-hand-sweep")
+
+    out = sweep(fx, fake_gh(tmp_path, []))
+    assert "2 dangling link(s) that are supposed to dangle" in out
+    assert "FINDING — 1 DANGLING SYMLINK(S)" in out
+    assert "SingletonLock" not in out.split("FINDING")[1]
+    assert "campaigns" in out.split("FINDING")[1]
+
+
 def test_the_reachability_key_states_its_binding(fx, tmp_path):
     fx.worktree("wt-landed", "landed")
     out = sweep(fx, fake_gh(tmp_path, []))
