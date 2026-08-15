@@ -1,4 +1,4 @@
-//! The whole-map release panorama (`delve-render panorama`).
+//! The whole-map release panorama (`delvec panorama`).
 //!
 //! Every content release ships one 45° oblique view of the entire delve (owner
 //! decision, 2026-08-06). The camera for it is *computed from the layout*, not
@@ -38,8 +38,8 @@
 //! (`scene::water_world`) — see those docs for why mixing the two sources
 //! leaves a seam.
 
-use crate::diag::Diagnostic;
-use crate::scene::{
+use crate::view::diag::Diagnostic;
+use crate::view::scene::{
     self, ChunkyCamera, ChunkyScene, ChunkySun, Orientation, WorldRef, Xyz, chunky_orientation,
 };
 
@@ -252,7 +252,7 @@ impl Default for PanoramaOptions {
 }
 
 /// Emit the whole-map panorama scene for a `render-plan.json`. Returns
-/// `(filename, bytes)`; byte-deterministic like [`crate::scene`].
+/// `(filename, bytes)`; byte-deterministic like [`crate::view::scene`].
 pub fn panorama_from_plan(
     plan_json: &[u8],
     opts: &PanoramaOptions,
@@ -449,8 +449,8 @@ mod tests {
         }
     }
 
-    const MINI: &[u8] = include_bytes!("../tests/fixtures/render-plan-mini.json");
-    const OCEAN: &[u8] = include_bytes!("../tests/fixtures/render-plan-ocean.json");
+    const MINI: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-mini.json");
+    const OCEAN: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-ocean.json");
 
     #[test]
     fn scene_loads_only_the_layouts_own_chunks() {
@@ -508,6 +508,10 @@ mod tests {
     #[test]
     fn malformed_plan_json_is_dw0721() {
         let err = panorama_from_plan(b"not json", &PanoramaOptions::default()).unwrap_err();
-        assert_eq!(err.code, crate::diag::DW_INPUT, "expected DW0721: {err:?}");
+        assert_eq!(
+            err.code,
+            crate::view::diag::DW_INPUT,
+            "expected DW0721: {err:?}"
+        );
     }
 }

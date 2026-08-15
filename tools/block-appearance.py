@@ -78,7 +78,7 @@ import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-REGISTRY = REPO / "crates" / "compiler" / "data" / "blocks-1.21.11.json"
+REGISTRY = REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
 CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
 
 # Generation-time working material only — gitignored, never shipped, and unable
@@ -776,10 +776,24 @@ def program_mixes(doc: dict) -> list[tuple[str, list[tuple[str, float]]]]:
     on any `fill`. Reading only the named roles would leave every inline mix
     unmeasured — the same shape as a walk that enumerates three of five effect
     roots.
+
+    A paint written in the scope's own axis frame is that same string or list
+    wrapped as `{"local": ...}`. The frame decides which world direction a
+    property names; it moves no block and changes no colour, so a local paint is
+    unwrapped and measured exactly like a bare one. Skipping the wrapper instead
+    is how a program whose whole palette is local reports NOTHING and prints the
+    shelf.
     """
     out: list[tuple[str, list[tuple[str, float]]]] = []
 
+    def unwrap(value):
+        """A `{"local": ...}` paint is its inner states; anything else is itself."""
+        if isinstance(value, dict) and "local" in value:
+            return value["local"]
+        return value
+
     def paint(label: str, value) -> None:
+        value = unwrap(value)
         if isinstance(value, str):
             out.append((label, [(base_block(value), 1.0)]))
         elif isinstance(value, list):
@@ -795,9 +809,13 @@ def program_mixes(doc: dict) -> list[tuple[str, list[tuple[str, float]]]]:
     for role, value in sorted((doc.get("palette") or {}).items()):
         paint(f"palette.{role}", value)
 
+    def is_paint(material) -> bool:
+        """An inline paint, as against a `{"role": ...}` reference to a named one."""
+        return isinstance(unwrap(material), (str, list))
+
     def walk(node, path: str) -> None:
         if isinstance(node, dict):
-            if node.get("op") == "fill" and isinstance(node.get("material"), (str, list)):
+            if node.get("op") == "fill" and is_paint(node.get("material")):
                 paint(f"fill@{path}", node["material"])
             for key in sorted(node):
                 walk(node[key], f"{path}/{key}")
@@ -1287,7 +1305,13 @@ def main(argv: list[str]) -> int:
     if args.program:
         doc = json.loads(args.program.read_text())
         mixes += program_mixes(doc)
-    if mixes:
+    # Asking for a mix report and getting none back is the finding, so the report
+    # is printed on the REQUEST, never on there being something to say. Gating it
+    # on a non-empty list left `print_mix_report`'s zero-binding finding — already
+    # written, already correct — with nothing that could ever invoke it, and a
+    # program whose palette this reader did not understand fell through to the
+    # whole-shelf listing and exited 0.
+    if mixes or args.mix or args.program:
         reports = [mix_report(name, members, by_id) for name, members in mixes]
         if args.json:
             multi = sum(1 for r in reports if r["member_count"] >= 2)

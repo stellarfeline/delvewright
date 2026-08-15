@@ -29,6 +29,7 @@ delvec schema --stage all               # the JSON Schema every stage is written
 delvec validate <campaign-dir>          # schema + cross-document reference checks
 delvec analyze  <campaign-dir>          # + quest-graph reachability and deadlock proofs
 delvec build    <campaign-dir> -o out   # datapack, world, and server assets
+delvec viewer   <prefab.nbt>   -o page.html   # look at a room before you ship it
 ```
 
 `build` implies `analyze`, which implies `validate`. `<campaign-dir>` holds one
@@ -52,6 +53,16 @@ one with `--prefabs <dir>`.
 | `blocking-chart` | Per-elevation cutaway floor plans of every area. |
 | `edit` | Replay the world-edit script, re-proving the invariants per batch. |
 | `calibrate` | Turn a harvested rehearsal report into camera DSL patches. |
+| `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
+| `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
+| `scene` | Chunky scene descriptions for every planned shot of a build. |
+| `panorama` | One 45° oblique scene framing the whole map. |
+| `contact-sheet` | Many candidate renders laid out on one page to choose from. |
+| `index` | The shot list as (image, expectation) pairs, for review. |
+
+The last six read textures from your own Minecraft client jar, which is never
+downloaded, bundled or redistributed by this tool. Point them at it with
+`--textures <jar>`, or set `DELVEWRIGHT_CLIENT_JAR`.
 
 Every problem is reported as a stable `DW####` code with a severity, the stage,
 and a path into the document. `--json` writes one JSON object per diagnostic,

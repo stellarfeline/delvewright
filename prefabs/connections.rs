@@ -49,13 +49,13 @@ use crate::invariants::Cells;
 /// The pinned block registry — legal property names and values per block.
 /// Source-included the same way this file is (see `invariants.rs`: two readers
 /// of one file is not two authorities).
-const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/compiler/data/blocks-1.21.11.json");
+const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
 
 /// Per block, the properties its own blockstate definition's `multipart`
 /// selectors name — Mojang's answer to "which properties carry this block's
 /// shape", never a hand-kept id list. `DW0735` fires on exactly this class.
 const SHAPE_PROPS_JSON: &str =
-    include_str!("../crates/compiler/data/blockstate-shape-props-1.21.11.json");
+    include_str!("../crates/dsl/data/blockstate-shape-props-1.21.11.json");
 
 /// Per block, its **form** (shape class), derived from vanilla's own block
 /// tags. `fence`, `wall` and `pane` are the three connection classes whose

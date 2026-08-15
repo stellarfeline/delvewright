@@ -69,7 +69,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-REGISTRY = REPO / "crates" / "compiler" / "data" / "blocks-1.21.11.json"
+REGISTRY = REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
 
 # misode/mcmeta @ 1.21.11-summary (PROVENANCE.md's ref/commit), retrieved 2026-08-13.
 SOURCE_SHA256 = {

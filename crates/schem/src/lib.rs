@@ -17,7 +17,6 @@
 //! fields deletes the rest on read-modify-write and reports nothing, and a copy
 //! that refuses what it does not model turns a forward addition into an outage.
 
-pub mod blocks;
 pub mod convert;
 pub mod diag;
 pub mod fixtures;
@@ -26,8 +25,17 @@ pub mod nav;
 pub mod nbt;
 pub mod prefab;
 pub mod schematic;
-pub mod split;
 pub mod stairs;
+
+// The block-state registry and the tile-set manifest are DOCUMENT-and-REGISTRY
+// definitions, so they live in `delvewright-dsl` beside `prefab` and `registry`
+// for the same reason `prefab` does: `delvec` is published to crates.io and may
+// only depend on published crates, and the CPU render surface it now carries
+// (ADR-0021 §1) reads both. They are re-exported here, unchanged, so that
+// `delvewright_schem::blocks` and `delvewright_schem::split` keep naming the one
+// definition every emitter already checks against — one authority, two spellings,
+// which is the same arrangement `prefab` has had since spec-0007.
+pub use delvewright_dsl::{blocks, split};
 
 use diag::{DW_DATAVERSION, DW_SPLIT, Diagnostic};
 use schematic::ParseError;

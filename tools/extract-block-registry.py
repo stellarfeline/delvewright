@@ -27,7 +27,7 @@ Reproduce (the same shape as `tools/extract-sound-registry.py`):
     curl -sSL -o /tmp/blocks.min.json \\
       https://raw.githubusercontent.com/misode/mcmeta/1.21.11-summary/blocks/data.min.json
     python3 tools/extract-block-registry.py /tmp/blocks.min.json \\
-      crates/compiler/data/blocks-1.21.11.json
+      crates/dsl/data/blocks-1.21.11.json
 
 The source SHA-256 is pinned below and checked: a regeneration that silently
 picked up a different version of the game would otherwise be invisible.

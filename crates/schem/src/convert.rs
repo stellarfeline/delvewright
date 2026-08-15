@@ -373,3 +373,21 @@ pub fn read_structure(bytes: &[u8]) -> Result<StructureView, String> {
         block_entities,
     })
 }
+
+#[cfg(test)]
+mod data_version_pin {
+    /// The pinned DataVersion the block registry judges against and the one this
+    /// emitter stamps into every structure template are ONE fact. The registry
+    /// moved to `delvewright-dsl` (ADR-0021 §1 made it reachable from the
+    /// published `delvec`), so this crate is now the first place both constants
+    /// are in scope at once — which is why the assertion lives here rather than
+    /// beside either of them. Losing it would let the emitter stamp a version the
+    /// registry does not judge at, silently.
+    #[test]
+    fn the_pin_data_version_matches_the_emitter() {
+        assert_eq!(
+            delvewright_dsl::blocks::PIN_DATA_VERSION,
+            super::DATA_VERSION
+        );
+    }
+}

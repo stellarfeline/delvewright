@@ -27,12 +27,12 @@
 use std::collections::BTreeMap;
 
 /// The pinned block registry, as its ids. Read straight out of the vendored
-/// file (`crates/compiler/data/blocks-1.21.11.json`, `data/PROVENANCE.md`)
+/// file (`crates/dsl/data/blocks-1.21.11.json`, `data/PROVENANCE.md`)
 /// rather than through either crate's parser, so the corpus is not supplied by
 /// one of the two things under test.
 fn pinned_block_ids() -> Vec<String> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../compiler/data/blocks-1.21.11.json");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../dsl/data/blocks-1.21.11.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("{} is not readable: {e}", path.display()));
     let map: BTreeMap<String, serde_json::Value> =

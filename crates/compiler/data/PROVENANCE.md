@@ -4,6 +4,15 @@ These files pin the game data the compiler validates against (ADR-0009 = MC
 1.21.11, ADR-0011 = vendored command tree + item registry). They change only if
 ADR-0009's revisit triggers fire.
 
+**The block tables live in `crates/dsl/data/`**, and this file is their
+provenance too — one record for one pinned game version, rather than a second
+copy that can fall a version behind. `blocks-1.21.11.json`,
+`blockstate-shape-props-1.21.11.json` and `block-defaults-1.21.11.json` sit
+beside the module that reads them (`delvewright_dsl::blocks`, re-exported as
+`delvewright_schem::blocks`), because `delvec` is published to crates.io and may
+only depend on published crates — and the CPU render surface it carries reads the
+block registry. Every reproduce command below names the path it writes.
+
 ## Route taken
 
 Mojang's official data generator was **not** run locally: it requires Java 21 and
@@ -65,7 +74,7 @@ not third-party reconstructions.
   `minecraft:diamond` passes as a block id). Widening `DW0193` onto this file is
   a `dsl_version`-scale change and is deliberately NOT done here.
   **Reproduce it**: `python3 tools/extract-block-registry.py
-  <blocks/data.min.json> crates/compiler/data/blocks-1.21.11.json`. The script
+  <blocks/data.min.json> crates/dsl/data/blocks-1.21.11.json`. The script
   pins and checks the source SHA-256 and the block count.
 
 - **`blockstate-shape-props-1.21.11.json`** — per block, the properties named by
@@ -82,7 +91,7 @@ not third-party reconstructions.
   Like the font metrics below, the client jar is EULA-bound and never
   committed; what is committed is the derived table of property names.
   **Reproduce it**: `python3 tools/extract-shape-properties.py
-  <minecraft-1.21.11-client.jar> crates/compiler/data/blockstate-shape-props-1.21.11.json`.
+  <minecraft-1.21.11-client.jar> crates/dsl/data/blockstate-shape-props-1.21.11.json`.
   The script pins the jar's `version.json` to `1.21.11` / DataVersion 4671 and
   cross-checks every derived property against `blocks-1.21.11.json` — a
   selector naming a property the registry does not define is a refusal.
@@ -109,7 +118,7 @@ not third-party reconstructions.
   when it is not written. Consumed by `delvewright_schem::blocks`
   (`default_state` / `unwritten`) and through it by the prefab review page.
   **Reproduce it**: `python3 tools/extract-block-defaults.py
-  <blocks/data.min.json> crates/compiler/data/block-defaults-1.21.11.json`. The
+  <blocks/data.min.json> crates/dsl/data/block-defaults-1.21.11.json`. The
   script pins and checks the source SHA-256 and the block count, and refuses a
   default that is not one of its own property's legal values.
 

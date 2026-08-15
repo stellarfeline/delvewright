@@ -326,7 +326,7 @@ incl. Chinese note text) and the overlay emission + byte-determinism
   and there is no daemon-wide mode — a teardown that can reach another project is
   an outage, not a teardown.
 - **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir]` turns a build
-  output into the Chunky scene set plus the shot index (`delve-render scene` +
+  output into the Chunky scene set plus the shot index (`delvec scene` +
   `index`) for visual review, including the first-person player-POV shots.
 
 ## Harness

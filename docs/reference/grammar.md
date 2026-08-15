@@ -1124,7 +1124,7 @@ its minimum region.
 ## 4b. Blocks have to exist
 
 Every block state the export writes is checked against the pinned 1.21.11
-block-state registry (`crates/compiler/data/blocks-1.21.11.json`, 1166 blocks,
+block-state registry (`crates/dsl/data/blocks-1.21.11.json`, 1166 blocks,
 via `delvewright_schem::blocks`) — the id, every property name, and every
 property value. An unknown state is `ExportError::UnknownBlocks`, a refusal, with
 the cell count and a suggested rename.
@@ -1151,7 +1151,7 @@ model to judge at all.
 
 - **Shape completeness (`DW0735`).** A placed state must write every property
   named by a `multipart` selector in its block's own blockstate definition
-  (`crates/compiler/data/blockstate-shape-props-1.21.11.json`, derived from the
+  (`crates/dsl/data/blockstate-shape-props-1.21.11.json`, derived from the
   client jar). A `variants` property the state omits renders the complete
   default model — benign; a `multipart` property it omits drops assembled
   geometry, so a bare `iron_bars`/`oak_fence`/`cobblestone_wall` places as a row
@@ -2871,16 +2871,19 @@ front of the IR. Later phases of spec-0027.
 
 The §4 palette budget's **measurement** does exist, out of the compiler:
 `python3 tools/block-appearance.py --program <p.json>` reads every `palette` role
-and every inline `fill` material of a program and reports each mix's
-`chroma_mass`, `chromatic_area`, **named** `loudest_member` with its area share,
-and `dominant_hue`, stating its binding count. What is missing is the *binding* —
+and every inline `fill` material of a program — in either frame, since a
+`{"local": …}` paint is the same states and the frame moves no block and changes
+no colour — and reports each mix's `chroma_mass`, `chromatic_area`, **named**
+`loudest_member` with its area share, and `dominant_hue`, stating its binding
+count. A program it finds no paint in reports a binding of **zero** as a finding,
+which is the answer a palette written in a form this reader does not model gives. What is missing is the *binding* —
 the compiler cannot run it, because the numbers are measured from the EULA-gated
 client jar and whether the derived table may be committed is spec-0035 §7's open
 question for the owner. Until that is answered the measurement is an authoring
 aid an author runs, not a gate, and it must not be described as one. It is also
 whole-zone today: scoping it to player-reachable mass is the risk §5 records.
 
-The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
+The **contact sheet** is built: `delvec contact-sheet` lays a directory of
 candidate renders out as one page, optionally ordered by a similarity score
 against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
 the page and never gates it). What is still missing between the expander and
