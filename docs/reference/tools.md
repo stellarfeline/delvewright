@@ -108,6 +108,15 @@ delve-schem convert <input.schem> -o <out.nbt>
     [--json]
 ```
 
+Every palette entry it writes states **every** property the block has. A schematic
+may spell out only the properties its author cared about; the template is stamped
+at the pinned DataVersion, so the completion says out loud what vanilla would
+otherwise fill in from the block's default state, and no reader of the file has to
+carry a table of 1.21.11 defaults to know what a cell is. It happens at
+`convert::build_region` — the workspace's one structure-template byte boundary,
+which the grammar back end passes through too — rather than in each caller's
+palette construction, so a new caller cannot be lossy by omission.
+
 ## 2a. `delve-grammar` — the box-split grammar back end (`crates/grammar`) · agent
 
 **The entry point for making a prefab** (spec-0027 §3; the whole procedure is
@@ -161,9 +170,12 @@ each entry's region and seed; `--campaign-root <content repo>` walks every
 `zones.json` manifest. It reds on a failed gate, on a gate that examined zero
 objects, on a programs directory with no manifest, on a program file the manifest
 does not name, and on a corpus that turned out empty. `--exclusions` takes the
-record of zones that are known red with the exact codes each must fail with; it
-inverts those assertions and never removes them, so a recorded zone that starts
-passing is a finding too. Both repos' CI run it — the pipeline repo's `campaign
+record of programs that are known red with the exact codes each must fail with;
+it inverts those assertions and never removes them, so a recorded program that
+starts passing is a finding too. Ids are audit labels, so the record reaches both
+corpora — `library/<program>` and `<campaign>/<zone>` — and it currently holds
+one entry, `library/causeway` (`DW0800`), against a missing `nav` capability.
+Both repos' CI run it — the pipeline repo's `campaign
 builds` job against the pinned content SHA, and the content repo's `zone
 programs` job against the branch under review, with no paths filter.
 
@@ -636,13 +648,15 @@ count, on the page and on stderr:
   different blocks. Worst on a `multipart` definition, where an unwritten
   property matches no case at all: a `cobblestone_wall` with nothing written drew
   a **solid cube** where a wall post stands, and every tool reported it resolved.
-  Measured over the committed library: **31 palette entries across 9 of the
-  36 prefabs**, which is 15 distinct blockstates — every one a wall, a fence,
-  iron bars, a vine, glow lichen, a barrel's `open`, a grass block's `snowy`,
-  a button's `powered` or a fence gate's `in_wall`. Counting every unwritten
-  property instead of only the selecting ones gives 65 entries across 20
-  prefabs; the difference is `waterlogged`, `distance` and `persistent` —
-  real, and invisible.
+  Measured over the library at the pinned content SHA: **15 palette entries
+  across 7 of the 36 prefabs**, which is 7 distinct blockstates — a barrel's
+  `open`, a grass block's and a podzol's `snowy`, a button's `powered`, a fence
+  gate's `in_wall`. No connection class is among them: an omitted connection is
+  `DW0735`, and the generators write those states from the piece's own
+  neighbours. Counting every unwritten property instead of only the selecting
+  ones gives 84 entries across 20 prefabs; the difference is `waterlogged` and
+  the non-selecting residue beside it (a trapdoor's `powered`, `signal_fire`,
+  `cracked`, `facing`, `distance`) — real, and invisible.
 - **drawn as nothing, or drawn as the missing-texture checker** — measured in the
   browser by meshing each blockstate alone, because neither is visible from the
   resources. The checker case is how a wrong block-entity texture id presents:
@@ -812,7 +826,7 @@ Never shipped inside a delve.
 | `tools/check-required-contexts.py` | CI | `python3 tools/check-required-contexts.py` — keeps `.github/required-status-checks.txt` and `ci.yml`'s job `name:` values in lockstep, **both directions**. All ten CI jobs are required status checks: an advisory job is a job that does not gate, and at three of ten required, `tier 2` (datapack load + the whole generated PackTest suite), the storybook engine-version marker and the prefab determinism gate did not block a merge — only `gh pr merge`'s own refusal on UNSTABLE did, and `--admin` went straight through. Requiring all ten creates the deadlock this checker guards: branch protection matches a required context by its NAME STRING, so a renamed job stops reporting forever and blocks every PR *including the one that would fix it*. Renaming a job is therefore three steps — add the new context to protection, merge the rename + manifest update, drop the old context. The reverse direction matters as much: a job with no manifest line is a gate nobody must obey, which is how the seven drifted. `ADVISORY_JOBS` in the checker is the only exemption and is empty on purpose; each entry needs a reason a future reader can weigh. Reads only the repo — CI's token has `contents: read` and cannot see branch protection, and a gate that needs a privileged token is a gate that quietly stops running. States its binding count; parsing zero jobs or zero contexts is a red |
 | `tools/assert-run-approved.sh` | CI (release) | `bash tools/assert-run-approved.sh <environment>` — the run-time half of the above, and the first step of `publish-crates`. Reads this run's own approval history (`/actions/runs/<id>/approvals`) and refuses when no `approved` entry names the environment: a run that was never held records none, which is exactly the state the incident run is still in. Needs only `actions: read` on its own repo, so it never becomes a gate that quietly stops running for want of a privileged token. Does **not** prove the approver differs from whoever pushed the tag — that is `prevent_self_review`, configured in the same out-of-band settings; what this asserts is that a human passed through a review UI at all, which is the step that did not happen. Materialises the API response to a file before parsing, never `curl | jq` (a pipe hides the producer's exit status) |
 | `tools/check-skill-version.py` | CI | `python3 tools/check-skill-version.py` — ADR-0016's **third version line**, made true. `.claude/skills/new-delve/SKILL.md`'s frontmatter declares the skill's own product version (`version:`), the engine window it drives (`requires: delvec: ">=X.0.0 <A.0.0"`) and the engine it was proven on (`verified_with:`); this gate is what stops those being a `requires:` nobody reads. **The last two are different claims and bind differently.** (1) `requires.delvec` is COMPATIBILITY — what a creator reads as "older engines will not work" — so it is ADR-0016's own **major window**, stable across a whole line, and binds by MEMBERSHIP: the ceiling is the floor's next major and this repo's engine sits inside the window (the direction that catches `delvec 2.0.0` shipping beside a skill that still says `<2.0.0`). (2) `verified_with` is EVIDENCE — the one engine this tree actually exercises the skill on — so it binds by EQUALITY to `crates/compiler/Cargo.toml`'s `[package] version`, the single source `DELVEC_VERSION` derives from, in **both** directions: above names a compiler that does not exist, below is stale evidence from a build no longer in the tree. Restamping it is one line in the engine's own release commit, and it never moves `version:` or the compatibility window. Pinning the window's floor to the engine instead — the first draft of this gate — would make the frontmatter assert after every release that older engines are unsupported, which nothing tested, and would make ADR-0016's own example un-writable at 1.1.0. (3) Every `delvec` subcommand the skill's code spans name, and every long flag named with it, must exist in the clap CLI parsed out of `crates/compiler/src/main.rs` (nested `edit apply`/`preview` actions fold into their parent, so `delvec apply` is correctly not a subcommand) — that is what makes the window a claim about a real command surface rather than a shrug. States its binding count on every run — currently 9 distinct subcommands, i.e. all of them; **extracting zero subcommand references is a red**, as is parsing zero subcommands out of `main.rs`, because a green that binds to nothing is vacuous (CLAUDE.md). **Known non-proof, stated in the script's docstring and in its OK line**: a window floor that has drifted too LOW — the skill adopting a subcommand added in 1.1.0 while the window still opens at 1.0.0 — is invisible here, because check 3 tests against the CURRENT CLI and this repo holds one engine. A green means the window is internally consistent and the engine in the tree is inside it, never that the whole line was tested. Runs as a step of the `docs (local link check)` job — a step, not a job, since every job name is a required status context |
-| `tools/check-publishable.sh` | CI | `bash tools/check-publishable.sh [--allow-dirty]` — ADR-0017: proves `cargo install delvec` will work **without publishing anything**, on every push. `cargo publish` is a one-way door (a version can never be reused, a name never freed), so the packaging contract cannot wait for release day. Three checks: (1) both publishable crates `cargo package`, which is where a path-only dependency, a missing `description`/`license` or a stray `publish = false` fails by name; (2) the GENERATED manifest crates.io will serve carries no dependency `path`, carries the exact `=` requirement `versions.toml [engine].dsl_crate_req` declares, and has dropped the path-only dev-dependency on `delvewright-grammar` entirely — which is *why* that crate may stay unpublished, verified rather than assumed; (3) the packaged `delvec` tarball, extracted into a temp dir with **no workspace above it and no path dep anywhere**, builds its binary with `delvewright-dsl` supplied from the packaged DSL tarball, i.e. the bytes crates.io will hold. Check 3 is what stops the gate being vacuous: `cargo publish --dry-run` alone could satisfy the sibling dependency from `crates/dsl` on disk and prove nothing about a stranger's download. **Does not prove** that crates.io accepts the upload — nothing pre-publication can; the release workflow's post-publish index poll covers that. Runs as a step of `rust (fmt, clippy, test)` — a step, not a job, since every job name is a required status context. `--allow-dirty` is local-only: CI works from a clean checkout so the VCS-dirty refusal stays armed. Creates `target/` before redirecting a log into it and reports a missing or empty log as such — the v1.0.0 run had no build cache, so the redirect failed, `cargo package` never ran, and the script blamed it anyway (`tools/check-shell-redirect-dirs.py` now forbids the shape repo-wide) |
+| `tools/check-publishable.sh` | CI | `bash tools/check-publishable.sh [--allow-dirty]` — ADR-0017: proves `cargo install delvec` will work **without publishing anything**, on every push. `cargo publish` is a one-way door (a version can never be reused, a name never freed), so the packaging contract cannot wait for release day. Three checks: (1) both publishable crates `cargo package`, which is where a path-only dependency, a missing `description`/`license` or a stray `publish = false` fails by name; (2) the GENERATED manifest crates.io will serve carries no dependency `path`, carries the exact `=` requirement `versions.toml [engine].dsl_crate_req` declares, and has dropped **every** path-only dev-dependency entirely — which is *why* an unpublished sibling may be used by `delvec`'s tests, verified rather than assumed. That set is read out of `crates/compiler/Cargo.toml` and its binding count printed, never named in the script: a named dev-dep binds to the one somebody thought of, and the second such dependency arrived and was examined by nothing; (3) the packaged `delvec` tarball, extracted into a temp dir with **no workspace above it and no path dep anywhere**, builds its binary with `delvewright-dsl` supplied from the packaged DSL tarball, i.e. the bytes crates.io will hold. Check 3 is what stops the gate being vacuous: `cargo publish --dry-run` alone could satisfy the sibling dependency from `crates/dsl` on disk and prove nothing about a stranger's download. **Does not prove** that crates.io accepts the upload — nothing pre-publication can; the release workflow's post-publish index poll covers that. Runs as a step of `rust (fmt, clippy, test)` — a step, not a job, since every job name is a required status context. `--allow-dirty` is local-only: CI works from a clean checkout so the VCS-dirty refusal stays armed. Creates `target/` before redirecting a log into it and reports a missing or empty log as such — the v1.0.0 run had no build cache, so the redirect failed, `cargo package` never ran, and the script blamed it anyway (`tools/check-shell-redirect-dirs.py` now forbids the shape repo-wide) |
 | `tools/build-release-binaries.sh` | CI | `bash tools/build-release-binaries.sh (--list-targets \| --check-only \| --target <triple>)` — the ONE definition of the release shelf, called by both the standing CI gate and `engine-release.yml`, so the two cannot drift. Holds no copy of any pin: version and targets come from `versions.toml [engine]` (a hardcoded triple is a `check-versions.sh` failure). `--check-only` is the CI job `engine binaries (cross-build shelf)`: `cargo check` every target on one ubuntu runner — rustup ships std for all five regardless of host, and build scripts still run, so a new dependency that will not compile for musl/msvc/darwin fails on the PR that adds it instead of at release time with the tag already pushed; **an empty target list is a red**, not a pass. `--target <triple>` builds, archives (`delvec-v<version>-<triple>.tar.gz`, binary + LICENSE for GPL-3.0 §4) and emits the checksum line. `.tar.gz` for every target including Windows on purpose: one archive format is one extraction path for ADR-0014's bootstrap, and a per-OS format branch is somewhere for the shelf to end up half-built. `*-linux-musl` links with rustup's own `rust-lld` rather than `musl-gcc`, so the same command works on the owner's macOS workstation and on the runners (measured: cross-linked macOS/arm64 → x86_64 musl, `static-pie`), and every musl artifact is then asserted to carry **no `PT_INTERP`** — read out of the ELF header, not pattern-matched on `file`'s prose — because a musl binary that quietly acquired a dynamic interpreter breaks on a stranger's machine rather than here. Every value it reads out of `versions.toml` is produced by a python that pins `newline="\n"`: without that, Windows' `\r\n` made the msvc target compare unequal to itself on the msvc runner alone (`tools/check-python-shell-newlines.py`) |
 | `tools/crates-io-publish.sh` | CI | `bash tools/crates-io-publish.sh (--plan \| --publish)` — the only path to crates.io; no human ever runs `cargo publish` for this project (ADR-0017). **Idempotent by checksum**: for each crate it asks the sparse index what is already there — absent → publish; present with our exact sha256 → skip; present with *different* bytes → hard fail by name, because crates.io will never accept the new bytes. That is what makes the half-succeeded sequence (`delvewright-dsl` lands, `delvec` fails) safely retryable instead of burning a version. The index lookup is **bind-tested** against `serde 1.0.0` before it is trusted, because a broken lookup would report every crate absent and silently disable the skip branch — the unbound-gate class (the first draft of this script had exactly that bug: `python3 - <<'PY'` binds stdin to the heredoc, so a piped index body was discarded). One `cargo publish -p … -p …` invocation, so cargo owns dependency ordering and its own wait-for-index; this script adds the POST-condition instead — a poll on an observable (both crates visible with our checksums), 180 s timeout, 5 s interval, never a sleep chosen by feel. `--plan` touches nothing and needs no credential; `--publish` reads `CARGO_REGISTRY_TOKEN` straight out of the environment, never runs `cargo login`, never writes a credential to disk |
 | `tools/check-shell-pipe-shortcircuit.py` | CI | `python3 tools/check-shell-pipe-shortcircuit.py` — forbids a consumer that stops reading before its producer stops writing on the right of a pipe (`grep -q`, `grep -m N`, `head -N`) in every repo `*.sh`. Under `set -o pipefail` such a consumer exits at the first match, the producer dies of SIGPIPE (141), and pipefail promotes 141 to the pipeline: **the pipeline reports failure precisely because the match succeeded**, at a rate set by how much the producer still had to write. Measured against a live, healthy server whose log contained `Done (` exactly once: 28 false negatives in 30 runs. This is what made `playtest-server.sh` print "server did not come up" for a server that was up, and the same shape sat under both 25565 guards and `dw_mutex_port_bound` — where a false negative frees the owner's sacred mutex while a human is playing. Prescribed idiom: capture, then test with bash's own `[[ $out == *pat* ]]` / `[[ $out =~ re ]]` / `${out%%$'\n'*}`, spawning no process at all. `docs/experiments/` is excluded (frozen record); `EXEMPT_LINES` carries exactly one justified line-level exemption, and a stale entry there is itself a red |
@@ -820,6 +834,7 @@ Never shipped inside a delve.
 | `tools/check-live-commands.py` | CI | `python3 tools/check-live-commands.py` — nothing in this repo may speak to a Minecraft server without being able to hear it. Three rules, the first two driven by pinned artifacts rather than a typed list. **(1)** A shell/Node file that invokes `rcon-cli` must reach it through the shared rejection rule (`tools/lib/rcon.sh` / `tools/lib/rcon.mjs`); six sites did not, and the rule already existed — correct — privately inside one spike, which is exactly why the next two callers wrote the unchecked version. **(2)** A `gamerule <name> <value>` line anywhere in `*.sh`/`*.mjs`/`*.js`/`*.ts`/`*.rs`/`*.mcfunction` must name a rule the pinned 1.21.11 server has, checked against the literal children of `gamerule` in `crates/compiler/data/commands-1.21.11.json`, so it cannot drift from ADR-0009. Motivating instances: the gallery's four legacy camelCase rules (which cost `admit:load` and `admit:finish` in their entirety — the gallery world had no objectives, nothing forceloaded, nothing placed), `spike-jump-arc`'s `fallDamage`, `warden-probe`'s `doMobSpawning`/`randomTickSpeed`. **Known non-proof, stated in its docstring**: rule (2) only sees a `gamerule` with a LITERAL name and a literal value — a dynamic name (`gamerule ${g}`) is a probe it cannot judge — and line comments are stripped, which can hide a violation but never invent one. **(3)** `rcon.sh`'s refusal list and `rcon.mjs`'s must recognise the SAME reply shapes. The rule has to exist twice (shell sources, Node imports), and two copies of one truth is the very shape rules (1) and (2) exist to prevent — so they are compared, not trusted. Found on its first run: the area-effect-arrow spike's private copy knew `No targets matched`, `Malformed ` and a broad `Failed to `, which the shared rule did not, while the shared rule knew the `<--[HERE]` cursor, which the spike's did not. **Every private copy ever found was silent on exactly the refusals its own run never provoked**, so the shared list is the union and a shape leaves it only when the pinned server stops producing it. `docs/experiments/` is excluded (frozen record); a negative fixture may carry an inline `check-live-commands: allow (<reason>)`, and **every honoured exemption is printed with its reason on every run**. States all three binding counts every run; **zero live command sites, zero gamerule lines or zero compared shapes is a red**. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
 | `tools/lib/publishable.py` | library (CI gates) | Imported, never run. The repo's ONE answer to "which files does a stranger read on crates.io": every crate under `crates/*/` whose `[package] publish` is not `false`, resolved through its `[package] readme` key. `check-crates-io-readmes.py` and `check-reference-versions.py` both consume it, so a crate that becomes publishable inherits both gates with **no edit to either**. It globs the directory rather than reading `[workspace] members`, and that is load-bearing: `crates/render` is deliberately EXCLUDED from the workspace, so a members-only derivation would never see the one crate whose publishability is invisible from the workspace table. The glob is then cross-checked against the root manifest — a crate the root names but the glob cannot reach raises rather than silently shrinking the binding count. Every failure is a `DerivationError` raised, never an empty list returned: a gate that caught this and carried on would be the exact "it matched zero objects" vacuity CLAUDE.md names. Lives here for the same reason `rcon.{sh,mjs}` does — the rule that lives correct inside ONE caller leaves the next caller nothing to reuse |
 | `tools/lib/gitbase.py` | library (CI gates) | Imported, never run. Resolves a gate's `--base` ref and owns the ONE remedy printed when it is absent. The remedy is **computed from the repository it will be run in**, never quoted from CI: a full clone gets `git fetch --no-tags <remote> <branch>:refs/remotes/<remote>/<branch>`, an already-shallow one gets the same line with `--depth=1`. The two are not interchangeable in either direction. `--depth=1` in a full clone converts it — and every worktree sharing its object store — into a shallow one, and a shallow repository does not fail, it **answers wrong**: on a branch 1 commit ahead of `origin/main` and 5 behind, `merge-base` returns nothing, `git merge origin/main` says "refusing to merge unrelated histories", and the ahead/behind counts come back 401 and 1. The refusal costs minutes; the counts are what someone resets or force-pushes on. A plain fetch in an already-shallow checkout is the opposite error, pulling a branch's whole ancestry (400 commits against 1, measured under CI's merge-preview shape) to no purpose. A `--base` that is not `<remote>/<branch>` gets prose rather than a command, because no single fetch is certain to install it. `check-numbered-doc-uniqueness.py` and `check-version-ledger-uniqueness.py` both consume it, so a third gate needing a base ref inherits the correct remedy with no decision to make. `tools/tests/test_gitbase.py` does not merely assert the wording — it RUNS the printed command against a throwaway clone and re-examines the repository, because the property under test is "this instruction does not damage the thing it is helping with". Lives here for the same reason `rcon.{sh,mjs}` does: the unsafe line existed twice because the first gate wrote it inline and the second copied it |
+| `tools/check-structure-emitters.py` | CI | `python3 tools/check-structure-emitters.py` — **which sites owe the block-state rule, decided by discovery rather than by a list.** The rule (`prefabs/invariants.rs::assert_blocks_are_real`, `BlockRegistry::validate`) was placed at five tileset generators by hand; a sixth emitter — `hello-room`, which hand-built its own palette from an `examples/` target — was missed, so nothing judged the states it wrote. **(1)** Every tracked `.rs` naming `fastnbt::to_bytes` (the one way anything here produces NBT) must either name the block-state rule — following its own `mod` declarations, since a generator may split palette from emission — or be listed in the script's `NOT_EMITTERS` with a reason, which is printed on every run. The exemptions are enumerated file by file on purpose: a class exemption (“anything under `tests/`/`examples/` is a fixture”) is the exact assumption that hid the sixth emitter, which was production tooling living in `examples/`. The polarity is the point — a list of inclusions fails silently when it misses a site, a list of exclusions fails loudly. **(2)** Every emitter check (1) accepted must also derive its connection states — the piece goes through `connections::resolve`, which computes each `multipart` property from the blocks beside the cell — or be listed in `NOT_CONNECTION_EMITTERS` with its reason. Judging the palette is not enough: an omitted connection property and one written at the block's default both pass `validate`, and the default is *disconnected*, so completing a state from `BlockRegistry::default_state` ships the isolated post the author never meant and empties the `DW0735` predicate at the same time — the check going green by ceasing to bind. The rule and that defeater live seventy lines apart in one impl block, which is why the obligation is bound to the emitter rather than left to a doc line. **(3)** Every `prefabs/*/Cargo.toml` on disk is named by the `prefab-generators` job's cache list and both of its `for g in` loops, in both directions, so a new generator cannot be added without CI running it twice. All three checks print their binding count. |
 | `tools/lib/rcon.sh`, `tools/lib/rcon.mjs` | library (agent + human) | Sourced/imported, never run. The repo's ONE definition of "the server refused that command", measured on the pinned 1.21.11 server: a PARSE failure (every Brigadier error carries a `<--[HERE]` cursor) and a REFUSAL (`That position is not loaded`, `No entity was found`, `No targets matched`, `Failed to `, …). The list is the **union** of every private copy that has been found, and the two halves are held equal by `check-live-commands.py` rule (3). Shell: `dw_rcon <container> <cmd>` asserts and returns non-zero on a refusal, `dw_rcon_probe` is the unjudged form, `DW_RCON_ARGS` carries extra `rcon-cli` flags. Node: `rconChannel(container).run(cmd)` throws, `.probe(cmd)` does not; `REJECTION`/`assertAccepted` are exported for a tool with its own transport (the death spike's pipelined channel). **Which channel a call uses is a statement about that call**: `probe` is for a liveness poll or a measurement whose subject IS the rejection, and nothing else. `tools/check-live-commands.py` is what makes the choice unavoidable |
 | `tools/check-shell-redirect-dirs.py` | CI | `python3 tools/check-shell-redirect-dirs.py` — every `>`/`>>` in a repo `*.sh` that writes **into a directory** must have that directory guaranteed first: a `mkdir -p` covering it, a `mkdir` naming it exactly, a `mktemp -d`, a directory tracked in this repo, or an always-present one (`/tmp`, `/dev`, and `/data` — the itzg image's own data dir, written only from inside that image). Variables are resolved through their literal assignments, so hoisting the path into `LOG=` does not hide it, and `>` inside a quoted string is text, not a redirection. **Why**: the shell opens a redirect *before* running the command it captures, so on the v1.0.0 preflight — a runner with no build cache and therefore no `target/` — the redirect failed, `cargo package` never ran, and the else-branch `sed`ed the log whose absence was the finding, reporting "cargo package failed" about a command that had not been executed. The general form is **an error path must not depend on an artifact the error may have prevented from existing**; this gate removes the root cause, and the other half — a failure branch that names a missing or empty log instead of quoting it — is exercised by `tools/tests/test_check_shell_redirect_dirs.py`, since syntax cannot check a message. States its binding count |
 | `tools/check-trial-verdicts.py` | CI | `python3 tools/check-trial-verdicts.py` — every judged verdict in `docs/trials/trial-*.md` declares what bounded it: `artifact-bound` (the instrument could frame the thing being judged) or `instrument-bound — <named blocker>` (it could not, so the answer is partly about the tooling and the blocker is a capability-gap finding under playtest-methodology rule 4). A rubric answer is a judgement, and a judgement three paragraphs away from its own disclaimer ships as a verdict: trial 0001's R1 for run 1 read `partial` while the same section recorded that no camera could take a square-on elevation — re-photographed with an aimed camera from the same delivered bytes, the answer is `yes`. Enumerates the entry points rather than trusting a checklist — every trial record, every `## Run N — result` section, every rubric row carrying a bolded verdict — so a record cannot gain a run or an answer without gaining the declaration. **Known non-proof, stated in its docstring**: it establishes that the declaration exists and is well-formed, never that it is true; the reviewer's question is *what would this verdict have to look like for the instrument to be unable to tell?* States its binding counts; a trial record yielding zero verdicts is a red, because the likely cause is a rubric table reformatted out from under the parser. Runs as a step of `docs (local link check)` — a step, not a job, since every job name is a required status context |
@@ -935,10 +950,13 @@ marker — but the log now says which of the two happened instead of showing a b
 
 ## 9. Prefab generators (`prefabs/*-generator`, `prefabs/generator`) · agent + CI
 
-The tileset libraries are **generated, not hand-built**. Five separate Cargo
+The tileset libraries are **generated, not hand-built**. Separate Cargo
 workspaces, deliberately outside `crates/` so none of them can enter the shipped
-`delvec` and no existing `.nbt` moves (ADR-0006). All five share one CLI —
-`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export:
+`delvec` and no existing `.nbt` moves (ADR-0006). They share one CLI —
+`<out_dir>`, which is the content repo's `prefabs/` when you mean to re-export. It must
+already exist: a generator that creates its own destination cannot tell a fresh
+library from a typo, and a piece written where nothing reads is indistinguishable
+from a piece written correctly.
 
 ```sh
 cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
@@ -951,8 +969,9 @@ cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
 | `island-generator` | `island-prefab-gen` | `island-*` set-pieces | `prefabs/island-tileset.md` |
 | `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
 | `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
+| `hello-room-generator` | `hello-room-gen` | `hello-room` (the M1 piece) | — |
 
-Each generator prints the `pool/*` block to merge into the content repo's
+Each tileset generator prints the `pool/*` block to merge into the content repo's
 `pools.json` — printed, never written, because every `*.json` in that directory
 is parsed as prefab metadata and a stray snippet is `DW0346`.
 
@@ -963,7 +982,7 @@ sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
 
 Invariants true of **every** tileset live once, in
 [`../../prefabs/invariants.rs`](../../prefabs/invariants.rs), source-included by
-all five (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
+every one of them (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
 dependency, so the workspaces stay independent). Today: **distress embeds, it
 never stacks** (`assert_distress_never_stacks`) — a walkable stair tread may
 carry nothing but air or a declared attachment (railing, hardware, light fitting,
@@ -971,14 +990,59 @@ plant), because wear on a walked surface belongs *in* the surface, as a weathere
 variant of the same shape (`invariants::weathered`), never as a lump on top of
 it. Owner playtest, island round 13: stray stone sitting on the cave-mouth steps.
 The shared file carries its own unit tests — including the cases that prove the
-gate *fails* — run by the same CI job. Debug flags, all
+gate *fails* — run by the same CI job.
+
+**Connections are derived, never defaulted.**
+[`../../prefabs/connections.rs`](../../prefabs/connections.rs) is source-included
+the same way and runs at the same emitters. Before the bytes are written it
+fills every shape-carrying property a state *leaves out* — a fence's, a wall's,
+a pane's or a bar's connections, a vine's or a lichen's absent faces — from the
+blocks actually beside the cell, by the rule vanilla applies itself
+(`FenceBlock.connectsTo`, `IronBarsBlock.attachsTo`, `WallBlock.connectsTo` /
+`shouldRaisePost`, `MultifaceBlock.canAttachTo`). A value the generator wrote is
+never overwritten, so a fully-specified state emits unchanged and an author who
+means a lone post says so. Filling with the block's *defaults* would be the
+opposite of this and worse than silence: the default of every connection
+property is disconnected, so it would assert the isolated post rather than
+merely fail to deny it.
+
+Two emitter post-conditions come with it. `assert_shape_is_stated` is the
+`DW0735` verdict where the bytes are made rather than at admission, which binds
+to one moment per piece. `assert_attachments_are_supported` refuses a vine or a
+lichen face with nothing behind it — vanilla deletes such a face at the first
+block update, so it is in the template and not in the game.
+
+**Where an attachable block may hold on is the same module's question.**
+`attachable_faces(block, cell, at)` answers it: every face of *that block* with
+a supporting neighbour, best first — a wall before the ceiling, the ceiling
+before the floor. A decoration pass asks it and takes the first answer, and an
+empty answer means the cell can hold no decal and none is placed. The faces come
+from the pinned shape table, so a vine is asked about its five and a lichen about
+its six, and each face is paired with the direction it looks in by the module
+rather than by the caller. Both halves are load-bearing: a pass that pairs its
+own offsets can name the face pointing *away* from the rock, and a pass that
+lists its own faces lists the four horizontals — so a decal whose only rock is
+overhead has nowhere to hang and is dropped instead of hung from it. This is a
+query for a placer, not a repair: a multiface face is a placement decision, so
+re-hanging an already-emitted state would turn the post-condition above into a
+silent rewrite.
+
+The one input vanilla publishes nowhere is `isFaceSturdy`: it is code, not data,
+so `face_support` decides from the pinned tables plus a **declared** list of full
+cubes and **refuses** — naming the block and the piece — outside it. There is no
+conservative direction to guess in; connecting where vanilla would not and
+failing to connect where it would are equally visible.
+
+Debug flags, all
 `tidal-keep-generator`: `TK_DEBUG_LIGHT=1` (per-region measured light + darkest
 cell), `TK_PROBE=<salt>,<x>,<y>,<z>` (labelled block dump), `TK_DEBUG_STAIRS=1`
 (every flank the seal pass closed).
 
-CI (`prefab-generators` job, tier 1) runs all five twice into separate trees on
-every PR: a panic fails the job, and the two trees must be byte-identical
-(ADR-0006). Wired 2026-08-03 — before that nothing in CI compiled these
+CI (`prefab-generators` job, tier 1) runs every generator twice into separate trees
+on every PR: a panic fails the job, and the two trees must be byte-identical
+(ADR-0006). `tools/check-structure-emitters.py` holds that job's lists equal to the
+`prefabs/*/Cargo.toml` workspaces on disk, so a generator it does not run is a red.
+Wired 2026-08-03 — before that nothing in CI compiled these
 workspaces, which is how a tileset with 132 reversed stair blocks (`DW0430`)
 reached an owner playtest through a green pipeline. `clippy -D warnings` is not
 yet part of that job (`prefabs/generator` carries two legacy style lints).
@@ -1028,6 +1092,34 @@ keeping: a dead rcon channel rejects the pending read instead of leaving node
 an empty event loop to exit 0 on, and channel start is a retried handshake
 (the readiness probe passing and the next connection being accepted are two
 events with a measured race between them).
+
+`tools/spike-block-settling/run.sh` (`EULA=TRUE
+tools/spike-block-settling/run.sh [--out <path>]`) measures, on a throwaway
+pinned server booted on a DRY superflat, the two facts the `stair-shape`
+(`DW0801`) and `fluid-contained` (`DW0800`) gates encode — so that neither rests
+on a recalled reading of vanilla.
+
+A field of 758 random stairs (two stair blocks, both halves, all four facings,
+air holes) is placed, settled and read back cell by cell; the result rides in
+`observations.json` and `crates/schem/tests/stair_shape_measured.rs` **replays
+every cell of it** against `delvewright_schem::stairs::derive_shape` in CI, with
+no server. Nine water rigs decide what "a body of fluid stays where it was
+written" has to mean: a source sealed, a source with one open cell, a source
+against a `waterlogged=false` stair (both orientations) and a grate, a source
+each side of a dry waterloggable, a source above one, and a `waterlogged=true`
+block beside open air both before and after a block update is forced next to it.
+
+Two things this rig is worth keeping for. Its **settling pass** is the subtle
+part: `/setblock` writes a state literally and `StairBlock` only re-derives its
+shape on a HORIZONTAL neighbour update, so the obvious rig (set each stair to
+air and back) settles a cell's neighbours and RESETS the cell — the first run
+left 10 of 758 cells carrying their authored value, a number small enough to
+read as "the implementation is wrong about ten corner cases" rather than "the
+rig lied". The poke therefore never touches a stair: a temporary stone goes into
+a NON-stair cell beside it and comes out again. And the rig carries its own
+falsifier — the field is read twice with a further round of updates in between
+and must not move, because a settled field is a fixpoint and an unsettled one is
+exactly what moves.
 
 `tools/spike-area-effect-arrow/run.sh` (`EULA=TRUE
 tools/spike-area-effect-arrow/run.sh [--out <path>]`) answers whether a datapack

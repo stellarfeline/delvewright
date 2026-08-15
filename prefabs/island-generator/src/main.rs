@@ -57,9 +57,14 @@ use std::path::Path;
 
 /// Cross-tileset generator invariants, shared by source include so a lesson
 /// learned in one tileset does not have to be re-learned in the other four
-/// (the five generators are separate Cargo workspaces on purpose).
+/// (the generators are separate Cargo workspaces on purpose).
 #[path = "../../invariants.rs"]
 mod invariants;
+
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -1030,15 +1035,48 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in [`connections`]; only the conversion
+/// between it and this workspace's own `Structure` types is local.
+fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     let grid = build(spec);
     assert_no_unsupported_gravity(spec.id, &grid);
 
-    let structure = serialize(&grid);
+    let mut structure = serialize(&grid);
+    // Connections before the gates: what a fence, a wall, a pane or a lichen
+    // joins is derived from the blocks beside it, never left to the defaults.
+    resolve_connections(spec.id, &mut structure);
     let cells = invariant_cells(&structure);
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(spec.id, &cells);
+    connections::assert_attachments_are_supported(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

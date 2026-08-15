@@ -43,7 +43,9 @@ passed, which voids the weaker kinds' role as discriminators.
 ### 1a. Program IR (fenced at the next `Program` version)
 
 - `contract` block on `Program`: `{ entry: <space>, edges: [Edge],
-  no_body_majority_ack?: <string> }`. **`entry` must carry at least one
+  no_body_majority_ack?: <string> }`. **The string is not the demand** — see
+  §6.1 for what secures the acknowledgement and for the recommendation to
+  retire the field. **`entry` must carry at least one
   `exterior` edge of a traversal class** — the piece is enterable where it
   claims (Z4/Z6-style fall entries are an exterior `drop` edge).
 - Declaration node `{ "op": "space", "space": <kebab>, "envelope":
@@ -125,9 +127,10 @@ Both invocations are bound to the events they guard.
    listed.
 3. **closure**: for every `enclosed` space (and the side faces of
    `open_top`), every boundary cell is non-passable except: a declared
-   edge's `via` (constrained per §1a), the discovered opening of an edge
-   with no `via`, faces shared with an abutting declared space, and faces
-   shared with an abutting `no_body` region. **Envelopes demand sky** (§0):
+   edge's `via` (constrained per §1a), faces shared with an abutting declared
+   space, and faces shared with an abutting `no_body` region. **An opening is
+   claimed, never discovered** (§6.2): a via-less edge licenses no closure
+   exception. **Envelopes demand sky** (§0):
    `open_top` and `open` are refused when any standable cell of the space
    has artifact solid above it — a roofed room cannot be downgraded out of
    closure, which was the adversary's second move and the one the three-
@@ -208,9 +211,9 @@ Both invocations are bound to the events they guard.
    cell on a face and so reports 47 approaches where 3 are doors.
 9. **vacuity reds**: a zero binding on closure, edge proof, or reachability
    is red. A `no_body` majority is red unless the contract carries
-   `no_body_majority_ack` — the acknowledgement does not weaken §2.6, which
-   still binds every region (AC8). `1 space, 0 edges` remains a printed
-   finding. The verdict block enumerates, always: every `open`/`open_top`
+   `no_body_majority_ack` **and the majority is not made of `posted` cells**
+   (§6.1) — the acknowledgement does not weaken §2.6, which still binds every
+   region (AC8). `1 space, 0 edges` remains a printed finding. The verdict block enumerates, always: every `open`/`open_top`
    envelope, every `vision` via with its area, every `posted` region with
    its anchors, every `facade` region with its cell share, and every
    opened-bar set §2.5 used — the per-instance, named form that a blind
@@ -285,7 +288,11 @@ Both invocations are bound to the events they guard.
    fixtures, exit non-zero on the broken artifact — the blankets on §2.6
    `sealed` closure, the downgrades on §2.3 envelope-sky — and remain
    non-zero with `no_body_majority_ack` present. A vacuous-binding fixture
-   (nothing enclosed, zero closure binding) reds on §2.9.
+   (nothing enclosed, zero closure binding) reds on §2.9. **Both directions of
+   the acknowledgement** (§6.1): a `sealed`/`facade` majority with the
+   acknowledgement present is green, the same contract with the same
+   acknowledgement over a `posted` majority is red, and the red names the
+   `posted` share.
 9. First-party anchor resolution with no per-rule exception, asserted over
    the library: `far_side_bar`'s `gate` (bar region), `boulder_stair`'s
    `volley-slot` (boundary cell), and `rafter_hall`'s perches classified
@@ -320,7 +327,11 @@ Both invocations are bound to the events they guard.
     falsification; the agent's account does not name the contract as the
     reason a concept was cut. Any of the three failing is this spec's
     design failing, and the record says which.
-14. **Signal restoration and the `facade` adversary, both directions**: the
+14. **No closure exception is discovered** (§6.2): an `enclosed` space with a
+    via-less edge to `exterior` and a hole in its wall is RED, and the same
+    space with the hole claimed as that edge's `via` is green. The five-boxes
+    cheat (AC11) and this fixture are the same rule from two sides.
+15. **Signal restoration and the `facade` adversary, both directions**: the
     cathedral's five decoration families (296 cells: tower wall-heads,
     inter-buttress recesses, gable courses, apse-yard cells, cornices)
     declared as `no_body` classify `facade` and manufacture **zero**
@@ -332,3 +343,70 @@ Both invocations are bound to the events they guard.
     no exterior air reaches them — and red; and a kind-shopping loop over
     declarations cannot exist, because there is no kind field to shop
     (§2.6 computes it).
+
+## 6. Where this spec and the checker disagree, and which one is right
+
+The checker is authoritative on both points below, and each is the same story:
+the spec as written offered an opt-out §0 forbids, the implementation refused to
+ship it, and it could not simply delete the surface — deleting a landed field is
+the owner's call, not an implementer's. The spec is brought into line here.
+§6.1 also carries a recommendation this round declined to take.
+
+### 6.1 A string is not a demand — `no_body_majority_ack`
+
+**As written**, a `no_body` majority — more than half the standable floor
+declared out of play — is red unless the contract carries
+`no_body_majority_ack`, a non-empty string.
+
+**The defect supplies that for free.** Every other opt-out here demands a
+positive fact about the cells: `sealed` demands its own closure, `posted` an
+anchor within reach of every cell, `facade` exterior air, an open envelope sky.
+The acknowledgement demands *typing*. That is not merely §0's usual shape (a
+proof entailed by the failure) but something weaker still — an **unconstrained**
+demand: the piece whose floor is 90 % stranded and the piece whose floor is 90 %
+honest decoration write the identical field, and the reviewer reading the string
+cannot tell which one is in front of them.
+
+**What the checker demands instead.** The acknowledgement is honoured only when
+the out-of-walk majority is made of the kinds whose demands are facts about the
+blocks — `sealed` (a closed region) and `facade` (exterior air reaches every
+cell). A majority of `posted` cells is **red with the acknowledgement present**,
+because `posted` is the one kind an author secures by *placing something*: an
+author free to scatter the anchors and write the excuse has authored their own
+exemption twice. The kind is computed (§2.6 — the author never picks), so what
+now secures the hatch is a fact the author cannot write.
+
+**The recommendation, not taken.** The majority test is not an obligation at
+all: it names no cells and proves no property. It is a *shape* measurement —
+"most of this building's floor is out of play" is something a reviewer should be
+told and something no author can be required to fix, because a cathedral is
+legitimately mostly roof. The honest form is to **demote the majority to a
+measurement in the verdict block and delete `no_body_majority_ack`**, leaving
+§2.6 — which binds every region, one at a time, with a demand each — as the only
+gate over out-of-walk floor. That deletes a `Program` field: a `dsl_version`
+bump and an adoption round on every active campaign, so it is the owner's
+decision and it is recorded here rather than taken.
+
+### 6.2 An opening is claimed, never discovered
+
+**As written**, §2.3 excused "the discovered opening of an edge with no `via`"
+from closure.
+
+**The defect supplies that too.** The demand is "declare an edge". A doorway
+supplies it; so does a wall the author never built. Between two declared spaces
+it costs nothing — an abutting space is already an excuse in its own right, and
+crossing into one without a declared edge still fails the graph-confined walk of
+§2.5 — but toward `exterior` it excuses a breach of **any size**: an
+eleven-course hole in a nave wall and a door are the same declaration.
+
+**What the checker demands instead.** A passable boundary cell is excused by
+exactly three things: a declared edge's `via` (already constrained by §1a to lie
+on the endpoints' shared boundary, or on the piece's outer face for an
+`exterior` edge), the cells of an abutting declared space, and the cells of an
+abutting `no_body` region. A via-less edge licenses nothing. An author who means
+"there is a way out here" names the cells, and the `via` constraints then bind
+to those cells — the same rule that refuses the five-boxes cheat (AC11), seen
+from the other side.
+
+What a piece leaves open at its own outer face is not a closure question at all.
+It is the face contract (§2.8), which assembly consumes and `DW0780` mates.

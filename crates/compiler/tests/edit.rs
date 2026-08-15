@@ -1322,12 +1322,15 @@ fn fragment_stamps_preserve_blockstate() {
 /// class, so it is a build error (`DW0323`, the fragment verb's resolution code).
 ///
 /// It is a **collision test, not a blanket ban**: a prefab whose every state is
-/// yaw-invariant (`hello-room` carries only `lantern[hanging=true]`) rotates
-/// correctly and stays allowed. Rejecting that too would be a check asserting
-/// something false.
+/// yaw-invariant rotates correctly and stays allowed. Rejecting that too would
+/// be a check asserting something false. That half is proved against
+/// [`prefabs_with_a_yaw_invariant_piece`], a piece built to have the property
+/// rather than a shipped one observed to — see its own note for why no shipped
+/// piece can serve.
 #[test]
 fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
     let dir = edits_copy("edits-rotation");
+    let prefabs = prefabs_with_a_yaw_invariant_piece();
     let stamp = |prefab: &str, rotation: Option<&str>| {
         let mut edit = serde_json::json!({
             "verb": "fragment", "prefab": prefab,
@@ -1347,7 +1350,7 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
             "-o",
             tmp("edits-rotation-out").to_str().unwrap(),
             "--prefabs",
-            &prefabs_arg(),
+            prefabs.to_str().unwrap(),
         ])
     };
 
@@ -1371,14 +1374,149 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
     let r = stamp("prefab/keep-stair", None);
     assert!(r.status.success(), "unrotated is fine:\n{}", combined(&r));
 
-    // And a prefab with no yaw-dependent state rotates correctly, in both
-    // directions: the check must not reject provably correct output.
+    // And a prefab with no yaw-dependent state rotates correctly, in every
+    // direction: the check must not reject provably correct output.
     for rot in ["clockwise90", "counterclockwise90", "clockwise180"] {
-        let r = stamp("prefab/hello-room", Some(rot));
+        let r = stamp("prefab/yaw-invariant-box", Some(rot));
         assert!(
             r.status.success(),
             "yaw-invariant prefab rotates fine ({rot}):\n{}",
             combined(&r)
         );
     }
+
+    // The shipped gate room is the other side of the same coin: its grille is
+    // an east–west run of bars, so a quarter-turn deforms it and the check says
+    // so. This is the case the fixture above used to stand in for.
+    let r = stamp("prefab/hello-room", Some("clockwise90"));
+    assert_eq!(
+        r.status.code(),
+        Some(3),
+        "a barred gate is not yaw-invariant"
+    );
+    assert!(
+        combined(&r).contains("minecraft:iron_bars"),
+        "names the grille:\n{}",
+        combined(&r)
+    );
+}
+
+/// The shipped library, plus one piece that is yaw-invariant **by
+/// construction**: a stone box, a hanging lantern and an upright log — states
+/// that carry properties (`hanging`, `waterlogged`, `axis=y`) and not one of
+/// them a direction a quarter-turn can move.
+///
+/// It has to be built rather than borrowed, and the reason is the finding. This
+/// half of the test used to stamp `hello-room`, which measured as yaw-invariant
+/// only because its iron-bars gate wrote **no connection properties at all**.
+/// The grille has always run east–west, so a quarter-turn had always deformed
+/// it; `DW0323` could not see that because the file did not say. Now that every
+/// emitted state names what it joins, no shipped piece is yaw-invariant — and a
+/// check whose "provably-correct output is accepted" half has no case left is a
+/// blanket ban that nobody can tell apart from a rule.
+fn prefabs_with_a_yaw_invariant_piece() -> PathBuf {
+    use fastnbt::Value;
+    let dir = tmp("edits-rotation-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &dir);
+
+    let (sx, sy, sz) = (5i32, 4i32, 5i32);
+    let mut blocks: Vec<Value> = Vec::new();
+    for x in 0..sx {
+        for y in 0..sy {
+            for z in 0..sz {
+                let shell = y == 0 || y == sy - 1 || x == 0 || x == sx - 1 || z == 0 || z == sz - 1;
+                let state = if [x, y, z] == [2, sy - 2, 2] {
+                    2 // the lantern, hung from the middle of the ceiling
+                } else if [x, y, z] == [1, 1, 1] {
+                    3 // an upright log: `axis=y` is the excluded-by-name case
+                } else if shell {
+                    1
+                } else {
+                    0
+                };
+                let mut c = std::collections::HashMap::new();
+                c.insert(
+                    "pos".to_string(),
+                    Value::List(vec![Value::Int(x), Value::Int(y), Value::Int(z)]),
+                );
+                c.insert("state".to_string(), Value::Int(state));
+                blocks.push(Value::Compound(c));
+            }
+        }
+    }
+    let entry = |name: &str, props: &[(&str, &str)]| {
+        let mut c = std::collections::HashMap::new();
+        c.insert("Name".to_string(), Value::String(name.to_string()));
+        if !props.is_empty() {
+            let mut p = std::collections::HashMap::new();
+            for (k, v) in props {
+                p.insert(k.to_string(), Value::String(v.to_string()));
+            }
+            c.insert("Properties".to_string(), Value::Compound(p));
+        }
+        Value::Compound(c)
+    };
+    // Every state this fixture authors, judged against the pinned registry
+    // before the bytes exist. A palette nobody judges can name a block 1.21.11
+    // does not have, and a structure template loads an unknown block as AIR —
+    // so the piece would be a hole and the test would still be green.
+    let states: &[(&str, &[(&str, &str)])] = &[
+        ("minecraft:air", &[]),
+        ("minecraft:stone", &[]),
+        (
+            "minecraft:lantern",
+            &[("hanging", "true"), ("waterlogged", "false")],
+        ),
+        ("minecraft:oak_log", &[("axis", "y")]),
+    ];
+    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    for (name, props) in states {
+        let props: BTreeMap<String, String> = props
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let verdict = registry.validate(name, &props);
+        verdict
+            .unwrap_or_else(|e| panic!("the yaw-invariant fixture names an impossible state: {e}"));
+    }
+
+    let mut root = std::collections::HashMap::new();
+    root.insert("DataVersion".to_string(), Value::Int(4671));
+    root.insert(
+        "size".to_string(),
+        Value::List(vec![Value::Int(sx), Value::Int(sy), Value::Int(sz)]),
+    );
+    root.insert(
+        "palette".to_string(),
+        Value::List(states.iter().map(|(n, p)| entry(n, p)).collect()),
+    );
+    root.insert("blocks".to_string(), Value::List(blocks));
+    root.insert("entities".to_string(), Value::List(vec![]));
+    let raw = fastnbt::to_bytes(&Value::Compound(root)).expect("nbt");
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut gz, &raw).expect("gzip");
+    std::fs::write(
+        dir.join("yaw-invariant-box.nbt"),
+        gz.finish().expect("gzip"),
+    )
+    .expect("write");
+
+    std::fs::write(
+        dir.join("yaw-invariant-box.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "prefab_id": "prefab/yaw-invariant-box",
+            "structure": {
+                "file": "yaw-invariant-box.nbt",
+                "id": "yaw-invariant-box",
+                "size": [sx, sy, sz],
+                "data_version": 4671,
+                "generator": "crates/compiler/tests/edit.rs (test fixture)"
+            },
+            "anchors": {},
+            "connectors": []
+        }))
+        .expect("json"),
+    )
+    .expect("write");
+    dir
 }

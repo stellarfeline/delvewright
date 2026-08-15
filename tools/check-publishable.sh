@@ -28,10 +28,12 @@
 #    dependency, a missing `description`/`license`, a `publish = false`, or a
 #    file `include!`d from outside the package would fail — by name.
 # 2. The GENERATED manifest that crates.io will actually serve declares no
-#    `path`, carries the `=` requirement on the dsl crate, and has dropped the
-#    path-only dev-dependency on `delvewright-grammar` entirely. (That last is
-#    the reason `delvewright-grammar` may stay unpublished: verified here rather
-#    than trusted.)
+#    `path`, carries the `=` requirement on the dsl crate, and has dropped EVERY
+#    path-only dev-dependency entirely. (That last is the reason an unpublished
+#    sibling may be used by `delvec`'s tests: verified here rather than trusted.
+#    The set is read out of `crates/compiler/Cargo.toml`, never named here — a
+#    named one binds to the dev-dep somebody thought of, and the second such
+#    dependency arrived and was examined by nothing.)
 # 3. The packaged `delvec` tarball, extracted into a temp directory with NO
 #    workspace above it and NO path dependency anywhere, builds its binary — with
 #    `delvewright-dsl` supplied from the packaged DSL TARBALL, i.e. the exact
@@ -185,14 +187,35 @@ else
   fail "$CRATE depends on $DSL_CRATE '$got_req' but versions.toml says '$DSL_CRATE_REQ'"
 fi
 
-# A path-only DEV-dependency is stripped on publish, which is what lets
-# `delvewright-grammar` stay unpublished while `delvec`'s test suite uses it.
-# That is load-bearing, so it is verified, not assumed.
-n_grammar="$(grep -cF 'delvewright-grammar' "$CRATE_DIR/Cargo.toml" || true)"
-if [ "$n_grammar" -eq 0 ]; then
-  pass "path-only dev-dependency delvewright-grammar is stripped from the packaged manifest"
+# A path-only DEV-dependency is stripped on publish, which is what lets an
+# unpublished sibling be used by `delvec`'s test suite. That is load-bearing, so
+# it is verified, not assumed — and the SET is read out of the source manifest
+# rather than named here. A named one is a check that binds to the dev-dep
+# somebody thought of: the second such dependency arrived (`delvewright-schem`,
+# for the one test that authors a prefab palette) and was examined by nothing.
+dev_paths="$(python3 - "$ROOT/crates/compiler/Cargo.toml" <<'PY'
+import sys, tomllib
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+m = tomllib.load(open(sys.argv[1], "rb"))
+for name, spec in (m.get("dev-dependencies") or {}).items():
+    if isinstance(spec, dict) and "path" in spec and "version" not in spec:
+        print(name)
+PY
+)"
+n_dev=0
+for dep in $dev_paths; do
+  n_dev=$((n_dev + 1))
+  n_left="$(grep -cF "$dep" "$CRATE_DIR/Cargo.toml" || true)"
+  if [ "$n_left" -eq 0 ]; then
+    pass "path-only dev-dependency $dep is stripped from the packaged manifest"
+  else
+    fail "$dep survives into the packaged manifest ($n_left line(s)) — it would have to be published too"
+  fi
+done
+if [ "$n_dev" -eq 0 ]; then
+  fail "binding count is zero: no path-only dev-dependency found in crates/compiler/Cargo.toml, so this check examined nothing"
 else
-  fail "delvewright-grammar survives into the packaged manifest ($n_grammar line(s)) — it would have to be published too"
+  pass "path-only dev-dependencies examined: $n_dev"
 fi
 
 echo

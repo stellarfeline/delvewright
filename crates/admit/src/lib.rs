@@ -25,6 +25,7 @@ pub mod gallery;
 pub mod jigsaw;
 pub mod light;
 pub mod meta;
+pub mod settling;
 pub mod socket;
 pub mod spatial;
 pub mod structure;

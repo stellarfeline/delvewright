@@ -156,8 +156,7 @@ jobs:
         run: |
           cargo run --locked -q -p delvec --bin delvec -- fmt --check \
             crates/dsl/fixtures \
-            crates/compiler/tests/fixtures \
-            crates/compiler/examples
+            crates/compiler/tests/fixtures
       # ADR-0017: `cargo install delvec` has to keep working, and `cargo publish`
       # is a ONE-WAY DOOR — a version can never be reused and a name never freed
       # — so the packaging contract is proven on every push from a tree nobody
@@ -234,6 +233,7 @@ jobs:
           workspaces: |
             prefabs/generator
             prefabs/cave-generator
+            prefabs/hello-room-generator
             prefabs/island-generator
             prefabs/island-terrain-generator
             prefabs/tidal-keep-generator
@@ -241,15 +241,15 @@ jobs:
       # oldest generator (`prefabs/generator`) carries two pre-existing style
       # lints, and silencing them belongs in its own PR rather than riding along
       # with a stair fix. Tracked as a follow-up; the correctness gate below is
-      # the one that matters and it covers all five.
+      # the one that matters and it covers every generator workspace.
       - name: cargo fmt --check each generator workspace
         run: |
           set -euo pipefail
-          for g in generator cave-generator island-generator \
+          for g in generator cave-generator hello-room-generator island-generator \
                    island-terrain-generator tidal-keep-generator; do
             cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
           done
-      # `prefabs/invariants.rs` is source-included by all five generators, so one
+      # `prefabs/invariants.rs` is source-included by every generator, so one
       # workspace's `cargo test` compiles and runs the shared gate's own unit
       # tests once — including the cases that prove it FAILS (a rock stacked on a
       # stair tread), which running the generators can only prove by not firing.
@@ -260,7 +260,7 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in generator cave-generator island-generator \
+          for g in generator cave-generator hello-room-generator island-generator \
                    island-terrain-generator tidal-keep-generator; do
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
@@ -574,6 +574,18 @@ jobs:
       # Deterministic, offline, stdlib-only python3.
       - name: no command is issued to a server that cannot answer back
         run: python3 tools/check-live-commands.py
+      # The set of things that write a prefab .nbt was enumerated by hand, and the
+      # hand missed one: hello-room built its own palette from an examples/ target,
+      # so nothing judged the block states it wrote. The set is discovered here
+      # instead — by the ingredient (fastnbt::to_bytes), with non-emitters named
+      # one by one and printed, so a NEW emitter is red on arrival rather than
+      # silently outside somebody's list.
+      # It also asks the second question a validated palette does not answer:
+      # whether the connection properties were DERIVED from the blocks beside
+      # each cell, or completed from the block default that means disconnected —
+      # which passes validation, ships an isolated post, and empties DW0735.
+      - name: every site that writes a prefab .nbt judges and connects its blocks
+        run: python3 tools/check-structure-emitters.py
       # The v1.0.0 release run (2026-08-06) found both of the next two, in the
       # release machinery itself, on the first path CI had never exercised.
       #
