@@ -203,6 +203,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
+  And the obligation has a precondition that is easy to satisfy by accident and
+  fatal when missed: **a second method that shares the first's calibration is not
+  a second method** — it measures the same error twice, and the agreement reads
+  as confirmation. Two red tests were "confirmed pre-existing" by reproducing
+  them on a baseline tree carrying the SAME wrong content symlink; both
+  instruments were miscalibrated identically, so of course they agreed. The
+  shared premise is rarely the arithmetic — it is the configuration underneath:
+  one pin, one symlink, one `target/`, one checkout the shell happened to be
+  sitting in. So the question to ask of a cross-check is not *is this a different
+  command* but ***what does this share with the first one***, and the strongest
+  second method is the one whose failure mode is unrelated: a different
+  instrument, a different tree, or an observer outside the machine entirely.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red.
   **Every CI job is a required status check**: an advisory
   job is a job that does not gate — at three of ten required, `tier 2` (datapack
