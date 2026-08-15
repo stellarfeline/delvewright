@@ -21,6 +21,10 @@ and it ends in a screen, a measurement of the mix, and a LOOK:
 
     # what a weighted paint actually reads as — four numbers, never a mean
     tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+    tools/block-appearance.py --mix 'deepslate[axis=y]=3,stone=1'   # states, properties and all
+
+    # a whole program's palette, and a count of how much of it was read
+    tools/block-appearance.py --program zone.json
 
     # the shortlist and the mixes as pixels, for whoever chooses to look at
     tools/block-appearance.py --screen --where full_cube --where 'L>=0.75' \\
@@ -50,6 +54,15 @@ statistic that moved.
 Classification — form, material family, gravity, technical, biome-tinted — needs
 no jar and comes from `crates/compiler/data/block-classification-1.21.11.json`
 (`tools/extract-block-classification.py`).
+
+## What a report binds to
+
+A mix report leads with `binding: <examined> of <declared> declared paint(s)
+examined`. `declared` is the program's own tally — one per `palette` key and one
+per inline `fill` material — so the two numbers can disagree, which is the point:
+a paint this reader cannot read is named with its reason and the run exits 2. A
+count derived from what the reader understood agrees with itself whatever it
+skipped, and reads as a pass over a palette nobody measured.
 
 ## What it is not
 
@@ -668,27 +681,92 @@ def run_screen(rows: list[dict], exprs: list[str]) -> tuple[list[dict], list[tup
 # --------------------------------------------------------------------------
 
 
+def split_outside_state(text: str, sep: str, what: str) -> list[str]:
+    """Split on `sep`, ignoring every occurrence inside a `[...]` property list.
+
+    A paint's members are separated by `,` and a member's weight by `=` — and a
+    block state is `name[key=value,key=value]` (`crates/grammar/src/block.rs`),
+    so BOTH separators also occur *inside* one. Splitting on every occurrence is
+    not splitting on the separators: `deepslate[axis=y]=3` parsed that way asks
+    for a weight of `y]=3`, so the more precisely a paint is written the more
+    certainly it is refused, and the workaround is to strip the properties by
+    hand — which measures a different paint.
+
+    Bracket depth is therefore part of the grammar here, and an unbalanced one is
+    a refusal in the same words `BlockStateParseError` uses.
+    """
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth < 0:
+                raise SystemExit(
+                    f"{what}: a `]` closes a block-state property list that was never "
+                    f"opened, in {text!r}"
+                )
+        if ch == sep and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    if depth:
+        raise SystemExit(
+            f"{what}: unterminated block-state property list (missing `]`) in {text!r}"
+        )
+    parts.append("".join(buf))
+    return parts
+
+
 def parse_mix(spec: str) -> list[tuple[str, float]]:
-    """`sandstone=3,smooth_sandstone=3,andesite=4` → normalised area shares."""
+    """`sandstone=3,deepslate[axis=y]=1` → normalised area shares.
+
+    A member is `<block state>` or `<block state>=<weight>`, where the block
+    state is the vanilla string form the DSL itself is authored in — properties
+    and all. Appearance is a property of the BLOCK, so the state reduces to its
+    id for measurement; carrying it is what lets an author paste the paint they
+    wrote rather than a hand-edited copy of it.
+
+    A weight is malformed when it is absent (`stone=`), not a number
+    (`stone=heavy`), not positive (`stone=0`, `stone=-2`), or when a member
+    carries a second `=` outside its property list (`stone=1=2`). Each is a
+    refusal naming the member; none is ever read as a smaller mix.
+    """
+    what = f"--mix {spec!r}"
     members: list[tuple[str, float]] = []
-    for part in spec.split(","):
+    for part in split_outside_state(spec, ",", what):
         part = part.strip()
         if not part:
             continue
-        block, sep, raw = part.partition("=")
-        if not sep:
-            block, raw = part, "1"
-        block = block.strip()
-        block = block if ":" in block else f"minecraft:{block}"
+        fields = split_outside_state(part, "=", what)
+        if len(fields) == 1:
+            state, raw = fields[0], "1"
+        elif len(fields) == 2:
+            state, raw = fields
+        else:
+            raise SystemExit(
+                f"{what}: member {part!r} carries {len(fields) - 1} `=` outside its "
+                f"block state, and a member is `<block state>` or "
+                f"`<block state>=<weight>`"
+            )
+        state, raw = state.strip(), raw.strip()
+        if not state:
+            raise SystemExit(f"{what}: member {part!r} names no block")
+        block = base_block(state)
         try:
             weight = float(raw)
         except ValueError:
-            raise SystemExit(f"--mix {spec!r}: {raw!r} is not a weight")
-        if weight <= 0:
-            raise SystemExit(f"--mix {spec!r}: weight for {block} must be positive")
+            raise SystemExit(f"{what}: {raw!r} is not a weight for {block}") from None
+        if not math.isfinite(weight) or weight <= 0:
+            raise SystemExit(
+                f"{what}: weight for {block} must be a positive number, got {raw!r}"
+            )
         members.append((block, weight))
     if not members:
-        raise SystemExit(f"--mix {spec!r}: no members")
+        raise SystemExit(f"{what}: no members")
     total = sum(w for _, w in members)
     return [(b, w / total) for b, w in members]
 
@@ -769,54 +847,142 @@ def mix_report(name: str, members: list[tuple[str, float]], by_id: dict[str, dic
     }
 
 
-def program_mixes(doc: dict) -> list[tuple[str, list[tuple[str, float]]]]:
-    """Every weighted paint in a grammar program: palette roles and inline fills.
+def classify_paint(value) -> tuple[list[tuple[str, float]] | None, str | None]:
+    """A paint as its area shares, or the reason this reader cannot read it.
+
+    The grammar it mirrors is `crates/grammar/src/ir.rs`, and nothing else: a
+    `Paint` is `World(States)` or `Local { local: States }`, and a `States` is
+    one block-state string or a weighted list of `{block, weight}`. The frame is
+    a declaration about which world DIRECTION a property names — it moves no
+    block and changes no colour — so a local paint is read as the states it is,
+    and `{"local": ...}` is unwrapped rather than skipped. A program whose
+    palette is entirely local is the correctly-written case, so skipping the
+    wrapper makes the tool blindest to the programs it is most needed on.
+
+    Returns `(members, None)` or `(None, why)`, never a partial paint: a paint
+    read from the members that happened to parse is a mean of a different paint,
+    which is the same silence one level down.
+    """
+    if isinstance(value, dict):
+        keys = sorted(value)
+        if keys == ["local"]:
+            inner = value["local"]
+            if isinstance(inner, dict):
+                return None, (
+                    f"a `local` wrapper holding an object with keys {sorted(inner)}, "
+                    f"where its states — a block-state string or a weighted list — "
+                    f"were expected"
+                )
+            return classify_paint(inner)
+        if keys == ["role"]:
+            return None, (
+                f"a reference to the palette role {value['role']!r}, where a paint "
+                f"was declared — a role is bound to states, never to another role"
+            )
+        return None, (
+            f"not a paint: expected a block-state string, a weighted list, or a "
+            f'`{{"local": ...}}` wrapper of either; got an object with keys {keys}'
+        )
+    if isinstance(value, str):
+        if not value.strip():
+            return None, "an empty block state"
+        return [(base_block(value), 1.0)], None
+    if isinstance(value, list):
+        if not value:
+            return None, "an empty weighted list, which writes nothing"
+        members: list[tuple[str, float]] = []
+        for index, entry in enumerate(value):
+            if not isinstance(entry, dict) or "block" not in entry:
+                return None, (
+                    f"member {index} of the weighted list is not "
+                    f'`{{"block": ..., "weight": ...}}`'
+                )
+            try:
+                weight = float(entry.get("weight", 1))
+            except (TypeError, ValueError):
+                return None, (
+                    f"member {index} ({entry['block']}) has a weight that is not a "
+                    f"number: {entry.get('weight')!r}"
+                )
+            if not math.isfinite(weight) or weight <= 0:
+                return None, (
+                    f"member {index} ({entry['block']}) has a weight that is not "
+                    f"positive: {entry.get('weight')!r}"
+                )
+            members.append((base_block(str(entry["block"])), weight))
+        total = sum(w for _, w in members)
+        return [(b, w / total) for b, w in members], None
+    return None, f"not a paint: a JSON {type(value).__name__}"
+
+
+class PaintReading:
+    """Every paint a program DECLARES, split into the ones read and the ones not.
+
+    The list of successes is the half a reader can produce on its own, and a
+    binding count stated from it agrees with itself whatever it skipped: a
+    palette of eighteen roles of which two were understood reports "2 paints
+    examined" and exits 0 — a pass over a palette nobody measured, and the more
+    correctly the program is written the fewer of its roles the number covers.
+
+    So a declared paint leaves this reader by exactly one of two doors, `read`
+    or `skip`, and the count the report states is `declared`, which is the
+    document's own — one entry per `palette` key and per inline `fill` material,
+    counted whether or not the reader understood it.
+    """
+
+    def __init__(self) -> None:
+        self.paints: list[tuple[str, list[tuple[str, float]]]] = []
+        self.declared: list[str] = []
+        self.unread: list[tuple[str, str]] = []
+
+    def read(self, label: str, members: list[tuple[str, float]]) -> None:
+        self.declared.append(label)
+        self.paints.append((label, members))
+
+    def skip(self, label: str, why: str) -> None:
+        self.declared.append(label)
+        self.unread.append((label, why))
+
+
+def program_paints(doc) -> PaintReading:
+    """Every paint in a grammar program: palette roles and inline fills, both
+    frames, with an entry for every one that could not be read.
 
     A paint is a block-state string or a weighted list, in `palette` and equally
     on any `fill`. Reading only the named roles would leave every inline mix
     unmeasured — the same shape as a walk that enumerates three of five effect
-    roots.
-
-    A paint written in the scope's own axis frame is that same string or list
-    wrapped as `{"local": ...}`. The frame decides which world direction a
-    property names; it moves no block and changes no colour, so a local paint is
-    unwrapped and measured exactly like a bare one. Skipping the wrapper instead
-    is how a program whose whole palette is local reports NOTHING and prints the
-    shelf.
+    roots. A `{"role": ...}` material is a REFERENCE to a paint already reported
+    from `palette`; it declares no second paint and is neither read nor skipped.
     """
-    out: list[tuple[str, list[tuple[str, float]]]] = []
-
-    def unwrap(value):
-        """A `{"local": ...}` paint is its inner states; anything else is itself."""
-        if isinstance(value, dict) and "local" in value:
-            return value["local"]
-        return value
+    if not isinstance(doc, dict):
+        raise SystemExit(
+            f"refusing: a grammar program is a JSON object, and this is a "
+            f"{type(doc).__name__}"
+        )
+    reading = PaintReading()
+    palette = doc.get("palette") or {}
+    if not isinstance(palette, dict):
+        raise SystemExit(
+            f"refusing: `palette` is a JSON {type(palette).__name__}, not an object "
+            f"of roles, so this program has no role count to state a binding against"
+        )
 
     def paint(label: str, value) -> None:
-        value = unwrap(value)
-        if isinstance(value, str):
-            out.append((label, [(base_block(value), 1.0)]))
-        elif isinstance(value, list):
-            members = []
-            for entry in value:
-                if not isinstance(entry, dict) or "block" not in entry:
-                    continue
-                members.append((base_block(entry["block"]), float(entry.get("weight", 1))))
-            total = sum(w for _, w in members)
-            if total > 0:
-                out.append((label, [(b, w / total) for b, w in members]))
+        members, why = classify_paint(value)
+        if members is None:
+            reading.skip(label, why or "unreadable")
+        else:
+            reading.read(label, members)
 
-    for role, value in sorted((doc.get("palette") or {}).items()):
+    for role, value in sorted(palette.items()):
         paint(f"palette.{role}", value)
-
-    def is_paint(material) -> bool:
-        """An inline paint, as against a `{"role": ...}` reference to a named one."""
-        return isinstance(unwrap(material), (str, list))
 
     def walk(node, path: str) -> None:
         if isinstance(node, dict):
-            if node.get("op") == "fill" and is_paint(node.get("material")):
-                paint(f"fill@{path}", node["material"])
+            if node.get("op") == "fill":
+                material = node.get("material")
+                if not (isinstance(material, dict) and sorted(material) == ["role"]):
+                    paint(f"fill@{path}", material)
             for key in sorted(node):
                 walk(node[key], f"{path}/{key}")
         elif isinstance(node, list):
@@ -824,7 +990,12 @@ def program_mixes(doc: dict) -> list[tuple[str, list[tuple[str, float]]]]:
                 walk(item, f"{path}[{i}]")
 
     walk(doc.get("rules") or {}, "rules")
-    return out
+    if len(reading.paints) + len(reading.unread) != len(reading.declared):
+        raise SystemExit(
+            "internal: a declared paint was neither read nor named as unread, so the "
+            "binding count would be stated over a palette this reader lost track of"
+        )
+    return reading
 
 
 def base_block(state: str) -> str:
@@ -1089,7 +1260,7 @@ def load_registry() -> str:
     except OSError:
         raise SystemExit(
             f"no block registry at {REGISTRY} — this tool needs the pinned "
-            "1.21.11 block list from crates/compiler/data/, and this checkout "
+            "1.21.11 block list from crates/dsl/data/, and this checkout "
             "does not have it.\n"
             "The palette step is not optional: take role names from the corpus "
             "instead (`delve-grammar list`, then `delve-grammar show --program "
@@ -1134,16 +1305,83 @@ def sheet_path_ok(target: Path) -> bool:
     return True
 
 
-def print_mix_report(reports: list[dict], roles_examined: int) -> None:
-    """A mix report ALWAYS states what it bound to. A zero binding is a finding."""
-    multi = [r for r in reports if r["member_count"] >= 2]
-    print(f"binding: {roles_examined} paint(s) examined, {len(multi)} mix(es) with >= 2 members")
-    if not multi:
-        print(
-            "FINDING: zero binding — no paint here has two or more members, so this "
-            "report proves nothing about any palette. A green report over nothing is "
-            "not a pass."
+def member_count(members: list[tuple[str, float]]) -> int:
+    """How many members a paint HAS, air counted once and never dropped.
+
+    Arithmetic on the parsed members alone, so the binding count is knowable
+    BEFORE any block is measured — which is what lets the count be stated ahead
+    of a refusal that would otherwise swallow it.
+    """
+    solid = sum(1 for block, _ in members if block not in VOID_BLOCKS)
+    return solid + (1 if any(block in VOID_BLOCKS for block, _ in members) else 0)
+
+
+class Binding:
+    """What a mix report bound to, counted against what was DECLARED.
+
+    `declared` is the palette's own role count plus every inline fill (and one
+    per `--mix` spec); `examined` is how many of those this reader could read.
+    They are two different numbers on purpose: while `examined` was derived from
+    the reader's own output there was no arithmetic in which a skipped role
+    could show up, so a report over two of eighteen roles printed a smaller
+    number and exited 0.
+    """
+
+    def __init__(
+        self,
+        declared: int,
+        paints: list[tuple[str, list[tuple[str, float]]]],
+        unread: list[tuple[str, str]],
+    ) -> None:
+        self.declared = declared
+        self.examined = len(paints)
+        self.multi = sum(1 for _, members in paints if member_count(members) >= 2)
+        self.unread = unread
+
+    def line(self) -> str:
+        return (
+            f"binding: {self.examined} of {self.declared} declared paint(s) examined, "
+            f"{self.multi} mix(es) with >= 2 members"
         )
+
+    def findings(self) -> list[str]:
+        out: list[str] = []
+        if self.unread:
+            out.append(
+                f"FINDING: {len(self.unread)} declared paint(s) could not be read, so "
+                f"this report is not a measurement of this palette. A paint that is "
+                f"skipped is a colour the piece has and the report does not:"
+            )
+            out += [f"  {label} — {why}" for label, why in self.unread]
+        if not self.multi:
+            out.append(
+                "FINDING: zero binding — no paint here has two or more members, so this "
+                "report proves nothing about any palette. A green report over nothing is "
+                "not a pass."
+            )
+        return out
+
+    def as_json(self) -> dict:
+        return {
+            "paints_declared": self.declared,
+            "paints_examined": self.examined,
+            "mixes_with_two_or_more_members": self.multi,
+            "zero_binding_finding": self.multi == 0,
+            "unread": [{"paint": label, "why": why} for label, why in self.unread],
+            "unread_finding": bool(self.unread),
+        }
+
+
+def print_mix_report(reports: list[dict], binding: Binding) -> None:
+    """A mix report ALWAYS states what it bound to, and states it FIRST.
+
+    The count leads because a count printed only when it is interesting is a
+    count nobody learns to read — and because everything after it can refuse,
+    while this line cannot.
+    """
+    print(binding.line())
+    for finding in binding.findings():
+        print(finding)
     for report in reports:
         print(f"\n{report['name']}")
         for member in report["members"]:
@@ -1302,9 +1540,10 @@ def main(argv: list[str]) -> int:
     mixes: list[tuple[str, list[tuple[str, float]]]] = []
     for index, spec in enumerate(args.mix):
         mixes.append((f"mix{index + 1}", parse_mix(spec)))
+    reading = None
     if args.program:
-        doc = json.loads(args.program.read_text())
-        mixes += program_mixes(doc)
+        reading = program_paints(json.loads(args.program.read_text()))
+        mixes += reading.paints
     # Asking for a mix report and getting none back is the finding, so the report
     # is printed on the REQUEST, never on there being something to say. Gating it
     # on a non-empty list left `print_mix_report`'s zero-binding finding — already
@@ -1312,25 +1551,32 @@ def main(argv: list[str]) -> int:
     # program whose palette this reader did not understand fell through to the
     # whole-shelf listing and exited 0.
     if mixes or args.mix or args.program:
-        reports = [mix_report(name, members, by_id) for name, members in mixes]
+        # Every `--mix` spec is one declared paint: `parse_mix` refuses rather
+        # than returning a shorter one, so those two counts cannot diverge.
+        binding = Binding(
+            declared=len(args.mix) + (len(reading.declared) if reading else 0),
+            paints=mixes,
+            unread=reading.unread if reading else [],
+        )
+        try:
+            reports = [mix_report(name, members, by_id) for name, members in mixes]
+        except SystemExit:
+            # A refusal deep in the measurement must not be the reason a report
+            # carries no binding count. The count is arithmetic on the parsed
+            # paints, so it is knowable here and is stated before the refusal
+            # rather than lost behind it.
+            print(binding.line(), file=sys.stderr)
+            raise
         if args.json:
-            multi = sum(1 for r in reports if r["member_count"] >= 2)
-            print(
-                json.dumps(
-                    {
-                        "mixes": reports,
-                        "binding": {
-                            "paints_examined": len(reports),
-                            "mixes_with_two_or_more_members": multi,
-                            "zero_binding_finding": multi == 0,
-                        },
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
-            )
+            print(json.dumps({"mixes": reports, "binding": binding.as_json()}, indent=2, sort_keys=True))
+            for finding in binding.findings():
+                print(finding, file=sys.stderr)
         else:
-            print_mix_report(reports, len(reports))
+            print_mix_report(reports, binding)
+        if binding.unread:
+            # A skipped role is a RED, never a smaller number: the palette this
+            # report describes is not the palette the program declares.
+            return 2
         if not args.screen and not args.sheet:
             return 0
 
