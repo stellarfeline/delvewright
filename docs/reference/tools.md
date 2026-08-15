@@ -1074,7 +1074,8 @@ air over the sand — every tool in the repo drew it as still water. The block
 knowledge is not restated: `crates/schem/src/fluid.rs` is source-included by the
 same mechanism, so the emitters and `delve-admit audit` read one rule. A run
 direction that leaves the piece's own outer face is counted and never failed
-(what is beyond a face is not in these bytes), and every piece prints its own
+here (what is beyond a face is not in these bytes — the compiler's `DW0318`
+judges it at placement, against the campaign's horizon), and every piece prints its own
 binding — sources examined, cells held `waterlogged`, runs at the edge — so a
 piece that quietly lost its water does not read like a piece that holds it.
 

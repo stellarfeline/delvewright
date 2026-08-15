@@ -1524,6 +1524,128 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
     );
 }
 
+/// `DW0318` on the shipped library, both horizons, one placement.
+///
+/// `island-beach-camp` is a real shoreline piece: its own bytes pass the
+/// piece-level containment rule, and `delve-admit` counts 171 run directions
+/// leaving its outer faces, which that rule deliberately does not judge —
+/// *whatever this piece is placed against decides where that water goes*. This
+/// test is the thing that decides it.
+///
+/// Placed under `horizon: ocean` the water meets the sea the piece depicts and
+/// the build is green. Placed under `horizon: void` — the default, and what any
+/// campaign that never declares a horizon gets — the identical geometry pours
+/// thousands of water cells off the edge of the world, forever, and before this
+/// check existed the build was **green** and shipped it.
+fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
+    let camp = tmp(name);
+    copy_dir(&common::hello_world_dir(), &camp);
+    let edit = |file: &str, f: &dyn Fn(&mut serde_json::Value)| {
+        let p = camp.join(file);
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        f(&mut doc);
+        if ocean {
+            doc["dsl_version"] = serde_json::json!("0.6.0");
+        }
+        std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    };
+    edit("world.json", &|d| {
+        d["content"]["areas"][0]["prefab"] = serde_json::json!("prefab/island-beach-camp");
+        if ocean {
+            let c = d["content"].as_object_mut().unwrap();
+            c.insert("horizon".into(), serde_json::json!("ocean"));
+            c.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
+        }
+    });
+    // The fixture's quest hangs on `hello-room`'s anchors; re-seat it on this
+    // piece's own, and drop the gate effect (this piece declares no gate).
+    edit("npcs.json", &|d| {
+        d["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/crew-a");
+    });
+    edit("quests.json", &|d| {
+        d["content"]["quests"][0]["objectives"][1]["anchor"] =
+            serde_json::json!("anchor/camp-fire");
+        d["content"]["quests"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("on_objective_complete");
+    });
+    if ocean {
+        for f in ["quest-plan.json", "classes.json", "dialogue.json"] {
+            edit(f, &|_| {});
+        }
+    }
+    camp
+}
+
+#[test]
+fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_does_not() {
+    let pf = common::prefabs_dir();
+
+    // --- void: the water runs out of the world ------------------------------
+    let camp = beach_camp_campaign("dw0318-void", false);
+    let out = tmp("dw0318-void-out");
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(code(&r), 3, "build-tier failure:\n{log}");
+    assert!(log.contains("DW0318"), "expected DW0318:\n{log}");
+    assert!(
+        log.contains("prefab/island-beach-camp"),
+        "names the piece the water came from:\n{log}"
+    );
+    assert!(
+        log.contains("Examined") && log.contains("fluid cell(s) across"),
+        "states its binding count, not only its finding:\n{log}"
+    );
+
+    // --- ocean: the same water meets the sea --------------------------------
+    let camp = beach_camp_campaign("dw0318-ocean", true);
+    let out = tmp("dw0318-ocean-out");
+    let r = delvec(&[
+        "build",
+        camp.to_str().unwrap(),
+        "-o",
+        out.to_str().unwrap(),
+        "--prefabs",
+        pf.to_str().unwrap(),
+    ]);
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&r.stdout),
+        String::from_utf8_lossy(&r.stderr)
+    );
+    assert_eq!(code(&r), 0, "an ocean horizon holds this water:\n{log}");
+    assert!(!log.contains("DW0318"), "no finding under ocean:\n{log}");
+
+    // The binding ledger ships either way, and says what was examined.
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/fluid-escape.json"))
+            .expect("every assembled world emits the fluid-escape ledger"),
+    )
+    .unwrap();
+    assert_eq!(ledger["horizon"], "ocean");
+    assert_eq!(ledger["verdict"], "pass");
+    assert_eq!(ledger["pieces_examined"], 1);
+    let examined = ledger["fluid_cells_examined"].as_u64().unwrap();
+    let outside = ledger["cells_outside_built_volume"].as_u64().unwrap();
+    assert!(
+        examined > 0 && outside > 0 && outside < examined,
+        "the binding count is the world's water, not the finding list: {ledger}"
+    );
+}
+
 /// `DW0344`: in an `ocean` world, a placed piece whose metadata declares a
 /// waterline that does not land at sea level (y=62) is a build error — the piece
 /// would float above the sea (an unclimbable shore) or drown under it. Nothing

@@ -10,7 +10,7 @@
 //! walked to a deck it was never carried to.
 //!
 //! Fixture: `branch-transport` — `branch-two-endings` plus a second area
-//! (`area/galley`) that only the bolt branch ever enters. The default (hold)
+//! (`area/landing`) that only the bolt branch ever enters. The default (hold)
 //! path never leaves the keep, so the crossing is branch-only by construction.
 
 mod common;
@@ -26,10 +26,10 @@ use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
-/// The galley's `spawn` anchor in world coordinates — the destination the bolt
+/// The landing's `spawn` anchor in world coordinates — the destination the bolt
 /// branch's crossing has to land on. Asserted against the exported branch path
 /// below, so a fixture drift fails loudly instead of silently.
-const GALLEY_SPAWN: [i32; 3] = [260, 69, 11];
+const LANDING_SPAWN: [i32; 3] = [262, 66, 8];
 
 fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("branch-transport")
@@ -140,7 +140,7 @@ fn json_at(out: &BuildOutput, path: &str) -> Value {
     serde_json::from_str(text(out, path)).unwrap()
 }
 
-/// The bolt branch crosses into the galley when it completes `obj/bolt`; the
+/// The bolt branch crosses into the landing when it completes `obj/bolt`; the
 /// exported (hold) path never leaves the keep. The crossing must still be
 /// emitted — gated on the flags that select the branch, so the hold path is
 /// untouched by it.
@@ -159,8 +159,8 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
         .expect("obj/bolt step exists");
     assert_eq!(
         promised,
-        serde_json::json!(GALLEY_SPAWN),
-        "fixture drift: the bolt branch must cross into area/galley at obj/bolt"
+        serde_json::json!(LANDING_SPAWN),
+        "fixture drift: the bolt branch must cross into area/landing at obj/bolt"
     );
 
     // The delivery: `complete_obj_bolt` carries the crossing, conditioned on the
@@ -168,9 +168,9 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
     let body = complete_fn(&out, "obj/bolt");
     let expected = format!(
         "execute if score {p} {flee} matches 1 unless score {p} {wait} matches 1 run teleport @s {} {} {}",
-        GALLEY_SPAWN[0],
-        GALLEY_SPAWN[1],
-        GALLEY_SPAWN[2],
+        LANDING_SPAWN[0],
+        LANDING_SPAWN[1],
+        LANDING_SPAWN[2],
         p = plan::PARTY,
         flee = plan::flag_score("flag/flee"),
         wait = plan::flag_score("flag/wait"),
@@ -237,7 +237,7 @@ fn the_branch_path_json_and_the_emission_agree() {
 ///
 /// The variant: the hold branch gains a shore beat (`area/shore`) immediately
 /// after `obj/decide`, while the bolt branch's own next beat moves into
-/// `area/galley` — so `obj/decide` carries two contradictory crossings.
+/// `area/shore` — so `obj/decide` carries two contradictory crossings.
 #[test]
 fn a_shared_crossing_with_divergent_destinations_is_dw0494() {
     let tmp = TempCampaign::new("dw0494");
@@ -249,8 +249,8 @@ fn a_shared_crossing_with_divergent_destinations_is_dw0494() {
         }));
     });
     tmp.patch("quest-plan", |p| {
-        // The bolt branch's next beat is already out at the galley.
-        quest(p, "quest/bolt")["area"] = json!("area/galley");
+        // The bolt branch's next beat is already out at the landing.
+        quest(p, "quest/bolt")["area"] = json!("area/landing");
         quest(p, "quest/hold")["depends_on"]
             .as_array_mut()
             .unwrap()
@@ -266,7 +266,7 @@ fn a_shared_crossing_with_divergent_destinations_is_dw0494() {
         }));
     });
     tmp.patch("quests", |q| {
-        quest(q, "quest/bolt")["objectives"][0]["anchor"] = json!("anchor/deck");
+        quest(q, "quest/bolt")["objectives"][0]["anchor"] = json!("anchor/exit");
         q["content"]["quests"].as_array_mut().unwrap().push(json!({
             "id": "quest/beacon",
             "trigger": { "type": "quest-complete", "quest": "quest/decide" },

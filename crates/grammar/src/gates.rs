@@ -955,7 +955,9 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         findings.push(format!(
             "a body of fluid reaches this piece's own outer face in {} run direction(s) (from {}) \
              — what is beyond a face is not in these bytes, so `fluid-contained` counted them and \
-             judged nothing. Whatever this piece is placed against decides where that water goes",
+             judged nothing. Whatever this piece is placed against decides where that water goes, \
+             and the compiler holds it to that: `DW0318` refuses a build whose fluid ends up \
+             outside every placed piece under a void horizon",
             fluid.at_edge.len(),
             named.join(", ")
         ));
