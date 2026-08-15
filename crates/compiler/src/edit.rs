@@ -475,6 +475,12 @@ fn check_batch_invariants(
     // block, or a `carve` that opens the wall which was holding one — and the
     // flood model re-runs over the edited world every batch regardless. Naming
     // the batch is what this call site adds over the stage-10 floor.
+    //
+    // `verify_boundary_safety` runs this same proof first and would raise the
+    // same finding, so what this call adds is the ATTRIBUTION and nothing else:
+    // `ctx` names the batch that made the world leak, which a reader chasing a
+    // stage-7 edit needs and the stage-10 floor cannot know. The sequence
+    // itself is no longer this call site's to get right.
     if let Some(e) = crate::nav::measure_fluid_escape(&with_fixtures).finding() {
         return Err(ctx(e));
     }

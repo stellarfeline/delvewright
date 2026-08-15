@@ -6237,7 +6237,41 @@ const OPEN_SEA_MARGIN: i32 = 2;
 /// fire. The two models compose without interacting: partial heights change
 /// *which cells are reachable* (via [`World::neighbors_fp`], feeding `reachable`
 /// above), never *what counts as a climb-out*.
+/// **The fluid proof runs first, and it runs inside here.**
+///
+/// `boundary_void`'s per-column fall-arrest scan counts a flooded cell as
+/// arrest, so a bottomless column with a waterfall running down it reads as
+/// *supported* and this proof goes quiet on exactly the columns the water
+/// escaped through. Escaping fluid is therefore a false premise of this proof,
+/// the way an unsettled gravity block is of everything downstream of `DW0313`.
+///
+/// That constraint used to be held by the ORDER OF TWO STATEMENTS at each of the
+/// two call sites, plus a comment saying why. Source order is not a mechanism:
+/// it is a checklist item that survives only until somebody inserts a third gate
+/// into the same function — which is precisely what happened when tiled-zone
+/// placement landed, and nothing would have said so. So the sequence is a fact
+/// about this proof rather than a fact about its callers, and a caller can no
+/// longer get it wrong: there is no order to get wrong.
+///
+/// The masking is not a corner case that a cleverer fixture could dodge. Under a
+/// void horizon the flood model spreads without a floor to stop it, so escaped
+/// water reaches essentially every column and silences essentially every hit —
+/// which is why no black-box test can tell the two orders apart, and why this is
+/// structural instead of a test. [`boundary_only`] is the unsequenced proof,
+/// kept so the masking can still be DEMONSTRATED rather than asserted.
 pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
+    if let Some(e) = measure_fluid_escape(world).finding() {
+        return Err(e);
+    }
+    boundary_only(world, starts)
+}
+
+/// Boundary safety alone, on a world whose fluid has already been accounted for.
+///
+/// Split out of [`verify_boundary_safety`] for one reason: the masking that
+/// makes the sequence load-bearing has to be showable. A test that wants to see
+/// this proof go quiet on a flooded world calls this; nothing else should.
+fn boundary_only(world: &World, starts: &[AnchorRoot]) -> Result<(), NavError> {
     let reachable = world.reachable_walkable_rooted(starts);
     match &world.ambient {
         Ambient::Void => boundary_void(world, &reachable),
@@ -7258,13 +7292,21 @@ mod tests {
             World::from_occupancy(crate::assembled::occupancy_of(wet, &BTreeSet::new()))
                 .with_ambient(Ambient::Void, plate_built());
         assert!(
-            verify_boundary_safety(&wet_world, &roots([1, 64, 1])).is_ok(),
+            boundary_only(&wet_world, &roots([1, 64, 1])).is_ok(),
             "the leak silences the boundary proof — this is the masking, not a pass"
         );
         assert!(
             measure_fluid_escape(&wet_world).finding().is_some(),
             "and DW0318 is the only proof left that sees it"
         );
+        // …which is why the sequence is inside `verify_boundary_safety` rather
+        // than at its call sites: the same world, through the entry point every
+        // caller uses, reports the leak instead of the silence. A caller cannot
+        // put these two in the wrong order because there is no order left to
+        // put them in.
+        let err = verify_boundary_safety(&wet_world, &roots([1, 64, 1]))
+            .expect_err("the sequenced entry point reports the leak");
+        assert_eq!(err.code, DW_FLUID_LEAVES_WORLD);
     }
 
     /// Boundary safety (spec-0017 invariant 4): a walkable platform edge whose

@@ -107,7 +107,7 @@ fn build(root: &Path, id: &str) -> (Plan<'static>, emit::BuildOutput) {
 #[test]
 fn a_tiled_zone_is_bound_like_any_prefab_and_placed_whole() {
     let root = scratch("whole");
-    common::write_tiled_zone(&root.join("prefabs"), "tiled-corridor", anchors());
+    common::write_tiled_zone(&root.join("prefabs"), "tiled-corridor", anchors(), &[]);
     let (plan, out) = build(&root, "tiled-corridor");
 
     // ONE logical piece, at the whole zone's size — not two pieces of 48 and 12.
@@ -177,7 +177,7 @@ fn a_tiled_zone_is_bound_like_any_prefab_and_placed_whole() {
 #[test]
 fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
     let root = scratch("assembled");
-    common::write_tiled_zone(&root.join("prefabs"), "tiled-corridor", anchors());
+    common::write_tiled_zone(&root.join("prefabs"), "tiled-corridor", anchors(), &[]);
     let prefabs_dir = root.join("prefabs");
     let campaign_path = campaign_dir(&root, "tiled-corridor");
     let loaded = load_campaign_dir(&campaign_path).unwrap();
@@ -240,7 +240,7 @@ fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
 fn a_manifest_that_does_not_tile_its_zone_is_still_dw0346() {
     let root = scratch("holed");
     let dir = root.join("prefabs");
-    common::write_tiled_zone(&dir, "tiled-corridor", anchors());
+    common::write_tiled_zone(&dir, "tiled-corridor", anchors(), &[]);
     // Delete the second tile from the manifest, leaving the zone's declared
     // size unchanged: the parts now cover 48 of 60 rows.
     common::patch_file(&dir.join("tiled-corridor.json"), |v| {
@@ -270,7 +270,7 @@ fn a_manifest_that_does_not_tile_its_zone_is_still_dw0346() {
 fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
     let root = scratch("stale");
     let dir = root.join("prefabs");
-    common::write_tiled_zone(&dir, "tiled-corridor", anchors());
+    common::write_tiled_zone(&dir, "tiled-corridor", anchors(), &[]);
 
     // The manifest is untouched and still tiles its zone exactly; only the
     // BYTES of the second tile are from another export.
@@ -306,7 +306,7 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
 
     // ...and the honest tiles pass it, with a binding count that is the number
     // of templates actually compared rather than the length of a list.
-    common::write_tiled_zone(&dir, "tiled-corridor", anchors());
+    common::write_tiled_zone(&dir, "tiled-corridor", anchors(), &[]);
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for template in plan
         .areas
@@ -342,7 +342,7 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
 fn a_stale_tile_is_refused_by_the_review_commands_too_not_only_by_build() {
     let root = scratch("cli-stale");
     let dir = root.join("prefabs");
-    common::write_tiled_zone(&dir, "tiled-corridor", anchors());
+    common::write_tiled_zone(&dir, "tiled-corridor", anchors(), &[]);
     let campaign_path = campaign_dir(&root, "tiled-corridor");
 
     // Honest library first: both commands succeed, so the refusals below are
@@ -403,7 +403,7 @@ fn a_stale_tile_is_refused_by_the_review_commands_too_not_only_by_build() {
 fn a_tiled_placement_is_byte_identical_across_builds() {
     let a = scratch("det-a");
     let b = scratch("det-b");
-    common::write_tiled_zone(&a.join("prefabs"), "tiled-corridor", anchors());
+    common::write_tiled_zone(&a.join("prefabs"), "tiled-corridor", anchors(), &[]);
     // The SAME input bytes in a second tree, not a second synthesis of them.
     // `fastnbt`'s compound is a `HashMap`, so this file's own generator writes
     // its tags in hash order — running it twice produces two different (equally

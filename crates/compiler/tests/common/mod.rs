@@ -393,11 +393,30 @@ fn tiled_zone_cells() -> Vec<([i32; 3], &'static str)> {
 /// `anchors` is written verbatim into the document, in WHOLE-ZONE coordinates —
 /// which is the property tiling must not disturb: an anchor is a fact about the
 /// building, and a cut never moves one.
-pub fn write_tiled_zone(dir: &Path, id: &str, anchors: serde_json::Value) {
+///
+/// `extra` is added to the corridor's own cells, also in whole-zone
+/// coordinates, and is how a caller puts something in the zone that the cut
+/// then has to survive — a pool of water past the cut, say. It is an argument
+/// rather than a second writer because what a caller varies is what is IN the
+/// zone; a `write_tiled_zone_with_water` would leave whoever wants lava, or a
+/// chest, with nowhere to go.
+pub fn write_tiled_zone(
+    dir: &Path,
+    id: &str,
+    anchors: serde_json::Value,
+    extra: &[([i32; 3], &str)],
+) {
     std::fs::create_dir_all(dir).unwrap();
     let [sx, sy, sz] = TILED_ZONE_SIZE;
     let cut = TILED_ZONE_CUT;
     let cells = tiled_zone_cells();
+    // Later wins, so `extra` may carve as well as add: a cell it names replaces
+    // the shell cell underneath it rather than fighting with it.
+    let mut by_pos: std::collections::BTreeMap<[i32; 3], &str> = cells.into_iter().collect();
+    for (pos, name) in extra {
+        by_pos.insert(*pos, *name);
+    }
+    let cells: Vec<([i32; 3], &str)> = by_pos.into_iter().collect();
     let mut parts = Vec::new();
     for (i, (z0, depth)) in [(0, cut), (cut, sz - cut)].into_iter().enumerate() {
         let tile: Vec<([i32; 3], &str)> = cells
@@ -441,4 +460,58 @@ pub fn write_tiled_zone(dir: &Path, id: &str, anchors: serde_json::Value) {
         serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
+}
+
+/// Write a single-template prefab into `dir`: one `.nbt` plus its metadata.
+///
+/// The companion of [`write_tiled_zone`] on the other packaging, so a test that
+/// is about something else — where a piece ends, where its water goes — can
+/// compose a piece without caring which packaging it got.
+pub fn write_single_prefab(
+    dir: &Path,
+    id: &str,
+    size: [i32; 3],
+    cells: &[([i32; 3], &str)],
+    anchors: serde_json::Value,
+) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(format!("{id}.nbt")), structure_nbt(size, cells)).unwrap();
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{id}"),
+        "structure": {
+            "file": format!("{id}.nbt"),
+            "id": id,
+            "size": size,
+            "data_version": 4671,
+            "generator": "crates/compiler/tests/common",
+        },
+        "anchors": anchors,
+        "connectors": [],
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-15" },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Test fixture.",
+            "provenance": "Synthesised by crates/compiler/tests/common::write_single_prefab."
+        }
+    });
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+}
+
+/// The hello-world campaign materialised at `dst`, with its one area rebound to
+/// `prefab/<id>`. Shared by every test that needs a real campaign around a
+/// synthetic piece.
+pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
+    std::fs::create_dir_all(dst).unwrap();
+    for f in STAGE_FILES {
+        std::fs::copy(hello_world_dir().join(f), dst.join(f)).unwrap();
+    }
+    patch_file(&dst.join("world.json"), |v| {
+        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
+    });
+    dst.to_path_buf()
 }

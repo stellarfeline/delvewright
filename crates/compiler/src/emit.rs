@@ -683,6 +683,13 @@ pub fn build_with_warnings(
             // at all: "0 fluid cells examined" is the reading a dry campaign
             // should be able to show, and a check whose only output is silence
             // is one nobody can tell apart from a check that did not run.
+            // Measured here for the LEDGER, which is owed even on a pass and
+            // even by a bone-dry world. The sequencing itself is no longer this
+            // call site's to hold: `verify_boundary_safety` runs the same proof
+            // first, because a boundary verdict taken over a world the water is
+            // still running out of is not a verdict (see its doc comment). This
+            // call and that one cannot disagree — the measurement is pure and
+            // reads the same two sets.
             let fluid_escape = crate::nav::measure_fluid_escape(&world);
             fluid_escape_ledger = Some(fluid_escape.ledger());
             if let Some(e) = fluid_escape.finding() {

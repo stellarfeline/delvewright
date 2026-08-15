@@ -381,3 +381,104 @@ fn every_command_is_classified_exactly_once() {
         NOT_PIECE_DOORS.len()
     );
 }
+
+/// Obligation 3, and it belonged to no branch: **a door that takes a zone
+/// manifest refuses one that does not tile its own zone.**
+///
+/// The two obligations above hand every door a lone TILE. They landed beside a
+/// compiler that refused a tile-set manifest outright, so a manifest was never
+/// something a door had to be right about — reaching one meant the zone was
+/// unbuildable anyway.
+///
+/// That changed underneath them. The compiler places a tile set now, and the one
+/// reader that defines the prefab document validates the manifest as it reads
+/// it. So a manifest is a live input, and it has its own way of lying: parts
+/// that do not cover the zone reassemble into a building with a hole in it and
+/// report success — the failure `TileSet::validate` exists for and the one
+/// nothing else can see. Neither branch could test it. One had no validating
+/// reader; the other had no enumeration to test it across.
+///
+/// **Which doors take a manifest is measured, not listed.** Not every door does
+/// — a socket is carved into one tile's bytes, so the editing doors take an
+/// `.nbt` and say so by failing to parse a `.json` at all. Writing that
+/// distinction down here would be the same defect the enumeration above exists
+/// to end, one input over. So the set is discovered by handing every door a
+/// manifest that is entirely VALID and seeing which accept it; those, and only
+/// those, then owe the refusal. The rest owe what every command owes — they may
+/// not exit 0 on it either, which is what stops a door dropping out of the
+/// obligation by breaking.
+#[test]
+fn a_door_that_takes_a_manifest_refuses_one_that_does_not_tile_its_zone() {
+    let (dir, _beside, _orphan) = stage("holed-manifest");
+    let manifest = dir.join("zone.json");
+    let honest = std::fs::read_to_string(&manifest).unwrap();
+
+    // Which doors take a manifest at all: hand each the honest one.
+    let mut takes_a_manifest: Vec<&Door> = Vec::new();
+    for door in PIECE_DOORS {
+        let handed: PathBuf = match door.handed {
+            Handed::Nbt => manifest.clone(),
+            Handed::Dir => dir.clone(),
+        };
+        let out = run(door.path, door.extra, &handed, &dir);
+        if out.status.code() == Some(0) {
+            takes_a_manifest.push(door);
+        }
+    }
+    assert!(
+        !takes_a_manifest.is_empty(),
+        "no door accepted a valid zone manifest, so this test would bind to nothing. Either the \
+         staged zone stopped being valid or the whole-zone input is gone"
+    );
+
+    // Now the same manifest, lying: it keeps the zone size it declares and
+    // loses a tile, so its parts cover half the volume. Every `.nbt` is still
+    // on disk and every one of them is still honest — the document is the thing
+    // that lies, which is why nothing but the manifest rule can catch it.
+    let mut doc: serde_json::Value = serde_json::from_str(&honest).unwrap();
+    let parts = doc["structure_set"]["parts"].as_array_mut().unwrap();
+    assert_eq!(parts.len(), 2, "the staged zone is genuinely tiled");
+    parts.truncate(1);
+    std::fs::write(&manifest, doc.to_string()).unwrap();
+
+    let mut bound = 0usize;
+    for door in PIECE_DOORS {
+        let handed: PathBuf = match door.handed {
+            Handed::Nbt => manifest.clone(),
+            Handed::Dir => dir.clone(),
+        };
+        let out = run(door.path, door.extra, &handed, &dir);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // Every door, manifest-taking or not: never a success.
+        assert_ne!(
+            out.status.code(),
+            Some(0),
+            "`delve-admit {}` accepted a manifest covering half the zone it declares. It has \
+             answered about a building with a hole in it, and said so:\n{text}",
+            door.path.join(" ")
+        );
+        // And a door that takes manifests owes the reason, not an incidental
+        // failure somewhere further down.
+        if takes_a_manifest.iter().any(|d| d.path == door.path) {
+            assert!(
+                text.contains("cover"),
+                "`delve-admit {}` reads zone manifests, so its refusal must be that this one does \
+                 not tile its zone:\n{text}",
+                door.path.join(" ")
+            );
+            bound += 1;
+        }
+    }
+    eprintln!(
+        "holed-manifest binding: {} of {} piece door(s) take a zone manifest; {bound} refused a \
+         manifest that lies, and 0 of {} accepted one",
+        takes_a_manifest.len(),
+        PIECE_DOORS.len(),
+        PIECE_DOORS.len()
+    );
+    assert_eq!(bound, takes_a_manifest.len());
+}
