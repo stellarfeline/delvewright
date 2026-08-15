@@ -845,14 +845,20 @@ Symptom → tool:
      `--mix 'a=3,b=3,c=4'` or `--program p.json` reports `chroma_mass`,
      `chromatic_area`, the **named** `loudest_member` with its area share, and
      `dominant_hue` — never a mean as the verdict, because a mean cannot see
-     that 60% of a wall is one loud family when the craft rule gives it 10%.
+     that 60% of a wall is one loud family when the craft rule gives it 10%. A
+     member carries its block state, properties and all
+     (`--mix 'deepslate[axis=y]=3,stone=1'`). **Read the binding line before
+     the colours**: it reads `examined of declared`, declared being the
+     palette's own role count plus each inline fill, so `18 of 18` is a
+     measurement of the palette and `8 of 18` is not — a declared paint the
+     tool could not read is named with its reason and exits 2.
      Then **LOOK**: `--sheet` writes `.sheets/palette/swatches.png`, every
      survivor tiled and every mix rendered as its seeded weighted tiling —
      **read that PNG before binding anything.** A shortlist is not a choice,
      and the screen will hand you blocks that are right on every measured axis
      and wrong for the job (a light source, a gravity block, wool). Record the
      measured hex beside each role.
-     The tool needs the pinned block registry from `crates/compiler/data/`
+     The tool needs the pinned block registry from `crates/dsl/data/`
      **and** a 1.21.11 client jar, and refuses by name when either is
      absent. That does not make the step optional: take role names from the
      corpus instead (`delve-grammar list`, then `delve-grammar show
