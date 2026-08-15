@@ -160,6 +160,57 @@ rules. Silhouette complexity stays a measurement, never a gate.
   program, hash, region and seed like any prefab; the release freeze names it
   like any campaign file.
 
+## 3b. The ground, when the ground is designed
+
+A map stands on something, and where that something is *designed* it is part of
+the composition rather than a setting the composition is dropped into.
+
+**The boundary, and it is the same test every primitive is held to.** The horizon
+line exists to place a finished scene into a **backdrop**: terrain produced by a
+parameter-controlled analytic generator, chosen from a small set of bases, never
+authored the way a building is authored. That is the right shape for ground
+nobody is designing. It is the wrong shape for ground that carries the
+silhouette, that the parts are cut into, and that a reviewer judges by eye —
+because a base built to satisfy one map's landform would be one campaign's
+design wearing a primitive's clothes: buildable by nobody else, configurable
+into nothing.
+
+So: **designed ground is content and is written in the DSL; undesigned ground is
+backdrop and belongs to the horizon.** A map whose ground is designed declares
+the flat, surround-free backdrop under it and builds its landform as ordinary
+rules in the map program.
+
+This is not a loss of fidelity. A landform assembled from stepped axis-aligned
+masses reads as rock at playable scale, which is the scale the constitution says
+judgement happens at; the curve in a piece of concept art is a drawing
+convention, and the silhouette is what carries the recognition. There is
+precedent in the corpus: a sea cliff with a road cut across it has already been
+built this way, striation and all.
+
+### The seam class this creates
+
+A part cut into ground is **not** the zone-to-zone seam section 4 is written
+for. Two zones meeting is two authored volumes agreeing on a shared face. A zone
+in ground is one volume **displacing** another: the ground owes a void exactly
+where the part sits, the part owes closure exactly where the ground stops, and
+neither obligation is the other's mirror.
+
+Stated as obligations, so they are checked rather than remembered:
+
+1. **The ground declares no cell inside a part's box.** A ground rule that fills
+   into a placed part's volume is a refusal at expansion, never a silent
+   overwrite — an overwrite reads as a solved seam and ships a part whose
+   interior has been replaced by rock.
+2. **A part's exterior edges meeting ground are exterior obligations, not
+   interior ones.** A face opening onto sky above a cliff is not an unwritten
+   wall; a face opening into the rock is.
+3. **The ground's walkable surface is part of the map's reachability**, so a
+   part reachable only across ground the ground does not actually provide is a
+   stranded part, caught by the same proof that catches a stranded zone.
+4. **The count is stated.** How many part-to-ground seams the map has, and how
+   many were examined. A map reporting zero has either no designed ground or a
+   binding failure, and those two must not look alike.
+
 ## 4. Mutual consistency: what a part owes, what the whole owes, what is checked
 
 **A part owes the whole:**
