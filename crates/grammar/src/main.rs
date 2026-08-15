@@ -600,7 +600,13 @@ fn run_expand(
         eprintln!("error: write {}: {e}", report_path.display());
         return ExitCode::from(EXIT_OUTPUT);
     }
-    if !report.is_pass() {
+    // `is_fail`, not `!is_pass`: an UNDECIDED report is not a red and must not
+    // refuse the artifact. The gate could not examine something at this region;
+    // the program may be entirely correct, and refusing here would be the
+    // "reds on ordinary correct programs" failure arriving by the back door.
+    // It is still shouted — `report_to_stderr` prints the verdict, the gate's
+    // state and the finding that names every undecided object.
+    if report.is_fail() {
         report_to_stderr(&id, &report);
         eprintln!(
             "error: {id}: a machine gate went red; no prefab was written. The report is at {}.",
@@ -685,7 +691,11 @@ fn report_to_stderr(id: &str, report: &gates::Report) {
         eprintln!(
             "  {:<15} {}  bound {:<6} {}",
             gate.id,
-            if gate.pass { "pass" } else { "FAIL" },
+            match gate.state {
+                gates::GateState::Pass => "pass",
+                gates::GateState::Fail => "FAIL",
+                gates::GateState::Undecided => "UNDECIDED",
+            },
             gate.bound,
             gate.detail
         );
@@ -800,6 +810,22 @@ const ZONE_MANIFEST: &str = "zones.json";
 /// to become the program that is expanded.
 type AuditItem = (String, Program, [u32; 3], u64, gates::Options, usize);
 
+/// What one gate id totalled to across the corpus.
+#[derive(Default)]
+struct GateTotals {
+    /// Objects examined, summed.
+    objects: usize,
+    /// Programs the gate ran on.
+    programs: usize,
+    /// Programs it went red on.
+    red: usize,
+    /// Objects it could not decide, summed — a binding count in its own right,
+    /// and the one that says a corpus never exercises the surface.
+    undecided_objects: usize,
+    /// Programs holding at least one undecided object.
+    undecided_programs: usize,
+}
+
 /// One audited program's outcome, so the caller can total binding counts.
 struct Audited {
     label: String,
@@ -826,9 +852,13 @@ struct Exclusion {
 }
 
 /// Which recorded codes appear in a report's failing gates.
+///
+/// `failed`, not `!passed`: an exclusion records what a program is RED with,
+/// and an undecided gate is not red. Reading `DW0742` in here would let a
+/// program hold a known-red record on a code that refuses nothing.
 fn failing_codes(report: &gates::Report) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    for gate in report.gates.iter().filter(|g| !g.pass) {
+    for gate in report.gates.iter().filter(|g| g.failed()) {
         for word in gate.detail.split(|c: char| !c.is_ascii_alphanumeric()) {
             if word.len() == 6
                 && word.starts_with("DW")
@@ -1163,29 +1193,46 @@ fn run_audit(
     // is the point of the report, and a gate that examined zero objects across
     // the whole corpus is the vacuous green this project has shipped five times.
     let mut order: Vec<&'static str> = Vec::new();
-    let mut bound: std::collections::BTreeMap<&'static str, (usize, usize, usize)> =
-        Default::default();
+    let mut bound: std::collections::BTreeMap<&'static str, GateTotals> = Default::default();
     for a in &audited {
         for g in &a.report.gates {
             if !order.contains(&g.id) {
                 order.push(g.id);
             }
             let e = bound.entry(g.id).or_default();
-            e.0 += g.bound;
-            e.1 += 1;
-            if !g.pass {
-                e.2 += 1;
+            e.objects += g.bound;
+            e.programs += 1;
+            if g.failed() {
+                e.red += 1;
+            }
+            // Counted apart from `red`, because it is a different answer. A
+            // gate that could not decide anywhere in the corpus is a surface
+            // the corpus never exercises — the vacuity a summed binding count
+            // hides, one level down.
+            e.undecided_objects += g.undecided;
+            if g.undecided > 0 {
+                e.undecided_programs += 1;
             }
         }
     }
 
     let mut held_red = 0usize;
+    let mut undecided_programs = 0usize;
     for a in &audited {
         let bad: Vec<&gates::Gate> = a
             .report
             .gates
             .iter()
-            .filter(|g| !g.pass || g.bound == 0)
+            .filter(|g| g.failed() || g.bound == 0)
+            .collect();
+        // Never folded into `bad`: an undecided gate refuses nothing and must
+        // not red the sweep, or the third answer becomes a fail with a softer
+        // name. It is printed per program, by name, so it cannot be lost.
+        let unsure: Vec<&gates::Gate> = a
+            .report
+            .gates
+            .iter()
+            .filter(|g| g.state == gates::GateState::Undecided)
             .collect();
         let recorded_here = recorded.iter().find(|e| e.id == a.label);
 
@@ -1225,7 +1272,23 @@ fn run_audit(
         }
 
         if bad.is_empty() {
-            println!("  {:<44} pass  {} gate(s)", a.label, a.report.gates.len());
+            if unsure.is_empty() {
+                println!("  {:<44} pass  {} gate(s)", a.label, a.report.gates.len());
+            } else {
+                undecided_programs += 1;
+                println!(
+                    "  {:<44} UNDECIDED  {} gate(s), {} of them could not decide at this region",
+                    a.label,
+                    a.report.gates.len(),
+                    unsure.len()
+                );
+                for g in &unsure {
+                    println!(
+                        "      {:<16} undecided {:<4} of bound {:<6} {}",
+                        g.id, g.undecided, g.bound, g.detail
+                    );
+                }
+            }
             continue;
         }
         failed = true;
@@ -1234,9 +1297,15 @@ fn run_audit(
             println!(
                 "      {:<16} {}  bound {:<6} {}",
                 g.id,
-                if g.pass { "zero-bound" } else { "FAIL" },
+                if g.failed() { "FAIL" } else { "zero-bound" },
                 g.bound,
                 g.detail
+            );
+        }
+        for g in &unsure {
+            println!(
+                "      {:<16} undecided {:<4} of bound {:<6} {}",
+                g.id, g.undecided, g.bound, g.detail
             );
         }
     }
@@ -1254,7 +1323,8 @@ fn run_audit(
     }
 
     println!(
-        "\naudited {} program(s), {held_red} of them held known-red:",
+        "\naudited {} program(s), {held_red} of them held known-red, {undecided_programs} of them \
+         UNDECIDED at their declared region:",
         audited.len()
     );
     // The local frame's own binding count, beside the gate whose population it
@@ -1306,21 +1376,31 @@ fn run_audit(
         );
     }
     for id in &order {
-        let (total, ran, red) = bound[id];
+        let t = &bound[id];
+        // The undecided binding is printed beside the bound one, always, and
+        // not only when it is non-zero — a count that appears only when it is
+        // interesting is a count nobody learns to read.
         println!(
-            "  {:<16} bound {:<8} over {:<3} program(s){}",
+            "  {:<16} bound {:<8} undecided {:<6} over {:<3} program(s){}",
             id,
-            total,
-            ran,
-            if red > 0 {
-                format!(" — {red} RED")
-            } else if total == 0 {
+            t.objects,
+            t.undecided_objects,
+            t.programs,
+            if t.red > 0 {
+                format!(" — {} RED", t.red)
+            } else if t.objects == 0 {
                 " — FINDING: zero binding, this gate examined nothing".to_string()
+            } else if t.undecided_programs > 0 {
+                format!(
+                    " — UNDECIDED in {} program(s); this corpus does not exercise the surface \
+                     the gate is pointed at",
+                    t.undecided_programs
+                )
             } else {
                 String::new()
             }
         );
-        if total == 0 {
+        if t.objects == 0 {
             failed = true;
         }
     }

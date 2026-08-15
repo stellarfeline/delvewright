@@ -112,7 +112,7 @@ fn an_oriented_fill_inside_a_mirrored_body_is_a_finding() {
     let report = judge(&out);
     let g = gate(&report, "oriented-fills");
     assert!(
-        !g.pass,
+        !g.passed(),
         "a mirrored frame lands the literal facing backwards: {}",
         g.detail
     );
@@ -135,7 +135,7 @@ fn a_reflection_of_an_axis_the_state_does_not_name_is_no_finding() {
     assert!(out.oriented.carrying > 0, "{:?}", out.oriented);
     let report = judge(&out);
     let g = gate(&report, "oriented-fills");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.bound > 0);
     assert!(out.oriented.unguarded.is_empty(), "{:?}", out.oriented);
 }
@@ -146,7 +146,7 @@ fn a_reflection_of_an_axis_the_state_does_not_name_is_no_finding() {
 fn the_same_fill_in_an_unreflected_frame_is_green() {
     let out = run(&stair_under(plain, Axis::Z));
     let report = judge(&out);
-    assert!(gate(&report, "oriented-fills").pass);
+    assert!(gate(&report, "oriented-fills").passed());
     assert!(out.oriented.unguarded.is_empty());
 }
 
@@ -173,7 +173,7 @@ fn a_frame_guard_licenses_the_mirrored_arm_and_writes_the_reflected_facing() {
     let out = run(&program);
     assert!(out.oriented.carrying > 0, "{:?}", out.oriented);
     let report = judge(&out);
-    assert!(gate(&report, "oriented-fills").pass);
+    assert!(gate(&report, "oriented-fills").passed());
     assert!(
         out.model
             .palette()
@@ -210,7 +210,7 @@ fn an_unreflected_guard_does_not_license_a_reflected_scope() {
     let report = judge(&out);
     let g = gate(&report, "oriented-fills");
     assert!(
-        !g.pass,
+        !g.passed(),
         "the guard named an unreflected frame and cannot license this one: {}",
         g.detail
     );
@@ -313,7 +313,7 @@ fn a_bind_that_rebinds_a_role_to_an_incomplete_state_is_a_finding() {
     let out = run(&barred(complete, Some("iron_bars")));
     let report = judge(&out);
     let g = gate(&report, "shape-complete");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.bound > 0, "the gate examined no placed state");
     assert!(g.detail.contains("DW0735"), "{}", g.detail);
     assert!(
@@ -341,7 +341,7 @@ fn a_bind_that_rebinds_a_role_to_a_complete_state_is_green() {
     let out = run(&barred("iron_bars", Some(complete)));
     let report = judge(&out);
     let g = gate(&report, "shape-complete");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.bound > 0);
     assert!(
         out.model
@@ -387,7 +387,7 @@ fn shape_completeness_is_unmoved_by_the_frame() {
         let report = judge(&out);
         let g = gate(&report, "shape-complete");
         assert!(
-            !g.pass,
+            !g.passed(),
             "a frame must not excuse a bare state: {}",
             g.detail
         );

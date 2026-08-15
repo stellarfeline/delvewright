@@ -28,11 +28,11 @@ use crate::eval::{Env, EvalError, Scope};
 use crate::explain::{self, GuardLeaf, axis_name, render_cond, render_expr};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
-    Alternative, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint, Program,
-    ProgramError, Side, Size, Split, States,
+    Alternative, AxisSpec, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint,
+    Program, ProgramError, Reorient, Side, Size, Split, States,
 };
 use crate::model::{PaletteFull, VoxelModel};
-use crate::orient::{OrientError, reorient};
+use crate::orient::{FrameSet, OrientError, reachable_frames, reorient};
 use crate::rng::Rng;
 use crate::split::{ResolvedSize, SplitError, make_split};
 
@@ -260,6 +260,43 @@ pub struct OrientedFinding {
     pub orientation: String,
 }
 
+/// One fill the `DW0736` predicate could not judge here: the
+/// `DW0742` record (`delvewright_schem::blocks::DW_ORIENTED_FILL_UNDECIDED`).
+///
+/// A world-frame state standing in the identity frame, in a scope whose frame
+/// is **not a constant of the program** — its reachable set
+/// ([`crate::orient::FrameSet`]) holds another frame, and that frame would land
+/// one of the state's properties wrong.
+///
+/// The mismatch test short-circuits on the identity frame before it reads a
+/// single property, so what it returned here was not a verdict; it was silence.
+/// The same program at a region whose axes rank differently hands the same scope
+/// a turned frame, and then the literal is judged — which is how the fact that
+/// it was never judged here becomes visible only after the piece has shipped.
+///
+/// A scope whose frame set is a singleton is **not** this, however it got there:
+/// no reorientation at all, or one that names its axes outright. Its frame is
+/// the identity at every region there will ever be, so a world-frame literal is
+/// unconditionally what the author wrote. Nor is a state the reachable frames
+/// cannot disturb — an `axis=y` pillar under a request that pins the vertical
+/// has no image to get wrong.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UndecidedFinding {
+    /// The rule whose fill wrote the state.
+    pub rule: String,
+    /// The state, vanilla string form.
+    pub state: String,
+    /// A property some frame would land wrong, as `key=value`.
+    pub property: String,
+    /// The reorientation request the scope reached this fill through, as the
+    /// author wrote it (`z: largest`) — the thing to go and read, because it is
+    /// what makes the frame here a fact about the REGION rather than about the
+    /// program.
+    pub through: String,
+    /// The rule the reorientation request was written in.
+    pub through_rule: String,
+}
+
 /// What the expander saw of orientation-sensitive fills — the binding record
 /// the `oriented-fills` gate reports (a green gate states what it examined;
 /// zero examined is a fact the report must carry, CLAUDE.md vacuity rule).
@@ -280,6 +317,16 @@ pub struct OrientedFillAudit {
     pub resolved: u64,
     /// The unguarded oriented fills, deduplicated and sorted.
     pub unguarded: Vec<OrientedFinding>,
+    /// **The fills this region could not decide**, deduplicated and sorted:
+    /// world-frame, in a scope whose frame is the identity here and could have
+    /// been something else at another region, carrying a property one of those
+    /// other frames would land wrong (`DW0742`).
+    ///
+    /// Separate from [`Self::unguarded`] because it is a different answer, not a
+    /// weaker one. An unguarded fill is wrong at this region and will ship
+    /// wrong; an undecided fill is one the predicate never got to read, and
+    /// whether it is right is a question about a region nobody expanded.
+    pub undecided: Vec<UndecidedFinding>,
 }
 
 /// The result of expanding a program.
@@ -765,6 +812,7 @@ pub fn expand(
         oriented_carrying: 0,
         oriented_resolved: 0,
         oriented_unguarded: std::collections::BTreeSet::new(),
+        oriented_undecided: std::collections::BTreeSet::new(),
     };
     // The root binding frame is the program's own declarations, which are its
     // defaults; every `bind` pushes a frame over this one.
@@ -776,6 +824,8 @@ pub fn expand(
             orient: options.orientation,
             env: root,
             pinned: None,
+            reachable: FrameSet::just(options.orientation),
+            reframed: None,
         },
         0,
     )?;
@@ -791,6 +841,7 @@ pub fn expand(
             carrying: expander.oriented_carrying,
             resolved: expander.oriented_resolved,
             unguarded: expander.oriented_unguarded.into_iter().collect(),
+            undecided: expander.oriented_undecided.into_iter().collect(),
         },
     })
 }
@@ -912,6 +963,78 @@ fn frame_label(orient: Orientation) -> String {
     )
 }
 
+/// What a child scope inherits about its frame: the set of frames it could have
+/// stood in, and the innermost request that made that set bigger than one.
+///
+/// A request that widens nothing is not a reframing, however it is spelled.
+/// `keep` is the obvious case and is the default on every `split`, so counting
+/// it would make every split piece a reframed scope; but so is `x: world_x,
+/// y: world_y, z: world_z` from a scope whose frame was already a constant, and
+/// so is any request from a scope where the answer was fixed anyway. Only a
+/// request that leaves the child with more frames than one has made a fact about
+/// the region out of something that was a fact about the program.
+fn reframed_by<'e>(
+    parent: &ScopeState<'e>,
+    symbol: &'e str,
+    request: &Reorient,
+    split_axis: Option<Axis>,
+) -> (FrameSet, Option<(&'e str, Reorient)>) {
+    let reachable = reachable_frames(parent.reachable, request, split_axis);
+    let reframed = if reachable.is_singleton() {
+        // A request that closes the question back down — a reset to the world
+        // axes under an outer `largest` — leaves nothing region-dependent to
+        // name, and carrying the parent's request here would point an author at
+        // a reorientation this scope is no longer under.
+        None
+    } else if reachable == parent.reachable {
+        parent.reframed
+    } else {
+        Some((symbol, *request))
+    };
+    (reachable, reframed)
+}
+
+/// A reorientation request as the author wrote it — `z: largest, x: local_z`,
+/// or `mirror: x` for one that only flips.
+fn reorient_label(request: &Reorient) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for (name, spec) in [("x", request.x), ("y", request.y), ("z", request.z)] {
+        if let Some(spec) = spec {
+            parts.push(format!("{name}: {}", axis_spec_name(spec)));
+        }
+    }
+    let flipped = request.mirror.axes();
+    let names: Vec<&str> = ["x", "y", "z"]
+        .iter()
+        .zip(flipped)
+        .filter(|(_, on)| *on)
+        .map(|(n, _)| *n)
+        .collect();
+    if !names.is_empty() {
+        parts.push(format!("mirror: {}", names.join("+")));
+    }
+    if parts.is_empty() {
+        "keep".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+/// The authoring name of one axis assignment, as the JSON IR spells it.
+fn axis_spec_name(spec: AxisSpec) -> &'static str {
+    match spec {
+        AxisSpec::LocalX => "local_x",
+        AxisSpec::LocalY => "local_y",
+        AxisSpec::LocalZ => "local_z",
+        AxisSpec::WorldX => "world_x",
+        AxisSpec::WorldY => "world_y",
+        AxisSpec::WorldZ => "world_z",
+        AxisSpec::Smallest => "smallest",
+        AxisSpec::Largest => "largest",
+        AxisSpec::SplitAxis => "split_axis",
+    }
+}
+
 /// The box a node is expanding into, what it calls its axes, and what its names
 /// mean.
 ///
@@ -931,6 +1054,24 @@ struct ScopeState<'e> {
     /// frame. `bind` and `claim` change neither half of the frame and so hand
     /// the pin on unchanged.
     pinned: Option<Orientation>,
+    /// **Every frame this scope could have stood in**, over every region the
+    /// program could be expanded at ([`crate::orient::FrameSet`]).
+    ///
+    /// This is what separates "the frame here is the identity" from "the frame
+    /// here is the identity *at this region*". A scope no rule reoriented, and
+    /// one reoriented only by requests that name axes outright, has a frame that
+    /// is a constant of the PROGRAM — the set is a singleton and every frame
+    /// question about it is settled here for good. A scope under `z: largest`
+    /// has the identity only while this box's longest axis happens to be the one
+    /// the request already names, and its set holds the quarter-turns too.
+    ///
+    /// The frame itself cannot tell those apart, which is why `DW0736` returning
+    /// `None` for the identity was read as a verdict when it was silence.
+    reachable: FrameSet,
+    /// The innermost reorientation request that widened [`Self::reachable`],
+    /// with the rule it was written in — the thing to go and read, kept so a
+    /// `DW0742` can point at it instead of describing it.
+    reframed: Option<(&'e str, Reorient)>,
 }
 
 impl ScopeState<'_> {
@@ -979,6 +1120,8 @@ struct Expander<'a> {
     /// `DW0736` findings, deduplicated (a rule in a repeat split would
     /// otherwise report once per piece).
     oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
+    /// `DW0742` records, deduplicated for the same reason.
+    oriented_undecided: std::collections::BTreeSet<UndecidedFinding>,
 }
 
 impl<'a> Expander<'a> {
@@ -1178,9 +1321,12 @@ impl<'a> Expander<'a> {
                 Ok(())
             }
             Node::Call { symbol: target } => self.run_rule(target, state, depth + 1),
-            Node::Reorient { orient, body } => {
+            Node::Reorient {
+                orient: request,
+                body,
+            } => {
                 let orient =
-                    reorient(state.orient, state.region.size, orient, None).map_err(|error| {
+                    reorient(state.orient, state.region.size, request, None).map_err(|error| {
                         ExpandError::Orient {
                             symbol: symbol.to_string(),
                             error,
@@ -1188,6 +1334,7 @@ impl<'a> Expander<'a> {
                             path: Vec::new(),
                         }
                     })?;
+                let (reachable, reframed) = reframed_by(state, symbol, request, None);
                 let child = ScopeState {
                     region: state.region,
                     orient,
@@ -1198,6 +1345,8 @@ impl<'a> Expander<'a> {
                     // the first — those land the author back in the frame the
                     // guard proved, and the state is right again there.
                     pinned: state.pinned,
+                    reachable,
+                    reframed,
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -1243,8 +1392,11 @@ impl<'a> Expander<'a> {
                     orient: state.orient,
                     env: Env::child(&state.env, &bound_params, &bound_palette),
                     // A `bind` renames values; it moves neither half of the
-                    // frame, so what the guard proved is still true here.
+                    // frame, so what the guard proved is still true here — and
+                    // for the same reason it asks for no frame of its own.
                     pinned: state.pinned,
+                    reachable: state.reachable,
+                    reframed: state.reframed,
                 };
                 self.run_node(symbol, body, &child, depth + 1)
             }
@@ -1384,6 +1536,57 @@ impl<'a> Expander<'a> {
             state.orient.axis(Axis::Z).index(),
         ];
         let reflected = state.orient.mirror.axes();
+        // **The frame is the identity.** `oriented_mismatch` returns `None`
+        // there before it reads a property, so running the loop below would
+        // record a pass over an examination that did not happen. Which of the
+        // two facts that `None` is depends on whether the identity is a fact
+        // about the PROGRAM — this scope's frame is the identity at every
+        // region — or about the REGION, `z: largest` on a box whose longest
+        // axis is already Z. The scope's own frame cannot say; its reachable
+        // SET can, and the second case is `DW0742`.
+        //
+        // Judged against the frames this scope could actually have stood in,
+        // never against all 48. A request that pins the vertical
+        // (`y: world_y`) leaves every `axis=y` pillar and every `facing=up`
+        // barrel decided, and reporting those would have put six of the live
+        // campaign's eight zones into a state their authors could do nothing
+        // about — the shape of a gate that gets routed around.
+        if perm == [0, 1, 2] && reflected == [false; 3] {
+            if let Some((through_rule, request)) = state.reframed
+                && !state.reachable.is_only(state.orient)
+            {
+                let frames: Vec<([usize; 3], [bool; 3])> = state
+                    .reachable
+                    .iter()
+                    .map(|f| {
+                        (
+                            [
+                                f.axis(Axis::X).index(),
+                                f.axis(Axis::Y).index(),
+                                f.axis(Axis::Z).index(),
+                            ],
+                            f.mirror.axes(),
+                        )
+                    })
+                    .collect();
+                for block in states.iter() {
+                    if let Some(property) = registry
+                        .frame_sensitive(&block.name, &block.properties, frames.iter().copied())
+                        .into_iter()
+                        .next()
+                    {
+                        self.oriented_undecided.insert(UndecidedFinding {
+                            rule: symbol.to_string(),
+                            state: block.to_string(),
+                            property,
+                            through: reorient_label(&request),
+                            through_rule: through_rule.to_string(),
+                        });
+                    }
+                }
+            }
+            return;
+        }
         for block in states {
             if let Some(property) =
                 registry.oriented_mismatch(&block.name, &block.properties, perm, reflected)
@@ -1618,6 +1821,10 @@ impl<'a> Expander<'a> {
             path: Vec::new(),
         })?;
 
+        // The frame set is a fact about the request and the parent, not about
+        // any one piece, so it is computed once rather than per piece.
+        let (reachable, reframed) = reframed_by(state, symbol, &split.orient, Some(split.axis));
+
         // The pattern is laid out along the LOCAL axis, from its low end. In an
         // unreflected frame that is the world low end; in a reflected one the
         // first piece is the world-highest, so the same rule puts its end wall
@@ -1648,6 +1855,8 @@ impl<'a> Expander<'a> {
                 orient: child_orient,
                 env: state.env,
                 pinned: state.pinned,
+                reachable,
+                reframed,
             };
             let child = &split.children[i % split.children.len()];
             self.run_node(symbol, child, &child_state, depth + 1)
