@@ -1,7 +1,7 @@
 //! Oversize splitting — the one tiling in this project.
 //!
 //! Vanilla structure templates cap each axis at 48. That is a limit on a file
-//! format, never on a design (owner ruling, 2026-08-12), so anything bigger is
+//! format, never on a design, so anything bigger is
 //! tiled into a deterministic grid of parts plus a manifest recording grid
 //! dimensions, per-part sizes and zone-local offsets, and every consumer
 //! reassembles losslessly from that manifest.

@@ -1,5 +1,5 @@
 //! `DW0498` — a pool draw that seats the same **anchored** prefab twice, stated
-//! once at the pool/area declaration (task #187).
+//! once at the pool/area declaration.
 //!
 //! # What goes wrong without this
 //!

@@ -104,7 +104,7 @@ pub struct CheckpointPlan {
     /// plain `set-checkpoint` (spec-0012), which is immediate.
     pub rest: bool,
     /// The bonfire rest dialog's three strings, already resolved against the
-    /// compiler's canonical English (owner ruling 2026-08-03). Meaningless for a
+    /// compiler's canonical English. Meaningless for a
     /// plain `set-checkpoint`, which shows no dialog.
     pub prompt: String,
     /// The **rest and save** button label.
@@ -188,9 +188,9 @@ impl LethalVolumePlan {
 /// The compiler's own answer a sealed gate gives a right-click when the
 /// `close-gate` authors no `sealed_hint`.
 ///
-/// The owner's island finding #34: a sealed boulder answered a right-click with
-/// SILENCE. There is no such thing as a seal with nothing to say, so the answer
-/// is the compiler's obligation and the authored line is only the wording.
+/// There is no such thing as a seal with nothing to say: a sealed boulder that
+/// answers a right-click with SILENCE is a defect. The answer is therefore the
+/// compiler's obligation, and the authored line is only the wording.
 ///
 /// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
 /// the compiler, and not l10n-inventoried — a campaign that wants its own wording
@@ -200,7 +200,7 @@ impl LethalVolumePlan {
 pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
 
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
-/// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
+/// right-click with (DSL v0.8). One entry per **anchor**: the seal is
 /// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
 /// and must agree on the wording (`DW0423`).
 #[derive(Clone, Debug)]
@@ -241,7 +241,7 @@ impl SealHintPlan {
 /// axis-neighbour outside it, in ascending `(x, y, z)` order.
 ///
 /// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
-/// own answer needed the identical surface (task #50). One definition, because
+/// own answer needed the identical surface. One definition, because
 /// two copies of "which cells of a sealed slab can be clicked" would be free to
 /// drift apart, and the whole point of the geometry is that it is the same
 /// question in both places.
@@ -287,13 +287,13 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
-    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// The resolved disarm affordance, if declared. A gate whose
     /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
     /// `DW0377` reports that, and no half-built affordance reaches emission.
     pub disarm: Option<TimedGateDisarmPlan>,
 }
 
-/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// A resolved `timed-gate` disarm affordance — the same shape a
 /// trap's [`TrapDisarmPlan`] takes.
 #[derive(Clone, Debug)]
 pub struct TimedGateDisarmPlan {
@@ -601,14 +601,14 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
     pub loot: Vec<LootPlan>,
-    /// Resolved `collect` container adoptions (DSL v0.8, task #95), campaign-
+    /// Resolved `collect` container adoptions (DSL v0.8), campaign-
     /// ordered. Empty for a campaign whose collects keep the compiler's chest.
     pub collect_fills: Vec<CollectFillPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
     pub timed_gates: Vec<TimedGatePlan>,
-    /// One entry per gate anchor some `close-gate` seals (DSL v0.8, task #142),
+    /// One entry per gate anchor some `close-gate` seals (DSL v0.8),
     /// in first-firing order — the seal the party can press for an answer. Empty
     /// for a campaign that never seals a gate.
     pub seal_hints: Vec<SealHintPlan>,
@@ -637,7 +637,7 @@ pub struct Plan<'a> {
     /// result is named in `docs/reference/compiler.md`.
     pub transit_teleports: Vec<([i32; 3], [i32; 3])>,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
-    /// (spec-0017 PR 3), keyed by batch id — the editor's per-batch snapshot
+    /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
     pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// For each objective's `critical_path` step, the set of steps of its **strict
@@ -1016,7 +1016,7 @@ pub fn wave_tag(wave_id: &str) -> String {
 }
 
 /// The entity tag a **census brand** stamps on a wave's currently-living mobs
-/// (task #123). The harness applies it before a scripted death and reads it back
+/// The harness applies it before a scripted death and reads it back
 /// after the re-seat: a mob still wearing it is, by identity and not by
 /// silhouette, one the previous life already fought.
 ///
@@ -1026,9 +1026,9 @@ pub fn wave_brand_tag(wave_id: &str) -> String {
     format!("dw_brand_{}", safe_local(wave_id))
 }
 
-/// Marker token for the per-wave census SUMMARY line (task #123).
+/// Marker token for the per-wave census SUMMARY line.
 pub const MARKER_TOKEN_CENSUS: &str = "census";
-/// Marker token for one mob's line inside a census (task #123).
+/// Marker token for one mob's line inside a census.
 pub const MARKER_TOKEN_CENSUS_MOB: &str = "censusmob";
 
 /// A stage-5 wave by id (v0.3).
@@ -1166,7 +1166,7 @@ pub struct PlanError {
     /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
     /// anchor is usually the use-site symptom of a pool `DW0498` already
     /// describes at the declaration, and dropping the explanation because the
-    /// build failed is exactly the silence task #187 exists to remove.
+    /// build failed is exactly the silence `DW0498` exists to remove.
     pub warnings: Vec<Diagnostic>,
 }
 
@@ -1384,7 +1384,7 @@ impl<'a> Plan<'a> {
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
         let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
-        // Per-batch affected AABBs from L2 massing (spec-0017 PR 3), for the
+        // Per-batch affected AABBs from L2 massing (spec-0017), for the
         // editor's per-batch snapshots. Empty without massing verbs.
         let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
         // Socket doorways severed by `rewire-socket sealed`, per area — the
@@ -1466,7 +1466,7 @@ impl<'a> Plan<'a> {
                     // A solver failure raised after growth (`DW0305`) carries the
                     // draw that produced it: attach the pool-level `DW0498` so the
                     // author reads the cause at the declaration, not just the
-                    // symptom at the use site (task #187).
+                    // symptom at the use site.
                     let mut w = warnings.clone();
                     w.extend(crate::pool::check(
                         prefabs,
@@ -1481,7 +1481,7 @@ impl<'a> Plan<'a> {
                     ));
                     PlanError::new(e.code, e.message).with_warnings(w)
                 })?;
-                // Stage-7 L2 massing (spec-0017 PR 3): apply the edit script's
+                // Stage-7 L2 massing (spec-0017): apply the edit script's
                 // massing batches for this area over the solved layout, so
                 // everything downstream — anchor resolution just below, the
                 // gate/waterline checks, assembly, relight, nav, the L3
@@ -1496,7 +1496,7 @@ impl<'a> Plan<'a> {
                     severed.insert(area_id.clone(), massing_out.severed);
                 }
 
-                // `DW0498` (task #187): the draw is settled — read it back and say
+                // `DW0498`: the draw is settled — read it back and say
                 // so ONCE, here at the declaration, if it seats the same
                 // anchor-bearing prefab more than once. Every anchor that prefab
                 // declares now has more than one carrier; the `or_insert_with`
@@ -1679,7 +1679,7 @@ impl<'a> Plan<'a> {
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
-        // ---- `collect` container adoption (DSL v0.8, task #95) ----
+        // ---- `collect` container adoption (DSL v0.8) ----
         let collect_fills = collect_collect_fills(campaign, &anchors);
 
         // ---- ambushes (spec-0016 §3) ----
@@ -1714,7 +1714,7 @@ impl<'a> Plan<'a> {
             })
             .collect();
 
-        // ---- v0.8 seal hints (task #142): what a sealed gate answers ----
+        // ---- v0.8 seal hints: what a sealed gate answers ----
         let seal_hints = collect_seal_hints(campaign, &anchors);
 
         // ---- the press answers (DSL v0.11): what every sealed body answers ----
@@ -1801,7 +1801,7 @@ impl<'a> Plan<'a> {
         build_critical_path(self.campaign, &self.anchors, &self.npcs, flow, path)
     }
 
-    /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
+    /// The gate/seal model of ONE branch's exported path (spec-0025):
     /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
     /// the **branch path's own step space**, plus the strict DAG-ancestor relation
     /// over that space — exactly the model [`Plan::build`] computes for the
@@ -1882,8 +1882,9 @@ impl<'a> Plan<'a> {
     /// the area is not placed at all.
     ///
     /// The confinement boundary for anything that must not silently leave the
-    /// piece it was declared in: wave seating ([`crate::nav::World::confined_standable_cells`],
-    /// task #41) and anchor seating ([`crate::nav::AnchorRoot`]).
+    /// piece it was declared in: wave seating
+    /// ([`crate::nav::World::confined_standable_cells`]) and anchor seating
+    /// ([`crate::nav::AnchorRoot`]).
     pub fn piece_bounds(&self, area_id: &str, cell: [i32; 3]) -> ([i32; 3], [i32; 3]) {
         let Some(area) = self.areas.iter().find(|a| a.area_id == area_id) else {
             return (cell, cell);
@@ -1934,7 +1935,7 @@ impl<'a> Plan<'a> {
     /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
     /// promise is "die and resume at the last checkpoint", and vanilla's
     /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
-    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// whenever the recorded cell is not a legal respawn position.
     /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
     pub fn any_checkpoint(&self) -> bool {
         !self.checkpoints.is_empty()
@@ -1971,7 +1972,7 @@ impl<'a> Plan<'a> {
     }
 
     /// The waves a bonfire refreshes **only while they are undefeated**
-    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// (spec-0016 §1): every `elite`/`boss`-tier wave
     /// that does NOT declare `respawns_on_rest`, in content order.
     ///
     /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
@@ -2003,8 +2004,8 @@ impl<'a> Plan<'a> {
             .collect()
     }
 
-    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
-    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1),
+    /// in declaration order: every actor the campaign
     /// `unleash-actor`s — the compiler's one definition of an actor that is a
     /// *fight* ([`crate::combat::hostile_actors`]).
     ///
@@ -2283,7 +2284,7 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 // `kill` objective — so a kill-less live-threat wave is placed too.
                 Objective::Kill { .. } | Objective::TalkTo { .. } => {}
             }
-            // v0.8 (task #95): an adopted container is a piece of hardware the
+            // v0.8: an adopted container is a piece of hardware the
             // objective cannot do without — a pool draw that omits its carrier
             // leaves the collect with nothing to fill, so it joins the required
             // set exactly as a lane waypoint does. Absent field adds nothing.
@@ -2735,7 +2736,7 @@ fn build_critical_path(
                     // sit in a barrel three blocks away is a guaranteed bot stall.
                     // An unresolvable container anchor falls back to the objective
                     // anchor; the DSL tier reports it (`DW0142`).
-                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // v0.9: a drop-gated collect has no container at
                     // all — the item is on the floor the wave died on, so the
                     // step points at that wave's own anchor.
                     let dropped_at = dropped_by.as_ref().and_then(|w| {
@@ -3024,7 +3025,7 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
-            // Task #50: which half of the doorway is the sealed one, from the
+            // Which half of the doorway is the sealed one, from the
             // slab's thin axis and the side the unlock stands on. `None` is not
             // an error here — `emit` raises `DW0425` only if an answer was
             // actually authored for a side the geometry does not name.
@@ -3070,7 +3071,7 @@ fn collect_ambushes(
 }
 
 /// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
-/// v0.8, task #142), in first-firing order.
+/// v0.8), in first-firing order.
 ///
 /// A repeat of an anchor already collected is dropped: the seal is a **place**,
 /// so its hitboxes and its answer belong to the anchor, not to each firing. When
@@ -3601,10 +3602,10 @@ fn zone_box_in(
 ///
 /// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner and
 /// `gates::check_seal_hints` walk — so the model and the emission cannot disagree
-/// about which firings exist (task #167; before this, the model saw three of the
-/// five roots emission reaches, and a `close-gate` in a `traps[].payload` or a
-/// dialogue option's `on_respawn` bundle was filled in the datapack while every nav
-/// proof believed the wall was open). Nesting is descended by that traversal, so a
+/// about which firings exist. A model that saw only three of the five roots
+/// emission reaches would leave a `close-gate` in a `traps[].payload` or a
+/// dialogue option's `on_respawn` bundle filled in the datapack while every nav
+/// proof believed the wall was open. Nesting is descended by that traversal, so a
 /// gate effect inside a `sequence` step / lifecycle bundle is registered at its
 /// root's firing step. An effect whose anchor is not a resolvable gate is skipped
 /// (a point anchor / bad close-gate is a validation concern, `DW0142`/`DW0343`).
@@ -3855,8 +3856,8 @@ pub struct LootItemPlan {
     pub enchantments: BTreeMap<String, u32>,
 }
 
-/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8, task
-/// #95), resolved to the container's world cell.
+/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8),
+/// resolved to the container's world cell.
 ///
 /// One resolution, one cell: the build-tier container proof (`DW0438`), the
 /// activation-time fill and the critical-path step the bot opens all read THIS
@@ -4307,7 +4308,7 @@ fn check_gate_reachability(
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            // A `rewire-socket sealed` (spec-0017 PR 3) cuts doorway edges out
+            // A `rewire-socket sealed` (spec-0017) cuts doorway edges out
             // of this graph, so the blockage may be a massed-away passage, not
             // a quest-order mistake — say so.
             let severed_note = if severed.is_some_and(|s| !s.is_empty()) {
@@ -4617,7 +4618,7 @@ fn build_adjacency(
                 continue;
             }
             if b.world == a_next && b.facing == a.facing.opposite() {
-                // A doorway severed by `rewire-socket sealed` (spec-0017 PR 3)
+                // A doorway severed by `rewire-socket sealed` (spec-0017)
                 // is walled on both planes — no edge.
                 if severed.is_some_and(|s| s.contains(&a.world) || s.contains(&b.world)) {
                     continue;

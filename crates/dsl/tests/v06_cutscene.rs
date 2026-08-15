@@ -289,7 +289,7 @@ fn unknown_shot_field_is_dw0100() {
 }
 
 // --------------------------------------------------------------------------
-// Shot subjects deny unknown fields (task #78)
+// Shot subjects deny unknown fields
 // --------------------------------------------------------------------------
 
 /// A mistyped or over-specified shot subject must FAIL the schema (`DW0100`),

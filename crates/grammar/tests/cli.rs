@@ -15,7 +15,7 @@
 //! `export_prefab` for as long as the export existed, and a region past the
 //! structure-template cap was a refusal *at the CLI* with a suggestion that the
 //! author re-author their design as several jigsaw-socketed prefabs. A region
-//! an author chose is never the wrong size (owner ruling, 2026-08-12), so a
+//! an author chose is never the wrong size, so a
 //! region past the cap is not an input error at all — it tiles.
 
 use std::path::{Path, PathBuf};

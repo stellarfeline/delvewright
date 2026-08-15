@@ -147,8 +147,8 @@ fn resting_moves_the_party_respawn_point() {
     );
 }
 
-/// Right-clicking a bonfire opens a CHOICE, never an immediate rest (owner
-/// ruling 2026-08-03 — the campfire must be a real interaction). The click is
+/// Right-clicking a bonfire opens a CHOICE, never an immediate rest — the
+/// campfire must be a real interaction. The click is
 /// picked up by the vanilla `player_interacted_with_entity` advancement, which is
 /// what makes `@s` the clicking player and therefore what makes a `dialog show`
 /// possible at all; the advancement revokes itself so a bonfire is re-openable
@@ -217,7 +217,7 @@ fn the_rest_dialog_offers_exactly_two_options() {
     assert_eq!(actions[1]["label"]["translate"], chrome::BONFIRE_SAVE.key);
     assert_eq!(actions[1]["label"]["fallback"], "Save only");
     assert_eq!(actions[1]["action"]["command"], "/trigger dw.rest set 1");
-    // Both labels are captions, not sentences (#215's fixed-width button rule) —
+    // Both labels are captions, not sentences (the fixed-width button rule) —
     // in EVERY language the compiler ships them in, since any of them can be what
     // the player actually reads.
     for a in actions {
@@ -547,7 +547,7 @@ fn bonfire_runtime_behaviour_is_packtested() {
     );
 }
 
-/// **Stationed re-seat** (owner ruling 2026-08-04). A beaten `respawns_on_rest`
+/// **Stationed re-seat**. A beaten `respawns_on_rest`
 /// wave does come back — but it comes back where it was FIRST seated, in the
 /// state it was first seated in, never in the state the party last left it in.
 ///
@@ -666,7 +666,7 @@ fn the_two_options_are_packtested_apart() {
     );
 }
 
-/// The contents round-trip, on a live server (owner directive 2026-08-03): a rest
+/// The contents round-trip, on a live server: a rest
 /// must refill the flask with the **same** bottle, not with a lookalike.
 ///
 /// The template counts through the flask's own item predicate, so every count in
@@ -759,7 +759,7 @@ fn a_named_potion_compiles_to_the_vanilla_brew() {
     );
 }
 
-// --- spec-0021 coexistence with the affordance hardware pass (#192) ---
+// --- spec-0021 coexistence with the affordance hardware pass ---
 
 /// An **equipped actor** and the compiler-owned affordance hardware must
 /// coexist: the bonfire is permanent hardware (`retired_by: None`), so `DW0421`

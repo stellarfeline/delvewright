@@ -113,7 +113,7 @@ fn merge_into_card_is_idempotent() {
     assert_eq!(cur2.notes.len(), 1);
 }
 
-/// Every `.mcfunction` the gallery writes parses on the pinned server (task #70).
+/// Every `.mcfunction` the gallery writes parses on the pinned server.
 ///
 /// The gallery emitted four legacy camelCase gamerules and a `text_opacity:255b`
 /// for as long as it has existed. Both are refused by 1.21.11, and a refused line
@@ -167,9 +167,8 @@ fn every_emitted_function_parses_on_the_pinned_server() {
 
 /// The gate fails in the direction the code actually drifted (CLAUDE.md's
 /// one-directional-falsifiability rule): a gate proven only against lines that
-/// were already right proves nothing. These are the EXACT lines this file
-/// shipped before task #70, run through the exact check that now guards
-/// emission.
+/// were already right proves nothing. These are exact lines the pinned server
+/// refuses, run through the exact check that guards emission.
 #[test]
 fn the_command_gate_rejects_the_lines_that_shipped() {
     for bad in [

@@ -86,7 +86,7 @@ pub fn validate_campaign_with(
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
     }
     // DSL v0.6: scripted actors + staging effects (spec-0014), traps (spec-0011)
-    // and wave-mob equipment (task #65). Actor entity ids validate against the
+    // and wave-mob equipment. Actor entity ids validate against the
     // injected entity registry and anchors against single-prefab area metadata;
     // traps' dispense payloads and wave-mob equipment slots validate against the
     // item registry (pool areas deferred to the compiler). Gated on the quests
@@ -114,7 +114,7 @@ pub fn validate_campaign_with(
     if is_v08(c.quest_plan.dsl_version.as_str()) {
         branch_point_checks(c, &mut d);
     }
-    // DSL v0.8 (task #95): a `collect` may adopt a prefab container, which puts a
+    // DSL v0.8: a `collect` may adopt a prefab container, which puts a
     // second positional filler on the same anchor a `loot` entry can name.
     if is_v08(c.quests.dsl_version.as_str()) {
         collect_container_claim_checks(c, &mut d);
@@ -122,7 +122,7 @@ pub fn validate_campaign_with(
     if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
         happening_subject_checks(c, &mut d);
     }
-    // DSL v0.8 (spec-0016 §1, owner directive 2026-08-03): what is really in the
+    // DSL v0.8 (spec-0016 §1): what is really in the
     // flask. The status-effect registry is the same fixed vanilla list v0.4 uses,
     // and the potion registry is complete in-crate, so no injected registry is
     // needed.
@@ -2329,7 +2329,7 @@ fn check_player_state_not_scheduled(
     }
 }
 
-/// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the
+/// DSL v0.9 reserved-feature gating: the
 /// declared-drops surface — `drops[]` on a wave mob and on an actor, and the
 /// `collect` `dropped_by` that sources a quest item off a body instead of out of
 /// a box.
@@ -2461,14 +2461,14 @@ fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///   compiler-side checks.)
 /// - **spec-0014 (stage 5)**: scripted `actors` + the staging effects
 ///   (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`).
-/// - **task #55 (stage 5)**: the per-effect `requires_flags` flag gate on
+/// - **stage 5**: the per-effect `requires_flags` flag gate on
 ///   quest/trigger effects (see [`reserved_v06_effect_flags`]).
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06_world(c, d);
     reserved_v06_effect_flags(c, d);
 }
 
-/// Per-effect `requires_flags` (task #55) is a v0.6 quests-stage surface: any
+/// Per-effect `requires_flags` is a v0.6 quests-stage surface: any
 /// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
 /// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
 /// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
@@ -2654,7 +2654,7 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        // Declared combat difficulty (owner ruling 2026-08-03). `peaceful` is the
+        // Declared combat difficulty. `peaceful` is the
         // one keyword the compiler refuses: on peaceful the server discards every
         // hostile-category mob as it ticks it — summoned, `NoAI` and
         // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
@@ -2829,8 +2829,8 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.loot.is_empty() {
             res(d, "/content/loot".to_string(), "the `loot` section");
         }
-        // Actor `equipment` (spec-0021) likewise, and actor `attributes` (owner
-        // ruling 2026-08-03) — the same v0.4 shape a wave mob's takes, fenced on
+        // Actor `equipment` (spec-0021) likewise, and actor `attributes` — the
+        // same v0.4 shape a wave mob's takes, fenced on
         // the stage the actors themselves are fenced on.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.equipment.is_some() {
@@ -2848,7 +2848,7 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
+        // Wave-mob `equipment` is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
         for (i, w) in c.quests.content.waves.iter().enumerate() {
@@ -3355,7 +3355,7 @@ fn check_carrier_one_not_scheduled(
 
 /// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
 /// references from staging effects, the no-nested-`sequence` rule, and wave-mob
-/// `equipment` item ids (task #65, `DW0143` — the give-item family). Gated on the
+/// `equipment` item ids (`DW0143` — the give-item family). Gated on the
 /// quests stage version by the caller.
 fn v06_checks(
     c: &Campaign,
@@ -3502,7 +3502,7 @@ fn v06_checks(
         check_carrier_one_not_scheduled(effs, path, false, d);
     }
 
-    // Wave-mob `equipment` item ids (task #65): every present slot must name a
+    // Wave-mob `equipment` item ids: every present slot must name a
     // pinned-1.21.11 item — the same registry and DW family as `give-item`
     // (`DW0143`).
     for (i, w) in quests.waves.iter().enumerate() {
@@ -3531,7 +3531,7 @@ fn v06_checks(
         );
     }
 
-    // task #179: declared drops — the subset an elite/boss leaves behind.
+    // Declared drops — the subset an elite/boss leaves behind.
     check_drops(c, quests, items, d);
 
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
@@ -3569,7 +3569,7 @@ fn v06_checks(
     }
 
     // spec-0016 §1 + spec-0023, souls ruling 5/7 ("stage bosses never respawn
-    // on rest", task #160, bell r5 semantics audit): `tier` and
+    // on rest"): `tier` and
     // `respawns_on_rest` are two fields on the SAME wave declaration — the only
     // place a "boss" billing and a "re-seat on rest" contract can land on one
     // another (an actor carries `tier` too, but has no `respawns_on_rest` field
@@ -3596,7 +3596,7 @@ fn v06_checks(
         }
     }
 
-    // spec-0016 §1 (owner ruling 2026-08-03): a campaign that places a bonfire is
+    // spec-0016 §1: a campaign that places a bonfire is
     // a souls campaign, and a souls campaign owes the party a flask. Resting
     // replenishes every `flask` kit entry to its declared count — with none
     // declared, "rest and save" and "save only" collapse into the same button and
@@ -3621,8 +3621,8 @@ fn v06_checks(
                     "this campaign places a `bonfire` but {} no `flask` kit item: {}. \
                      Resting at a bonfire replenishes every kit entry marked `\"flask\": true` to \
                      its declared `count` — with none, the rest option recovers nothing and the \
-                     souls loop has no consumable to spend (spec-0016 §1, owner ruling \
-                     2026-08-03). Add a recovery item to each class kit and mark it \
+                     souls loop has no consumable to spend (spec-0016 §1). \
+                     Add a recovery item to each class kit and mark it \
                      `\"flask\": true` (this needs `dsl_version` 0.8.0 on the classes stage). Do \
                      NOT drop the bonfire to silence this — the rest point is the design.",
                     if flaskless.len() == 1 {
@@ -3637,7 +3637,7 @@ fn v06_checks(
     }
 }
 
-/// spec-0016 §1 (owner directive 2026-08-03): **what is actually in the flask.**
+/// spec-0016 §1: **what is actually in the flask.**
 ///
 /// The kit `flask` marker landed with no way to say what the bottle pours, so
 /// every flask shipped as `minecraft:potion` with no `minecraft:potion_contents`
@@ -3670,7 +3670,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                              \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
                              `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
                              bottle instead — semantics never key on player-facing text \
-                             (spec-0016 §1, owner directive 2026-08-03).",
+                             (spec-0016 §1).",
                             item.item
                         ),
                     ));
@@ -3831,7 +3831,7 @@ fn anchors_and_items(
     d: &mut Vec<Diagnostic>,
 ) {
     // area id -> anchor set of its bound prefab (only for single-prefab areas
-    // whose prefab is known; pool areas resolve anchors in M2 task #9).
+    // whose prefab is known; pool areas resolve their anchors elsewhere).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
     for a in &c.world.content.areas {
         if let Some(prefab) = &a.prefab
@@ -4297,7 +4297,7 @@ fn v03_checks(
                     fill_count,
                     ..
                 } => {
-                    // v0.9 (task #179): the wave a drop-gated collect names must
+                    // v0.9: the wave a drop-gated collect names must
                     // exist — the same dangling-reference rule a `kill` follows.
                     if let Some(wave) = dropped_by
                         && !declared_waves.contains(wave.as_str())
@@ -4337,13 +4337,13 @@ fn v03_checks(
                         d,
                     );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
-                    // v0.8 (task #95): the adopted container's anchor must exist
+                    // v0.8: the adopted container's anchor must exist
                     // too. Whether its CELL really holds a chest/barrel needs the
                     // assembled world and is the build-tier `DW0438`.
                     if let Some(cont) = container {
                         anchor_resolves(set, cont, i, j, "container", d);
                     }
-                    // v0.8 (task #95): the fill is positional — the required stack
+                    // v0.8: the fill is positional — the required stack
                     // in `container.0` plus one padding stack per slot after it —
                     // so it obeys the same 27-slot ceiling a `loot` declaration
                     // does, and for the same reason: every stack past the last slot
@@ -4834,7 +4834,7 @@ fn v04_checks(
 }
 
 /// Split a block field into its base id and (optional) blockstate suffix,
-/// validating the suffix's syntax (DSL v0.6, task #55). Returns the base id to
+/// validating the suffix's syntax (DSL v0.6). Returns the base id to
 /// check against the block registry; `Err(reason)` when a `[...]` suffix is
 /// present but malformed (unbalanced brackets, empty, or a token that is not a
 /// lowercase `key=value`). A well-formed state string is passed through verbatim
@@ -4936,7 +4936,7 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
             flags.insert(dis.sets_flag.as_str());
         }
     }
-    // task #184: a timed gate's disarm produces a first-class flag exactly as a
+    // A timed gate's disarm produces a first-class flag exactly as a
     // trap's does — the party jammed the portcullis, and the rest of the campaign
     // may read that fact.
     for g in &c.quests.content.timed_gates {
@@ -6941,7 +6941,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 /// its own id, and an actor list that does not actually stage an ambush.
 ///
 /// It deliberately does **not** require a `telegraph`. The un-telegraphed
-/// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
+/// ambush is core souls vocabulary — 初见杀 is how a
 /// level teaches. What the engine owes the player is counterplay on the retry,
 /// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
 fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -7011,7 +7011,7 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `DW0389`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
-/// the cycle, one owner per gate region, and — task #184 — a `disarm.via` that
+/// the cycle, one owner per gate region, and a `disarm.via` that
 /// resolves to a real anchor outside the span it jams. The *design* half — that
 /// the gate is a timing read and not a coin flip — needs the nav model's crossing
 /// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
@@ -7130,7 +7130,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
                 d,
             );
         }
-        // task #184 — the disarm affordance, the same two rules a trap's obeys.
+        // The disarm affordance, the same two rules a trap's obeys.
         if let Some(dis) = &g.disarm {
             if !resolvable(dis.via.as_str()) {
                 err(
@@ -7180,7 +7180,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
             path,
             format!(
                 "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
-                 `disarm` — a disarmed gate rests OPEN permanently (task #184, souls dossier \
+                 `disarm` — a disarmed gate rests OPEN permanently (souls dossier \
                  §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
                  its clock. Use a different gate for the beat that must re-seal, or drop the \
                  `disarm` and keep the clock running."
@@ -7234,8 +7234,8 @@ fn bare_entity(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
-/// The advisory half of the difficulty surface (owner ruling 2026-08-03,
-/// `DW0469`): a campaign that stages a **fighting** actor but declares no
+/// The advisory half of the difficulty surface
+/// (`DW0469`): a campaign that stages a **fighting** actor but declares no
 /// `waves[]` and no `world.difficulty` ships the compiler's derived
 /// `difficulty=peaceful` — under which the server discards every
 /// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
@@ -7521,7 +7521,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
     }
 }
 
-/// Declared drops (task #179, owner ruling 2026-08-04): what an elite or boss
+/// Declared drops: what an elite or boss
 /// leaves behind is a **declared subset**, never automatically everything.
 ///
 /// Four rules, all of them about the gap between what a campaign says and what
@@ -7932,7 +7932,7 @@ fn check_enchantments(
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
 /// a second diagnostic on one typo is noise.
-/// Exclusive ownership of an adopted container (DSL v0.8, task #95, `DW0435`).
+/// Exclusive ownership of an adopted container (DSL v0.8, `DW0435`).
 ///
 /// Both container-fill surfaces write **positionally** from `container.0`: a
 /// `loot` entry and a `collect`'s adopted container filling one cell overwrite
@@ -8155,7 +8155,7 @@ fn loot_checks(
 /// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
 /// declaration, per-node `happening` and `campaign-complete` `ending`, plus
 /// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
-/// (stage 3), spec-0023's actor `tier` (stage 5) and task #95's `collect`
+/// (stage 3), spec-0023's actor `tier` (stage 5) and the `collect`
 /// container adoption (`container` / `item_name` / `fill_count`, stage 5).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
@@ -8177,7 +8177,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
-        // spec-0023 (task #113): an actor's `tier` — the same `elite`/`boss`
+        // spec-0023: an actor's `tier` — the same `elite`/`boss`
         // billing a wave declares, on the OTHER shape an elite takes.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.tier.is_none() {
@@ -8207,8 +8207,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         format!("/content/quests/{i}/objectives/{j}/happening"),
                     ));
                 }
-                // task #95 (owner ruling, island playtest rounds 1 and 2): the
-                // `collect` container-adoption trio. Declaring any of it below
+                // The `collect` container-adoption trio. Declaring any of it below
                 // 0.8.0 is `DW0141`, so a 0.6/0.7 campaign's chest, its unnamed
                 // item and its single stack cannot move by a byte.
                 if let Objective::Collect {
@@ -8273,7 +8272,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         });
     }
-    // spec-0016 §1 (owner rulings 2026-08-03): the class-kit `flask` a bonfire
+    // spec-0016 §1: the class-kit `flask` a bonfire
     // rest replenishes, and the bonfire's authorable rest-dialog labels.
     if !is_v08(c.classes.dsl_version.as_str()) {
         for (i, cl) in c.classes.content.classes.iter().enumerate() {
@@ -8289,7 +8288,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             .to_string(),
                     ));
                 }
-                // Owner directive 2026-08-03: what the bottle actually pours.
+                // What the bottle actually pours.
                 if item.contents.is_some() {
                     d.push(Diagnostic::error(
                         codes::RESERVED,
@@ -8306,7 +8305,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
-        // Task #142 (owner island finding #34): the line a sealed gate answers a
+        // The line a sealed gate answers a
         // right-click with. A pre-0.8 campaign still gets the answer — the
         // compiler's canonical English — it just cannot author the wording.
         crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
@@ -8357,8 +8356,8 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening"),
                         ));
                     }
-                    // Owner design 2026-08-04: the button's hover tooltip — the
-                    // full line the caption stands for.
+                    // The button's hover tooltip — the full line the caption
+                    // stands for.
                     if o.tooltip.is_some() {
                         d.push(Diagnostic::error(
                             codes::RESERVED,

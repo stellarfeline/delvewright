@@ -1,4 +1,4 @@
-//! The jigsaw layout solver (ADR-0004 amendment, M2 task #9).
+//! The jigsaw layout solver (ADR-0004 amendment).
 //!
 //! **The compiler is the jigsaw.** Rather than issue `/place jigsaw` at runtime
 //! and try to predict Mojang's placement, the compiler solves the piece layout
@@ -667,7 +667,7 @@ pub fn solve_area(
                 ),
             )
             // The draw travels with the error so the caller can add the
-            // pool-level `DW0498` explanation (task #187).
+            // pool-level `DW0498` explanation.
             .with_placed(&pieces));
         }
     }

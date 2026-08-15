@@ -1,7 +1,7 @@
 //! Block states — the grammar's terminal vocabulary.
 //!
-//! Block states are first class from day one (spec-0027 §2, owner decision
-//! 2026-08-04): a name-only palette cannot express stairs, slabs, panes or
+//! Block states are first class from day one (spec-0027 §2): a name-only
+//! palette cannot express stairs, slabs, panes or
 //! doors, and those are exactly the micro-depth a Tier-2 build is made of.
 //! Upstream carried the same information as `Block.from_string_blockstate`
 //! strings behind integer material ids; we drop the id indirection and keep the

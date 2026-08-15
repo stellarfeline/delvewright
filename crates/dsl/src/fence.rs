@@ -1,13 +1,13 @@
 //! **The obligation fence**: a campaign is processed according to its DECLARED
 //! `dsl_version`, so a campaign that compiled before keeps its behaviour
-//! unchanged (owner ruling, 2026-08-10).
+//! unchanged.
 //!
 //! ## What this is for
 //!
 //! Per-stage `dsl_version` fences have always guarded **new surface** — "you may
 //! not write this field below version X" (`DW0141`). Nothing guarded **new
 //! obligations** — "you are now required to have X". The asymmetry cost the
-//! project a staging round (task #51): `dsl::l10n::each_string` was widened onto
+//! project a staging round: `dsl::l10n::each_string` was widened onto
 //! an actor's own `name` with no version gate, `DW0180` compares key SETS and had
 //! no version gate either, and the obligation therefore reached every campaign at
 //! every declared version instantly. `nobodys-cave-island` (0.6.0/0.8.0) went red
@@ -38,7 +38,7 @@
 //!   exactly this case: the code declares [`Binds::Since`] and the fence carries
 //!   it.
 //! * **An existing check's binding widens.** Same code, more objects examined —
-//!   task #51's actual shape, which added no code at all. A per-code fence cannot
+//!   the l10n widening's actual shape, which added no code at all. A per-code fence cannot
 //!   see it, because the code was always allowed to fire. Such a check has to
 //!   version its own **binding**, at whatever granularity that binding has;
 //!   [`crate::l10n::required_inventory`] is the worked instance (an l10n key

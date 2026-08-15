@@ -1,4 +1,4 @@
-//! DSL v0.8 actor `tier` (spec-0023, task #113): the OTHER shape an elite takes.
+//! DSL v0.8 actor `tier` (spec-0023): the OTHER shape an elite takes.
 //!
 //! `waves[].tier` (v0.7) only ever described one implementation of a hard fight.
 //! The set-piece souls encounter — the armoured thing kneeling among the graves

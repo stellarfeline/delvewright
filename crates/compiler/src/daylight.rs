@@ -1,7 +1,7 @@
 //! Daylight-burning staging proof: a body the sun kills may not be staged where
-//! the sun can reach it (`DW0496`, task #189).
+//! the sun can reach it (`DW0496`).
 //!
-//! ## The defect this exists for (owner playtest, `hollow-vigil`, 2026-08-05)
+//! ## The defect this exists for (`hollow-vigil`)
 //!
 //! The walls-down round carved the gate yard's roof and two of its walls open to
 //! the sky. The world is pinned `time set noon`. The first zombie wave musters a
@@ -12,9 +12,9 @@
 //!
 //! Every rung of the ladder was green. `DW0312` proved the wave had footing;
 //! `DW0311` proved the room was reachable; spec-0023 proved the fight was
-//! winnable; task #178's liveness census made sure a wave that dies to *anything*
-//! still closes its objective — which fixed the soft-lock and, deliberately, not
-//! the encounter. Nothing anywhere related "this body burns in daylight" to "this
+//! winnable; the liveness census made sure a wave that dies to *anything*
+//! still closes its objective — which answers the soft-lock and, deliberately,
+//! not the encounter. Nothing there relates "this body burns in daylight" to "this
 //! is a fight the party is meant to have".
 //!
 //! ## The rule

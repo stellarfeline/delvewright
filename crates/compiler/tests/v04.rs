@@ -217,7 +217,7 @@ fn every_v04_verb_emitted() {
 }
 
 /// Display gating combines two axes into one per-node availability mask
-/// (`dw.dmask`), bit `i` = the node's i-th gated option is displayable (task #54).
+/// (`dw.dmask`), bit `i` = the node's i-th gated option is displayable.
 /// `dlg/greet` has three options: an ungated one ("Who are you?"), a completing
 /// option ("I'll clear the keep." → obj/talk, bit 0, objective-state axis), and a
 /// flag-gated one ("What lies past the door?" → flag/summoned, bit 1, flag axis).
@@ -281,7 +281,7 @@ fn dialogue_display_gating_variants() {
 
 /// The generated PackTest drives the availability mask through the objective-state
 /// axis transitions (hidden before the quest activates, shown while active, hidden
-/// again after completion) plus the flag axis in isolation (task #54). It asserts
+/// again after completion) plus the flag axis in isolation. It asserts
 /// the option-under-test's *isolated* bit, never the whole mask: sibling gated
 /// options in the same node can share a quest-active score, so a whole-mask compare
 /// would read a sibling's bit as this option's and mis-assert.
@@ -388,7 +388,7 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     );
 }
 
-/// Task #45: objective-marker lifecycle. Completing an interact objective kills
+/// Objective-marker lifecycle. Completing an interact objective kills
 /// the `minecraft:interaction` hitbox + wayfinding marker it summoned (both carry
 /// `dw_i_<obj>`); completing a reach objective kills its `dw_r_<obj>` marker. The
 /// prop BLOCK (lever) is scenery and is NOT removed. A regression PackTest proves
@@ -438,7 +438,7 @@ fn completed_objectives_despawn_their_summoned_markers() {
     );
 }
 
-/// Task #41: every wave mob is summoned onto a distinct, compiler-validated
+/// Every wave mob is summoned onto a distinct, compiler-validated
 /// standable cell inside its own wave's area — never inside a block, and never on
 /// the blind `+x` line the old emitter used (which could string a flock across a
 /// socket seam toward void). Rebuilds the assembled occupancy world the emitter

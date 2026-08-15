@@ -31,7 +31,7 @@ pub fn hello_world_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/hello-world")
 }
 
-/// The multi-area / multi-piece keep-crawl campaign directory (M2 task #9).
+/// The multi-area / multi-piece keep-crawl campaign directory.
 pub fn keep_crawl_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-crawl")
 }
@@ -248,7 +248,7 @@ pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>
 /// That coupling is invisible when it breaks: `str::replace` matching nothing
 /// returns the input unchanged, so the test goes on to assert against an
 /// **unpatched** campaign and passes for the wrong reason. Reformatting every
-/// fixture into canonical form (task #52) exposed four such silent no-ops at
+/// fixture into canonical form exposed four such silent no-ops at
 /// once — including the `DW0307` unroutable-move test, which had been asserting
 /// against a campaign with no `move-npc` in it. A structural patch cannot miss:
 /// an absent key is a panic, not a quiet pass.

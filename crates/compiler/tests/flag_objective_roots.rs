@@ -1,6 +1,6 @@
 //! Every `set-flag` emission lowers gets its scoreboard objective declared
-//! (task #24 — the second of the two latent emission defects on the
-//! effect-root drift list).
+//! — the second of the two latent emission defects on the effect-root drift
+//! list.
 //!
 //! `emit::declared_flags` decides which `dw.f_<flag>` objectives `setup` creates.
 //! It is not a lint: a `set-flag` whose objective was never declared writes to
@@ -235,15 +235,15 @@ fn a_set_flag_nested_in_a_sequence_gets_its_objective() {
 }
 
 // ---------------------------------------------------------------------------
-// the two roots the inventory did not reach (task #24)
+// the two roots the inventory did not reach
 // ---------------------------------------------------------------------------
 
 /// A `set-flag` in a `traps[].payload` gets its objective.
 ///
-/// Red before task #24: `trap_fire_alarm_chest.mcfunction` shipped
+/// Without it, `trap_fire_alarm_chest.mcfunction` ships
 /// `scoreboard players set @a[tag=dw_party] dw.f_alarm 1` while `setup` never
-/// ran `scoreboard objectives add dw.f_alarm dummy`. The trap sprang, the write
-/// failed, and every gate on `flag/alarm` stayed shut forever.
+/// runs `scoreboard objectives add dw.f_alarm dummy`. The trap springs, the
+/// write fails, and every gate on `flag/alarm` stays shut forever.
 #[test]
 fn a_set_flag_in_a_trap_payload_gets_its_objective() {
     let out = build(
@@ -278,8 +278,8 @@ fn a_set_flag_nested_in_a_trap_payload_gets_its_objective() {
 /// A `set-flag` in a dialogue option's `set-checkpoint` `on_respawn` bundle gets
 /// its objective.
 ///
-/// The bundle is lowered into `cp_on_respawn_<i>`, so the write really ships;
-/// before task #24 the objective behind it did not exist. Quieter than the trap
+/// The bundle is lowered into `cp_on_respawn_<i>`, so the write really ships and
+/// the objective behind it must exist. Quieter than the trap
 /// case, because nothing runs until somebody dies.
 ///
 /// Note this root is a **non-producer** for the completability model

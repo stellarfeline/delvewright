@@ -117,7 +117,7 @@ impl DeathPlanGate {
 ///
 /// Reads [`QuestEffect::nested_effect_lists`] — the DSL's own answer to "what does
 /// this effect contain" — rather than matching on the variants that happen to nest
-/// today. A hand-rolled descent here would be the #301/#302/#321 defect in a new
+/// today. A hand-rolled descent here would be the three-of-five defect in a new
 /// place: it would silently stop counting the moment a later verb grew a body.
 fn deep_effects(effs: &[QuestEffect]) -> Vec<&QuestEffect> {
     let mut out: Vec<&QuestEffect> = Vec::new();

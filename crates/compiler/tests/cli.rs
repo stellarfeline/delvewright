@@ -1129,7 +1129,7 @@ fn cutscene_clip_exits_3_with_dw0308() {
 }
 
 /// A cutscene whose aim sweeps faster than the 6°/tick angular budget fails the
-/// build with exit 3 and `DW0347` (task #64): the showcase's known-air dolly is
+/// build with exit 3 and `DW0347`: the showcase's known-air dolly is
 /// sped up to 1 s and aimed at a `look_at` subject passing 1 block abeam —
 /// ~8.6°/tick at closest approach, a spin, not a shot.
 #[test]
@@ -1158,7 +1158,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     assert!(stdout.contains("DW0347"), "expected DW0347:\n{stdout}");
 }
 
-/// Wave-capacity guard (task #41): a `spawn-wave` whose mob count exceeds the
+/// Wave-capacity guard: a `spawn-wave` whose mob count exceeds the
 /// standable footing of its own room fails the build with `DW0312` and exit 2
 /// (analysis-tier — a content-design capacity mistake, like reachability `DW02xx`,
 /// not a compiler/geometry defect). keep-vertical's single wave is blown up past
@@ -2123,7 +2123,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
 }
 
-/// task #117: every REACHABLE branch gets its own waypoint artifact
+/// Every REACHABLE branch gets its own waypoint artifact
 /// (`validation/branch-waypoints-<slug>.json`) in the `critical-path-waypoints`
 /// shape, derived from the branch's OWN path over the same assembled world its
 /// per-branch DW0311 proof ran over.

@@ -2178,7 +2178,7 @@ impl Program {
             // but the guard spells one out field by field, so `{x: z, y: z, z: z}`
             // is expressible. It matches nothing, ever — which at expansion time
             // surfaces as a baffling `NoApplicableRule` about a *different*
-            // alternative. Refuse it where it was written (PR #266 review).
+            // alternative. Refuse it where it was written.
             // A reflection is legal on any mapping — every one of the eight
             // reflections of a permutation is a frame a scope can really be in —
             // so only the permutation half is *semantically* checkable here. The

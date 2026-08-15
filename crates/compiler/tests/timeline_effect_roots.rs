@@ -1,5 +1,5 @@
 //! The **staged-walk timeline** sees every root emission can lower an effect
-//! from (task #169 — the last of the three-of-five family).
+//! from (the last of the three-of-five family).
 //!
 //! `compiler::timeline::walk_campaign` replays each effect bundle in order and
 //! hands every effect the gate regions an *earlier effect in its own bundle*
@@ -40,7 +40,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 /// The quest line **opens** `anchor/door` on its first objective, so the player's
 /// own forced route is clear and the DAG-causal seal model (`DW0311`) stays
 /// silent: a later `open-gate` from a forced root wins the region over an
-/// optional root's close (the rule task #167 settled). Anything these fixtures
+/// optional root's close. Anything these fixtures
 /// red on is therefore the timeline proof talking.
 fn quests_doc(traps: &str) -> String {
     format!(

@@ -1,14 +1,14 @@
 //! Compiler **chrome**: the player-visible strings the compiler writes itself,
-//! which no campaign authored and no translator was ever asked for (owner ruling,
-//! 2026-08-06; spec-0029 addendum).
+//! which no campaign authored and no translator was ever asked for
+//! (spec-0029 addendum).
 //!
 //! A delve's on-screen text has two authors. The campaign writes its own lines,
 //! and those travel through the l10n inventory ([`crate::l10n`]) into a sidecar a
 //! translator fills in. The **compiler** writes the rest — `New objective: `,
 //! `Delve Complete`, `Choose your class`, and the default a `bonfire` shows when
-//! the campaign authors no label — and until this module existed those had no key,
-//! no sidecar entry and no way to be anything but English. A player reading a
-//! fully translated delve still saw English chrome wrapped around it.
+//! the campaign authors no label — and without a module like this one they have
+//! no key, no sidecar entry and no way to be anything but English, so a player
+//! reading a fully translated delve still sees English chrome wrapped around it.
 //!
 //! ## Why chrome is compiler-owned rather than authored
 //!

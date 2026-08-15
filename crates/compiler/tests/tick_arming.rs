@@ -1,4 +1,4 @@
-//! The arming-before-adjudication invariant in `tick.mcfunction` (task #124).
+//! The arming-before-adjudication invariant in `tick.mcfunction`.
 //!
 //! `tick`'s objective-completion loop is the only place a quest gets ARMED: a
 //! completion line runs `complete_<obj>` → `check_q_<quest>` → `complete_q_<quest>`,

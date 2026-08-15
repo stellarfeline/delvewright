@@ -1,5 +1,5 @@
 //! What a player's click actually reaches at an anchor — the single authority
-//! for the body every `strike`/`use` trigger is dispatched from (task #50).
+//! for the body every `strike`/`use` trigger is dispatched from.
 //!
 //! ## The defect this module exists to make impossible
 //!

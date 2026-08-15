@@ -47,7 +47,7 @@
 //!   `sequence` inside it would have emitted a `function` call to a function
 //!   nothing generated. Zero campaigns happened to use it, which is the only
 //!   reason it never shipped as a bug. The sixth blind spot in the family that
-//!   `#301`/`#302`/`#321` each closed one instance of.
+//!   three earlier hand-rolled walks each closed one instance of.
 //! * **R7 `on_death` is new surface that starts inside the enumeration.** The
 //!   whole point of adding it as a root, rather than as a hook on the checkpoint
 //!   machinery that detects death, is that "the purse is dropped on death" then

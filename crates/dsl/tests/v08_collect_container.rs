@@ -1,9 +1,9 @@
-//! DSL v0.8 `collect` container adoption (task #95, owner ruling from island
-//! playtest rounds 1 and 2).
+//! DSL v0.8 `collect` container adoption.
 //!
-//! Three fields, one complaint: the quest item was an unnamed generic stack in a
-//! chest the compiler conjured out of the air beside the barrel the prefab had
-//! already put there, and opening it showed one lonely item. `container` adopts
+//! Three fields, one complaint: without them the quest item is an unnamed
+//! generic stack in a chest the compiler conjures out of the air beside the
+//! barrel the prefab already put there, and opening it shows one lonely item.
+//! `container` adopts
 //! the prefab's barrel, `item_name` gives the item a name a player can read, and
 //! `fill_count` pads the container so it reads full.
 //!

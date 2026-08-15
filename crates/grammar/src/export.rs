@@ -25,7 +25,7 @@
 //!
 //! Vanilla caps a structure template at 48 blocks per axis. That cap is a
 //! **packaging** fact about a file format, and a creator's design must never
-//! bend to satisfy it (owner ruling, 2026-08-12): a zone bigger than 48 on some
+//! bend to satisfy it: a zone bigger than 48 on some
 //! axis is exported as a *tile set* — several `.nbt` files plus one manifest —
 //! and [`export_zone`] decides which of the two shapes it writes from the region
 //! alone. Nothing an author writes mentions 48.
@@ -853,7 +853,7 @@ fn zone_palette(model: &VoxelModel) -> ZonePalette {
 
 /// Refuse block states Minecraft 1.21.11 does not have.
 ///
-/// Spelling, checked by the emitter (CLAUDE.md, task #70: the operator running
+/// Spelling, checked by the emitter (CLAUDE.md: the operator running
 /// the tool does not run `cargo test`). A structure template loads an unknown
 /// block as AIR, so this is the one class of defect that costs the whole piece
 /// and reports nothing at all.
@@ -917,7 +917,7 @@ fn refuse_unknown_states(model: &VoxelModel, palette: &ZonePalette) -> Result<()
 
     // The shape half of the same spelling rule (`DW0735`): a state that omits
     // a multipart property compiles, loads, and places disconnected. Checked
-    // by the emitter for the same task-#70 reason the id check is.
+    // by the emitter for the same reason the id check is.
     let omissions: Vec<String> = palette
         .states
         .iter()

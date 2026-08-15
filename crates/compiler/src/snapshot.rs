@@ -109,7 +109,7 @@ pub const FALLBACK_COLOR: [u8; 3] = [255, 0, 255];
 ///    unseen variant of a known material still shades plausibly;
 /// 3. [`FALLBACK_COLOR`].
 pub fn block_color(name: &str) -> ([u8; 3], bool) {
-    // The assembled map carries full blockstates (task #78) — shade on the bare
+    // The assembled map carries full blockstates — shade on the bare
     // id, or `oak_slab[type=top]` misses both the exact table and the `_slab`
     // family and shades as an unknown block.
     let id = crate::assembled::base_id(name);

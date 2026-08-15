@@ -585,7 +585,7 @@ fn an_entry_choice_is_resolved_against_its_own_speaker() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0205 per branch (task #174)
+// DW0205 per branch
 // ---------------------------------------------------------------------------
 
 /// The green fixture is clean of `DW0205`: nothing on either branch offers a

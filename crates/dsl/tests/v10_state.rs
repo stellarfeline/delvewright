@@ -402,7 +402,7 @@ fn the_numeric_gate_is_part_of_an_effects_content_key() {
 }
 
 /// **The gate walk inherits every effect root, including the two `on_death`
-/// (#346) added after this surface was written.**
+/// added after this surface was written.**
 ///
 /// `for_each_gate`'s effect branch is defined on `stages::for_each_campaign_effect`,
 /// which is defined on `effects::for_each_effect_root` — the single enumeration.
@@ -413,8 +413,8 @@ fn the_numeric_gate_is_part_of_an_effects_content_key() {
 /// asserted: an undeclared datum named from inside each of those two bundles must
 /// raise `DW0500`, which can only happen if the walk got there.
 ///
-/// This is the shape the `for_each_effect_root` family exists to prevent (#301,
-/// #302, #321): a proof written over "every gate" that silently stops at the
+/// This is the shape the `for_each_effect_root` family exists to prevent: a
+/// proof written over "every gate" that silently stops at the
 /// roots its author happened to know about.
 #[test]
 fn a_gate_inside_the_newest_effect_roots_is_still_walked() {

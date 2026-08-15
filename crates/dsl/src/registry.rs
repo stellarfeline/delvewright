@@ -569,8 +569,7 @@ pub struct VendoredAnchorRegistry {
 
 impl VendoredAnchorRegistry {
     /// The anchors declared by the M1 hello-world prefab(s), plus a fixture pool
-    /// so prefab-pool existence checks are exercised (pools land fully in M2
-    /// task #9).
+    /// so prefab-pool existence checks are exercised.
     pub fn hello_world() -> Self {
         let raw = include_str!("../data/anchors.json");
         let by_prefab: BTreeMap<String, BTreeSet<String>> =

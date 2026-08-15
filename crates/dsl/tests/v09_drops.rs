@@ -1,4 +1,4 @@
-//! DSL v0.9 declared drops (task #179; owner ruling 2026-08-04): an elite or
+//! DSL v0.9 declared drops: an elite or
 //! boss leaves behind a **declared subset** — usually one worn piece, plus any
 //! quest token the fight yields — never automatically everything.
 //!

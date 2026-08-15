@@ -11,8 +11,8 @@
 //! on by name.**
 //!
 //! A stage-2 NPC is *two* entities sharing one `dw_npc_<id>` tag: a body and a
-//! co-located `minecraft:interaction` hitbox that carries its dialogue. Owner
-//! ruling 2026-08-08 is that everyone on the car travels, players and entities
+//! co-located `minecraft:interaction` hitbox that carries its dialogue.
+//! Everyone on the car travels, players and entities
 //! alike — a cargo lift is the same mechanism. Exempting `minecraft:interaction`
 //! would teleport the speaker and leave the thing players click standing in the
 //! old car, and nothing anywhere would notice: the NPC is present at the
@@ -260,8 +260,8 @@ pub fn check_bound_affordances(plan: &Plan) -> Result<TeleportGate, NavError> {
                      the entity and leaves the block, so the player is left with something they \
                      can see and reach that answers nothing. The selection is deliberately TOTAL \
                      — exempting `minecraft:interaction` the way a lethal volume must would tear \
-                     an NPC's dialogue hitbox off its body, and everyone on the car travels \
-                     (owner ruling 2026-08-08). Move the affordance out of the volume, or shrink \
+                     an NPC's dialogue hitbox off its body, and everyone on the car travels. \
+                     Move the affordance out of the volume, or shrink \
                      the volume's `extent` so it does not cover it.",
                     v.path, v.anchor
                 ),

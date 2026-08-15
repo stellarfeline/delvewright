@@ -567,7 +567,7 @@ fn a_lang_bake_ships_no_language_carrier() {
 }
 
 // ---------------------------------------------------------------------------
-// Compiler chrome (spec-0029 addendum, owner ruling 2026-08-06)
+// Compiler chrome (spec-0029 addendum)
 // ---------------------------------------------------------------------------
 
 /// **The chrome hole, closed.** Every string the compiler writes itself — the
@@ -841,7 +841,7 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     let quests = dir.join("quests.json");
     let mut q: Value = serde_json::from_str(&std::fs::read_to_string(&quests).unwrap()).unwrap();
     // 0.10.0, because an actor NAMEPLATE is only a coverage obligation from 0.10
-    // onward (`l10n::ACTOR_NAME_ENTRY`, task #51): the widening that inventoried
+    // onward (`l10n::ACTOR_NAME_ENTRY`): the widening that inventoried
     // it landed over v0.6 surface, so campaigns below 0.10 are grandfathered. The
     // pair to this line is `an_actor_nameplate_is_not_demanded_below_0_10`.
     q["dsl_version"] = serde_json::json!("0.10.0");
@@ -879,14 +879,13 @@ fn renaming_one_body_makes_another_bodys_row_stale_dw0187() {
     );
 }
 
-/// **The obligation fence, in the direction that actually happens** (task #51).
+/// **The obligation fence, in the direction that actually happens**.
 ///
-/// PR #317 widened `l10n::each_string` onto an actor's own `name` with no version
-/// gate, and `DW0180` compares key SETS with no version gate either — so the
-/// obligation reached every campaign at every declared version on the next engine
-/// build. `nobodys-cave-island` (0.6.0/0.8.0) went red mid-staging with nothing in
-/// its own documents changed, and was unblocked with a three-string patch rather
-/// than an adoption round.
+/// Widening `l10n::each_string` onto an actor's own `name` with no version
+/// gate reaches every campaign at every declared version on the next engine
+/// build, because `DW0180` compares key SETS with no version gate either. A
+/// campaign at 0.6.0/0.8.0 then goes red mid-staging with nothing in
+/// its own documents changed.
 ///
 /// This is that campaign in miniature and the drift is real, not simulated: the
 /// engine holds a widening the campaign predates. Below 0.10 the nameplate is not
@@ -915,7 +914,7 @@ fn an_actor_nameplate_is_not_demanded_below_0_10() {
     assert!(
         !below.contains("actor.ram.name"),
         "a 0.9.0 campaign must not be asked for a key the walk only reached at \
-         0.10 — this is the whole of task #51:\n{below}"
+         0.10 — this is the whole of the obligation fence:\n{below}"
     );
 
     // The same campaign, having adopted 0.10.0. Now it owes the translation, and
