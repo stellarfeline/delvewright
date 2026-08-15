@@ -1,4 +1,4 @@
-//! DSL v0.9 declared-drop emission (task #179; owner ruling 2026-08-04).
+//! DSL v0.9 declared-drop emission.
 //!
 //! What this pins down, against the pinned 1.21.11 NBT surface:
 //!

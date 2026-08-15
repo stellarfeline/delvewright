@@ -6,7 +6,7 @@
 //! `npc/perimedes` declares `anchor: anchor/mouth` in stage 2 and is cast at
 //! `anchor/alcove-2` for his `obj/the-stone` beat. The emitted runtime cast is
 //! correct — the body stands in the alcove and a human clicks it — but
-//! `critical-path.json` carried the *mouth*, so the eye-ray bot (task #190)
+//! `critical-path.json` carried the *mouth*, so the eye-ray bot
 //! walked to the mouth and could not acquire the target through the sealed
 //! boulder region's wall of interaction entities. Two sources of truth (the
 //! static anchor and the ledger) that emission and the bot contract read

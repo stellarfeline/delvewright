@@ -1,4 +1,4 @@
-//! Task #50 — a click trigger gets the body of the **object** at its anchor.
+//! A click trigger gets the body of the **object** at its anchor.
 //!
 //! ## The finding
 //!
@@ -34,7 +34,7 @@ use delvewright_compiler::emit::{self, BuildFailure, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{AnchorId, Campaign, EnvTrigger, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{AnchorId, Campaign, EnvTrigger, parse_campaign};
 
 const NS: &str = "souls-shortcut";
 
@@ -43,7 +43,7 @@ fn fixture() -> Campaign {
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::fenced_diagnostics(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,

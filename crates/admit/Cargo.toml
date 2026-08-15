@@ -58,7 +58,7 @@ delvewright-orchestrator = { path = "../orchestrator" }
 # compiler owned that check because it was the first emitter to need it, and the
 # gallery — the second — shipped four legacy camelCase gamerules and an
 # out-of-range `text_opacity` byte that made 1.21.11 refuse `admit:load` and
-# `admit:finish` outright (task #70). The capability belongs to the object class
+# `admit:finish` outright. The capability belongs to the object class
 # "an mcfunction this repo emits", not to `delvec`, so the second emitter reuses
 # the ONE vendored tree rather than growing a private copy of the rule.
 # (The package is `delvec` — ADR-0016 — while its library target keeps the

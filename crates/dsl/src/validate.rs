@@ -17,8 +17,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, EncounterTier, Locomotion, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn,
-    WorldEdit, body_traversal_sites,
+    EditFrame, EncounterTier, Locomotion, MorphOp, NarrateStyle, Objective, QuestEffect,
+    RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -86,7 +86,7 @@ pub fn validate_campaign_with(
         v04_checks(c, anchors, &blocks, &effects_reg, &mut d);
     }
     // DSL v0.6: scripted actors + staging effects (spec-0014), traps (spec-0011)
-    // and wave-mob equipment (task #65). Actor entity ids validate against the
+    // and wave-mob equipment. Actor entity ids validate against the
     // injected entity registry and anchors against single-prefab area metadata;
     // traps' dispense payloads and wave-mob equipment slots validate against the
     // item registry (pool areas deferred to the compiler). Gated on the quests
@@ -114,7 +114,7 @@ pub fn validate_campaign_with(
     if is_v08(c.quest_plan.dsl_version.as_str()) {
         branch_point_checks(c, &mut d);
     }
-    // DSL v0.8 (task #95): a `collect` may adopt a prefab container, which puts a
+    // DSL v0.8: a `collect` may adopt a prefab container, which puts a
     // second positional filler on the same anchor a `loot` entry can name.
     if is_v08(c.quests.dsl_version.as_str()) {
         collect_container_claim_checks(c, &mut d);
@@ -122,7 +122,7 @@ pub fn validate_campaign_with(
     if is_v08(c.quests.dsl_version.as_str()) || is_v08(c.dialogue.dsl_version.as_str()) {
         happening_subject_checks(c, &mut d);
     }
-    // DSL v0.8 (spec-0016 §1, owner directive 2026-08-03): what is really in the
+    // DSL v0.8 (spec-0016 §1): what is really in the
     // flask. The status-effect registry is the same fixed vanilla list v0.4 uses,
     // and the potion registry is complete in-crate, so no injected registry is
     // needed.
@@ -1368,21 +1368,41 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v09(c, d);
     reserved_v10(c, d);
     reserved_v11(c, d);
+    press_answer_checks(c, d);
+    press_obligation_checks(c, d);
 }
 
-/// DSL v0.11 reserved-feature gating (spec-0034): the per-body `traversal`
-/// declaration.
+/// DSL v0.11 reserved-feature gating. **Two surfaces land in this version**, and
+/// this is the one fence for both:
+///
+/// * spec-0034's per-body `traversal` declaration — what a body can do when it
+///   moves — on the stage-2 NPC and the stage-5 actor;
+/// * the **press-answer lift** — a `narrate` `actionbar` style and a trigger's
+///   `audience: presser`.
 ///
 /// **Fenced per stage, because the surface is per stage.** The stage-2 NPC's
-/// declaration is gated on the `npcs` document's own `dsl_version` and the
-/// stage-5 actor's on the `quests` document's, so a campaign may adopt the
+/// traversal declaration is gated on the `npcs` document's own `dsl_version` and
+/// the stage-5 actor's on the `quests` document's, so a campaign may adopt the
 /// surface one stage at a time — which is what keeps every 0.2–0.10 campaign
-/// compiling untouched.
+/// compiling untouched. The press-answer lift is carried entirely by stage-5
+/// documents, so its fence reads the `quests` version alone.
 ///
-/// There is no requirement half. Nothing obliges a body to declare anything; the
-/// derived class is exactly what every pre-0.11 build used, so a campaign that
-/// declares none emits byte-for-byte what it emitted before.
+/// The press-answer additions are one capability and share one fence: without
+/// the channel a press answer cannot be written where a player reads replies,
+/// and without the addressee it is broadcast to a party three quarters of whom
+/// are elsewhere. Together they are what makes `close-gate.sealed_hint`
+/// expressible as an ordinary trigger.
+///
+/// Declaring any of it below 0.11.0 is `DW0141`. **The version does have a
+/// requirement half**, and it is not this function's: at 0.11.0 and above a
+/// sealed body nothing answers is `DW0429`, raised unconditionally by
+/// [`press_obligation_checks`] and fenced by [`crate::fence`] off the code's own
+/// [`crate::Binds::Since`] 11. Nothing obliges a body to declare traversal, and
+/// nothing obliges a campaign to adopt either half of the lift — the obligation
+/// binds a campaign that has ALREADY declared a sealed body, once its quests
+/// stage reaches 0.11.0.
 fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // spec-0034: the per-body `traversal` declaration, stage 2.
     if !is_v11(c.npcs.dsl_version.as_str()) {
         for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
             if npc.traversal.is_none() {
@@ -1417,6 +1437,48 @@ fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     actor.id
                 ),
             ));
+        }
+    }
+    // The press-answer lift, stage 5. Both halves ride the `quests` version, so
+    // one guard carries them — and it is a SEPARATE guard from the actor
+    // traversal one above rather than a shared `if`, because the two surfaces
+    // are fenced independently and a future stage move must not silently take
+    // the other with it.
+    if !is_v11(c.quests.dsl_version.as_str()) {
+        // The style rides `for_each_campaign_effect`, so a `narrate` nested
+        // inside a `sequence` step or an `on_arrive` bundle is fenced exactly
+        // like a top-level one — the fence is as total as the surface.
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            if matches!(
+                eff,
+                QuestEffect::Narrate {
+                    style: Some(NarrateStyle::Actionbar),
+                    ..
+                }
+            ) {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/style"),
+                    "the `actionbar` narrate style (the reply strip above the hotbar) requires \
+                     dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or use \
+                     `chat`/`title`/`subtitle`"
+                        .to_string(),
+                ));
+            }
+        });
+        for (i, t) in c.quests.content.triggers.iter().enumerate() {
+            if t.addresses_presser() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/triggers/{i}/audience"),
+                    "a trigger `audience` of `presser` (the effects run as the one player who \
+                     clicked, instead of addressing the party) requires dsl_version 0.11.0 — \
+                     raise this stage's `dsl_version` to 0.11.0, or remove the field"
+                        .to_string(),
+                ));
+            }
         }
     }
 }
@@ -1454,6 +1516,168 @@ fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
 }
+
+/// `DW0427`/`DW0428`: the two ways a trigger's **press answer** surface can be
+/// declared wrong (DSL v0.11).
+///
+/// Both are about the trigger as an *object*, not about any effect inside it, so
+/// they sit together and are checked over the one trigger authority.
+fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        if t.addresses_presser() && !matches!(t.on, TriggerOn::Use) {
+            d.push(Diagnostic::error(
+                codes::TRIGGER_AUDIENCE_UNATTRIBUTABLE,
+                "quests",
+                format!("/content/triggers/{i}/audience"),
+                format!(
+                    "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
+                     can only attribute a RIGHT-click to a player. \
+                     `minecraft:player_interacted_with_entity` is the one criterion that runs a \
+                     function as the clicker; a left-click is recorded in the interaction \
+                     entity's `attack` NBT, which names a UUID no command can become, and an \
+                     `approach` has no click at all. Guessing — polling the record and hoping the \
+                     nearest player is the striker — is the kind of downstream folklore this \
+                     engine refuses (CLAUDE.md: a capability with no vanilla primitive under it \
+                     is excluded, not faked). Prescription: make it an `on: use` trigger, or drop \
+                     `audience` and let the beat address the party",
+                    t.id,
+                    t.on.kind()
+                ),
+            ));
+        }
+        let local = crate::l10n::local_id(t.id.as_str());
+        if local.starts_with(RESERVED_TRIGGER_PREFIX) {
+            d.push(Diagnostic::error(
+                codes::TRIGGER_ID_RESERVED,
+                "quests",
+                format!("/content/triggers/{i}/id"),
+                format!(
+                    "trigger id `{}` opens with `{RESERVED_TRIGGER_PREFIX}`, which the compiler \
+                     reserves for the triggers it synthesizes itself — today the press answer \
+                     every sealed gate and shortcut door gives (`trigger/dw-press-…`). Two \
+                     triggers with one id would share one `dw_trig_…` tag and one emitted \
+                     function, so one of them would silently vanish. Prescription: rename it; any \
+                     kebab id not starting with `{RESERVED_TRIGGER_PREFIX}` is yours",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11),
+/// uniformly over the pressable class.
+///
+/// A sealed thing is something the party walks up to and pushes on — a `shortcut`
+/// door on the wrong side of the loop, a `close-gate`'s wall — and the press has
+/// to say something. The compiler will not say it for them: a baked default is a
+/// design statement (about tone, about what this thing is) made on the author's
+/// behalf and never disclosed, so the obligation is stated instead of filled.
+///
+/// **One rule for the whole pressable class, not one per verb.** A shortcut door
+/// and a sealed gate are two objects of the same class, and giving them two
+/// defaulting policies would be exactly the "capability keyed to the verb" defect
+/// CLAUDE.md's worked example is about — which this surface *is*. So above the
+/// fence both are held to the same obligation, and `plan::press_answer_sites`
+/// carries the single shared list they are read from.
+///
+/// **Two ways to discharge it**, and they are the same thing said at two layers:
+///
+/// * a `use` trigger anchored on the body — the general verb, available to every
+///   pressable object (`QuestsContent::answers_press_at`);
+/// * for a `close-gate`, an authored `sealed_hint` — the sugar, which *is* the
+///   author defining the wording. The compiler lowering that onto the general
+///   path is not the compiler putting words in a player's mouth.
+///
+/// A `strike` discharges neither: pressing a thing is a right-click, and a
+/// left-click reply is a gesture the player may never make.
+///
+/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not new
+/// surface, and the fence is what makes an already-approved design keep its
+/// verdicts: the same declared version yields the same behaviour. Below
+/// 0.11.0 a silent door still compiles and
+/// still emits nothing, and an unauthored `close-gate` still takes the compiler's
+/// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
+/// differ from each other only because the two classes historically differed.
+///
+/// The fence is the general one: `DW0429` is declared [`Binds::Since`] 0.11.0 on
+/// its own [`DwCode`](crate::DwCode), and [`crate::fence::Fenced`] grandfathers
+/// it against a quests stage below that version. This check therefore raises the
+/// diagnostic unconditionally and never tests a version itself — a private
+/// `is_v11(...)` guard here would be a second, narrower copy of the mechanism
+/// that already governs exactly this case.
+fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+
+    // Every gate anchor some `close-gate` seals, and whether any firing on it
+    // authored a wording. Keyed by ANCHOR because the seal is a place, not an
+    // event — the same reason `plan::collect_seal_hints` dedups by anchor and
+    // `DW0423` refuses two firings that disagree.
+    let mut sealed: BTreeMap<&str, (bool, String)> = BTreeMap::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(anchor) = eff.close_gate_anchor() else {
+            return;
+        };
+        let entry = sealed
+            .entry(anchor.as_str())
+            .or_insert_with(|| (false, path.to_string()));
+        entry.0 |= eff.close_gate_sealed_hint().is_some();
+    });
+    for (anchor, (authored, path)) in sealed {
+        if authored || quests.answers_press_at(anchor) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SEALED_BODY_UNANSWERED,
+            "quests",
+            path,
+            format!(
+                "this `close-gate` seals `{anchor}`, and nothing says what the wall answers when \
+                 the party presses it. A seal is a thing the party walks back to and pushes on, \
+                 so the press has to say something — and the compiler will not word it for you: a \
+                 baked default decides this wall's tone on your behalf and never tells you it \
+                 did. Two ways to say it, and either is enough: add `\"sealed_hint\": \"<what the \
+                 wall says>\"` to this effect, or anchor a trigger on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the wall says>\"}}]}}`. The trigger form \
+                 is the general one and can carry a sound, a flag gate or any other effect"
+            ),
+        ));
+    }
+
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        let gate = sc.gate.as_str();
+        if quests.answers_press_at(gate) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SEALED_BODY_UNANSWERED,
+            "quests",
+            format!("/content/shortcuts/{i}"),
+            format!(
+                "shortcut `{}` bars the gate `{gate}` from world-load, and nothing in the \
+                 campaign answers a right-click on it — so a player who walks the long way \
+                 round, arrives at the wrong side of the door and pushes on it is told nothing. \
+                 That is the press a shortcut loop most invites. The compiler will not word it \
+                 for you: a baked default would be the engine deciding this door's tone and \
+                 never saying that it had. A `shortcut` carries no wording field, deliberately — \
+                 the line is a trigger. Prescription: add a trigger anchored on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \
+                 the door's own hitboxes, fires only from the sealed side, and retires when the \
+                 door opens. Any `use` trigger on `{gate}` discharges this, whatever it does",
+                sc.id
+            ),
+        ));
+    }
+}
+
+/// The id prefix the compiler reserves for triggers it synthesizes
+/// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
+/// DSL-level fact even though today's only user is in the compiler.
+const RESERVED_TRIGGER_PREFIX: &str = "dw-";
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
 /// version**, and this is the one fence for both:
@@ -1956,7 +2180,12 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // actor the same way. Seeding it `false` — as this walk first did — read
     // every root as player-bearing and let three of the seven through.
     crate::effects::for_each_effect_root(c, &mut |site, effs| {
-        let scheduled = !site.kind().runs_with_acting_player();
+        // Per SITE, not per kind (DSL v0.11): a trigger declaring
+        // `audience: presser` is dispatched by the interaction advancement and so
+        // DOES have an acting player, while every other trigger is polled with
+        // none. Asking the kind would refuse a `player`-scoped read that the
+        // emitter can serve — the mirror of the bug this seed was added to fix.
+        let scheduled = !site.runs_with_acting_player();
         check_player_state_not_scheduled(effs, &declared, site.stage, &site.path, scheduled, d);
     });
 
@@ -2100,7 +2329,7 @@ fn check_player_state_not_scheduled(
     }
 }
 
-/// DSL v0.9 reserved-feature gating (task #179, owner ruling 2026-08-04): the
+/// DSL v0.9 reserved-feature gating: the
 /// declared-drops surface — `drops[]` on a wave mob and on an actor, and the
 /// `collect` `dropped_by` that sources a quest item off a body instead of out of
 /// a box.
@@ -2232,14 +2461,14 @@ fn reserved_v07(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///   compiler-side checks.)
 /// - **spec-0014 (stage 5)**: scripted `actors` + the staging effects
 ///   (`spawn-actor`/`despawn-actor`/`move-actor`/`unleash-actor`, `sequence`).
-/// - **task #55 (stage 5)**: the per-effect `requires_flags` flag gate on
+/// - **stage 5**: the per-effect `requires_flags` flag gate on
 ///   quest/trigger effects (see [`reserved_v06_effect_flags`]).
 fn reserved_v06(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v06_world(c, d);
     reserved_v06_effect_flags(c, d);
 }
 
-/// Per-effect `requires_flags` (task #55) is a v0.6 quests-stage surface: any
+/// Per-effect `requires_flags` is a v0.6 quests-stage surface: any
 /// quest effect (`on_objective_complete` / `on_complete`) or environment-trigger
 /// effect that carries a non-empty `requires_flags` under a pre-0.6 quests stage
 /// is reserved (`DW0141`). `campaign-complete` cannot carry the field at all.
@@ -2425,7 +2654,7 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        // Declared combat difficulty (owner ruling 2026-08-03). `peaceful` is the
+        // Declared combat difficulty. `peaceful` is the
         // one keyword the compiler refuses: on peaceful the server discards every
         // hostile-category mob as it ticks it — summoned, `NoAI` and
         // `PersistenceRequired` are all irrelevant — so a peaceful delve is one in
@@ -2600,8 +2829,8 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
         if !c.quests.content.loot.is_empty() {
             res(d, "/content/loot".to_string(), "the `loot` section");
         }
-        // Actor `equipment` (spec-0021) likewise, and actor `attributes` (owner
-        // ruling 2026-08-03) — the same v0.4 shape a wave mob's takes, fenced on
+        // Actor `equipment` (spec-0021) likewise, and actor `attributes` — the
+        // same v0.4 shape a wave mob's takes, fenced on
         // the stage the actors themselves are fenced on.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.equipment.is_some() {
@@ -2619,7 +2848,7 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 );
             }
         }
-        // Wave-mob `equipment` (task #65) is a v0.6 stage-5 surface: reserved
+        // Wave-mob `equipment` is a v0.6 stage-5 surface: reserved
         // before 0.6.0 (the field defaults to absent, so an earlier campaign
         // that uses none is byte-identical).
         for (i, w) in c.quests.content.waves.iter().enumerate() {
@@ -3126,7 +3355,7 @@ fn check_carrier_one_not_scheduled(
 
 /// DSL v0.6 checks (spec-0014): actor entity ids, skins, anchor resolution, actor
 /// references from staging effects, the no-nested-`sequence` rule, and wave-mob
-/// `equipment` item ids (task #65, `DW0143` — the give-item family). Gated on the
+/// `equipment` item ids (`DW0143` — the give-item family). Gated on the
 /// quests stage version by the caller.
 fn v06_checks(
     c: &Campaign,
@@ -3273,7 +3502,7 @@ fn v06_checks(
         check_carrier_one_not_scheduled(effs, path, false, d);
     }
 
-    // Wave-mob `equipment` item ids (task #65): every present slot must name a
+    // Wave-mob `equipment` item ids: every present slot must name a
     // pinned-1.21.11 item — the same registry and DW family as `give-item`
     // (`DW0143`).
     for (i, w) in quests.waves.iter().enumerate() {
@@ -3302,7 +3531,7 @@ fn v06_checks(
         );
     }
 
-    // task #179: declared drops — the subset an elite/boss leaves behind.
+    // Declared drops — the subset an elite/boss leaves behind.
     check_drops(c, quests, items, d);
 
     // spec-0016 §1: `respawns_on_rest` is re-seating *by a bonfire*. With no
@@ -3340,7 +3569,7 @@ fn v06_checks(
     }
 
     // spec-0016 §1 + spec-0023, souls ruling 5/7 ("stage bosses never respawn
-    // on rest", task #160, bell r5 semantics audit): `tier` and
+    // on rest"): `tier` and
     // `respawns_on_rest` are two fields on the SAME wave declaration — the only
     // place a "boss" billing and a "re-seat on rest" contract can land on one
     // another (an actor carries `tier` too, but has no `respawns_on_rest` field
@@ -3367,7 +3596,7 @@ fn v06_checks(
         }
     }
 
-    // spec-0016 §1 (owner ruling 2026-08-03): a campaign that places a bonfire is
+    // spec-0016 §1: a campaign that places a bonfire is
     // a souls campaign, and a souls campaign owes the party a flask. Resting
     // replenishes every `flask` kit entry to its declared count — with none
     // declared, "rest and save" and "save only" collapse into the same button and
@@ -3392,8 +3621,8 @@ fn v06_checks(
                     "this campaign places a `bonfire` but {} no `flask` kit item: {}. \
                      Resting at a bonfire replenishes every kit entry marked `\"flask\": true` to \
                      its declared `count` — with none, the rest option recovers nothing and the \
-                     souls loop has no consumable to spend (spec-0016 §1, owner ruling \
-                     2026-08-03). Add a recovery item to each class kit and mark it \
+                     souls loop has no consumable to spend (spec-0016 §1). \
+                     Add a recovery item to each class kit and mark it \
                      `\"flask\": true` (this needs `dsl_version` 0.8.0 on the classes stage). Do \
                      NOT drop the bonfire to silence this — the rest point is the design.",
                     if flaskless.len() == 1 {
@@ -3408,7 +3637,7 @@ fn v06_checks(
     }
 }
 
-/// spec-0016 §1 (owner directive 2026-08-03): **what is actually in the flask.**
+/// spec-0016 §1: **what is actually in the flask.**
 ///
 /// The kit `flask` marker landed with no way to say what the bottle pours, so
 /// every flask shipped as `minecraft:potion` with no `minecraft:potion_contents`
@@ -3441,7 +3670,7 @@ fn kit_potion_checks(c: &Campaign, effects: &dyn EffectRegistry, d: &mut Vec<Dia
                              \"minecraft:strong_healing\"}}`, or an `\"effects\"` list of \
                              `{{\"effect\", \"duration\", \"amplifier\"}}`. Do NOT rename the \
                              bottle instead — semantics never key on player-facing text \
-                             (spec-0016 §1, owner directive 2026-08-03).",
+                             (spec-0016 §1).",
                             item.item
                         ),
                     ));
@@ -3602,7 +3831,7 @@ fn anchors_and_items(
     d: &mut Vec<Diagnostic>,
 ) {
     // area id -> anchor set of its bound prefab (only for single-prefab areas
-    // whose prefab is known; pool areas resolve anchors in M2 task #9).
+    // whose prefab is known; pool areas resolve their anchors elsewhere).
     let mut area_anchors: BTreeMap<&str, &BTreeSet<String>> = BTreeMap::new();
     for a in &c.world.content.areas {
         if let Some(prefab) = &a.prefab
@@ -4068,7 +4297,7 @@ fn v03_checks(
                     fill_count,
                     ..
                 } => {
-                    // v0.9 (task #179): the wave a drop-gated collect names must
+                    // v0.9: the wave a drop-gated collect names must
                     // exist — the same dangling-reference rule a `kill` follows.
                     if let Some(wave) = dropped_by
                         && !declared_waves.contains(wave.as_str())
@@ -4108,13 +4337,13 @@ fn v03_checks(
                         d,
                     );
                     anchor_resolves(set, anchor, i, j, "anchor", d);
-                    // v0.8 (task #95): the adopted container's anchor must exist
+                    // v0.8: the adopted container's anchor must exist
                     // too. Whether its CELL really holds a chest/barrel needs the
                     // assembled world and is the build-tier `DW0438`.
                     if let Some(cont) = container {
                         anchor_resolves(set, cont, i, j, "container", d);
                     }
-                    // v0.8 (task #95): the fill is positional — the required stack
+                    // v0.8: the fill is positional — the required stack
                     // in `container.0` plus one padding stack per slot after it —
                     // so it obeys the same 27-slot ceiling a `loot` declaration
                     // does, and for the same reason: every stack past the last slot
@@ -4605,7 +4834,7 @@ fn v04_checks(
 }
 
 /// Split a block field into its base id and (optional) blockstate suffix,
-/// validating the suffix's syntax (DSL v0.6, task #55). Returns the base id to
+/// validating the suffix's syntax (DSL v0.6). Returns the base id to
 /// check against the block registry; `Err(reason)` when a `[...]` suffix is
 /// present but malformed (unbalanced brackets, empty, or a token that is not a
 /// lowercase `key=value`). A well-formed state string is passed through verbatim
@@ -4707,7 +4936,7 @@ fn collect_declared_flags(c: &Campaign) -> BTreeSet<&str> {
             flags.insert(dis.sets_flag.as_str());
         }
     }
-    // task #184: a timed gate's disarm produces a first-class flag exactly as a
+    // A timed gate's disarm produces a first-class flag exactly as a
     // trap's does — the party jammed the portcullis, and the rest of the campaign
     // may read that fact.
     for g in &c.quests.content.timed_gates {
@@ -6712,7 +6941,7 @@ fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagn
 /// its own id, and an actor list that does not actually stage an ambush.
 ///
 /// It deliberately does **not** require a `telegraph`. The un-telegraphed
-/// ambush is core souls vocabulary (owner ruling 2026-08-02) — 初见杀 is how a
+/// ambush is core souls vocabulary — 初见杀 is how a
 /// level teaches. What the engine owes the player is counterplay on the retry,
 /// which is a geometric question and is proven in `compiler::nav` (`DW0376`).
 fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -6782,7 +7011,7 @@ fn ambush_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// `DW0389`.
 ///
 /// The structural half only: ids, a cycle that actually cycles, a phase inside
-/// the cycle, one owner per gate region, and — task #184 — a `disarm.via` that
+/// the cycle, one owner per gate region, and a `disarm.via` that
 /// resolves to a real anchor outside the span it jams. The *design* half — that
 /// the gate is a timing read and not a coin flip — needs the nav model's crossing
 /// time and lives in `compiler::nav` (`DW0378`). The fill-block requirement is
@@ -6901,7 +7130,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
                 d,
             );
         }
-        // task #184 — the disarm affordance, the same two rules a trap's obeys.
+        // The disarm affordance, the same two rules a trap's obeys.
         if let Some(dis) = &g.disarm {
             if !resolvable(dis.via.as_str()) {
                 err(
@@ -6951,7 +7180,7 @@ fn timed_gate_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Dia
             path,
             format!(
                 "`close-gate` targets `{anchor}`, the gate of a `timed-gate` that declares a \
-                 `disarm` — a disarmed gate rests OPEN permanently (task #184, souls dossier \
+                 `disarm` — a disarmed gate rests OPEN permanently (souls dossier \
                  §5.2: a hazard the party has switched off stays off), so nothing may re-arm \
                  its clock. Use a different gate for the beat that must re-seal, or drop the \
                  `disarm` and keep the clock running."
@@ -7005,8 +7234,8 @@ fn bare_entity(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
-/// The advisory half of the difficulty surface (owner ruling 2026-08-03,
-/// `DW0469`): a campaign that stages a **fighting** actor but declares no
+/// The advisory half of the difficulty surface
+/// (`DW0469`): a campaign that stages a **fighting** actor but declares no
 /// `waves[]` and no `world.difficulty` ships the compiler's derived
 /// `difficulty=peaceful` — under which the server discards every
 /// hostile-category mob as it ticks it (`/summon`ed, `NoAI` and
@@ -7292,7 +7521,7 @@ fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnosti
     }
 }
 
-/// Declared drops (task #179, owner ruling 2026-08-04): what an elite or boss
+/// Declared drops: what an elite or boss
 /// leaves behind is a **declared subset**, never automatically everything.
 ///
 /// Four rules, all of them about the gap between what a campaign says and what
@@ -7703,7 +7932,7 @@ fn check_enchantments(
 /// Skipped when the registry does not carry stack sizes (the small vendored DSL-side
 /// subset) or the item id is unknown — the latter is already `DW0143`, and stacking
 /// a second diagnostic on one typo is noise.
-/// Exclusive ownership of an adopted container (DSL v0.8, task #95, `DW0435`).
+/// Exclusive ownership of an adopted container (DSL v0.8, `DW0435`).
 ///
 /// Both container-fill surfaces write **positionally** from `container.0`: a
 /// `loot` entry and a `collect`'s adopted container filling one cell overwrite
@@ -7926,7 +8155,7 @@ fn loot_checks(
 /// DSL v0.8 reserved-feature gating: spec-0025's stage-4 `branch_points`
 /// declaration, per-node `happening` and `campaign-complete` `ending`, plus
 /// spec-0016 §1's bonfire rest-dialog labels (stage 5), the class-kit `flask`
-/// (stage 3), spec-0023's actor `tier` (stage 5) and task #95's `collect`
+/// (stage 3), spec-0023's actor `tier` (stage 5) and the `collect`
 /// container adoption (`container` / `item_name` / `fill_count`, stage 5).
 ///
 /// Same asymmetry the v0.7 ledger established: *declaring* any of it below 0.8.0
@@ -7948,7 +8177,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
-        // spec-0023 (task #113): an actor's `tier` — the same `elite`/`boss`
+        // spec-0023: an actor's `tier` — the same `elite`/`boss`
         // billing a wave declares, on the OTHER shape an elite takes.
         for (i, a) in c.quests.content.actors.iter().enumerate() {
             if a.tier.is_none() {
@@ -7978,8 +8207,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         format!("/content/quests/{i}/objectives/{j}/happening"),
                     ));
                 }
-                // task #95 (owner ruling, island playtest rounds 1 and 2): the
-                // `collect` container-adoption trio. Declaring any of it below
+                // The `collect` container-adoption trio. Declaring any of it below
                 // 0.8.0 is `DW0141`, so a 0.6/0.7 campaign's chest, its unnamed
                 // item and its single stack cannot move by a byte.
                 if let Objective::Collect {
@@ -8044,7 +8272,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         });
     }
-    // spec-0016 §1 (owner rulings 2026-08-03): the class-kit `flask` a bonfire
+    // spec-0016 §1: the class-kit `flask` a bonfire
     // rest replenishes, and the bonfire's authorable rest-dialog labels.
     if !is_v08(c.classes.dsl_version.as_str()) {
         for (i, cl) in c.classes.content.classes.iter().enumerate() {
@@ -8060,7 +8288,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             .to_string(),
                     ));
                 }
-                // Owner directive 2026-08-03: what the bottle actually pours.
+                // What the bottle actually pours.
                 if item.contents.is_some() {
                     d.push(Diagnostic::error(
                         codes::RESERVED,
@@ -8077,7 +8305,7 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     if !is_v08(c.quests.dsl_version.as_str()) {
-        // Task #142 (owner island finding #34): the line a sealed gate answers a
+        // The line a sealed gate answers a
         // right-click with. A pre-0.8 campaign still gets the answer — the
         // compiler's canonical English — it just cannot author the wording.
         crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
@@ -8128,8 +8356,8 @@ fn reserved_v08(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             format!("/content/dialogues/{i}/nodes/{j}/options/{k}/happening"),
                         ));
                     }
-                    // Owner design 2026-08-04: the button's hover tooltip — the
-                    // full line the caption stands for.
+                    // The button's hover tooltip — the full line the caption
+                    // stands for.
                     if o.tooltip.is_some() {
                         d.push(Diagnostic::error(
                             codes::RESERVED,

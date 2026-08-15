@@ -1,4 +1,4 @@
-//! Boundary safety over the **assembled world** (`DW0322`, task #170) — the
+//! Boundary safety over the **assembled world** (`DW0322`) — the
 //! stage-10 call site in `emit::build`, as opposed to the per-batch one inside
 //! the stage-7 edit replay.
 //!

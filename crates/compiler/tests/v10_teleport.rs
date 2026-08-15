@@ -16,7 +16,7 @@
 //! OBJECT (`compiler::affordance`, `DW0545`), which is why one negated tag can
 //! stand where a type roster cannot.
 //!
-//! That roster is still a deliberate divergence from `lethal_volumes[]` (#347),
+//! That roster is still a deliberate divergence from `lethal_volumes[]`,
 //! which exempts five engine machinery types by name: a teleport must never
 //! exempt a TYPE, because an NPC is a body plus a co-located
 //! `minecraft:interaction` and the type says nothing about which of the two it

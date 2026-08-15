@@ -4,7 +4,7 @@
 //! the typed door to it: serialize with serde, then put the bytes through the
 //! formatter. Full rules and rationale: `docs/reference/compiler.md` §9.
 //!
-//! **Why it delegates rather than defining its own form** (task #52). Before
+//! **Why it delegates rather than defining its own form**. Before
 //! `delvec fmt` existed this function *was* the canonical form, and its form was
 //! serde's — struct-declaration field order, whatever `PrettyFormatter` emits.
 //! `delvec edit apply` writes `world-edits.json` with it. Had `fmt` shipped with

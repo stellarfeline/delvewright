@@ -489,7 +489,7 @@ fn run_expand(
     // The region is NOT checked against the structure-template cap here, and
     // that is deliberate: a region past it is not an error at all. `export_zone`
     // tiles it. The cap is a packaging fact about a file format and a creator's
-    // design never bends to satisfy it (owner ruling, 2026-08-12), so the only
+    // design never bends to satisfy it, so the only
     // region this command refuses is a degenerate one, which `parse_region` and
     // `export_zone` between them already do.
     let size = match parse_region(region) {
@@ -569,7 +569,7 @@ fn run_expand(
 
     // `export_zone`, never `export_prefab`: how many files the zone lands in is
     // the toolchain's arithmetic, and a region an author chose is never the
-    // wrong size (owner ruling, 2026-08-12).
+    // wrong size.
     //
     // The verdict is printed only once the artifact it is a verdict about
     // exists. Freezing can still refuse an expansion every gate passed — a

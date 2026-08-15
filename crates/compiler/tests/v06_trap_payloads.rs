@@ -2,7 +2,7 @@
 //!
 //! Redstone keeps exactly one job (the trigger); the consequence is commands.
 //! These tests pin the two new payload verbs and, above all, the owner's
-//! **saturation ruling** (2026-08-03): a volley BLANKETS its kill zone, and that
+//! **saturation ruling**: a volley BLANKETS its kill zone, and that
 //! is proven at compile time rather than hoped for at runtime.
 
 mod common;
@@ -217,7 +217,7 @@ fn err_code(e: &BuildFailure) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// The saturation contract (owner ruling 2026-08-03)
+// The saturation contract
 // ---------------------------------------------------------------------------
 
 /// A volley BLANKETS its kill zone: every standable cell of the zone receives

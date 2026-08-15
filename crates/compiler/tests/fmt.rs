@@ -1,4 +1,4 @@
-//! `delvec fmt` — the canonical-form formatter and its `--check` gate (task #52).
+//! `delvec fmt` — the canonical-form formatter and its `--check` gate.
 //!
 //! The task's hard constraint is that **sorting an array changes the game**, so
 //! the tests that matter are not about layout. In order of weight:

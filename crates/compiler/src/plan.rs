@@ -104,7 +104,7 @@ pub struct CheckpointPlan {
     /// plain `set-checkpoint` (spec-0012), which is immediate.
     pub rest: bool,
     /// The bonfire rest dialog's three strings, already resolved against the
-    /// compiler's canonical English (owner ruling 2026-08-03). Meaningless for a
+    /// compiler's canonical English. Meaningless for a
     /// plain `set-checkpoint`, which shows no dialog.
     pub prompt: String,
     /// The **rest and save** button label.
@@ -188,9 +188,9 @@ impl LethalVolumePlan {
 /// The compiler's own answer a sealed gate gives a right-click when the
 /// `close-gate` authors no `sealed_hint`.
 ///
-/// The owner's island finding #34: a sealed boulder answered a right-click with
-/// SILENCE. There is no such thing as a seal with nothing to say, so the answer
-/// is the compiler's obligation and the authored line is only the wording.
+/// There is no such thing as a seal with nothing to say: a sealed boulder that
+/// answers a right-click with SILENCE is a defect. The answer is therefore the
+/// compiler's obligation, and the authored line is only the wording.
 ///
 /// It is **chrome** (`dsl::chrome::GATE_SEALED`): compiler-owned, translated with
 /// the compiler, and not l10n-inventoried — a campaign that wants its own wording
@@ -200,7 +200,7 @@ impl LethalVolumePlan {
 pub const SEAL_HINT_DEFAULT: &str = delvewright_dsl::chrome::GATE_SEALED.en;
 
 /// A gate anchor that some `close-gate` seals, and the line the seal answers a
-/// right-click with (DSL v0.8, task #142). One entry per **anchor**: the seal is
+/// right-click with (DSL v0.8). One entry per **anchor**: the seal is
 /// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
 /// and must agree on the wording (`DW0423`).
 #[derive(Clone, Debug)]
@@ -216,6 +216,11 @@ pub struct SealHintPlan {
     pub block: String,
     /// The line the seal answers with — authored, or [`SEAL_HINT_DEFAULT`].
     pub text: String,
+    /// Whether [`Self::text`] came from a `sealed_hint` the campaign wrote.
+    /// `false` means it is the compiler's chrome fallback, which above
+    /// `dsl_version` 0.11.0 the compiler is no longer allowed to supply
+    /// (`DW0429`).
+    pub authored: bool,
 }
 
 impl SealHintPlan {
@@ -236,7 +241,7 @@ impl SealHintPlan {
 /// axis-neighbour outside it, in ascending `(x, y, z)` order.
 ///
 /// Extracted verbatim from [`SealHintPlan::shell_cells`] when the shortcut door's
-/// own answer needed the identical surface (task #50). One definition, because
+/// own answer needed the identical surface. One definition, because
 /// two copies of "which cells of a sealed slab can be clicked" would be free to
 /// drift apart, and the whole point of the geometry is that it is the same
 /// question in both places.
@@ -282,13 +287,13 @@ pub struct TimedGatePlan {
     /// Whether the closing edge kills players caught inside the region
     /// (spec-0016 §4 addendum).
     pub crush: bool,
-    /// The resolved disarm affordance (task #184), if declared. A gate whose
+    /// The resolved disarm affordance, if declared. A gate whose
     /// `disarm.via` anchor does not resolve carries `None` — the DSL tier's
     /// `DW0377` reports that, and no half-built affordance reaches emission.
     pub disarm: Option<TimedGateDisarmPlan>,
 }
 
-/// A resolved `timed-gate` disarm affordance (task #184) — the same shape a
+/// A resolved `timed-gate` disarm affordance — the same shape a
 /// trap's [`TrapDisarmPlan`] takes.
 #[derive(Clone, Debug)]
 pub struct TimedGateDisarmPlan {
@@ -596,17 +601,22 @@ pub struct Plan<'a> {
     pub shortcuts: Vec<ShortcutPlan>,
     /// Resolved container fills (spec-0021), declaration-ordered.
     pub loot: Vec<LootPlan>,
-    /// Resolved `collect` container adoptions (DSL v0.8, task #95), campaign-
+    /// Resolved `collect` container adoptions (DSL v0.8), campaign-
     /// ordered. Empty for a campaign whose collects keep the compiler's chest.
     pub collect_fills: Vec<CollectFillPlan>,
     /// Resolved ambushes (spec-0016 §3), declaration-ordered.
     pub ambushes: Vec<AmbushPlan>,
     /// Resolved timed gates (spec-0016 §4), declaration-ordered.
     pub timed_gates: Vec<TimedGatePlan>,
-    /// One entry per gate anchor some `close-gate` seals (DSL v0.8, task #142),
+    /// One entry per gate anchor some `close-gate` seals (DSL v0.8),
     /// in first-firing order — the seal the party can press for an answer. Empty
     /// for a campaign that never seals a gate.
     pub seal_hints: Vec<SealHintPlan>,
+    /// **What every compiler-owned sealed body answers a press with** (DSL v0.11).
+    /// One entry per pressable body the campaign does not answer itself — a
+    /// `close-gate` seal, a sealed `shortcut` door — in that order. Empty for a
+    /// campaign with neither.
+    pub press_answers: Vec<PressAnswer>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -627,7 +637,7 @@ pub struct Plan<'a> {
     /// result is named in `docs/reference/compiler.md`.
     pub transit_teleports: Vec<([i32; 3], [i32; 3])>,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
-    /// (spec-0017 PR 3), keyed by batch id — the editor's per-batch snapshot
+    /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
     pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// For each objective's `critical_path` step, the set of steps of its **strict
@@ -1006,7 +1016,7 @@ pub fn wave_tag(wave_id: &str) -> String {
 }
 
 /// The entity tag a **census brand** stamps on a wave's currently-living mobs
-/// (task #123). The harness applies it before a scripted death and reads it back
+/// The harness applies it before a scripted death and reads it back
 /// after the re-seat: a mob still wearing it is, by identity and not by
 /// silhouette, one the previous life already fought.
 ///
@@ -1016,9 +1026,9 @@ pub fn wave_brand_tag(wave_id: &str) -> String {
     format!("dw_brand_{}", safe_local(wave_id))
 }
 
-/// Marker token for the per-wave census SUMMARY line (task #123).
+/// Marker token for the per-wave census SUMMARY line.
 pub const MARKER_TOKEN_CENSUS: &str = "census";
-/// Marker token for one mob's line inside a census (task #123).
+/// Marker token for one mob's line inside a census.
 pub const MARKER_TOKEN_CENSUS_MOB: &str = "censusmob";
 
 /// A stage-5 wave by id (v0.3).
@@ -1156,7 +1166,7 @@ pub struct PlanError {
     /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
     /// anchor is usually the use-site symptom of a pool `DW0498` already
     /// describes at the declaration, and dropping the explanation because the
-    /// build failed is exactly the silence task #187 exists to remove.
+    /// build failed is exactly the silence `DW0498` exists to remove.
     pub warnings: Vec<Diagnostic>,
 }
 
@@ -1374,7 +1384,7 @@ impl<'a> Plan<'a> {
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
         let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
-        // Per-batch affected AABBs from L2 massing (spec-0017 PR 3), for the
+        // Per-batch affected AABBs from L2 massing (spec-0017), for the
         // editor's per-batch snapshots. Empty without massing verbs.
         let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
         // Socket doorways severed by `rewire-socket sealed`, per area — the
@@ -1456,7 +1466,7 @@ impl<'a> Plan<'a> {
                     // A solver failure raised after growth (`DW0305`) carries the
                     // draw that produced it: attach the pool-level `DW0498` so the
                     // author reads the cause at the declaration, not just the
-                    // symptom at the use site (task #187).
+                    // symptom at the use site.
                     let mut w = warnings.clone();
                     w.extend(crate::pool::check(
                         prefabs,
@@ -1471,7 +1481,7 @@ impl<'a> Plan<'a> {
                     ));
                     PlanError::new(e.code, e.message).with_warnings(w)
                 })?;
-                // Stage-7 L2 massing (spec-0017 PR 3): apply the edit script's
+                // Stage-7 L2 massing (spec-0017): apply the edit script's
                 // massing batches for this area over the solved layout, so
                 // everything downstream — anchor resolution just below, the
                 // gate/waterline checks, assembly, relight, nav, the L3
@@ -1486,7 +1496,7 @@ impl<'a> Plan<'a> {
                     severed.insert(area_id.clone(), massing_out.severed);
                 }
 
-                // `DW0498` (task #187): the draw is settled — read it back and say
+                // `DW0498`: the draw is settled — read it back and say
                 // so ONCE, here at the declaration, if it seats the same
                 // anchor-bearing prefab more than once. Every anchor that prefab
                 // declares now has more than one carrier; the `or_insert_with`
@@ -1669,7 +1679,7 @@ impl<'a> Plan<'a> {
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
-        // ---- `collect` container adoption (DSL v0.8, task #95) ----
+        // ---- `collect` container adoption (DSL v0.8) ----
         let collect_fills = collect_collect_fills(campaign, &anchors);
 
         // ---- ambushes (spec-0016 §3) ----
@@ -1704,8 +1714,14 @@ impl<'a> Plan<'a> {
             })
             .collect();
 
-        // ---- v0.8 seal hints (task #142): what a sealed gate answers ----
+        // ---- v0.8 seal hints: what a sealed gate answers ----
         let seal_hints = collect_seal_hints(campaign, &anchors);
+
+        // ---- the press answers (DSL v0.11): what every sealed body answers ----
+        // Collected AFTER both `shortcuts` and `seal_hints`, because it is derived
+        // from the union of the two — one rule over the pressable class, not one
+        // rule per verb.
+        let press_answers = collect_press_answers(campaign, &seal_hints, &shortcuts);
 
         // ---- v0.6 gate open/close firings (drives the close-gate nav proof) ----
         let mut region_events = collect_region_events(campaign, &anchors, &objective_steps);
@@ -1751,6 +1767,7 @@ impl<'a> Plan<'a> {
             ambushes,
             timed_gates,
             seal_hints,
+            press_answers,
             region_events,
             transit_teleports,
             strict_ancestor_steps,
@@ -1784,7 +1801,7 @@ impl<'a> Plan<'a> {
         build_critical_path(self.campaign, &self.anchors, &self.npcs, flow, path)
     }
 
-    /// The gate/seal model of ONE branch's exported path (spec-0025, task #117):
+    /// The gate/seal model of ONE branch's exported path (spec-0025):
     /// the campaign's `open-gate`/`close-gate` firings with `fire_step` indices in
     /// the **branch path's own step space**, plus the strict DAG-ancestor relation
     /// over that space — exactly the model [`Plan::build`] computes for the
@@ -1865,8 +1882,9 @@ impl<'a> Plan<'a> {
     /// the area is not placed at all.
     ///
     /// The confinement boundary for anything that must not silently leave the
-    /// piece it was declared in: wave seating ([`crate::nav::World::confined_standable_cells`],
-    /// task #41) and anchor seating ([`crate::nav::AnchorRoot`]).
+    /// piece it was declared in: wave seating
+    /// ([`crate::nav::World::confined_standable_cells`]) and anchor seating
+    /// ([`crate::nav::AnchorRoot`]).
     pub fn piece_bounds(&self, area_id: &str, cell: [i32; 3]) -> ([i32; 3], [i32; 3]) {
         let Some(area) = self.areas.iter().find(|a| a.area_id == area_id) else {
             return (cell, cell);
@@ -1917,7 +1935,7 @@ impl<'a> Plan<'a> {
     /// spec-0016 §1). Gates the respawn **re-seat** machinery: the delve's own
     /// promise is "die and resume at the last checkpoint", and vanilla's
     /// `/spawnpoint` is only a hint — it silently falls back to the world spawn
-    /// whenever the recorded cell is not a legal respawn position (task #145).
+    /// whenever the recorded cell is not a legal respawn position.
     /// A campaign with no checkpoint keeps the pre-0.6 emission byte-for-byte.
     pub fn any_checkpoint(&self) -> bool {
         !self.checkpoints.is_empty()
@@ -1954,7 +1972,7 @@ impl<'a> Plan<'a> {
     }
 
     /// The waves a bonfire refreshes **only while they are undefeated**
-    /// (spec-0016 §1, owner ruling 2026-08-05): every `elite`/`boss`-tier wave
+    /// (spec-0016 §1): every `elite`/`boss`-tier wave
     /// that does NOT declare `respawns_on_rest`, in content order.
     ///
     /// The distinction from [`Self::reseat_waves`] is the whole ruling. A
@@ -1986,8 +2004,8 @@ impl<'a> Plan<'a> {
             .collect()
     }
 
-    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1,
-    /// owner ruling 2026-08-05), in declaration order: every actor the campaign
+    /// The actors a bonfire refreshes while they are undefeated (spec-0016 §1),
+    /// in declaration order: every actor the campaign
     /// `unleash-actor`s — the compiler's one definition of an actor that is a
     /// *fight* ([`crate::combat::hostile_actors`]).
     ///
@@ -2026,6 +2044,46 @@ impl<'a> Plan<'a> {
     /// Every collected bonfire (spec-0016 §1), content-ordered.
     pub fn bonfires(&self) -> impl Iterator<Item = &CheckpointPlan> {
         self.checkpoints.iter().filter(|c| c.rest)
+    }
+
+    /// **Every trigger this build emits**: the campaign's own, in declaration
+    /// order, then the compiler's press answers ([`PressAnswer`]).
+    ///
+    /// This is the emission-side counterpart of `QuestsContent::all_triggers` (the
+    /// authority an `ambush` desugars into), and it exists for the same reason:
+    /// there must be exactly one list, or the sugar acquires a second code path to
+    /// drift down. Every place that gives a click a body, a tick clause, a
+    /// function, an advancement or a rider tag reads this — so a press answer is
+    /// emitted by the code that emits author triggers, and cannot be given a
+    /// dialect of its own.
+    ///
+    /// **Why the press answers are added here rather than in `parse_campaign`**
+    /// (where the `ambush` sugar expands). An ambush's strings are the author's
+    /// and belong in the campaign's l10n inventory under the desugared trigger's
+    /// keys; a press answer's are not. An authored `sealed_hint` is already
+    /// inventoried at `fx.….sealed_hint`, and expanding at parse time would move
+    /// that key and orphan every sidecar that has it; the compiler's own default
+    /// is **chrome**, which must never enter a campaign's inventory at all. The
+    /// key contract is a property of the authored document, so the desugar happens
+    /// one layer below it — after `localize`, before emission.
+    ///
+    /// Deterministic: two fixed orders concatenated, no hashing (ADR-0006).
+    pub fn emitted_triggers(&self, chrome: &delvewright_dsl::Chrome) -> Vec<EnvTrigger> {
+        let mut out = self.campaign.quests.content.triggers.clone();
+        out.extend(self.press_answers.iter().map(|p| p.trigger(chrome)));
+        out
+    }
+
+    /// [`Self::emitted_triggers`] for a consumer that asks *which triggers exist,
+    /// where, and of what kind* and never reads what they say — the hitbox proofs
+    /// (`DW0422`/`DW0426`) and the affordance ledger.
+    ///
+    /// The build language only ever decides which rendition of a **chrome**
+    /// string rides a component as its fallback, so a body question cannot depend
+    /// on it. Spelling that out here is what keeps those consumers from having to
+    /// thread a `Chrome` they would not use.
+    pub fn emitted_triggers_unlocalized(&self) -> Vec<EnvTrigger> {
+        self.emitted_triggers(&delvewright_dsl::Chrome::default())
     }
 
     /// For each [`Self::checkpoints`] entry, in the same order: the step at which
@@ -2226,7 +2284,7 @@ fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> 
                 // `kill` objective — so a kill-less live-threat wave is placed too.
                 Objective::Kill { .. } | Objective::TalkTo { .. } => {}
             }
-            // v0.8 (task #95): an adopted container is a piece of hardware the
+            // v0.8: an adopted container is a piece of hardware the
             // objective cannot do without — a pool draw that omits its carrier
             // leaves the collect with nothing to fill, so it joins the required
             // set exactly as a lane waypoint does. Absent field adds nothing.
@@ -2678,7 +2736,7 @@ fn build_critical_path(
                     // sit in a barrel three blocks away is a guaranteed bot stall.
                     // An unresolvable container anchor falls back to the objective
                     // anchor; the DSL tier reports it (`DW0142`).
-                    // v0.9 (task #179): a drop-gated collect has no container at
+                    // v0.9: a drop-gated collect has no container at
                     // all — the item is on the floor the wave died on, so the
                     // step points at that wave's own anchor.
                     let dropped_at = dropped_by.as_ref().and_then(|w| {
@@ -2967,7 +3025,7 @@ fn collect_shortcuts(
             unlock_anchor: sc.unlock.as_str().to_string(),
             unlock,
             on_unlock: sc.on_unlock.clone(),
-            // Task #50: which half of the doorway is the sealed one, from the
+            // Which half of the doorway is the sealed one, from the
             // slab's thin axis and the side the unlock stands on. `None` is not
             // an error here — `emit` raises `DW0425` only if an answer was
             // actually authored for a side the geometry does not name.
@@ -3013,7 +3071,7 @@ fn collect_ambushes(
 }
 
 /// Collect one [`SealHintPlan`] per gate anchor that any `close-gate` seals (DSL
-/// v0.8, task #142), in first-firing order.
+/// v0.8), in first-firing order.
 ///
 /// A repeat of an anchor already collected is dropped: the seal is a **place**,
 /// so its hitboxes and its answer belong to the anchor, not to each firing. When
@@ -3047,9 +3105,274 @@ fn collect_seal_hints(
                 Some(h) => h.to_string(),
                 None => delvewright_dsl::chrome::GATE_SEALED.tagged(),
             },
+            authored: e.close_gate_sealed_hint().is_some(),
         });
     });
     out
+}
+
+/// The compiler-supplied answer one **pressable body** gives a right-click
+/// (DSL v0.11).
+///
+/// ## Why this is not a field on a verb
+///
+/// `close-gate` owned `sealed_hint`: its own hitbox fleet, its own advancement,
+/// its own actionbar reply, its own baked English. Every one of those is a
+/// property of *being a thing a player can press*, and none of them has anything
+/// to do with closing a gate — so the second object that needed them, a sealed
+/// `shortcut` door, had no surface at all and answered a press with silence,
+/// which is exactly the door a souls loop-back invites the party to push on.
+/// CLAUDE.md's rule, on this precise case: *a second bespoke field is the
+/// defect, not the fix*.
+///
+/// So a press answer is **not a mechanism**. It is an ordinary
+/// [`EnvTrigger`]`{on: use, audience: presser}` carrying an ordinary
+/// [`QuestEffect::Narrate`]`{style: actionbar}` — the general "click a thing, run
+/// anything" verb, which since DSL v0.11 can reach both the channel and the
+/// addressee that the private copy reached. This struct is the *sugar*: the wording
+/// and the body it hangs on, lowered by [`PressAnswer::trigger`] into the one path
+/// every author-written click already takes. There is no second emitter, no second
+/// advancement shape, no second l10n rule and no second diagnostic family.
+///
+/// ## Lifetime is the body's lifetime
+///
+/// The synthesized trigger summons nothing: it **rides** the hitboxes the sealed
+/// object already owns ([`crate::pressable::body_at`]). So a `close-gate` seal
+/// answers exactly while it is sealed (`open-gate` kills `dw_seal_<safe>`), and a
+/// shortcut door answers exactly until it is opened (`shortcut_open_<id>` kills
+/// `dw_ws_<safe>`). A door that kept saying it cannot be opened after you opened
+/// it would be worse than silence, and nothing has to remember not to do that:
+/// there is no answer left to give once the thing you pressed is gone. That is
+/// also why the shortcut needs no re-seal reasoning — `DW0372` forbids one.
+#[derive(Clone, Debug)]
+pub struct PressAnswer {
+    /// The anchor of the body this answer hangs on.
+    pub anchor: String,
+    /// The full id of the trigger this lowers to (`trigger/dw-press-…`).
+    pub trigger_id: String,
+    /// What owns the body (`close-gate seal` / `shortcut door`), for diagnostics.
+    pub owner: &'static str,
+    /// The line, l10n-tagged: an authored `sealed_hint`'s campaign key, or the
+    /// compiler's own `delvewright.ui.gate.sealed` chrome. Chrome is rebound to
+    /// the build language at emission ([`delvewright_dsl::Chrome::rebind`]); an
+    /// authored line passes through untouched and keeps its campaign key, so the
+    /// l10n inventory is exactly what it was.
+    pub text: String,
+    /// Whether [`Self::text`] is the **campaign's** wording rather than the
+    /// compiler's chrome fallback.
+    ///
+    /// This is the distinction the rule turns on. A `close-gate`
+    /// with an authored `sealed_hint` has said what its seal says, and the
+    /// compiler lowering that onto the general path is not the compiler putting
+    /// words in a player's mouth. A `close-gate` with none has said nothing, and
+    /// above the fence that is `DW0429` rather than `The way is sealed.`
+    pub authored: bool,
+}
+
+/// The `trigger/<local>` id a press answer is synthesized under.
+///
+/// Two parts carry the collision argument. `dw-` is **reserved** from authored
+/// trigger ids (`DW0428`), so a campaign can never write one of these; and
+/// `<kind>` separates the two body classes, so a `close-gate` on `anchor/bell`
+/// and a `shortcut/bell` — which share nothing but a local name — cannot land on
+/// one id and silently become one answer.
+fn press_answer_trigger_id(kind: &str, local: &str) -> String {
+    format!("trigger/dw-press-{kind}-{local}")
+}
+
+/// The local part of an id (`anchor/bell` → `bell`), which is already kebab.
+fn local_of(id: &str) -> &str {
+    id.split_once('/').map(|(_, r)| r).unwrap_or(id)
+}
+
+impl PressAnswer {
+    /// This answer lowered into the general verb: a repeatable right-click at the
+    /// body's anchor that puts one line on the presser's actionbar.
+    ///
+    /// `chrome` resolves the compiler's own default into the build's language (a
+    /// `--lang` bake ships no language files, so the component's fallback is what
+    /// the player reads); an authored line is not chrome and is returned unchanged.
+    pub fn trigger(&self, chrome: &delvewright_dsl::Chrome) -> EnvTrigger {
+        EnvTrigger {
+            id: delvewright_dsl::TriggerId(self.trigger_id.clone()),
+            at: Some(delvewright_dsl::AnchorId(self.anchor.clone())),
+            on: delvewright_dsl::TriggerOn::Use,
+            requires_flags: Vec::new(),
+            forbids_flags: Vec::new(),
+            requires_state: Vec::new(),
+            // A wall is not consumed by being asked: it answers every press.
+            once: false,
+            audience: delvewright_dsl::TriggerAudience::Presser,
+            effects: vec![QuestEffect::Narrate {
+                text: chrome.rebind(&self.text),
+                style: Some(delvewright_dsl::NarrateStyle::Actionbar),
+                sound: None,
+                requires_flags: Vec::new(),
+                forbids_flags: Vec::new(),
+                requires_state: Vec::new(),
+            }],
+        }
+    }
+}
+
+/// **What happens when the campaign leaves a pressable body silent.**
+///
+/// The policy is a property of the **body class**, not of this function, so
+/// extending an owner ruling from one class to another is a changed arm in
+/// [`press_answer_sites`] rather than a re-architecture. The site that builds the
+/// answers is shared; only this decides who supplies the wording.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SilencePolicy {
+    /// **The campaign must author the wording** — every pressable body, from
+    /// `dsl_version` 0.11.0.
+    ///
+    /// The compiler still *lowers* an authored wording onto the general path: a
+    /// `close-gate`'s `sealed_hint` is an authored answer and is synthesized from
+    /// as it always was. What it may not do is **invent** one. A body with neither
+    /// an authored wording nor a `use` trigger is `DW0429`.
+    ///
+    /// The reasoning belongs in the code because it is the project's own rule
+    /// arriving at a new site. A baked default is the compiler making a **design
+    /// statement** — about tone, about what this specific thing is — on the
+    /// author's behalf, and then never telling them it did. An error makes the
+    /// author say it. Same rule as "no hacks at any layer": if content needs a
+    /// thing, the DSL exposes it and the author declares it, rather than a lower
+    /// layer inventing it.
+    ///
+    /// It is also the only end state where the docs, the code and the player
+    /// agree. `wrongside.rs` and the reference both claimed for two versions that
+    /// a shortcut door's wording "defaults", and no code defaulted anything: the
+    /// door said nothing. The honest repair was never to make the claimed default
+    /// real — it was to refuse to compile a body with no answer.
+    Authored,
+    /// **Grandfathered: a `close-gate` seal below 0.11.0.** The compiler falls
+    /// back to its own `delvewright.ui.gate.sealed` chrome, exactly as it has
+    /// since v0.8.
+    Defaulted,
+    /// **Grandfathered: a `shortcut` door below 0.11.0.** Nothing is emitted and
+    /// nothing is demanded — the door is silent, byte for byte what it emitted
+    /// before this version existed.
+    Silent,
+}
+
+impl SilencePolicy {
+    /// May the compiler word this body when the campaign has not?
+    ///
+    /// The two grandfathered arms differ from each other only because the two
+    /// classes *historically* differed — a seal defaulted since v0.8, a door was
+    /// silent — and preserving that is the whole point of a fence: **the same
+    /// declared `dsl_version` yields the same verdicts and the same
+    /// behaviour**. It is emphatically not a
+    /// policy split by object class. Above the fence there is exactly one rule for
+    /// every pressable body, which is what stops this from becoming the
+    /// "capability keyed to the verb" defect CLAUDE.md's worked example is about —
+    /// and this task IS that worked example.
+    fn compiler_may_word_it(self) -> bool {
+        matches!(self, SilencePolicy::Defaulted)
+    }
+}
+
+/// The pressable bodies a press answer can hang on, each with its silence policy
+/// — seals first, then shortcut doors, each in its own planner's order.
+///
+/// **This list is the class.** A third pressable object gets an answer by joining
+/// it, not by growing a field on the verb that owns it.
+fn press_answer_sites<'p>(
+    seal_hints: &'p [SealHintPlan],
+    shortcuts: &'p [ShortcutPlan],
+    authored_required: bool,
+) -> Vec<(PressAnswer, SilencePolicy)> {
+    let mut out: Vec<(PressAnswer, SilencePolicy)> = seal_hints
+        .iter()
+        .map(|s| {
+            (
+                PressAnswer {
+                    anchor: s.anchor.clone(),
+                    trigger_id: press_answer_trigger_id("seal", local_of(&s.anchor)),
+                    owner: "close-gate seal",
+                    text: s.text.clone(),
+                    authored: s.authored,
+                },
+                if authored_required {
+                    SilencePolicy::Authored
+                } else {
+                    SilencePolicy::Defaulted
+                },
+            )
+        })
+        .collect();
+    out.extend(shortcuts.iter().filter_map(|sc| {
+        // A door whose sealed side the geometry does not name has no body to hang
+        // an answer on; `emit::check_shortcut_sides` (`DW0425`) fails the build
+        // before this could matter.
+        sc.sealed_side.as_ref()?;
+        Some((
+            PressAnswer {
+                anchor: sc.gate_anchor.clone(),
+                trigger_id: press_answer_trigger_id("door", local_of(&sc.id)),
+                owner: "shortcut door",
+                // A shortcut carries no wording field, so there is never an
+                // authored wording to lower: its answer is always a trigger.
+                text: delvewright_dsl::chrome::GATE_SEALED.tagged(),
+                authored: false,
+            },
+            if authored_required {
+                SilencePolicy::Authored
+            } else {
+                SilencePolicy::Silent
+            },
+        ))
+    }));
+    out
+}
+
+/// **The silence-policy ledger**: every pressable body in the campaign, what owns
+/// it, and who supplies its wording when the campaign says nothing.
+///
+/// CLAUDE.md: every validation artifact states its binding count. Here the count
+/// that matters is not how many answers the compiler produced — that is zero
+/// for a door, by design — but how many bodies
+/// were **examined** and under which policy. A reader can see at a glance that
+/// the door was considered and its wording withheld on purpose, rather than
+/// missed.
+pub fn press_answer_policies(plan: &Plan) -> Vec<(&'static str, String, SilencePolicy)> {
+    press_answer_sites(
+        &plan.seal_hints,
+        &plan.shortcuts,
+        delvewright_dsl::is_v11(plan.campaign.quests.dsl_version.as_str()),
+    )
+    .into_iter()
+    .map(|(a, p)| (a.owner, a.anchor, p))
+    .collect()
+}
+
+/// Collect the compiler's press answers: **one per pressable body whose class is
+/// `Defaulted` and which the campaign does not answer itself**.
+///
+/// ## The rule, stated once
+///
+/// > A sealed body the campaign never answers is answered by the compiler —
+/// > where, and only where, its class says the compiler may speak for it.
+///
+/// "The campaign answers it" is `QuestsContent::answers_press_at`, the one
+/// predicate `DW0429` also reads, so the refusal and the synthesis can never
+/// disagree about what counts as an answer.
+fn collect_press_answers(
+    campaign: &Campaign,
+    seal_hints: &[SealHintPlan],
+    shortcuts: &[ShortcutPlan],
+) -> Vec<PressAnswer> {
+    let quests = &campaign.quests.content;
+    let authored_required = delvewright_dsl::is_v11(campaign.quests.dsl_version.as_str());
+    press_answer_sites(seal_hints, shortcuts, authored_required)
+        .into_iter()
+        // The compiler lowers a wording it was GIVEN (an authored `sealed_hint`)
+        // at every version; it invents one only where its policy still lets it.
+        .filter(|(a, policy)| a.authored || policy.compiler_may_word_it())
+        // …and stands down entirely where the campaign answers the press itself.
+        .filter(|(a, _)| !quests.answers_press_at(&a.anchor))
+        .map(|(a, _)| a)
+        .collect()
 }
 
 /// Which of the five effect roots a visited effect hangs off — the part of a
@@ -3279,10 +3602,10 @@ fn zone_box_in(
 ///
 /// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner and
 /// `gates::check_seal_hints` walk — so the model and the emission cannot disagree
-/// about which firings exist (task #167; before this, the model saw three of the
-/// five roots emission reaches, and a `close-gate` in a `traps[].payload` or a
-/// dialogue option's `on_respawn` bundle was filled in the datapack while every nav
-/// proof believed the wall was open). Nesting is descended by that traversal, so a
+/// about which firings exist. A model that saw only three of the five roots
+/// emission reaches would leave a `close-gate` in a `traps[].payload` or a
+/// dialogue option's `on_respawn` bundle filled in the datapack while every nav
+/// proof believed the wall was open. Nesting is descended by that traversal, so a
 /// gate effect inside a `sequence` step / lifecycle bundle is registered at its
 /// root's firing step. An effect whose anchor is not a resolvable gate is skipped
 /// (a point anchor / bad close-gate is a validation concern, `DW0142`/`DW0343`).
@@ -3533,8 +3856,8 @@ pub struct LootItemPlan {
     pub enchantments: BTreeMap<String, u32>,
 }
 
-/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8, task
-/// #95), resolved to the container's world cell.
+/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8),
+/// resolved to the container's world cell.
 ///
 /// One resolution, one cell: the build-tier container proof (`DW0438`), the
 /// activation-time fill and the critical-path step the bot opens all read THIS
@@ -3985,7 +4308,7 @@ fn check_gate_reachability(
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            // A `rewire-socket sealed` (spec-0017 PR 3) cuts doorway edges out
+            // A `rewire-socket sealed` (spec-0017) cuts doorway edges out
             // of this graph, so the blockage may be a massed-away passage, not
             // a quest-order mistake — say so.
             let severed_note = if severed.is_some_and(|s| !s.is_empty()) {
@@ -4295,7 +4618,7 @@ fn build_adjacency(
                 continue;
             }
             if b.world == a_next && b.facing == a.facing.opposite() {
-                // A doorway severed by `rewire-socket sealed` (spec-0017 PR 3)
+                // A doorway severed by `rewire-socket sealed` (spec-0017)
                 // is walled on both planes — no edge.
                 if severed.is_some_and(|s| s.contains(&a.world) || s.contains(&b.world)) {
                     continue;

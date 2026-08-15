@@ -1,4 +1,4 @@
-//! DSL v0.8 dialogue-option `tooltip` (owner design 2026-08-04): the button keeps
+//! DSL v0.8 dialogue-option `tooltip`: the button keeps
 //! a caption, the hover box carries the full line.
 //!
 //! Ground truth, not folklore. In the pinned 1.21.11 client jar a dialog action

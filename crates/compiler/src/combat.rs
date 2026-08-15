@@ -400,8 +400,7 @@ pub fn encounters(plan: &Plan) -> Vec<Encounter> {
         // campaign fires STRICTLY BEFORE the step (spec-0012 checkpoints are
         // party-wide and monotonic by quest order).
         //
-        // `< i`, not `<= i`, and the difference is a real defect (#221's
-        // precondition found it on the souls-bonfire fixture). A checkpoint's
+        // `< i`, not `<= i`, and the difference is a real defect. A checkpoint's
         // `fire_step` is the step whose COMPLETION arms it — for a bonfire, the
         // beat after which a rest first becomes possible. A death *during* step
         // i happens while step i is unfinished, so a checkpoint armed by step i
@@ -441,7 +440,7 @@ fn mandatory_waves(plan: &Plan) -> BTreeSet<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Tiered ACTORS — the other shape an elite takes (spec-0023 floor gate, #113)
+// Tiered ACTORS — the other shape an elite takes (spec-0023 floor gate)
 // ---------------------------------------------------------------------------
 
 /// Whether the inverted floor gate can hold a billed encounter to its billing.
@@ -541,14 +540,13 @@ pub struct ActorEncounter {
 /// private one, so nesting — `sequence` steps, `on_arrive` reactions, flag-gated
 /// bundles — is descended exactly as emission descends it, and an ambush (which
 /// desugars to a real trigger at parse time) is seen as the trigger it becomes.
-/// The dialogue **stage** was the blind spot this doc used to argue away
-/// (task #24). `DialogueEffect` indeed has no actor verb, but a dialogue option's
-/// `set-checkpoint` carries an `on_respawn` bundle that is a `Vec<QuestEffect>`,
-/// so a `spawn-actor` there is a beat emission lowers — and it was invisible here
-/// only because `EffectSite` could not *represent* it. Widening the type is what
-/// let the walk widen; the same widening carried roots 6 and 7 (spec-0031) in on
-/// the day they were added, which is the property the exhaustive match below
-/// exists to keep.
+/// The dialogue **stage** is not exempt. `DialogueEffect` has no actor verb of
+/// its own, but a dialogue option's `set-checkpoint` carries an `on_respawn`
+/// bundle that is a `Vec<QuestEffect>`, so a `spawn-actor` there is a beat
+/// emission lowers, and `EffectSite` must be able to *represent* it. The type is
+/// wide enough for the walk to be wide; that is what carried roots 6 and 7
+/// (spec-0031) in on the day they were added, and it is the property the
+/// exhaustive match below exists to keep.
 fn actor_beats(c: &Campaign) -> BTreeMap<String, (Vec<ActorBeat>, Vec<ActorBeat>)> {
     let triggers: BTreeMap<&str, &delvewright_dsl::EnvTrigger> = c
         .quests
@@ -752,8 +750,8 @@ pub fn hostile_actors(c: &Campaign) -> Vec<&Actor> {
         .collect()
 }
 
-/// Every actor the campaign turns loose on the party but never bills (task
-/// #121): `unleash-actor`ed somewhere, `tier` absent.
+/// Every actor the campaign turns loose on the party but never bills:
+/// `unleash-actor`ed somewhere, `tier` absent.
 ///
 /// A tier declared `ordinary` is a *statement* — the author saying this fight is
 /// routine — and stays off the ledger like any other ordinary encounter. An
@@ -789,11 +787,12 @@ struct FloorEntry {
 /// tiered waves in declaration order, then tiered actors in declaration order,
 /// then untiered hostile actors in declaration order.
 ///
-/// The last group is task #121's fix. An EMPTY ledger reads as "everything is
-/// covered" when what it actually meant was "nothing was even assessed": before
-/// this, an actor the campaign unleashes on the party without declaring a tier
-/// appeared on neither side of the ledger, and the run report printed two empty
-/// lists over a delve full of fights. Silence must not read as a pass — and an
+/// The last group is why an EMPTY ledger cannot be trusted to mean "everything
+/// is covered": without it, an actor the campaign unleashes on the party
+/// without declaring a tier appears on neither side of the ledger, and the run
+/// report prints two empty lists over a delve full of fights. That reads as
+/// "everything is covered" when it means "nothing was even assessed".
+/// Silence must not read as a pass — and an
 /// unassessed fight is silence of exactly the kind [`FloorCoverage`] exists to
 /// break.
 fn floor_ledger(
@@ -872,7 +871,7 @@ pub fn floor_coverage_warnings(
         let Some(why) = e.coverage.reason() else {
             continue;
         };
-        // An UNTIERED hostile (task #121) is on the ledger but is not BILLED
+        // An UNTIERED hostile is on the ledger but is not BILLED
         // anything, and `DW0477` is by definition about a billing the gate
         // cannot hold — its message, its pointer (`…/tier`, a field that does
         // not exist here) and its prescription would all be wrong. The ledger
@@ -1423,7 +1422,7 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   the tag the body wears, the beats that stage and unleash them, and the
 ///   attributes of the body that fights.
 /// * `floor_gate` — the ledger: every encounter billed `elite`/`boss` **plus
-///   every untiered hostile actor** (task #121), split into what the gate covers
+///   every untiered hostile actor**, split into what the gate covers
 ///   and what it cannot, each uncovered entry naming its reason. An untiered
 ///   hostile carries `tier: null` and lands in `not_covered`, because a fight
 ///   nothing bills is a fight nothing assessed. This exists so an empty findings
@@ -1453,7 +1452,7 @@ fn coverage_json(c: &FloorCoverage) -> Value {
 ///   for `actors[]` itself: how many actors this build's tier machinery even
 ///   tracked. `actors[]` holds every TIER-DECLARING actor, whether the floor
 ///   gate covers it or not — an untiered hostile actor never appears here (it
-///   is `floor_gate.not_covered` only, task #121), so `actors_gate.unbound`
+///   is `floor_gate.not_covered` only), so `actors_gate.unbound`
 ///   does not by itself mean "no hostile actor in this campaign"; the reason
 ///   text says so and points at `floor_gate.not_covered`.
 pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEncounter]) -> Value {
@@ -1473,7 +1472,7 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                 "pos": [e.pos[0], e.pos[1], e.pos[2]],
                 "count": e.count,
                 "respawns_on_rest": e.respawns_on_rest,
-                // task #123: the tag-census probe surface for this wave. The
+                // The tag-census probe surface for this wave. The
                 // harness calls what the plan NAMES — `safe_local` is a compiler
                 // naming rule, and a harness that re-derived it would be exactly
                 // the downstream folklore CLAUDE.md forbids.
@@ -1505,7 +1504,7 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
                 "tier": e.tier.map(EncounterTier::token),
             }))
             .collect::<Vec<_>>(),
-        // `tier: null` is the untiered hostile (task #121) — an explicit
+        // `tier: null` is the untiered hostile — an explicit
         // null rather than an omitted key, because this document's entire
         // job is to make an absence legible.
         "not_covered": not_covered
@@ -1558,7 +1557,7 @@ pub fn combat_plan_json(plan: &Plan, encounters: &[Encounter], actors: &[ActorEn
 }
 
 /// `floor_gate`'s reason when `examined == 0`: the ledger holds every wave and
-/// actor billed `elite`/`boss` plus every untiered hostile actor (task #121),
+/// actor billed `elite`/`boss` plus every untiered hostile actor,
 /// so an empty ledger means none of those three things exist in the campaign —
 /// a legitimate, common state (an all-`ordinary` delve) stated here so it is
 /// never mistaken for a ledger that ran and found nothing.
@@ -1572,8 +1571,8 @@ const FLOOR_GATE_UNBOUND_REASON: &str = "no wave or actor in this campaign is bi
 /// that declares ANY tier (`ordinary` included), so an empty array means no
 /// actor in the campaign declares one at all — which is not the same fact as
 /// "no hostile actor exists": an unleashed actor that never got a `tier` is
-/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead,
-/// task #121), so this reason points a reader there rather than letting the
+/// invisible here BY DESIGN (it lives in `floor_gate.not_covered` instead),
+/// so this reason points a reader there rather than letting the
 /// empty array read as "no actor combat".
 const ACTORS_GATE_UNBOUND_REASON: &str = "no actor in this campaign declares a `tier` \
     (not even `ordinary`), so this build's actor-tier machinery tracked none. This is \

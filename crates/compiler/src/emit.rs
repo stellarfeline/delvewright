@@ -47,7 +47,7 @@ pub enum BuildFailure {
 }
 
 /// `DW0312`: a `spawn-wave` needs more standable spawn cells near its anchor than
-/// the anchor's own assembled room provides (task #41). Wave-mob placement seats
+/// the anchor's own assembled room provides. Wave-mob placement seats
 /// each mob on a compiler-validated standable cell confined to that room; when the
 /// wave's mob count exceeds the room's footing, the build fails here rather than
 /// letting mobs pile into blocks or spill across a socket seam. Analysis-tier
@@ -75,7 +75,7 @@ pub const DW_WAVE_SPAWN_UNRESOLVED: DwCode = DwCode::every_version("DW0310");
 pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::every_version("DW0387");
 
 /// `DW0494`: completing ONE objective would cross into two different areas —
-/// one destination on the exported path, another on a branch (task #186).
+/// one destination on the exported path, another on a branch.
 ///
 /// The crossing is emitted into the objective's own completion bundle, so the
 /// two destinations would be two teleports in one function body, and which one
@@ -231,7 +231,7 @@ pub fn build_with_warnings(
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
-    // Gravity-despawn gate (task #42, owner addendum): before any downstream model
+    // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
     // unsupported over the delve's `the_void` world and would despawn at placement,
     // silently deforming the shipped map. This is the authoritative direct gate —
@@ -274,8 +274,8 @@ pub fn build_with_warnings(
     // the EDITED model when an edit script exists, since a stage-7 batch can
     // legitimately be what puts the barrel there. Independent of nav, because a
     // campaign may declare loot without ever walking a leg.
-    // The same proof serves the v0.8 `collect` container adoption (DW0438, task
-    // #95): an adopted container is prefab furniture on exactly the terms a `loot`
+    // The same proof serves the v0.8 `collect` container adoption
+    // (DW0438): an adopted container is prefab furniture on exactly the terms a `loot`
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
@@ -324,7 +324,7 @@ pub fn build_with_warnings(
     }
 
     // The voxel occupancy model backs both nav verification (move-npc / cutscene /
-    // critical path) and spawn-wave mob placement (task #41), so build it once when
+    // critical path) and spawn-wave mob placement, so build it once when
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
@@ -333,7 +333,7 @@ pub fn build_with_warnings(
     // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
     // empty for a campaign with no walked leg, so its render plan stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
-    // spec-0025 per-branch waypoint artifacts (task #117): one
+    // spec-0025 per-branch waypoint artifacts: one
     // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
     // inside the world block below (they need the assembled occupancy) and
     // emitted alongside the branch paths. Empty for a campaign with no declared
@@ -406,7 +406,7 @@ pub fn build_with_warnings(
     })?);
 
     // …and no OTHER affordance may contest the hitboxes a sealed gate arms to
-    // answer a right-click (DW0422, task #142). Same box arithmetic, same tier:
+    // answer a right-click (DW0422). Same box arithmetic, same tier:
     // two interaction entities in one cell is a ray-pick tie the client resolves
     // by iteration order, so one of them silently stops receiving clicks.
     crate::eclipse::check_seal_collisions(plan).map_err(|e| BuildFailure::Diagnostic {
@@ -476,7 +476,7 @@ pub fn build_with_warnings(
             }
 
             // DW0322 over the FINISHED world, for every campaign that assembles
-            // one (task #170).
+            // one.
             //
             // This proof had exactly one call site: inside the stage-7 edit
             // replay, once per batch. Stage 8 is skipped entirely for a campaign
@@ -490,8 +490,7 @@ pub fn build_with_warnings(
             // which this one cannot. This is the floor under both — run last,
             // over the world that actually ships.
             //
-            // ERROR TIER, unwindowed (owner ruling, 2026-08-08, superseding the
-            // one-`dsl_version` warning window this branch first proposed). A
+            // ERROR TIER, unwindowed. A
             // reachable walkable cell one step from a bottomless column is a
             // player who leaves the world; that is not a style note the author
             // may carry for a version, so there is no deprecation window and the
@@ -586,7 +585,7 @@ pub fn build_with_warnings(
                 // genuinely shorten the crossing. The critical path above was
                 // already proven with every shortcut gate SEALED (Plan::build seals
                 // them at step 0), so the delve is finishable the long way.
-                // Task #50: refuse to place a wrong-side answer on a side the
+                // Refuse to place a wrong-side answer on a side the
                 // geometry does not name (DW0425) — BEFORE the route proofs. A
                 // door whose two sides are not even distinguishable is a
                 // structural problem with the declaration, and reporting it under
@@ -610,7 +609,7 @@ pub fn build_with_warnings(
                 // timing is the point; one that punishes every timing is a slot
                 // machine. At least 20% of the cycle must admit a crossing.
                 crate::nav::check_timed_gates(plan, &world)?;
-                // task #184: the third rung. A gate's `disarm` lever must be
+                // The third rung. A gate's `disarm` lever must be
                 // reachable while the gate is still SHUT — a jam you can only
                 // pull after surviving the crossing disables nothing (DW0393).
                 crate::nav::check_timed_gate_disarms(plan, &world, campaign_spawn(plan))?;
@@ -628,7 +627,7 @@ pub fn build_with_warnings(
                 pacing = crate::nav::pacing_lints(plan, &world);
                 pacing.extend(unobserved);
                 // Export the DW0311-proven critical-path routes as validation
-                // metadata (task #38): thinned per-leg waypoint polylines the harness
+                // metadata: thinned per-leg waypoint polylines the harness
                 // replays as successive nearby goals, so no single giant mineflayer A*
                 // solve strands the bot on a large open cave. NOT shipped gameplay —
                 // lives under `validation/` (excluded from the delve image, like
@@ -636,13 +635,13 @@ pub fn build_with_warnings(
                 // campaign with none stays byte-identical to before. Uses the same
                 // relight-aware `world` as the DW0311 check it exports.
                 let routes = crate::nav::critical_path_routes(plan, &world);
-                // Structural self-check (task #45): every exported waypoint must be
+                // Structural self-check: every exported waypoint must be
                 // genuinely standable in this FINAL world (settled + water-flooded +
                 // fixtures). Makes it impossible to ship a waypoint the game floods
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::nav::verify_exported_routes(&world, &routes)?;
-                // Stair-orientation proof (task #191, DW0430). Nav models a stair
+                // Stair-orientation proof (DW0430). Nav models a stair
                 // as a full cube, so a reversed stair reads as a legal one-block
                 // jump and every existing proof passes — the delve ships with a
                 // staircase the player must hop up tread by tread. This is the
@@ -675,7 +674,7 @@ pub fn build_with_warnings(
                     .map(|s| (s.id.clone(), s.eye_cell()))
                     .collect();
                 crate::nav::verify_pov_cameras(&world, &eyes)?;
-                // spec-0025 branch navigation, made first-class (task #117). The
+                // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run
                 // walked its fork-divergent legs with no proof behind them and
@@ -739,7 +738,7 @@ pub fn build_with_warnings(
             } else {
                 (Vec::new(), Vec::new())
             };
-            // Body clearance (DW0450/DW0451, task #196): no NPC or actor body may
+            // Body clearance (DW0450/DW0451): no NPC or actor body may
             // occupy the same space as block geometry — not at the anchor it is
             // summoned on, and not at any tick of any walked leg. A walked
             // destination was already safe by construction (endpoint snapping +
@@ -776,7 +775,7 @@ pub fn build_with_warnings(
             // `summon: aggro-edge` wave, on its perception ring (DW0387).
             let (waves, rings) = plan_wave_spawns(plan, &world)?;
             // …and prove the sun is not going to fight the party's battle for it
-            // (DW0496, task #189). Runs HERE because it needs the seated cells:
+            // (DW0496). Runs HERE because it needs the seated cells:
             // the question is whether open sky stands within one aggro radius of
             // where the mobs actually land, on ground they can walk to — not of
             // an anchor they stand around. The hollow-vigil gate yard is the
@@ -816,12 +815,12 @@ pub fn build_with_warnings(
             // lives under `validation/`, which `Dockerfile.delve` excludes, so
             // no shipped byte moves.
             //
-            // A tier-declaring ACTOR (task #113) is enough on its own to want
+            // A tier-declaring ACTOR is enough on its own to want
             // this file: the set-piece souls fight is an actor, not a wave, and
             // a campaign whose only billed elite is an actor would otherwise
             // emit no plan at all — the exact silence spec-0023's floor gate
             // must not be allowed to read as a pass. An UNTIERED hostile actor
-            // (task #121) is enough for the same reason and one step further
+            // is enough for the same reason and one step further
             // out: it is a fight nothing bills, so without the ledger line
             // naming it there is no artifact anywhere that says it existed.
             let tiered_actors = crate::combat::actor_encounters(plan);
@@ -845,7 +844,7 @@ pub fn build_with_warnings(
             // proven cells are what `patrol_target` carries, so the squad is only
             // ever sent somewhere it can stand and walk to.
             let lanes = crate::nav::plan_lanes(plan, &world)?;
-            // spec-0016 §1 (owner ruling 2026-08-04): the RESPAWN-POINT safe zone
+            // spec-0016 §1: the RESPAWN-POINT safe zone
             // (DW0478). Runs here because it needs both halves of where the
             // hostiles actually are — the seated spawn cells above and the lane
             // polylines just resolved — measured against every rest point. A
@@ -960,7 +959,7 @@ pub fn build_with_warnings(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
-    // Task #186: the inter-area crossings that exist only on a branch. Computed
+    // The inter-area crossings that exist only on a branch. Computed
     // here so `DW0494` fails the build before a single function is emitted.
     let branch_transport = branch_transport_overlay(plan)?;
 
@@ -1010,7 +1009,7 @@ pub fn build_with_warnings(
     }
 
     // advancements
-    for (name, value) in emit_advancements(plan) {
+    for (name, value) in emit_advancements(plan, &chrome) {
         insert_unique(
             &mut out,
             format!("datapack/data/{ns}/advancement/{name}.json"),
@@ -1210,7 +1209,7 @@ pub fn build_with_warnings(
             &path,
         );
     }
-    // ...and each reachable branch's own waypoint artifact (task #117), derived
+    // ...and each reachable branch's own waypoint artifact, derived
     // in the world block above from the same assembled model its per-branch
     // DW0311 proof ran over. The harness derives the name from the branch's
     // `branch-path-<slug>.json`, so the two files are one contract.
@@ -1632,10 +1631,10 @@ fn sealing_commands(
         // The delve's own machinery must not narrate itself. Dialogue options are
         // `trigger`-type objectives (`dw.dlg_<npc>`, `dw.class`), so every option a
         // player picks runs `/trigger` and vanilla answers it in chat — "Triggered
-        // [dw.dlg_antiphos]" beside the line the character just said (owner
-        // playtest, 2026-08-07). Command feedback is engine implementation reaching
-        // the player, which is what every other rule in this list exists to stop;
-        // it was simply missing from the seal. NOT version-gated: a campaign at any
+        // [dw.dlg_antiphos]" beside the line the character just said. Command
+        // feedback is engine implementation reaching
+        // the player, which is what every other rule in this list exists to stop.
+        // NOT version-gated: a campaign at any
         // `dsl_version` wants its dialogue to stop announcing its scoreboard.
         // rcon replies to the caller regardless of this rule, so the harness and
         // `validation/` are unaffected, and the creator overlay's log stamp is
@@ -1660,7 +1659,7 @@ fn sealing_commands(
     if let Some(w) = weather {
         cmds.push(format!("weather {}", w.token()));
     }
-    // Declared combat difficulty (v0.6, owner ruling 2026-08-03). The shipped
+    // Declared combat difficulty (v0.6). The shipped
     // `server/server.properties` already carries it, so this line is not what
     // makes the delve image correct — it is what makes the DATAPACK correct
     // wherever else it is loaded (the owner's own test save, a PackTest world
@@ -1713,8 +1712,8 @@ fn snbt_string(s: &str) -> String {
 /// labels a floating objective marker with its objective `title`. When the
 /// objective has no title, the marker carries NO name — an empty fragment — so it
 /// still glows and is findable but never surfaces the raw objective id (e.g.
-/// `obj/door`) as player-visible floating text (presentation hygiene, task #54
-/// addendum). Titled markers are unchanged (byte-identical).
+/// `obj/door`) as player-visible floating text — presentation hygiene. A titled
+/// marker carries its title verbatim.
 fn marker_name_fields(title: Option<&str>) -> String {
     match title {
         Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
@@ -1909,7 +1908,7 @@ fn default_equipment(entity: &str) -> Option<String> {
     })
 }
 
-/// The drop chance a **declared** drop puts on its slot (DSL v0.9, task #179).
+/// The drop chance a **declared** drop puts on its slot (DSL v0.9).
 ///
 /// Not `1.0`. Vanilla's `DropChances` record (pinned 1.21.11 client jar, class
 /// `cgi`) has exactly two named operations here, and they say what the numbers
@@ -2217,7 +2216,7 @@ fn emit_functions(
     setup.push("scoreboard objectives add dw.class trigger".to_string());
     setup.push("scoreboard objectives add dw.classed dummy".to_string());
     setup.push("scoreboard objectives add dw.dlg_shown dummy".to_string());
-    // spec-0016 §1 (owner ruling 2026-08-03): the bonfire's two-option answer
+    // spec-0016 §1: the bonfire's two-option answer
     // channel. `dw.rest` is a *trigger* because a dialog button runs its command
     // as the clicking player, and `/trigger` is the one command a non-operator
     // player may run. Absent for a campaign with no bonfire → byte-identical.
@@ -2354,8 +2353,8 @@ fn emit_functions(
     // v0.6 checkpoints (spec-0012): the active-checkpoint marker + the vanilla
     // `deathCount` respawn-detection scores. Emitted for EVERY campaign that
     // declares a checkpoint — the marker now also drives the respawn **re-seat**
-    // (task #145), not just the `on_respawn` dispatch. Pre-0.6 / checkpoint-free
-    // campaigns stay byte-identical here.
+    // as well as the `on_respawn` dispatch. Pre-0.6 / checkpoint-free
+    // campaigns emit nothing here.
     if plan.any_checkpoint() {
         setup.push("scoreboard players set #cp dw.sys -1".to_string());
         setup.push("scoreboard objectives add dw.deaths deathCount".to_string());
@@ -2375,8 +2374,8 @@ fn emit_functions(
     if !plan.on_death().is_empty() {
         setup.push("scoreboard objectives add dw.death_seen dummy".to_string());
     }
-    // v0.6 stealth beats (spec-0014; sneak requirement removed by owner ruling
-    // 2026-08-01): the active-session marker + per-player grace scores. Hidden =
+    // v0.6 stealth beats (spec-0014; no sneak requirement): the
+    // active-session marker + per-player grace scores. Hidden =
     // inside a declared zone — no sneak stat is tracked. Declared only when the
     // campaign uses `begin-stealth`.
     if !plan.stealth_beats.is_empty() {
@@ -2608,7 +2607,7 @@ fn emit_functions(
     }
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
-    setup.extend(env_trigger_setup(plan));
+    setup.extend(env_trigger_setup(plan, chrome));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
@@ -2678,13 +2677,13 @@ fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
-    // The class trigger is ONE-SHOT per player (owner ruling 2026-08-04, task
-    // #121's sibling #122). `class_apply_<c>` ends in a teleport to the campaign
-    // entry point, so re-firing `/trigger dw.class` mid-run warped whoever ran
-    // it back to the start of the delve — an already-classed player included,
-    // because this line used to `enable @a` unconditionally, every tick,
+    // The class trigger is ONE-SHOT per player. `class_apply_<c>` ends in a
+    // teleport to the campaign entry point, so re-firing `/trigger dw.class`
+    // mid-run would warp whoever ran it back to the start of the delve — an
+    // already-classed player included, if this line were to `enable @a`
+    // unconditionally, every tick,
     // forever. The vanilla trigger pattern is to re-enable only what is meant to
-    // be usable, so the arming is per-player and conditional now; the guard
+    // be usable, so the arming is per-player and conditional; the guard
     // lives inside `class_arm` rather than in this line so a PackTest can drive
     // the real arming path as its own dummy instead of mirroring it.
     //
@@ -2747,7 +2746,7 @@ fn emit_functions(
         ),
     ));
     for class in &plan.classes {
-        // The second seal (#122). The arming above is what makes the trigger
+        // The second seal. The arming above is what makes the trigger
         // unusable after a class; this makes any score that arrives by some
         // OTHER route inert rather than a warp. Costs one condition and closes
         // the dispatch as well as the door.
@@ -2817,7 +2816,7 @@ fn emit_functions(
     // its `inventory_changed` advancement AND (v0.3) a per-tick held check that
     // closes the pre-activation-pickup stall (gap 13).
     //
-    // ## The arming-before-adjudication invariant (task #124)
+    // ## The arming-before-adjudication invariant
     //
     // This is the ONE loop whose lines can ARM a quest: a completion line runs
     // `complete_<obj>` → `check_q_<quest>` → `complete_q_<quest>`, and that last
@@ -2896,13 +2895,13 @@ fn emit_functions(
                     ..
                 } => {
                     let trigger = plan::interact_trigger(id.as_str());
-                    // `requires_item` means HELD, not possessed (owner ruling,
-                    // 2026-08-03): presenting the item is the action, so the gate
+                    // `requires_item` means HELD, not possessed: presenting the
+                    // item is the action, so the gate
                     // reads the main hand (`weapon.mainhand`), not the whole
-                    // inventory (`container.*`). The inventory reading made every
-                    // gated interaction fire the moment the item was picked up
-                    // anywhere — a player who right-clicked a sleeping giant with a
-                    // sharpened stake in their backpack blinded it without ever
+                    // inventory (`container.*`). An inventory-wide reading fires
+                    // every gated interaction the moment the item is picked up
+                    // anywhere — a player who right-clicks a sleeping giant with a
+                    // sharpened stake in their backpack would blind it without ever
                     // raising a hand. (`collect`'s hold check below still reads
                     // `container.*`: that one genuinely counts an inventory.)
                     let item_guard = match requires_item {
@@ -2969,7 +2968,7 @@ fn emit_functions(
     }
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
-    tick.extend(env_trigger_tick(plan));
+    tick.extend(env_trigger_tick(plan, chrome));
     // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
     // no disarmable traps → byte-identical.
     tick.extend(trap_tick(plan));
@@ -2979,11 +2978,11 @@ fn emit_functions(
     // spec-0016 §2: shortcut unlock detection. Empty without a shortcut →
     // byte-identical.
     tick.extend(shortcut_tick(plan));
-    // task #184: timed-gate disarm detection. Empty without a jammable gate →
+    // Timed-gate disarm detection. Empty without a jammable gate →
     // byte-identical.
     tick.extend(timed_gate_tick(plan));
     // v0.6 checkpoints (spec-0012): per-player death detection via the vanilla
-    // `deathCount` criterion — the respawn re-seat (task #145) and the active
+    // `deathCount` criterion — the respawn re-seat and the active
     // checkpoint's `on_respawn`. Since spec-0031 the same one detector also drives
     // the campaign's `on_death` beat on the CORPSE side of the same edge, so a
     // campaign with a death beat and no checkpoint arms the identical line. There
@@ -3019,9 +3018,9 @@ fn emit_functions(
     fns.extend(emit_bonfire_functions(plan));
     // --- spec-0016 §2 shortcut unlock functions ---
     fns.extend(emit_shortcut_functions(plan));
-    // --- task #50: the clickable body of each sealed shortcut door ---
+    // --- The clickable body of each sealed shortcut door ---
     // Empty for a campaign with no shortcut → byte-identical output.
-    fns.extend(ws_arm_fns(plan));
+    fns.extend(ws_arm_fns(plan, chrome));
     // --- spec-0016 §4 timed-gate clock functions ---
     fns.extend(emit_timed_gate_functions(plan));
     // --- v0.6 stealth-beat functions (spec-0014) ---
@@ -3100,7 +3099,7 @@ fn emit_functions(
         ]),
     ));
 
-    // --- class_arm: the one-shot seal on the class trigger (#122) ---
+    // --- class_arm: the one-shot seal on the class trigger ---
     //
     // Run by `tick` as every player, every tick. `dw.class` is a `trigger`
     // objective, and `class_apply_<c>` both consumes it (`reset` clears the
@@ -3413,7 +3412,7 @@ fn emit_functions(
                 ));
                 body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
             }
-            // Objective-marker lifecycle (task #45): despawn every ENTITY this
+            // Objective-marker lifecycle: despawn every ENTITY this
             // objective's activation summoned, so a completed interact/reach
             // objective leaves nothing behind. Two motivations, strongest first:
             // (1) a finished interact objective must not remain clickable — its
@@ -3442,7 +3441,7 @@ fn emit_functions(
             if let Some(pos) = plan.transport.get(oid) {
                 body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
             }
-            // Task #186: a crossing that happens only on ONE branch. The exported
+            // A crossing that happens only on ONE branch. The exported
             // path never walks it, so it cannot be unconditional — it is gated on
             // exactly the flag assignment that selects its branch, the same
             // `#party` predicate a branch-gated dialogue option uses. Prefix
@@ -3606,7 +3605,7 @@ fn emit_functions(
     // --- v0.3: wave spawn functions + verb reward functions ---
     for w in &c.quests.content.waves {
         // Compiler-validated standable spawn cells near the wave anchor, in the
-        // anchor's own room, one per mob (task #41). A wave whose spawn anchor
+        // anchor's own room, one per mob. A wave whose spawn anchor
         // resolves in no assembled area gets no entry here and is skipped exactly
         // as before — DW0310 (check_wave_spawns) catches a dangling spawn-wave.
         let Some(cells) = wave_placements.get(w.id.as_str()) else {
@@ -3649,7 +3648,7 @@ fn emit_functions(
             let equip = wave_equipment(&mob.entity, mob.equipment.as_ref(), &mob.drops)
                 .map(|e| format!(",{e}"))
                 .unwrap_or_default();
-            // v0.9 (task #179): a declared quest-item drop rides the mob's own
+            // v0.9: a declared quest-item drop rides the mob's own
             // death loot table. Absent on every other mob, so a wave that
             // declares no item drop keeps vanilla's own table and its exact
             // pre-0.9 summon string.
@@ -3764,14 +3763,14 @@ fn emit_functions(
                 ]),
             ));
         }
-        // --- task #123: the wave CENSUS probe surface ---
+        // --- The wave CENSUS probe surface ---
         //
         // The live ladder used to answer "what is standing at this encounter?" by
         // silhouette: every entity mineflayer tracked, no distance filter, any mob
         // taller than half a block. On the drowned bell that counted five ambush
         // actors and a neighbouring wave as members of whichever wave was being
         // measured, and — since they were alive on both sides of a scripted death
-        // — reported them as survivors the re-seat had failed to remove (#230).
+        // — reported them as survivors the re-seat had failed to remove.
         // The wave tag is the only exact answer to that question and the compiler
         // owns it, so the compiler owns the census too: the harness asks these
         // functions and reads numbers, instead of guessing from shapes.
@@ -3917,7 +3916,7 @@ fn emit_functions(
     fns.extend(sequence_fns(plan));
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
-    fns.extend(env_trigger_fns(plan));
+    fns.extend(env_trigger_fns(plan, chrome));
     fns.extend(trap_fns(plan, trap_gates));
     // spec-0022: the proven per-cell volley geometry and the settled collapse
     // debris. Empty for a campaign using neither verb (byte-identical).
@@ -3925,16 +3924,15 @@ fn emit_functions(
     fns.extend(collapse_fns(plan, payloads));
     fns.extend(boundary_fns(plan, chrome));
     fns.extend(night_vision_fns(plan));
-    // v0.8 seal answers (task #142). Empty for a campaign that seals no gate.
-    fns.extend(seal_fns(plan));
-    fns.extend(seal_hint_fns(plan, chrome));
+    // v0.8 seal answers. Empty for a campaign that seals no gate.
+    fns.extend(seal_fns(plan, chrome));
 
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
 }
 
 /// Validated spawn cells per wave: wave id → one standable cell per mob, in
-/// summon order (task #41). Only waves whose spawn anchor resolves have an entry.
+/// summon order. Only waves whose spawn anchor resolves have an entry.
 type WavePlacements = BTreeMap<String, Vec<[i32; 3]>>;
 
 /// The **defended point** each `summon: aggro-edge` wave's perception ring is
@@ -4069,9 +4067,9 @@ fn lane_tick_fn(
 
 /// Seat every wave's mobs on compiler-validated standable cells near the wave
 /// anchor, confined to the anchor's own assembled piece so the flock never strings
-/// across a socket seam into a neighbouring room (task #41: the field bug where six
-/// sheep spread `+x` off the den anchor across the den↔mouth seam toward void, some
-/// ending inside blocks or outside the room). Cells are chosen by ascending BFS
+/// across a socket seam into a neighbouring room — an unconfined flock spreads
+/// `+x` off its anchor across the nearest seam toward void, some bodies
+/// ending inside blocks or outside the room. Cells are chosen by ascending BFS
 /// distance from the anchor with a fixed `(y, z, x)` tie-break — deterministic
 /// (ADR-0006). A wave that needs more standable footing than its room offers fails
 /// the build with [`DW_WAVE_NO_ROOM`] (`DW0312`). A wave whose spawn anchor resolves
@@ -4082,7 +4080,7 @@ fn plan_wave_spawns(
 ) -> Result<(WavePlacements, WaveRings), BuildFailure> {
     // Wave mobs cannot right-click a fence gate open: seat them on the
     // no-gate-use view, where a closed gate cell is a 1.5-tall barrier — never a
-    // seat, and never a doorway the seating flood spills through (task #59).
+    // seat, and never a doorway the seating flood spills through.
     let entity_world_owned;
     let world: &crate::nav::World = if world.has_use_gates() {
         entity_world_owned = world.without_gate_use();
@@ -4111,7 +4109,7 @@ fn plan_wave_spawns(
             continue;
         }
         // The room the wave's mobs must stay inside, so the placement flood-fill
-        // never crosses a socket seam (task #41).
+        // never crosses a socket seam.
         let bounds = plan.piece_bounds(area, anchor);
         let cells = world.confined_standable_cells(anchor, bounds);
         if cells.len() < need {
@@ -4403,7 +4401,7 @@ fn assembles_world(plan: &Plan) -> bool {
 /// camera anchors are deferred to here), so this is the backstop that makes the
 /// rule total.
 ///
-/// **Total means total** (task #24). The roots come from
+/// **Total means total**. The roots come from
 /// [`crate::plan::for_each_effect_root`] — the one enumeration
 /// [`all_campaign_effects`], the staged-walk timeline and both halves of
 /// `compiler::flow` also walk. This walk used to hand-list three of the five, so a
@@ -4423,7 +4421,7 @@ fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
     // shrugs and emits nothing. The spec-0022 payload verbs (`volley`,
     // `collapse`) fail CLOSED instead: `plan_payload_verbs` resolves their volumes
     // with `?` and reports `DW0447`, naming the verb, the volume and the anchor.
-    // Widening this walk to R4/R5 (task #24) put those anchors in reach of the
+    // Widening this walk to R4/R5 put those anchors in reach of the
     // generic message for the first time, which would have preempted the specific
     // one for no gain — so where `DW0447` runs, the fail-closed verbs keep it.
     //
@@ -4858,7 +4856,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 {
                     // A region write whose box and filter the gate anchor supplies.
                     body.push(fill_region_command((*from, *to), AIR, Some(block)));
-                    // …and take the seal's answer down with the seal (task #142).
+                    // …and take the seal's answer down with the seal.
                     // The hitboxes exist exactly while the region is solid: an
                     // opened threshold that still says "the way is sealed" is a
                     // lie, and an invisible box left standing in a doorway
@@ -4881,7 +4879,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 {
                     // The same region write, with the block the anchor declares.
                     body.push(fill_region_command((*from, *to), block, None));
-                    // Arm the seal's answer (task #142, owner island finding #34):
+                    // Arm the seal's answer:
                     // a wall the party walks back to and presses must say
                     // something. Guarded on absence, so a re-fired `close-gate`
                     // never stacks a second set of hitboxes.
@@ -5264,7 +5262,7 @@ fn emit_despawn_actor(
 ) {
     use delvewright_dsl::DespawnStyle;
     let safe = plan::safe_local(actor);
-    // v0.9 (task #179): a removal is not a death the player earned. Both styles
+    // v0.9: a removal is not a death the player earned. Both styles
     // end in `/kill`, and a preserved drop chance survives a non-player kill, so
     // an elite the story re-cages (a souls re-seat) would shed its axe on every
     // rest. Strip the declaration off the body first; emitted only when the
@@ -5447,7 +5445,7 @@ fn center(cell: i32) -> String {
 /// Every command this returns is prepended to the corpse-side branch of
 /// `cp_respawn_check`, ahead of `on_death_fire`, so whatever records "where the
 /// player died" runs before any authored effect can read it. It emits **nothing**,
-/// and since #349 that is a settled answer rather than a deferral.
+/// and that is a settled answer rather than a deferral.
 ///
 /// The seam was carved because spec-0032's recovery stake needs the death position
 /// and there were two candidate vanilla mechanisms — a pre-respawn death
@@ -5488,7 +5486,7 @@ fn death_position_capture() -> Vec<String> {
 ///
 /// * `on_death` wants **the moment of death**: the player is still a corpse on
 ///   the death screen, standing where they died. `deathCount` has already ticked
-///   up there (measured, task #145 — it is why the v0.6 half needs its `alive`
+///   up there (measured — it is why the v0.6 half needs its `alive`
 ///   guard at all), and `@a` matches a corpse, so the corpse side of the edge is
 ///   reachable with no new machinery.
 /// * `on_respawn` and the re-seat want **the player who has come back**, so they
@@ -5516,12 +5514,12 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     // the authored `on_respawn` bundle belong to the player who has actually come
     // back, so the whole edge (fire AND acknowledge) is held until the player is
     // alive again: a dead player reads `Health: 0.0f`, and holding the ack keeps
-    // the edge armed instead of burning it on the corpse (task #145).
+    // the edge armed instead of burning it on the corpse.
     let alive = "unless data entity @s {Health:0.0f}";
     let dead = "if data entity @s {Health:0.0f}";
     let mut check: Vec<String> = Vec::new();
     // **The three scores this edge compares have to EXIST before it compares them.**
-    // Found live by the bot tier's death-loop stage (task #68), which is the only
+    // Found live by the bot tier's death-loop stage, which is the only
     // tier that can witness a player death at all; generalised into `DW0495`, which
     // then named a third objective the instance fix had missed.
     //
@@ -5534,9 +5532,9 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     // three — so the whole edge was dead on a player's FIRST death: no `on_death`
     // (no forfeit, no recovery stake), no `cp_respawn_fire` (no `on_respawn`, no
     // engine re-seat — the party landed wherever vanilla's own `/spawnpoint` hint
-    // put them, the hint task #145 established cannot be trusted). Both then
-    // worked from the second death onward, which is why it survived since
-    // spec-0012: every manual test of "does dying work" dies twice.
+    // put them, a hint that cannot be trusted). Both work from the second death
+    // onward whatever this does, which is why the gap is invisible to a manual
+    // test: every manual test of "does dying work" dies twice.
     //
     // Seeded here rather than at a join hook because this is the one function that
     // reads them, so the two facts cannot drift apart; `add … 0` is idempotent
@@ -5595,7 +5593,7 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     // cp_seat_<i> (as @s): put the respawned player ON the checkpoint cell.
     //
-    // Why this exists (owner playtest, task #145). `set-checkpoint` records the
+    // Why this exists. `set-checkpoint` records the
     // party's respawn with vanilla's `spawnpoint @a <cell>`, but `/spawnpoint` is
     // a *hint*: on death vanilla re-validates the recorded cell and, when the cell
     // or the cell above it is solid or liquid, silently discards it and respawns
@@ -5665,7 +5663,7 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
         let mut body: Vec<String> = Vec::new();
         if c.rest {
             body.extend(reseat.iter().cloned());
-            // spec-0016 §1 (owner ruling 2026-08-03), read forward: death respawns
+            // spec-0016 §1, read forward: death respawns
             // the party at the last-rested bonfire with the same hooks, and vanilla
             // already returns the dead player at full health and hunger. What it
             // does NOT restore is the flask — so without this a player who dies
@@ -5691,11 +5689,11 @@ fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
 // ---------------------------------------------------------------------------
 
 /// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
-/// clock, and — task #184 — summon the disarm affordance of any gate that
+/// clock, and summon the disarm affordance of any gate that
 /// declares one. The gate is physically sealed by the prefab at world-load, so
 /// the clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
 /// larger one holds the gate shut that many ticks first. Empty for a campaign
-/// with no timed gate → byte-identical.
+/// with no timed gate.
 ///
 /// The affordance is the same pair a shortcut unlock and a trap disarm emit: an
 /// invisible `minecraft:interaction` hitbox **plus** compiler-owned visible
@@ -5732,7 +5730,7 @@ fn timed_gate_setup(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// Per-tick disarm detection for jammable timed gates (task #184), reusing the
+/// Per-tick disarm detection for jammable timed gates, reusing the
 /// v0.4 interaction-entity `use` primitive exactly as a trap disarm and a
 /// shortcut unlock do. The `#tgdis_<id>` sentinel makes the jam fire **once**;
 /// after it, there is nothing left to dispatch. Empty for a campaign with no
@@ -5799,7 +5797,7 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
     for g in &plan.timed_gates {
         let id = &g.safe;
         let (from, to) = g.gate_region;
-        // task #184: the jam guard. A disarmable gate's clock lines are prefixed
+        // The jam guard. A disarmable gate's clock lines are prefixed
         // with `execute unless score #tgdis_<id> dw.sys matches 1` — the same
         // score-guard shape a gated trap's payload uses. A gate with no `disarm`
         // emits no guard at all, so its output is byte-identical to before.
@@ -5845,7 +5843,7 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
         // is slow, gear-dependent and escapable. Costs nothing per tick: this
         // rides the closing tick of the schedule ping-pong that already exists.
         //
-        // task #184: the judgement sits INSIDE the suppressed clock, so a
+        // The judgement sits INSIDE the suppressed clock, so a
         // disarmed gate can never crush — there is no closing tick left to be
         // caught by. That is not a second rule, it is the same guard.
         if g.crush {
@@ -5868,7 +5866,7 @@ fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The `tgate_disarm_<id>` functions (task #184): jam the gate for good.
+/// The `tgate_disarm_<id>` functions: jam the gate for good.
 ///
 /// Four commands, and the ORDER is the semantics:
 /// 1. latch `#tgdis_<id>` — from this instant every guarded clock line is inert,
@@ -6022,7 +6020,7 @@ fn shortcut_setup(plan: &Plan) -> Vec<String> {
             &format!("dw_sc_{}", sc.safe),
             "minecraft:lever",
         ));
-        // Task #50: arm the door itself, so a press from the sealed side reaches
+        // Arm the door itself, so a press from the sealed side reaches
         // something. Unlike a `close-gate` seal — which is armed by the firing
         // that seals it — a shortcut gate is sealed by the PREFAB at world-load,
         // so world init is the only moment its answer can go up. Guarded on
@@ -6056,7 +6054,7 @@ fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// The seal answers (DSL v0.8, task #142 — owner island finding #34)
+// The seal answers (DSL v0.8)
 // ---------------------------------------------------------------------------
 
 /// How far a seal's answer hitbox protrudes past the sealed block, on every side.
@@ -6111,12 +6109,9 @@ fn seal_arm_fn(safe: &str) -> String {
 /// that made the island's boulder unshippable, so the trigger's tag rides these
 /// entities and [`env_trigger_setup`] summons nothing for it. The consequence is
 /// also its meaning: such a trigger is live exactly while the gate is sealed.
-fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
+fn seal_rider_tags(plan: &Plan, chrome: &delvewright_dsl::Chrome, anchor: &str) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
-    plan.campaign
-        .quests
-        .content
-        .triggers
+    plan.emitted_triggers(chrome)
         .iter()
         .filter(|t| !matches!(t.on, TriggerOn::Approach { .. }))
         .filter(|t| t.at_anchor() == Some(anchor))
@@ -6124,7 +6119,7 @@ fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
         .collect()
 }
 
-/// The `seal_arm_<safe>` functions (task #142): one `minecraft:interaction` per
+/// The `seal_arm_<safe>` functions: one `minecraft:interaction` per
 /// clickable cell of each sealed region, so the wall answers a press wherever the
 /// party presses it.
 ///
@@ -6134,11 +6129,11 @@ fn seal_rider_tags(plan: &Plan, anchor: &str) -> Vec<String> {
 /// every axis; see that constant for why the margin is not cosmetic.
 ///
 /// Empty for a campaign that never seals a gate → byte-identical output.
-fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
+fn seal_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for s in &plan.seal_hints {
         let mut tags = vec![format!("dw_seal_{}", s.safe)];
-        tags.extend(seal_rider_tags(plan, &s.anchor));
+        tags.extend(seal_rider_tags(plan, chrome, &s.anchor));
         let tag_list = tags
             .iter()
             .map(|t| format!("\"{t}\""))
@@ -6170,36 +6165,21 @@ fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// The `seal_hint_<safe>` reward functions (task #142): the answer itself.
-///
-/// Dispatched by a `player_interacted_with_entity` advancement, which is the one
-/// vanilla primitive that runs a function **as the player who right-clicked** —
-/// the same criterion every `interact` objective, NPC dialogue and bonfire rest
-/// already runs on. The interaction entity's own `interaction` NBT record names
-/// no player a command could target, and reading it would also *consume* the
-/// press that a co-located `use` trigger is entitled to see (round-8: adjudicate
-/// conditionally, consume unconditionally). An advancement observes without
-/// consuming, so the seal's answer can never eat another consumer's click.
-///
-/// The advancement is revoked immediately, so the stone answers every press, not
-/// only the first.
-fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
-    let ns = &plan.namespace;
-    plan.seal_hints
-        .iter()
-        .map(|s| {
-            (
-                format!("seal_hint_{}", s.safe),
-                lines(&[
-                    format!("advancement revoke @s only {ns}:seal_{}", s.safe),
-                    format!("title @s actionbar {}", tr(&chrome.rebind(&s.text))),
-                ]),
-            )
-        })
-        .collect()
-}
+// The `seal_hint_<safe>` reward functions and their `seal_<safe>` advancements
+// are GONE (DSL v0.11). They were `close-gate`'s private copy of "a pressable
+// thing answers the player who pressed it": its own advancement shape, its own
+// actionbar command, its own baked English — none of which has anything to do
+// with closing a gate, and none of which the second object that needed them (a
+// sealed shortcut door) could reach.
+//
+// A seal's answer is now an ordinary `EnvTrigger{on: use, audience: presser}`
+// carrying an ordinary `narrate{style: actionbar}`, synthesized by
+// `plan::collect_press_answers` and emitted by `env_trigger_fns` /
+// `press_dispatch_fn` / `emit_advancements` like any author's own click. The
+// wording is unchanged, the revoke-every-press behaviour is unchanged, and the
+// shortcut door gets all of it for free — which is the whole finding.
 
-/// Generated `v08_seal_answers` PackTest (task #142): on a live pinned server,
+/// Generated `v08_seal_answers` PackTest: on a live pinned server,
 /// a gate that is sealed carries the hitboxes its answer rides, arming is
 /// idempotent, and re-opening it takes them away again.
 ///
@@ -6211,7 +6191,7 @@ fn seal_hint_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, 
 /// the one every NPC dialogue and bonfire rest already runs on, and the harness
 /// bot exercises it there.
 ///
-/// Batch model (#140): the fixture stages the seal itself and hands the world
+/// Batch model: the fixture stages the seal itself and hands the world
 /// back exactly as it found it — region cleared, hitboxes killed.
 fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
@@ -6232,9 +6212,7 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
         s.anchor
     ));
     b.push(format!("function {ns}:setup"));
-    b.push(
-        "# Batch model (#140): a sibling test may have driven the campaign past its".to_string(),
-    );
+    b.push("# Batch model: a sibling test may have driven the campaign past its".to_string());
     b.push("# own seal, so stage a known-OPEN gate rather than assuming one.".to_string());
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!(
@@ -6276,15 +6254,16 @@ fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
 }
 
 // ---------------------------------------------------------------------------
-// The shortcut door's wrong-side answer (DSL v0.9, task #50)
+// The shortcut door's wrong-side answer (DSL v0.9)
 // ---------------------------------------------------------------------------
 
 /// Every shortcut door with its derived sealed side.
 ///
-/// **Every** shortcut answers — the wording defaults to the compiler's canonical
-/// English — so the only shortcut missing here is one whose side did not resolve,
-/// and such a campaign never reaches emission: [`check_shortcut_sides`] fails the
-/// build first.
+/// **Every** shortcut gets a body — a door with no answer is still a door a
+/// player walks up to and pushes — so the only shortcut missing here is one whose
+/// side did not resolve, and such a campaign never reaches emission:
+/// [`check_shortcut_sides`] fails the build first. That is why `DW0425` binds to
+/// every shortcut rather than to the ones that authored something.
 fn answering_shortcuts<'a>(
     plan: &'a Plan,
 ) -> Vec<(&'a plan::ShortcutPlan, &'a crate::wrongside::SealedSide)> {
@@ -6309,8 +6288,8 @@ fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
         return Err(BuildFailure::Diagnostic {
             code: crate::wrongside::DW_SHORTCUT_SIDE_UNDECIDABLE,
             message: format!(
-                "shortcut `{}` declares an `on_wrong_side` answer, but the compiler cannot tell \
-                 which side of its gate `{}` is the sealed one. The sealed side is derived from \
+                "shortcut `{}` needs a clickable body on the sealed side of its gate `{}`, but \
+                 the compiler cannot tell which side that is. The sealed side is derived from \
                  the gate slab's thin axis and the side of it the `unlock` anchor `{}` stands on; \
                  here the gate spans {lo:?}..{hi:?} and the unlock resolves to {:?}, which either \
                  gives the region no unique thinnest axis (a cube is not a doorway) or leaves the \
@@ -6326,7 +6305,7 @@ fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
     Ok(())
 }
 
-/// The `ws_arm_<safe>` functions (task #50): the **clickable body of a sealed
+/// The `ws_arm_<safe>` functions: the **clickable body of a sealed
 /// shortcut door**.
 ///
 /// A shortcut gate is a solid slab the prefab places, and nothing gave it a body.
@@ -6350,7 +6329,7 @@ fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
 /// compiler supplies the body; the campaign supplies the answer.
 ///
 /// Empty for a campaign with no shortcut → byte-identical output.
-fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
+fn ws_arm_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (sc, side) in answering_shortcuts(plan) {
         // A click trigger the author anchored on this gate rides these hitboxes
@@ -6358,7 +6337,7 @@ fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
         // `seal_fns` performs for a `close-gate` seal, and the reason a trigger
         // at a gate anchor stops being a ray-pick tie.
         let mut tags = vec![format!("dw_ws_{}", sc.safe)];
-        tags.extend(seal_rider_tags(plan, &sc.gate_anchor));
+        tags.extend(seal_rider_tags(plan, chrome, &sc.gate_anchor));
         let tag_list = tags
             .iter()
             .map(|t| format!("\"{t}\""))
@@ -6426,7 +6405,7 @@ fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
                 crate::affordance::hardware_tag(&format!("dw_sc_{id}"))
             ),
         ];
-        // …and the door's own voice goes with the bars (task #50). An opened
+        // …and the door's own voice goes with the bars. An opened
         // threshold that still says "this will not open" is a lie, and an
         // invisible box left standing in a now-walkable doorway swallows
         // right-clicks aimed through it — the same retirement `open-gate`
@@ -6507,7 +6486,7 @@ fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// Per-tick bonfire **choice** dispatch (spec-0016 §1, owner ruling 2026-08-03).
+/// Per-tick bonfire **choice** dispatch (spec-0016 §1).
 ///
 /// Right-clicking a bonfire no longer rests: it opens a two-option dialog
 /// (`bonfire_open_<i>`, run as the clicking player by the vanilla
@@ -6535,8 +6514,8 @@ fn bonfire_tick(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// The player-local restore a **rest** performs (spec-0016 §1, owner ruling
-/// 2026-08-03): health, hunger/saturation, negative status effects, flask.
+/// The player-local restore a **rest** performs (spec-0016 §1): health,
+/// hunger/saturation, negative status effects, flask.
 ///
 /// **Audience (reported ambiguity).** spec-0018 makes the checkpoint party state
 /// and the flask/inventory per-player state; spec-0016 §1 says "player fully
@@ -7703,8 +7682,8 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
     fns
 }
 
-/// Generate the stealth-beat functions (DSL v0.6, spec-0014; sneak requirement
-/// removed by owner ruling 2026-08-01 — holding sneak collided with the
+/// Generate the stealth-beat functions (DSL v0.6, spec-0014; no sneak
+/// requirement — holding sneak collides with the
 /// spectator cutscene camera). For each beat: an `arm` that activates the
 /// session and resets per-player grace; a per-tick judge that, per player,
 /// tests "inside some zone box" (zone presence alone = hidden), tracks a grace
@@ -7806,6 +7785,12 @@ fn emit_narrate(
             let art = tr_with(text, &[("font", json!("delve:art"))]);
             body.push(format!("title {who} title {art}"));
         }
+        // DSL v0.11: the reply strip above the hotbar. This is the command every
+        // compiler-written reply has always used — a sealed gate's answer, a
+        // checkpoint return, the lobby count — reached at last by the general
+        // verb, so a campaign can write its own replies instead of the engine
+        // owning them one verb at a time.
+        NarrateStyle::Actionbar => body.push(format!("title {who} actionbar {comp}")),
     }
     if let Some(s) = sound {
         body.push(format!("playsound {s} player {who}"));
@@ -8227,7 +8212,7 @@ fn party_flag_gate(flags: &[delvewright_dsl::FlagId]) -> String {
 /// generates functions for and what the proofs check are therefore the same set by
 /// construction: a `sequence`/`cutscene`/`move-actor` in **any** root gets its
 /// generated function, and none of the four walks can quietly grow a different
-/// idea of where effects live (tasks #142, #167, #168, #169).
+/// idea of where effects live.
 fn all_campaign_effects(c: &delvewright_dsl::Campaign) -> Vec<&QuestEffect> {
     let mut out = Vec::new();
     crate::plan::for_each_effect_root(c, &mut |_site, effs| {
@@ -8272,16 +8257,15 @@ fn movenpc_bare(npc: &str, to_anchor: &str, gate_key: &str) -> String {
 /// Each `tp` carries the **planned yaw** for that tick (`nav::yaws_along`, pitch
 /// always 0 — a walk is level by construction). A rotation-less `tp` leaves the
 /// body's yaw at whatever its summon or previous beat set, so an NPC routed the
-/// other way slides backwards for the whole walk (owner playtest, island round
-/// 13); the actor puppets have carried their tangent yaw since task #46 and this
-/// is `move-npc` reaching the same standard.
+/// other way slides backwards for the whole walk. Actor puppets carry their
+/// tangent yaw, and `move-npc` holds to the same standard.
 ///
 /// An `on_arrive` bundle (DSL v0.6, parity with `move-actor`) fires on the
 /// driver's **final-waypoint tick** — exactly the arrival detection `ma_tick`
 /// uses — via a generated `mv_arrive_<key>` function. A bare `move-npc` emits no
 /// arrive hook and stays byte-identical to pre-0.6 output.
 ///
-/// # Supersession — one body, one live driver (task #25)
+/// # Supersession — one body, one live driver
 ///
 /// A driver's re-entry latch `#mrun_<bare>` is keyed per **(npc, to_anchor, gate)**:
 /// it stops a walk from restarting *itself* and knows nothing about the body's other
@@ -8427,7 +8411,7 @@ fn actor_facing_yaw(a: &delvewright_dsl::Actor) -> i32 {
 /// `skin` re-dresses it as a `minecraft:mannequin`, exactly as a stage-2 NPC.
 fn actor_puppet_summon(ns: &str, a: &delvewright_dsl::Actor, pos: [i32; 3], yaw: i32) -> String {
     let safe = plan::safe_local(a.id.as_str());
-    // v0.9 (task #179): a declared quest-item drop points the field the puppet
+    // v0.9: a declared quest-item drop points the field the puppet
     // has always carried at a table the compiler emits. `unleash` and
     // `despawn-actor` strip it again ([`strip_drops_line`]) — only a player's
     // kill yields it.
@@ -8843,9 +8827,9 @@ fn teleport_fns(plan: &Plan) -> Vec<(String, String)> {
 /// teleport driver (with tangent yaw and an `on_arrive` bundle) per planned
 /// `move-actor`. Empty for a campaign with no actors (pre-0.6 byte-identical).
 ///
-/// # Supersession — one puppet, one live leg driver (task #28)
+/// # Supersession — one puppet, one live leg driver
 ///
-/// A `move-actor` driver carries the identical defect `move-npc` had (task #25): its
+/// A `move-actor` driver carries the identical defect `move-npc` had: its
 /// re-entry latch `#arun_<bare>` is keyed per **(actor, to_anchor, gate)**, so it only
 /// ever stopped a leg from restarting *itself*. Two overlapping legs on ONE puppet left
 /// two live drivers both `tp`-ing the same body every tick; they fought, and the longer
@@ -8896,7 +8880,7 @@ fn actor_fns(plan: &Plan, actor_moves: &[crate::nav::ActorMovePlan]) -> Vec<(Str
             unleash.extend(aggro_lock_lines(&a.entity, &safe));
         }
         out.push((format!("unleash_{safe}"), lines(&unleash)));
-        // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat. A rest
+        // spec-0016 §1: the UNDEFEATED re-seat. A rest
         // (and a death-respawn at the same fire) deletes the elite the party is
         // still fighting and stands a FRESH body on its origin anchor: full
         // health, no accumulated chip damage, and — the reported regression — back
@@ -9184,7 +9168,7 @@ fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
     out
 }
 
-/// Cutscene functions (spec-0008 addendum; keyframe dolly per task #64): the
+/// Cutscene functions (spec-0008 addendum; keyframe dolly): the
 /// two-camera bounce. Per cutscene (deduped by content key) emits a start
 /// function, a self-scheduling keyframe/`spectate` driver, and an end/restore
 /// function.
@@ -9201,7 +9185,7 @@ fn cutscene_repair_fns(plan: &Plan) -> Vec<(String, String)> {
 /// sneak dismounts a spectator, so re-attaching against a held key strobes.
 /// On completion, restore adventure mode + teleport players back to the marker.
 ///
-/// **Path timing** (task #64): the dolly is arc-length parameterized (equal
+/// **Path timing**: the dolly is arc-length parameterized (equal
 /// distance per time, not equal segments per time) with baked smoothstep
 /// ease-in/ease-out — both fixes live in [`crate::camera::plan_shot`].
 ///
@@ -9300,7 +9284,7 @@ fn cutscene_fns(
         start.push(format!("schedule function {ns}:cs_tick_{bare} 1t"));
         out.push((start_name.clone(), lines(&start)));
 
-        // Keyframe driver (task #64): every shot's keyframes laid end-to-end on
+        // Keyframe driver: every shot's keyframes laid end-to-end on
         // one counter. Each shot plans an arc-length-parameterized, eased
         // keyframe schedule (`crate::camera::plan_shot`); the client draws the
         // in-between frames via display-entity `teleport_duration` (= the
@@ -9386,7 +9370,7 @@ fn cutscene_fns(
             format!("kill @e[tag=dw_csmark_{bare}]"),
         ];
         // Resume: drop the cutscene marker. The stealth judge (zone-presence
-        // only — no sneak stat since the 2026-08-01 ruling) needs no re-sync;
+        // only — no sneak stat is tracked) needs no re-sync;
         // grace is deliberately NOT reset — it neither accrued nor expired
         // during the cutscene, so the beat picks up exactly where it paused.
         end.push(format!("tag @a remove {CUTSCENE_TAG}"));
@@ -9413,10 +9397,10 @@ fn cutscene_fns(
 /// Polyphemus could not be talked to at all). One cell, one hitbox. The
 /// trigger's lifecycle therefore follows the NPC's presence — which is also
 /// its meaning: the thing being struck is the NPC.
-fn env_trigger_setup(plan: &Plan) -> Vec<String> {
+fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let mut out = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
@@ -9428,7 +9412,7 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        // Same rule, one layer out (task #142): a click trigger anchored on a gate
+        // Same rule, one layer out: a click trigger anchored on a gate
         // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
         // summons them wearing this trigger's tag. A second entity here would be
         // exactly co-located with them, and the ray-pick tie is what killed the
@@ -9477,7 +9461,11 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
 fn check_trigger_bodies(plan: &Plan) -> Result<crate::pressable::PressLedger, BuildFailure> {
     use delvewright_dsl::TriggerOn;
     let mut ledger = crate::pressable::PressLedger::default();
-    for t in &plan.campaign.quests.content.triggers {
+    // Every trigger this build EMITS, not only the campaign's own: a press answer
+    // the compiler synthesizes lands on a body exactly as an authored click does,
+    // and a proof that walked the authored list alone would leave the compiler's
+    // own presses unexamined and the ledger's count short of what shipped.
+    for t in &plan.emitted_triggers_unlocalized() {
         if matches!(t.on, TriggerOn::Approach { .. }) {
             continue;
         }
@@ -9544,14 +9532,24 @@ fn check_trigger_bodies(plan: &Plan) -> Result<crate::pressable::PressLedger, Bu
 ///
 /// Byte impact: a campaign whose click triggers are its last-declared triggers is
 /// unchanged; any other ordering moves the clear clauses to the end of the block.
-fn env_trigger_tick(plan: &Plan) -> Vec<String> {
+fn env_trigger_tick(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
     use delvewright_dsl::TriggerOn;
     let ns = &plan.namespace;
     let mut out = Vec::new();
     // Phase 2, accumulated while phase 1 is emitted: `(tag, record)` for every
     // click trigger, in declaration order (deterministic).
     let mut clears: Vec<String> = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
+        // A `presser` trigger is not polled at all (DSL v0.11): its dispatch is a
+        // `player_interacted_with_entity` advancement, which is the only vanilla
+        // primitive that knows WHO pressed. It therefore also emits no `data
+        // remove` — an advancement observes the click without consuming it, which
+        // is what lets a press answer share one hitbox with a polled trigger and
+        // neither eat the other's record (round-8: adjudicate conditionally,
+        // consume unconditionally).
+        if t.addresses_presser() {
+            continue;
+        }
         let id = plan::safe_local(t.id.as_str());
         let once_guard = if t.once {
             format!("unless score #trig_{id} dw.sys matches 1 ")
@@ -9641,10 +9639,20 @@ fn env_trigger_tick(plan: &Plan) -> Vec<String> {
 /// scoreboard write on a rare event buys a PackTest that can assert *which* of two
 /// triggers on one hitbox actually ran (`v06_shared_hitbox`). Byte impact: one added
 /// line per non-`once` trigger function.
-fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
+///
+/// **An `audience: presser` trigger reverses both of those** (DSL v0.11). Its
+/// bundle is emitted under [`Audience::Solo`] — `@s` is the player who pressed —
+/// and it is reached from a second, tiny function [`press_dispatch_fn`] that the
+/// interaction advancement rewards, rather than from the tick. Everything else is
+/// identical, which is the point: a press answer is not a mechanism, it is this
+/// mechanism with a different addressee.
+fn env_trigger_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for t in &plan.campaign.quests.content.triggers {
+    for t in &plan.emitted_triggers(chrome) {
         let id = plan::safe_local(t.id.as_str());
+        if t.addresses_presser() {
+            out.push(press_dispatch_fn(plan, t, &id));
+        }
         let mut body: Vec<String> = Vec::new();
         body.push(format!("scoreboard players set #trig_{id} dw.sys 1"));
         // Striker capture (owner directive, round 8). The click record is still on
@@ -9661,14 +9669,10 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
             ));
         }
         // The trigger's own flag gate is already proven by `env_trigger_tick`
-        // before it dispatches here; each effect still carries its own gate.
+        // (or by `press_<id>`) before it dispatches here; each effect still
+        // carries its own gate.
         for e in &t.effects {
-            emit_gated_effect(
-                plan,
-                e,
-                root_audience(delvewright_dsl::EffectRootKind::Trigger),
-                &mut body,
-            );
+            emit_gated_effect(plan, e, trigger_audience(t), &mut body);
         }
         if capture {
             body.push(format!(
@@ -9678,6 +9682,74 @@ fn env_trigger_fns(plan: &Plan) -> Vec<(String, String)> {
         out.push((format!("trig_{id}"), lines(&body)));
     }
     out
+}
+
+/// The audience one trigger's bundle is emitted under.
+///
+/// [`root_audience`] answers for the root *class*, and remains the authority the
+/// DSL's `EffectRootKind::runs_with_acting_player` is bound to. A trigger is the
+/// one root whose audience is a per-declaration fact (DSL v0.11), and this is
+/// where that is resolved — bound to the DSL by
+/// `EffectRootOwner::runs_with_acting_player`, which `DW0503` reads, so the
+/// validator and the emitter cannot disagree about whether `@s` exists.
+fn trigger_audience(t: &delvewright_dsl::EnvTrigger) -> Audience {
+    if t.addresses_presser() {
+        Audience::Solo
+    } else {
+        root_audience(delvewright_dsl::EffectRootKind::Trigger)
+    }
+}
+
+/// The advancement reward function of an `audience: presser` trigger (DSL v0.11):
+/// `press_<id>`, which revokes its own grant and then runs the trigger's bundle
+/// **as the player who right-clicked**.
+///
+/// This is `seal_hint_<safe>` generalized off the verb it was built onto. The
+/// revoke is what makes the object answer *every* press rather than only the
+/// first — a wall is not consumed by being asked — and `once`, the flag gate and
+/// the state gate are re-stated here because for a presser trigger this function
+/// takes the place of the tick clause that would otherwise have carried them.
+/// They are the trigger's own, spelled exactly as `env_trigger_tick` spells them,
+/// so the two dispatch routes gate identically.
+fn press_dispatch_fn(plan: &Plan, t: &delvewright_dsl::EnvTrigger, id: &str) -> (String, String) {
+    let ns = &plan.namespace;
+    let once_guard = if t.once {
+        format!("unless score #trig_{id} dw.sys matches 1 ")
+    } else {
+        String::new()
+    };
+    let forbid_guard: String = t
+        .forbids_flags
+        .iter()
+        .map(|f| {
+            format!(
+                "unless score {} {} matches 1 ",
+                plan::PARTY,
+                plan::flag_score(f.as_str())
+            )
+        })
+        .collect();
+    let flag_guard = format!(
+        "{}{}",
+        party_flag_gate(&t.requires_flags),
+        state_cond(plan, &t.requires_state, false)
+    );
+    // An ungated press answer — which is every one the compiler synthesizes —
+    // calls its bundle outright. `execute run function …` is legal and would
+    // work, but a conditionless `execute` in shipped output reads as a guard
+    // somebody deleted.
+    let dispatch = if once_guard.is_empty() && forbid_guard.is_empty() && flag_guard.is_empty() {
+        format!("function {ns}:trig_{id}")
+    } else {
+        format!("execute {once_guard}{forbid_guard}{flag_guard}run function {ns}:trig_{id}")
+    };
+    (
+        format!("press_{id}"),
+        lines(&[
+            format!("advancement revoke @s only {ns}:press_{id}"),
+            dispatch,
+        ]),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -9883,7 +9955,7 @@ fn loot_setup(loot: &[crate::plan::LootPlan]) -> Vec<String> {
 /// byte-identical to the emission that predates both fields.
 ///
 /// ONE renderer for every container fill: spec-0021 `loot` and the DSL v0.8
-/// `collect` `item_name` (task #95). A quest item named on one surface and
+/// `collect` `item_name`. A quest item named on one surface and
 /// unnamed on the other would be the same defect the wave-arming table taught —
 /// two places describing one stack, drifting apart the moment either moves.
 /// Enchantment order is the `BTreeMap`'s id order, never hash order (ADR-0006).
@@ -10742,7 +10814,7 @@ fn sys_score(holder: &str) -> Value {
 }
 
 /// Join a marker's prefix and its integer fields into one `tellraw` component,
-/// rendering as a single anchored line the harness parses whole (task #123).
+/// rendering as a single anchored line the harness parses whole.
 ///
 /// The grammar is the completion channel's, one token further on:
 /// `[dw:<token> <campaign> <wave> <n> <n> …]`. It inherits the same three
@@ -10881,14 +10953,14 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             dropped_by,
             ..
         } => {
-            // v0.9 (task #179): a drop-gated collect is provisioned by the fight,
+            // v0.9: a drop-gated collect is provisioned by the fight,
             // not by the world. Place nothing and fill nothing — the item exists
             // only once the boss dies, which is exactly what makes the chain
             // provable (`DW0493`) instead of merely intended.
             if dropped_by.is_some() {
                 return cmds;
             }
-            // v0.8 (task #95): an ADOPTED container is prefab furniture standing
+            // v0.8: an ADOPTED container is prefab furniture standing
             // in the room already — fill it where it stands, place nothing. Absent
             // `container`, the compiler keeps conjuring its own chest at the
             // anchor exactly as it always has. The adopted cell comes from
@@ -10976,7 +11048,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     cmds
 }
 
-/// The despawn commands run when an objective COMPLETES (task #45): remove every
+/// The despawn commands run when an objective COMPLETES: remove every
 /// entity its [`activation_commands`] summoned. The objective-scoped tag
 /// (`dw_i_<obj>` on an interact's hitbox and its wayfinding marker, `dw_r_<obj>` on
 /// a reach marker) is deterministic and unique to the objective, so a single tight
@@ -11004,7 +11076,7 @@ fn completion_cleanup(o: &Objective) -> Vec<String> {
 /// plus (DSL v0.4) dialogue `set-flag` effects and environment-trigger effects.
 /// Empty extra sources for v0.2/v0.3, keeping their scoreboard setup identical.
 ///
-/// **This is emission, not a lint** (task #24). A `set-flag` whose `dw.f_<flag>`
+/// **This is emission, not a lint**. A `set-flag` whose `dw.f_<flag>`
 /// objective is missing from `setup` writes to nothing: vanilla answers
 /// `scoreboard players set … <undeclared> 1` with a command error and carries on,
 /// so there is no crash, nothing a bot observes, and every gate on that flag
@@ -11043,7 +11115,7 @@ fn declared_flags(c: &delvewright_dsl::Campaign) -> std::collections::BTreeSet<S
             out.insert(dis.sets_flag.as_str().to_string());
         }
     }
-    // task #184: a timed gate's disarm sets a flag exactly as a trap's does.
+    // A timed gate's disarm sets a flag exactly as a trap's does.
     for g in &c.quests.content.timed_gates {
         if let Some(dis) = &g.disarm {
             out.insert(dis.sets_flag.as_str().to_string());
@@ -11108,7 +11180,7 @@ fn interact_objectives(c: &delvewright_dsl::Campaign) -> Vec<(String, String)> {
 /// per selected player in turn, so the first player's `run` sets the party score
 /// and every later player's `unless score #party …` fails in the same tick.
 /// Stage-5 quests in **arming order**: a quest whose completion arms another is
-/// visited before the quest it arms (task #124).
+/// visited before the quest it arms.
 ///
 /// The arming graph is exactly the `Trigger::QuestComplete` edges — the only two
 /// trigger kinds are `CampaignStart` (a root, armed by `setup`) and
@@ -11533,7 +11605,7 @@ fn emit_dialogs(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, V
         }),
     ));
 
-    // spec-0016 §1 (owner ruling 2026-08-03): one bonfire dialog per bonfire,
+    // spec-0016 §1: one bonfire dialog per bonfire,
     // offering EXACTLY two options — rest and save, or save only. Nothing else
     // may appear here: the ruling is that a campfire is a real interaction with a
     // real choice, not a one-click "arrive" objective. Emitted only for a campaign
@@ -11723,7 +11795,7 @@ fn build_node_dialog(
 }
 
 /// The **death loot tables** a campaign's declared quest-item drops need (DSL
-/// v0.9, task #179), as `(namespace-local path, json)` pairs.
+/// v0.9), as `(namespace-local path, json)` pairs.
 ///
 /// One table per declaring body, one pool, one roll, one entry per declared
 /// item: nothing here rolls a die. The entry is the vanilla `minecraft:item`
@@ -11776,12 +11848,12 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
     out
 }
 
-fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
+fn emit_advancements(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(String, Value)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
     let mut advs = Vec::new();
 
-    // spec-0016 §1 (owner ruling 2026-08-03): one advancement per bonfire, so a
+    // spec-0016 §1: one advancement per bonfire, so a
     // right-click opens the rest dialog AS the player who clicked. The interaction
     // entity's own `interaction` record cannot do this — it names no player the
     // `dialog show` could target — and this is the same vanilla criterion every
@@ -11855,12 +11927,23 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
         ));
     }
 
-    // Task #142: one advancement per sealed gate, so a right-click on the stone
-    // runs the answer AS the player who pressed it. `seal_hint_<safe>` revokes it,
-    // so the seal answers every press — a wall is not consumed by being asked.
-    for s in &plan.seal_hints {
+    // DSL v0.11: one advancement per `audience: presser` trigger, so a right-click
+    // on the thing runs its bundle AS the player who pressed it. `press_<id>`
+    // revokes its own grant, so the object answers every press — a wall is not
+    // consumed by being asked.
+    //
+    // This is `seal_<safe>` lifted off `close-gate`. It keys on the trigger's own
+    // `dw_trig_<id>` tag, which `seal_fns` / `ws_arm_fns` / `env_trigger_setup`
+    // already put on whatever body that trigger rides or summons — so the
+    // advancement needs to know nothing about seals, doors, or any future
+    // pressable object class.
+    for t in &plan.emitted_triggers(chrome) {
+        if !t.addresses_presser() {
+            continue;
+        }
+        let id = plan::safe_local(t.id.as_str());
         advs.push((
-            format!("seal_{}", s.safe),
+            format!("press_{id}"),
             json!({
                 "criteria": {
                     "interact": {
@@ -11868,12 +11951,12 @@ fn emit_advancements(plan: &Plan) -> Vec<(String, Value)> {
                         "conditions": {
                             "entity": {
                                 "type": "minecraft:interaction",
-                                "nbt": format!("{{Tags:[\"dw_seal_{}\"]}}", s.safe)
+                                "nbt": format!("{{Tags:[\"dw_trig_{id}\"]}}")
                             }
                         }
                     }
                 },
-                "rewards": { "function": format!("{ns}:seal_hint_{}", s.safe) }
+                "rewards": { "function": format!("{ns}:press_{id}") }
             }),
         ));
     }
@@ -12047,7 +12130,7 @@ fn emit_packtest(
     // without needing dialog-UI clicks or bot movement (verified live: passes on
     // Fabric + PackTest 2.4.0).
     //
-    // Two structural facts of the campaign shape the template (task #125, the-wake):
+    // Two structural facts of the campaign shape the template (the-wake):
     //
     //   * `campaign-complete` may sit at any nesting depth (spec-0025 / DW0481) —
     //     the-wake schedules it 250t into its closing `sequence`. A same-tick
@@ -12199,7 +12282,7 @@ fn emit_packtest(
         lines(&sealed).into_bytes(),
     );
 
-    // Declared combat difficulty (v0.6, owner ruling 2026-08-03): prove on a live
+    // Declared combat difficulty (v0.6): prove on a live
     // pinned server that the difficulty the campaign DECLARED is the difficulty
     // the world runs at. Unlike the gamerules, this one has a vanilla read-back:
     // the bare `/difficulty` query command returns `Difficulty#getId()`
@@ -12255,11 +12338,11 @@ fn emit_packtest(
     // reachable. Emits nothing without such a pair.
     emit_shared_hitbox_packtest(plan, out);
 
-    // #122: the class trigger is one-shot per player. Emitted for every campaign
+    // The class trigger is one-shot per player. Emitted for every campaign
     // that declares a class, i.e. every campaign.
     emit_class_seal_packtest(plan, out);
 
-    // task #142: a sealed gate carries the hitboxes its right-click answer rides.
+    // A sealed gate carries the hitboxes its right-click answer rides.
     // Emits nothing for a campaign that seals no gate.
     emit_seal_packtest(plan, out);
 
@@ -12281,20 +12364,20 @@ fn emit_packtest(
     emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
     // re-seats its `respawns_on_rest` waves. Emits nothing without a bonfire.
-    // task #123: the tag census really counts the wave, and only the wave.
+    // The tag census really counts the wave, and only the wave.
     emit_wave_census_packtest(plan, out);
     emit_bonfire_packtests(plan, out);
-    // spec-0016 §1 (owner ruling 2026-08-04): a re-seated wave comes back
+    // spec-0016 §1: a re-seated wave comes back
     // STATIONED — at its lane start / anchor, in its routed state, with no trace
     // of the previous life's feral release. Emits nothing without a bonfire and
     // a `respawns_on_rest` wave.
     emit_reseat_stationed_packtest(plan, out, waves.placements, waves.lanes);
-    // spec-0016 §1 (owner ruling 2026-08-05): the UNDEFEATED re-seat — an elite
+    // spec-0016 §1: the UNDEFEATED re-seat — an elite
     // the party is still fighting is deleted and stood up fresh on its origin;
     // one they finished stays finished. Emits nothing without a bonfire and a
     // hostile actor / billed wave.
     emit_reseat_undefeated_packtests(plan, out);
-    // spec-0016 §1 (owner ruling 2026-08-03): rest and save-only really differ.
+    // spec-0016 §1: rest and save-only really differ.
     emit_bonfire_option_packtest(plan, out);
     // spec-0016 §2: the shortcut really opens, and opens exactly once.
     emit_shortcut_packtest(plan, out);
@@ -12321,7 +12404,7 @@ fn emit_packtest(
 /// function plus the completion write itself.
 const CAMPAIGN_PHASE_MARGIN_TICKS: u32 = 20;
 
-/// The branch-aware campaign mechanism test (task #125): ONE template that
+/// The branch-aware campaign mechanism test: ONE template that
 /// drives each reachable branch's coherent path as its own phase, serialized
 /// through the vanilla scheduler, and awaits one verdict per phase.
 ///
@@ -12485,7 +12568,7 @@ fn option_sets_flags<'p>(plan: &'p Plan, objective: &str, n: usize) -> &'p [Stri
 }
 
 /// The scheduled tail (ticks) between firing `effs` and a `campaign-complete`
-/// nested anywhere inside it — `None` when the bundle reaches none (task #125).
+/// nested anywhere inside it — `None` when the bundle reaches none.
 ///
 /// spec-0025 / DW0481 admit the ending at any nesting depth (the-wake schedules
 /// its finale 250t into the closing `sequence`), so every consumer that waits
@@ -12542,8 +12625,7 @@ fn campaign_complete_tail(
 
 /// The ending tail a driven run of `quest_ids` can schedule: the max
 /// [`campaign_complete_tail`] over those quests' `on_objective_complete` bundles
-/// and `on_complete`. `0` when the ending is synchronous (which keeps every
-/// pre-task-#125 campaign's emission byte-identical).
+/// and `on_complete`. `0` when the ending is synchronous.
 fn quests_ending_tail(
     c: &delvewright_dsl::Campaign,
     quest_ids: &BTreeSet<&str>,
@@ -12605,7 +12687,7 @@ const MAX_PARTY: usize = 4;
 ///    the one who cleared the first arm — completes the join, proving each member
 ///    sees and can consume the successor state.
 ///
-/// Batch model (#140): own members (spawned and removed by this template alone,
+/// Batch model: own members (spawned and removed by this template alone,
 /// under names no other template uses), own scratch holder (`#pj_<obj>`), own
 /// init (every party score it reads is actively baselined), and no `await` — the
 /// whole body is one atomic tick, so no sibling can interleave inside it.
@@ -12972,7 +13054,7 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// "the record is written and consumed, and nothing opens" directly assertable.
 /// Pin every branch-gate flag an NPC's cast ledger reads to the value that
 /// selects `clause`: its `requires_flags` to 1, every other flag any clause
-/// reads to 0 (task #133, island r15).
+/// reads to 0 (island r15).
 ///
 /// The generated cast templates zero every `dw.qa_*` their dispatch reads but
 /// used to leave the ledger's `requires_flags`/`forbids_flags` to whatever the
@@ -12984,8 +13066,7 @@ fn emit_dialogue_trigger_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// against any future flag-setting template, rather than trusting each one to
 /// clean up. It is also what makes a `requires_flags`-gated clause assertable
 /// at all — "never set" is not 1 on the shared server any more than it is 0.
-/// Emits nothing for a ledger with no branch-gated clause, so pre-#133
-/// campaigns are byte-identical.
+/// Emits nothing for a ledger with no branch-gated clause.
 fn pin_cast_clause_flags(
     b: &mut Vec<String>,
     cast: &crate::cast::NpcCast,
@@ -13369,7 +13450,7 @@ fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted
 /// on a live pinned server.
 ///
-/// The volley test is the runtime half of the owner's ruling (2026-08-03). It
+/// The volley test is the runtime half of the owner's ruling. It
 /// runs the REAL emitted salvo function and then asserts, per standable
 /// kill-zone cell, that a projectile exists on the exact trajectory that reaches
 /// it — so "the volley blankets its zone" is checked in the game, not just in
@@ -13632,7 +13713,7 @@ fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
 /// block-x, captured via `data get … Pos[0]`, discriminates the checkpoint from
 /// the interior cell, and is robust to teleport centering (both sides floor the
 /// same way). Emits nothing when the campaign declares no `boundary`.
-/// #122: **the class trigger is one-shot per player** — the seal, proved on a
+/// **The class trigger is one-shot per player** — the seal, proved on a
 /// live server.
 ///
 /// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, so a second
@@ -13678,7 +13759,7 @@ fn emit_class_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
 
     let mut b = packtest_header(&format!(
         "{title}: the class trigger is one-shot — a second `/trigger dw.class` cannot re-class or \
-         warp (#122)"
+         warp"
     ));
     b.push(format!("function {ns}:setup"));
     // Own init: the batch is one shared server, so "never set" is not 0.
@@ -13846,13 +13927,13 @@ fn emit_boundary_packtest(plan: &Plan, out: &mut BuildOutput) {
 ///   which is the whole point of the sentinel.
 ///
 /// Emits nothing for a campaign with no bonfire → byte-identical.
-/// The wave census counts by TAG (task #123), proven on a live server.
+/// The wave census counts by TAG, proven on a live server.
 ///
 /// The ladder's old probe counted silhouettes — every entity the client tracked,
 /// anything taller than half a block — so an ambush actor standing near the fight
 /// was indistinguishable from a member of it, and one alive on both sides of a
-/// scripted death was reported as a survivor the re-seat had failed to remove
-/// (#230). The fix moves the count into the datapack, where the tag lives; this
+/// scripted death was reported as a survivor the re-seat had failed to remove.
+/// The count lives in the datapack, where the tag lives; this
 /// template is what proves the arithmetic on the pinned server rather than in a
 /// unit test's imagination.
 ///
@@ -13878,8 +13959,7 @@ fn emit_wave_census_packtest(plan: &Plan, out: &mut BuildOutput) {
     let species = &w.mobs[0].entity;
 
     let mut b = packtest_header(&format!(
-        "{title}: the census counts wave `{}` by TAG — a bystander beside it is not in it \
-         (task #123)",
+        "{title}: the census counts wave `{}` by TAG — a bystander beside it is not in it",
         w.id
     ));
     b.push(format!("function {ns}:setup"));
@@ -13996,7 +14076,7 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
         "execute store result score #br_bfs dw.sys if entity @e[tag={tag}]"
     ));
     b.push(format!("assert score #br_bfs dw.sys matches {total}"));
-    // --- the SURVIVOR case (owner's no-chip-through ruling, 2026-08-03) ---
+    // --- the SURVIVOR case ---
     // A wiped wave coming back proves the count. It does not prove the thing the
     // ruling is actually about: grinding a wave down one hit per life must never
     // be a valid path, so a survivor the party chipped has to be REMOVED and
@@ -14026,7 +14106,7 @@ fn emit_bonfire_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
-/// spec-0016 §1 (owner ruling 2026-08-04): **a re-seated wave comes back
+/// spec-0016 §1: **a re-seated wave comes back
 /// STATIONED.**
 ///
 /// The souls loop stands — a beaten `respawns_on_rest` wave does return on a rest
@@ -14216,7 +14296,7 @@ fn emit_reseat_stationed_packtest(
     );
 }
 
-/// spec-0016 §1 (owner ruling 2026-08-05): **an undefeated elite is put back;
+/// spec-0016 §1: **an undefeated elite is put back;
 /// a defeated one stays dead.**
 ///
 /// The bell's round-five playtest found the half of the souls loop nothing was
@@ -14402,7 +14482,7 @@ fn emit_reseat_undefeated_packtests(plan: &Plan, out: &mut BuildOutput) {
     );
 }
 
-/// spec-0016 §1 (owner ruling 2026-08-03): the **two options really differ**.
+/// spec-0016 §1: the **two options really differ**.
 ///
 /// The owner's ruling is that right-clicking a bonfire offers exactly *rest and
 /// save* and *save only*, and that save-only does nothing but move the
@@ -14550,7 +14630,7 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     // the shared server, and PackTest does not order siblings — so whenever disarm
     // runs first, this template's `tgate_close_` is swallowed by its own jam guard
     // and the re-seal assertion reads air. A template never inherits the state a
-    // sibling left (the flag-leak class of PR #237); it pins what it depends on.
+    // sibling left (the flag-leak class); it pins what it depends on.
     pin_tgdis(&mut b, g);
     b.push(format!(
         "execute store success score #tg_sealed dw.sys if block {} {} {} {}",
@@ -14577,7 +14657,7 @@ fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
     emit_timed_gate_disarm_packtest(plan, g, out);
 }
 
-/// task #184 PackTest: a **disarmed** gate stays open across several former cycle
+/// The disarm PackTest: a **disarmed** gate stays open across several former cycle
 /// boundaries, and its closing edge never fires again.
 ///
 /// A fake player cannot wait out a `schedule`, so the template does what the
@@ -14604,7 +14684,7 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     let probe = from;
     let id = &g.safe;
     let mut b = packtest_header(&format!(
-        "{title}: timed gate `{}` stays open once disarmed (task #184)",
+        "{title}: timed gate `{}` stays open once disarmed",
         g.id
     ));
     b.push(format!("function {ns}:setup"));
@@ -14948,7 +15028,7 @@ fn emit_td_lane_packtests(
         b.push(format!("tag {sel} remove dw_pt_tdrel"));
         write("souls_td_lane_release", b);
 
-        // --- the re-summon re-stations the squad (owner ruling 2026-08-04) ---
+        // --- the re-summon re-stations the squad ---
         //
         // A wave re-seat is `kill` + the wave's own `spawn_<wave>`, and the whole
         // stationed-re-seat ruling rests on that second half putting the squad
@@ -15056,7 +15136,7 @@ fn emit_td_lane_packtests(
 /// * **checkpoint**: applying the checkpoint's `spawnpoint @a` + `dw:cp pos`
 ///   mirror makes `storage dw:cp pos` read back the checkpoint cell — the
 ///   machine-checkable "last checkpoint" contract other features consume.
-/// * **stealth** (zone-presence model, owner ruling 2026-08-01 — no sneak
+/// * **stealth** (zone-presence model, no sneak
 ///   requirement): the generated `stealth_eval_<i>` judge catches an exposed
 ///   (out-of-zone) player after `grace_ticks` and spares an in-zone one —
 ///   driven by teleporting the dummy in and out of the declared zone box.
@@ -15102,7 +15182,7 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             lines(&t).into_bytes(),
         );
 
-        // --- the environmental-death variant (task #145) ---
+        // --- the environmental-death variant ---
         //
         // The template above proves the RECORD; this one proves the LANDING, which
         // is the half the owner's tide-mill playtest found missing. `spawnpoint` is
@@ -15122,7 +15202,7 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
             let (pin, sel) = pin_dummy("dw_t_cpseat");
             let mut t = packtest_header(&format!(
                 "{title}: an environmental death re-seats the player ON the checkpoint, once \
-                 (spec-0012, task #145)"
+                 (spec-0012)"
             ));
             t.push(format!("function {ns}:setup"));
             t.push(pin);
@@ -16081,7 +16161,7 @@ fn emit_v06_actor_packtests(
     // fires this handoff with the boulder down, and arrival must be immune to
     // sealed terrain — the driver is a tp chain, not pathfinding. Gates are
     // re-opened afterwards (fill air replace <block>), so the template leaves
-    // no block residue for a sibling (batch model, #140).
+    // no block residue for a sibling (batch model).
     let handoff = actor_moves.iter().find_map(|m| {
         all_campaign_effects(c).into_iter().find_map(|e| match e {
             QuestEffect::MoveActor {
@@ -16224,7 +16304,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         }
     }
 
-    // interact-marker lifecycle (task #45): a completed interact objective leaves
+    // interact-marker lifecycle: a completed interact objective leaves
     // NO `minecraft:interaction` hitbox behind — it must not stay clickable, and a
     // leaked hitbox congests the critical-path bot. Activate the first interact
     // objective (summons the hitbox), assert it exists, complete it, assert the
@@ -16574,7 +16654,7 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
         }
     }
 
-    // Dialogue display gating (task #54): a `completes` option is DISPLAYED iff
+    // Dialogue display gating: a `completes` option is DISPLAYED iff
     // its objective is active — its quest active and the objective not yet
     // complete — mirroring the click-handler guard. The chooser's `dmask_<npc>_<node>`
     // computes the per-player availability bitmask (bit `i` = the node's i-th
@@ -16999,7 +17079,7 @@ fn pin_dummy(tag: &str) -> (String, String) {
 /// own `give`: handing the plain item over first completes the objective and
 /// makes the named stack's assertion vacuous. Everything about which flags are
 /// pinned stays in one place, so no template can be written that opens a gate by
-/// hand and forgets one (PR #237's template flag hygiene).
+/// hand and forgets one — template flag hygiene lives here.
 fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
@@ -17067,7 +17147,7 @@ fn packtest_preamble(
             requires_item: Some(it),
             ..
         } => {
-            // HELD, not merely carried (owner ruling, 2026-08-03): the gate reads
+            // HELD, not merely carried: the gate reads
             // `weapon.mainhand`, so the preamble must put the item THERE. `give`
             // only happened to satisfy the old inventory-wide gate because a fresh
             // dummy's first free slot is also its selected one — an accident, not a
@@ -17103,7 +17183,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // milestone precisely because nothing looked. Falls back to the first kill.
     let mut first_armed_kill = None;
     let mut first_collect = None;
-    // The first `collect` that adopts a prefab container (DSL v0.8, task #95).
+    // The first `collect` that adopts a prefab container (DSL v0.8).
     let mut first_collect_adopted = None;
     let mut first_interact = None;
     // The first `interact` that actually gates on an item — the subject of the
@@ -17151,7 +17231,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 }
                 _ => {}
             }
-            // v0.8 (task #95): the first `collect` that ADOPTS a prefab container.
+            // v0.8: the first `collect` that ADOPTS a prefab container.
             // Distinct from `first_collect`, which may keep the compiler-placed
             // chest and would make the adoption assertions vacuous.
             if first_collect_adopted.is_none() && o.collect_container().is_some() {
@@ -17306,7 +17386,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("verb_interact", b);
 
         // A click that lands before its quest is armed is DISCARDED, and a real
-        // click afterwards still works (task #124, owner ruling).
+        // click afterwards still works.
         //
         // This is the runtime half of the arming invariant. The compile-time half
         // (`tests/tick_arming.rs`) pins that the arming quest's lines precede the
@@ -17321,7 +17401,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         let qa = quest_active_score(qid);
         let party = plan::PARTY;
         let mut b = packtest_header(&format!(
-            "{}: a click before the quest is armed is spent, not banked (task #124)",
+            "{}: a click before the quest is armed is spent, not banked",
             artifact_title(c)
         ));
         b.push(format!("function {ns}:setup"));
@@ -17354,8 +17434,8 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("verb_interact_arming", b);
     }
 
-    // interact + `requires_item`: HELD, not merely carried (owner ruling,
-    // 2026-08-03). Two phases on one dummy, one tick each:
+    // interact + `requires_item`: HELD, not merely carried. Two phases on one
+    // dummy, one tick each:
     //
     //   A. the item is in the pack, the hand is empty  -> must NOT complete
     //   B. the same item is in the main hand           -> completes
@@ -17623,7 +17703,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("collect_preheld", b);
     }
 
-    // v0.8 container adoption (task #95, island playtest rounds 1-2): the
+    // v0.8 container adoption: the
     // objective fills the barrel the PREFAB placed, pads it so it reads full, and
     // still completes when what the player carries is the NAMED stack.
     //
@@ -17727,7 +17807,7 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
 ///   arithmetic against a shipped `view-distance` of 10 (→ 160 blocks), with 12
 ///   reserved as the summit horizon's floor. Writing the key makes that
 ///   arithmetic bind to a fact rather than to an assumption about the host.
-/// * **Prod.** Perf is non-gating on the Raspberry Pi (owner ruling 2026-08-04),
+/// * **Prod.** Perf is non-gating on the Raspberry Pi,
 ///   so the Pi does not push the number DOWN; it is the absence of any delve
 ///   content past 160 blocks that stops it going up.
 ///
@@ -17984,7 +18064,7 @@ pub struct BranchTransport {
 /// Objective id → the branch-only crossings completing it must perform.
 pub type BranchTransportOverlay = BTreeMap<String, Vec<BranchTransport>>;
 
-/// The crossings that exist on a BRANCH but not on the exported path (task #186).
+/// The crossings that exist on a BRANCH but not on the exported path.
 ///
 /// [`crate::plan::build_critical_path`] derives an inter-area transport map for
 /// whatever playthrough it is handed, so every branch's map already exists via
@@ -18118,7 +18198,7 @@ fn critical_path_json(
     moves: &[crate::nav::MovePlan],
     actor_moves: &[crate::nav::ActorMovePlan],
 ) -> Value {
-    // Scheduled-ending tail for THIS path's quests (task #125): exported on the
+    // Scheduled-ending tail for THIS path's quests: exported on the
     // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
     // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
     // exactly as it already covers `cutscene_seconds`. Omitted when 0, keeping
@@ -18486,7 +18566,7 @@ mod tests {
         assert!(s.contains("PersistenceRequired:1b"));
     }
 
-    /// v0.9 (task #179): a `despawn-actor` on a drop-declaring actor strips the
+    /// v0.9: a `despawn-actor` on a drop-declaring actor strips the
     /// declaration off the body before killing it. `/kill` is an ordinary death
     /// and a preserved slot survives a non-player kill, so without this a souls
     /// re-seat would shower the party with the elite's own axe every rest.

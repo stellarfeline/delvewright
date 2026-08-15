@@ -308,7 +308,7 @@ fn critical_path_shape_and_commands() {
     // Each interactive step's /trigger objective must be enabled every tick, so
     // both the dialog buttons and the bot's chat command work.
     //
-    // `dw.class` is the ONE-SHOT exception (#122): `class_apply_<c>` ends in a
+    // `dw.class` is the ONE-SHOT exception: `class_apply_<c>` ends in a
     // teleport to the campaign entry, so a trigger left armed after a class is a
     // live warp back to the start of the delve. Its arming is therefore the same
     // every-tick guarantee, made conditional on not-yet-classed and per-player —
@@ -345,8 +345,8 @@ fn critical_path_shape_and_commands() {
     }
 
     // The completion objective exists but is NOT put on the sidebar: a raw
-    // internal id (`dw.campaign`) must never surface to players (task #54
-    // addendum). The bot observes completion via the chat token, not the sidebar.
+    // internal id (`dw.campaign`) must never surface to players. The bot
+    // observes completion via the chat token, not the sidebar.
     let setup = text(&out, "datapack/data/hello-world/function/setup.mcfunction");
     assert!(setup.contains("scoreboard objectives add dw.campaign dummy"));
     assert!(
@@ -367,11 +367,11 @@ fn critical_path_shape_and_commands() {
     assert!(complete.contains("[dw:complete hello-world campaign]"));
 }
 
-/// #122 — **the class trigger is one-shot per player**, sealed at the compiler.
+/// **The class trigger is one-shot per player**, sealed at the compiler.
 ///
-/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, and `tick`
-/// used to `enable @a dw.class` unconditionally forever: anything that could
-/// chat a command could re-class mid-run and warp itself back to the start of
+/// `class_apply_<c>` ends in `teleport @s <campaign entry point>`, so a `tick`
+/// that ran `enable @a dw.class` unconditionally forever would let anything that
+/// can chat a command re-class mid-run and warp itself back to the start of
 /// the delve. The seal is the vanilla trigger pattern — re-enable only what is
 /// meant to be usable — and it is per-PLAYER, because classing is per-player: a
 /// second player still on the class screen must keep an armed trigger while the
@@ -529,7 +529,7 @@ fn completion_marker_channel_is_anchored_and_per_objective() {
     );
 }
 
-/// task #38: the compiler exports the DW0311-proven critical-path routes as a
+/// The compiler exports the DW0311-proven critical-path routes as a
 /// deterministic validation artifact (`validation/critical-path-waypoints.json`) so
 /// the harness can navigate the bot leg-by-leg. It is validation metadata, cleanly
 /// separated from the shipped datapack (lives under `validation/`, not `datapack/`),
@@ -598,9 +598,9 @@ fn critical_path_waypoints_artifact_shape() {
         "waypoints artifact must not live inside the datapack"
     );
 
-    // task #81: the spec-0016 §4 timed-gate keys are ADDITIVE. hello-world declares
+    // The spec-0016 §4 timed-gate keys are ADDITIVE. hello-world declares
     // no gate clock, so neither the gate table nor any per-leg mark appears and the
-    // artifact stays byte-identical to its pre-task-#81 shape (ADR-0006).
+    // artifact carries neither key (ADR-0006).
     assert!(
         wp.get("timed_gates").is_none(),
         "no gate table for a campaign with no clock: {wp}"
@@ -1027,7 +1027,7 @@ fn dialog_buttons_run_the_trigger_commands() {
     }
 }
 
-/// The gravity-despawn diagnostic (DW0313, task #42) fires at build time for a
+/// The gravity-despawn diagnostic (DW0313) fires at build time for a
 /// prefab whose gravity floor is unsupported over the void, and passes once a
 /// non-falling substrate is added — exercised against a real plan (real piece
 /// AABBs for attribution) with synthetic structure bytes.

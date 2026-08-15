@@ -189,7 +189,7 @@ fn lane_follow_range_equals_aggro_radius() {
     );
 }
 
-/// **Stationed re-seat, lane half** (owner ruling 2026-08-04). A wave re-seat is
+/// **Stationed re-seat, lane half**. A wave re-seat is
 /// `kill` + the wave's own `spawn_<wave>`, so everything that stations a lane
 /// squad has to be written by `spawn_<wave>` and by nothing else — otherwise a
 /// re-seated warband keeps the previous life's routing and marches on from

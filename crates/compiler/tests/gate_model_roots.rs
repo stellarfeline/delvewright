@@ -1,5 +1,5 @@
 //! The close-gate **completability model** sees every root emission can fill a
-//! gate from (task #167).
+//! gate from.
 //!
 //! `plan::collect_region_events` feeds the nav proofs (`DW0311`/`DW0315`/`DW0342`/
 //! `DW0410`) their picture of which gate regions are solid on which walked leg.

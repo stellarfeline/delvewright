@@ -629,7 +629,7 @@ fn validate_loaded(
             diags.extend(delvewright_compiler::branch::check_branches(&campaign));
             // THE OBLIGATION FENCE. Every check above ran; this is where a
             // campaign's own declared `dsl_version` decides which of their
-            // findings it is answerable for (owner ruling 2026-08-10). Nothing
+            // findings it is answerable for. Nothing
             // downstream can un-fence it: `print_diags` and `Validated::diags`
             // both hold `Fenced`, which has no constructor from a bare list.
             let diags = Fenced::apply(&campaign, diags);
@@ -1027,7 +1027,7 @@ fn read_structures(
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
-    // no piece placed (spec-0017 PR 2) — the replay needs those bytes too.
+    // no piece placed (spec-0017) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();
     for area in &plan.areas {
         for piece in &area.pieces {
@@ -1539,8 +1539,8 @@ fn run_build(
             // Analysis-tier build diagnostics (exit 2, like DW02xx reachability): a
             // content/prefab defect the author fixes in the content, not a
             // compiler/geometry defect. These are the DW02xx lighting codes
-            // (DW0210/DW0211, spec-0010), wave-capacity DW0312 (task #41: a wave too
-            // big for its room), and DW0313 (task #42: a gravity floor that despawns
+            // (DW0210/DW0211, spec-0010), wave-capacity DW0312 (a wave too
+            // big for its room), and DW0313 (a gravity floor that despawns
             // into the void — fix the prefab with a substrate). Geometry/navigation
             // diagnostics (DW0307/DW0308/DW0311) print like a solver DW03xx error and
             // exit 3.
@@ -1998,7 +1998,7 @@ fn write_output(out: &Path, output: &emit::BuildOutput) -> std::io::Result<()> {
 }
 
 /// `delvec fmt [--check] <path>…` — canonical form for authored Delvewright
-/// JSON (task #52; owner directive 2026-08-07).
+/// JSON.
 ///
 /// A formatter AND a check, deliberately in that order: a `--check`-only gate
 /// makes authors hand-sort a 900-key sidecar, which nobody does twice, so the

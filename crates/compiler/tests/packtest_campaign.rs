@@ -1,5 +1,4 @@
-//! task #125 — the campaign mechanism PackTest vs scheduled endings and
-//! declared branches (the-wake escalation).
+//! The campaign mechanism PackTest vs scheduled endings and declared branches.
 //!
 //! Two defects in one template, both structural:
 //!

@@ -29,11 +29,11 @@
 //! * a `move-actor` / `move-npc` `on_arrive` bundle, which inherits the state as
 //!   of its move and is itself an ordered list.
 //!
-//! ## Optional roots need no special case (task #169)
+//! ## Optional roots need no special case
 //!
 //! Two of the five have no guaranteed firing: the party may never trip a trap,
 //! and nobody is forced to die at a checkpoint. The completability model has to
-//! rule on that (task #167: an unguaranteed firing registers its `close-gate`
+//! rule on that (an unguaranteed firing registers its `close-gate`
 //! only, because assuming a seal happened is the conservative direction) —
 //! **this model does not**, and the asymmetry is not an oversight.
 //!

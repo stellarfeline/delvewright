@@ -141,7 +141,7 @@ fn v06_void_horizon_needs_no_boundary() {
 }
 
 // ---------------------------------------------------------------------------
-// v0.6 per-effect `requires_flags` gate + blockstate suffix (task #55)
+// v0.6 per-effect `requires_flags` gate + blockstate suffix
 // ---------------------------------------------------------------------------
 
 /// Build a full campaign with a custom stage-5 `quests` document (0.6.0), reusing

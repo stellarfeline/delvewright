@@ -38,9 +38,15 @@ fn version_line() {
     // `set-state`/`add-state`/`clear-state` verbs and the `requires_state`
     // numeric comparison carried by every gate consumer — the campaign-wide
     // `on_death` bundle, effect root R7, and the stage-5 `lethal_volumes`
-    // declaration. spec-0034 raised it again to 0.11.0: the per-body `traversal`
-    // declaration — what a body can do when it moves — carried by the stage-2
-    // NPC and the stage-5 actor through one shared type.
+    // declaration. 0.11.0 carries two surfaces and one obligation: spec-0034's
+    // per-body `traversal` declaration — what a body can do when it moves —
+    // carried by the stage-2 NPC and the stage-5 actor through one shared type;
+    // and the press-answer lift, a `narrate` `actionbar` style (the reply strip
+    // every compiler-written line already used) plus a trigger's `audience:
+    // presser` (dispatch as the player who right-clicked), which together make
+    // "a pressable thing answers the presser" an ordinary trigger and retire
+    // `close-gate`'s private copy of it. The obligation is `DW0429`: at 0.11.0 a
+    // sealed body nothing answers is an error.
     assert!(s.contains("dsl 0.11.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
@@ -1123,7 +1129,7 @@ fn cutscene_clip_exits_3_with_dw0308() {
 }
 
 /// A cutscene whose aim sweeps faster than the 6°/tick angular budget fails the
-/// build with exit 3 and `DW0347` (task #64): the showcase's known-air dolly is
+/// build with exit 3 and `DW0347`: the showcase's known-air dolly is
 /// sped up to 1 s and aimed at a `look_at` subject passing 1 block abeam —
 /// ~8.6°/tick at closest approach, a spin, not a shot.
 #[test]
@@ -1152,7 +1158,7 @@ fn cutscene_over_angular_budget_exits_3_with_dw0347() {
     assert!(stdout.contains("DW0347"), "expected DW0347:\n{stdout}");
 }
 
-/// Wave-capacity guard (task #41): a `spawn-wave` whose mob count exceeds the
+/// Wave-capacity guard: a `spawn-wave` whose mob count exceeds the
 /// standable footing of its own room fails the build with `DW0312` and exit 2
 /// (analysis-tier — a content-design capacity mistake, like reachability `DW02xx`,
 /// not a compiler/geometry defect). keep-vertical's single wave is blown up past
@@ -2117,7 +2123,7 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     assert!(!tree.keys().any(|k| k.starts_with("datapack/branch")));
 }
 
-/// task #117: every REACHABLE branch gets its own waypoint artifact
+/// Every REACHABLE branch gets its own waypoint artifact
 /// (`validation/branch-waypoints-<slug>.json`) in the `critical-path-waypoints`
 /// shape, derived from the branch's OWN path over the same assembled world its
 /// per-branch DW0311 proof ran over.

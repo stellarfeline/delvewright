@@ -1096,14 +1096,13 @@ fn an_included_program_keeps_its_bindings() {
 /// **`bind` owes the program-document fence an entry the moment that fence
 /// exists.**
 ///
-/// `Program::version` and `crates/grammar/src/version.rs` land on PR #417, which
-/// is open; rebasing onto it is not available here. So instead of a line in a
-/// document asking someone to remember, the obligation is bound to the event
-/// that creates it: the day the module lands, this test starts asserting that
-/// `bind` is fenced, and reds if it is not.
+/// `Program::version` and `crates/grammar/src/version.rs` do not exist yet. So
+/// instead of a line in a document asking someone to remember, the obligation is
+/// bound to the event that creates it: the day the module lands, this test
+/// starts asserting that `bind` is fenced, and reds if it is not.
 ///
 /// It binds to **nothing today, deliberately and visibly** — it prints which
-/// state it is in on every run — and to one thing the moment #417 merges.
+/// state it is in on every run — and to one thing the moment the module exists.
 #[test]
 fn bind_is_fenced_the_moment_the_program_version_module_exists() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/version.rs");
