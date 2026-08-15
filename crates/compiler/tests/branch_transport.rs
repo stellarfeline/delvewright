@@ -1,4 +1,4 @@
-//! Branch-aware inter-area transport (task #186): a crossing that only happens
+//! Branch-aware inter-area transport: a crossing that only happens
 //! on ONE branch still has to move the party.
 //!
 //! `build_critical_path` derives the inter-area transport map for whatever

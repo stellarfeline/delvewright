@@ -1,4 +1,4 @@
-//! L2 massing verbs (spec-0017 PR 3): declarative control of a pool area's
+//! L2 massing verbs (spec-0017): declarative control of a pool area's
 //! solved jigsaw layout — `swap-piece`, `insert-piece`, `remove-piece`,
 //! `rewire-socket`, `reseed-piece` — applied by `Plan::build` immediately
 //! after `solve_area`, so **every** downstream pass (anchor resolution, gate
@@ -41,7 +41,7 @@ use crate::solver::{
 };
 use delvewright_dsl::DwCode;
 
-/// An L2 massing verb cannot apply to the solved layout (spec-0017 PR 3): the
+/// An L2 massing verb cannot apply to the solved layout (spec-0017): the
 /// target area is single-prefab (no jigsaw layout to mass), a piece
 /// index/prefab guard mismatches (layout drift), a swap/reseed candidate
 /// cannot re-mate every mated socket without overlap, an insert's socket is

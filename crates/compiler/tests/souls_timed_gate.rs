@@ -189,7 +189,7 @@ fn clock_runtime_behaviour_is_packtested() {
     }
 }
 
-/// The validation metadata the RUNTIME rung needs (task #81). The static proof
+/// The validation metadata the RUNTIME rung needs. The static proof
 /// (`DW0378`) already shows the window is readable; the harness bot could not act on
 /// it, because nothing told it a gate existed — so the portcullis filling mid-approach
 /// aborted the pathfinder and failed the leg as if the geometry were broken. The
@@ -211,7 +211,7 @@ fn waypoints_artifact_exports_the_gate_table_and_marks_the_crossing_leg() {
     assert_eq!(g["closed_ticks"], 40);
     assert_eq!(g["phase"], 0);
     assert_eq!(g["block"], "minecraft:iron_bars");
-    // task #140: `crush` is part of the exported contract — the harness must know a
+    // `crush` is part of the exported contract — the harness must know a
     // closing edge kills, or it walks the bot into one blind (the tide-mill death).
     // The fixture opts into crush (see `the_clock_is_a_self_sustaining_ping_pong`).
     assert_eq!(
@@ -321,7 +321,7 @@ fn crush_false_is_inert() {
     }
 
     // The two builds differ ONLY in the closing function, the crush PackTests, and
-    // the waypoints artifact's exported `crush` fact — task #140: the runtime
+    // the waypoints artifact's exported `crush` fact: the runtime
     // harness must be TOLD a closing edge kills, or it walks the bot into one blind
     // (the manifest hashes those files, so it differs too — and must).
     let differing: Vec<&String> = off
@@ -344,7 +344,7 @@ fn crush_false_is_inert() {
     }
 }
 
-/// **`crush` is exported to the runtime rung** (task #140). The first live
+/// **`crush` is exported to the runtime rung**. The first live
 /// `crush: true` gate killed the mineflayer bot: the harness's gate machinery was
 /// purely reactive (wait for a window only AFTER a hop fails), which is safe when a
 /// closing gate merely aborts the path and lethal when it kills. The staged-entry

@@ -1,4 +1,4 @@
-//! The shared assembled-world block model (task #42).
+//! The shared assembled-world block model.
 //!
 //! One authoritative cell→block map of the world the shipped delve actually
 //! assembles, built the way vanilla does: place each prefab structure with
@@ -16,7 +16,7 @@
 //!   the DW0311 critical-path walk, DW0312 wave seating, and the waypoint export.
 //! - [`crate::light::LightModel`] — opacity/emission for the spec-0010 relight.
 //!
-//! ## Why settling is required for fidelity (task #42)
+//! ## Why settling is required for fidelity
 //!
 //! Field bug: the cave-den prefab floor is a single layer of blocks over void.
 //! Where that layer is `minecraft:sand` (a [`FallingBlock`], gravity-affected),
@@ -43,7 +43,7 @@ use delvewright_dsl::DwCode;
 /// trailing `[state]` / `{nbt}` suffix, keeping the namespace
 /// (`minecraft:oak_slab[type=top]` → `minecraft:oak_slab`).
 ///
-/// The assembled map stores **full blockstates** (task #78): waterlogging, slab
+/// The assembled map stores **full blockstates**: waterlogging, slab
 /// halves and snow-layer counts are all block *state*, and a model that throws
 /// the state away cannot tell a half-step from a full cube or a submerged fence
 /// from a dry one. Every classifier below therefore matches on `base_id`, and
@@ -69,7 +69,7 @@ pub fn state_value<'a>(name: &'a str, key: &str) -> Option<&'a str> {
 /// Rewrite a blockstate's **orientation properties** for a piece placed with
 /// rotation `r`, the way vanilla's `/place template … <rotation>` does.
 ///
-/// Model fidelity (task #191). [`placed_blocks`] rotates a prefab cell's
+/// Model fidelity. [`placed_blocks`] rotates a prefab cell's
 /// *position* via [`crate::solver::Rotation::transform`] but used to insert the
 /// palette name verbatim, so for any piece with `rotation != None` the assembled
 /// map disagreed with the world the server actually builds: vanilla rotates
@@ -204,7 +204,7 @@ fn strip_ns(id: &str) -> &str {
     id.strip_prefix("minecraft:").unwrap_or(id)
 }
 
-/// Whether a block is a **1.5-block-tall barrier** (task #59): fences (`*_fence`,
+/// Whether a block is a **1.5-block-tall barrier**: fences (`*_fence`,
 /// incl. `nether_brick_fence`) and walls (`*_wall`). Vanilla gives these a
 /// collision box 1.5 blocks tall on a 1-block cell, which breaks the full-cube
 /// assumption in BOTH directions:
@@ -212,7 +212,7 @@ fn strip_ns(id: &str) -> &str {
 /// - **Not standable on top by a walking player**: a normal jump rises ~1.25
 ///   blocks, so a 1.5-tall top face is unreachable by walking/jumping — the
 ///   full-solid model's "legal +1 step onto a fence-top" was a proof of a route no
-///   player (or mineflayer bot) can walk (owner-hit island bug; harness #110).
+///   player (or mineflayer bot) can walk.
 /// - **Not passable through**: the barrier fills its cell for a walker, and its
 ///   top half also blocks the cell above (feet at `y+1` intersect the `y..y+1.5`
 ///   box), which the model gets for free because a tall barrier is never valid
@@ -239,7 +239,7 @@ pub fn is_fence_gate(name: &str) -> bool {
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
 /// source** alongside the host block (MC 1.13+ waterlogging).
 ///
-/// Fidelity fix (task #78). The model previously stored bare block ids and its
+/// Fidelity fix. The model previously stored bare block ids and its
 /// own doc claimed "vanilla waterlogging never spreads to a neighbour", which is
 /// factually wrong: a waterlogged block's cell holds a genuine water *source*
 /// that ticks and spreads into adjacent air exactly like a free source block
@@ -319,9 +319,9 @@ pub const THIN_HEIGHT_16: u8 = 8;
 
 /// The height of a block's **collision box top face**, in sixteenths of a block
 /// (0 = no collision at all, 16 = a full cube). Anything not listed is a full
-/// cube — the conservative default, unchanged from the pre-#78 model.
+/// cube — the conservative default.
 ///
-/// Fidelity fix (task #78): modelling a slab or a snow layer as a full 1×1×1 cube
+/// Fidelity fix: modelling a slab or a snow layer as a full 1×1×1 cube
 /// misplaces the surface a walker stands on by up to a whole block, which makes
 /// the nav step rule prove step-ups vanilla refuses (stepping from a bottom slab
 /// up onto a full block is a **1.5-block** rise — above the ~1.25-block jump
@@ -419,7 +419,7 @@ pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
 /// property when the palette entry carries one (`Some(true)` for an authored open
 /// fence gate / door / trapdoor; `None` when the state has no `open` property).
 /// The decoder otherwise keeps only `Name`; the assembled model uses the
-/// blockstate-preserving [`structure_cells_stateful`] instead (task #78).
+/// blockstate-preserving [`structure_cells_stateful`] instead.
 /// Unparseable structures contribute nothing.
 pub fn structure_cells(bytes: &[u8]) -> Vec<([i32; 3], String, Option<bool>)> {
     structure_cells_inner(bytes, false)
@@ -663,7 +663,7 @@ struct Placed {
 
 /// The un-settled cell→block map: placed structures + solver seals + gate clears,
 /// exactly as the two legacy models built it — plus the set of fence-gate cells
-/// whose authored block state is `open=true` (task #59: an open gate threshold is
+/// whose authored block state is `open=true` (an open gate threshold is
 /// passable; a closed one is passable-with-use), plus the per-gate world-load
 /// measurement ([`GateSeal`]) taken immediately before the gate clear. Kept
 /// separate from settling so unit tests can exercise each half.
@@ -675,12 +675,12 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
             let Some(bytes) = structures.get(&piece.structure_file) else {
                 continue;
             };
-            // Blockstate-preserving read (task #78): waterlogging, slab halves and
+            // Blockstate-preserving read: waterlogging, slab halves and
             // snow-layer counts are block STATE, and the fluid/step models below
             // are wrong without them. Every classifier matches on [`base_id`].
             for (local, name, open) in structure_cells_stateful(bytes) {
                 // Vanilla rotates blockstates as well as positions during
-                // `/place template … <rotation>` (task #191) — see [`rotate_state`].
+                // `/place template … <rotation>` — see [`rotate_state`].
                 let name = rotate_state(&name, piece.rotation);
                 let t = piece.rotation.transform(local);
                 let cell = [
@@ -765,13 +765,13 @@ pub struct Settled {
 /// where it ended up), so callers can distinguish a benign land-on-support from a
 /// despawn.
 ///
-/// **Fluids are not supports** (task #78). Vanilla's `FallingBlock.isFree` counts
+/// **Fluids are not supports**. Vanilla's `FallingBlock.isFree` counts
 /// a liquid cell as free space: a falling block sinks straight through water/lava
 /// and lands on the first genuinely solid block, *displacing* the fluid in the
-/// cell it comes to rest in. The pre-#78 model treated a `minecraft:water` cell as
-/// an immovable support, so a sand block authored over a pool "settled on the
-/// water surface" — a floating floor the game does not have, which the flood then
-/// dammed and nav then walked on. See [`is_fluid`].
+/// cell it comes to rest in. Treating a `minecraft:water` cell as an immovable
+/// support would settle a sand block authored over a pool "on the water surface"
+/// — a floating floor the game does not have, which the flood would dam and nav
+/// would walk on. See [`is_fluid`].
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
@@ -860,7 +860,7 @@ pub struct Assembled {
     /// One outcome per falling block: where it came to rest, or `None` if it
     /// despawned into the void.
     pub settled: Vec<Settled>,
-    /// Fence-gate cells whose authored block state is `open=true` (task #59):
+    /// Fence-gate cells whose authored block state is `open=true`:
     /// passable thresholds, as opposed to closed gates (passable-with-use).
     pub open_gates: BTreeSet<[i32; 3]>,
     /// One entry per **resolved gate anchor**, in `(area, anchor)` order, saying
@@ -890,7 +890,7 @@ pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assemble
 /// The authoritative assembled-world cell→block map: placed structures + solver
 /// seals + gate clears, **then gravity-settled**. Cells absent from the map are
 /// air. Shared by the nav occupancy model and the relight light model so a single
-/// gravity-faithful world feeds every consumer (task #42).
+/// gravity-faithful world feeds every consumer.
 pub fn assembled_blocks(
     plan: &Plan,
     structures: &BTreeMap<String, Vec<u8>>,
@@ -908,8 +908,8 @@ pub fn assembled_blocks(
 /// smaller one is the failure mode this model refuses.
 const WATER_FLOW_RANGE: u8 = 7;
 
-/// The collision-classified nav occupancy of the settled assembled world (tasks
-/// #45, #59). The sets are pairwise disjoint; a cell in none of them is passable
+/// The collision-classified nav occupancy of the settled assembled world.
+/// The sets are pairwise disjoint; a cell in none of them is passable
 /// air.
 ///
 /// | Set | Blocks | Walk through? | Stand on top? |
@@ -935,18 +935,18 @@ pub struct Occupancy {
     /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
     /// right-click), impassable for walkers that cannot use gates; never floor.
     pub use_gates: BTreeSet<[i32; 3]>,
-    /// Fluid-flooded cells: impassable, never floor (task #45). Every cell a free
+    /// Fluid-flooded cells: impassable, never floor. Every cell a free
     /// fluid ([`is_fluid`]) occupies, plus the reach [`flood`] gives it. Disjoint
     /// from every block set — a waterlogged cell is its host block's class, not
     /// this.
     pub flooded: BTreeSet<[i32; 3]>,
     /// For each `solid` cell whose walkable top face is **below** the cell top,
-    /// that height in sixteenths of a block (task #78). Absent = a full cube
+    /// that height in sixteenths of a block. Absent = a full cube
     /// (16/16). Drives the nav step rule's true rise between two standing cells.
     pub partial: BTreeMap<[i32; 3], u8>,
 }
 
-/// The nav occupancy of the settled assembled world (tasks #45, #59) — see
+/// The nav occupancy of the settled assembled world — see
 /// [`Occupancy`] for the collision classes.
 ///
 /// ## Why fluid is modelled, and why as a *superset* of vanilla flow
@@ -955,7 +955,7 @@ pub struct Occupancy {
 /// fluid physics spreads it at world-load into neighbouring air cells the prefab
 /// left empty. The compile-time model must reflect that, or nav proves a route/seat
 /// standable on a cell the game floods — the water analogue of the gravity-despawn
-/// divergence (task #42). Field case: the `cave-shore` pool floods `[261,66,1]`, a
+/// divergence. Field case: the `cave-shore` pool floods `[261,66,1]`, a
 /// cell an unpatched model routed the perimedes talk-to leg's step-up through.
 ///
 /// [`flood`] is a deliberate **conservative superset** of real flow, mirroring
@@ -978,7 +978,7 @@ pub struct Occupancy {
 ///   superset guarantee.
 ///
 /// Settle runs **before** flood: a settled sand column can dam or open a channel, so
-/// the flood must see the post-gravity geometry (task #42 order preserved).
+/// the flood must see the post-gravity geometry.
 ///
 /// ## Lava is the same question, so it gets the same answer
 ///
@@ -1022,7 +1022,7 @@ pub fn occupancy_of(
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     for (cell, name) in &blocks {
         // A waterlogged block's cell holds a real water source that spreads into
-        // its air neighbours (task #78) — seed the flood from it, then classify
+        // its air neighbours — seed the flood from it, then classify
         // the host block normally below (the cell itself stays occupied).
         if is_waterlogged(name) {
             sources.insert(*cell);
@@ -1041,7 +1041,7 @@ pub fn occupancy_of(
         } else if is_fence_gate(name) {
             barriers.insert(*cell);
             if !open_gates.contains(cell) {
-                use_gates.insert(*cell); // closed: passable-with-use (task #59)
+                use_gates.insert(*cell); // closed: passable-with-use
             } // open: a passable threshold (still dams water)
         } else if is_tall_barrier(name) {
             barriers.insert(*cell);
@@ -1211,7 +1211,7 @@ fn spread(solid: &BTreeSet<[i32; 3]>, sources: &BTreeSet<[i32; 3]>) -> BTreeSet<
 /// shipped map (holes, light leaks, visual damage) even where no critical path or
 /// wave seat happens to cross it — so DW0311/DW0312 alone would let it ship green.
 /// This is the authoritative, direct gate: no DSL verb can intend a despawn, so it
-/// is always a prefab/generator defect (task #42, owner addendum).
+/// is always a prefab/generator defect.
 pub const DW_GRAVITY_DESPAWN: DwCode = DwCode::every_version("DW0313");
 
 /// A placed piece's prefab id paired with its world AABB `(min, max)`, for
@@ -1245,7 +1245,7 @@ pub fn gravity_despawn_error(
 /// Pure core of [`gravity_despawn_error`]: the `DW0313` message for the despawned
 /// members of `settled`, attributing each despawned cell to the prefab piece whose
 /// AABB contains it; `None` when nothing despawns. Split out so the diagnostic's
-/// attribution and #73-rubric wording are unit-testable without a full [`Plan`].
+/// attribution and rubric wording are unit-testable without a full [`Plan`].
 fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
     let despawned: Vec<&Settled> = settled.iter().filter(|s| s.to.is_none()).collect();
     if despawned.is_empty() {
@@ -1448,7 +1448,7 @@ mod tests {
         assert!(!blocks.contains_key(&[0, 68, 0]));
     }
 
-    // --- water flood model (task #45) ---
+    // --- water flood model ---
 
     /// A flat solid floor at `y` over `[x0,x1] × [z0,z1]`.
     fn floor(y: i32, x0: i32, x1: i32, z0: i32, z1: i32) -> BTreeMap<[i32; 3], String> {
@@ -1752,7 +1752,7 @@ mod tests {
 
     #[test]
     fn shore_pool_floods_the_approach_tongue_but_not_a_walled_dry_alcove() {
-        // The `cave-shore`/perimedes field case (task #45), reduced: a sand shore at
+        // The `cave-shore`/perimedes field case, reduced: a sand shore at
         // y=65 with a water source pooled on it floods the open shore cells (the flow
         // TONGUE a talk-to leg must never step through), while a cell fully walled off
         // from the water on every horizontal side stays a DRY, standable alcove.
@@ -1819,7 +1819,7 @@ mod tests {
 
     #[test]
     fn cave_den_field_bug_mixed_floor_keeps_only_the_non_falling_cells() {
-        // The exact task #42 field shape: a single-layer cave floor over void,
+        // The exact field shape: a single-layer cave floor over void,
         // part `sand` (falling) and part `andesite` (fixed). In game every sand
         // cell falls out of the void and leaves a hole; every andesite cell
         // stays. The model must reproduce this — seating a wave or routing a path
@@ -1849,7 +1849,7 @@ mod tests {
         }
     }
 
-    // --- collision classes (task #59) ---
+    // --- collision classes ---
 
     #[test]
     fn fences_walls_and_gates_classify_off_the_solid_set() {
@@ -2057,7 +2057,7 @@ mod tests {
         let settled = settle(&mut blocks);
         let pieces = [("prefab/test-den", ([0, 64, 0], [4, 64, 0]))];
         let msg = despawn_message(&settled, &pieces).expect("despawn must be flagged");
-        // WHAT: count + kind; WHERE: the piece; HOW + anti-dodge clause (#73 rubric).
+        // WHAT: count + kind; WHERE: the piece; HOW + anti-dodge clause.
         assert!(msg.contains("despawn"), "names the failure: {msg}");
         assert!(
             msg.contains("prefab/test-den"),
@@ -2082,15 +2082,14 @@ mod tests {
         );
     }
 
-    // --- waterlogging is water (task #78) ---
+    // --- waterlogging is water ---
 
     #[test]
     fn a_waterlogged_block_seeds_the_flood_like_a_free_source() {
         // MC 1.13+: a waterlogged block's cell holds a real water source that
-        // spreads into adjacent air. The pre-#78 model stored bare ids and
-        // asserted (wrongly) that waterlogging "never spreads to a neighbour", so
-        // it under-marked the flood — the one direction the never-under-mark
-        // contract forbids.
+        // spreads into adjacent air. A model that stores bare block ids cannot
+        // see it, and under-marks the flood — the one direction the
+        // never-under-mark contract forbids.
         let mut b = floor(64, 0, 6, 0, 0);
         b.insert(
             [0, 65, 0],
@@ -2126,15 +2125,15 @@ mod tests {
         assert!(occ.flooded.is_empty(), "a dry fence floods nothing");
     }
 
-    // --- gravity blocks sink through fluids (task #78) ---
+    // --- gravity blocks sink through fluids ---
 
     #[test]
     fn a_falling_block_sinks_through_water_and_displaces_it() {
         // Vanilla `FallingBlock.isFree` counts a fluid as free space: sand dropped
         // over a pool falls THROUGH the water and lands on the rock beneath,
-        // replacing the water cell it rests in. The pre-#78 model treated the
-        // water cell as an immovable support and floated the sand on the surface —
-        // a phantom floor that dammed the flood and that nav then walked on.
+        // replacing the water cell it rests in. Treating that water cell as an
+        // immovable support floats the sand on the surface — a phantom floor
+        // that dams the flood and that nav then walks on.
         let mut b = BTreeMap::new();
         b.insert([0, 63, 0], "minecraft:stone".to_string()); // pool floor
         b.insert([0, 64, 0], "minecraft:water".to_string()); // 2-deep water
@@ -2174,7 +2173,7 @@ mod tests {
         assert_eq!(outcomes[0].to, None, "no fluid is a support: {outcomes:?}");
     }
 
-    // --- partial collision heights (task #78) ---
+    // --- partial collision heights ---
 
     #[test]
     fn collision_heights_match_the_vanilla_shapes() {

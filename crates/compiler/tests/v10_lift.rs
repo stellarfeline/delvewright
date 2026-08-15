@@ -8,7 +8,7 @@
 //!
 //! ## What the fixture proves
 //!
-//! `tests/fixtures/lift` authors the owner's design of record (2026-08-08) with
+//! `tests/fixtures/lift` authors the owner's design of record with
 //! **no new engine surface at all**: two party datums, one call lever per floor,
 //! and the seven-step timing table as the steps of one `sequence`. Nothing in
 //! the DSL, the compiler or the emission names a lift, and
@@ -435,8 +435,8 @@ fn the_car_exists_at_every_tick_of_the_ride() {
         assert!(
             fill < clear,
             "the destination car must exist BEFORE the source car is cleared — otherwise \
-             there is a tick at which a save could be loaded with no car at all (owner \
-             design of record, 2026-08-08). fill@{fill}t clear@{clear}t"
+             there is a tick at which a save could be loaded with no car at all. \
+             fill@{fill}t clear@{clear}t"
         );
     }
 }

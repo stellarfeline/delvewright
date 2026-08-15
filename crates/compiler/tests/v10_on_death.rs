@@ -72,7 +72,7 @@ fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
 
 fn build(loaded: &LoadedCampaign, c: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
@@ -148,13 +148,13 @@ fn the_death_beat_rides_the_existing_edge_on_the_corpse_side() {
         "…and acknowledges on the corpse side, so it fires ONCE per death rather \
          than every tick of the death screen: {check}"
     );
-    // task #68, found live by the bot tier's death-loop stage: `dw.death_seen` is
-    // a `dummy` objective, so a player who has never died has NO score in it — and
+    // `dw.death_seen` is a `dummy` objective, so a player who has never died has
+    // NO score in it — and
     // `execute if score @s A > @s B` with B unset does not fire (measured on the
     // pinned 1.21.11 server; `scoreboard players add <e> <obj> 0` is what creates
-    // the entry). The whole `on_death` bundle was therefore dead on a player's
-    // FIRST death — no forfeit, no recovery stake — and worked from the second
-    // onward, which is exactly why compile-time shape proofs never saw it. The
+    // the entry). Without the seed the whole `on_death` bundle is dead on a
+    // player's FIRST death — no forfeit, no recovery stake — and works from the
+    // second onward, which is why compile-time shape proofs cannot see it. The
     // seed must PRECEDE the read, so the order is what is asserted.
     let seed = check
         .lines()

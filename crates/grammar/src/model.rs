@@ -198,7 +198,7 @@ mod tests {
 
     /// ...and in a debug build the same write is a *bug*, not a no-op: nothing
     /// in expansion may aim outside its box, so the boundary says so loudly
-    /// where a developer will see it (PR #266 review).
+    /// where a developer will see it.
     #[test]
     #[cfg(debug_assertions)]
     #[should_panic(expected = "outside the model region")]

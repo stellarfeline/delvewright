@@ -496,7 +496,7 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     assert_eq!(out1, again, "stamped build is deterministic");
 }
 
-/// `dusk` / `dawn` (owner ruling, 2026-08-03): vanilla's `/time set` primitive
+/// `dusk` / `dawn`: vanilla's `/time set` primitive
 /// takes a raw tick count as well as its four keywords, so the states worth naming
 /// for a delve's pacing are not limited to the keywords. The DSL names the beat;
 /// the compiler emits the tick form — and the sealed-state PackTest, which reads
@@ -505,7 +505,7 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
 fn dusk_and_dawn_emit_the_vanilla_tick_form() {
     // `dusk` is the SUNSET ONSET (12000), not 13000: 13000 is the instant the sun
     // has finished setting, which the `night` keyword already sets — so 13000 would
-    // make `dusk` a synonym of `night` instead of its own beat (owner, 2026-08-03).
+    // make `dusk` a synonym of `night` instead of its own beat.
     for (time, ticks) in [(WorldTime::Dusk, 12000), (WorldTime::Dawn, 23000)] {
         let mut c = hello_world();
         c.world.dsl_version = "0.5.0".to_string();

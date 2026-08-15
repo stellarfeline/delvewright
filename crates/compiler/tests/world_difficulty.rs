@@ -1,4 +1,4 @@
-//! `world.difficulty` emission (v0.6, owner ruling 2026-08-03) + actor
+//! `world.difficulty` emission (v0.6) + actor
 //! `attributes`.
 //!
 //! Difficulty was a compiler constant — `easy` with waves, `peaceful` without —

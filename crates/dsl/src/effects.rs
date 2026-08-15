@@ -47,7 +47,7 @@
 //!   `sequence` inside it would have emitted a `function` call to a function
 //!   nothing generated. Zero campaigns happened to use it, which is the only
 //!   reason it never shipped as a bug. The sixth blind spot in the family that
-//!   `#301`/`#302`/`#321` each closed one instance of.
+//!   three earlier hand-rolled walks each closed one instance of.
 //! * **R7 `on_death` is new surface that starts inside the enumeration.** The
 //!   whole point of adding it as a root, rather than as a hook on the checkpoint
 //!   machinery that detects death, is that "the purse is dropped on death" then
@@ -163,6 +163,14 @@ impl EffectRootKind {
     /// polled on the tick with no executor (`Audience::Scheduled`) — their own
     /// doc comments in `emit` say so.
     ///
+    /// **This is the class default, and one root now overrides it per
+    /// declaration.** A trigger declaring `audience: presser` (DSL v0.11) is
+    /// dispatched by a `player_interacted_with_entity` advancement and DOES run
+    /// as the clicking player; every other trigger is polled with no executor.
+    /// A consumer that must be right about a *particular* bundle therefore asks
+    /// [`EffectRootSite::runs_with_acting_player`], which answers per site;
+    /// this stays the answer for the kind.
+    ///
     /// It is exhaustive, so an eighth root cannot be added without answering it,
     /// and `emit::root_audience` is bound to it in both directions by
     /// `emit`'s own test — the emitter and this answer cannot drift.
@@ -269,6 +277,24 @@ impl<'a> EffectRootOwner<'a> {
         }
     }
 
+    /// Whether emission runs **this site's** bundle with an acting player (`@s`).
+    ///
+    /// [`EffectRootKind::runs_with_acting_player`] answers for the root *class*,
+    /// which is the right answer for six of the eight and was the right answer for
+    /// all of them until DSL v0.11. A trigger is now the exception: an
+    /// `audience: presser` click is dispatched by a
+    /// `minecraft:player_interacted_with_entity` advancement and therefore runs as
+    /// the player who pressed, while every other trigger is polled on the tick
+    /// with no executor. The distinction is per-declaration, so it is answered
+    /// where the declaration is reachable — here — and the kind-level answer stays
+    /// the class default that `emit::root_audience` is bound to.
+    pub fn runs_with_acting_player(&self) -> bool {
+        match self {
+            EffectRootOwner::Trigger(t) => t.addresses_presser(),
+            other => other.kind().runs_with_acting_player(),
+        }
+    }
+
     /// The quest this root belongs to, if it has a DAG position at all.
     pub fn quest(&self) -> Option<&'a Quest> {
         match self {
@@ -303,6 +329,13 @@ impl EffectRootSite<'_> {
     /// Which root this site is.
     pub fn kind(&self) -> EffectRootKind {
         self.owner.kind()
+    }
+
+    /// Whether emission runs this site's bundle with an acting player — the
+    /// per-declaration answer (see [`EffectRootOwner::runs_with_acting_player`]),
+    /// which is what `DW0357`/`DW0503` must ask.
+    pub fn runs_with_acting_player(&self) -> bool {
+        self.owner.runs_with_acting_player()
     }
 }
 

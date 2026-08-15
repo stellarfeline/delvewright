@@ -143,7 +143,7 @@ fn malformed_timed_gate_id_is_dw0377() {
 }
 
 // ---------------------------------------------------------------------------
-// task #184 — the `disarm` third rung
+// The `disarm` third rung
 // ---------------------------------------------------------------------------
 
 /// The v0.6 gate with a jam lever on a real anchor. `anchor/keeper-stand` is a

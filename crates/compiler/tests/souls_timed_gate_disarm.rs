@@ -1,4 +1,4 @@
-//! task #184 — a `timed-gate` `disarm`: the readable → avoidable → **disable-able**
+//! A `timed-gate` `disarm`: the readable → avoidable → **disable-able**
 //! third rung (souls dossier §5.2). Driven by the `souls-timed-gate-disarm`
 //! fixture: the `souls-timed-gate` portcullis (60 open / 40 closed, `crush: true`)
 //! given a jam lever, with the same stage-7 `carve` bypass that makes the lever

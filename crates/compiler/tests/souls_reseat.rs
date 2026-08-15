@@ -1,4 +1,4 @@
-//! spec-0016 §1 (owner ruling 2026-08-05) — **the undefeated re-seat**.
+//! spec-0016 §1 — **the undefeated re-seat**.
 //!
 //! The regression this file exists for, from the drowned bell's round-five
 //! playtest: a rest re-seated the `respawns_on_rest` waves around the party and

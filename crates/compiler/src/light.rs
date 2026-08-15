@@ -95,7 +95,7 @@ fn base_id(name: &str) -> &str {
 }
 
 /// A block's blockstate property, defaulting when the name carries no state —
-/// the assembled model stores full blockstates (task #78), and a vanilla
+/// the assembled model stores full blockstates, and a vanilla
 /// structure palette always carries the complete property set, so the default
 /// only applies to the compiler's own bare-id fixture strings.
 fn prop<'a>(name: &'a str, key: &str, default: &'a str) -> &'a str {
@@ -113,14 +113,12 @@ fn prop<'a>(name: &'a str, key: &str, default: &'a str) -> &'a str {
 /// block brighter than vanilla lets a genuinely dark area pass the gate and ship
 /// unmitigated — the exact failure the gate exists to prevent.
 ///
-/// The pre-#78 table broke that contract in seven places by collapsing
-/// state-dependent blocks onto their *brightest* state (or on plain misremembered
-/// values): `sea_pickle` 15, `redstone_ore` 7, `respawn_anchor` 7,
-/// `amethyst_cluster` 7, `brewing_stand` 3, `brown_mushroom` 3, and
-/// `glow_item_frame` 7 (which is not even a block — it is an entity, and emits no
-/// block light in Java at all). It also carried a `froglight` id that does not
-/// exist. Every entry below is now the verified 1.21.11 value for the state
-/// actually present, cited to its source.
+/// Seven blocks break that contract the moment a table collapses a
+/// state-dependent block onto its *brightest* state: `sea_pickle`,
+/// `redstone_ore`, `respawn_anchor`, `amethyst_cluster`, `brewing_stand`,
+/// `brown_mushroom`, and `glow_item_frame` (which is not even a block — it is an
+/// entity, and emits no block light in Java at all). Every entry below is the
+/// verified 1.21.11 value for the state actually present, cited to its source.
 ///
 /// Blocks absent from the table emit 0 — an underestimate, which is the safe
 /// direction.
@@ -391,7 +389,7 @@ pub struct LightModel {
 impl LightModel {
     /// Build the assembled light model from the shared gravity-settled
     /// assembled-world model ([`crate::assembled`]): placed pieces, solver seals,
-    /// gate clears, and unsupported falling blocks settled (task #42). Relight
+    /// gate clears, and unsupported falling blocks settled. Relight
     /// therefore evaluates opacity/emission over the same world the game assembles,
     /// so a `sand` floor that fell into the void is air here, not phantom rock.
     pub fn from_plan(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Self {
@@ -1204,8 +1202,8 @@ mod tests {
 
     #[test]
     fn emitter_table_never_overestimates_a_state_dependent_source() {
-        // The seven entries that broke the never-overestimate contract before
-        // task #78, each now evaluated over the block's ACTUAL state. Modelling
+        // The seven entries that can break the never-overestimate contract,
+        // each evaluated over the block's ACTUAL state. Modelling
         // any of these brighter than vanilla lets a genuinely dark area slip past
         // the DW0210/DW0211 gate and ship unmitigated.
 

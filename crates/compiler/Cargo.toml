@@ -71,7 +71,7 @@ crc32fast = "1"
 
 [dev-dependencies]
 # Integration tests synthesize structure `.nbt` bytes (gzip-framed NBT) to drive
-# the assembled-world / gravity-despawn checks (task #42) against a real plan.
+# the assembled-world / gravity-despawn checks against a real plan.
 fastnbt = "2"
 flate2 = "1"
 

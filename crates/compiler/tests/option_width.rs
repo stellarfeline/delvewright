@@ -1,6 +1,6 @@
 //! `DW0331` — a dialogue option label wider than the button vanilla draws it on.
 //!
-//! Engine task #110. A dialogue option is a button caption: `build_node_dialog`
+//! A dialogue option is a button caption: `build_node_dialog`
 //! emits a `minecraft:multi_action` with no `width` override, so every button is
 //! vanilla's default 150 GUI px and a label over the 146 usable px *scrolls*. The
 //! budget is the widget's geometry, not the player's window — so unlike `DW0330`

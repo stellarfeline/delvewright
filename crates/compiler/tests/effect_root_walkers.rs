@@ -8,7 +8,7 @@
 //! comes out of an exhaustive `match`, and every walker is asked about every root.
 //!
 //! Why that shape and not another per-walker test. This repo's most-repeated
-//! defect is a walk that enumerates *some* roots (#301, #302, #321), and the
+//! defect is a walk that enumerates *some* roots, and the
 //! reason it kept recurring after each fix is that a per-walker test proves one
 //! walker against the roots its author remembered. Add a root and every one of
 //! those tests stays green while saying nothing about it. Here, adding a root is a
@@ -64,9 +64,7 @@ use delvewright_compiler::flow::gate_flags;
 use delvewright_compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{
-    Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign, validate_campaign_with,
-};
+use delvewright_dsl::{Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign};
 
 /// The `souls-shortcut` fixture is the base for every row, because it is the only
 /// one in the tree that already carries a **shortcut** — root 6 needs real
@@ -258,7 +256,7 @@ fn prefabs() -> PrefabRegistry {
 }
 
 fn assert_validates(c: &Campaign, k: EffectRootKind) {
-    let d = validate_campaign_with(
+    let d = common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs(),
@@ -412,7 +410,7 @@ fn every_root_is_visited_by_every_walker() {
 ///
 /// `emit::check_effect_anchors` is the backstop that turns a typo'd anchor into a
 /// diagnostic instead of an effect that silently emits nothing. It hand-listed
-/// three of five roots once (task #24), and the delve the owner played had a trap
+/// three of five roots once, and the delve the owner played had a trap
 /// that sprang and did nothing.
 #[test]
 fn a_bogus_anchor_is_rejected_at_every_root() {

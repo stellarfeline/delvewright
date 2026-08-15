@@ -31,7 +31,7 @@ pub fn hello_world_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/hello-world")
 }
 
-/// The multi-area / multi-piece keep-crawl campaign directory (M2 task #9).
+/// The multi-area / multi-piece keep-crawl campaign directory.
 pub fn keep_crawl_dir() -> PathBuf {
     repo_root().join("crates/dsl/fixtures/valid/keep-crawl")
 }
@@ -248,7 +248,7 @@ pub fn campaign_inputs(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>
 /// That coupling is invisible when it breaks: `str::replace` matching nothing
 /// returns the input unchanged, so the test goes on to assert against an
 /// **unpatched** campaign and passes for the wrong reason. Reformatting every
-/// fixture into canonical form (task #52) exposed four such silent no-ops at
+/// fixture into canonical form exposed four such silent no-ops at
 /// once — including the `DW0307` unroutable-move test, which had been asserting
 /// against a campaign with no `move-npc` in it. A structural patch cannot miss:
 /// an absent key is a panic, not a quiet pass.
@@ -275,4 +275,27 @@ pub fn objective_effects<'a>(
     doc["content"]["quests"][quest]["on_objective_complete"][objective]
         .as_array_mut()
         .unwrap_or_else(|| panic!("quests[{quest}].on_objective_complete[{objective}] is an array"))
+}
+
+/// Validation diagnostics a campaign is **answerable for**: `validate_campaign_with`
+/// put through the obligation fence, which is the list `delvec` prints and derives
+/// its exit code from (`compiler::main`).
+///
+/// Fixtures are written at the `dsl_version` their feature landed at, and a
+/// `Binds::Since` rule raised against a stage below its version is grandfathered
+/// — so a helper that asserted the RAW list would hold a 0.6 fixture to an
+/// obligation the engine never applies to it, and would red on a rule that in
+/// fact never reaches it. One helper rather than a fence rewritten at each call
+/// site: a rule that lives inside one caller is a rule the next caller has
+/// nothing to reuse of.
+pub fn fenced_diagnostics(
+    c: &delvewright_dsl::Campaign,
+    items: &delvewright_compiler::registry::FullItemRegistry,
+    prefabs: &delvewright_compiler::registry::PrefabRegistry,
+    entities: &delvewright_compiler::registry::FullEntityRegistry,
+) -> Vec<delvewright_dsl::Diagnostic> {
+    let raised = delvewright_dsl::validate_campaign_with(c, items, prefabs, entities);
+    delvewright_dsl::Fenced::apply(c, raised)
+        .reported()
+        .to_vec()
 }

@@ -1,5 +1,5 @@
-//! Nested-effect **consumer** validation recursion (task: 4th of the bug class
-//! fixed in #102/#104), DSL half: an unknown-wave (`DW0170`), unknown-item
+//! Nested-effect **consumer** validation recursion, DSL half: an
+//! unknown-wave (`DW0170`), unknown-item
 //! (`DW0143`) or unknown-block (`DW0193`) reference nested inside a `sequence` step
 //! (or a lifecycle bundle) is caught by the deep consumer scan, not shipped
 //! unvalidated. The compiler-side sound (`DW0326`) / art-glyph (`DW0328`) halves are

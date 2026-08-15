@@ -1,7 +1,7 @@
 //! `DW0496` — a daylight-burning body may not be staged where the sun can
-//! reach it (task #189).
+//! reach it.
 //!
-//! ## The incident this exists for (owner playtest, `hollow-vigil`, 2026-08-05)
+//! ## The incident this exists for (`hollow-vigil`)
 //!
 //! The walls-down round carved the gate yard's roof and two of its walls open
 //! to the sky; the world is pinned `time set noon`; the first zombie wave

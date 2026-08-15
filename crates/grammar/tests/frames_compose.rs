@@ -154,7 +154,7 @@ fn reflect_x(b: Box3, width: u32) -> Box3 {
 /// **A resolved contract region sees the rebound parameters**, and a claim under
 /// a frame is seen at all.
 ///
-/// The pair #418 named for the merge. `arm`'s room is whatever the band left
+/// The cross-feature pair. `arm`'s room is whatever the band left
 /// over, and the band is the caller's — so the same rule, called under two
 /// frames, claims two differently sized boxes in one expansion. Both halves are
 /// asserted: that the claim is *found* (a walk that did not descend through
@@ -242,7 +242,7 @@ fn rebinding_a_name_to_the_value_it_already_has_changes_neither_blocks_nor_boxes
 /// **A reflected rule claims the reflected box.**
 ///
 /// One rule at both sides of the hall's mirror plane, the same value pushed to
-/// each: the blocks are symmetric — `--symmetric x`, the gate #413 added, says so
+/// each: the blocks are symmetric — the `--symmetric x` gate says so
 /// with its binding count — and so are the two boxes the contract resolved. A
 /// `claim` that recorded the unreflected box would leave the gate green and the
 /// contract wrong, which is the exact shape a contract exists to stop.

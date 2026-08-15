@@ -1,5 +1,5 @@
 //! The **staged-walk timeline** sees every root emission can lower an effect
-//! from (task #169 — the last of the three-of-five family).
+//! from (the last of the three-of-five family).
 //!
 //! `compiler::timeline::walk_campaign` replays each effect bundle in order and
 //! hands every effect the gate regions an *earlier effect in its own bundle*
@@ -40,7 +40,7 @@ use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 /// The quest line **opens** `anchor/door` on its first objective, so the player's
 /// own forced route is clear and the DAG-causal seal model (`DW0311`) stays
 /// silent: a later `open-gate` from a forced root wins the region over an
-/// optional root's close (the rule task #167 settled). Anything these fixtures
+/// optional root's close. Anything these fixtures
 /// red on is therefore the timeline proof talking.
 fn quests_doc(traps: &str) -> String {
     format!(
@@ -160,7 +160,7 @@ fn prefabs() -> PrefabRegistry {
 fn assert_validates(c: &Campaign) {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = delvewright_dsl::validate_campaign_with(c, &items, &prefabs(), &entities);
+    let d = common::fenced_diagnostics(c, &items, &prefabs(), &entities);
     assert!(d.is_empty(), "fixture must validate cleanly: {d:#?}");
 }
 

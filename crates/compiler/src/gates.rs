@@ -87,7 +87,7 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
     d
 }
 
-/// Prove every gate anchor has ONE answer (`DW0423`, DSL v0.8 / task #142).
+/// Prove every gate anchor has ONE answer (`DW0423`, DSL v0.8).
 ///
 /// A `close-gate`'s `sealed_hint` is the line the sealed region answers a
 /// right-click with. The hitboxes that carry it are named after the **anchor**,

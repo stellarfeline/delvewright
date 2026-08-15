@@ -168,7 +168,7 @@ fn on_rest_strings_enter_the_l10n_inventory() {
 }
 
 // ---------------------------------------------------------------------------
-// Owner rulings, 2026-08-03 (the bell playtest): the flask + the rest dialog
+// The flask + the rest dialog
 // ---------------------------------------------------------------------------
 
 /// **A souls campaign whose kit declares no flask is a build error.** (Owner
@@ -265,7 +265,7 @@ fn authored_bonfire_labels_are_v08_and_translatable() {
     );
 }
 
-/// spec-0016 §1 (owner ruling 2026-08-05): a **`boss`-tier wave may not declare
+/// spec-0016 §1: a **`boss`-tier wave may not declare
 /// `respawns_on_rest`**. Beating a stage boss is progress the fire may not undo,
 /// so the two declarations contradict each other — `DW0499`, and nothing silent.
 ///

@@ -26,7 +26,7 @@
 //! covered by the DSL registry; the rest is mecha's job). This is enough to catch
 //! misspelled commands, wrong argument arity, and bogus subcommand paths.
 //!
-//! One value-level exception, added after it cost a whole tool (task #70): an
+//! One value-level exception, added after it cost a whole tool: an
 //! **SNBT integer literal whose suffix cannot hold it**. `text_opacity:255b` is
 //! structurally perfect and unparseable — NBT bytes are signed, so the server
 //! answers "Failed to parse number: Value out of range" and drops the entire
@@ -219,8 +219,8 @@ fn single_entity_violation(node: &Node, tok: &str) -> bool {
 }
 
 /// An SNBT integer literal whose suffix cannot hold its value, e.g. the
-/// `text_opacity:255b` that made 1.21.11 refuse to load a whole function
-/// (task #70). NBT bytes and shorts are **signed**: `b` is -128..=127 and `s` is
+/// `text_opacity:255b` that makes 1.21.11 refuse a whole function.
+/// NBT bytes and shorts are **signed**: `b` is -128..=127 and `s` is
 /// -32768..=32767, so "fully opaque" is `-1b`, never `255b`.
 ///
 /// Deliberately narrow, so it cannot mistake text for a number:
@@ -486,7 +486,7 @@ mod tests {
         }
     }
 
-    /// An SNBT byte/short literal that overflows its suffix (task #70).
+    /// An SNBT byte/short literal that overflows its suffix.
     ///
     /// `delve-admit`'s gallery summoned its labels with `text_opacity:255b`. The
     /// command is structurally flawless, so every structural check passed — and
