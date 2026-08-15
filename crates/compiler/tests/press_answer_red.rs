@@ -41,7 +41,7 @@ const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/doo
 /// The campaign seals a doorway the party is invited to walk up to and push on,
 /// and nothing anywhere answers a right-click on it. That must not compile: the
 /// press produces silence, and the compiler will not word the door on the
-/// author's behalf (owner ruling 2026-08-10).
+/// author's behalf.
 ///
 /// On `origin/main` there is no such obligation, so the campaign is accepted and
 /// ships the silence. This is the direction that drifts — a door is added, nobody

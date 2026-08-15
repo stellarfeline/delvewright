@@ -3,8 +3,8 @@
 // pipeline, not wired into CI. Same shape as `tools/spike-death-teleport/`.
 //
 // Every mutation's response is checked (`ok()`); censuses that legitimately
-// count zero go through `raw()` and parse the reply instead (task #70: a
-// command whose response nobody reads cannot fail).
+// count zero go through `raw()` and parse the reply instead: a command whose
+// response nobody reads cannot fail.
 //
 // World facts (must match crates/compiler/src/horizon.rs): water top y=62,
 // water layers y=55..62, sea floor (stone) top y=54.

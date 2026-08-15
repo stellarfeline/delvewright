@@ -212,7 +212,7 @@ test("retainStandableWaypoints is identity when every cell is standable", () => 
   assert.deepEqual(kept, leg);
 });
 
-// --- spec-0016 §4 timed gates (task #81) ------------------------------------
+// --- spec-0016 §4 timed gates ------------------------------------
 
 /** The-drowned-bell shape: a straight leg whose proven route runs through a
  * portcullis on a 100/100 clock, plus a gate-free leg beside it. */
@@ -260,7 +260,7 @@ test("a leg's timed gates are resolved against the declared table", () => {
   assert.equal(gate.openTicks, 100);
   assert.equal(gate.closedTicks, 100);
   assert.equal(gate.phase, 0);
-  // task #140: `crush` absent (every pre-crush artifact) means the gate merely
+  // `crush` absent (every artifact that predates the field) means the gate merely
   // blocks — the staged-entry discipline is reserved for gates that KILL.
   assert.equal(gate.crush, false);
   // The crossing leg carries the resolved gate; the leg beside it carries none, so
@@ -269,7 +269,7 @@ test("a leg's timed gates are resolved against the declared table", () => {
   assert.deepEqual(wp.legs[1]!.timedGates, []);
 });
 
-test("a gate exporting crush: true parses as lethal (task #140)", () => {
+test("a gate exporting crush: true parses as lethal", () => {
   const crushing = {
     ...GATED,
     timed_gates: [{ ...GATED.timed_gates[0], crush: true }],
@@ -349,7 +349,7 @@ test("a gate region whose min exceeds its max is rejected", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Per-branch waypoints (task #117)
+// Per-branch waypoints
 // ---------------------------------------------------------------------------
 
 test("the per-branch waypoints file is derived from the branch path file", () => {

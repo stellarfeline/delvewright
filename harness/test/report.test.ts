@@ -43,7 +43,7 @@ const TRIAL: DeathTrial = {
 test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branch run", () => {
   // `branch-run` comes first because it says WHICH storyline the stages below it
   // are about — a passed critical path means something different on each branch.
-  // `death-loop` (task #68) comes last because it deliberately kills the player:
+  // `death-loop` comes last because it deliberately kills the player:
   // it is the one stage that must not run until everything else is proven.
   assert.deepEqual([...STAGES], ["branch-run", "critical-path", "die-retry", "death-loop"]);
 });
@@ -97,9 +97,9 @@ test("every enumerated branch appears in the report — run, or skipped with a r
 });
 
 test("the run report prints the compiler's floor-gate ledger, both sides, verbatim", () => {
-  // #114: before this, an unmeasurable elite surfaced only as a build-time
-  // DW0477 — so a reader holding a green run report had no way to learn that its
-  // empty findings list covered a fight nobody ever had.
+  // Without this, an unmeasurable elite surfaces only as a build-time DW0477 —
+  // so a reader holding a green run report has no way to learn that its empty
+  // findings list covers a fight nobody ever had.
   const report = new RunReport("souls-bonfire", "normal");
   report.recordCombatCoverage(
     {
@@ -128,7 +128,7 @@ test("the run report prints the compiler's floor-gate ledger, both sides, verbat
 });
 
 test("an untiered hostile is printed with an explicit null tier, never a dropped key", () => {
-  // Task #121: the row exists precisely because nothing was declared, so the
+  // The row exists precisely because nothing was declared, so the
   // report must SHOW the absence. A key that vanishes from the JSON would be the
   // same silence one layer down.
   const report = new RunReport("souls-bonfire", "normal");
@@ -354,7 +354,7 @@ test("the report is written only when the environment names a path", () => {
   assert.equal(reportPathFromEnv({ DELVEWRIGHT_RUN_REPORT: "/out/run.json" }), "/out/run.json");
 });
 
-// --- reading an EMPTY assist ledger (task #102) ------------------------------
+// --- reading an EMPTY assist ledger ------------------------------
 
 test("the report states each encounter's assist policy and how far the run got", () => {
   // The-drowned-bell round 3 shipped `assist_windows: []` on a run in which the

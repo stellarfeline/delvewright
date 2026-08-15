@@ -272,7 +272,7 @@ fn a_sealed_gate_answers_a_right_click() {
     );
 }
 
-// --- the 2026-08-11 ruling: above the fence, nobody defaults ----------------
+// --- above the fence, nobody defaults --------------------------------------
 
 /// **`DW0429` over a `close-gate`.** At 0.11.0 a seal with neither an authored
 /// `sealed_hint` nor a `use` trigger on its gate does not compile. The wall is a
@@ -388,9 +388,9 @@ fn the_press_ledger_counts_the_compilers_own_press() {
 
 /// **The engine does not talk over the campaign.** Once the author answers the
 /// press at that anchor themselves, the compiler supplies nothing — one press,
-/// one answer. (For a `close-gate` the compiler still *may* speak; the owner's
-/// 2026-08-10 ruling withdrew that licence for shortcut doors only, and
-/// `plan::SilencePolicy` is where the two classes differ.)
+/// one answer. (For a `close-gate` the compiler still *may* speak; that
+/// licence is withdrawn for shortcut doors only, and `plan::SilencePolicy`
+/// is where the two classes differ.)
 #[test]
 fn an_authored_trigger_replaces_the_compilers_seal_answer() {
     let c = parse_hw(&quests_doc_with(

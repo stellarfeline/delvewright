@@ -1,5 +1,4 @@
-//! **A press is answered by one mechanism** (DSL v0.11, owner design ruling
-//! 2026-08-06).
+//! **A press is answered by one mechanism** (DSL v0.11).
 //!
 //! ## The finding
 //!
@@ -9,7 +8,7 @@
 //! cannot be opened from this side."* It answered nothing, and the gate the party
 //! is most likely to press was the one gate in the engine that stayed silent.
 //!
-//! Task #50 had already given the door a **body** (`crate::wrongside`,
+//! The door already had a **body** (`crate::wrongside`,
 //! `crate::pressable`): a click trigger anchored on the `gate` now rides hitboxes
 //! standing in the open air on the sealed side. What it did not give it was an
 //! **answer**. That half lived — entirely — inside one effect verb:
@@ -38,8 +37,8 @@
 //!
 //! ## And then: the compiler does not word it either
 //!
-//! Owner ruling, 2026-08-10. The wording *may* be "The way is sealed." and it
-//! must be creator-customisable — but the better design is **no default at all:
+//! The wording *may* be "The way is sealed." and it must be
+//! creator-customisable — but the design is **no default at all:
 //! if it is not defined, the compiler errors.** So a sealed shortcut door the
 //! campaign never answers is `DW0429`, not a line the engine invents.
 //!
@@ -156,8 +155,8 @@ fn all_functions(out: &BuildOutput) -> String {
 
 /// The `safe_local` form of the authored answer's trigger id — what names its
 /// function, its advancement and its entity tag. There is no compiler-derived
-/// name here any more: since the 2026-08-10 ruling a door's answer is the
-/// campaign's, so its id is the campaign's too.
+/// name here: a door's answer is the campaign's, so its id is the
+/// campaign's too.
 const DOOR_TRIG: &str = "from_the_wrong_side";
 
 // ---------------------------------------------------------------------------
@@ -539,7 +538,7 @@ fn the_silence_policy_is_uniform_above_the_fence() {
 }
 
 /// **`DW0422`'s binding, stated.** The hitbox-contest proof was written over
-/// `close-gate` seals alone, and task #50 then gave a shortcut door press
+/// `close-gate` seals alone, and a shortcut door then gained press
 /// hitboxes of its own — standing in the open air on the sealed side, which is
 /// exactly where a lever or an objective marker plausibly stands — without
 /// widening it. On this fixture it therefore examined **zero** bodies: a green

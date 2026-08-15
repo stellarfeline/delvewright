@@ -3814,9 +3814,14 @@ pub enum QuestEffect {
     /// (`plan::RegionEvent`), so a third consumer inherits the proof instead of
     /// re-deriving it.
     ///
-    /// The completability model treats the filled cells as **solid** from the
-    /// DAG point at which this fires, exactly as a `close-gate` seal is: a
-    /// critical path that must cross the region afterwards fails `DW0311`.
+    /// From the DAG point at which this fires, the completability model treats the
+    /// filled cells as whatever the **block** makes them. A full-cube block leaves
+    /// them **solid**, exactly as a `close-gate` seal is: a critical path that must
+    /// cross the region afterwards fails `DW0311`. `minecraft:water` /
+    /// `minecraft:lava` leave them **flooded** — impassable and never floor, because
+    /// nothing stands on a fluid — and because a fill carries no `replace` filter it
+    /// takes away whatever floor was in the box, so a forced leg that needed that
+    /// footing fails `DW0544`.
     FillRegion {
         /// The volume to fill, as an anchor-centred box (`anchor ± extent`).
         ///

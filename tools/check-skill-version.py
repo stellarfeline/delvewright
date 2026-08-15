@@ -17,7 +17,7 @@ rule 1). The island's combat floor gate was green for nineteen rounds because it
 examined zero enemies. A hand-typed engine range would be green forever for the
 same reason: nothing would ever read it.
 
-TWO FIELDS, BECAUSE THEY ARE TWO DIFFERENT CLAIMS (planner review, PR #309)
+TWO FIELDS, BECAUSE THEY ARE TWO DIFFERENT CLAIMS
 
     requires:
       delvec: ">=1.0.0 <2.0.0"   # COMPATIBILITY — the major window it drives

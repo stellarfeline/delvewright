@@ -1469,8 +1469,8 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11; owner
-/// ruling 2026-08-10, made uniform 2026-08-11).
+/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11),
+/// uniformly over the pressable class.
 ///
 /// A sealed thing is something the party walks up to and pushes on — a `shortcut`
 /// door on the wrong side of the loop, a `close-gate`'s wall — and the press has
@@ -1498,8 +1498,8 @@ fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
 ///
 /// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not new
 /// surface, and the fence is what makes an already-approved design keep its
-/// verdicts: the same declared version yields the same behaviour (owner ruling on
-/// version semantics, 2026-08-11). Below 0.11.0 a silent door still compiles and
+/// verdicts: the same declared version yields the same behaviour. Below
+/// 0.11.0 a silent door still compiles and
 /// still emits nothing, and an unauthored `close-gate` still takes the compiler's
 /// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
 /// differ from each other only because the two classes historically differed.

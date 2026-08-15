@@ -414,9 +414,8 @@ test("accepts the 0.7.0 … 0.10.0 dsl versions (additive; same path contract)",
   // v0.9 (spec-0026) adds the stage-1 horizon-library surface (object-form
   // `horizon`, new base/shorthand names) — world-generation input the compiler
   // consumes to build the map, not a change to the critical-path step contract
-  // the bot walks. task #157: the allowlist lagged the compiler's dsl_version
-  // ceiling and refused every 0.9.0 campaign at the gate before the bot took a
-  // single step.
+  // the bot walks. An allowlist that lags the compiler's dsl_version ceiling
+  // refuses every 0.9.0 campaign at the gate before the bot takes a single step.
   // v0.10 (spec-0031) adds the campaign-wide `on_death` effect root — a beat
   // that fires on a death the bot may never take. It exports no new step and
   // reorders none.
@@ -427,7 +426,7 @@ test("accepts the 0.7.0 … 0.10.0 dsl versions (additive; same path contract)",
   }
 });
 
-test("parses an optional ending_tail_ticks on assert-complete (task #125)", () => {
+test("parses an optional ending_tail_ticks on assert-complete", () => {
   const raw = validRaw();
   (raw["steps"] as Array<Record<string, unknown>>)[3]!["ending_tail_ticks"] = 250;
   const done = parseCriticalPath(raw).steps[3];
@@ -532,7 +531,7 @@ test("rejects a malformed objective id with a precise pointer", () => {
   }
 });
 
-// --- rest steps (compiler #220) ---------------------------------------------
+// --- rest steps -------------------------------------------------------------
 
 test("a rest step parses with its bonfire index, anchor, pos and command", () => {
   const raw = validRaw();

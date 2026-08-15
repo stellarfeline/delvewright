@@ -1,4 +1,4 @@
-//! Which side of a sealed shortcut door a player is standing on (task #50).
+//! Which side of a sealed shortcut door a player is standing on.
 //!
 //! **No `shortcuts[]` field names this.** Earlier drafts of this module's docs
 //! promised one — `on_wrong_side` in one paragraph, `sealed_hint` in another, and

@@ -39,7 +39,7 @@ jobs:
       # Jar cache removed 2026-07-30 (see the note in ci.yml tier-2): single-file
       # bind mounts break itzg's installer rename, and runners fetch piston-data in
       # under a second. The itzg entrypoint downloads the pinned jar (ADR-0010).
-      # `bot-run.sh --project <id>` is the ladder entry (task #185): the compose
+      # `bot-run.sh --project <id>` is the ladder entry: the compose
       # project is the only name the stack has, it is REQUIRED, and the script
       # tears down exactly that project and proves it clean.
       - name: bot completes the critical path against the shipped delve image
@@ -48,7 +48,7 @@ jobs:
         if: always()
         run: cat validation/run-out/dw-ci-playthrough/run-report.json || true
 
-  # ---- the death loop (task #68) --------------------------------------------
+  # ---- the death loop --------------------------------------------
   # The one mechanic NO other tier can witness. A PackTest fake player is
   # permanently undamageable — measured independently on 2026-08-03 and again on
   # 2026-08-09 — so `on_death`, a lethal volume's kill and the recovery stake had
@@ -93,7 +93,7 @@ jobs:
         if: always()
         run: cat validation/run-out/dw-ci-death-loop/run-report.json || true
 
-  # ---- the die-retry loop (task #68) ----------------------------------------
+  # ---- the die-retry loop ----------------------------------------
   # The stage that proves "dying is always safe" — death → respawn at the
   # governing checkpoint → walk back → re-engage, with no progression lost. It is
   # the load-bearing combat proof of a souls-shaped delve, and until this job it

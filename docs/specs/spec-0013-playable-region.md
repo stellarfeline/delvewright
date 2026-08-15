@@ -1,6 +1,6 @@
 # spec-0013 — Playable region & ocean horizon (pseudo-open-world staging)
 
-- **Status**: Draft (planner-authored per owner direction, 2026-08-01)
+- **Status**: Draft
 - **Motivation**: owner verdict on nobodys-cave — box-garden maps must be able to
   *look* like a coherent open world (sky, horizon, sea) while containing zero
   content outside the scripted area. Two halves: a scenic horizon, and a

@@ -1,9 +1,8 @@
 # ADR-0009: Pinned Minecraft version — 1.21.11
 
-- **Status**: Accepted (owner confirmed 2026-07-29)
+- **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: kickoff handoff (2026-07-29) requires a 1.20.5+ long-term pin; specific
-  version researched and owner-confirmed 2026-07-29
+- **Source**: kickoff handoff (2026-07-29) requires a 1.20.5+ long-term pin
 
 ## Context
 

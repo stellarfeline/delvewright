@@ -38,9 +38,14 @@ use std::path::Path;
 
 /// Cross-tileset generator invariants, shared by source include so a lesson
 /// learned in one tileset does not have to be re-learned in the other four
-/// (the five generators are separate Cargo workspaces on purpose).
+/// (the generators are separate Cargo workspaces on purpose).
 #[path = "../../invariants.rs"]
 mod invariants;
+
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -114,6 +119,25 @@ fn value_noise(seed: u64, x: i32, y: i32, z: i32, freq: f64, salt: u64) -> f64 {
 // ---------------------------------------------------------------------------
 
 type Props = Option<Vec<(&'static str, &'static str)>>;
+
+/// A neighbouring cell as `(block id, properties)`, or `None` when it is
+/// outside the grid or holds no block. The shape [`connections`] asks about.
+fn neighbour_state(g: &Grid, x: i32, y: i32, z: i32) -> Option<(String, BTreeMap<String, String>)> {
+    if !g.inb(x, y, z) {
+        return None;
+    }
+    match g.get(x, y, z) {
+        Cell::Block(name, props) => Some((
+            name.clone(),
+            props
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )),
+        _ => None,
+    }
+}
 
 struct Recipe {
     name: &'static str,
@@ -1628,22 +1652,31 @@ fn mountain_dressing(_spec: &Spec, g: &mut Grid, seed: u64) {
                 if !g.is_air(x, y, z) {
                     continue;
                 }
-                for (dx, dz, face) in [
-                    (-1, 0, "east"),
-                    (1, 0, "west"),
-                    (0, -1, "south"),
-                    (0, 1, "north"),
-                ] {
-                    if g.is_solid(x + dx, y, z + dz) {
-                        let ln = value_noise(seed, x, y, z, 0.5, 105);
-                        if ln > 0.95 {
-                            g.blk(x, y, z, "minecraft:glow_lichen", Some(vec![(face, "true")]));
-                        } else if ln < 0.08 && y >= M_CEIL - 3 {
-                            g.blk(x, y, z, "minecraft:vine", Some(vec![(face, "true")]));
-                        }
-                        break;
-                    }
-                }
+                // What would grow here is decided first, because which faces a
+                // decal can hold on to is a fact about the block: a vine has
+                // five, a lichen six.
+                let ln = value_noise(seed, x, y, z, 0.5, 105);
+                let decal = if ln > 0.95 {
+                    "minecraft:glow_lichen"
+                } else if ln < 0.08 && y >= M_CEIL - 3 {
+                    "minecraft:vine"
+                } else {
+                    continue;
+                };
+                // Where it may hold on is `connections`' question, not this
+                // scan's: the module owns which faces the block has and pairs
+                // each with the direction it looks in, so this pass can neither
+                // name a face pointing away from the rock nor forget that rock
+                // overhead is rock. The first answer is the best one — a wall
+                // if there is one, the ceiling if there is not.
+                let Some(face) = connections::attachable_faces(decal, [x, y, z], |p| {
+                    neighbour_state(g, p[0], p[1], p[2])
+                })
+                .first()
+                .copied() else {
+                    continue;
+                };
+                g.blk(x, y, z, decal, Some(vec![(face, "true")]));
             }
         }
     }
@@ -1733,13 +1766,21 @@ fn mountain_modules(g: &mut Grid, seed: u64) {
         g.blk(px0, M_SHELF_TOP + 1, z, "minecraft:oak_fence", None);
         g.blk(px1, M_SHELF_TOP + 1, z, "minecraft:oak_fence", None);
     }
+    // The gate stands in the pz1 rail, which runs along X, and a fence gate is
+    // joinable only from the two sides its panel spans — vanilla's
+    // `FenceGateBlock.connectsToDirection`, i.e. across `facing.getClockWise()`.
+    // So `facing` must be north or south for the rail to reach it: facing east
+    // spans Z, leaves both rail ends unjoined, and opens a permanent gap in the
+    // pen with daylight on either side of the gate. Of the two, north is the
+    // one vanilla places for a player who walks in off the shelf apron at
+    // pz1 + 1 — the pen's only approach, since the rails close every other side.
     let gx = (px0 + px1) / 2;
     g.blk(
         gx,
         M_SHELF_TOP + 1,
         pz1,
         "minecraft:oak_fence_gate",
-        Some(vec![("facing", "east"), ("open", "false")]),
+        Some(vec![("facing", "north"), ("open", "false")]),
     );
     g.blk(
         px0 + 1,
@@ -1832,6 +1873,33 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in [`connections`]; only the conversion
+/// between it and this workspace's own `Structure` types is local.
+fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     // Build at the ground datum (walk = 1), measure light there, then lift every
     // piece to the shared island datum (walk = 3, socket floor_y = 2) with a solid
@@ -1848,11 +1916,17 @@ fn write_piece(out: &Path, spec: &Spec) {
     let grid = lift_substrate(&grid0, yoff);
     assert_no_unsupported_gravity(spec.id, &grid);
 
-    let structure = serialize(&grid);
+    let mut structure = serialize(&grid);
+    // Connections before the gates: what a fence, a wall, a pane or a lichen
+    // joins is derived from the blocks beside it, never left to the defaults.
+    resolve_connections(spec.id, &mut structure);
     let cells = invariant_cells(&structure);
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(spec.id, &cells);
+    connections::assert_attachments_are_supported(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

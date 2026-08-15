@@ -25,7 +25,7 @@
 # The selection itself comes from `harness/src/branch-select.ts`, i.e. from the
 # same code the run uses, so a tier can never select a branch the run then refuses.
 #
-# ## Isolation (task #185)
+# ## Isolation
 #
 # `--project <id>` (or `DW_COMPOSE_PROJECT`) is REQUIRED. `compose.yaml` pins no
 # container name and publishes no host port, so the compose project is the ONLY
@@ -75,7 +75,7 @@ PLAN="$OUT/validation/branch-plan.json"
 # (a path relative to the compose file), and it is scoped to this project so two
 # concurrent loops from one checkout cannot overwrite each other's reports.
 # Reports are read from here and FILED under $RUN_OUT — before the split, a
-# custom DW_RUN_OUT silently lost every per-branch report (task #117).
+# custom DW_RUN_OUT silently lost every per-branch report.
 BOT_OUT="$here/run-out/$PROJECT"
 export DW_BOT_OUT="./run-out/$PROJECT"
 TIER="${DELVEWRIGHT_BRANCHES:-all}"
@@ -109,8 +109,8 @@ status=0
 reports=()
 # Branches whose compose run exited without writing ANY run report — an INFRA
 # failure (server never booted, bot never connected, mount broken), which is a
-# different fact from a red run and from a tier skip, and must render as one
-# (task #117). Entries are `branch=exit-code`.
+# different fact from a red run and from a tier skip, and must render as one.
+# Entries are `branch=exit-code`.
 infra=()
 while IFS= read -r branch; do
   [ -n "$branch" ] || continue
@@ -157,7 +157,7 @@ echo "==> merging per-branch reports into $MERGED"
 # `DW_INFRA` carries the attempted-but-reportless branches (`branch=exit-code`
 # lines): those rows must render as INFRA failures — distinct from a red run
 # (the bot walked and failed a step) and from a tier skip (never attempted) —
-# and no other session's "skipped" row may paper over them (task #117).
+# and no other session's "skipped" row may paper over them.
 DW_INFRA="$(printf '%s\n' ${infra[@]+"${infra[@]}"})" \
 python3 - "$MERGED" "$PLAN" ${reports[@]+"${reports[@]}"} <<'PY'
 import json, os, sys

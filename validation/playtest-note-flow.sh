@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 # The owner sets CREATOR_NAME to their real (resolvable) MC name for hands-on playtests.
 unset CREATOR_NAME
 
-# Isolation by construction (task #185): its own compose project, unique per
+# Isolation by construction: its own compose project, unique per
 # invocation, and an EPHEMERAL host port instead of 25565 — so this flow can run
 # beside another ladder, or beside the owner's play session, without a lock and
 # without a name either of them could collide with. Override the project with

@@ -2,10 +2,10 @@
 // when a wave is finished.
 //
 // Why this is its own module (the-drowned-bell, souls ladder run 13): self-defense
-// (#173) let the bot kill mobs OUTSIDE the kill loop — a wave husk that attacked it on
+// let the bot kill mobs OUTSIDE the kill loop — a wave husk that attacked it on
 // the approach leg died to the fight-or-flight path
 // (`[defend] husk#43 is down; resuming wave wave/grave-echoes waypoint 11/12`) and was
-// never counted, because #173 credited only mobs the kill LOOP had targeted. The step
+// never counted, because only mobs the kill LOOP had targeted were credited. The step
 // then could not finish: `killed` could never reach `step.count`, and the degraded
 // "no eligible mob remains" exit never fired either, so the objective burned its whole
 // 90s budget and failed a wave the bot had actually beaten.

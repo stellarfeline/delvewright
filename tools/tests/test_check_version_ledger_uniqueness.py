@@ -2,7 +2,7 @@ r"""Guards for `tools/check-version-ledger-uniqueness.py`.
 
 The red this gate exists to prevent: two branches each take "the next version"
 off the same ledger they can each see, for DIFFERENT surfaces, and both are
-green. PR #413 wrote `MIRROR_SINCE = "1.1.0"` and PR #417 wrote
+green. One branch wrote `MIRROR_SINCE = "1.1.0"` and another wrote
 `CONTRACT_SINCE = "1.1.0"` into a `crates/grammar/src/version.rs` each of them
 was creating. The two files conflict textually — and the tempting resolution,
 unioning both constants under one `1.1.0`, is the actual defect: an engine at
@@ -156,9 +156,9 @@ DSL_VERSIONS = ["0.2.0", "0.3.0", "0.4.0", "0.5.0"]
 DSL_PREDICATES = {"is_v03": 3, "is_v04": 4, "is_v05": 5}
 DSL_OK = dsl_ledger(DSL_VERSIONS, DSL_PREDICATES)
 
-# `origin/main` after PR #413 merged: the ledger names 1.1.0, and 1.1.0 is the
-# frame's direction.
-GRAMMAR_AFTER_413 = grammar_ledger(["1.0.0", "1.1.0"], {"MIRROR_SINCE": "1.1.0"}, {})
+# `origin/main` after the mirror branch merged: the ledger names 1.1.0, and
+# 1.1.0 is the frame's direction.
+GRAMMAR_AFTER_MIRROR = grammar_ledger(["1.0.0", "1.1.0"], {"MIRROR_SINCE": "1.1.0"}, {})
 
 
 def go(checker, root: Path, monkeypatch, base: str = "origin/main") -> int:
@@ -179,12 +179,12 @@ def scenario(root: Path, base_files: dict[str, str], local_files: dict[str, str]
 # --- the incident, both directions ------------------------------------------
 
 
-def test_413_shaped_collision_once_the_first_pr_merges(checker, tmp_path, capsys, monkeypatch):
+def test_collision_once_the_first_branch_merges(checker, tmp_path, capsys, monkeypatch):
     """The actual incident: this branch's `CONTRACT_SINCE = 1.1.0` against an
-    `origin/main` that now carries #413's `MIRROR_SINCE = 1.1.0`."""
+    `origin/main` that now carries `MIRROR_SINCE = 1.1.0`."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(["1.0.0", "1.1.0"], {"CONTRACT_SINCE": "1.1.0"}, {}),
             DSL: DSL_OK,
@@ -202,11 +202,11 @@ def test_413_shaped_collision_once_the_first_pr_merges(checker, tmp_path, capsys
 
 def test_the_renumber_with_a_reservation_is_green(checker, tmp_path, capsys, monkeypatch):
     """The fix CI must accept: the contract moves to 1.2.0, and 1.1.0 is
-    RESERVED under the name of the constant #413 defines — so the forward
+    RESERVED under the name of the constant the mirror branch defines — so the forward
     declaration and the change that fulfils it agree instead of colliding."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.1.0", "1.2.0"],
@@ -232,7 +232,7 @@ def test_a_reservation_naming_the_wrong_anchor_is_red(checker, tmp_path, capsys,
     reservation guesses `REFLECT_SINCE`, `MIRROR_SINCE` is what landed."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.1.0", "1.2.0"],
@@ -257,7 +257,7 @@ def test_a_fence_that_moves_after_it_shipped_is_red(checker, tmp_path, capsys, m
     changes what every already-written 1.1.0 document means."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.1.0", "1.2.0"], {"MIRROR_SINCE": "1.2.0"}, {}
@@ -276,7 +276,7 @@ def test_a_version_nothing_claims_is_red(checker, tmp_path, capsys, monkeypatch)
     number does not free you from declaring what it is."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.1.0", "1.2.0"],
@@ -300,7 +300,7 @@ def test_a_ledger_that_is_not_append_only_is_red(checker, tmp_path, capsys, monk
     """Rule 4: only the end of the list is free."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.0.5", "1.1.0"],
@@ -320,7 +320,7 @@ def test_a_reservation_whose_surface_landed_is_red(checker, tmp_path, capsys, mo
     Left standing, it refuses a version the engine can now honour."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
         {
             GRAMMAR: grammar_ledger(
                 ["1.0.0", "1.1.0", "1.2.0"],
@@ -351,7 +351,7 @@ def test_a_ledger_absent_on_both_sides_is_red(checker, tmp_path, capsys, monkeyp
 
 
 def test_deleting_a_ledger_is_red(checker, tmp_path, capsys, monkeypatch):
-    scenario(tmp_path, {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK}, {DSL: DSL_OK})
+    scenario(tmp_path, {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK}, {DSL: DSL_OK})
     assert go(checker, tmp_path, monkeypatch) == 1
     err = capsys.readouterr().err
     assert "exists at origin/main but not in this checkout" in err
@@ -362,8 +362,8 @@ def test_a_ledger_whose_shape_drifted_exits_two(checker, tmp_path, capsys, monke
     separates "the source moved" from "the source is wrong"."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
-        {GRAMMAR: GRAMMAR_AFTER_413.replace("SUPPORTED_PROGRAM_VERSIONS", "PROGRAM_VERSIONS"),
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR.replace("SUPPORTED_PROGRAM_VERSIONS", "PROGRAM_VERSIONS"),
          DSL: DSL_OK},
     )
     assert go(checker, tmp_path, monkeypatch) == 2
@@ -378,8 +378,8 @@ def test_anchors_that_stop_matching_exit_two(checker, tmp_path, capsys, monkeypa
     version happens to be unclaimed."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
-        {GRAMMAR: GRAMMAR_AFTER_413.replace("MIRROR_SINCE", "MIRROR_FROM"), DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR.replace("MIRROR_SINCE", "MIRROR_FROM"), DSL: DSL_OK},
     )
     assert go(checker, tmp_path, monkeypatch) == 2
     err = capsys.readouterr().err
@@ -392,7 +392,7 @@ def test_an_unfetched_base_refuses_to_run(checker, tmp_path, capsys, monkeypatch
     it to a shallow one, after which ancestry answers are wrong numbers rather
     than errors."""
     init_repo(tmp_path)
-    write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK})
+    write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK})
     assert go(checker, tmp_path, monkeypatch) == 1
     err = capsys.readouterr().err
     assert "does not resolve to a commit" in err
@@ -407,7 +407,7 @@ def test_an_already_shallow_checkout_is_told_to_fetch_shallowly(
     truncate here, so the cheap fetch is the right one — this is CI's case, and
     it is decided by looking at the repository rather than by assuming it."""
     init_repo(tmp_path)
-    write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK})
+    write_local(tmp_path, {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK})
     make_shallow(tmp_path)
     assert go(checker, tmp_path, monkeypatch) == 1
     err = capsys.readouterr().err
@@ -418,8 +418,8 @@ def test_an_already_shallow_checkout_is_told_to_fetch_shallowly(
 def test_a_clean_tree_is_green_and_prints_both_bindings(checker, tmp_path, capsys, monkeypatch):
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
     )
     assert go(checker, tmp_path, monkeypatch) == 0
     out = capsys.readouterr().out
@@ -444,8 +444,8 @@ def test_dsl_same_number_collision_is_the_documented_blind_spot(
     both = dsl_ledger(DSL_VERSIONS + ["0.6.0"], {**DSL_PREDICATES, "is_v06": 6})
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: both},
-        {GRAMMAR: GRAMMAR_AFTER_413, DSL: both},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: both},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: both},
     )
     assert go(checker, tmp_path, monkeypatch) == 0
     assert "0 collision(s)" in capsys.readouterr().out

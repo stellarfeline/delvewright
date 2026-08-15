@@ -21,9 +21,10 @@ members = [
 # included, which never builds render — clone 227 MB from two repositories it does
 # not use, before doing anything. That put five required status checks behind a
 # network reach they have no use for, and a transient TLS failure on that reach
-# reddened `tier 2` on a docs-only PR (#388: `the SSL certificate is invalid;
+# reddened `tier 2` on a docs-only PR (`the SSL certificate is invalid;
 # class=Ssl (16)`), a shape this repo already refuses at two other sites (the
-# `docs` job's `lychee --offline`; task #41's single Mojang fetch).
+# `docs` job's `lychee --offline`; the server-bootstrap overlay's single Mojang
+# fetch).
 #
 # Scope is the only lever that works here, and this is measured rather than
 # assumed: a workspace resolves ALL its members, so neither `-p delvec` nor

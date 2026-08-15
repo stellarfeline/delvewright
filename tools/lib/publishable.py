@@ -6,7 +6,7 @@ WHY THIS IS A SHARED MODULE AND NOT A COPY IN EACH GATE
 Two gates ask the same question — "which READMEs does a stranger read?" — and
 answer it for different reasons (`check-crates-io-readmes.py` bans internal
 references on them; `check-reference-versions.py` binds their version claims to
-the build). The rule this repo has already paid for (CLAUDE.md, task #70) is
+the build). The rule this repo has already paid for (CLAUDE.md) is
 that a correct rule living privately inside ONE caller leaves the next caller
 nothing to reuse, so the next caller writes a weaker version. The derivation
 lives here once; each gate imports it.

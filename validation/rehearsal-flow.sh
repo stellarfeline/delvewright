@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.."
 # offline bot name. Same reasoning as playtest-note-flow.sh.
 unset CREATOR_NAME
 
-# Isolation by construction (task #185): its own compose project, unique per
+# Isolation by construction: its own compose project, unique per
 # invocation, and an EPHEMERAL host port instead of 25565 — so this flow can run
 # beside another ladder, or beside the owner's play session, without a lock and
 # without a name either of them could collide with. Override the project with
@@ -61,7 +61,7 @@ echo "==> starting the playtest server (delve image + mounted creator overlay)"
 $COMPOSE up -d --build
 
 echo "==> waiting for the server to finish starting"
-# No pinned container name (task #185) — ask compose for this project's id.
+# No pinned container name — ask compose for this project's id.
 CID="$($COMPOSE ps -q playtest)"
 [ -n "$CID" ] || { echo "::error:: the playtest container did not start"; exit 1; }
 STARTED=0

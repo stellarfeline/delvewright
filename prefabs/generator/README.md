@@ -17,8 +17,8 @@ cargo run --manifest-path prefabs/generator/Cargo.toml --release -- campaigns/pr
 
 This is a **standalone crate** (its own `[workspace]`), deliberately outside
 `crates/` so it is not a member of the compiler workspace and never enters the
-shipped `delvec` binary — mirroring how `crates/compiler/examples/gen_hello_room.rs`
-generates `hello-room.nbt`, but kept out of `crates/` on purpose.
+shipped `delvec` binary. Every prefab generator is such a crate, `hello-room`
+included (`prefabs/hello-room-generator`).
 
 Piece geometry, the connection ("keep-socket-v1") convention, and the live-probed
 lighting minimums are documented in `../keep-tileset.md`. `measured_min_light` in

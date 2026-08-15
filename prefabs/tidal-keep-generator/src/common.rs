@@ -386,6 +386,35 @@ pub fn invariant_cells(s: &Structure) -> crate::invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in `connections`; only the conversion between
+/// it and this workspace's own `Structure` types is local, and it lives here for
+/// the same reason [`invariant_cells`] does — `Structure`'s fields are private
+/// to this module.
+pub fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = crate::connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    crate::connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 pub fn serialize(grid: &Grid) -> Structure {
     let [sx, sy, sz] = grid.size;
     let mut pal = Palette::new();

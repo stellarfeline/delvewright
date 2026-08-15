@@ -816,8 +816,8 @@ pub mod codes {
     /// wellformedness rule, which [`Binds`] names as the wrong direction.
     pub const TRIGGER_ID_RESERVED: DwCode = DwCode::every_version("DW0428");
 
-    /// (v0.11) **A sealed body with no press answer** (owner ruling 2026-08-10,
-    /// made uniform over the pressable class 2026-08-11). A `shortcuts[]` door or
+    /// (v0.11) **A sealed body with no press answer**, uniformly over the
+    /// pressable class. A `shortcuts[]` door or
     /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
     /// party presses it — no `use` trigger anchored on it, and (for a
     /// `close-gate`) no authored `sealed_hint`.

@@ -30,7 +30,7 @@ Three shapes, all of them this class (`docs/notes/capability-ownership-audit.md`
      grew its own per-shell-cell fleet.
 
 The repo has already paid for this class twice under other names: the hand-rolled
-effect-root walks (PRs #301/#302/#321, `check-effect-roots.py`), and the legacy
+effect-root walks (`check-effect-roots.py`), and the legacy
 `traps[].effect` that spec-0022 superseded with a general `traps[].payload`. The
 second of those is the proof the fix is possible — a verb's private machinery was
 replaced by the general effect vocabulary, and the verb got *more* expressive.
@@ -313,7 +313,7 @@ MODIFIER_HOLES = {
 # reachable by SOME total enumeration, or every walk that inherits the roots
 # silently skips it: l10n never translates a `narrate` inside it, the flag model
 # never sees a `set-flag`, the timeline never schedules it. That is the exact
-# defect PRs #301/#302/#321 fixed thirteen times.
+# defect the effect-root walks have already had fixed thirteen times.
 #
 # Keyed by the line's field name plus the declaring context, because several
 # share a name. Value: which enumeration reaches it.

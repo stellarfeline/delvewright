@@ -1,4 +1,4 @@
-// The death loop, as the bot tier proves it (task #68; spec-0031 lethal volumes,
+// The death loop, as the bot tier proves it (spec-0031 lethal volumes,
 // spec-0032 `on_death` + the recovery stake).
 //
 // ## Why this tier and no other

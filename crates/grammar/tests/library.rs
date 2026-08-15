@@ -78,9 +78,19 @@ fn every_library_piece_builds_something_inside_its_box() {
     );
 }
 
-/// **Every program in the registry passes every gate at the expansion it
-/// declares** — the sweep `delve-grammar audit --library` runs, run here so
-/// `cargo test` carries it too.
+/// **Every program in the registry gives the verdict the record says it gives,
+/// at the expansion it declares** — the sweep `delve-grammar audit --library`
+/// runs, run here so `cargo test` carries it too.
+///
+/// One program is recorded red: `causeway`'s flood is not contained, which is a
+/// missing `nav` capability rather than a defect a session could fix
+/// ([`UNCONTAINED_LIBRARY_RULES`], and `.github/zone-audit-exclusions.json`,
+/// which is what the CLI sweep reads). The assertion is INVERTED for it rather
+/// than dropped: a recorded program that starts passing reds this test, and so
+/// does any other program that fails anything. That is the same discrimination
+/// in both directions the exclusions record gives the CLI, and it is why this
+/// test does not say "every gate passes" — it would be false, and the way to
+/// make it true would be to stop judging the one piece that fails.
 ///
 /// This replaces a `rules_applied > 5` assertion that used to sit in the sweep
 /// above. That number measured how MUCH derivation happened rather than how far
@@ -91,7 +101,7 @@ fn every_library_piece_builds_something_inside_its_box() {
 /// and what stands in its place is strictly stronger: the full gate report,
 /// every gate, every program, with the binding counts asserted.
 #[test]
-fn every_library_program_passes_every_gate_at_its_declared_expansion() {
+fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() {
     use delvewright_grammar::gates;
     let mut totals: std::collections::BTreeMap<&str, usize> = Default::default();
     for entry in library::PROGRAMS {
@@ -104,7 +114,25 @@ fn every_library_program_passes_every_gate_at_its_declared_expansion() {
         .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
         let report = gates::judge(&out, entry.gates);
         for gate in &report.gates {
-            assert!(gate.pass, "{}: `{}` — {}", entry.id, gate.id, gate.detail);
+            // The one inversion, and it is exact in both directions: this gate
+            // on this program MUST be red, everything else MUST be green.
+            let recorded_red =
+                gate.id == "fluid-contained" && UNCONTAINED_LIBRARY_RULES.contains(&entry.id);
+            assert_eq!(
+                gate.pass,
+                !recorded_red,
+                "{}: `{}` — {}{}",
+                entry.id,
+                gate.id,
+                gate.detail,
+                if recorded_red {
+                    ". This program is RECORDED red on this gate. It passing means the capability \
+                     gap closed, and this record plus its note in \
+                     `.github/zone-audit-exclusions.json` must go with it"
+                } else {
+                    ""
+                }
+            );
             assert!(
                 gate.bound > 0,
                 "{}: gate `{}` examined zero objects",
@@ -419,6 +447,96 @@ fn every_library_program_paints_only_blocks_that_exist() {
     assert!(
         examined >= 60,
         "the gate examined only {examined} block states — it is bound to almost nothing"
+    );
+}
+
+/// **The one library rule whose body of water is not contained** — a live
+/// finding of `DW0800`, pinned here rather than hidden by it.
+///
+/// `causeway` is a flooded ward with a 1-wide raised spine through it, and the
+/// flood is water from the ward floor to the ceiling on both flanks of that
+/// spine. In the game the water runs sideways into the spine's air column at
+/// every level and forward into the guard station's open interior: 134 ways
+/// out of a body of 252 sources, so the causeway a player would walk is
+/// flooded and so is the post that watches it. Nothing upstream of a server
+/// could see it — a render draws still water — which is why the rule this
+/// fixture belongs to exists.
+///
+/// It is NOT repaired here, and the reason is a capability rather than effort.
+/// The piece fills its flood to the ceiling on purpose: `crate::nav`'s
+/// `standable` treats any non-air cell as floor, so water with a body-height
+/// air pocket over it reads as a walkable surface, and the ward's whole claim
+/// ("off the spline there is nothing to stand on") would go green while being
+/// false. Lowering the waterline — the only repair that keeps the design —
+/// needs `nav` to know that a body cannot stand on water, which is spec-0038
+/// §2.1's rule one layer over and its own round of work with its own
+/// playtest gate.
+///
+/// The pin is exact and falsifiable in BOTH directions: a second library rule
+/// that leaks reds this test, and so does repairing this one. It cannot
+/// quietly absorb a new defect and it cannot outlive the fix.
+const UNCONTAINED_LIBRARY_RULES: [&str; 1] = ["causeway"];
+
+/// **Both settling gates over the whole corpus** (`DW0801` stair shapes,
+/// `DW0800` bodies of fluid), at each program's documented region.
+///
+/// This is the invocation that keeps them from being UNRUN over the library
+/// (CLAUDE.md's fourth vacuity mode), and it states what they BIND here rather
+/// than implying it: stairs are bound by the church's roof courses, and fluid
+/// by the causeway's flood. Every zero binding is asserted to be NAMED in its
+/// own report — the vacuity rule enforced over the corpus instead of trusted.
+#[test]
+fn every_library_program_passes_the_settling_gates() {
+    use delvewright_grammar::gates;
+    let (mut stairs_bound, mut fluid_bound, mut zero_bindings) = (0usize, 0usize, 0usize);
+    let corpus = programs();
+    let swept = corpus.len();
+    let mut uncontained: Vec<String> = Vec::new();
+    for (program, region) in corpus {
+        let out = expand(&program, region, &ExpandOptions::seeded(1))
+            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+        let report = gates::judge(&out, gates::Options::default());
+        stairs_bound += report.measurements.stairs;
+        fluid_bound += report.measurements.fluid_cells;
+        for (id, present) in [
+            ("stair-shape", report.measurements.stairs),
+            ("fluid-contained", report.measurements.fluid_cells),
+        ] {
+            match (report.gates.iter().find(|g| g.id == id), present) {
+                // Nothing to judge: the rule must claim NO verdict rather than a
+                // green one, and its count stands as a measurement.
+                (None, 0) => zero_bindings += 1,
+                (None, n) => panic!("{}: `{id}` said nothing about {n} object(s)", program.name),
+                (Some(_), 0) => {
+                    panic!("{}: `{id}` claimed a verdict over nothing", program.name)
+                }
+                (Some(g), n) => {
+                    assert_eq!(g.bound, n, "{}: `{id}` binding", program.name);
+                    if !g.pass {
+                        assert_ne!(id, "stair-shape", "{}: {}", program.name, g.detail);
+                        uncontained.push(program.name.clone());
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(
+        uncontained, UNCONTAINED_LIBRARY_RULES,
+        "the set of library rules whose fluid runs is pinned. A NEW name here is a new leak; a \
+         MISSING one means the finding was repaired and this pin plus its note must go with it"
+    );
+    assert!(
+        stairs_bound > 0,
+        "the stair gate examined ZERO stairs across {swept} library program(s)"
+    );
+    assert!(
+        fluid_bound > 0,
+        "the fluid gate examined ZERO fluid cells across {swept} library program(s)"
+    );
+    assert!(
+        zero_bindings > 0,
+        "not one program in {swept} lacks a stair or a drop of fluid — the zero-binding half of \
+         this test bound to nothing"
     );
 }
 

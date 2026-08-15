@@ -1,7 +1,6 @@
 # spec-0022: Traps v2 — physical triggers, command-driven consequences
 
-- **Status**: Draft (owner directive 2026-08-03, dictated during the
-  drowned-bell playtest; supersedes spec-0011's redstone signal-path half —
+- **Status**: Draft (supersedes spec-0011's redstone signal-path half —
   spec-0011's trigger-hardware layer and its completability proofs stand)
 - **ADRs**: 0001 (compiler emits everything), 0003 (vanilla-first)
 
@@ -34,7 +33,7 @@ A trap becomes `{id, trigger, payload}`:
   plus trap-payload verbs:
   - `volley {projectile, from_anchor, kill_zone, salvos?, interval?}` —
     command-summoned projectiles with real velocity vectors. **Saturation,
-    not sniping** (owner ruling 2026-08-03): a volley must blanket its
+    not sniping**: a volley must blanket its
     declared kill zone — every standable cell of the zone receives fire, and
     the pattern repeats for `salvos` rounds (default 3) at `interval` ticks
     (default 10) — so a player moving through the zone cannot dodge it by

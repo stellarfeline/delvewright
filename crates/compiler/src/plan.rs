@@ -435,7 +435,31 @@ pub struct TrapPlan {
 pub enum RegionWrite {
     /// Every cell becomes solid: `close-gate` (the gate anchor's declared block),
     /// `fill-region` (the author's block), a `shortcut`'s world-load seal.
+    ///
+    /// "Solid" is a claim about the **block**, not about the write. Only a write
+    /// whose block is a full collision cube leaves floor behind, so the block is
+    /// classified once, by [`RegionWrite::of_block`], and a fluid lands in
+    /// [`RegionWrite::Flood`] instead.
     Fill,
+    /// Every cell becomes **free fluid**: a `fill-region` / `close-gate` /
+    /// `shortcut` seal whose block is water or lava
+    /// ([`crate::assembled::is_fluid`]).
+    ///
+    /// A separate case from [`RegionWrite::Fill`] because the two conclusions are
+    /// opposite where it matters. A fill of stone is impassable **and** floor; a
+    /// fill of water is impassable and **never** floor. Collapsing them says a body
+    /// stands on a water surface, and the nav model's `flooded` set — impassable,
+    /// never standable — is precisely the set that already says otherwise, so this
+    /// is a classification the model was missing, not a capability.
+    ///
+    /// **What it does not model**: the fluid's spread beyond the written region.
+    /// Vanilla flows a source outward at world-tick; this marks the written cells
+    /// and no more, so the model can under-mark the wet set exactly as
+    /// [`crate::nav::World::with_cleared`] documents for a clear that opens a dry
+    /// region into adjacent water. Both are the same missing input — a runtime
+    /// block map to re-derive the flood from — and both are stated in
+    /// `docs/reference/compiler.md` rather than left to be discovered.
+    Flood,
     /// Every cell becomes empty: `clear-region`, whose emitted
     /// `fill … minecraft:air` carries no `replace` filter and so removes whatever
     /// is there.
@@ -456,6 +480,35 @@ pub enum RegionWrite {
     Unseal,
 }
 
+impl RegionWrite {
+    /// **The one place a block id becomes a region write's conclusion.** Every
+    /// site that turns "this verb fills that box with that block" into a model
+    /// update goes through here, so no two of them can disagree about what a
+    /// fluid leaves behind.
+    ///
+    /// It reads [`crate::assembled::is_fluid`] — the same predicate the static
+    /// occupancy model uses — because the question "what does this block do to a
+    /// walker" belongs to the block, not to the verb that wrote it. A waterlogged
+    /// block is deliberately a [`RegionWrite::Fill`]: its cell is occupied by the
+    /// host block and is genuine floor (see `is_fluid`'s note).
+    pub fn of_block(block: &str) -> RegionWrite {
+        if crate::assembled::is_fluid(block) {
+            RegionWrite::Flood
+        } else {
+            RegionWrite::Fill
+        }
+    }
+
+    /// Whether this write **overwrites** the region with a block, rather than
+    /// emptying it — true for both [`RegionWrite::Fill`] and
+    /// [`RegionWrite::Flood`], because a `fill … minecraft:water` destroys
+    /// whatever was in the box exactly as a `fill … minecraft:stone` does. It says
+    /// nothing about whether the result is standable; that is the variant's job.
+    pub fn fills(&self) -> bool {
+        matches!(self, RegionWrite::Fill | RegionWrite::Flood)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RegionEvent {
     /// The region's inclusive corners (absolute world coords).
@@ -467,9 +520,10 @@ pub struct RegionEvent {
 }
 
 impl RegionEvent {
-    /// Whether this write makes the region solid.
+    /// Whether this write overwrites the region with a block
+    /// ([`RegionWrite::fills`]).
     pub fn fills(&self) -> bool {
-        self.write == RegionWrite::Fill
+        self.write.fills()
     }
 }
 
@@ -1664,7 +1718,7 @@ impl<'a> Plan<'a> {
         // the long way; the shortcut is a reward, never a requirement.
         region_events.extend(shortcuts.iter().map(|sc| RegionEvent {
             region: sc.gate_region,
-            write: RegionWrite::Fill,
+            write: RegionWrite::of_block(&sc.gate_block),
             fire_step: 0,
         }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
@@ -1752,7 +1806,7 @@ impl<'a> Plan<'a> {
         let mut region_events = collect_region_events(self.campaign, &self.anchors, &cp.obj_step);
         region_events.extend(self.shortcuts.iter().map(|sc| RegionEvent {
             region: sc.gate_region,
-            write: RegionWrite::Fill,
+            write: RegionWrite::of_block(&sc.gate_block),
             fire_step: 0,
         }));
         let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
@@ -3048,9 +3102,9 @@ fn collect_seal_hints(
 /// property of *being a thing a player can press*, and none of them has anything
 /// to do with closing a gate — so the second object that needed them, a sealed
 /// `shortcut` door, had no surface at all and answered a press with silence,
-/// which is exactly the door a souls loop-back invites the party to push on
-/// (owner design ruling 2026-08-06). CLAUDE.md's rule, on this precise case: *a
-/// second bespoke field is the defect, not the fix*.
+/// which is exactly the door a souls loop-back invites the party to push on.
+/// CLAUDE.md's rule, on this precise case: *a second bespoke field is the
+/// defect, not the fix*.
 ///
 /// So a press answer is **not a mechanism**. It is an ordinary
 /// [`EnvTrigger`]`{on: use, audience: presser}` carrying an ordinary
@@ -3088,7 +3142,7 @@ pub struct PressAnswer {
     /// Whether [`Self::text`] is the **campaign's** wording rather than the
     /// compiler's chrome fallback.
     ///
-    /// This is the distinction the 2026-08-11 ruling turns on. A `close-gate`
+    /// This is the distinction the rule turns on. A `close-gate`
     /// with an authored `sealed_hint` has said what its seal says, and the
     /// compiler lowering that onto the general path is not the compiler putting
     /// words in a player's mouth. A `close-gate` with none has said nothing, and
@@ -3151,7 +3205,7 @@ impl PressAnswer {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SilencePolicy {
     /// **The campaign must author the wording** — every pressable body, from
-    /// `dsl_version` 0.11.0 (owner ruling 2026-08-10, uniform ruling 2026-08-11).
+    /// `dsl_version` 0.11.0.
     ///
     /// The compiler still *lowers* an authored wording onto the general path: a
     /// `close-gate`'s `sealed_hint` is an authored answer and is synthesized from
@@ -3188,8 +3242,8 @@ impl SilencePolicy {
     /// The two grandfathered arms differ from each other only because the two
     /// classes *historically* differed — a seal defaulted since v0.8, a door was
     /// silent — and preserving that is the whole point of a fence: **the same
-    /// declared `dsl_version` yields the same verdicts and the same behaviour**
-    /// (owner ruling on version semantics, 2026-08-11). It is emphatically not a
+    /// declared `dsl_version` yields the same verdicts and the same
+    /// behaviour**. It is emphatically not a
     /// policy split by object class. Above the fence there is exactly one rule for
     /// every pressable body, which is what stops this from becoming the
     /// "capability keyed to the verb" defect CLAUDE.md's worked example is about —
@@ -3257,8 +3311,8 @@ fn press_answer_sites<'p>(
 /// it, and who supplies its wording when the campaign says nothing.
 ///
 /// CLAUDE.md: every validation artifact states its binding count. Here the count
-/// that matters is not how many answers the compiler produced — since the
-/// 2026-08-10 ruling that is zero for a door, by design — but how many bodies
+/// that matters is not how many answers the compiler produced — that is zero
+/// for a door, by design — but how many bodies
 /// were **examined** and under which policy. A reader can see at a glance that
 /// the door was considered and its wording withheld on purpose, rather than
 /// missed.
@@ -3470,6 +3524,13 @@ pub(crate) fn for_each_gate_effect<'a>(
 
 /// The absolute gate region **and fill block** a gate anchor resolves to. `None`
 /// if the anchor is not a gate region.
+///
+/// The block is not an extra the callers happen to want: a `close-gate` is a
+/// region write like any other, and what a write leaves behind is decided by what
+/// it writes ([`RegionWrite::of_block`]) — a gate anchor declaring a fluid seals
+/// nothing a body can stand on. Resolving the region without the block is what let
+/// that conclusion be assumed instead of derived, so there is deliberately no
+/// region-only variant of this lookup.
 fn gate_region_block_any(
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
     name: &str,
@@ -3513,22 +3574,6 @@ fn zone_box_in(
         [c[0] - e[0] as i32, c[1] - e[1] as i32, c[2] - e[2] as i32],
         [c[0] + e[0] as i32, c[1] + e[1] as i32, c[2] + e[2] as i32],
     ))
-}
-
-/// The absolute gate region `(from, to)` a gate anchor resolves to (globally, like
-/// `open-gate`/`close-gate` resolution). `None` if the anchor is not a gate.
-fn gate_region_any(
-    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    name: &str,
-) -> Option<([i32; 3], [i32; 3])> {
-    for ((_, n), resolved) in anchors {
-        if n == name
-            && let ResolvedAnchor::Gate { from, to, .. } = resolved
-        {
-            return Some((*from, *to));
-        }
-    }
-    None
 }
 
 /// Collect every `open-gate` / `close-gate` firing (DSL v0.6) that emission can
@@ -3595,23 +3640,24 @@ fn collect_region_events(
         // `fill-region`/`clear-region` names its own anchor-centred box and clears
         // it outright. Neither owns the model.
         let resolved = match (e.gate_region_write(), e.region_write()) {
-            (Some((anchor, fills)), _) => gate_region_any(anchors, anchor.as_str()).map(|r| {
-                (
-                    r,
-                    if fills {
-                        RegionWrite::Fill
-                    } else {
-                        RegionWrite::Unseal
-                    },
-                )
-            }),
+            (Some((anchor, fills)), _) => {
+                gate_region_block_any(anchors, anchor.as_str()).map(|(from, to, gate_block)| {
+                    (
+                        (from, to),
+                        if fills {
+                            RegionWrite::of_block(&gate_block)
+                        } else {
+                            RegionWrite::Unseal
+                        },
+                    )
+                })
+            }
             (_, Some((zone, block))) => zone_box_in(anchors, zone).map(|r| {
                 (
                     r,
-                    if block.is_some() {
-                        RegionWrite::Fill
-                    } else {
-                        RegionWrite::Clear
+                    match block {
+                        Some(b) => RegionWrite::of_block(b),
+                        None => RegionWrite::Clear,
                     },
                 )
             }),
@@ -3620,8 +3666,11 @@ fn collect_region_events(
         let Some((region, write)) = resolved else {
             return; // an unresolvable anchor is DW0142/DW0343/DW0355's finding
         };
-        if write != RegionWrite::Fill && !forced {
-            return; // an optional firing may fill, never open
+        if !write.fills() && !forced {
+            // An optional firing may make a region impassable, never passable — a
+            // flood is credited for the same reason a fill is: the proof must
+            // survive it.
+            return;
         }
         out.push(RegionEvent {
             region,

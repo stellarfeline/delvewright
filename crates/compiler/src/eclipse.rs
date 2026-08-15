@@ -92,8 +92,8 @@ use delvewright_dsl::DwCode;
 pub const DW_BODY_ECLIPSE: DwCode = DwCode::every_version("DW0359");
 
 /// `DW0422`: a **pressable body's hitbox** shares a cell with another
-/// compiler-owned interaction affordance (DSL v0.8, task #142; widened to the
-/// whole pressable class in v0.11).
+/// compiler-owned interaction affordance (DSL v0.8; widened to the whole
+/// pressable class in v0.11).
 ///
 /// A compiler-owned press body is one `minecraft:interaction` per clickable cell
 /// of the thing being pressed. Any other affordance whose own 1.0 × 2.0 box
@@ -607,8 +607,8 @@ struct PressableBody {
 /// doors, each in its planner's order.
 ///
 /// `DW0422` was written over `plan.seal_hints` alone, because a `close-gate` seal
-/// was the only thing in the engine that had press hitboxes. Task #50 gave a
-/// sealed `shortcut` door its own set (`ws_arm_<safe>`, standing in the open air
+/// was the only thing in the engine that had press hitboxes. A sealed
+/// `shortcut` door later gained its own set (`ws_arm_<safe>`, standing in the open air
 /// on the sealed side — precisely where a lever or an objective marker plausibly
 /// stands) and nothing widened the proof, so the collision that made the island's
 /// boulder unshippable was unchecked on the newer of the two bodies. On the

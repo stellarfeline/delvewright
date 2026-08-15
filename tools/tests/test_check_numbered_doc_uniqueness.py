@@ -1,9 +1,9 @@
-r"""Guards for `tools/check-numbered-doc-uniqueness.py` (task #111).
+r"""Guards for `tools/check-numbered-doc-uniqueness.py`.
 
 The red this gate exists to prevent: two branches each pick "the next spec
 number" against the SAME `docs/specs/` they can each see, and neither sees the
-other's file, because two new files never produce a git conflict. PR #361
-(`spec-0033-declared-body-traversal.md`) and a later PR
+other's file, because two new files never produce a git conflict. One branch
+(`spec-0033-declared-body-traversal.md`) and a later one
 (`spec-0033-grammar-corpus.md`) held number 0033 for three days; a per-branch
 uniqueness check would have been green on both, every day, because the
 collision exists only in the UNION of the two trees.
@@ -13,7 +13,7 @@ directly with `hash-object`/`write-tree`/`commit-tree` (no clone, no network),
 plus a plain on-disk `docs/specs/`/`docs/adr/` standing in for "this branch's
 checkout" (the gate reads the checkout with `Path.iterdir()`, never through
 git, so it never needs to be committed) — and assert the gate catches the
-`#361`-shaped union collision, a same-branch self-collision, a pre-existing
+cross-branch union collision, a same-branch self-collision, a pre-existing
 `origin/main` self-collision, and refuses to run at all against an unfetched
 base rather than silently comparing against nothing.
 """
@@ -129,7 +129,7 @@ def test_clean_checkout_matches_base(checker, tmp_path, capsys, monkeypatch):
     assert "adr: 1 here, 1 at origin/main" in out
 
 
-def test_361_shaped_cross_branch_collision(checker, tmp_path, capsys, monkeypatch):
+def test_cross_branch_collision(checker, tmp_path, capsys, monkeypatch):
     """The actual historical incident: this branch's own spec-0033 vs a
     DIFFERENT spec-0033 that reached origin/main from elsewhere."""
     init_repo(tmp_path)
@@ -138,7 +138,7 @@ def test_361_shaped_cross_branch_collision(checker, tmp_path, capsys, monkeypatc
         {
             **SEED_SPECS,
             **SEED_ADRS,
-            "docs/specs/spec-0033-declared-body-traversal.md": "the #361 spec",
+            "docs/specs/spec-0033-declared-body-traversal.md": "the first spec",
         },
     )
     set_origin_main(tmp_path, base_sha)
@@ -171,7 +171,7 @@ def test_renumbering_the_collision_away_is_green(checker, tmp_path, capsys, monk
         {
             **SEED_SPECS,
             **SEED_ADRS,
-            "docs/specs/spec-0033-declared-body-traversal.md": "the #361 spec",
+            "docs/specs/spec-0033-declared-body-traversal.md": "the first spec",
         },
     )
     set_origin_main(tmp_path, base_sha)

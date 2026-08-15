@@ -2,7 +2,6 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-30
-- **Source**: owner decision (2026-07-30 planning discussion)
 
 ## Context
 

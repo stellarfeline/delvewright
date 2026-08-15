@@ -3,9 +3,9 @@
 
 Container names and published host ports are global to the daemon: `docker
 compose -p dw-worker-<x>` isolates containers, volumes and networks but NOT
-those two. Task #185 removed both from `validation/compose.yaml` entirely, so a
-ladder is fully described by its compose project and any number of them run side
-by side — no mutex, no queueing. This gate is what keeps them out.
+those two. `validation/compose.yaml` carries neither, so a ladder is fully
+described by its compose project and any number of them run side by side — no
+mutex, no queueing. This gate is what keeps them out.
 
 The rules, over `validation/*.yaml`:
 
@@ -13,7 +13,7 @@ The rules, over `validation/*.yaml`:
      on any service. (The predecessor of this gate merely required a matching
      `!reset` in a worker override — which meant the pin still existed and every
      caller had to remember to pass the override. It cost two runs: `server`
-     (#190) and `bot` (the-drowned-bell round 2).)
+     and `bot` (the-drowned-bell round 2).)
   2. `owner-play.yaml` is the ONLY file that may publish a fixed host port, and
      only `127.0.0.1:25565:25565` — the owner's client address, the one genuinely
      shared resource, guarded by `validation/mutex.sh`.

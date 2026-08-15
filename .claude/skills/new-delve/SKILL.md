@@ -31,8 +31,8 @@ When the prompt pins down little — a one-line theme, no detailed brief — tre
 as a **SHOWCASE** brief: a thin prompt is creative license, and the goal is to
 deliberately exercise the breadth of the currently-supported feature set so a
 stranger playing the result discovers what the engine can do (this is our primary
-marketing artifact). Do NOT hardcode a feature list here — v0.4 is landing soon and
-any list would rot; instead **query the live schema** (`delvec schema --stage <n>`
+marketing artifact). Do NOT hardcode a feature list here — a written list rots as
+the schema moves; instead **query the live schema** (`delvec schema --stage <n>`
 across stages) for the available verbs/effects, then aim to include, wherever the
 story can carry them coherently: multi-area transport as a narrative beat,
 flag-gated dialogue consequences, real props / set-dressing, at least one tuned
@@ -75,8 +75,8 @@ campaign in that repo** (conventional message; do not push unless asked). The DS
 of record: the delve must be rebuildable byte-identically from them without any
 LLM (ADR-0006/0012).
 
-**Iteration protocol (owner ruling 2026-08-03 — NEVER skip on any revision
-round):** `DESIGN.md` is the single authoritative design document. Every
+**Iteration protocol — NEVER skip on any revision round.** `DESIGN.md` is the
+single authoritative design document. Every
 iteration round, however mechanical its trigger, (1) changes ONLY what the
 user asked to change — a mechanics fix must not incidentally rewrite story,
 staging, or dialogue; (2) updates `DESIGN.md` in the same commit when an
@@ -175,8 +175,8 @@ Operationally, per campaign:
 
 ### C. HARD RULE — dialogue options are labels, not sentences
 
-Owner ruling, 2026-08-03. **A dialogue option is a button caption.** Vanilla
-draws each option as a fixed-width button; a label wider than the button
+**A dialogue option is a button caption.** Vanilla draws each option as a
+fixed-width button; a label wider than the button
 *scrolls* rather than wrapping or shrinking, and a shelf of scrolling captions is
 a miserable thing to read and pick from. This is not a style preference — it is
 the widget.
@@ -216,19 +216,16 @@ normally, or in the NPC's reply — not in the button. This applies to every
 localization stage's critique pass already checks that translated labels stay
 short and scannable.
 
-A compiler diagnostic for this is being added separately (engine task #110), on
-the same font-pixel measurement `DW0330` uses. Until it lands the rule is
-enforced here, by you, at authoring time — and when it lands it will be telling
-you the same thing this section does.
+`DW0331` enforces this at compile time on the same font-pixel measurement
+`DW0330` uses. Author to the target and it never fires.
 
 ### D. HARD RULE — a name spelled the same way IS the same name
 
-Owner ruling, 2026-08-06, after playing a delve in Chinese. Every name you write
-over a body is translated, and **whether two bodies share one translation is
-decided by whether you spelled them identically** — not by whether you meant the
-same character. Apply this while you are naming, because it is unrecoverable
-later: by the time a translator sees the list, your intent is gone and only the
-spelling is left.
+Every name you write over a body is translated, and **whether two bodies
+share one translation is decided by whether you spelled them identically** —
+not by whether you meant the same character. Apply this while you are naming,
+because it is unrecoverable later: by the time a translator sees the list, your
+intent is gone and only the spelling is left.
 
 **Bodies that are one character: spell the name byte-identically.** A character
 usually occupies more than one declaration — an NPC that stands and talks, plus
@@ -299,7 +296,7 @@ real campaign. Do **not** reach for `--release` mid-loop: it is ~20s slower to
 rebuild after every edit and the output is byte-identical either way
 (`docs/reference/tools.md`).
 
-Two other paths now exist and are equally real, so do not assume a `delvec` on
+Two other paths exist and are equally real, so do not assume a `delvec` on
 `PATH` was built from this tree (ADR-0017): `cargo install delvec`, and the
 per-target archives on the `v<version>` GitHub Release. If you are handed a
 `delvec` rather than building one, run `delvec --version` and check it against
@@ -332,8 +329,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      ≤12 Han** so a translation has room to grow (a `zh-cn` sidecar is checked
      under its own key). What does not fit belongs in the node's body text, which
      wraps, in the option's `tooltip`, or in the NPC's reply — never in the button.
-   - **Stage 6: `button = caption, tooltip = the full line.`** (Owner design,
-     2026-08-04.) When the caption cannot carry what the character actually
+   - **Stage 6: `button = caption, tooltip = the full line.`**
+     When the caption cannot carry what the character actually
      says — the wine beat, where "Pour it out." stands for a whole sentence —
      author the option's optional `tooltip`: vanilla shows it in a hover box
      beside the button. It **wraps** (no `DW0331`, no width budget), so it takes
@@ -344,17 +341,17 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      (`dlg.<npc>.<node>.opt.<i>.tooltip`). Full geometry rationale: *Writing
      craft* §C.
    - **Stage 6: re-derive every node's option list from that node's situation.**
-     (Owner ruling, 2026-08-03.) Never carry an option list forward from an
+     Never carry an option list forward from an
      earlier node. Before shipping a node, check each option for semantic fit
      with what has *just happened* in the story — "would a survivor say this line
      right now?" Premise and exposition options must retire once their moment
      passes, via the cast ledger's dialogue swap (declare a later root) or a flag
      gate. A "who are we" / "what is that thing" option must be **impossible** at
-     the finale. The motivating playtest defect: after the climactic escape, a
-     crew NPC still offered "Tell me what he is." and "Is there another way
-     out?" — questions the character had already lived through the answers to.
+     the finale. The defect this prevents: after a climactic escape, a crew NPC
+     still offering "Tell me what he is." and "Is there another way out?" —
+     questions the character has already lived through the answers to.
    - Pace to `target_minutes`; no grind (forbidden zone); mandatory-only quests.
-   - Objectives (v0.3): author `title` (short player-facing name, e.g. "Unbar the
+   - Objectives: author `title` (short player-facing name, e.g. "Unbar the
      Deep Gate") and `hint` (one-line location/direction guidance, e.g. "Past the
      entrance hall, take the left passage to the barred door") for **every
      non-`talk-to` objective**. The compiler surfaces them in-game when the
@@ -364,9 +361,9 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      previous objective completed** (a different room, down a corridor, across an
      area) — the player otherwise gets a silent objective and wanders. Only omit
      them when the NPC is in plain sight of where the player just was; read the "may
-     omit" allowance narrowly (playtest lesson: an off-screen NPC 60 blocks away
-     through an unfamiliar cave left the player with no guidance at all).
-   - **`interact.requires_item` is HELD, not carried** (owner ruling, 2026-08-03):
+     omit" allowance narrowly — an off-screen NPC 60 blocks away through an
+     unfamiliar cave leaves the player with no guidance at all.
+   - **`interact.requires_item` is HELD, not carried**:
      the player must have the item in their **main hand** when they click —
      presenting it is the action. Author `missing_item_hint` whenever the
      empty-handed click deserves diegetic feedback (a sleeping giant mumbles in
@@ -382,11 +379,11 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      (`DW0431`). Elites and set-piece actors take `equipment` in the same shape
      wave mobs use, enchantments included.
    - **A `collect` takes its item from the room's own furniture, and the item has
-     a name.** (Owner ruling, island playtest rounds 1-2.) Point the objective's
+     a name.** Point the objective's
      `container` at the anchor of a chest/barrel the prefab already placed — the
      compiler then fills THAT container and places no chest of its own; a floating
      chest conjured beside the barrel the player has been walking past is the
-     defect this replaced. Give the item an `item_name` ("Cheese", "Tide Ledger"):
+     defect this avoids. Give the item an `item_name` ("Cheese", "Tide Ledger"):
      it is what the player reads on the stack, it translates like every other
      player-visible string, and an unnamed generic item says nothing about what
      the quest asked for. Set `fill_count` so the container reads plausibly full
@@ -395,8 +392,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      container's 27 slots. The container must really be there in the piece
      (`DW0438`), must not also be filled by a `loot` entry or another `collect`
      (`DW0435`), and the fields need `dsl_version` 0.8.0 on the quests stage.
-   - **An elite or boss leaves ONE thing behind, and you say which.** (Owner
-     ruling, 2026-08-04.) Give the fight's `drops[]` a declared subset — a
+   - **An elite or boss leaves ONE thing behind, and you say which.**
+     Give the fight's `drops[]` a declared subset — a
      `{"slot": "main_hand"}` for the axe the player watched swing, or a
      `{"item": …, "name": …}` for a quest token — never the whole kit. Only an
      `elite`/`boss` encounter may declare drops (`DW0491`); a slot must be one the
@@ -462,8 +459,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
      damage_type?}` on the quests stage (`dsl_version` 0.10.0). Never obtain the
      behaviour by changing the world instead — making the horizon `void` so the
-     fall kills is the move this exists to replace, and it serves exactly one
-     fiction. `message` is REQUIRED and is what the player reads as they die
+     fall kills serves exactly one fiction and is never the move here.
+     `message` is REQUIRED and is what the player reads as they die
      (blank is `DW0512`); `damage_type` words vanilla's own broadcast (`fall`,
      `on_fire`, …). The volume is geometry the completability proof honours: if the
      party's only route to an objective crosses it the build fails naming the
@@ -472,7 +469,7 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      inside one (`DW0511`). Put the volume where a player can SEE what will happen
      before they commit to it; a killing box nobody can read is 初见杀 with no
      lesson in it.
-   - **A status effect is a verb now — and it ends by expiring, never by being
+   - **A status effect is a verb — and it ends by expiring, never by being
      cleared.** `give-effect {effect, seconds, amplifier?, hide_particles?, in?}`
      grants any pinned-1.21.11 status effect; `in {anchor, extent}` narrows it to
      the players inside a box, so "blind whoever is riding" does not blind the
@@ -536,7 +533,7 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket
      ids).
    - **A beat that can FAIL the player must not arm before they could have read
-     it.** (Owner ruling, 2026-08-03.) Any fail-able beat — follow-an-NPC, escort,
+     it.** Any fail-able beat — follow-an-NPC, escort,
      timed escape, stealth onset — arms only after a grace window long enough to
      read the on-screen prompt that explains it: the player must never be failable
      before they could have understood what is being asked. Where the DSL has an
@@ -544,11 +541,11 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      (`begin-stealth`'s `grace_ticks`); where the pacing is authored, put the first
      enforcing step late enough in the `sequence`'s `at_ticks`. Budget the window
      from the prompt's length, not from a habit — a two-line chat prompt is several
-     seconds of reading before the first step is taken. The motivating playtest
-     defect: the flock the player was told to follow left while they were still
-     reading the instruction, and the beat then failed them for it.
-   - **Stage 4: declare every story fork** (spec-0025, DSL v0.8). If a choice
-     forks who lives, where the party ends up, or which ending plays, it is a
+     seconds of reading before the first step is taken. The defect this
+     prevents: the flock the player is told to follow leaves while they are
+     still reading the instruction, and the beat then fails them for it.
+   - **Stage 4: declare every story fork** (spec-0025, `dsl_version` 0.8.0). If
+     a choice forks who lives, where the party ends up, or which ending plays, it is a
      `branch_points` entry: `{id, opens_at, forks_on:[flags], branches:[{id,
      flags, leads_to}]}`. `leads_to` is one field — a `quest/…` the branches
      converge at, or an `ending/…` this branch runs to (the id prefix says
@@ -574,8 +571,7 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      each gated by the flags of the branch it belongs to — in *every* later
      quest, not just the first. Leaving one ungated as a fallback is `DW0483`:
      later declarations win, so the fallback keeps governing the branch that
-     already has its own. This is the island round-13 defect ("the fork moved the
-     ledger but never moved the bodies").
+     already has its own — the fork moves the ledger and never moves the bodies.
    - **Stage 5: write the `cast` block FIRST, before the objectives** (spec-0020).
      Every quest declares, for every NPC live in it, `{at, doing, dialogue}` —
      position first, story second. `at` is an anchor (or `"offstage"`/`"dead"`,
@@ -597,9 +593,8 @@ For each stage in order — world → npcs → classes → quest-plan → quests
        nuisance.** It means an NPC's right-click never learns that the story
        moved. Give it a scene that changes, or make it a bark-pool background
        character — do not silence it by shuffling spellings.
-     - Omitting a live NPC is `DW0460`: an unaccounted NPC is how two crew
-       members ended up standing forgotten in the alcoves while the player
-       escaped the cave.
+     - Omitting a live NPC is `DW0460`: an unaccounted NPC is how a crew member
+       ends up standing forgotten in an alcove while the player escapes.
 3. `delvec validate <campaign-dir>` — fix by diagnostic code (DW####; the
    complete catalogue is `docs/reference/compiler.md` §5). Loop until clean.
    Three failed repairs on the same code → stop and think about the design instead
@@ -608,35 +603,36 @@ For each stage in order — world → npcs → classes → quest-plan → quests
 
 ### 4b. The design-alignment Artifact — MANDATORY between the plan and the content
 
-**Owner directive, 2026-08-04.** Stages 1–4 settle *what the delve is*; stages 5–6
-are where the expensive authoring happens. Between them, when the design is
-settled and the pieces it needs exist, **you deliver an Artifact and stop.**
+Stages 1–4 settle *what the delve is*; stages 5–6 are where the expensive
+authoring happens. Between them, when the design is settled and the pieces it
+needs exist, **you deliver an Artifact and stop.**
 
 The Artifact tells the **complete story** and walks through **every scene's
 design**, and each scene carries images at **both near view and far view**. Not a
-document with pictures in it — a visual walkthrough, in the medium the owner
-actually reviews in. She does not read long documents (the review protocol); a
-design she cannot see is a design she cannot approve, and every problem it would
-have caught gets paid for twice once stages 5–6 are written against it.
+document with pictures in it — a visual walkthrough, in the medium the review
+happens in. A design the reviewer cannot see is a design they cannot approve, and
+every problem it would have caught gets paid for twice once stages 5–6 are
+written against it.
 
-- **Which images these are** (owner correction, 2026-08-07): at THIS gate they are
+- **Which images these are**: at THIS gate they are
   **reference images** — concept art drawn from the scene description *before any
-  prefab exists*, so she is confirming the design, not a build. A **render** is a
+  prefab exists*, so what is being confirmed is the design, not a build. A
+  **render** is a
   candidate prefab imaged by `delve-render`, and belongs to contact-sheet curation
   later. Two stages, two producers; building prefabs first and rendering them
   inverts the gate. `tools/refimg.py` draws reference images when a provider is
   configured (`[refimg]` in `delvewright.local.toml`) — advisory, and it needs a
   human in the loop for prompt iteration.
-  When candidate prefabs DO exist and the owner is choosing between them, that
+  When candidate prefabs DO exist and the reviewer is choosing between them, that
   later step has its own tool: `delve-render contact-sheet <renders> -o <png>`
   puts them all on one page, optionally ordered by similarity to this gate's
   reference image (`tools/refscore.py`) — advisory, human-in-the-loop, and the
   score only ORDERS the page, it never removes a candidate from it.
   A still image cannot answer where the way in is or how a room reads from
   standing height; when that is the question,
-  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` gives her one
-  self-contained page she drives — orbit, plan, a player point of view at every
-  anchor, and a cutaway for roofed interiors. Every block is drawn from the
+  `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` gives the reviewer
+  one self-contained page they drive — orbit, plan, a player point of view at
+  every anchor, and a cutaway for roofed interiors. Every block is drawn from the
   pinned version's own model and textures, so a wall is a wall and a stair is a
   stair. Advisory, human-in-the-loop.
 
@@ -646,7 +642,7 @@ have caught gets paid for twice once stages 5–6 are written against it.
   "is the set pretty"; only an eye-height frame on the walk answers "what does a
   player walking in experience", and the second question is the one the review
   exists for.
-- **The moment she confirms, the approved images become campaign files.** Copy
+- **The moment the images are confirmed, they become campaign files.** Copy
   them to `campaigns/<id>/design/concept/`, one per scene, named for the scene,
   and write `campaigns/<id>/design/README.md` carrying the approval date, the
   approved names, and the sentence that every later round is held to: *author
@@ -654,16 +650,16 @@ have caught gets paid for twice once stages 5–6 are written against it.
   with the campaign. `tools/refimg.py` writes to a gitignored working directory,
   which is right for a draft and wrong for an approved one — **an approval that
   lives only in a published page is bound to nothing.**
-- **Every later step that asks the owner to choose reads `design/` FIRST**, and
+- **Every later step that asks the reviewer to choose reads `design/` FIRST**, and
   presents the choice beside that scene's image, under the approved name, saying
   which element of the image the thing on offer corresponds to. A round that
   cannot say that is not ready to ask. This binds hardest on contact-sheet
   curation, which is the step most likely to run in a later session that never
   saw the gate.
-- **Do not begin stage 5 until she has confirmed it.** A confirmation is her
-  words in chat, not the absence of an objection.
+- **Do not begin stage 5 until the Artifact is confirmed.** A confirmation is an
+  explicit yes, not the absence of an objection.
 - In **e2e mode** the Artifact is still produced and still shown — e2e removes
-  the per-stage pauses, not the one gate whose whole purpose is her judgment.
+  the per-stage pauses, not the one gate whose whole purpose is human judgment.
 
 This is the same principle as the branch chronicle in step 7, applied one layer
 earlier: the compiler renders compiled reality back into the reviewer's own
@@ -674,18 +670,18 @@ step is designed wrong.
 
 ### 4c. A device enters a campaign only behind a green machine gate
 
-**Owner ruling, 2026-08-05.** If a structural device — a shortcut loop, a one-way
-drop, an ambush reversal, a multi-path interlock — has no machine gate proving
-its class, it does not go in the campaign yet. Never "author it now and prove it
-later": the owner's QA hour is the scarce resource this whole pipeline exists to
-protect, and an unproven device spends it on something a test should have caught.
+If a structural device — a shortcut loop, a one-way drop, an ambush reversal, a
+multi-path interlock — has no machine gate proving its class, it does not go in
+the campaign yet. Never "author it now and prove it later": the one human QA
+hour is the scarce resource this whole pipeline exists to protect, and an
+unproven device spends it on something a test should have caught.
 
 When a design wants a device whose gate does not exist, that is a **capability
 gap**: report it, and either the gate lands first or the design does without it.
 
 ### Supported techniques
 
-Load-bearing patterns proven on real runs — reuse rather than rediscover:
+Load-bearing patterns — reuse rather than rediscover:
 
 - **`base_entity` accepts any entity id, and NPCs are inert by construction.** Every
   NPC is summoned `NoAI,Invulnerable,Silent,NoGravity,PersistenceRequired` plus a
@@ -701,9 +697,9 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
   crosses areas — the player *cannot* walk back, so "the boulder seals the cave" is
   enforced by geometry, not merely asserted. The return trip is the same mechanism
   in reverse.
-- **Anything you seal, you must say what it says** (`dsl_version` 0.11.0; owner
-  ruling 2026-08-10). A `shortcut`'s barred door and a `close-gate`'s wall are
-  both things the party walks up to and pushes on, and one with nothing to say is
+- **Anything you seal, you must say what it says.** A `shortcut`'s barred door
+  and a `close-gate`'s wall are both things the party walks up to and pushes on,
+  and one with nothing to say is
   `DW0429` — the build refuses. The compiler will not decide the tone of your
   door or your wall for you and then not tell you it did. One rule for both: they
   are two objects of the same class.
@@ -733,7 +729,7 @@ Load-bearing patterns proven on real runs — reuse rather than rediscover:
 
 ### Authoring tools (know these exist; reach for them by symptom)
 
-Two classes, one rule each (owner, 2026-08-02):
+Two classes, one rule each:
 
 - **LLM-facing tools are workflow steps, not options.** Where a step below says
   "always", skipping it is skipping validation.
@@ -751,12 +747,12 @@ Symptom → tool:
   `--shot <render-plan id>`, `--labels`) and `delvec blocking-chart` (per-floor
   cutaways). *Always* for cutscenes: render start/mid/end of every dolly
   segment and **look at the frames** before calling the stage done — `DW0308`
-  proves the path is air, not that the shot is pointed at the subject
-  (round-6 shipped an inside-out cinematic that was fully DW-green).
+  proves the path is air, not that the shot is pointed at the subject, and an
+  inside-out cinematic can be fully DW-green.
 - **Terrain/visual fixes beyond swapping prefabs**: `delvec edit` — the
   spec-0017 map editor loop (edit script batch → replay → snapshot). Never
   hand-patch `.nbt` or invent block edits outside it.
-- **Handing a build to the owner to play**: mention the playtest note flow
+- **Handing a build to a playtester**: mention the playtest note flow
   (spec-0006: `/trigger dw.note` in-game, then `delve-harvest` →
   `playtest-report.json`) — one line, human-optional.
 - **Delivering or revising a cutscene**: mention spec-0019 shot calibration —
@@ -766,7 +762,7 @@ Symptom → tool:
   `rehearsal-report.json` and `delvec calibrate <report> --layout
   <out>/creator-datapack/layout.json` turns it into an anchor+offset patch you
   apply and rebuild. One line, human-optional. (Beat replay — `dw.beat` /
-  `dw.shot` / `dw.free` — is not landed yet; do not promise it. See
+  `dw.shot` / `dw.free` — does not exist; do not promise it. See
   `docs/reference/compiler.md` §8.)
 - **Declared non-English languages**: `delvec l10n-inventory` +
   `tools/i18n-translate.py` per `docs/reference/i18n.md` — workflow step,
@@ -970,47 +966,47 @@ Symptom → tool:
 - **Re-running the machine ladder after a fix**: the ladder entry scripts
   (`validation/bot-run.sh` / `packtest-run.sh` / `branch-runs.sh`, all
   `--project <id>`) fresh-volume their own project before and after every run,
-  so a persisted world volume can no longer keep completed objectives completed
+  so a persisted world volume cannot keep completed objectives completed
   and fail a "fresh" playthrough for reasons that have nothing to do with the
   delve. To clean up by hand: `validation/fresh-volumes.sh --project <id>`.
   `--project` is required everywhere and there is no daemon-wide mode.
 - **A `talk-to` / `interact` step that times out with "objective … did not
   complete"**: read the rest of that line before touching the campaign. The bot
-  now reports the server's own answer to the `/trigger` it sent — *the server
+  reports the server's own answer to the `/trigger` it sent — *the server
   ANSWERED …* means the trigger reached the delve and a datapack guard consumed
   it (a re-used world whose scoreboard already carries the objective does
   exactly this: run `fresh-volumes.sh --project <id>` and re-run before believing
   the content is at fault), while *the server never answered …* means the command
   never got there and the failure is the harness's, not the delve's.
-- **A prefab library needing owner taste, not machine checks**: mention
-  `delve-admit gallery` (browse world) → owner walks it and leaves notes →
+- **A prefab library needing human taste, not machine checks**: mention
+  `delve-admit gallery` (browse world) → a reviewer walks it and leaves notes →
   `delve-admit curate` / `curate-merge` fold them into the catalog cards — one
   line, human-optional.
-- **Several candidate prefabs for one slot, and she has to pick**: mention
+- **Several candidate prefabs for one slot, and a human has to pick**: mention
   `delve-render contact-sheet <renders> -o <png>` — all the candidates on one
   page, each labelled with its rank and id, with `tools/refscore.py` optionally
   ordering the page by similarity to the design-gate reference image. One line,
   human-optional. Say plainly that the score only orders the page: every
-  candidate is on it, and the low scorer is present, last — she is the selector,
-  the number is not.
-- **She cannot tell from a picture what a prefab is like to be inside**: mention
+  candidate is on it, and the low scorer is present, last — the human is the
+  selector, the number is not.
+- **A picture cannot say what a prefab is like to be inside**: mention
   `delve-render viewer <nbt|dir|manifest.json> -o <page.html>` — one
-  self-contained HTML page with a camera she drives: exterior, plan, and a player
+  self-contained HTML page with a camera the reviewer drives: exterior, plan, and
+  a player
   point of view at eye height (1.62) standing at every declared anchor and
   doorway, plus a cutaway slider that takes the roof off. Blocks are drawn from
   the pinned client jar's own models and textures, so a wall reads as a wall. A
   zone that ships as several tiles and a manifest shows as one building. Pass a
   directory to put a whole library on one page. One line, human-optional.
 
-  **Read its fidelity list before showing her the page.** It names every
+  **Read its fidelity list before handing the page over.** It names every
   blockstate the page cannot draw as the game draws it: a block the pinned
   version does not have (`DW0790`), and — the one that reads as fine and is not
   — a palette entry that leaves shape-carrying properties unwritten (`DW0791`),
   where the shape comes from the version's default state rather than from the
   file. That is a defect in the prefab, not in the page: fix it by writing the
-  property at the value the message names, then rebuild. Showing her a page whose
-  walls are the wrong shape spends her hour on the tool instead of on the
-  building.
+  property at the value the message names, then rebuild. A page whose walls are
+  the wrong shape spends the review hour on the tool instead of on the building.
 
 ### Localization stage (only when the prompt asks for other languages)
 
@@ -1044,12 +1040,12 @@ non-English language **and asks for localized in-game text** (中文文本 etc.)
    `l10n/<code>.json`:
    `{ dsl_version, campaign_id, kind: "l10n", lang: "<code>", content: { <key>: … } }`.
 4. Re-`validate` until zero `DW0180`/`DW0181`. **The default build ships every
-   declared language and the client picks its own** (i18n v2): `delvec build`
+   declared language and the client picks its own**: `delvec build`
    emits each authored string as `{"translate": key, "fallback": English}` and
    writes `assets/delvewright/lang/<mc_code>.json` per language into the delve's
    resource pack. A player whose locale you do not ship — or who declines the
    resource-pack prompt — reads the English fallback. Nothing extra to run.
-   `delvec build --lang <code>` still produces the single-language bake for local
+   `delvec build --lang <code>` produces the single-language bake for local
    dev; the release path does not use it. `critical-path.json` is language-neutral
    either way, so the ladder is unchanged.
 
@@ -1059,7 +1055,7 @@ Then:
 later DSL fix, including every playtest-round repair.** It rewrites every stage
 document and l10n sidecar in canonical form: object keys sorted, two-space
 indent, non-ASCII raw, one trailing newline. It exists because a three-key
-insertion into a non-canonical `zh-cn.json` once produced a 103-insertion /
+insertion into a non-canonical `zh-cn.json` produces a 103-insertion /
 100-deletion diff, which is unreviewable and conflicts with every other edit in
 flight. **Array order is semantic and it never touches it** (`quests[]`,
 `objectives[]`, `effects[]` are ordered), and it proves that on every file it
@@ -1121,17 +1117,17 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    branch has no table rows at all, or if any row's verdict is a finding. A
    finding is fixed in the DSL (move the line behind the right flag, swap the
    cast's dialogue root for that branch, or fix the branch the beat is on) and the
-   review re-run — never argued away, and never left for the owner's QA hour.
-8. Machine validation ladder — **delegate to a `sonnet` subagent** (owner policy
-   2026-07-30: execution is mechanical, no creativity needed; also keeps long
-   server logs out of the authoring context). Spawn an Agent
+   review re-run — never argued away, and never left for the human QA hour.
+8. Machine validation ladder — **delegate to a `sonnet` subagent** (execution is
+   mechanical, no creativity needed, and it keeps long server logs out of the
+   authoring context). Spawn an Agent
    (`subagent_type: general-purpose`, `model: sonnet`) instructed to, from repo
    root (docker required):
    - copy/point `validation/delve-output` at the build output
    - **pick a compose project id for this ladder** — `dw-<campaign>-r<round>` or
      anything unique — and pass it to every command below. It is REQUIRED: the
-     validation stack pins no container name and publishes no host port (task
-     #185), so the compose project is the only name the stack has, and two
+     validation stack pins no container name and publishes no host port, so the
+     compose project is the only name the stack has, and two
      ladders with distinct ids run side by side on one host with no lock and no
      queueing. There is no mutex to take. An entry script invoked without
      `--project` fails loudly rather than landing in a shared default.
@@ -1162,8 +1158,7 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
      findings list over an uncovered elite is silence, not a pass. **`covered`,
      `not_covered` and `actors[]` all empty is the worst case, not the best**: it
      means no body in the campaign declares a tier, so the gate examined nothing
-     and would have been green no matter what you shipped. The island's floor
-     gate sat in exactly that state, green, for nineteen rounds. A campaign with
+     and would have been green no matter what you shipped. A campaign with
      hostile bodies and no tiered actor or wave has an **unbound** gate — report
      it as unbound, never as a pass, and fix it by tiering the fight
      (`docs/reference/playtest-methodology.md`, rule 1). The `actors[]`
@@ -1222,14 +1217,12 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
      (lighting profile, anchor, NPC facing, name string) and rebuild; never
      hand-edit output.
 
-   **Judge the player's eye first, and the set second** (owner concern, recorded
-   during the nobodys-cave QA rounds). A per-prefab eye shot is a body inside one
-   piece; it cannot see the route, the seams between pieces, or the world's real
-   light. The question a playtest asks is *"what does a player walking in
-   experience"*, and only a first-person frame on the actual assembled route
-   answers it. The compiler emits those shots — a `pov` camera at eye height on
-   every corner-thinned
-   critical-path waypoint, looking along the walk and, at each leg's end, toward
+   **Judge the player's eye first, and the set second.** A per-prefab eye shot
+   is a body inside one piece; it cannot see the route, the seams between
+   pieces, or the world's real light. The question a playtest asks is *"what
+   does a player walking in experience"*, and only a first-person frame on the
+   actual assembled route answers it. The compiler emits those shots — a `pov`
+   camera at eye height on every corner-thinned critical-path waypoint, looking along the walk and, at each leg's end, toward
    the objective it arrives at, each with its own machine `expect` line. Every POV
    eye sits on a proven-standable waypoint, so the camera is provably in open air.
 
@@ -1252,7 +1245,7 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    the default — the author may later replace them with hand-crafted shots
    (shaders, staged compositions); media ships with the campaign PR.
 
-   **Storybook art is Chunky, in two passes** (owner decision, 2026-08-06).
+   **Storybook art is Chunky, in two passes.**
    Draft with `delvec snapshot` — fast, disposable, for judging *layout*: is the
    right thing in frame, from the right side, at the right distance. Then produce
    the shipped image with Chunky: emit the scene set with
@@ -1267,7 +1260,7 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    patch.
 
    **Every edition opens with the engine-version marker**, on its own line
-   directly under the title (task #147). This is the ONE piece of internal
+   directly under the title. This is the ONE piece of internal
    machinery a storybook may carry — it is what a server host needs before
    running the delve — so it stays in this exact host-facing form and nothing
    else internal joins it:
@@ -1280,15 +1273,15 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
    documents; the second is `delvec --version`'s, from the build that just went
    green. The line is byte-identical in every localized edition — it is a
    version stamp, not prose; a translated gloss may follow on the next line, but
-   it may not restate the numbers (a mistranslated version number is a wrong
-   version number — the island's zh-cn gloss drifted a whole minor behind the
-   stamp directly above it).
+   it may not restate the numbers — a mistranslated version number is a wrong
+   version number, and a gloss drifts a whole minor behind the stamp directly
+   above it without anything noticing.
 
    **Write no other version number anywhere in the storybook.** The marker is
    the only one a check can keep true; every other is hand-typed and goes stale
-   in silence. The v1.1.0 island release had a correct marker and still told a
-   host to run `:v1.0.0`, because the `docker run` line and a `**vX.Y.Z**`
-   campaign stamp were bound to nothing. So: no campaign-version stamp, and the
+   in silence — a correct marker sits happily above a `docker run` line naming
+   an old tag and a `**vX.Y.Z**` campaign stamp, because neither of those is
+   bound to anything. So: no campaign-version stamp, and the
    host command names `:latest` — that IS this storybook's claim — with one
    sentence sending a reader who wants an exact version to the release page,
    where the tag is machine-written. Then prove it:
@@ -1306,33 +1299,32 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
       publishes `localhost:25565`; the base compose file publishes nothing
     - playtest with notes: same with `--profile playtest` (+ `CREATOR_NAME=<mc name>`)
 
-## Playtest rounds (iterating with the owner)
+## Playtest rounds
 
 Generation is round 1. Everything after it is an iteration round against the
-owner's findings, and the owner's playtest hour is the scarcest resource in the
-pipeline. Full derivation from the 22-round island run:
-`docs/reference/playtest-methodology.md`. Mandatory here:
+playtester's findings, and the playtest hour is the scarcest resource in the
+pipeline. Full derivation: `docs/reference/playtest-methodology.md`. Mandatory
+here:
 
-1. **Keep a findings ledger in `GENERATION.md`** — one row per owner finding:
-   number, her wording, the round it was reported, status. Status is `fixed@rN`,
-   `open`, `engine` (blocked on a capability gap), or `ruled` (she closed it with
-   no code change). This table is the campaign's memory; a finding that lives
+1. **Keep a findings ledger in `GENERATION.md`** — one row per finding:
+   number, its wording as reported, the round it was reported, status. Status is
+   `fixed@rN`, `open`, `engine` (blocked on a capability gap), or `ruled` (closed
+   with no code change). This table is the campaign's memory; a finding that lives
    only in chat is a finding that will be reported to you twice.
 2. **Triage every finding the day it arrives**, as *content* or *capability gap*.
-   A capability gap — the DSL has no way to express what she asked for — is
+   A capability gap — the DSL has no way to express what was asked for — is
    never patched downstream (CLAUDE.md forbids it) and is therefore a **staging
    blocker**: either the engine work lands before the next playtest, or the round
-   summary tells her, per item, that it is still open and not to test it. Every
-   island finding that survived more than one round was a capability gap, and
-   staging builds while those rows were open is what made her see the same
-   defect twice.
+   summary says, per item, that it is still open and not to test it. A finding
+   that survives more than one round is a capability gap; staging a build while
+   those rows are open is what makes a playtester meet the same defect twice.
 3. **Close each finding twice: the instance, and the general form.** After fixing
    the instance, ask what rule it is an instance *of*, and file that rule as a
-   diagnostic (planner mints the DW code — never mint one yourself). When the
+   diagnostic (the DW code is minted for you — never mint one yourself). When the
    diagnostic exists, **re-run it against the current build**: that sweep is the
-   deliverable, not the code. `DW0489` found a second live instance the moment it
-   landed — one the owner had already lost a click to. Where no diagnostic is
-   possible, write that down; it becomes a risk item at the next staging review.
+   deliverable, not the code, and it routinely finds a second live instance the
+   moment it lands. Where no diagnostic is possible, write that down; it becomes
+   a risk item at the next staging review.
 4. **Append every finding to the engine repo's `docs/playtest-findings.json`**,
    the same day, with its general form and the check that carries it — this is
    the cross-campaign ledger, and `GENERATION.md`'s table is the per-campaign
@@ -1343,7 +1335,7 @@ pipeline. Full derivation from the 22-round island run:
    staging paths REQUIRE it. `tools/playtest-server.sh up` runs the gate between
    the build and the container and refuses to serve a red build; the compose
    owner-play path requires the admission token the gate mints. Run it yourself
-   first so the red list is in the round summary before she is invited:
+   first so the red list is in the round summary before anyone is invited:
 
        python3 tools/staging-gate.py --campaign <dir> --build <out> --report round-N-gate.md
 
@@ -1353,18 +1345,19 @@ pipeline. Full derivation from the 22-round island run:
    here: never built, check gone, matched nothing, the campaign has none of the
    objects, or the campaign's `dsl_version` never reached the surface the check
    keys off. **A red is not permission to stop**: it is the list of defect
-   classes she is not protected from, and it goes into the round summary item by
-   item. Never backfill a weak diagnostic to turn a row green. To show her a red
-   build deliberately (a framing check, not a QC round), the override is
+   classes the playtester is not protected from, and it goes into the round
+   summary item by item. Never backfill a weak diagnostic to turn a row green.
+   To stage a red build deliberately (a framing check, not a QC round), the
+   override is
    `--stage-anyway "<reason>" --acknowledge-red <N>` — it prints every class
    being overridden and the server announces it at boot.
 6. **Pre-flight, in this order, before the invitation**: full ladder green
    (PackTest → bot critical path + die-retry → every branch run) → staging gate
    (step 5) → localized builds + double-build byte-identical → server boots and
    self-checks → then invite. Not "the build compiled, come look".
-7. **Update `DESIGN.md` in the same round and run its conformance review.** The
-   island's design record went eight rounds unupdated and the audit that caught
-   up found seven changes no one had asked for.
+7. **Update `DESIGN.md` in the same round and run its conformance review.** A
+   design record left unupdated across rounds accumulates changes nobody asked
+   for, and the audit that catches up finds them all at once.
 8. **Close the round in `GENERATION.md` with its machine record**, not just
    prose: how many validation-loop iterations it took to reach green, and every
    DW code the round hit **with its count** (`DW0205 x3, DW0483 x3, DW0450 x1`).
@@ -1378,14 +1371,14 @@ pipeline. Full derivation from the 22-round island run:
 
 - Persist the DSL workspace before validation, not after — a crash must never
   lose the campaign.
-- **Apply an owner ruling at the scope it was given.** If a wider rule seems
+- **Apply a ruling at the scope it was given.** If a wider rule seems
   right, propose it in one line and wait — generalizing a ruling is a design
-  decision, not an inference to make silently. (A one-beat pacing ruling was
-  read as a campaign-wide ceiling and had to be corrected the next day.)
+  decision, not an inference to make silently. A one-beat pacing ruling read as
+  a campaign-wide ceiling is a campaign nobody approved.
 - **Unrequested change is a rejection cause on its own**, independent of whether
   the change is good. Author what the round asked for; anything else you believe
   the campaign needs is a proposal in the round summary.
-- **Open-air by default** (owner directive 2026-08-04): stage scenes in the
+- **Open-air by default**: stage scenes in the
   open unless a beat NEEDS enclosure (a cave passage, an interior puzzle,
   a reveal). The horizon — surround terrain, sky, backdrop (spec-0026) — is
   part of the composition; a campaign of enclosed boxes wastes it. When an
@@ -1393,8 +1386,8 @@ pipeline. Full derivation from the 22-round island run:
   between beats over chaining interiors.
 - Every player-visible string in the **stage docs stays English** — always. Other
   languages are delivered as `l10n/<code>.json` sidecars (the Localization stage
-  above), never by writing non-English into the stage docs. Owner prompts in
-  Chinese still yield English stage docs; add a `zh-cn` sidecar only when the user
+  above), never by writing non-English into the stage docs. A prompt in
+  Chinese still yields English stage docs; add a `zh-cn` sidecar only when the user
   asks for localized in-game text (中文文本).
 - **Commit only canonically formatted JSON.** The last thing you do before any
   `git add` of a stage document or sidecar is `delvec fmt <campaign-dir>`; CI
@@ -1406,7 +1399,7 @@ pipeline. Full derivation from the 22-round island run:
   verbs silently — tell the user what's missing and offer the closest authorable
   alternative (spec change requests go to the planning session, not this skill).
 
-## Authoring pitfalls (learned on the nobodys-cave-island run, 2026-08-01)
+## Authoring pitfalls
 
 - **`delvec validate` is whole-campaign**: it hard-errors unless all six stage
   files exist. When authoring stages incrementally, stub the later stages
@@ -1458,7 +1451,8 @@ pipeline. Full derivation from the 22-round island run:
      — declared count, all-new mobs, full health — because a retry must never let
      the party grind a fight down one swing per death.
   4. *The inverted floor gate*: mark a set-piece fight `tier: "elite"` or
-     `"boss"` — on the **wave** (DSL v0.7) or on the **actor** (DSL v0.8), same
+     `"boss"` — on the **wave** (`dsl_version` 0.7.0) or on the **actor**
+     (`dsl_version` 0.8.0), same
      three keywords. The ladder then gives it one UNASSISTED bot attempt; if the
      bot — a poor fencer by design — wins cold, the run reports the fight as too
      easy for its billing. Leave ordinary pressure waves unmarked: they carry no
@@ -1492,7 +1486,7 @@ pipeline. Full derivation from the 22-round island run:
   a budget and never a stockpile.
   **A potion must say what is in it.** A `minecraft:potion` (or splash/lingering
   potion, or tipped arrow) with no `contents` is vanilla's *Uncraftable Potion* —
-  it heals nothing however you name it — so at 0.8.0 declaring one is the build
+  it heals nothing however you name it — so declaring one is the build
   error `DW0487`. Either name a vanilla brew or list the effects:
 
   ```json
@@ -1537,29 +1531,29 @@ pipeline. Full derivation from the 22-round island run:
 - **Wave tuning**: `follow_range` below ~16 means distant wave mobs never
   engage; a kill objective whose mobs idle is unfinishable-in-practice even
   though machine-valid. Undead waves burn in daylight — the ONLY sanctioned fix
-  (owner ruling) is a helmet on the mob: `equipment.head`, any head item, on
+  is a helmet on the mob: `equipment.head`, any head item, on
   every burning stack the party is asked to fight. **Never `set-time`**; the
   delve's hour is a pacing decision, and moving it to save a mob spends a beat.
-  The compiler enforces this now (`DW0496`): a species in vanilla's
+  The compiler enforces this (`DW0496`): a species in vanilla's
   `#minecraft:burn_in_daylight` staged for a `kill`-adjudicated fight whose
   walkable ground reaches open sky, under a pinned clear daytime hour, with an
   empty head slot, is a build error naming the sunlit cell. Roofing the arena
   clears it too. One species the helmet does not save — a phantom burns through
   it — so an open-air phantom fight has to be roofed or restaged.
   Never route wave mobs like actors: waves
-  are native AI; if a future beat needs lane-then-fight movement, that is the
-  routed-then-feral primitive (M4, task #66), not a follow_range trick.
-- **Player-POV review is live**: the build's `render-plan.json` POV shots
-  render through Chunky (see `validation/render-shots.sh`, delve-render scene
-  emission, camera mapping fixed in #111). Review the corrected set against
+  are native AI; if a beat needs lane-then-fight movement, that is the
+  routed-then-feral primitive, which does not exist — not a follow_range trick.
+- **Player-POV review**: the build's `render-plan.json` POV shots
+  render through Chunky (see `validation/render-shots.sh`, `delve-render scene`
+  emission). Review the set against
   each shot's `expect` before handing the delve over. Declared-dark interiors
   render faithfully dark — review those in-game (night-vision mitigation);
   do not brighten scenes to pass review.
 - **Anchor ambiguity**: if the jigsaw can place a pool piece twice, its anchors
   are DW0305-ambiguous — don't hang objectives on connector-piece anchors
   unless the pool guarantees uniqueness; use them as hint landmarks instead.
-  You no longer have to guess which those are: the build now says so at the
-  pool declaration. `DW0498` (advisory) names, per pool area, every prefab the
+  The build says which those are at the
+  pool declaration: `DW0498` (advisory) names, per pool area, every prefab the
   draw seated twice and every anchor that repeat makes ambiguous. Read it
   before placing anything — an anchor it lists resolves silently to the first
   copy for actors and edits, and is a hard `DW0305` the moment an objective,
