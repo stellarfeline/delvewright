@@ -23,7 +23,8 @@
 #   1. both checkouts: current commit, dirtiness
 #   2. shallow checkouts — the one corruption that reports numbers, not errors
 #   3. worktrees beyond the main checkout (each is owned by an open dispatch,
-#      or it is garbage)
+#      or it is garbage) — and the sweep that RECLAIMS the garbage
+#      (tools/worktree-reclaim.py), which runs here rather than being remembered
 #   4. commits that exist on NO remote (the only unrecoverable git state)
 #   5. open PRs, both repos (the in-flight set the planner must be able to hold)
 #   6. decision ledger: open + unenforced rows
@@ -73,8 +74,30 @@
 # non-zero blocks the prompt instead of informing the agent. What has to reach
 # the agent is the sentence, and the sentence is what it reads.
 #
-# Read-only, and it never fails the session: a section that cannot be computed
-# says so and the page continues — an absent answer is itself state worth seeing.
+# WHY ONE SECTION OF THIS PAGE IS NOT READ-ONLY
+#
+# Listing stale worktrees is what this page did for weeks, and the disk still
+# filled: reading a list is not draining it, and the obligation to drain it lived
+# in a sentence in a document — the UNRUN vacuity mode. So the worktree section
+# does not merely report; it RUNS `tools/worktree-reclaim.py --apply`, which is
+# the only thing here that changes the machine.
+#
+# It is safe to run unattended because of what it demands before it deletes
+# anything: the REMOTE's own pull-request state says merged or closed, the tree
+# is clean, no commit in it is absent from every remote, nothing outside it
+# points into it, and no dispatch has leased it. A live worker cannot produce
+# the first of those and is protected by any of the others; everything it
+# refuses is reported instead. See that file's header for the full argument.
+#
+# Report-only was the alternative and it is the shape that already failed here:
+# the entry points at which a tree becomes garbage — a merge from the command
+# line, a pull request closed in a browser, a stopped worker whose branch
+# someone else pushed, the harness's own throwaway branches — have exactly one
+# thing in common, which is that the next prompt passes through this hook.
+#
+# Read-only otherwise, and it never fails the session: a section that cannot be
+# computed says so and the page continues — an absent answer is itself state
+# worth seeing.
 #
 # INVOCATION (one long-lived session, so a session-start-only binding would
 # almost never fire):
@@ -232,6 +255,19 @@ section "worktrees beyond main (each owned by an open dispatch, or garbage)"
 ew="$(worktrees "$ROOT")"; cw="$([ -n "$CONTENT" ] && worktrees "$CONTENT")"
 printf '%s\n' "${ew:-  engine: none}"
 printf '%s\n' "${cw:-  content: none}"
+
+section "worktree reclamation — RUN here, not remembered (tools/worktree-reclaim.py)"
+if [ -x "$ROOT/tools/worktree-reclaim.py" ]; then
+  python3 "$ROOT/tools/worktree-reclaim.py" --apply 2>&1 | sed 's/^/  /'
+else
+  cat <<EOF
+  REFUSED — $ROOT/tools/worktree-reclaim.py is missing or not executable.
+
+  Nothing is draining stale worktrees on this machine. That obligation has no
+  other home: it is not a checklist item, and the last time it was one the disk
+  filled twice. Restore the tool before dispatching another worker.
+EOF
+fi
 
 section "commits on NO remote (unrecoverable if this machine dies)"
 eu="$(unpushed_commits "$ROOT")"; cu="$([ -n "$CONTENT" ] && unpushed_commits "$CONTENT")"
