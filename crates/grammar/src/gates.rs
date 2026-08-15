@@ -38,18 +38,77 @@ use crate::model::VoxelModel;
 use crate::nav;
 use crate::settle;
 
+/// **What a gate can answer.** Three things, not two.
+///
+/// A binary gate has to fold "I examined this and it held" together with "this
+/// expansion could not examine it", and it folds them into `pass` — which is the
+/// vacuity CLAUDE.md names, one level below a zero binding: the gate bound to
+/// plenty of objects and its *predicate* bound to none of them. `oriented-fills`
+/// is the worked example. Its mismatch test short-circuits on the identity
+/// frame, so a program whose reorientation happens to resolve to the identity at
+/// its declared region gets a green from a test that read nothing, and the same
+/// program at a region whose axes rank differently is refused outright.
+///
+/// [`Undecided`](GateState::Undecided) is the third answer. It is not a weaker
+/// fail and not a stricter pass: it says the expansion examined the objects and
+/// **this region could not decide them**, which is a fact about the region and
+/// so cannot be repaired by editing the program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GateState {
+    /// The gate examined its objects and they held.
+    Pass,
+    /// The gate examined its objects and they did not.
+    Fail,
+    /// The gate could not decide at this expansion. Never a fail: the program
+    /// may be entirely correct, and nothing it could do here would make this
+    /// region decide it.
+    Undecided,
+}
+
 /// One gate's verdict over one expansion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Gate {
     /// Stable id, e.g. `blocks-exist`.
     pub id: &'static str,
-    /// True when the gate held.
-    pub pass: bool,
+    /// `pass`, `fail`, or `undecided`.
+    pub state: GateState,
     /// **How many objects the gate examined.** A gate that examined zero
     /// objects is not a pass; `Report::findings` says so by name.
     pub bound: usize,
+    /// Of `bound`, how many this expansion could not decide — the binding count
+    /// of the third answer, reported the way every other binding count is.
+    /// Zero on a gate with nothing undecided, which is every gate but
+    /// `oriented-fills` today.
+    pub undecided: usize,
     /// What the gate found, in one line.
     pub detail: String,
+}
+
+impl Gate {
+    /// A green verdict — examined, and held. **Not** the complement of
+    /// [`Self::failed`]: an undecided gate is neither.
+    pub fn passed(&self) -> bool {
+        self.state == GateState::Pass
+    }
+
+    /// A red verdict — examined, and did not hold. This is what refuses an
+    /// artifact; an undecided gate never does.
+    pub fn failed(&self) -> bool {
+        self.state == GateState::Fail
+    }
+}
+
+/// A two-valued gate's verdict. Most gates have only two answers, and saying so
+/// at the construction site is what keeps [`GateState::Undecided`] a thing a
+/// gate has to reach for deliberately rather than a third value every gate now
+/// has to think about.
+pub(crate) fn verdict(pass: bool) -> GateState {
+    if pass {
+        GateState::Pass
+    } else {
+        GateState::Fail
+    }
 }
 
 /// Numbers with no threshold. Not gates, and deliberately not presented as any.
@@ -266,7 +325,17 @@ fn reachability(model: &VoxelModel, standable: &BTreeSet<[i32; 3]>) -> Reachabil
 /// The whole verdict over one expansion.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Report {
-    /// `"pass"` when every gate held, else `"fail"`.
+    /// `"fail"` when any gate went red; else `"undecided"` when any gate could
+    /// not decide; else `"pass"`.
+    ///
+    /// Three values, in that precedence, because they answer different
+    /// questions and only the first refuses an artifact. `"undecided"` says the
+    /// building is sound as far as anything here could establish, and that one
+    /// gate's predicate never got to read what it was pointed at — see
+    /// [`GateState`]. It is deliberately NOT a red: a program with a
+    /// region-dependent reorientation and a world-frame literal may be entirely
+    /// correct, and a gate that reddens on it is one an author routes around
+    /// within a week.
     pub verdict: &'static str,
     /// Every gate, in a fixed order.
     pub gates: Vec<Gate>,
@@ -287,10 +356,25 @@ pub struct Report {
 }
 
 impl Report {
-    /// True when no gate went red. Findings do not fail a report; they are
+    /// True when every gate held. Findings do not fail a report; they are
     /// carried so they cannot be lost.
+    ///
+    /// **Not** the complement of [`Self::is_fail`]. An undecided report is
+    /// neither, and the two are asked for different things: `is_fail` is what
+    /// refuses to write an artifact, `is_pass` is what a test asserts when it
+    /// means "and nothing was left unexamined".
     pub fn is_pass(&self) -> bool {
         self.verdict == "pass"
+    }
+
+    /// True when some gate went red. The artifact-refusing question.
+    pub fn is_fail(&self) -> bool {
+        self.verdict == "fail"
+    }
+
+    /// True when no gate went red and at least one could not decide.
+    pub fn is_undecided(&self) -> bool {
+        self.verdict == "undecided"
     }
 
     /// Canonical pretty JSON with a trailing newline.
@@ -351,7 +435,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     }
     gates.push(Gate {
         id: "blocks-exist",
-        pass: bad.is_empty(),
+        state: verdict(bad.is_empty()),
+        undecided: 0,
         bound: model.palette().len(),
         detail: if bad.is_empty() {
             format!(
@@ -390,7 +475,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         .collect();
     gates.push(Gate {
         id: "shape-complete",
-        pass: omissions.is_empty(),
+        state: verdict(omissions.is_empty()),
+        undecided: 0,
         bound: used.len(),
         detail: if omissions.is_empty() {
             format!(
@@ -435,7 +521,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         .collect();
     gates.push(Gate {
         id: "states-complete",
-        pass: under.is_empty(),
+        state: verdict(under.is_empty()),
+        undecided: 0,
         bound: used.len(),
         detail: if under.is_empty() {
             format!(
@@ -461,19 +548,31 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     // unless a `Cond::Orientation` guard pinned the orientation the author
     // wrote it for (`DW0736`). The predicate ran during expansion, where the
     // scope orientations exist; this gate reports what it saw.
+    //
+    // **And what it could not see** (`DW0742`). The mismatch predicate returns
+    // `None` for the identity frame before it reads a property, so a fill whose
+    // scope was reoriented onto the identity AT THIS REGION got a green from a
+    // test that examined nothing. That is not a pass and it is not a fail: the
+    // program may be perfectly correct, and no edit to it would make this
+    // region decide the question. It is the third answer, and it is
+    // deliberately narrow — a fill under NO reorientation request stands in the
+    // identity frame at every region there will ever be, so its world-frame
+    // literal is unconditionally what the author wrote and is never counted
+    // here. That is what keeps this off the ordinary building, which reorients
+    // nothing and would otherwise carry the whole corpus into `undecided`.
     let audit = &expansion.oriented;
     gates.push(Gate {
         id: "oriented-fills",
-        pass: audit.unguarded.is_empty(),
-        bound: audit.fills as usize,
-        detail: if audit.unguarded.is_empty() {
-            format!(
-                "{} fill(s) examined, {} carrying block-state properties, {} of those resolved \
-                 out of the scope's own axis frame; every remaining orientation-sensitive one \
-                 was under the identity frame or an `orientation` guard",
-                audit.fills, audit.carrying, audit.resolved
-            )
+        state: if !audit.unguarded.is_empty() {
+            GateState::Fail
+        } else if !audit.undecided.is_empty() {
+            GateState::Undecided
         } else {
+            GateState::Pass
+        },
+        undecided: audit.undecided.len(),
+        bound: audit.fills as usize,
+        detail: if !audit.unguarded.is_empty() {
             format!(
                 "{}: {} — write one alternative per orientation, each guarded with the \
                  `orientation` cond and carrying the facing that matches it (the guard \
@@ -488,6 +587,41 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                     ))
                     .collect::<Vec<_>>()
                     .join("; ")
+            )
+        } else if !audit.undecided.is_empty() {
+            format!(
+                "{}: {} fill(s) examined, {} carrying block-state properties, {} of those \
+                 resolved out of the scope's own axis frame — and {} THIS REGION CANNOT DECIDE: \
+                 {}. Each stands in the identity frame here only because its reorientation \
+                 request resolved to a no-op at this region's proportions, so the mismatch test \
+                 short-circuited before it read the state; at a region whose axes rank \
+                 differently the same scope is turned and the same literal is judged. Wrap the \
+                 state as `{{\"local\": …}}` so it is read in the scope's own axis names and \
+                 resolved at fill time, or pin the frame with an `orientation` guard. Neither \
+                 the verdict nor the artifact is refused on this — the program may be right, and \
+                 nothing it could do would make THIS region say so",
+                delvewright_schem::blocks::DW_ORIENTED_FILL_UNDECIDED,
+                audit.fills,
+                audit.carrying,
+                audit.resolved,
+                audit.undecided.len(),
+                audit
+                    .undecided
+                    .iter()
+                    .map(|f| format!(
+                        "rule {:?} fills {} whose {} is frame-sensitive, under `{}` in rule {:?}",
+                        f.rule, f.state, f.property, f.through, f.through_rule
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        } else {
+            format!(
+                "{} fill(s) examined, {} carrying block-state properties, {} of those resolved \
+                 out of the scope's own axis frame; every remaining orientation-sensitive one \
+                 was judged against a turned frame, was under an `orientation` guard, or stands \
+                 in a scope no rule reorients",
+                audit.fills, audit.carrying, audit.resolved
             )
         },
     });
@@ -509,7 +643,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     if shapes.bound > 0 {
         gates.push(Gate {
             id: "stair-shape",
-            pass: shapes.mismatches.is_empty(),
+            state: verdict(shapes.mismatches.is_empty()),
+            undecided: 0,
             bound: shapes.bound,
             detail: if shapes.mismatches.is_empty() {
                 format!(
@@ -526,7 +661,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     if fluid.bound > 0 {
         gates.push(Gate {
             id: "fluid-contained",
-            pass: fluid.leaks.is_empty(),
+            state: verdict(fluid.leaks.is_empty()),
+            undecided: 0,
             bound: fluid.bound,
             detail: if fluid.leaks.is_empty() {
                 settle::fluid_summary(&fluid)
@@ -541,7 +677,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     let region_cells = model.region().positions().count();
     gates.push(Gate {
         id: "non-empty",
-        pass: filled > 0,
+        state: verdict(filled > 0),
+        undecided: 0,
         bound: region_cells,
         detail: format!("{filled} filled cell(s) of {region_cells} in the region"),
     });
@@ -588,7 +725,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 }
                 gates.push(Gate {
                     id: "traversable",
-                    pass: bound >= 2 && severed.is_empty(),
+                    state: verdict(bound >= 2 && severed.is_empty()),
+                    undecided: 0,
                     bound,
                     detail: if bound < 2 {
                         format!(
@@ -632,7 +770,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                 };
                 gates.push(Gate {
                     id: "traversable",
-                    pass: walked && bound > 0,
+                    state: verdict(walked && bound > 0),
+                    undecided: 0,
                     bound,
                     detail: format!(
                         "{} standable cell(s) at the approach end, {} at the exit end; walking{} \
@@ -689,7 +828,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         let (pairs, broken) = asymmetry(model, axis);
         gates.push(Gate {
             id: "symmetric",
-            pass: broken.is_empty() && pairs > 0,
+            state: verdict(broken.is_empty() && pairs > 0),
+            undecided: 0,
             bound: pairs,
             detail: if broken.is_empty() {
                 format!(
@@ -713,7 +853,8 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         let bound = reach.sheltered;
         gates.push(Gate {
             id: "reachable-floor",
-            pass: bound > 0 && reach.unreachable_sheltered == 0,
+            state: verdict(bound > 0 && reach.unreachable_sheltered == 0),
+            undecided: 0,
             bound,
             detail: format!(
                 "{} standable cell(s) under a roof; {} of them have no walking route from the {} \
@@ -745,6 +886,18 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             findings.push(format!(
                 "gate `{}` examined ZERO objects — its verdict binds to nothing",
                 gate.id
+            ));
+        }
+        // The undecided binding, raised by name the way a zero binding is —
+        // and for the same reason. A reader who takes `undecided` for a softer
+        // pass is exactly the reader this whole module exists to stop, so the
+        // count says out loud what the gate could not establish.
+        if gate.undecided > 0 {
+            findings.push(format!(
+                "gate `{}` could not decide {} of the {} object(s) it examined at this region — \
+                 UNDECIDED, which is neither a pass nor a fail. Its detail names each one; a \
+                 region whose axes rank differently would decide them",
+                gate.id, gate.undecided, gate.bound
             ));
         }
     }
@@ -816,10 +969,17 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     }
 
     let (footprint_area, footprint_perimeter) = footprint(model);
-    let verdict = if gates.iter().all(|g| g.pass) {
-        "pass"
-    } else {
+    // Fail wins over undecided, and undecided over pass: a report says the worst
+    // thing that is true of it. Undecided is a distinct headline rather than a
+    // silent pass because "pass" is the word every caller reads, and the whole
+    // defect being repaired here is a pass printed over an examination that did
+    // not happen.
+    let verdict = if gates.iter().any(Gate::failed) {
         "fail"
+    } else if gates.iter().any(|g| g.state == GateState::Undecided) {
+        "undecided"
+    } else {
+        "pass"
     };
     Report {
         verdict,
@@ -1120,7 +1280,7 @@ mod tests {
             .iter()
             .find(|g| g.id == "blocks-exist")
             .unwrap();
-        assert!(!gate.pass);
+        assert!(!gate.passed());
         assert_eq!(gate.bound, 2, "air plus the one painted state");
         assert!(
             gate.detail.contains("minecraft:iron_chain"),
@@ -1199,7 +1359,7 @@ mod tests {
         .unwrap();
         let report = judge(&stair, opts);
         let gate = report.gates.iter().find(|g| g.id == "traversable").unwrap();
-        assert!(gate.pass, "{}", gate.detail);
+        assert!(gate.passed(), "{}", gate.detail);
         assert!(gate.bound > 0, "{}", gate.detail);
 
         let drop = crate::expand(
@@ -1215,7 +1375,7 @@ mod tests {
                 .iter()
                 .find(|g| g.id == "traversable")
                 .unwrap()
-                .pass,
+                .passed(),
             "a one-way spill must not walk back up"
         );
         let with_falls = judge(
@@ -1233,7 +1393,7 @@ mod tests {
                 .iter()
                 .find(|g| g.id == "traversable")
                 .unwrap()
-                .pass,
+                .passed(),
             "a one-way spill IS traversable once falling is allowed"
         );
     }
@@ -1255,7 +1415,7 @@ mod tests {
         );
         assert!(report.is_pass(), "{:#?}", report.gates);
         let walk = report.gates.iter().find(|g| g.id == "traversable").unwrap();
-        assert!(walk.pass, "{}", walk.detail);
+        assert!(walk.passed(), "{}", walk.detail);
 
         let r = &report.measurements.reachability;
         assert_eq!(r.standable, 243, "two storeys and a roof, 81 cells each");
@@ -1307,7 +1467,7 @@ mod tests {
             .iter()
             .find(|g| g.id == "reachable-floor")
             .unwrap();
-        assert!(!gate.pass, "{}", gate.detail);
+        assert!(!gate.passed(), "{}", gate.detail);
         assert_eq!(gate.bound, 162, "it examined the floor under the roof");
         assert!(!red.is_pass());
 
@@ -1317,7 +1477,7 @@ mod tests {
             .iter()
             .find(|g| g.id == "reachable-floor")
             .unwrap();
-        assert!(gate.pass, "{}", gate.detail);
+        assert!(gate.passed(), "{}", gate.detail);
         assert!(gate.bound > 0, "{}", gate.detail);
         assert!(green.is_pass(), "{:#?}", green.gates);
 
@@ -1370,7 +1530,7 @@ mod tests {
             .find(|g| g.id == "reachable-floor")
             .unwrap();
         assert_eq!(gate.bound, 0);
-        assert!(!gate.pass, "a zero binding is never a pass");
+        assert!(!gate.passed(), "a zero binding is never a pass");
         assert!(
             solid
                 .findings

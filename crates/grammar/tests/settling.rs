@@ -109,7 +109,7 @@ fn basin(west_wall: bool) -> Program {
 fn a_walled_basin_holds_its_water_and_says_how_many_cells_it_examined() {
     let report = judge(&basin(true), BASIN);
     let g = gate(&report, "fluid-contained");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 9, "3x1x3 sources: {}", g.detail);
 }
 
@@ -118,7 +118,7 @@ fn one_missing_wall_course_reds_the_basin_and_names_the_cells() {
     let report = judge(&basin(false), BASIN);
     let g = gate(&report, "fluid-contained");
     assert!(
-        !g.pass,
+        !g.passed(),
         "a basin with an open west wall must red: {}",
         g.detail
     );
@@ -166,7 +166,7 @@ fn water_written_mid_flow_is_not_a_body() {
     );
     let report = judge(&flowing, BASIN);
     let g = gate(&report, "fluid-contained");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("DW0800"), "{}", g.detail);
     assert!(g.detail.contains("mid-flow"), "{}", g.detail);
 }
@@ -245,7 +245,7 @@ fn kerb(across: bool) -> Program {
 fn a_corner_the_neighbours_derive_is_green_and_binds_to_the_stairs() {
     let report = judge(&kerb(true), KERB);
     let g = gate(&report, "stair-shape");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 2, "both stairs are examined: {}", g.detail);
 }
 
@@ -253,7 +253,7 @@ fn a_corner_the_neighbours_derive_is_green_and_binds_to_the_stairs() {
 fn the_same_corner_pointed_along_the_run_reds_and_names_both_shapes() {
     let report = judge(&kerb(false), KERB);
     let g = gate(&report, "stair-shape");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("DW0801"), "{}", g.detail);
     assert_eq!(g.bound, 2, "the same two stairs are examined: {}", g.detail);
     assert!(

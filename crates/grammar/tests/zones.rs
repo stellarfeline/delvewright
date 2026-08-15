@@ -256,7 +256,7 @@ fn every_zone_passes_the_shape_and_orientation_gates() {
                 .iter()
                 .find(|g| g.id == id)
                 .unwrap_or_else(|| panic!("{}: no `{id}` gate", program.name));
-            assert!(gate.pass, "{}: {}", program.name, gate.detail);
+            assert!(gate.passed(), "{}: {}", program.name, gate.detail);
             assert!(
                 gate.bound > 0,
                 "{}: gate `{id}` examined zero objects",

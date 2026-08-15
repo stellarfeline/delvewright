@@ -176,6 +176,126 @@ fn claim(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Which frames a scope could have had — the same computation, asked of every
+// region at once
+// ---------------------------------------------------------------------------
+
+/// The 48 frames of the cube: six axis permutations, each with eight
+/// reflection patterns.
+///
+/// Small enough to be a bitmask, which is what makes [`FrameSet`] a `Copy`
+/// field a scope can carry without allocating once per split piece.
+pub const FRAME_COUNT: usize = 48;
+
+/// The six axis permutations, in a fixed order (ADR-0006: the index is part of
+/// a report's determinism).
+const PERMS: [[Axis; 3]; 6] = [
+    [Axis::X, Axis::Y, Axis::Z],
+    [Axis::X, Axis::Z, Axis::Y],
+    [Axis::Y, Axis::X, Axis::Z],
+    [Axis::Y, Axis::Z, Axis::X],
+    [Axis::Z, Axis::X, Axis::Y],
+    [Axis::Z, Axis::Y, Axis::X],
+];
+
+/// Every frame, by index.
+pub fn all_frames() -> [Orientation; FRAME_COUNT] {
+    let mut out = [Orientation::IDENTITY; FRAME_COUNT];
+    for (p, axes) in PERMS.iter().enumerate() {
+        for bits in 0..8usize {
+            out[p * 8 + bits] = Orientation::from_axes(*axes).mirrored(Mirror::from_axes([
+                bits & 1 != 0,
+                bits & 2 != 0,
+                bits & 4 != 0,
+            ]));
+        }
+    }
+    out
+}
+
+/// A frame's index in [`all_frames`].
+pub fn frame_index(frame: Orientation) -> usize {
+    let perm = PERMS
+        .iter()
+        .position(|p| *p == frame.axes())
+        .expect("a frame is a permutation");
+    let m = frame.mirror.axes();
+    perm * 8 + usize::from(m[0]) + 2 * usize::from(m[1]) + 4 * usize::from(m[2])
+}
+
+/// **The frames one scope could stand in, over every region the program could
+/// be expanded at.**
+///
+/// A frame is a fact about the region as much as about the program: `z: largest`
+/// hands a scope the identity when the box is already longest along Z and a
+/// quarter-turn when it is not. An expansion sees one of those and has no way to
+/// tell which kind of fact it just observed — which is what let a fill of a
+/// world-frame `facing` be called sound by a test that never ran. This set is
+/// the missing half: a singleton `{identity}` means the frame is a constant of
+/// the PROGRAM, and anything larger means this expansion saw one of several.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSet(u64);
+
+impl FrameSet {
+    /// The set holding exactly one frame.
+    pub fn just(frame: Orientation) -> FrameSet {
+        FrameSet(1 << frame_index(frame))
+    }
+
+    /// Whether this set holds only `frame` — the scope's frame is a constant.
+    pub fn is_only(&self, frame: Orientation) -> bool {
+        self.0 == 1 << frame_index(frame)
+    }
+
+    /// Whether the scope's frame is a constant of the program, whichever frame
+    /// that is.
+    pub fn is_singleton(&self) -> bool {
+        self.0.count_ones() == 1
+    }
+
+    /// The frames in the set, ascending by index.
+    pub fn iter(&self) -> impl Iterator<Item = Orientation> + '_ {
+        let all = all_frames();
+        (0..FRAME_COUNT).filter_map(move |i| (self.0 >> i & 1 == 1).then_some(all[i]))
+    }
+}
+
+/// Box proportions covering every weak ordering of the three world extents —
+/// which is all [`AxisSpec::Smallest`] and [`AxisSpec::Largest`] can read.
+///
+/// 27 triples over `{1, 2, 3}`, not a clever 13: the extremal passes compare
+/// extents pairwise and break ties by world-axis order, and enumerating every
+/// triple is the version whose correctness needs no argument.
+fn representative_sizes() -> impl Iterator<Item = [u32; 3]> {
+    (1..=3u32).flat_map(|x| (1..=3u32).flat_map(move |y| (1..=3u32).map(move |z| [x, y, z])))
+}
+
+/// The frames `request` can hand a child, given every frame the parent could
+/// have had and every proportion the box could have.
+///
+/// A refused reorientation (the request names one parent axis twice) contributes
+/// nothing: it cannot be a frame a fill stands in, because the expansion would
+/// have stopped there.
+pub fn reachable_frames(
+    parents: FrameSet,
+    request: &Reorient,
+    split_axis: Option<Axis>,
+) -> FrameSet {
+    if request.is_keep() {
+        return parents;
+    }
+    let mut out = 0u64;
+    for parent in parents.iter() {
+        for size in representative_sizes() {
+            if let Ok(child) = reorient(parent, size, request, split_axis) {
+                out |= 1 << frame_index(child);
+            }
+        }
+    }
+    FrameSet(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +479,75 @@ mod tests {
             reorient(Orientation::IDENTITY, CUBE, &req, None),
             Err(OrientError::Conflict { axis: Axis::Z })
         );
+    }
+}
+
+#[cfg(test)]
+mod frame_set_tests {
+    use super::*;
+
+    /// The index is a bijection over the 48 frames — which is what licenses the
+    /// bitmask, and the one thing a set of them could silently get wrong.
+    #[test]
+    fn every_frame_has_its_own_index() {
+        let all = all_frames();
+        let mut seen = [false; FRAME_COUNT];
+        for (i, frame) in all.iter().enumerate() {
+            assert!(frame.is_permutation(), "{frame:?}");
+            assert_eq!(frame_index(*frame), i, "{frame:?}");
+            assert!(!seen[i], "index {i} twice");
+            seen[i] = true;
+        }
+        assert!(seen.iter().all(|s| *s));
+    }
+
+    /// **A request that reads a proportion is the one that widens the set**, and
+    /// nothing else here does. This is the whole distinction `DW0742` rests on.
+    #[test]
+    fn only_an_extremal_spec_makes_the_frame_a_fact_about_the_region() {
+        let start = FrameSet::just(Orientation::IDENTITY);
+
+        // `keep` and an outright naming both leave the frame a constant.
+        assert!(reachable_frames(start, &Reorient::KEEP, None).is_only(Orientation::IDENTITY));
+        let named = Reorient::KEEP
+            .x(AxisSpec::WorldX)
+            .y(AxisSpec::WorldY)
+            .z(AxisSpec::WorldZ);
+        assert!(reachable_frames(start, &named, None).is_only(Orientation::IDENTITY));
+
+        // A fixed turn is still a constant — a different one.
+        let turned = Reorient::KEEP.z(AxisSpec::WorldX).x(AxisSpec::WorldZ);
+        let after = reachable_frames(start, &turned, None);
+        assert!(!after.is_only(Orientation::IDENTITY));
+        assert_eq!(after.iter().count(), 1, "a fixed turn reads no proportion");
+
+        // `largest` does not: the box decides, so both answers are reachable and
+        // the identity is only one of them.
+        let extremal = Reorient::KEEP.y(AxisSpec::WorldY).z(AxisSpec::Largest);
+        let after = reachable_frames(start, &extremal, None);
+        assert!(after.iter().count() > 1, "{:?}", after);
+        assert!(after.iter().any(|f| f == Orientation::IDENTITY));
+        // ...and the request still pins what it names: every reachable frame
+        // keeps the local Y on the world Y, running forward.
+        for frame in after.iter() {
+            assert_eq!(frame.axis(Axis::Y), Axis::Y, "{frame:?}");
+            assert!(!frame.reversed(Axis::Y), "{frame:?}");
+        }
+    }
+
+    /// The set is a superset of what the expander actually produces, which is
+    /// the direction that keeps it honest: it may say "could not decide" where a
+    /// region never arises, and never "decided" where one does.
+    #[test]
+    fn the_set_contains_every_frame_a_real_expansion_reaches() {
+        let request = Reorient::KEEP.y(AxisSpec::WorldY).z(AxisSpec::Largest);
+        let reachable = reachable_frames(FrameSet::just(Orientation::IDENTITY), &request, None);
+        for size in [[5, 4, 9], [9, 4, 5], [4, 9, 5], [7, 7, 7], [1, 1, 1]] {
+            let got = reorient(Orientation::IDENTITY, size, &request, None).unwrap();
+            assert!(
+                reachable.iter().any(|f| f == got),
+                "{size:?} reaches {got:?}, which the set omits"
+            );
+        }
     }
 }

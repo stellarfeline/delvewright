@@ -924,6 +924,15 @@ Symptom → tool:
      direction — a bar's connections, a stair's facing, a skull's yaw — write
      the state in the scope's own frame (`{"local": …}`) rather than guessing
      which way the zone will hand your piece its box.
+     **`oriented-fills` has three answers, not two.** `undecided` (`DW0742`)
+     means the piece is not wrong at this region and was not checked at it
+     either: a scope reoriented by `largest`/`smallest` stands in the identity
+     frame only while this box's axes happen to rank the way the request already
+     names, and at another region the same state would be refused. It writes the
+     `.nbt` and it is not a red — but it is the one verdict that will change
+     under you the day the zone's region does. The named fills are in the gate's
+     detail; wrap each as `{"local": …}` and the answer becomes `pass` at every
+     region.
      **Read the `reachability` line too**, which prints whether you asked or not:
      `traversable` joins two ground-level faces and says nothing about the
      storeys above, so a building can pass every gate with half its floor
