@@ -2515,7 +2515,9 @@ fn emit_functions(
     // seal/clear sockets: open sockets get a wall fill; mated sockets get their
     // jigsaw block cleared to air, leaving a clean 3×3 passage (keep-socket-v1).
     // Runs after placement so it overwrites the raw structure blocks. Empty for
-    // single-prefab areas.
+    // an area whose prefab declares no connector — including every single-prefab
+    // area binding one, whose lone piece has all its sockets unmated and so gets
+    // a wall fill per connector.
     for area in &plan.areas {
         for seal in &area.seals {
             setup.push(format!(
