@@ -4,6 +4,7 @@
 //!
 //! Modules:
 //! - [`audit`] — the mechanical NBT palette audit (CI gate: allowlist + forbid).
+//! - [`cli`] — the command line as a type, so the set of commands is readable.
 //! - [`allowlist`] — the configurable block allowlist.
 //! - [`structure`] — an editable structure `.nbt` (read / inspect / mutate / write).
 //! - [`socket`] — jigsaw socket carving.
@@ -19,6 +20,7 @@
 pub mod allowlist;
 pub mod audit;
 pub mod catalog;
+pub mod cli;
 pub mod diag;
 pub mod fixtures;
 pub mod gallery;

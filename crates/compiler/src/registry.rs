@@ -466,8 +466,9 @@ impl PrefabRegistry {
                          `.nbt` tiles plus this manifest. Placing a tile group during world \
                          assembly is queued engine work (chunked export phase 2) and this delvec \
                          cannot do it, so the zone is skipped rather than half-placed. Authoring \
-                         and review already handle it: `delve-render piece` and `delve-admit \
-                         audit` both take this manifest."
+                         and review already handle it: `delve-render piece`, `delve-admit audit` \
+                         and `delve-admit lighting` all take this manifest and judge the whole \
+                         zone."
                     ),
                 ));
                 continue;
