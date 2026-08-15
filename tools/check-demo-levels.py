@@ -8,7 +8,7 @@
 an engine capability's confirmation takes, so a capability with no demo cannot
 be put in front of anyone. Nothing invoked that rule. It lived in a doc line,
 which is the UNRUN shape `CLAUDE.md` names, and it behaved exactly as that shape
-predicts: over 416 merged changes the file was edited six times, seventeen of
+predicts: over 416 changes on `main` the file was edited six times, sixteen of
 its rows were seeded retroactively in one sitting, and for the twelve days after
 that seeding not one row was added while the compiler, the grammar and the
 render layer all gained author-facing surface. Three capabilities landed on one
@@ -17,29 +17,44 @@ day; one carried its row.
 ## The signal, and why it is this one and not a better one
 
 There is no syntactic mark on a diff that says "this is a mechanic", and the
-candidates were measured over the whole history rather than argued about:
+candidates were measured over the whole history rather than argued about. Two
+rows are ranges because two defensible readings of one question disagree, and
+the range is stated rather than the more convenient end of it:
 
-| candidate signal                              | fires on | rows in the queue |
-| --------------------------------------------- | -------: | ----------------: |
-| a new `DW` diagnostic code                     |      112 |                23 |
-| subject line begins `feat(`                    |      140 |                23 |
-| touches `crates/` and `docs/reference/`        |      191 |                23 |
-| adds a heading to `docs/reference/`            |       94 |                23 |
-| adds a row to a `Since`-columned surface table |       53 |                23 |
-| a `--flag` token appears in `tools.md`         |       31 |                23 |
-| **a new long flag on an author-facing binary** |   **16** |                23 |
+| candidate signal                               |  fires on | rows in the queue |
+| ---------------------------------------------- | --------: | ----------------: |
+| touches `crates/` and `docs/reference/`         |       191 |                23 |
+| subject line begins `feat(`                     |       140 |                23 |
+| a new `DW` diagnostic code                      | 101 – 112 |                23 |
+| adds a heading to `docs/reference/`             |        94 |                23 |
+| adds a row to a `Since`-columned surface table  |   27 – 53 |                23 |
+| a `--flag` token appears in `tools.md`          |        31 |                23 |
+| **a new long flag on a binary under `crates/`** |    **16** |                23 |
+
+`DW`: 101 counts the change that first puts a code under `crates/`, 112 also
+counts one that names it in the docs first. `Since`: 27 counts net growth of
+that table, 53 counts every row added, which is larger because a rewritten row
+is a delete and an add.
 
 The first six are not gates, they are noise generators: a check that fires on
-one merge in three is routed around inside a week, and being routed around is
-worse than not existing. The last one is different in kind. Every one of the
+one change in three is routed around inside a week, and being routed around is
+worse than not existing. The runner-up is worth naming, since it is the obvious
+extension if this gate's recall proves too low — a new row in a `Since`-columned
+surface table really is new authoring surface. It is not the demand here because
+a row there is a FIELD, not a mechanic: `world.outro` is an optional string with
+a translation key, and a gate that asks for a demo level when the schema grows
+one of those is asking on an ordinary change.
+
+The signal chosen is different in kind. Every one of the
 sixteen landed an engine capability — the compiler itself, the schematic
 importer, `--lang` and i18n, the admission pipeline, `snapshot`,
 `blocking-chart`, the edit stage's `--batch`, shot calibration, panorama
 emission, the contact sheet, `fmt --check`, the prefab loop, `--reachable-floor`,
-`--symmetric`, the zone audit, and the aimable camera — and the two things a
-reader would call plumbing (`--exclusions`, a version-range flag on a skill
-check) rode in beside a real capability on the same change. Six of the sixteen
-already have a queue row; the other ten are the measurement of the defect.
+`--symmetric`, the zone audit, and the aimable camera — and the one thing a
+reader would call plumbing (`--exclusions`) rode in beside a real capability on
+the same change. Replayed against this gate's own extractor, two of the sixteen
+added a row and would be green; the other fourteen are the measurement of the
+defect.
 
 The scope is what keeps it that clean: only the binaries under `crates/`, every
 one of which `docs/reference/tools.md` classes `agent` or `human` — the tools an
