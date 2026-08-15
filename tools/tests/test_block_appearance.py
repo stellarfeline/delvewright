@@ -8,8 +8,13 @@ quietly absent:
   * **CI-bound, no jar** — the vendored family/form table (spec-0035 AC2), the
     mix arithmetic over a committed fixture of measured numbers (AC4/AC5), the
     refusal paths, the screen's expression language, the swatch sheet's PNG
-    encoder and seeded tiling over synthetic pixels (AC6's determinism), and the
-    agreement between this tool's gravity set and the compiler's own.
+    encoder and seeded tiling over synthetic pixels (AC6's determinism), the
+    agreement between this tool's gravity set and the compiler's own, and — over
+    a five-block **synthetic** client jar built by the suite — `main()` itself:
+    what `--program` prints, and that it prints a binding count rather than the
+    shelf. Anything asserting the tool's OUTPUT needs a jar, so it brings one;
+    inheriting the developer's is how a test is jar-gated without saying so, and
+    `test_every_subprocess_run_of_the_tool_goes_through_run_tool` binds that.
   * **jar-gated** — the exact measured values for named blocks (AC1), the
     1146 → 409 → 58 → 16 → 14 cascade over the real shelf (AC3), and the real
     sheet (AC6's content). `test_jar_gated_inventory_is_named` fails if that list
@@ -31,13 +36,17 @@ neither number was re-baselined away.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import math
 import os
 import re
+import struct
 import subprocess
 import sys
+import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
@@ -399,6 +408,60 @@ def test_program_mixes_reach_inline_fills_not_only_named_roles():
     ]
 
 
+def test_program_mixes_read_a_paint_written_in_the_scopes_own_frame():
+    """A `{"local": ...}` paint is the same states in the scope's axis frame. The
+    frame decides which world direction a property names; it moves no block and
+    changes no colour, so it is measured exactly like a bare paint.
+
+    Skipping the wrapper is not a gap in one role's numbers — a program whose
+    whole palette is local binds to ZERO paints, and a zero binding that nothing
+    prints is the shelf listing arriving in place of a measurement.
+    """
+    program = {
+        "palette": {
+            "grille": {"local": "minecraft:stone_bricks"},
+            "crag": {
+                "local": [
+                    {"weight": 3, "block": "minecraft:cobbled_deepslate"},
+                    {"weight": 1, "block": "minecraft:blackstone"},
+                ]
+            },
+        },
+        "rules": {
+            "wall": [
+                {
+                    "weight": 1,
+                    "body": {
+                        "op": "fill",
+                        "material": {
+                            "local": [
+                                {"weight": 1, "block": "minecraft:sandstone"},
+                                {"weight": 1, "block": "minecraft:andesite"},
+                            ]
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    found = dict(ba.program_mixes(program))
+    assert found["palette.grille"] == [("minecraft:stone_bricks", 1.0)]
+    assert sorted(b for b, _ in found["palette.crag"]) == [
+        "minecraft:blackstone",
+        "minecraft:cobbled_deepslate",
+    ]
+    inline = [name for name in found if name.startswith("fill@")]
+    assert inline, f"a local inline fill went unread: {sorted(found)}"
+    assert sorted(b for b, _ in found[inline[0]]) == [
+        "minecraft:andesite",
+        "minecraft:sandstone",
+    ]
+    # A `{"role": ...}` material is a REFERENCE to a named paint, already reported
+    # from `palette`, and must not be read a second time as an inline one.
+    role_ref = {"rules": {"r": [{"body": {"op": "fill", "material": {"role": "crag"}}}]}}
+    assert ba.program_mixes(role_ref) == []
+
+
 def test_block_state_strings_reduce_to_their_block():
     assert ba.base_block("minecraft:oak_stairs[facing=east,half=top]") == "minecraft:oak_stairs"
     assert ba.base_block("stone") == "minecraft:stone"
@@ -511,6 +574,204 @@ def test_the_extractor_refuses_an_unpinned_source(tmp_path):
     )
     assert done.returncode == 2
     assert "sha256" in done.stderr
+
+
+# --------------------------------------------------------------------------
+# The whole entry point, over a SYNTHETIC jar — no EULA-gated jar
+#
+# `main()` refuses without a client jar, so anything that asserts what the tool
+# PRINTS is jar-gated unless it brings its own. Inheriting the developer's jar
+# instead is how a test passes on the machine that wrote it and fails where it
+# gates — and a `--program` assertion run that way sees an empty stdout in CI,
+# because the refusal is on stderr with a non-zero exit (which is the correct
+# behaviour, and `test_without_a_jar_the_tool_refuses_rather_than_answering`
+# owns it).
+#
+# So the fixture is a five-block client jar built here from stdlib zlib/zipfile:
+# a blockstates entry, a full-cube model and a solid 2x2 texture per block, for
+# five ids that are really in the pinned registry. The registry and the
+# classification table are the committed ones, so the run is the real code path
+# end to end, deterministic, and identical with or without a real jar.
+# --------------------------------------------------------------------------
+
+# Five real 1.21.11 ids, each given a flat colour. Solid colours are what make
+# the arithmetic checkable by hand: C_mean is the pixel's own chroma.
+SYNTHETIC_BLOCKS = {
+    "stone_bricks": (125, 125, 125),
+    "cobbled_deepslate": (77, 77, 82),
+    "blackstone": (42, 35, 40),
+    "sandstone": (219, 207, 160),
+    "andesite": (136, 136, 137),
+}
+
+
+def solid_png(rgb: tuple[int, int, int], size: int = 2) -> bytes:
+    """An 8-bit truecolour PNG of one colour, written independently of the tool —
+    a fixture that used `ba.Canvas` would be testing the encoder against itself."""
+    raw = bytearray()
+    for _ in range(size):
+        raw.append(0)  # filter type 0
+        raw += bytes(rgb) * size
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.fixture(scope="module")
+def synthetic_jar(tmp_path_factory) -> Path:
+    jar = tmp_path_factory.mktemp("synthetic-client") / "minecraft.jar"
+    with zipfile.ZipFile(jar, "w") as archive:
+        for name, rgb in SYNTHETIC_BLOCKS.items():
+            archive.writestr(
+                f"assets/minecraft/blockstates/{name}.json",
+                json.dumps({"variants": {"": {"model": f"minecraft:block/{name}"}}}),
+            )
+            archive.writestr(
+                f"assets/minecraft/models/block/{name}.json",
+                json.dumps(
+                    {
+                        "textures": {"all": f"minecraft:block/{name}"},
+                        "elements": [
+                            {
+                                "from": [0, 0, 0],
+                                "to": [16, 16, 16],
+                                "faces": {"north": {"texture": "#all"}},
+                            }
+                        ],
+                    }
+                ),
+            )
+            archive.writestr(f"assets/minecraft/textures/block/{name}.png", solid_png(rgb))
+    return jar
+
+
+def run_over_synthetic(jar: Path, *args):
+    return run_tool(*args, env={"DELVEWRIGHT_CLIENT_JAR": str(jar)})
+
+
+def test_the_synthetic_shelf_really_prints_its_blocks(synthetic_jar):
+    """The guard on the test below. `not in stdout` proves nothing if the fixture
+    could never have printed those ids in the first place — that is the unbound
+    reading of a green. This is the same jar and the same entry point, asked for
+    the listing, and the ids are there."""
+    done = run_over_synthetic(synthetic_jar, "--list")
+    assert done.returncode == 0, done.stderr
+    for name in SYNTHETIC_BLOCKS:
+        assert f"minecraft:{name}" in done.stdout
+    assert "5 row(s)" in done.stdout
+
+
+def test_a_program_that_binds_to_nothing_prints_the_finding_not_the_shelf(
+    tmp_path, synthetic_jar
+):
+    """The zero-binding FINDING was written, correct, and unreachable: the report
+    was gated on there being something to say, so a program this reader did not
+    understand fell through to the whole-shelf listing and exited 0.
+
+    A mix report is owed by the REQUEST, so `--program` over a paintless program
+    states its binding of zero.
+    """
+    program = tmp_path / "empty.json"
+    program.write_text(json.dumps({"version": "1.4.0", "palette": {}, "rules": {}}))
+    done = run_over_synthetic(synthetic_jar, "--program", str(program))
+    assert done.returncode == 0, done.stderr
+    assert "binding: 0 paint(s) examined, 0 mix(es) with >= 2 members" in done.stdout
+    assert "FINDING: zero binding" in done.stdout
+    # The tell of the old behaviour: the shelf listing arriving instead of a
+    # report. The test above proves this shelf is one that does print.
+    for name in SYNTHETIC_BLOCKS:
+        assert f"minecraft:{name}" not in done.stdout
+
+
+def test_a_local_frame_palette_is_measured_through_the_entry_point(tmp_path, synthetic_jar):
+    """The other half of the same defect, at the level an author meets it: a
+    program whose every paint is written in the scope's own frame is measured,
+    and the binding count says how many paints it read."""
+    program = tmp_path / "local.json"
+    program.write_text(
+        json.dumps(
+            {
+                "version": "1.4.0",
+                "palette": {
+                    "grille": {"local": "minecraft:stone_bricks"},
+                    "crag": {
+                        "local": [
+                            {"weight": 3, "block": "minecraft:cobbled_deepslate"},
+                            {"weight": 1, "block": "minecraft:blackstone"},
+                        ]
+                    },
+                },
+                "rules": {
+                    "wall": [
+                        {
+                            "weight": 1,
+                            "body": {
+                                "op": "fill",
+                                "material": {
+                                    "local": [
+                                        {"weight": 1, "block": "minecraft:sandstone"},
+                                        {"weight": 1, "block": "minecraft:andesite"},
+                                    ]
+                                },
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    done = run_over_synthetic(synthetic_jar, "--program", str(program))
+    assert done.returncode == 0, done.stderr
+    assert "binding: 3 paint(s) examined, 2 mix(es) with >= 2 members" in done.stdout
+    assert "FINDING: zero binding" not in done.stdout
+    assert "palette.crag" in done.stdout
+    assert "fill@rules/wall[0]/body" in done.stdout
+
+
+def test_every_subprocess_run_of_the_tool_goes_through_run_tool():
+    """The general form of the defect this section exists for, bound rather than
+    remembered.
+
+    `run_tool` is what removes the ambient `$DELVEWRIGHT_CLIENT_JAR` and `$HOME`,
+    so a bare `subprocess.run([sys.executable, str(TOOL), ...])` silently inherits
+    whichever jar the author's machine happens to have. Such a test is jar-gated
+    without being marked jar-gated: green where it does not gate, red where it
+    does, and `test_jar_gated_inventory_is_named` cannot see it because it carries
+    no skipif. A test that wants a jar declares one — the real one behind
+    `needs_jar`, or the synthetic one above.
+    """
+    tree = ast.parse(Path(__file__).read_text())
+    direct = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.args
+        and isinstance(node.args[0], ast.List)
+        and any(ast.unparse(element) == "str(TOOL)" for element in node.args[0].elts)
+    ]
+    helper = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "run_tool"
+    )
+    outside = [line for line in direct if not helper.lineno <= line <= helper.end_lineno]
+    assert outside == [], (
+        f"line(s) {outside} run the tool without run_tool(), so they inherit whatever "
+        "jar this machine has; route them through run_tool() and give them a jar"
+    )
+    assert len(direct) == 1, "run_tool() no longer runs the tool"
 
 
 # --------------------------------------------------------------------------
