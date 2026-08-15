@@ -1103,6 +1103,29 @@ pub fn build_with_warnings(
     // See `crate::affordance` for the drowned-bell soft-lock this encodes.
     crate::affordance::check(&affordances(plan), &out)?;
 
+    // ---- fixture-class self-check (DW0545) ----
+    // `DW0421` above is tag-keyed and asks who may DESTROY an affordance's
+    // hardware. A region verb selects by BOX and MOVES what it finds, so it slips
+    // past that entirely — which is how a lift carries a recovery stake's marker
+    // away from the position its ledger recorded, after which `stk_gc_<s>` deletes
+    // the marker and the wager with it. So the same rule is stated one verb wider,
+    // over the emitted tree: every engine-summoned hitbox, mark and display
+    // declares whether it is a PLACE or is carried by a BODY, and no box-narrowed
+    // entity selector may reach a place. Feature-blind, so a region verb nobody
+    // has written yet is covered by existing.
+    let mut fixture_gate = crate::affordance::check_fixtures(&out)?;
+    // Counted off the shipped tree rather than reported by the emitter that wrote
+    // them, so the ledger states what a reader can go and open.
+    fixture_gate.packtests = out
+        .keys()
+        .filter(|p| p.starts_with("packtest-datapack/") && p.contains("/test/fixture_"))
+        .count();
+    put_json(
+        &mut out,
+        "validation/fixture-gate.json",
+        &fixture_gate.to_json(),
+    );
+
     // ---- call-graph integrity (DW0497) ----
     // Every `function <ns>:<name>` the compiler just wrote must point at a
     // function the compiler wrote. Vanilla resolves an unknown function to
@@ -5046,7 +5069,7 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
                 let v = ent_xyz(bf.pos);
                 let i = bf.index;
                 body.push(format!(
-                    "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_bonfire_{i}\"]}}",
+                    "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]}}",
                     v[0], v[1], v[2]
                 ));
                 // …and the visible hardware, under the same absence guard so a
@@ -5156,12 +5179,14 @@ fn emit_quest_effect(plan: &Plan, eff: &QuestEffect, aud: Audience, body: &mut V
         // ONE command, and its selector is the volume — never the effect's
         // audience. `who` is deliberately unused here: a teleport moves what is
         // INSIDE the box, and a box does not have a party. The selector carries
-        // the six box terms and nothing else — no `type=`, no `tag=`, no
-        // `limit=`, no `sort=` — which is what makes the selection total, and
-        // `crates/compiler/tests/v10_teleport.rs` asserts exactly that against the
-        // emitted string. See `QuestEffect::Teleport` for why a machinery-type
-        // exemption (which `lethal_volumes[]` must carry) would be wrong here and
-        // what stands in its place.
+        // the six box terms plus the one class exclusion every box-narrowed
+        // entity selector in this engine carries — `tag=!dw_fixture`, and no
+        // `type=`, no `limit=`, no `sort=`. That is what makes the selection
+        // total over BODIES, and `crates/compiler/tests/v10_teleport.rs` asserts
+        // exactly that against the emitted string. See `QuestEffect::Teleport`
+        // for why a machinery-TYPE exemption (which `lethal_volumes[]` must
+        // carry) would be wrong here, and `crate::affordance` for the class that
+        // stands in its place.
         QuestEffect::Teleport { .. } => {
             // A call into the generated function, exactly as `volley` and
             // `collapse` do: the body is proven geometry, and a body that only
@@ -5695,7 +5720,7 @@ fn timed_gate_setup(plan: &Plan) -> Vec<String> {
         };
         let v = ent_xyz(dis.via_cell);
         out.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_tgdis_{}\"]}}",
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]}}",
             v[0], v[1], v[2], g.safe
         ));
         out.push(affordance_hardware(
@@ -5989,7 +6014,7 @@ fn shortcut_setup(plan: &Plan) -> Vec<String> {
     for sc in &plan.shortcuts {
         let v = ent_xyz(sc.unlock);
         out.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_sc_{}\"]}}",
+            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_sc_{}\"]}}",
             v[0], v[1], v[2], sc.safe
         ));
         out.push(affordance_hardware(
@@ -6022,7 +6047,7 @@ fn shortcut_setup(plan: &Plan) -> Vec<String> {
 /// string that no campaign authored and no `l10n` sidecar could translate.
 fn affordance_hardware(pos: [String; 3], tag: &str, item: &str) -> String {
     format!(
-        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],billboard:\"center\",item:{{id:\"{item}\",count:1}}}}",
+        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],billboard:\"center\",item:{{id:\"{item}\",count:1}}}}",
         pos[0],
         pos[1],
         pos[2],
@@ -6136,7 +6161,7 @@ fn seal_fns(plan: &Plan) -> Vec<(String, String)> {
                 let z = fmt_centi(c[2] as i64 * 100 + 50);
                 format!(
                     "summon minecraft:interaction {x} {y} {z} \
-                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}{tag_list}]}}"
                 )
             })
             .collect();
@@ -6350,7 +6375,7 @@ fn ws_arm_fns(plan: &Plan) -> Vec<(String, String)> {
                 let z = fmt_centi(c[2] as i64 * 100 + 50);
                 format!(
                     "summon minecraft:interaction {x} {y} {z} \
-                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{tag_list}]}}"
+                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}{tag_list}]}}"
                 )
             })
             .collect();
@@ -7021,7 +7046,7 @@ fn shop_setup(plan: &Plan) -> Vec<String> {
         let v = ent_xyz(pos);
         let tag = format!("dw_shop_{i}");
         out.push(format!(
-            "execute unless entity @e[tag={tag}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+            "execute unless entity @e[tag={tag}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}",
             v[0], v[1], v[2]
         ));
         let hw = crate::affordance::hardware_tag(&tag);
@@ -7240,10 +7265,10 @@ fn emit_stake_functions(
             // --- stk_fill: the marker, then the first free slot ---------------
             let mut fill: Vec<String> = vec![
                 format!(
-                    "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                    "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
                 ),
                 format!(
-                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
+                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
                     st.marker_item()
                 ),
             ];
@@ -7483,6 +7508,17 @@ fn emit_shop_functions(plan: &Plan) -> Vec<(String, String)> {
 /// that walks into the lava dies, which is the mechanism working. An NPC posted
 /// inside a volume is a content defect the campaign's own placement proofs and
 /// `DW0511` are there to surface, not something to hide by exempting NPCs.
+///
+/// **It is no longer the whole answer, and it is kept anyway.** The engine's own
+/// places now declare a class ([`crate::affordance::FIXTURE_TAG`]) and the
+/// volume's selector negates it like every other box-narrowed entity selector, so
+/// the sentence above — "one negated tag per feature" — is answered: it is one
+/// negated tag for the whole engine, forever, because the class is decided at the
+/// object rather than per feature. This roster stays because it is not the same
+/// claim. It says *do not aim `/damage` at a thing that cannot take it*, which is
+/// still true of a `block_display` that no fixture happens to be today; the class
+/// says *do not disturb a place*. Deleting the roster would trade a live
+/// statement for a shorter line.
 const LETHAL_EXEMPT_TYPES: [&str; 5] = [
     "minecraft:interaction",
     "minecraft:marker",
@@ -7523,13 +7559,34 @@ const LETHAL_HP: &str = "#leth_hp dw.sys";
 /// totem doing its job rather than the volume failing to do its own.
 const LETHAL_DAMAGE: u32 = 1000;
 
-/// An inclusive block AABB as vanilla selector arguments — `x=…,dx=…,…`.
+/// The fixture class tag as the leading element of a summon's `Tags:` NBT list —
+/// *this entity's position IS engine state* ([`crate::affordance::FIXTURE_TAG`]).
+///
+/// Written at the summon site rather than derived by a roster in some verb,
+/// because the class belongs to the object: a bonfire's hitbox is a place whether
+/// the thing quantifying over it is a teleport, a lethal volume or a verb nobody
+/// has written yet.
+const FIXTURE_NBT: &str = "\"dw_fixture\",";
+
+/// The borne class tag ([`crate::affordance::BORNE_TAG`]) — *this entity's
+/// position belongs to a body that carries it*. Exactly one summon in the engine
+/// wears it: an NPC's co-located dialogue hitbox, which must ride whatever its
+/// speaker rides.
+const BORNE_NBT: &str = "\"dw_borne\",";
+
+/// An inclusive block AABB as vanilla selector arguments — `x=…,dx=…,…`, with the
+/// fixture-class exclusion every box-narrowed **entity** selector carries.
 ///
 /// One spelling for one fact. Vanilla's `dx` is a *span*, not a count, so the box
 /// `lo..=hi` is `dx = hi - lo`; every anchor-centred volume in the engine
 /// (`lethal_volumes[]`, a `teleport`'s `from`, a status effect's `in`) resolves
 /// through [`crate::plan::Plan::zone_box`] to exactly this pair and formats it
 /// here, so no two verbs can disagree by one block about what "inside" means.
+///
+/// The exclusion is NOT added here, because the *player* selectors
+/// (`damage-players`, `give-effect`, the volume's `@a` half) share this
+/// formatter and no player is a fixture. [`entity_box_selector`] is the entity
+/// spelling, and `DW0545` proves nothing else reaches a box.
 pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {
     format!(
         "x={},dx={},y={},dy={},z={},dz={}",
@@ -7539,6 +7596,22 @@ pub(crate) fn box_selector_args(lo: [i32; 3], hi: [i32; 3]) -> String {
         hi[1] - lo[1],
         lo[2],
         hi[2] - lo[2]
+    )
+}
+
+/// A box as the arguments of an `@e[…]` selector: the volume, then the
+/// fixture-class exclusion.
+///
+/// **Every** entity selector narrowed by a box in this engine goes through here,
+/// and `DW0545` reads the shipped datapack to prove it. One term, negating one
+/// class tag — never a `type=!…` roster, which grows with the engine and, on a
+/// verb that moves rather than deletes, would strip an NPC's dialogue hitbox off
+/// its body.
+fn entity_box_selector(lo: [i32; 3], hi: [i32; 3]) -> String {
+    format!(
+        "{},{}",
+        box_selector_args(lo, hi),
+        crate::affordance::FIXTURE_EXCLUDE
     )
 }
 
@@ -7608,8 +7681,9 @@ fn emit_lethal_functions(plan: &Plan) -> Vec<(String, String)> {
                     v.safe
                 ),
                 format!(
-                    "execute as @e[{bx},type=!minecraft:player{exempt}] run damage @s \
-                     {LETHAL_DAMAGE} {kind}"
+                    "execute as @e[{bx},{},type=!minecraft:player{exempt}] run damage @s \
+                     {LETHAL_DAMAGE} {kind}",
+                    crate::affordance::FIXTURE_EXCLUDE
                 ),
             ]),
         ));
@@ -7834,7 +7908,7 @@ fn npc_summon_commands(
         .collect::<Vec<_>>()
         .join(",");
     out.push(format!(
-        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{tag_list}]}}",
+        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
         p[0], p[1], p[2]
     ));
     out
@@ -8736,7 +8810,7 @@ fn teleport_command(plan: &Plan, eff: &QuestEffect) -> Option<String> {
     let d = ent_xyz(anchor_point_any(plan, to.as_str())?);
     Some(format!(
         "tp @e[{}] {} {} {}",
-        box_selector_args(lo, hi),
+        entity_box_selector(lo, hi),
         d[0],
         d[1],
         d[2]
@@ -9209,7 +9283,7 @@ fn cutscene_fns(
         start.push(format!("scoreboard players set #t_{bare} dw.sys 0"));
         start.push(format!("scoreboard players set #p_{bare} dw.sys 1"));
         start.push(format!(
-            "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[\"dw_csmark_{bare}\"]}}"
+            "execute at @p run summon minecraft:marker ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"dw_csmark_{bare}\"]}}"
         ));
         // The cutscene state marker. `gamemode spectator` already takes the
         // players' bodies out of the world; the tag is what campaign machinery
@@ -9375,7 +9449,7 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
                     let z = fmt_centi(c[2] as i64 * 100 + 50);
                     out.push(format!(
                         "summon minecraft:interaction {x} {y} {z} \
-                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}"
+                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
                     ));
                 }
             }
@@ -9383,7 +9457,7 @@ fn env_trigger_setup(plan: &Plan) -> Vec<String> {
             crate::pressable::Body::Point(p) => {
                 let q = ent_xyz(p);
                 out.push(format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{tag}\"]}}",
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}",
                     q[0], q[1], q[2]
                 ));
             }
@@ -9894,7 +9968,7 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
         {
             let v = ent_xyz(t.trigger_cell);
             out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapfire_{}\"]}}",
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]}}",
                 v[0], v[1], v[2], t.safe
             ));
         }
@@ -9906,7 +9980,7 @@ fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<Stri
         if let Some(dis) = &t.disarm {
             let v = ent_xyz(dis.via_cell);
             out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_trapdis_{}\"]}}",
+                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapdis_{}\"]}}",
                 v[0], v[1], v[2], t.safe
             ));
             out.push(affordance_hardware(
@@ -10854,7 +10928,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             if let Some(pos) = plan.point(area, anchor.as_str()) {
                 let e = ent_xyz(pos);
                 cmds.push(format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"{}\"]}}",
+                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]}}",
                     e[0], e[1], e[2], interact_entity_tag(id.as_str())
                 ));
                 if let Some(prop) = o.prop() {
@@ -10872,7 +10946,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                     // nameless (but still glowing) marker rather than a raw-id label.
                     let name_fields = marker_name_fields(o.title());
                     cmds.push(format!(
-                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
+                        "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:lantern\",count:1}}}}",
                         e[0], e[1], e[2], interact_entity_tag(id.as_str()), name_fields
                     ));
                 }
@@ -10893,7 +10967,7 @@ fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             let name_fields = marker_name_fields(o.title());
             let e = ent_xyz(pos);
             cmds.push(format!(
-                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
+                "summon minecraft:item_display {} {} {} {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{}\"],{}billboard:\"center\",item:{{id:\"minecraft:end_rod\",count:1}}}}",
                 e[0], e[1], e[2], reach_marker_tag(id.as_str()), name_fields
             ));
         }
@@ -15278,6 +15352,144 @@ fn emit_v06_packtests(plan: &Plan, out: &mut BuildOutput) {
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
     emit_teleport_packtests(plan, out);
+    // …and the runtime half of the fixture class (`DW0545`), one template per
+    // (teleport × stake) pair — the one defect in this family that has no
+    // compile-time form at all.
+    emit_fixture_packtests(plan, out);
+}
+
+/// spec-0032 / `DW0545` PackTests: one template per (`teleport`, `stake`) pair,
+/// each of which **leaves a real recovery-stake marker in a real teleport's
+/// volume, rides, and asserts the marker stayed while a body left.**
+///
+/// **This is the only tier that can witness the motivating defect at all, and it
+/// is worth being explicit about why.** A stake marker's position is chosen at
+/// RUNTIME — the death point, or a row of the compile-time placement table picked
+/// by the seat in force — so no compile-time geometry test knows where it will
+/// be. That is exactly why `DW0526` (footing) and `DW0542` (an affordance bound
+/// to a compile-time cell) both correctly decline it, and why the compile-time
+/// half of this fix is a *class* rather than a *box test*. The compile-time proof
+/// says the compiler wrote the exclusion and the marker declares the class; only
+/// a live server can say vanilla's `tag=!…` really keeps that entity out of a
+/// `tp`'s reach.
+///
+/// Three assertions, and the middle one is what stops the template being
+/// vacuous:
+///
+/// 1. both halves of the marker — the `minecraft:interaction` the collector
+///    right-clicks and the `item_display` the player sees — really are inside the
+///    teleport's own selector box before anything moves (a template whose
+///    fixtures landed outside would pass by examining nothing);
+/// 2. a plain **body** summoned in the same box **left**, so a teleport that did
+///    nothing at all cannot pass — the one-directional-falsifiability trap, where
+///    a gate can only fail in the direction that never happens;
+/// 3. both halves of the marker are still there.
+///
+/// It drives the campaign's REAL `stk_fill_<s>` and REAL `teleport_<key>`, never
+/// commands it re-typed, so an emission that grows a filter or drops the class
+/// reds here.
+fn emit_fixture_packtests(plan: &Plan, out: &mut BuildOutput) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let sts = stakes(plan);
+    if sts.is_empty() {
+        return;
+    }
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for eff in all_campaign_effects(plan.campaign) {
+        let Some((from, _to)) = eff.teleport() else {
+            continue;
+        };
+        let name = teleport_fn(eff);
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let Some((lo, hi)) = plan.zone_box(from) else {
+            continue;
+        };
+        let key = &name["teleport_".len()..];
+        let bx = box_selector_args(lo, hi);
+        let mid = [
+            (lo[0] + hi[0]) / 2,
+            (lo[1] + hi[1]) / 2,
+            (lo[2] + hi[2]) / 2,
+        ];
+        let at = format!("{} {} {}", mid[0] as f64 + 0.5, mid[1], mid[2] as f64 + 0.5);
+        for (st, safe) in &sts {
+            if st.max_live() == 0 {
+                continue;
+            }
+            let tag = stk_tag(safe);
+            let hw = crate::affordance::hardware_tag(&tag);
+            let body = format!("dw_fixbody_{key}_{safe}");
+            let (pin, me) = pin_dummy(&format!("dw_fixtest_{key}_{safe}"));
+            let sc = format!("{key}_{safe}");
+            let mut t = packtest_header(&format!(
+                "{title}: `{name}` carries a body out of its volume and leaves the recovery \
+                 stake `{}` standing — a marker is a PLACE, and moving it would move the \
+                 position its ledger recorded (DW0545)",
+                st.id
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            // Own entity and ledger state: a sibling template's leftovers would
+            // defeat the guarded summon inside `stk_fill_<s>`.
+            t.push(format!("kill @e[tag={tag}]"));
+            t.push(format!("kill @e[tag={hw}]"));
+            t.push(format!("kill @e[tag={body}]"));
+            for k in 0..st.max_live() {
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_live_obj(safe, k)
+                ));
+            }
+            // A real marker, put down by the real drop path, in the car.
+            t.push(format!(
+                "execute as {me} positioned {at} run function {ns}:stk_fill_{safe}"
+            ));
+            // Bound, not assumed: both halves are inside the volume the `tp` sweeps.
+            t.push(format!(
+                "execute store result score #fx_in_{sc} dw.sys if entity @e[tag={tag},{bx}]"
+            ));
+            t.push(format!("assert score #fx_in_{sc} dw.sys matches 1"));
+            t.push(format!(
+                "execute store result score #fx_hw_{sc} dw.sys if entity @e[tag={hw},{bx}]"
+            ));
+            t.push(format!("assert score #fx_hw_{sc} dw.sys matches 1"));
+            // A passenger, so "nothing moved" cannot read as a pass.
+            t.push(format!(
+                "summon minecraft:zombie {at} {{Tags:[\"{body}\"],NoAI:1b,Silent:1b,\
+                 PersistenceRequired:1b}}"
+            ));
+            t.push(format!("function {ns}:{name}"));
+            t.push(format!(
+                "execute store result score #fx_body_{sc} dw.sys if entity @e[tag={body},{bx}]"
+            ));
+            t.push(format!("assert score #fx_body_{sc} dw.sys matches 0"));
+            // …and the place stayed a place.
+            t.push(format!(
+                "execute store result score #fx_stay_{sc} dw.sys if entity @e[tag={tag},{bx}]"
+            ));
+            t.push(format!("assert score #fx_stay_{sc} dw.sys matches 1"));
+            t.push(format!(
+                "execute store result score #fx_hwstay_{sc} dw.sys if entity @e[tag={hw},{bx}]"
+            ));
+            t.push(format!("assert score #fx_hwstay_{sc} dw.sys matches 1"));
+            t.push(format!("kill @e[tag={body}]"));
+            t.push(format!("kill @e[tag={tag}]"));
+            t.push(format!("kill @e[tag={hw}]"));
+            for k in 0..st.max_live() {
+                t.push(format!(
+                    "scoreboard players set {me} {} 0",
+                    stk_live_obj(safe, k)
+                ));
+            }
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/fixture_{sc}.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
+    }
 }
 
 /// The entity types a `teleport` template puts in the volume — deliberately
@@ -15313,11 +15525,14 @@ const TELEPORT_WITNESS_TYPES: [(&str, &str); 5] = [
 /// them arrived**.
 ///
 /// The compile-time test (`crates/compiler/tests/v10_teleport.rs`) proves the
-/// compiler wrote no filter. That is only half of "the selection is total": the
-/// other half is vanilla's own `@e[<box>]` semantics, which no Rust test can
-/// witness. This template is that half, and it calls the campaign's REAL
-/// generated `teleport_<key>` function — not a command it re-typed — so a
-/// selector that grows a filter reds here.
+/// compiler wrote no filter beyond the one class exclusion (`tag=!dw_fixture`,
+/// [`crate::affordance`]). That is only half of "the selection is total over
+/// bodies": the other half is vanilla's own `@e[<box>]` semantics, which no Rust
+/// test can witness. This template is that half, and it calls the campaign's
+/// REAL generated `teleport_<key>` function — not a command it re-typed — so a
+/// selector that grows a second filter reds here. Its witnesses carry no class
+/// tag, which is why "the box is then empty" is still the criterion: the
+/// exclusion is about the engine's own places, and this template puts none down.
 ///
 /// The assertion is a count, not a per-entity check: the witnesses go in tagged,
 /// the box is asserted to hold all of them first (a template whose entities
@@ -15346,7 +15561,8 @@ fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
             (lo[2] + hi[2]) / 2,
         ];
         let bx = box_selector_args(lo, hi);
-        let tag = format!("dw_tptest_{}", &name["teleport_".len()..]);
+        let key = &name["teleport_".len()..];
+        let tag = format!("dw_tptest_{key}");
         let n = TELEPORT_WITNESS_TYPES.len();
         let mut t = packtest_header(&format!(
             "{title}: `{name}` moves EVERYTHING in its volume — no type is exempt (spec-0031)"
@@ -15366,16 +15582,16 @@ fn emit_teleport_packtests(plan: &Plan, out: &mut BuildOutput) {
         // Bound, not assumed: all N witnesses really are inside the volume's own
         // selector box before anything moves.
         t.push(format!(
-            "execute store result score #tp_in dw.sys if entity @e[tag={tag},{bx}]"
+            "execute store result score #tp_in_{key} dw.sys if entity @e[tag={tag},{bx}]"
         ));
-        t.push(format!("assert score #tp_in dw.sys matches {n}"));
+        t.push(format!("assert score #tp_in_{key} dw.sys matches {n}"));
         t.push(format!("function {ns}:{name}"));
         // …and none of them is left behind. A `type=!…` term in the selector
         // leaves its entity here and this count is non-zero.
         t.push(format!(
-            "execute store result score #tp_left dw.sys if entity @e[tag={tag},{bx}]"
+            "execute store result score #tp_left_{key} dw.sys if entity @e[tag={tag},{bx}]"
         ));
-        t.push("assert score #tp_left dw.sys matches 0".to_string());
+        t.push(format!("assert score #tp_left_{key} dw.sys matches 0"));
         t.push(format!("kill @e[tag={tag}]"));
         out.insert(
             format!("packtest-datapack/data/{ns}/test/{name}.mcfunction"),

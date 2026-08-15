@@ -4389,19 +4389,28 @@ pub enum QuestEffect {
     /// it is the same one every tick. `from` is the anchor-centred
     /// [`StealthZone`] box the rest of the engine already uses.
     ///
-    /// **The selection is total.** Emission is a single `tp @e[<box>] <cell>`
-    /// with no `type=`, no `tag=`, no `limit=` and no `sort=` — every entity in
-    /// the volume moves, and `crates/compiler/tests/v10_teleport.rs` asserts that
-    /// from the emitted selector rather than from anyone's memory. A
-    /// machinery-type exemption of the kind a `lethal_volumes[]` entry must carry
-    /// was considered and **rejected**: an NPC is a body plus a co-located
-    /// `minecraft:interaction` hitbox, so exempting `minecraft:interaction` —
-    /// as the lethal volume does — would teleport the speaker and leave its
-    /// dialogue box behind. The two engine affordances that are bound to hardware
-    /// the teleport cannot move are refused at compile time instead (`DW0542`).
-    /// Owner ruling
+    /// **The selection is total over bodies.** Emission is a single `tp
+    /// @e[<box>,tag=!dw_fixture] <cell>` with no `type=`, no `limit=` and no
+    /// `sort=` — every body in the volume moves, and
+    /// `crates/compiler/tests/v10_teleport.rs` asserts that from the emitted
+    /// selector rather than from anyone's memory. A machinery-**type** exemption
+    /// of the kind a `lethal_volumes[]` entry must carry was considered and
+    /// **rejected**: an NPC is a body plus a co-located `minecraft:interaction`
+    /// hitbox, so exempting `minecraft:interaction` — as the lethal volume does —
+    /// would teleport the speaker and leave its dialogue box behind. Owner ruling
     /// 2026-08-08 is that everyone on the car travels, players and entities
-    /// alike; totality is how that is true.
+    /// alike; totality over bodies is how that is true.
+    ///
+    /// The one narrowing is a **class the engine's own furniture declares about
+    /// itself**: `dw_fixture` means *my position IS engine state*. A bonfire's
+    /// hitbox, a shortcut lever and a recovery stake's marker are places, not
+    /// passengers, and carrying one does not move a thing — it rewrites a fact
+    /// (for a stake, the ledger holds the marker's coordinates, and the next tick
+    /// retires a marker nobody has a wager at). Places whose cell is known at
+    /// compile time are refused outright instead, because the author can move
+    /// them (`DW0542`); places the runtime puts down are excluded by the selector,
+    /// because nobody can (`DW0545`). Nothing an author writes carries either tag,
+    /// and no campaign JSON can turn either off.
     ///
     /// **A teleport is not a rescue.** Accumulated fall distance carries across
     /// one unchanged and is charged in full at the destination — measured Δ
