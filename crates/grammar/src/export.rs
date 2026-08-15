@@ -881,7 +881,7 @@ fn refuse_broken_contract(expansion: &Expansion) -> Result<(), ExportError> {
     let failed: Vec<String> = verdict
         .gates
         .iter()
-        .filter(|g| !g.pass)
+        .filter(|g| !g.passed())
         .map(|g| format!("{} (examined {}): {}", g.id, g.bound, g.detail))
         .collect();
     if failed.is_empty() {

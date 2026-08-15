@@ -192,7 +192,7 @@ fn a_missing_wall_course_reds_closure_and_the_same_hall_with_it_is_green() {
     let (b, c) = hall();
     let green = check(&b.model, &c, &no_anchors());
     let g = gate(&green, "contract-closure");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 254, "boundary cells examined");
 
     // Strip the top course of the south wall — the shape trial-0001 shipped
@@ -201,7 +201,7 @@ fn a_missing_wall_course_reds_closure_and_the_same_hall_with_it_is_green() {
     broken.air([1, 4, 0], [9, 4, 0]);
     let red = check(&broken.model, &c, &no_anchors());
     let g = gate(&red, "contract-closure");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert_eq!(
         g.bound, 254,
         "the same boundary is examined either way — a red is a disagreement, not a smaller gate"
@@ -242,7 +242,7 @@ fn the_same_bytes_pass_under_one_contract_and_fail_under_another() {
     ));
     let report = check(&b.model, &split, &no_anchors());
     let g = gate(&report, "contract-reachability");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(
         g.detail.contains("space east"),
         "the room with no declared way into it is named: {}",
@@ -292,7 +292,7 @@ fn deleting_an_edge_reds_reachability_though_the_blocks_did_not_move() {
     c.edges.retain(|e| e.class != "walk" || e.b == "exterior");
     let red = check(&b.model, &c, &no_anchors());
     let g = gate(&red, "contract-reachability");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("space east"), "{}", g.detail);
 }
 
@@ -316,7 +316,7 @@ fn a_stair_whose_declared_rise_is_one_off_reds_with_both_numbers_named() {
     }
     let red = check(&b.model, &c, &no_anchors());
     let g = gate(&red, "contract-edge-proof");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("declares rise 2"), "{}", g.detail);
     assert!(g.detail.contains("measure 3"), "{}", g.detail);
     let _ = &mut b;
@@ -373,7 +373,7 @@ fn an_opening_claimed_away_from_the_shared_boundary_is_refused() {
     }
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-well-formed");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("inside space \"hall\""), "{}", g.detail);
 }
 
@@ -402,7 +402,7 @@ fn merging_a_stairs_two_ends_into_one_space_is_refused() {
     ));
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-well-formed");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("is ONE floor"), "{}", g.detail);
 }
 
@@ -414,7 +414,7 @@ fn a_roofed_space_declared_open_is_refused_and_a_sky_open_one_is_not() {
     c.spaces.get_mut("hall").unwrap().envelope = "open".to_string();
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-closure");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(
         g.detail.contains("blocks overhead"),
         "the roof is what refuses it: {}",
@@ -497,7 +497,7 @@ fn a_walled_recess_seals_and_a_stranded_gallery_declared_the_same_way_reds() {
     );
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-no-body");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.detail.contains("sealed"), "{}", g.detail);
     assert!(
         report
@@ -516,7 +516,7 @@ fn a_walled_recess_seals_and_a_stranded_gallery_declared_the_same_way_reds() {
     );
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-no-body");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("qualifies for NOTHING"), "{}", g.detail);
     assert!(
         g.detail.contains("its own boundary is not closed"),
@@ -542,7 +542,7 @@ fn one_anchor_covers_the_cells_within_reach_of_it_and_no_others() {
     let report = check(&b.model, &c, &one);
     let g = gate(&report, "contract-no-body");
     assert!(
-        !g.pass,
+        !g.passed(),
         "one anchor cannot post a 63-cell gallery: {}",
         g.detail
     );
@@ -567,7 +567,7 @@ fn one_anchor_covers_the_cells_within_reach_of_it_and_no_others() {
     );
     let report = check(&b.model, &narrow, &every);
     let g = gate(&report, "contract-no-body");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.detail.contains("posted"), "{}", g.detail);
 }
 
@@ -597,12 +597,12 @@ fn a_wall_head_is_facade_and_the_same_declaration_inside_the_hall_is_not() {
     );
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-no-body");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.detail.contains("facade"), "{}", g.detail);
     // ...and it manufactures no closure or reachability red: the signal the
     // three-kind taxonomy diluted is what this kind restores.
-    assert!(gate(&report, "contract-closure").pass);
-    assert!(gate(&report, "contract-reachability").pass);
+    assert!(gate(&report, "contract-closure").passed());
+    assert!(gate(&report, "contract-reachability").passed());
 
     // The adversary direction: the same words over interior cells. A region
     // nested in a space can never be `facade`, and an enclosed interior can
@@ -616,7 +616,7 @@ fn a_wall_head_is_facade_and_the_same_declaration_inside_the_hall_is_not() {
         ),
     );
     let report = check(&b2.model, &c2, &no_anchors());
-    assert!(!gate(&report, "contract-no-body").pass);
+    assert!(!gate(&report, "contract-no-body").passed());
 }
 
 // ---------------------------------------------------------------------------
@@ -668,10 +668,10 @@ fn a_walkable_slope_declared_a_drop_and_a_bar_that_bars_nothing_both_red() {
     }
     let report = check(&b.model, &wrong, &no_anchors());
     let g = gate(&report, "contract-well-formed");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("a drop falls"), "{}", g.detail);
     let g = gate(&report, "contract-edge-proof");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(
         g.detail.contains("nothing falls from pit to ledge"),
         "{}",
@@ -726,7 +726,7 @@ fn a_bar_that_bars_is_green_and_an_open_doorway_called_barred_is_not() {
     open.air([7, 1, 4], [7, 2, 4]);
     let report = check(&open.model, &c, &no_anchors());
     let g = gate(&report, "contract-edge-proof");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("does not bar anything"), "{}", g.detail);
 }
 
@@ -744,7 +744,7 @@ fn a_standable_cell_in_nothing_reds_coverage() {
     b.air([10, 1, 3], [10, 2, 5]);
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-coverage");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("are in NOTHING"), "{}", g.detail);
     assert!(g.bound > 0);
 }
@@ -757,7 +757,7 @@ fn an_anchor_outside_every_declared_element_reds_and_one_inside_names_its_elemen
     anchors.insert("anchor/altar".to_string(), [5, 1, 4]);
     let report = check(&b.model, &c, &anchors);
     let g = gate(&report, "contract-anchors");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 1);
     assert!(g.detail.contains("1 in a space"), "{}", g.detail);
 
@@ -765,7 +765,7 @@ fn an_anchor_outside_every_declared_element_reds_and_one_inside_names_its_elemen
     adrift.insert("anchor/altar".to_string(), [10, 5, 0]);
     let report = check(&b.model, &c, &adrift);
     let g = gate(&report, "contract-anchors");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("land in nothing"), "{}", g.detail);
 }
 
@@ -784,7 +784,7 @@ fn the_exterior_face_contract_binds_to_declared_ways_out() {
 
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-exterior-faces");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 1, "one declared way out, not 47 standable cells");
 }
 
@@ -812,7 +812,10 @@ fn a_contract_with_nothing_to_examine_reds_rather_than_passing_quietly() {
     ] {
         let g = gate(&report, id);
         assert_eq!(g.bound, 0, "{id}");
-        assert!(!g.pass, "{id} bound to nothing and called itself a pass");
+        assert!(
+            !g.passed(),
+            "{id} bound to nothing and called itself a pass"
+        );
     }
     assert!(
         report
@@ -859,15 +862,15 @@ fn an_acknowledgement_silences_a_facade_majority_and_never_a_posted_one() {
         no_body("the leads", vec![region([0, 9, 0], [8, 9, 8])]),
     );
     let report = check(&b.model, &c, &no_anchors());
-    assert!(gate(&report, "contract-coverage").pass);
+    assert!(gate(&report, "contract-coverage").passed());
     let g = gate(&report, "contract-no-body-majority");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.detail.contains("not play space"), "{}", g.detail);
 
     c.no_body_majority_ack = Some("a tower is mostly roof".to_string());
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-no-body-majority");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(gate(&report, "contract-no-body").detail.contains("facade"));
 
     // The same acknowledgement over a majority the author placed themselves.
@@ -887,7 +890,7 @@ fn an_acknowledgement_silences_a_facade_majority_and_never_a_posted_one() {
     );
     let g = gate(&report, "contract-no-body-majority");
     assert!(
-        !g.pass,
+        !g.passed(),
         "an acknowledgement must not buy a `posted` majority: {}",
         g.detail
     );
@@ -919,7 +922,7 @@ fn an_out_of_walk_region_that_holds_no_standable_cell_is_red() {
     );
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-no-body");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(
         g.detail.contains("no standable cell at all"),
         "{}",

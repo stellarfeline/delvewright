@@ -271,7 +271,7 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         .iter()
         .find(|g| g.id.contains("symmetric"))
         .expect("the symmetry gate ran");
-    assert!(symmetric.pass, "{}", symmetric.detail);
+    assert!(symmetric.passed(), "{}", symmetric.detail);
     assert!(
         symmetric.bound > 0,
         "the symmetry gate examined zero cell pairs — {}",
@@ -288,7 +288,7 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
     let red: Vec<&str> = report
         .gates
         .iter()
-        .filter(|g| !g.pass)
+        .filter(|g| !g.passed())
         .map(|g| g.id)
         .collect();
     assert_eq!(
@@ -301,7 +301,7 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         report
             .gates
             .iter()
-            .filter(|g| !g.pass)
+            .filter(|g| !g.passed())
             .all(|g| g.bound == 0),
         "every red here is a zero binding, not a disagreement about geometry"
     );

@@ -25,12 +25,20 @@ Two library modules exist for the tool and are public for it:
 - [`gates`] — `judge(&Expansion, Options) -> Report`, and the distinction the
   module is built around: a **gate** has a verdict and a binding count, a
   **measurement** is a number with no threshold, and the two are never mixed.
+  A gate's verdict is one of **three** — `pass`, `fail`, `undecided` — and so is
+  a report's: `fail` when any gate went red, else `undecided` when any gate could
+  not decide, else `pass`. An undecided gate is neither a pass nor a fail; it
+  says the objects were examined and **this region could not decide them**, which
+  is a fact about the region rather than about the program (`DW0742`, §4b). It
+  refuses no artifact and reds no sweep, and it carries its own binding count,
+  `undecided`, printed beside `bound` wherever `bound` is printed.
   Gates: `blocks-exist` (every painted block state exists in 1.21.11 — see §4b),
   `shape-complete` (every placed state writes its shape-carrying `multipart`
   properties — `DW0735`, §4b), `states-complete` (every placed state writes
   EVERY property the block has — `DW0737`, §4b), `oriented-fills` (an
-  orientation-sensitive state is filled only under the identity frame, a passed
-  `orientation` guard, or the scope's own axis frame — `DW0736`, §4b),
+  orientation-sensitive state is filled only under a frame that leaves it alone,
+  a passed `orientation` guard, or the scope's own axis frame — `DW0736`, plus
+  `DW0742` for the fills this region could not decide, §4b),
   `non-empty`, and the opt-in `traversable`, `symmetric` and `reachable-floor`
   (§4c). Two more are emitted **only over a piece that holds what they judge**:
   `stair-shape` (every written stair `shape` is the one vanilla derives at that
@@ -1188,6 +1196,38 @@ model to judge at all.
   A finding names the frame as `x->X,y->Y,z->-Z`, with a leading `-` on a
   reflected axis, so a mirrored author is not shown a frame that reads as
   identity.
+- **Undecidable oriented fills (`DW0742`).** `DW0736` returns "sound" for the
+  identity frame before it reads a single property, so a fill whose scope stands
+  in the identity frame was not examined — it was skipped. Whether that matters
+  is not a fact about the frame. A scope no rule reorients, and one reoriented
+  only by requests that name their axes outright, has the identity at **every**
+  region there will ever be, and its world-frame literal is unconditionally what
+  the author wrote. A scope under `z: largest` has the identity only while this
+  box's longest axis is already the one the request names; at a region whose
+  axes rank differently the same scope is turned and the same literal is refused
+  by `DW0736`.
+  So the expander carries, beside each scope's frame, the **set of frames that
+  scope could stand in over every region the program could be expanded at**
+  (`orient::FrameSet`, computed from the reorientation request over every weak
+  ordering of the box's extents). A world-frame fill in the identity frame whose
+  set holds a frame that would land one of its properties wrong is `DW0742`:
+  **undecided**, a third gate state that is neither a pass nor a fail. It never
+  refuses an artifact and never reds a corpus sweep — the program may be
+  entirely correct, and no edit to it would make this region say so. It is a
+  distinct state on the gate, a binding count of its own (`undecided`, printed
+  beside `bound` everywhere `bound` is printed), a named finding, and a report
+  verdict of `undecided` when nothing went red.
+  The frame set is what keeps this off ordinary correct programs, and the
+  difference is large: judged against all forty-eight frames of the cube instead
+  of the reachable ones, every `deepslate[axis=y]` pillar and every
+  `barrel[facing=up]` under a request that pins the vertical with `y: world_y`
+  reports, which is six of the live campaign's eight zones and three library
+  programs — none of which an author could do anything about. Judged against the
+  reachable set, those are decided and one zone reports: the gate ward's four
+  runs of world-frame `iron_bars`, which are exactly the four the same gate
+  refuses under `DW0736` when that zone is expanded at its transposed region.
+  The fix is either mechanism `DW0736` already names — write the state in the
+  scope's own axis frame (§2), or pin the frame with `Cond::Orientation`.
 - **State completeness (`DW0737`).** The whole class `DW0735` is the hard half
   of. A placed state must write every property its block has, including the
   ones whose default is benign for the model. Vanilla fills an omitted property
@@ -1217,7 +1257,13 @@ model to judge at all.
 
 `tests/shape_orient.rs` demonstrates all four red→green on real pieces —
 `broken_grate`'s bars for the first three, `far_side_bar`'s for the frame, in
-both directions. `tests/frames_blockstate.rs` carries the gates across the frame
+both directions — and both of its identity-region halves are `DW0742`, which is
+what a pair of tests written one region apart looks like once the third answer
+exists. `tests/frames_undecided.rs` is the third answer on its own: one program
+at a box and at its transpose, plus the four ways a fill is genuinely decided
+(no reorientation, a reorientation that reads no proportion, a state no
+reachable frame disturbs, and a state written in the scope's own frame), none of
+which may report anything. `tests/frames_blockstate.rs` carries the gates across the frame
 constructs — an unguarded fill inside a mirrored body, a `claim` under a
 reoriented scope, a `bind`-rebound role, and what a refusal's message names
 inside a reframed subtree — and `tests/frames_local_paint.rs` is the same sweep
@@ -1351,6 +1397,15 @@ declares, runs the same `gates::judge` `expand` runs, prints a binding count per
 gate over the whole sweep, and writes nothing. It reds when any gate fails, when
 any gate examined zero objects, and when the corpus it was pointed at was empty.
 
+A program whose gates are all green but not all decided prints as `UNDECIDED`
+with the gates that could not decide, by name and with their counts, and does
+**not** red the sweep. The per-gate totals carry an `undecided` column beside
+`bound` — always, not only when it is non-zero, because a number that appears
+only when it is interesting is a number nobody learns to read — and the summary
+line states how many programs were undecided at their declared region. A gate
+undecided across a whole corpus is the same finding a zero binding is, one level
+down: the surface exists and this corpus does not exercise it.
+
 **The two corpora are counted apart**, because they have different owners and a
 zero means a different thing in each:
 
@@ -1388,7 +1443,12 @@ one more. An entry belongs there only while the engine is missing a capability
 the program needs. Ids are audit labels, so both corpora are recordable:
 `library/<program>` and `<campaign>/<zone>`.
 
-Every zone program of every campaign expands and judges green. The rule library
+Every zone program of every campaign expands, and every gate over every one of
+them is green. One is not fully decided: `the-drowned-bell-r2/z2-gate-ward` is
+`UNDECIDED` on four world-frame `iron_bars` runs under its `z: largest` root
+(`DW0742`) — the same four the same gate refuses under `DW0736` when that zone
+is expanded at its transposed region, which is what makes the state a finding
+rather than a formality. The rule library
 holds one recorded red: `library/causeway` (`DW0800`) floods its ward floor to
 ceiling on both flanks of its spine, which is what makes the flanks unwalkable,
 and lowering the waterline needs `nav` to know that a body cannot stand on water
