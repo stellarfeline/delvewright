@@ -137,10 +137,13 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
 delve is currently on the validation rig — see [the roadmap](docs/ROADMAP.md) for
 where the project stands.
 
-## Getting the compiler
+## Getting the tool
 
-`delvec` is the compiler that turns campaign documents into a playable delve. It
-is a single self-contained binary with no runtime dependencies.
+`delvec` is the **delve creator**: one self-contained binary, no runtime
+dependencies, holding everything you do to a campaign. It validates and
+compiles campaign documents into a playable delve, analyses the result for
+reachability, deadlocks and dark rooms, and renders what you have built so you
+can look at it before you believe it. `--help` lists the subcommands.
 
 ```sh
 cargo install delvec           # from crates.io
@@ -159,7 +162,7 @@ sha256sum --check --ignore-missing SHA256SUMS     # `shasum -a 256 -c` on macOS
 ```
 
 Building from a checkout of this repo (`cargo build -p delvec --bin delvec`)
-gives you the same compiler, and is the path to take if you are changing it.
+gives you the same tool, and is the path to take if you are changing it.
 
 ## Map of the repo
 
