@@ -171,9 +171,21 @@ rust_toolchain = "1.97.1"
 # branch is somewhere for the shelf to end up half-built. Windows 10 1803+ ships
 # bsdtar and Windows 11 Explorer opens `.tar.gz` natively.
 #
-# `delve-render` is deliberately NOT on this shelf — see ADR-0017 §3; it needs a
-# GPU/driver stack and the EULA-gated client jar, neither of which a downloaded
-# binary can carry, so it would be a shelf item that fails for most downloaders.
+# `delve-render` is deliberately NOT on this shelf (ADR-0021 §3), and it is worth
+# being exact about what that does and does not say. The CPU render surface —
+# `viewer`, `scene`, `panorama`, `contact-sheet`, `palette`, `index` — IS on the
+# shelf, because it is `delvec` subcommands (ADR-0021 §1). What is not is the
+# three arms that mesh and rasterise, and the reason is the shelf's own shape:
+# these Linux targets are static-musl on purpose, a fully static binary cannot
+# `dlopen` a Vulkan loader, and `nucleation` carries a C build script no musl
+# cross-compiler in the release recipe can run.
+#
+# That is a statement about DISTRIBUTION and never about capability. Every
+# validation the pipeline needs stays runnable on the creator's own machine
+# because the source build is the guarantee and the shelf is only an
+# optimisation of it: a creator who needs the GPU arms builds
+# `crates/render` from a checkout, which the skill's `Init` section does at the
+# step that needs it.
 targets = [
     "x86_64-unknown-linux-musl",
     "aarch64-unknown-linux-musl",
@@ -250,9 +262,9 @@ chunky_launcher_url = "https://chunkyupdate.lemaik.de/ChunkyLauncher.jar"
 chunky_license = "GPL-3.0"
 
 # deepslate (MIT) — the rendering core of the prefab review page
-# (`delve-render viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
+# (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as
-# `crates/render/src/viewer/deepslate.bundle.js`. Vendored, never forked — the
+# `crates/compiler/src/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
 # bundle carries one local patch, of two block-entity texture ids upstream points
 # at paths no Minecraft version ships.
 #
@@ -261,10 +273,10 @@ chunky_license = "GPL-3.0"
 # version without updating this file, is a red. Rebuild with
 # `tools/build-deepslate-bundle.sh` (which pins the same versions) and update the
 # digest in the same commit.
-# Consumed by: tools/build-deepslate-bundle.sh + crates/render/src/viewer/.
+# Consumed by: tools/build-deepslate-bundle.sh + crates/compiler/src/view/viewer/.
 deepslate_version = "0.26.0"
 deepslate_license = "MIT"
-deepslate_bundle = "crates/render/src/viewer/deepslate.bundle.js"
+deepslate_bundle = "crates/compiler/src/view/viewer/deepslate.bundle.js"
 deepslate_bundle_sha256 = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
 gl_matrix_version = "3.4.4"
 esbuild_version = "0.28.2"

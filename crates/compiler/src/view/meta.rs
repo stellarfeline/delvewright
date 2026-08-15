@@ -13,7 +13,7 @@
 //! manifest, and one reader has to serve both shapes.
 //!
 //! What it does not do is re-declare the fields. Every leaf type below is the
-//! document's own ([`delvewright_schem::prefab`]), so an anchor here is an
+//! document's own ([`delvewright_dsl::prefab`]), so an anchor here is an
 //! anchor there — same keys, same optionality, same tolerance of a key this
 //! version has never heard of. The only local decision is *which* blocks are
 //! read.
@@ -24,7 +24,8 @@ use serde::Deserialize;
 
 /// The document's own leaf types. A projection selects blocks; it does not get
 /// to have its own opinion about what an anchor is.
-pub use delvewright_schem::prefab::{Anchor as AnchorMeta, Connector, Lighting, Region};
+pub use delvewright_dsl::prefab::{Anchor as AnchorMeta, Connector, Region};
+pub use delvewright_dsl::registry::Lighting;
 
 /// The subset of prefab metadata the renderer reads, from either shape of the
 /// document (single template or tile-set manifest).
@@ -70,7 +71,7 @@ impl PrefabMeta {
     pub fn is_lit(&self) -> Option<bool> {
         self.lighting
             .as_ref()
-            .map(|l| l.profile == delvewright_schem::prefab::LightingProfile::Lit)
+            .map(|l| l.profile == delvewright_dsl::registry::LightingProfile::Lit)
     }
 }
 
@@ -79,9 +80,8 @@ mod tests {
     use super::*;
     // The document itself, so the projection can be checked against what it
     // projects rather than against a second copy of this file's beliefs.
-    use delvewright_schem::prefab::{
-        Anchor as DocAnchor, License, LightingProfile, PrefabMeta as Document,
-    };
+    use delvewright_dsl::prefab::{Anchor as DocAnchor, License, PrefabMeta as Document};
+    use delvewright_dsl::registry::LightingProfile;
 
     #[test]
     fn parses_connectors_and_anchors() {

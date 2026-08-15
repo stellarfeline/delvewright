@@ -1,0 +1,63 @@
+{
+  "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
+  "campaign_id": "mini",
+  "layout_aabb": {
+    "max": [
+      17,
+      69,
+      10
+    ],
+    "min": [
+      0,
+      64,
+      0
+    ]
+  },
+  "shots": [
+    {
+      "area": "area/entry",
+      "camera": {
+        "look_at": [
+          5.5,
+          66.0,
+          4.5
+        ],
+        "pitch": 15.945,
+        "pos": [
+          5.5,
+          68.0,
+          -2.5
+        ],
+        "yaw": -90.0
+      },
+      "expect": [
+        "spawn point clear — player can stand"
+      ],
+      "id": "spawn",
+      "kind": "spawn"
+    },
+    {
+      "area": "area/entry",
+      "camera": {
+        "look_at": [
+          5.5,
+          65.0,
+          5.5
+        ],
+        "pitch": 35.264,
+        "pos": [
+          -1.5,
+          72.0,
+          -1.5
+        ],
+        "yaw": -45.0
+      },
+      "expect": [
+        "room declared lit — no dark frame"
+      ],
+      "id": "interior/entry/0",
+      "kind": "interior"
+    }
+  ],
+  "version": "0.2.0"
+}

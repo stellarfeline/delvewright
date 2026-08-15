@@ -15,6 +15,7 @@
 //! Determinism (ADR-0006): all iteration is over `BTreeMap`/`BTreeSet` or slices;
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
+pub mod blocks;
 pub mod canonical;
 pub mod chrome;
 pub mod diagnostic;
@@ -29,6 +30,7 @@ pub mod mclang;
 pub mod prefab;
 pub mod registry;
 pub mod schema;
+pub mod split;
 pub mod stages;
 pub mod validate;
 

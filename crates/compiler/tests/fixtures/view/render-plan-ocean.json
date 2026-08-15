@@ -1,0 +1,45 @@
+{
+  "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
+  "campaign_id": "isle",
+  "horizon": {
+    "kind": "ocean",
+    "sea_level": 62
+  },
+  "layout_aabb": {
+    "max": [
+      31,
+      80,
+      47
+    ],
+    "min": [
+      0,
+      56,
+      0
+    ]
+  },
+  "shots": [
+    {
+      "area": "area/beach",
+      "camera": {
+        "look_at": [
+          5.5,
+          66.0,
+          4.5
+        ],
+        "pitch": 15.945,
+        "pos": [
+          5.5,
+          68.0,
+          -2.5
+        ],
+        "yaw": -90.0
+      },
+      "expect": [
+        "spawn point clear — player can stand"
+      ],
+      "id": "spawn",
+      "kind": "spawn"
+    }
+  ],
+  "version": "0.6.0"
+}

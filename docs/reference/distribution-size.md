@@ -17,12 +17,12 @@ are from `stellarfeline/delvewright` release **v1.1.0** and from repo `main` at
 
 | | download | on disk |
 |---|---|---|
-| **the authoring loop** (skill + compiler + prefabs) | **~3.2 MB** | **~8.6 MB** |
+| **the authoring loop** (skill + compiler + prefabs) | **~3.9 MB** | **~10.7 MB** |
 | \+ a Rust toolchain, if installing via `cargo install` | ~0.4 GB | **~1.4 GB** |
 | \+ Python venv, only if the campaign declares custom skins | — | ~94 MB |
 | **the validation ladder** (docker images, jars, renderer) | ~0.4 GB | ~2.0 GB |
 
-**`delvec` itself is ~3 MB to download and ~8 MB installed.** Nothing the
+**`delvec` itself is ~4 MB to download and ~11 MB installed.** Nothing the
 authoring loop needs is large. The two big numbers belong to things that are
 either *a way of obtaining* the compiler (a Rust toolchain) or *a different
 tier* (validation), and both are avoidable — see §2.
@@ -144,7 +144,7 @@ So the "cargo path" is ~1.4 GB of toolchain + ~34 MB of registry cache, and the
 
 ---
 
-## 4. Why `delvec` is ~8 MB and not ~1 MB
+## 4. Why `delvec` is ~11 MB and not ~1 MB
 
 The premise "`delvec` shouldn't have many dependencies" is **correct** — and the
 dependencies are not the cause.
@@ -153,6 +153,33 @@ dependencies are not the cause.
 cargo tree -p delvec --edges normal --prefix none | sed 's/ (\*)$//' | sort -u | wc -l
 → 50 packages
 ```
+
+### 4.0 The CPU render surface is ~1.6 MB of it
+
+`delvec` carries the whole CPU render surface — `viewer`, `palette`, `scene`,
+`panorama`, `contact-sheet`, `index` — so a creator installs one binary and
+nothing render-shaped is a second download. Measured on one host with one script,
+which is the only comparison worth making (the figures below move by a megabyte
+between toolchains and hosts, so a number from a different machine is not a
+baseline):
+
+```
+bash tools/build-release-binaries.sh --target aarch64-apple-darwin
+```
+
+| | download | on disk |
+|---|---|---|
+| without the render surface | 3,383,559 B | 9,109,152 B |
+| with it | 3,914,334 B | 10,718,048 B |
+| difference | +530,775 B (+15.7%) | +1,608,896 B (+17.7%) |
+
+That is a **record, not a budget**: binary size under 100 MB is not a concern,
+and the alternative it replaces was a second binary a creator had to find, build
+and keep in step. What the surface does NOT drag is a GPU stack — no
+`nucleation`, no `wgpu`, and the two new external dependencies (`image` with
+default features off, and `zip` with `deflate` only) are pure Rust, which is what
+keeps this binary cross-building for all five shelf targets including the two
+static-musl ones.
 
 ### 4.1 80% of the code is ours
 
@@ -268,6 +295,11 @@ applied; the numbers exist so a decision can be made against evidence.
 All builds below: `cargo build --release --locked -p delvec --bin delvec` on
 `main` with `RUSTFLAGS="-C strip=symbols"` and the named profile override, into a
 separate `CARGO_TARGET_DIR`. The baseline is the current shelf recipe:
+Every row below is measured against ONE baseline binary on one host, so the
+savings are relative and remain valid, while the absolute figures are smaller
+than §4.0's because that baseline carries no render surface. Re-measure the pair
+together before quoting either.
+
 **8,756,512 B on disk / 3,251,645 B archived** (`tools/build-release-binaries.sh
 --target aarch64-apple-darwin`).
 

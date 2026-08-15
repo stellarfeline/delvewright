@@ -11,8 +11,8 @@
 //! pretty, trailing newline), so the index rides the determinism gate like the plan
 //! it derives from.
 //!
-//! Shots stamped dark-with-night-vision (see [`crate::scene`]'s REVIEW POLICY)
-//! additionally carry `review_policy` = [`crate::scene::REVIEW_POLICY`] and their
+//! Shots stamped dark-with-night-vision (see [`crate::view::scene`]'s REVIEW POLICY)
+//! additionally carry `review_policy` = [`crate::view::scene::REVIEW_POLICY`] and their
 //! `lighting` stamp, so the reviewer knows those images are night-vision
 //! **emulations** (legibility ground truth, not lighting ground truth). Both
 //! fields are absent — not null — everywhere else, keeping indexes for
@@ -20,8 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::diag::{DW_INPUT, Diagnostic};
-use crate::scene::{LightingStamp, REVIEW_POLICY, needs_emulation, scene_file_stem};
+use crate::view::diag::{DW_INPUT, Diagnostic};
+use crate::view::scene::{LightingStamp, REVIEW_POLICY, needs_emulation, scene_file_stem};
 
 #[derive(Debug, Deserialize)]
 struct RenderPlan {
@@ -58,7 +58,7 @@ struct IndexEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     objective: Option<String>,
     /// The image filename a renderer produces for this shot: the scene's own
-    /// name (`crate::scene::scene_file_stem`) with a `.png` extension, so the
+    /// name (`crate::view::scene::scene_file_stem`) with a `.png` extension, so the
     /// scene JSON, its Chunky caches and this image all share one stem.
     image: String,
     expect: Vec<String>,
@@ -66,7 +66,7 @@ struct IndexEntry {
     /// (absent for shots of undeclared areas — index bytes unchanged for them).
     #[serde(skip_serializing_if = "Option::is_none")]
     lighting: Option<serde_json::Value>,
-    /// [`REVIEW_POLICY`] for shots whose scene `delve-render scene` emulates
+    /// [`REVIEW_POLICY`] for shots whose scene `delvec scene` emulates
     /// (dark-with-night-vision stamp): tells the reviewing agent/vision model
     /// the image approximates the night-vision player view — judge layout and
     /// readability from it, never the world's real lighting.
@@ -90,7 +90,7 @@ pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
         .shots
         .iter()
         .map(|s| {
-            // The same predicate `delve-render scene` applies, over the same
+            // The same predicate `delvec scene` applies, over the same
             // stamp — index and scene can never disagree about which shots are
             // emulated.
             let stamp: Option<LightingStamp> = s
@@ -124,10 +124,10 @@ pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diag::DW_INPUT;
+    use crate::view::diag::DW_INPUT;
 
-    const MINI: &[u8] = include_bytes!("../tests/fixtures/render-plan-mini.json");
-    const POV: &[u8] = include_bytes!("../tests/fixtures/render-plan-pov.json");
+    const MINI: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-mini.json");
+    const POV: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-pov.json");
 
     #[test]
     fn malformed_plan_is_dw0721() {
@@ -200,7 +200,7 @@ mod tests {
         // Dark + night-vision → marked, stamp passed through.
         assert_eq!(
             shots[0]["review_policy"],
-            crate::scene::REVIEW_POLICY,
+            crate::view::scene::REVIEW_POLICY,
             "emulated shot carries the review marker"
         );
         assert_eq!(shots[0]["lighting"]["profile"], "dark");

@@ -39,8 +39,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::diag::{DW_BINDING, DW_INPUT, DW_RANK_ORDER, Diagnostic};
-use crate::font;
+use crate::view::diag::{DW_BINDING, DW_INPUT, DW_RANK_ORDER, Diagnostic};
+use crate::view::font;
 
 /// One candidate on the sheet: an id the owner can name it by, and the render
 /// that represents it.

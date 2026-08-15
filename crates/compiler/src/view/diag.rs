@@ -57,7 +57,7 @@ pub const DW_ANCHOR_EYE: &str = "DW0727";
 /// load. Those are different questions, and only the second depends on the
 /// template's `DataVersion`: a pre-pin file is datafixed on load and places the
 /// renamed block correctly, which is why
-/// [`delvewright_schem::blocks::judge_at`] calls that case a warning and not a
+/// [`delvewright_dsl::blocks::judge_at`] calls that case a warning and not a
 /// refusal. Answering the second question here would report a defect on a file
 /// the game loads fine.
 pub const DW_UNRESOLVED_BLOCK: &str = "DW0790";

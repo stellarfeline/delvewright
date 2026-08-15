@@ -78,7 +78,7 @@ import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-REGISTRY = REPO / "crates" / "compiler" / "data" / "blocks-1.21.11.json"
+REGISTRY = REPO / "crates" / "dsl" / "data" / "blocks-1.21.11.json"
 CLASSIFICATION = REPO / "crates" / "compiler" / "data" / "block-classification-1.21.11.json"
 
 # Generation-time working material only — gitignored, never shipped, and unable

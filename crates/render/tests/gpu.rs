@@ -20,9 +20,9 @@
 
 use std::path::{Path, PathBuf};
 
+use delvewright_compiler::view::nbt;
 use delvewright_render::detect;
 use delvewright_render::fidelity;
-use delvewright_render::nbt;
 use delvewright_render::render::{self, RenderParams};
 use delvewright_render::shots;
 
@@ -270,7 +270,7 @@ fn piece_double_render_is_stable() {
         return;
     }
     let st = nbt::parse_structure(&p).expect("parse");
-    let meta = delvewright_render::meta::PrefabMeta::beside_nbt(&p).expect("meta");
+    let meta = delvewright_compiler::view::meta::PrefabMeta::beside_nbt(&p).expect("meta");
     let plan = shots::plan_piece(&st, meta.as_ref(), &[]).unwrap();
     for shot in &plan.shots {
         let params = RenderParams {

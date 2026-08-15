@@ -28,8 +28,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = join(HERE, "..", "src", "viewer", "controls.js");
-const PAGE = join(HERE, "..", "src", "viewer", "page.js");
+const SRC = join(HERE, "..", "src", "view", "viewer", "controls.js");
+const PAGE = join(HERE, "..", "src", "view", "viewer", "page.js");
 
 /* The module is an inline browser script, not an ES module — it is concatenated
  * into a `<script>` block by `render_html`. Evaluating the source is therefore
@@ -286,8 +286,8 @@ test("the page resolves keys through the table and nowhere else", () => {
  * called. So the checks below are about the page's geometry, not its arithmetic.
  */
 
-const CSS = readFileSync(join(HERE, "..", "src", "viewer", "page.css"), "utf8");
-const HTML = readFileSync(join(HERE, "..", "src", "viewer", "page.html"), "utf8");
+const CSS = readFileSync(join(HERE, "..", "src", "view", "viewer", "page.css"), "utf8");
+const HTML = readFileSync(join(HERE, "..", "src", "view", "viewer", "page.html"), "utf8");
 
 test("the [hidden] attribute actually hides, against any author display", () => {
   assert.match(

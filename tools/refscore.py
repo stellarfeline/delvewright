@@ -6,7 +6,7 @@ The score RANKS the contact sheet; it NEVER gates it (owner ruling, spec-0028
 is unproven, so a number here may decide where a candidate sits on the page and
 may never decide whether it is on the page. This tool therefore emits ONE SCORE
 PER CANDIDATE and nothing else — no threshold, no `keep`, no `reject`. The
-consumer (`delve-render contact-sheet`) enforces the rest: whatever ordering it
+consumer (`delvec contact-sheet`) enforces the rest: whatever ordering it
 computes must be a permutation of the candidate set, or it refuses with DW0725.
 Promoting the score to a gate needs its own owner-approved amendment backed by
 accumulated batch data. Do not add one here.
@@ -55,12 +55,12 @@ Stdlib only on the `stub` / `--dry-run` path (python >= 3.11 for `tomllib`).
 
 Usage:
     # 1. an unranked sheet — it always writes the manifest naming every cell
-    delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+    delvec contact-sheet .sheets/renders -o .sheets/zone2.png
     # 2. score those exact candidates against the zone's reference image
     tools/refscore.py --sheet .sheets/zone2.json --reference .refimg/zone2.png \\
         -o .sheets/zone2-scores.json
     # 3. the same page, now ordered by the score
-    delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \\
+    delvec contact-sheet .sheets/renders -o .sheets/zone2.png \\
         --scores .sheets/zone2-scores.json
 """
 
@@ -171,7 +171,7 @@ def candidates_from_sheet(path: Path) -> list[tuple[str, Path]]:
     if doc.get("schema") != SHEET_SCHEMA:
         raise SystemExit(
             f"{path}: schema is {doc.get('schema')!r}, expected {SHEET_SCHEMA!r} — "
-            f"pass the `.json` that `delve-render contact-sheet` wrote beside its PNG."
+            f"pass the `.json` that `delvec contact-sheet` wrote beside its PNG."
         )
     base = path.parent
     out: list[tuple[str, Path]] = []
