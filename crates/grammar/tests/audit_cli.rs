@@ -42,6 +42,18 @@ fn audit(args: &[&str]) -> Output {
         .unwrap()
 }
 
+/// This repo's own record of known reds — the reading CI audits under, and the
+/// only one under which `--library` is a statement about the corpus rather than
+/// about one recorded piece.
+///
+/// It is not a softer reading. A recorded program is still expanded and still
+/// judged, and the record INVERTS its assertion: `library/causeway` must fail,
+/// and must fail with exactly `DW0800`. Repairing it reds this file, and so does
+/// a second library rule whose water runs.
+fn repo_exclusions() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/zone-audit-exclusions.json")
+}
+
 /// A content root holding one campaign with one program, complete and green.
 fn content_root(dir: &Path, program_json: &str, manifest: Option<&str>) -> PathBuf {
     let programs = dir.join("campaigns/demo/design/programs");
@@ -188,7 +200,14 @@ fn an_audit_with_no_corpus_named_refuses() {
 fn an_empty_campaign_root_beside_the_library_is_named_not_absorbed() {
     let dir = scratch("empty-beside-library");
     fs::create_dir_all(dir.join("campaigns")).unwrap();
-    let out = audit(&["--library", "--campaign-root", dir.to_str().unwrap()]);
+    let excl = repo_exclusions();
+    let out = audit(&[
+        "--library",
+        "--campaign-root",
+        dir.to_str().unwrap(),
+        "--exclusions",
+        excl.to_str().unwrap(),
+    ]);
     let text = combined(&out);
     assert!(out.status.success(), "{text}");
     assert!(
@@ -220,7 +239,14 @@ fn an_empty_campaign_root_beside_the_library_is_named_not_absorbed() {
 fn each_corpus_states_its_own_binding_count() {
     let dir = scratch("both-corpora");
     let root = content_root(&dir, GREEN_PROGRAM, Some(MANIFEST));
-    let out = audit(&["--library", "--campaign-root", root.to_str().unwrap()]);
+    let excl = repo_exclusions();
+    let out = audit(&[
+        "--library",
+        "--campaign-root",
+        root.to_str().unwrap(),
+        "--exclusions",
+        excl.to_str().unwrap(),
+    ]);
     let text = combined(&out);
     assert!(out.status.success(), "{text}");
     assert!(
@@ -237,7 +263,8 @@ fn each_corpus_states_its_own_binding_count() {
 /// campaign corpus can never be confused with one that was never asked for.
 #[test]
 fn a_library_only_audit_claims_nothing_about_campaigns() {
-    let out = audit(&["--library"]);
+    let excl = repo_exclusions();
+    let out = audit(&["--library", "--exclusions", excl.to_str().unwrap()]);
     let text = combined(&out);
     assert!(out.status.success(), "{text}");
     assert!(text.contains("corpus: library "), "{text}");
@@ -450,11 +477,18 @@ fn an_exclusion_with_no_capability_gap_is_refused() {
 // The live corpora
 // ---------------------------------------------------------------------------
 
-/// **The rule library passes its own audit**, and the run states a binding count
-/// per gate over every program in it.
+/// **The rule library audits to exactly its record**, and the run states a
+/// binding count per gate over every program in it.
+///
+/// Under this repo's own record that is a green run with one held red:
+/// `library/causeway`'s flood is not contained, recorded against a missing `nav`
+/// capability. The count of held reds is asserted, so the record cannot grow a
+/// second entry unnoticed and cannot go stale unnoticed either — an expired one
+/// reds this test, because a recorded program that passes is a finding.
 #[test]
-fn the_rule_library_passes_its_own_audit() {
-    let out = audit(&["--library"]);
+fn the_rule_library_audits_to_exactly_its_record() {
+    let excl = repo_exclusions();
+    let out = audit(&["--library", "--exclusions", excl.to_str().unwrap()]);
     assert!(out.status.success(), "{}", combined(&out));
     let text = combined(&out);
     assert!(
@@ -464,6 +498,10 @@ fn the_rule_library_passes_its_own_audit() {
         )),
         "{text}"
     );
+    assert!(
+        text.contains("1 of them held known-red"),
+        "the held-red count is not the one the record carries:\n{text}"
+    );
     // No gate may report a zero binding over the whole corpus.
     for line in text.lines() {
         assert!(
@@ -471,4 +509,23 @@ fn the_rule_library_passes_its_own_audit() {
             "a gate bound to nothing:\n{text}"
         );
     }
+}
+
+/// **Without the record, the library's one known red is a plain red.**
+///
+/// The strict reading is what makes the record a record rather than a habit: the
+/// program is not skipped anywhere, and a run that is not handed the record
+/// refuses. This is also the falsifier for the entry itself — if `causeway`'s
+/// flood were ever contained, this test would go green in the wrong direction
+/// and `the_rule_library_audits_to_exactly_its_record` would red beside it.
+#[test]
+fn without_the_record_the_librarys_known_red_still_reds() {
+    let out = audit(&["--library"]);
+    let text = combined(&out);
+    assert!(
+        !out.status.success(),
+        "a known red passed a run that was handed no record:\n{text}"
+    );
+    assert!(text.contains("library/causeway"), "{text}");
+    assert!(text.contains("DW0800"), "{text}");
 }

@@ -37,9 +37,14 @@ use std::path::Path;
 
 /// Cross-tileset generator invariants, shared by source include so a lesson
 /// learned in one tileset does not have to be re-learned in the other four
-/// (the five generators are separate Cargo workspaces on purpose).
+/// (the generators are separate Cargo workspaces on purpose).
 #[path = "../../invariants.rs"]
 mod invariants;
+
+/// The connection derivation, shared the same way: what a fence, a wall, a pane
+/// or a lichen joins is computed from the blocks beside it, at the emitter.
+#[path = "../../connections.rs"]
+mod connections;
 
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
@@ -110,6 +115,25 @@ fn value_noise(seed: u64, x: i32, y: i32, z: i32, freq: f64, salt: u64) -> f64 {
 // ---------------------------------------------------------------------------
 
 type Props = Option<Vec<(&'static str, &'static str)>>;
+
+/// A neighbouring cell as `(block id, properties)`, or `None` when it is
+/// outside the grid or holds no block. The shape [`connections`] asks about.
+fn neighbour_state(g: &Grid, x: i32, y: i32, z: i32) -> Option<(String, BTreeMap<String, String>)> {
+    if !g.inb(x, y, z) {
+        return None;
+    }
+    match g.get(x, y, z) {
+        Cell::Block(name, props) => Some((
+            name.clone(),
+            props
+                .iter()
+                .flatten()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )),
+        _ => None,
+    }
+}
 
 /// A weighted palette entry: block id, optional block-state props, weight.
 struct Recipe {
@@ -1107,23 +1131,31 @@ fn detail_pass(spec: &Spec, g: &mut Grid, seed: u64) {
                 if !matches!(g.get(x, y, z), Cell::Air) {
                     continue;
                 }
-                // find an adjacent solid wall face
-                for (dx, dz, face) in [
-                    (-1, 0, "east"),
-                    (1, 0, "west"),
-                    (0, -1, "south"),
-                    (0, 1, "north"),
-                ] {
-                    if matches!(g.get(x + dx, y, z + dz), Cell::Block(_, _)) {
-                        let ln = value_noise(seed, x, y, z, 0.5, 71);
-                        if ln > 0.88 {
-                            g.blk(x, y, z, "minecraft:glow_lichen", Some(vec![(face, "true")]));
-                        } else if ln < 0.05 && y >= sy - 2 {
-                            g.blk(x, y, z, "minecraft:vine", Some(vec![(face, "true")]));
-                        }
-                        break;
-                    }
-                }
+                // What would grow here is decided first, because which faces a
+                // decal can hold on to is a fact about the block: a vine has
+                // five, a lichen six.
+                let ln = value_noise(seed, x, y, z, 0.5, 71);
+                let decal = if ln > 0.88 {
+                    "minecraft:glow_lichen"
+                } else if ln < 0.05 && y >= sy - 2 {
+                    "minecraft:vine"
+                } else {
+                    continue;
+                };
+                // Where it may hold on is `connections`' question, not this
+                // scan's: the module owns which faces the block has and pairs
+                // each with the direction it looks in, so this pass can neither
+                // name a face pointing away from the rock nor forget that rock
+                // overhead is rock. The first answer is the best one — a wall
+                // if there is one, the ceiling if there is not.
+                let Some(face) = connections::attachable_faces(decal, [x, y, z], |p| {
+                    neighbour_state(g, p[0], p[1], p[2])
+                })
+                .first()
+                .copied() else {
+                    continue;
+                };
+                g.blk(x, y, z, decal, Some(vec![(face, "true")]));
             }
         }
     }
@@ -1574,6 +1606,33 @@ fn invariant_cells(s: &Structure) -> invariants::Cells {
         .collect()
 }
 
+/// This piece's palette and block list, handed to the shared connection pass
+/// and taken back. The rule lives in [`connections`]; only the conversion
+/// between it and this workspace's own `Structure` types is local.
+fn resolve_connections(id: &str, s: &mut Structure) {
+    let mut piece = connections::Piece {
+        palette: s
+            .palette
+            .iter()
+            .map(|p| (p.name.clone(), p.properties.clone().unwrap_or_default()))
+            .collect(),
+        positions: s.blocks.iter().map(|b| b.pos).collect(),
+        states: s.blocks.iter().map(|b| b.state as usize).collect(),
+    };
+    connections::resolve(id, &mut piece);
+    s.palette = piece
+        .palette
+        .into_iter()
+        .map(|(name, properties)| PaletteEntry {
+            name,
+            properties: (!properties.is_empty()).then_some(properties),
+        })
+        .collect();
+    for (b, state) in s.blocks.iter_mut().zip(piece.states) {
+        b.state = state as i32;
+    }
+}
+
 fn write_piece(out: &Path, spec: &Spec) {
     let grid0 = build(spec);
     // Light is measured over the authored walkable floor (y=0 frame), before the
@@ -1597,11 +1656,17 @@ fn write_piece(out: &Path, spec: &Spec) {
     let size = [spec.size[0], spec.size[1] + yoff, spec.size[2]];
     // Belt-and-braces: no gravity block may sit over air in the shipped piece.
     assert_no_unsupported_gravity(spec.id, &grid);
-    let structure = serialize(&grid);
+    let mut structure = serialize(&grid);
+    // Connections before the gates: what a fence, a wall, a pane or a lichen
+    // joins is derived from the blocks beside it, never left to the defaults.
+    resolve_connections(spec.id, &mut structure);
     let cells = invariant_cells(&structure);
     invariants::assert_distress_never_stacks(spec.id, &cells);
     // Spelling, at the emitter: an unknown block id loads as AIR.
     invariants::assert_blocks_are_real(spec.id, &cells);
+    // Shape, at the emitter: an omitted connection property ships a post.
+    connections::assert_shape_is_stated(spec.id, &cells);
+    connections::assert_attachments_are_supported(spec.id, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

@@ -22,19 +22,36 @@ fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
 }
 
-/// A private copy of the prefab library with a `anchor/shelf` point anchor high in
-/// a corner — a box no route touches, so an emission case can write a region
-/// without also testing reachability.
-fn prefabs_with_shelf(name: &str) -> PathBuf {
+/// A private copy of the prefab library with one extra `hello-room` point anchor.
+fn prefabs_with_anchor(name: &str, anchor: &str, pos: [i32; 3]) -> PathBuf {
     let dir = std::env::temp_dir().join(name);
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    meta["anchors"]["anchor/shelf"] = serde_json::json!({ "pos": [1, 4, 1] });
+    meta["anchors"][anchor] = serde_json::json!({ "pos": pos });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     dir
+}
+
+/// A private copy of the prefab library with a `anchor/shelf` point anchor high in
+/// a corner — a box no route touches, so an emission case can write a region
+/// without also testing reachability.
+fn prefabs_with_shelf(name: &str) -> PathBuf {
+    prefabs_with_anchor(name, "anchor/shelf", [1, 4, 1])
+}
+
+/// A private copy of the prefab library with `anchor/doorstep` on the **floor cell
+/// under the doorway** (local `[4,0,6]` → world `[4,64,6]`).
+///
+/// `hello-room`'s floor is a single slab at y=64 over open void, and its one
+/// doorway is `x ∈ {4,5}, z = 6`, so `[4,64,6]` / `[5,64,6]` are the entire footing
+/// of the only route between the two halves of the room. A region write over them
+/// decides whether the delve is completable at all — which is what makes it the
+/// honest fixture for "what does this write leave behind".
+fn prefabs_with_doorstep(name: &str) -> PathBuf {
+    prefabs_with_anchor(name, "anchor/doorstep", [4, 0, 6])
 }
 
 /// A hello-world `quests` doc at 0.10.0 whose `obj/talk` bundle carries `effects`
@@ -209,5 +226,158 @@ fn every_region_write_reaches_the_one_model() {
         1,
         "the clear-region is a Clear: {writes:?}"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// --- what the write LEAVES: a fluid is not a floor --------------------------
+
+/// The classification, at the model's front door: a region write's conclusion is
+/// read off the **block**, not off the verb or the box.
+///
+/// Water, flowing water and lava are `Flood` in whatever spelling they arrive,
+/// **including without a namespace** — `fill-region` takes a hand-written string, a
+/// bare `water` passes block validation and is emitted verbatim as `fill … water`,
+/// and vanilla resolves it. A waterlogged block is `Fill`, because its cell is
+/// occupied by its host block and a body stands on it: "is this cell wet" and "is
+/// this block a fluid" are two questions and only the second one is asked here.
+#[test]
+fn a_region_write_reads_its_conclusion_off_the_block() {
+    for fluid in [
+        "minecraft:water",
+        "minecraft:water[level=3]",
+        "minecraft:lava",
+        "minecraft:lava[level=0]",
+        "water",
+        "lava",
+    ] {
+        assert_eq!(
+            RegionWrite::of_block(fluid),
+            RegionWrite::Flood,
+            "`{fluid}` fills a box with fluid; nothing stands on it"
+        );
+    }
+    for solid in [
+        "minecraft:stone",
+        "minecraft:oak_stairs[waterlogged=true]",
+        "minecraft:oak_slab[type=bottom,waterlogged=true]",
+        "minecraft:iron_bars",
+    ] {
+        assert_eq!(
+            RegionWrite::of_block(solid),
+            RegionWrite::Fill,
+            "`{solid}` occupies its cell with a block, waterlogged or not"
+        );
+    }
+}
+
+/// A `fill-region` whose block is a **fluid** is collected as a `Flood`, not as a
+/// `Fill` — the plan-level half of the same claim, over the real verb.
+#[test]
+fn a_fill_region_of_water_is_collected_as_a_flood() {
+    let dir = prefabs_with_shelf("dw-region-write-fluid-model");
+    let c = parse_hw(&quests_doc(
+        r#", { "type": "fill-region",
+              "region": { "anchor": "anchor/shelf", "extent": [0, 0, 0] },
+              "block": "minecraft:water" }"#,
+    ));
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let writes: Vec<RegionWrite> = plan.region_events.iter().map(|e| e.write).collect();
+    assert_eq!(
+        writes.iter().filter(|w| **w == RegionWrite::Flood).count(),
+        1,
+        "the water fill must reach the model as a Flood: {writes:?}"
+    );
+    assert_eq!(
+        writes.iter().filter(|w| **w == RegionWrite::Fill).count(),
+        0,
+        "and must NOT reach it as a Fill: {writes:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **The soundness hole, end to end.** `hello-room`'s only doorway stands on two
+/// floor cells over open void. A runtime `fill-region` replaces whatever is in its
+/// box — so filling those cells with `minecraft:water` deletes the floor and leaves
+/// water, and the party cannot cross.
+///
+/// Before a region write's conclusion was read off its block, this campaign built
+/// **green**: the model added the box to `solid` whatever the block, so it proved a
+/// route that walks the party across a pond in mid-air. The refusal is `DW0544` and
+/// not `DW0311` because the geometry is not the defect — the author filled that box
+/// on purpose and has to be told that the fluid is what took the footing away.
+#[test]
+fn a_water_fill_over_the_only_footing_is_dw0543() {
+    let dir = prefabs_with_doorstep("dw-region-write-water-doorstep");
+    // anchor/doorstep is world [4,64,6]; extent [1,0,0] → [3,64,6]..[5,64,6],
+    // which is the whole floor of the only doorway.
+    let water = parse_hw(&quests_doc(
+        r#", { "type": "fill-region",
+              "region": { "anchor": "anchor/doorstep", "extent": [1, 0, 0] },
+              "block": "minecraft:water" }"#,
+    ));
+    match try_build(&water, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0544", "wrong code: {message}");
+            assert!(
+                message.contains("[3, 64, 6]..[5, 64, 6]"),
+                "the message must name the fluid-filled box: {message}"
+            );
+            assert!(
+                message.contains("water or lava"),
+                "the message must say what the box holds: {message}"
+            );
+        }
+        other => panic!("a water floor under the only doorway must be refused: {other:?}"),
+    }
+    // The control: the identical campaign with a block that IS floor builds. Same
+    // box, same verb, same fire step, same route — only the block differs, which is
+    // the whole claim.
+    let planks = parse_hw(&quests_doc(
+        r#", { "type": "fill-region",
+              "region": { "anchor": "anchor/doorstep", "extent": [1, 0, 0] },
+              "block": "minecraft:oak_planks" }"#,
+    ));
+    try_build(&planks, &dir).expect("the same write with a solid block is floor, and routes");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Lava is the same defect wearing a different id, and it is the case a
+/// water-only classifier would have shipped.
+#[test]
+fn a_lava_fill_over_the_only_footing_is_dw0543_too() {
+    let dir = prefabs_with_doorstep("dw-region-write-lava-doorstep");
+    let lava = parse_hw(&quests_doc(
+        r#", { "type": "fill-region",
+              "region": { "anchor": "anchor/doorstep", "extent": [1, 0, 0] },
+              "block": "minecraft:lava" }"#,
+    ));
+    match try_build(&lava, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0544", "wrong code: {message}");
+        }
+        other => panic!("a lava floor under the only doorway must be refused: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The namespace-less spelling reaches the same refusal. It is a separate case
+/// because it is a separate *failure mode*: the classifier that compares against
+/// `minecraft:water` accepts this campaign in silence, and the author is handed a
+/// world where the doorway floor is water.
+#[test]
+fn a_bare_water_fill_is_refused_exactly_like_the_namespaced_one() {
+    let dir = prefabs_with_doorstep("dw-region-write-bare-water-doorstep");
+    let bare = parse_hw(&quests_doc(
+        r#", { "type": "fill-region",
+              "region": { "anchor": "anchor/doorstep", "extent": [1, 0, 0] },
+              "block": "water" }"#,
+    ));
+    match try_build(&bare, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0544", "wrong code: {message}");
+        }
+        other => panic!("`water` is the same block as `minecraft:water`: {other:?}"),
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

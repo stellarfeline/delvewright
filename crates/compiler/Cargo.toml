@@ -80,3 +80,10 @@ flate2 = "1"
 # this crate's `PrefabRegistry`. Test-only — the engine never depends on the
 # grammar back end, which is generation-time tooling (ADR-0003).
 delvewright-grammar = { path = "../grammar" }
+
+# The block-state rule, for the one test that AUTHORS a prefab palette rather
+# than hand-framing an input: `tests/edit.rs` writes a real `.nbt` into a real
+# prefab directory and stamps it through the real build. Anything that authors a
+# palette owes the pinned registry a verdict (`tools/check-structure-emitters.py`),
+# and an exemption would be the weaker answer here because the check is right.
+delvewright-schem = { path = "../schem" }

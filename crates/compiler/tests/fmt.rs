@@ -87,7 +87,6 @@ fn authored_roots() -> Vec<PathBuf> {
     vec![
         root.join("crates/dsl/fixtures"),
         root.join("crates/compiler/tests/fixtures"),
-        root.join("crates/compiler/examples"),
     ]
     .into_iter()
     .filter(|p| p.exists())
