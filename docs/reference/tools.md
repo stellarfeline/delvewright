@@ -1029,13 +1029,30 @@ sealing, anchor sanity, sightlines, gravity substrate, redstone support), so
 Invariants true of **every** tileset live once, in
 [`../../prefabs/invariants.rs`](../../prefabs/invariants.rs), source-included by
 every one of them (`#[path = "../../invariants.rs"] mod invariants;` — an include, not a
-dependency, so the workspaces stay independent). Today: **distress embeds, it
-never stacks** (`assert_distress_never_stacks`) — a walkable stair tread may
-carry nothing but air or a declared attachment (railing, hardware, light fitting,
-plant), because wear on a walked surface belongs *in* the surface, as a weathered
-variant of the same shape (`invariants::weathered`), never as a lump on top of
-it. Owner playtest, island round 13: stray stone sitting on the cave-mouth steps.
-The shared file carries its own unit tests — including the cases that prove the
+dependency, so the workspaces stay independent). Today:
+
+**Distress embeds, it never stacks** (`assert_distress_never_stacks`) — a
+walkable stair tread may carry nothing but air or a declared attachment
+(railing, hardware, light fitting, plant), because wear on a walked surface
+belongs *in* the surface, as a weathered variant of the same shape
+(`invariants::weathered`), never as a lump on top of it. Owner playtest, island
+round 13: stray stone sitting on the cave-mouth steps.
+
+**A body of fluid stays where the generator wrote it**
+(`assert_fluid_is_contained`) — the `DW0800` verdict where the bytes are made.
+Water and lava are the one thing an emitter places that does not stay placed:
+they run down first and then sideways, on the server's own clock, before any
+player arrives, and no other gate here looks. `cave-shore.nbt` shipped a 33-cell
+sea written one block *proud* of the beach it laps, with seven ways out into the
+air over the sand — every tool in the repo drew it as still water. The block
+knowledge is not restated: `crates/schem/src/fluid.rs` is source-included by the
+same mechanism, so the emitters and `delve-admit audit` read one rule. A run
+direction that leaves the piece's own outer face is counted and never failed
+(what is beyond a face is not in these bytes), and every piece prints its own
+binding — sources examined, cells held `waterlogged`, runs at the edge — so a
+piece that quietly lost its water does not read like a piece that holds it.
+
+The shared file carries its own unit tests — including the cases that prove each
 gate *fails* — run by the same CI job.
 
 **Connections are derived, never defaulted.**
