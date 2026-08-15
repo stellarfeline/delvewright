@@ -1141,8 +1141,8 @@ The check is **at the emitter, not in a test**, for the reason CLAUDE.md records
 for commands: the operator running the tool does not run `cargo test`. Its cost
 if absent is total and silent — a structure template loads an unknown block as
 AIR, so the piece is well-formed, the generator exits 0, the determinism gate
-passes, and the feature is simply not there. `minecraft:chain` was renamed
-`minecraft:iron_chain` in 1.21.11; when this gate was first run over the library
+passes, and the feature is simply not there. `minecraft:chain` is not a block at the pin — the game holds
+`minecraft:iron_chain`; when this gate was first run over the library
 it found `threshold_motif` painting the old id, i.e. the boss-door bell-rope
 curtain — the entire point of that rule — had been 14 cells of air.
 

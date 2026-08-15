@@ -122,6 +122,45 @@ not third-party reconstructions.
   script pins and checks the source SHA-256 and the block count, and refuses a
   default that is not one of its own property's legal values.
 
+- **`block-renames-1.21.11.json`** (in `crates/dsl/data/`) — the block-id
+  **renames** the pinned game's DataFixerUpper applies on load: an id 1.21.11
+  does not have → the id it becomes, with the greatest `DataVersion` at which
+  the old id still existed. **1 rename**, from **3** ids that ever left the
+  block registry across the 43 releases up to the pin.
+  **Why it exists**: the registry answers *does the pin have this id*, and every
+  check that judges a NAME — the palette allowlist, a palette screen, a render
+  surface — needs the different question *what will the pin HOLD*. Judging a
+  pre-pin template's palette as written made `delve-admit audit` contradict
+  itself inside one run: `DW0734` passed `minecraft:chain` at DataVersion 2975
+  because the fixer migrates it, and `DW0730` refused the identical cell in the
+  next breath because `minecraft:chain` is not a name at the pin.
+  **What is derived and what is not.** Which ids disappeared, and when, is fully
+  derived from the `block` array of each release's own `registries/data.min.json`
+  — so `valid_through` is a *lower bound* on the renaming schema, because the fix
+  lands inside the development cycle between two releases and the fixer schedule
+  is in the game jar, which nothing here reads. A file at or below the bound
+  certainly pre-dates the fix; above it the table says nothing and the caller
+  refuses. What each id BECAME is derived from Mojang's own recipe graph: the
+  crafting recipe whose ingredient side is byte-identical across the version step
+  and whose result moved from the removed id to an id the step added. For
+  `chain` → `iron_chain` (nugget/ingot/nugget of iron, 1.21.8 → 1.21.9) that
+  pairing is forced — which matters, since the same step added ten chain blocks
+  and the registry's nearest-name suggestion for `chain` is `copper_chain`.
+  **What it deliberately leaves out**: a removal the recipe graph cannot pair.
+  Two exist (`grass_path` at 1.17, `grass` at 1.20.3), both uncraftable, and
+  both are ABSENT rather than guessed — absence fails closed, so the audit still
+  refuses the id and a reviewer sees a name the pin does not have. Inventing the
+  pairing is the invented vanilla data the section below refuses.
+  Consumed by `delvewright_dsl::blocks::BlockRegistry::loaded_id_at`, and through
+  it by `delve-admit audit`'s allowlist (`DW0730`) and pre-pin warning
+  (`DW0734`).
+  **Reproduce it**: `python3 tools/extract-block-renames.py
+  crates/dsl/data/block-renames-1.21.11.json`. The script reads the same mcmeta
+  mirror as the tables above, one `<version>-summary` branch per release; it
+  refuses to run unless the newest release at or below DataVersion 4671 is the
+  pin, and refuses any row whose `from` still exists at the pin, whose `to` does
+  not, or whose bound is not below the pin.
+
 - **`items-1.21.11.json`** — the `item` registry array from `registries/data.min.json`,
   each id namespaced (`minecraft:<id>`) to match DSL usage, de-duplicated and sorted.
   1505 items. Deterministic transform: `sorted(set("minecraft:"+i for i in item))`,
@@ -298,6 +337,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `damage-types-1.21.11.json` | `c3daed77f2557dc7fd784d373e74c1d67b45157bb812c8e4dee761db4696b6fd` |
 | `blocks-1.21.11.json` | `e38653d774e3e837dbb74f8baa05d2687741e56eb7e702c03218c31bd2481087` |
 | `block-defaults-1.21.11.json` | `98ba9886b8bdf648e8ff74ffe8c817932e987037111427343613eefa1c37da3d` |
+| `block-renames-1.21.11.json` | `255937f801a71bb38fe92e7a5c16da74de934b88311b7ba68b62a0929e6756b5` |
 | `block-classification-1.21.11.json` | `58f80ca8bee1ed84e4cc64c3f4fda9d26cfba5f993c015489f3352c824a0e13d` |
 
 ## Not committed
