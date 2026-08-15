@@ -54,7 +54,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_schem::prefab::{Region as MetaRegion, SpatialContract};
 
-use crate::gates::Gate;
+use crate::gates::{Gate, verdict};
 use crate::model::VoxelModel;
 use crate::nav;
 
@@ -122,7 +122,7 @@ pub struct ContractReport {
 impl ContractReport {
     /// True when no obligation went red.
     pub fn is_pass(&self) -> bool {
-        self.gates.iter().all(|g| g.pass)
+        self.gates.iter().all(Gate::passed)
     }
 }
 
@@ -663,7 +663,8 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
 
     Gate {
         id: "contract-well-formed",
-        pass: bad.is_empty(),
+        state: verdict(bad.is_empty()),
+        undecided: 0,
         bound,
         detail: if bad.is_empty() {
             format!(
@@ -692,7 +693,8 @@ fn coverage(ix: &Index) -> Gate {
     let uncovered: BTreeSet<[i32; 3]> = ix.standable.difference(&covered).copied().collect();
     Gate {
         id: "contract-coverage",
-        pass: uncovered.is_empty(),
+        state: verdict(uncovered.is_empty()),
+        undecided: 0,
         bound: ix.standable.len(),
         detail: if uncovered.is_empty() {
             format!(
@@ -809,7 +811,8 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 
     Gate {
         id: "contract-closure",
-        pass: breaches.is_empty() && examined > 0,
+        state: verdict(breaches.is_empty() && examined > 0),
+        undecided: 0,
         bound: examined,
         detail: if !breaches.is_empty() {
             breaches.join(" · ")
@@ -977,7 +980,8 @@ fn edge_proof(ix: &Index, model: &VoxelModel) -> Gate {
     let could_have = ix.contract.spaces.len() > 1;
     Gate {
         id: "contract-edge-proof",
-        pass: bad.is_empty() && (proved > 0 || !could_have),
+        state: verdict(bad.is_empty() && (proved > 0 || !could_have)),
+        undecided: 0,
         bound: proved,
         detail: if !bad.is_empty() {
             bad.join(" · ")
@@ -1150,7 +1154,8 @@ fn no_body_gate(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) -> Gat
         .collect();
     Gate {
         id: "contract-no-body",
-        pass: bad.is_empty(),
+        state: verdict(bad.is_empty()),
+        undecided: 0,
         bound: kinds.len(),
         detail: if bad.is_empty() {
             format!(
@@ -1480,7 +1485,8 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        pass: unreached.is_empty() && !targets.is_empty(),
+        state: verdict(unreached.is_empty() && !targets.is_empty()),
+        undecided: 0,
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -1589,7 +1595,8 @@ fn anchors_gate(
         .collect();
     Gate {
         id: "contract-anchors",
-        pass: unresolved.is_empty(),
+        state: verdict(unresolved.is_empty()),
+        undecided: 0,
         bound: anchors.len(),
         detail: if unresolved.is_empty() {
             format!(
@@ -1754,7 +1761,8 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
     }
     Gate {
         id: "contract-exterior-faces",
-        pass: silent.is_empty(),
+        state: verdict(silent.is_empty()),
+        undecided: 0,
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")
@@ -1805,7 +1813,8 @@ fn no_body_majority(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) ->
 
     Gate {
         id: "contract-no-body-majority",
-        pass: !majority || excused,
+        state: verdict(!majority || excused),
+        undecided: 0,
         bound: total,
         detail: if !majority {
             format!(
