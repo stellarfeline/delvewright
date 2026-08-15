@@ -1,20 +1,20 @@
 {
-  "dsl_version": "0.10.0",
   "campaign_id": "lift-stake",
-  "stage": "world",
   "content": {
-    "title": "The Hoist and the Wager",
-    "theme": "A keep whose two landings are joined by one cage on a chain.",
-    "premise": "The `lift` fixture with a recovery stake standing in the same room, which is the shape a teleport moves ENTITIES, so the ground under a stake marker is untouched and what travels is the marker itself, away from the position the collecting player's ledger recorded. `stk_gc_<s>` then finds nobody holding a wager at the marker's new position and retires it, taking the wager with it. No compile-time geometry test can state this — a marker's position is chosen at RUNTIME — so the proof is a class the marker declares and every box-narrowed selector excludes (`DW0545`, `compiler::affordance`), plus the PackTest this campaign generates for it.",
-    "seed": 20260729,
-    "target_minutes": 5,
-    "difficulty": "normal",
     "areas": [
       {
         "id": "area/keep",
         "name": "The Keep",
         "prefab": "prefab/hello-room"
       }
-    ]
-  }
+    ],
+    "difficulty": "normal",
+    "premise": "The `lift` fixture with a recovery stake standing in the same room, which is the shape a teleport moves ENTITIES, so the ground under a stake marker is untouched and what travels is the marker itself, away from the position the collecting player's ledger recorded. `stk_gc_<s>` then finds nobody holding a wager at the marker's new position and retires it, taking the wager with it. No compile-time geometry test can state this — a marker's position is chosen at RUNTIME — so the proof is a class the marker declares and every box-narrowed selector excludes (`DW0545`, `compiler::affordance`), plus the PackTest this campaign generates for it.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "theme": "A keep whose two landings are joined by one cage on a chain.",
+    "title": "The Hoist and the Wager"
+  },
+  "dsl_version": "0.10.0",
+  "stage": "world"
 }

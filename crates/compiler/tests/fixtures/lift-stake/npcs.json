@@ -1,8 +1,8 @@
 {
-  "dsl_version": "0.7.0",
   "campaign_id": "lift-stake",
-  "stage": "npcs",
   "content": {
     "npcs": []
-  }
+  },
+  "dsl_version": "0.7.0",
+  "stage": "npcs"
 }
