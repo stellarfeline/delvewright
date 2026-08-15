@@ -815,15 +815,97 @@ mod tests {
         }
     }
 
+    /// The golden is a RECORDING of what this emitter writes, and the assertion
+    /// below is over its bytes — so it must never be reformatted.
+    ///
+    /// That is why it lives under `tests/golden/` and not under
+    /// `tests/fixtures/`. The `delvec fmt --check` sweep in CI covers
+    /// `crates/dsl/fixtures` and `crates/compiler/tests/fixtures`, and it is
+    /// right to: those hold **authored** Delvewright JSON, which must be
+    /// canonical. This file is neither authored nor Delvewright JSON — it is
+    /// Chunky's scene schema, in Chunky's own key order, and canonical form
+    /// would sort those keys and break the byte equality this test exists to
+    /// make. `delvewright_dsl::fmt`'s own `BUILD_OUTPUT_MARKER` states the same
+    /// principle for `delvec build` output trees: emitted trees are not authored
+    /// content, and rewriting one breaks the byte-identity contract it exists to
+    /// record.
+    ///
+    /// The classification is not a claim anyone has to take on trust, and it is
+    /// not something a drifted authored fixture could imitate: this test fails
+    /// unless the file equals live emitter output byte for byte, and
+    /// `every_golden_is_emitter_output` refuses any OTHER file appearing beside
+    /// it. Together those are strictly stronger than canonical form would be.
     #[test]
     fn golden_scene_matches() {
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
-        let golden = include_bytes!("../../tests/fixtures/view/golden/spawn.json");
+        let golden = include_bytes!("../../tests/golden/view/spawn.json");
         let (_, spawn) = scenes.iter().find(|(n, _)| n == "mini_spawn.json").unwrap();
         assert_eq!(
             std::str::from_utf8(spawn).unwrap(),
             std::str::from_utf8(golden).unwrap(),
             "spawn.json scene drifted from golden"
+        );
+    }
+
+    /// `tests/golden/` sits outside the `delvec fmt --check` sweep on purpose,
+    /// which makes it the one directory in this crate where an authored JSON
+    /// file could stop being gated for canonical form without anything saying
+    /// so. A comment would not stop that — a doc line is not an invocation — so
+    /// the directory's admission rule is enforced here: every `.json` under it
+    /// is named by a golden test, and the set is closed.
+    ///
+    /// Add a golden and this reds until you have added the test that pins its
+    /// bytes to emitter output. Drop an authored fixture here and it reds
+    /// immediately, which is the outcome the sweep would have produced.
+    #[test]
+    fn every_golden_is_emitter_output() {
+        // Relative to a FIXED root, never to the directory the recursion happens
+        // to be in: stripping against `dir` yields a depth-dependent name, so a
+        // nested golden would be reported under a different key than a
+        // top-level one and the closed set below would compare the wrong
+        // strings.
+        fn walk(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>) {
+            let mut entries: Vec<_> = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .collect();
+            entries.sort();
+            for p in entries {
+                if p.is_dir() {
+                    walk(root, &p, out);
+                } else if p.extension().and_then(|e| e.to_str()) == Some("json") {
+                    out.push(
+                        p.strip_prefix(root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                    );
+                }
+            }
+        }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+        let mut found = Vec::new();
+        walk(&root, &root, &mut found);
+
+        // Every entry here is pinned byte-for-byte to live emitter output by the
+        // test named beside it.
+        let declared = ["view/spawn.json"]; // pinned by golden_scene_matches
+
+        assert!(
+            !found.is_empty(),
+            "tests/golden holds no .json at all — this check examined nothing, \
+             which is a vacuous pass rather than a pass"
+        );
+        assert_eq!(
+            found,
+            declared.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            "a file under tests/golden is not pinned to emitter output by any \
+             test. That directory is outside the `delvec fmt --check` sweep, so \
+             an authored JSON file placed here would be gated by nothing at all. \
+             Either pin it (a byte comparison against what the emitter writes) \
+             and name it above, or put it under tests/fixtures where the \
+             canonical-form sweep covers it"
         );
     }
 }
