@@ -1364,16 +1364,30 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
             }
         }
     }
-    // Surface: a GRADED shoreline that laps in from the open front (south), not a
-    // rectangular pool with a hard vertical water wall (the round-1 defect). The
-    // tide line sits near the front and is ragged (per-column jitter → cove inlets)
-    // so the coast is uneven; the spawn strip (x 4..8) is pinned dry so the player
-    // lands on the beach at the water's edge, not waist-deep. The softening is in
-    // the SEABED, not the water column: near shore the bed stays at sand (1-deep
-    // shallow), then the bed STEPS DOWN to stone as it deepens (2-deep sea) while
-    // the water surface stays flat at y=2. Sand → wet-gravel tide row → sand-bottom
-    // shallow → stone-bottom sea, with pebbles and seagrass across the transition.
-    let surf = 2; // flat calm-sea surface height (top water block at y=surf)
+    // Surface: a GRADED shoreline that laps in from the front (south), not a
+    // rectangular pool with a hard vertical water wall. The tide line sits near
+    // the front and is ragged (per-column jitter → cove inlets) so the coast is
+    // uneven; the spawn strip (x 4..8) is pinned dry so the player lands on the
+    // beach at the water's edge, not waist-deep. Sand → wet-gravel tide row →
+    // sandstone-bottom shallow → stone-bottom sea, with pebbles and seagrass
+    // across the transition.
+    //
+    // THE SEA'S SURFACE IS THE BEACH'S OWN TOP PLANE. A sea written one block
+    // higher than the sand it laps is not a shoreline — it is a wall of water
+    // standing beside the air over the beach, and the world flattens it on the
+    // first tick. That is what this piece shipped: 33 fluid cells at y=2 over a
+    // beach whose top block was y=1, with seven ways out into that air
+    // (`DW0800`, `assert_fluid_is_contained`). Vanilla's own beaches put the
+    // topmost water block level with the wet sand and the dry sand one above it,
+    // which is exactly the relation restored here.
+    //
+    // The piece's own bottom layer is its floor, so the water can only be one
+    // cell deep and the depth gradient the round-2 art carried in the water
+    // column is carried by the BED instead: sandstone where the shallows read
+    // sandy, stone where the sea reads deep. Both are non-falling, which the
+    // gravity invariant requires of a bottom-layer block — sand at y=0 would
+    // rest on nothing.
+    let surf = 1; // the top (and only) water block, level with the beach
     let base_wl = sz - 2;
     let coast_at = |x: i32| -> i32 {
         let j = (value_noise(seed, x, 0, 0, 0.35, 131) * 4.0).floor() as i32 - 2; // −2..+1
@@ -1383,9 +1397,14 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
         }
         c
     };
+    // `1..sz - 1`, not `1..sz`: the front row IS the enclosing cliff. Running to
+    // `sz` overwrote it with beach and sea for two of its rows, so the cove the
+    // comment above calls "walled against the void on every horizontal edge" was
+    // open at the front from y=1 to y=2 — a swimmer left the piece there, and
+    // the audit counted sixteen run directions leaving its outer face.
     for x in 1..sx - 1 {
         let coast = coast_at(x);
-        for z in 1..sz {
+        for z in 1..sz - 1 {
             if z < coast - 1 {
                 // dry beach: sand with clustered gravel patches, drier toward back.
                 let n = value_noise(seed, x, 1, z, 0.24, 101);
@@ -1400,30 +1419,29 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
                 // wet tide row: darker damp gravel where the water just reaches.
                 g.blk(x, 1, z, "minecraft:gravel", None);
             } else {
-                // sea. Bed drops the further out we go so depth grows from the FLOOR
-                // (natural beach slope), not from stacking water over a flat bed.
+                // sea. The bed reads shallow near the shore and deep further
+                // out; both bed materials are the piece's own bottom layer, so
+                // the water above them is one cell and its surface is flat.
                 let out = z - coast; // 0 at the shore
-                if out <= 1 {
-                    // shallow: sand bottom visible through 1 block of water; scatter
-                    // wet pebbles so the bottom is not a clean plane.
-                    let bed = if value_noise(seed, x, 1, z, 0.5, 107) > 0.78 {
-                        "minecraft:gravel"
+                let bed = if out <= 1 {
+                    // shallow: a sandy bottom, with wet pebbles scattered
+                    // through it so it is not a clean plane.
+                    if value_noise(seed, x, 1, z, 0.5, 107) > 0.78 {
+                        "minecraft:smooth_sandstone"
                     } else {
-                        "minecraft:sand"
-                    };
-                    g.blk(x, 1, z, bed, None);
-                    g.blk(x, surf, z, "minecraft:water", Some(vec![("level", "0")]));
-                } else {
-                    // deeper sea: bed steps down to stone, water fills 2 deep to the
-                    // flat surface.
-                    g.blk(x, 0, z, "minecraft:stone", None);
-                    for wy in 1..=surf {
-                        g.blk(x, wy, z, "minecraft:water", Some(vec![("level", "0")]));
+                        "minecraft:sandstone"
                     }
-                }
-                // seagrass tufts across the shallow band.
+                } else {
+                    // deeper sea: the bed goes to rock.
+                    "minecraft:stone"
+                };
+                g.blk(x, surf - 1, z, bed, None);
+                g.blk(x, surf, z, "minecraft:water", Some(vec![("level", "0")]));
+                // seagrass tufts across the shallow band. Seagrass is a
+                // water-filled block in vanilla, so it stands IN the sea's own
+                // cell rather than above it.
                 if out <= 2 && value_noise(seed, x, 2, z, 0.5, 105) > 0.82 {
-                    g.blk(x, 2, z, "minecraft:seagrass", None);
+                    g.blk(x, surf, z, "minecraft:seagrass", None);
                 }
             }
         }
@@ -1453,9 +1471,17 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
         (3 * sx / 5, -2, "x"),
         (4 * sx / 5, -1, "x"),
     ];
+    // A log needs DRY ground under it. Before the sea came down to the beach's
+    // own plane the water column at y=2 excluded these cells on its own; now the
+    // cell below a beached log can be the sea itself, and a log written over it
+    // would hang in the air above the water.
+    let dry_ground = |g: &Grid, x: i32, z: i32| match g.get(x, 1, z) {
+        Cell::Block(name, _) => name != "minecraft:water",
+        _ => false,
+    };
     for (lx, dz, ax) in logs {
         let z = (coast_at(lx) + dz).clamp(2, sz - 2);
-        if matches!(g.get(lx, 1, z), Cell::Block(_, _)) && matches!(g.get(lx, 2, z), Cell::Air) {
+        if dry_ground(g, lx, z) && matches!(g.get(lx, 2, z), Cell::Air) {
             g.blk(
                 lx,
                 2,
@@ -1468,9 +1494,7 @@ fn build_shore(spec: &Spec, g: &mut Grid, seed: u64) {
             } else {
                 (lx, z - 1)
             };
-            if matches!(g.get(nx, 1, nz), Cell::Block(_, _))
-                && matches!(g.get(nx, 2, nz), Cell::Air)
-            {
+            if dry_ground(g, nx, nz) && matches!(g.get(nx, 2, nz), Cell::Air) {
                 g.blk(nx, 2, nz, "minecraft:oak_log", Some(vec![("axis", ax)]));
             }
         }
@@ -1667,6 +1691,10 @@ fn write_piece(out: &Path, spec: &Spec) {
     // Shape, at the emitter: an omitted connection property ships a post.
     connections::assert_shape_is_stated(spec.id, &cells);
     connections::assert_attachments_are_supported(spec.id, &cells);
+    // Settling, at the emitter: a body of fluid written with a way out of it
+    // is not where it was put — the world moves it on the first tick, before
+    // anyone arrives, and no other gate here looks (`DW0800`).
+    invariants::assert_fluid_is_contained(spec.id, structure.size, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

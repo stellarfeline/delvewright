@@ -657,7 +657,10 @@ pub struct AreaPlacement {
     /// The placed pieces (single-prefab areas have exactly one; pool areas have
     /// the solver's assembly, entry first).
     pub pieces: Vec<PiecePlacement>,
-    /// Socket seal/clear fills for this area (empty for single-prefab areas).
+    /// Socket seal/clear fills for this area — one per connector of every placed
+    /// piece, whatever assembled them. Empty only when no placed piece declares a
+    /// connector; a single-prefab area's lone piece has all of its unmated, so
+    /// each one is walled.
     pub seals: Vec<SealFill>,
 }
 
@@ -1399,7 +1402,9 @@ impl<'a> Plan<'a> {
 
             let placement = if let Some(prefab) = &area.prefab {
                 // Single-prefab area (the M1 degenerate assembly): one piece at
-                // the origin, rotation none, no sockets to seal.
+                // the origin, rotation none — and every connector it declares is
+                // unmated by construction, because there is no second piece for
+                // one to mate with.
                 let prefab_id = prefab.as_str().to_string();
                 let meta = prefabs.get(&prefab_id).ok_or_else(|| {
                     PlanError::new(
@@ -1432,6 +1437,47 @@ impl<'a> Plan<'a> {
                         );
                     }
                 }
+                // Seal this piece's sockets through the SAME mechanism the pool
+                // path uses (`solver::seal_layout`), rather than skipping it.
+                //
+                // A connector is a hole the prefab deliberately leaves in its own
+                // wall — a 3×3 doorway plus the `minecraft:jigsaw` marker at its
+                // sill — and the solver's invariant is "every unmated socket is
+                // sealed with wall material; every mated socket's jigsaw block is
+                // cleared to air". That invariant is a property of a PLACED PIECE,
+                // not of having run the layout solver, and binding it to the
+                // solver left the one-piece case with no surface: a single-prefab
+                // area shipped the doorway wide open onto whatever the horizon
+                // says lies outside the piece, with the authoring marker still
+                // standing in it as a real block a player can stand on.
+                //
+                // Nothing caught it, because both symptoms hide behind content.
+                // `DW0322` reads the exposed doorway as a walkable cell one step
+                // from a void drop — but only once the doorway is REACHABLE, and
+                // a flooded cell is impassable, so any standing water between the
+                // piece's anchors and its own sill deletes the finding while
+                // leaving the hole. Correcting such a flood is what exposes it,
+                // which is the worst possible time to first meet it. And the
+                // stray jigsaw never surfaces in the datapack at all: `snapshot`
+                // colours it the magenta fallback precisely as an alarm, on the
+                // stated premise that "the solver strips them" — true of every
+                // piece a solver had placed, and of no other.
+                //
+                // Byte impact is confined to what was broken: a prefab with no
+                // connectors yields no seals, so every campaign and fixture that
+                // binds one is byte-identical.
+                let (bbox_min, bbox_max) = Rotation::None.bbox(origin, meta.structure.size);
+                let seals = solver::seal_layout(
+                    prefabs,
+                    &[solver::PlacedPiece {
+                        prefab_id: prefab_id.clone(),
+                        pos: origin,
+                        rotation: Rotation::None,
+                        bbox_min,
+                        bbox_max,
+                        mated: vec![false; meta.connectors.len()],
+                    }],
+                );
                 AreaPlacement {
                     area_id: area_id.clone(),
                     pieces: vec![PiecePlacement {
@@ -1442,7 +1488,7 @@ impl<'a> Plan<'a> {
                         size: meta.structure.size,
                         rotation: Rotation::None,
                     }],
-                    seals: Vec::new(),
+                    seals,
                 }
             } else if let Some(pool) = &area.prefab_pool {
                 // Pool area (ADR-0004 jigsaw assembly): the solver grows a layout

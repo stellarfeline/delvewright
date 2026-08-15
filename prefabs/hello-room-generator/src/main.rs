@@ -252,6 +252,10 @@ fn write_piece(out: &Path) {
     // Shape, at the emitter: an omitted connection property ships a post.
     connections::assert_shape_is_stated(ID, &cells);
     connections::assert_attachments_are_supported(ID, &cells);
+    // Settling, at the emitter: a body of fluid written with a way out of it
+    // is not where it was put — the world moves it on the first tick, before
+    // anyone arrives, and no other gate here looks (`DW0800`).
+    invariants::assert_fluid_is_contained(ID, s.size, &cells);
 
     let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
     // gzip-frame it (MC reads structure files as gzip-compressed NBT). Pin mtime

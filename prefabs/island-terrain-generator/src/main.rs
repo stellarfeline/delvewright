@@ -1927,6 +1927,10 @@ fn write_piece(out: &Path, spec: &Spec) {
     // Shape, at the emitter: an omitted connection property ships a post.
     connections::assert_shape_is_stated(spec.id, &cells);
     connections::assert_attachments_are_supported(spec.id, &cells);
+    // Settling, at the emitter: a body of fluid written with a way out of it
+    // is not where it was put — the world moves it on the first tick, before
+    // anyone arrives, and no other gate here looks (`DW0800`).
+    invariants::assert_fluid_is_contained(spec.id, structure.size, &cells);
     let nbt = fastnbt::to_bytes(&structure).expect("nbt");
     let mut gz = GzBuilder::new()
         .mtime(0)

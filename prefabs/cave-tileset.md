@@ -182,6 +182,40 @@ floor and ceiling intact over the whole walkable area), and nav's flock-containm
 model finds **zero** walkable cells bordering the void across the assembled cave
 after the fix — the flock is contained.
 
+### The sea was written above the beach
+
+The graded shoreline above put the water surface at `y=2` and the beach's top
+solid block at `y=1` — the sea standing a block **proud** of the sand it laps.
+Every cell of it along the ragged coast, and along the pinned-dry spawn strip,
+therefore sat beside the air over the beach: 33 fluid cells with **seven ways
+out**, which the world flattens on the first tick. The `.nbt`, the review render
+and the contact sheet all drew still water, so nothing said a word until the
+admission audit's fluid rule (`DW0800`) was first run over the library.
+
+Two things were wrong, and the second was hiding inside the paragraph that
+claimed to have fixed it:
+
+- **The surface plane.** A shoreline's water surface is the same plane as the
+  wet sand it meets — vanilla's own beaches put the topmost water block level
+  with it and the dry sand one above. The sea is now at `y=1`. The piece's own
+  bottom layer is its floor, so the water is one cell deep and the depth
+  gradient the round-2 art carried in the water column is carried by the **bed**
+  instead: sandstone where the shallows read sandy, stone where the sea reads
+  deep, both non-falling because a gravity block on the bottom layer rests on
+  nothing.
+- **The front cliff was never there.** "Walled against the void on every
+  horizontal edge" was written, and the surface loop then ran to `z = sz`, so it
+  overwrote the front row's cliff with beach and sea for two of its rows. The
+  cove was open at the front from `y=1` to `y=2` and a swimmer left the piece
+  through it; the audit counted sixteen run directions leaving the piece's outer
+  face. The loop now stops at `z = sz - 1`, and the count is zero.
+
+Only `cave-shore.nbt` changes; its size, sockets, connectors, anchors and every
+byte of its metadata JSON are identical. The class is now caught **at the
+emitter**: `invariants::assert_fluid_is_contained` runs in every generator
+before any bytes are written, sharing the block rules with `delve-admit audit`
+rather than restating them, and prints each piece's binding.
+
 ## Honest self-assessment vs the brief
 
 The pieces **read as natural rock and cohere as one place** (the main risk cleared
