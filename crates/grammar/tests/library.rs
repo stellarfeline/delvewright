@@ -119,7 +119,7 @@ fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() 
             let recorded_red =
                 gate.id == "fluid-contained" && UNCONTAINED_LIBRARY_RULES.contains(&entry.id);
             assert_eq!(
-                gate.pass,
+                gate.passed(),
                 !recorded_red,
                 "{}: `{}` — {}{}",
                 entry.id,
@@ -512,7 +512,7 @@ fn every_library_program_passes_the_settling_gates() {
                 }
                 (Some(g), n) => {
                     assert_eq!(g.bound, n, "{}: `{id}` binding", program.name);
-                    if !g.pass {
+                    if !g.passed() {
                         assert_ne!(id, "stair-shape", "{}: {}", program.name, g.detail);
                         uncontained.push(program.name.clone());
                     }
@@ -565,7 +565,7 @@ fn every_library_program_passes_the_shape_and_orientation_gates() {
                 .iter()
                 .find(|g| g.id == id)
                 .unwrap_or_else(|| panic!("{}: no `{id}` gate", program.name));
-            assert!(gate.pass, "{}: {}", program.name, gate.detail);
+            assert!(gate.passed(), "{}: {}", program.name, gate.detail);
             assert!(
                 gate.bound > 0,
                 "{}: gate `{id}` examined zero objects",
