@@ -44,7 +44,7 @@ def _rs(gate, crate: str, name: str, body: str) -> None:
 
 
 def test_one_code_declared_by_two_constants_is_detected(gate):
-    """The exact shape of the #155/#157 collision: one code, two rules, one crate."""
+    """The exact shape of the `DW0352` collision: one code, two rules, one crate."""
     _rs(gate, "compiler", "edit.rs", 'pub const DW_EDIT_TRAP_HARDWARE: &str = "DW0352";')
     _rs(gate, "compiler", "nav.rs", 'pub const DW_STEALTH_ONSET: &str = "DW0352";')
     owners = gate.declared_constants()["DW0352"]

@@ -495,7 +495,7 @@ fn surmountable_wall() -> String {
     barrier_line("minecraft:cobblestone_wall", "minecraft:stone", 0)
 }
 
-/// **The owner's ruling, as a red that turns green** (2026-08-09). A sheep-bodied
+/// **The ruling, as a red that turns green.** A sheep-bodied
 /// keeper that walks over a wall is a finding; the author who really means it to
 /// climb declares so, and the finding is answered — by the declaration, on the
 /// body, rather than by nobody.

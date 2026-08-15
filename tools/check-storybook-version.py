@@ -5,7 +5,7 @@ A campaign's storybook (`campaigns/<id>/README.md` in the content repo,
 spec-0007) is what a server host reads before running the delve. It must say
 which engine the delve needs — and that statement must be a fact about the
 campaign, not a hand-typed number that drifted three DSL versions ago (owner
-directive, task #147).
+directive).
 
 ## The marker
 
@@ -25,7 +25,7 @@ One line, near the top of the README, in exactly this form:
   second hand-typed copy.
 
 The marker is the ONE piece of internal machinery allowed in a player-facing
-README (owner ruling, task #147) — hence the host-facing phrasing. It is
+README (owner ruling) — hence the host-facing phrasing. It is
 byte-identical in every localized edition, because it is a version stamp, not
 prose: a translated gloss may follow on the next line, but the stamp itself does
 not get translated (a mistranslated version number is a wrong version number).
@@ -105,8 +105,8 @@ root:
 
 `--campaigns` defaults to `campaigns/campaigns` — the content-repo sources, as
 they resolve through the local `campaigns` symlink and through CI's
-`.github/actions/checkout-content`. The content repo's own campaign CI (task
-#137) can run this same script against a pinned engine checkout, exactly as
+`.github/actions/checkout-content`. The content repo's own campaign CI can run
+this same script against a pinned engine checkout, exactly as
 `.github/workflows/prefab-audit.yml` there already builds `delve-admit` from
 one; nothing here reads engine state other than `crates/compiler/Cargo.toml`'s
 `[package] version` (== `DELVEC_VERSION`).
@@ -142,14 +142,14 @@ STAGE_FILES = (
 MARKER_WITHIN_LINES = 10
 
 # Campaigns temporarily exempt from the marker requirement. EVERY entry names
-# the PR that blocks it and the condition for deleting the entry. Entries are
+# what blocks it and the condition for deleting the entry. Entries are
 # printed on every run (see module docstring). Keep empty when possible.
 ALLOWLIST: dict[str, str] = {
     "hollow-vigil": (
-        "content PR #22 (dsl 0.9.0 adoption + cherry-valley horizon, engine task "
-        "#157) is rewriting every stage document of this campaign right now, so a "
-        "marker written against main's 0.3.0 would be stale on merge — the marker "
-        "lands in that PR's round. REMOVE this entry when content PR #22 merges."
+        "an open content round (dsl 0.9.0 adoption + cherry-valley horizon) is "
+        "rewriting every stage document of this campaign, so a marker written "
+        "against main's 0.3.0 would be stale on merge — the marker lands in that "
+        "round. REMOVE this entry when that round merges."
     ),
 }
 

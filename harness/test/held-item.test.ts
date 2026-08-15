@@ -26,8 +26,8 @@ function fakeBot(carried: string[], opts: { equipFails?: boolean } = {}): Intera
 }
 
 test("a requires_item step equips the item BEFORE chatting the trigger", async () => {
-  // The regression PR #205 introduced: `requires_item` became mainhand-held, but the
-  // bot only ever carried the item, so the guard swallowed every trigger.
+  // `requires_item` is mainhand-held: a bot that only carries the item has every
+  // trigger swallowed by the guard.
   const bot = fakeBot(["stone_sword", "tripwire_hook"]);
   await presentAndTrigger(
     bot,

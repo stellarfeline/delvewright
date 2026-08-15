@@ -5,7 +5,7 @@
 #   EULA=TRUE validation/bot-run.sh --project dw-<id>
 #   DELVEWRIGHT_RUN_TIMEOUT_MS=2400000 EULA=TRUE validation/bot-run.sh --project dw-<id>
 #
-# ## Why the project id is REQUIRED (task #185)
+# ## Why the project id is REQUIRED
 #
 # The compose project is the ONLY name a ladder has now: `compose.yaml` pins no
 # container name and publishes no host port, so `-p <id>` isolates containers,

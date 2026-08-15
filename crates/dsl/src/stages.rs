@@ -494,7 +494,7 @@ impl Locomotion {
 }
 
 /// What a body can do when it moves, **declared by the author** (DSL v0.11,
-/// spec-0034; owner ruling 2026-08-09).
+/// spec-0034).
 ///
 /// Carried by every object class in the DSL that has a body and a position and
 /// is walked by a compiler-emitted route — the stage-2 [`Npc`] and the stage-5
@@ -529,7 +529,7 @@ pub struct BodyTraversal {
 /// A sum type rather than a flattened tuple, so **adding a body class is a
 /// compile error at every consumer** until each one says what it does with it.
 /// The alternative — each rule walking the classes it happens to remember — is
-/// the defect class CLAUDE.md names (#301/#302/#321): a hand-rolled walk that
+/// the defect class CLAUDE.md names: a hand-rolled walk that
 /// enumerated three of five effect roots.
 ///
 /// Deliberately NOT a member: [`WaveMob`]. A wave mob has a body and a position,
@@ -3937,9 +3937,14 @@ pub enum QuestEffect {
     /// (`plan::RegionEvent`), so a third consumer inherits the proof instead of
     /// re-deriving it.
     ///
-    /// The completability model treats the filled cells as **solid** from the
-    /// DAG point at which this fires, exactly as a `close-gate` seal is: a
-    /// critical path that must cross the region afterwards fails `DW0311`.
+    /// From the DAG point at which this fires, the completability model treats the
+    /// filled cells as whatever the **block** makes them. A full-cube block leaves
+    /// them **solid**, exactly as a `close-gate` seal is: a critical path that must
+    /// cross the region afterwards fails `DW0311`. `minecraft:water` /
+    /// `minecraft:lava` leave them **flooded** — impassable and never floor, because
+    /// nothing stands on a fluid — and because a fill carries no `replace` filter it
+    /// takes away whatever floor was in the box, so a forced leg that needed that
+    /// footing fails `DW0544`.
     FillRegion {
         /// The volume to fill, as an anchor-centred box (`anchor ± extent`).
         ///

@@ -207,7 +207,7 @@ that would otherwise have measured a player falling through a floor that was
 never placed. The measured registry (name = default on a fresh 1.21.11 server) is
 in `observations.json` under `incidental.gamerule_registry`.
 
-**Resolved, task #70 (2026-08-11).** The sweep found two more sites the probe had
+**Resolved (2026-08-11).** The sweep found two more sites the probe had
 not looked at — `validation/warden-probe.sh` (`doMobSpawning`, `randomTickSpeed`)
 and, in the same gallery function, a `text_opacity:255b` that overflows a signed
 NBT byte. Measured on a pinned 1.21.11 server booted on the gallery's own

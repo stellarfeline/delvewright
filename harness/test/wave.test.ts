@@ -17,8 +17,8 @@ test("a mob the bot engaged, dying near the anchor, is a wave kill", () => {
 test("a wave mob killed on the APPROACH counts — the run-13 deadlock", () => {
   // Self-defense killed husk#43 during `wave wave/grave-echoes waypoint 11/12`, i.e.
   // before the kill loop ever ran. The engagement is armed for the whole step, so the
-  // defense path records it and the proximity rule credits it; #173 credited only
-  // kill-loop targets, so `killed` could never reach `count` and the step deadlocked.
+  // defense path records it and the proximity rule credits it; crediting only
+  // kill-loop targets leaves `killed` unable to reach `count`, and the step deadlocks.
   const w = beginWave("wave/grave-echoes", [24, 71, -103]);
   w.engaged.add(43); // recorded by defendAgainst, not by the kill loop
   assert.equal(creditsWaveKill(w, 43, { x: 22, y: 71, z: -99 }), true);

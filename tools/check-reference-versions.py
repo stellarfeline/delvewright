@@ -47,7 +47,7 @@ otherwise unbound, and this is the mechanically checkable slice of it.
 
 Equality in both directions is the point. A gate that only rejected a version
 NEWER than the build is exactly the shape that let a storybook ship a stale
-`v1.0` marker through the whole `v1.1` release with a green check (engine #342):
+`v1.0` marker through the whole `v1.1` release with a green check:
 the stale-older direction is the one that actually happens, because docs are
 written once and the build moves.
 
@@ -62,9 +62,9 @@ the crates.io front pages of `delvec` and `delvewright-dsl`, and each states the
 Minecraft version, the `dsl_version` window and the minimum Rust — the three
 facts that decide whether a visitor can use the crate at all. Those were the
 same numbers this file already owned, and on those two pages they were bound to
-NOTHING (#388 named the risk and left it open). The next `dsl_version` bump
-would have made a stranger-facing page wrong, in the direction drift actually
-goes: a doc is written once and the build moves.
+NOTHING. The next `dsl_version` bump would have made a stranger-facing page
+wrong, in the direction drift actually goes: a doc is written once and the
+build moves.
 
 The file set is DERIVED, never listed — every crate under `crates/*/` whose
 `[package] publish` is not `false`, resolved through its `[package] readme`

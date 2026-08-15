@@ -6,7 +6,7 @@ description: >
   mirrors the local `campaigns/` symlink (spec-0007 Step 0). The main repo must
   already be checked out (this reads its `versions.toml`).
 
-  The content repo is PUBLIC (owner, 2026-07-30), so the checkout is tokenless.
+  The content repo is PUBLIC, so the checkout is tokenless.
 
 inputs:
   lfs:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Harness/compiler `dsl_version` sync gate (task #157).
+"""Harness/compiler `dsl_version` sync gate.
 
 The compiler's DSL surface and the harness's critical-path allowlist are two
 independent files that must agree on one number: the newest `dsl_version` a
@@ -13,8 +13,8 @@ Nothing in the repo ties these together, so a compiler version bump lands with
 zero signal to the harness. That happened for real: spec-0026 raised
 `SUPPORTED_DSL_VERSION` to `0.9.0` while `harness/src/critical-path.ts` still
 listed `0.2.0 … 0.8.0` — the server booted, the bot connected, and the gate
-refused the campaign before it took a single step (hollow-vigil ladder run,
-task #157). Every other CI job was green.
+refused the campaign before it took a single step (hollow-vigil ladder run).
+Every other CI job was green.
 
 The rule: the compiler's latest `dsl_version` must be a member of the
 harness's `SUPPORTED_DSL_VERSIONS`. The harness is allowed to lag behind on
@@ -94,7 +94,7 @@ def main() -> int:
             f"  {CRITICAL_PATH_TS}: SUPPORTED_DSL_VERSIONS = {harness!r}\n"
             f"  {compiler_max!r} is not in the harness allowlist.\n\n"
             "Every campaign at the compiler's current dsl_version would be refused "
-            "at the bot-tier version gate before it takes a single step (task #157). "
+            "at the bot-tier version gate before it takes a single step. "
             "Add the compiler's SUPPORTED_DSL_VERSION to harness/src/critical-path.ts's "
             "SUPPORTED_DSL_VERSIONS (additive addition only — do not remove older "
             "entries still in use), and confirm no version-conditional harness "

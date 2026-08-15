@@ -1,6 +1,6 @@
 # spec-0019: Cutscene rehearsal + in-game shot calibration
 
-- **Status**: Draft, design approved (owner 2026-08-02, three rulings: rehearsal
+- **Status**: Draft, design approved (three rules: rehearsal
   replays the **full performance**, not camera-only — staging defects are what
   playtests actually catch; the whole adjust-and-replay loop happens **inside
   one game session** with a single harvest at the end — never mark → harvest →

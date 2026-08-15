@@ -1,6 +1,6 @@
 # spec-0010 — Assembled-world lighting, deterministic relight, declared time & weather
 
-Status: Approved (owner-approved in conversation, 2026-07-31)
+Status: Approved
 Amends: spec-0001 "Lighting contract" (DW0210 evidence base), spec-0007 (admission
 probe role). Depends on: nav occupancy world (spec-0008 v0.4.1), environment
 sealing time lock (spec-0002).
@@ -65,7 +65,7 @@ Fixtures are emitted as `setblock` commands in the existing world-init path
 world is assembled in-game by jigsaw, so post-assembly block writes are the
 intended vanilla mechanism (consistent with v0.4 `SetBlock`).
 
-### Time & weather (owner-directed 2026-07-31)
+### Time & weather
 
 Sealing freezes both cycles (`advance_time false`, `advance_weather false`,
 spec-0002) but the states are hard-coded: time pinned to noon, weather silently
@@ -99,8 +99,7 @@ cells** (admission profiles are no longer an input to gating):
 1. `lighting` declared → relight pass guarantees `min_light`; unsatisfiable →
    **DW0211** (error).
 2. No declaration, measured min ≥ 3 → ok.
-3. No declaration, measured min < 3, a class kit grants night-vision → ok
-   (retained mitigation, owner decision 2026-07-31).
+3. No declaration, measured min < 3, a class kit grants night-vision → ok.
 4. Otherwise → **DW0210** (error): dark area, no declared fixture, no
    night-vision.
 

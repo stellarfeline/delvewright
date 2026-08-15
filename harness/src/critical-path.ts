@@ -54,8 +54,8 @@
  *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
  * ceiling (`crates/dsl/src/envelope.rs`) — `tools/check-harness-dsl-version.py`
- * enforces that in CI (task #157: a v0.9.0 campaign was refused at this gate,
- * server booted and bot connected, because this list still ended at 0.8.0).
+ * enforces that in CI: an allowlist that lags the ceiling refuses a v0.9.0
+ * campaign at this gate after the server booted and the bot connected.
  */
 export const SUPPORTED_DSL_VERSIONS = [
   "0.2.0",
@@ -213,7 +213,7 @@ export interface InteractStep extends PresentationMarkers {
 }
 
 /**
- * Rest at bonfire `bonfire` (spec-0016 §1, compiler #220). A path EXPORT step: it
+ * Rest at bonfire `bonfire` (spec-0016 §1). A path EXPORT step: it
  * proves no objective of its own, it performs the player loop the steps after it
  * are proven under.
  *
@@ -240,12 +240,12 @@ export interface AssertCompleteStep {
   readonly objective: string;
   readonly value: number;
   /**
-   * Scheduled-ending tail (task #125): the compiler-computed maximum tick offset
+   * Scheduled-ending tail: the compiler-computed maximum tick offset
    * between the terminal objective completing and `campaign-complete` firing —
    * a `sequence`-scheduled finale (the-wake: 250t) or a `move-npc`/`move-actor`
    * arrival bundle. The completion window must cover it: the window becomes
    * `max(default settle, tail + margin)`. Absent (undefined) for a synchronous
-   * ending, which keeps pre-#125 paths byte-identical.
+   * ending, which keeps paths that predate the field byte-identical.
    */
   readonly endingTailTicks?: number;
 }

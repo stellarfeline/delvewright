@@ -48,7 +48,8 @@ usage) · `3` output error (cannot write) · `≥10` internal error.
 
 The output is a standard structure template: `DataVersion`, `size`, `palette`
 (`Name` + optional `Properties`), `blocks` (`pos`, `state`, optional `nbt`), and
-an empty `entities` list — identical in shape to the compiler's `hello-room.nbt`.
+an empty `entities` list — identical in shape to what the `prefabs/*-generator`
+workspaces write.
 
 ## Safety strip (community-contract audit hook)
 

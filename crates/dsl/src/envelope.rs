@@ -189,8 +189,8 @@ pub fn is_v10(version: &str) -> bool {
     ordinal(version) >= 10
 }
 
-/// True if `version` enables the DSL v0.11 surface (spec-0034, owner ruling
-/// 2026-08-09): the per-body **`traversal` declaration** — what a body can do
+/// True if `version` enables the DSL v0.11 surface (spec-0034): the per-body
+/// **`traversal` declaration** — what a body can do
 /// when it moves — carried by the stage-2 NPC and the stage-5 actor through one
 /// shared [`crate::stages::BodyTraversal`] type.
 ///

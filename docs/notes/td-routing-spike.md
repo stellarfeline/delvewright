@@ -1,4 +1,4 @@
-# TD routing spike — routed while distant, feral once aggroed (task #66 phase 1)
+# TD routing spike — routed while distant, feral once aggroed (phase 1)
 
 Live-verified 2026-08-01 on a throwaway pinned itzg 1.21.11 server (`dw-spike-td`,
 rcon-driven, mineflayer probe player). Feeds the M4 tower-defense spec. All numbers
@@ -91,6 +91,6 @@ which is also the right fiction.
 
 Compiler obligations: lane species must be raider-family (diagnostic), squad ≥2
 (diagnostic), auto-arm lane species, waypoints validated standable/reachable on the
-assembled nav world (same machinery as wave seating, task #41), waypoint spacing >10
+assembled nav world (same machinery as wave seating), waypoint spacing >10
 enforced by resampling, one emitted per-wave tick function implementing §Verdict.
 Existing `attributes` surface keeps `follow_range` overridable per mob.

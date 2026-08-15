@@ -1,6 +1,6 @@
 # spec-0034 — Declared body traversal
 
-- Status: Accepted (owner ruling, 2026-08-09)
+- Status: Accepted
 - DSL version: 0.11.0
 - Diagnostics: `DW0454` (compiler), `DW0455` (dsl); `DW0141` fence
 - Supersedes nothing. Extends the traversal proof of island round 21
@@ -18,7 +18,7 @@ cannot be absolute; but an author who wants a body that moves unlike its species
 a sheep that climbs — had no way to say so. The exception could only happen by
 accident and merely render.
 
-## Decision (owner ruling, 2026-08-09)
+## Decision
 
 The DSL exposes a **proactive declaration** of a body's locomotion, and the engine
 holds the author to it. It does not forbid, and it does not merely warn.

@@ -16,9 +16,16 @@
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
 //! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
 //!
-//! So this module is the block half of the command rule. It is deliberately in
-//! `delvewright-schem` — the one crate that writes structure `.nbt` bytes — so
-//! that a new emitter reaches it by depending on the writer it already needs.
+//! So this module is the block half of the command rule. It lives in
+//! `delvewright-schem` because that is where the structure-template reader and
+//! writer already are — but this crate is **not** the only site that turns a
+//! palette into `.nbt` bytes, and reasoning as though it were is what left the
+//! sixth emitter unguarded. The six `prefabs/*-generator` workspaces cannot
+//! depend on this crate at all and reach the same rule through
+//! `prefabs/invariants.rs`. Which sites owe it is therefore not remembered: it
+//! is discovered from the ingredient by `tools/check-structure-emitters.py`,
+//! which treats every tracked file that calls the NBT serialiser as a
+//! candidate, and requires each to name the rule or declare why it need not.
 //!
 //! # What it validates
 //!
@@ -315,6 +322,20 @@ impl BlockRegistry {
     /// The block's default state — what the game resolves each unwritten
     /// property to. `None` for an id the pinned version does not have; an empty
     /// map for a block that has no properties at all.
+    ///
+    /// **This table says what a reader must ASSUME, never what an emitter may
+    /// WRITE.** A reader that is not a running server — the review page, a
+    /// diff, a walk — has to fill an omitted property from somewhere, and this
+    /// is where. An emitter filling one from here is a different act: it turns
+    /// a state that said nothing into a state that explicitly asserts the
+    /// default, and for every connection property the default is
+    /// *disconnected*. So a completion pass over a library would answer
+    /// [`Self::omitted_shape_carrying`] with the empty set for every block,
+    /// forever — the shape rule (`DW0735`) and its whole library sweep would go
+    /// green by ceasing to bind, over a library whose walls are still isolated
+    /// posts. What an emitter owes instead is the connection derived from the
+    /// blocks beside the cell (`prefabs/connections.rs`), and
+    /// `tools/check-structure-emitters.py` is what holds every emitter to it.
     pub fn default_state(&self, name: &str) -> Option<&BTreeMap<String, String>> {
         self.defaults.get(namespace(name).as_ref())
     }
@@ -328,7 +349,8 @@ impl BlockRegistry {
     /// answer different questions: that one asks whether the block's *model* is
     /// assembled from parts the property selects, this one asks what a reader
     /// that is not a running server would have to fill in to know what the file
-    /// means at all.
+    /// means at all. Being broader is exactly why it is not the repair for the
+    /// narrower one — see [`Self::default_state`], whose table this reads.
     pub fn unwritten(
         &self,
         name: &str,
@@ -354,6 +376,39 @@ impl BlockRegistry {
             .get(namespaced.as_ref())
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// The legal values of one property of one block, empty when either is
+    /// unknown or the namespace is foreign.
+    pub fn values(&self, name: &str, property: &str) -> &[String] {
+        let namespaced = namespace(name);
+        self.blocks
+            .get(namespaced.as_ref())
+            .and_then(|props| props.get(property))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// **True when `name` is a stair block**, derived from the pinned registry
+    /// rather than from a list: a stair is the block whose `shape` property
+    /// takes vanilla's five stair values, and nothing else in the game has one.
+    ///
+    /// The derivation matters because the property it feeds
+    /// ([`crate::stairs::derive_shape`]) tests *any* stair against *any* other
+    /// — an oak stair mitres against a stone-brick one — so a hand-kept list
+    /// would be wrong the day a version adds a stair, in the silent direction.
+    pub fn is_stairs(&self, name: &str) -> bool {
+        let values = self.values(name, "shape");
+        values.len() == 5
+            && [
+                "straight",
+                "inner_left",
+                "inner_right",
+                "outer_left",
+                "outer_right",
+            ]
+            .iter()
+            .all(|v| values.iter().any(|has| has == v))
     }
 
     /// **Every** property of `name` the state omits, sorted — the `DW0737`

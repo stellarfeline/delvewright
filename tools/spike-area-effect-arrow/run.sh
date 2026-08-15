@@ -74,8 +74,8 @@ wait_ready() {
     # refusal here means "not up yet". Readiness is the REPLY, never the exit
     # status of a discarded pipe: a `>/dev/null` probe cannot tell a server
     # that answered from one that answered an error, and the sibling idiom
-    # (`| grep -q` under pipefail) read as flakiness for months, cost two owner
-    # playtest stagings, and is task #173.
+    # (`| grep -q` under pipefail) read as flakiness for months and cost two
+    # owner playtest stagings.
     if [ -n "$(dw_rcon_probe "${CONTAINER}" list)" ]; then return 0; fi
     sleep 5
   done

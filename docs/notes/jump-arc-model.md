@@ -1,4 +1,4 @@
-# Jump-arc navigation model — spike findings + proposal (task #67, phase 1)
+# Jump-arc navigation model — spike findings + proposal (phase 1)
 
 Status: **spike note + model proposal**, written 2026-08-01 as the input the M4
 expressiveness spec consumes. Nothing here is implemented: the shipped nav model
@@ -145,7 +145,7 @@ order (ADR-0006).
 Jump edges are generated only inside areas whose stage-1/2 declaration sets a
 `parkour` flag (exact DSL surface is the M4 spec's call). Every existing
 campaign therefore keeps a pure-walk proof and byte-identical output — the same
-compatibility discipline as task #59's use-gates.
+compatibility discipline as use-gates.
 
 ### 3.3 Diagnostics + export (proposed codes; final numbers assigned when
 implemented — next free in the range at time of writing is DW0348, and other
@@ -166,7 +166,7 @@ workers allocate concurrently, so re-check at implementation time)
 - **Export annotation** (not a diagnostic): a leg whose proven route uses jump
   edges lists them in `validation/critical-path-waypoints.json` as
   `jumps: [{launch, landing, sprint}]`, with launch and landing force-kept as
-  explicit waypoints — the exact precedent `use_gates` set in #132. The
+  explicit waypoints — the same shape `use_gates` uses. The
   harness replays annotated jumps as scripted maneuvers, everything else as
   ordinary pathfinding.
 
@@ -196,8 +196,8 @@ The executor addition is a bounded scripted maneuver per exported jump edge:
 3. run the spike's control loop (forward + sprint per the annotation, jump at
    the launch-edge plane), detect landing/failure from own physics exactly as
    `attempt()` does;
-4. on failure: stall-recover back to the runway start (the existing task-#45
-   recovery machinery) and retry within the leg's existing retry budget.
+4. on failure: stall-recover back to the runway start (the existing
+   stall-recovery machinery) and retry within the leg's existing retry budget.
 
 mineflayer-pathfinder's built-in `allowParkour` is deliberately **not** used for
 proof replay: its parkour solver is heuristic and version-sensitive, while the

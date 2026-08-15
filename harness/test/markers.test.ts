@@ -81,7 +81,7 @@ test("a campaign id is matched exactly — another campaign's marker is a differ
   assert.notEqual(other?.campaignId, "hello-world");
 });
 
-// --- the wave census channel (task #123) -------------------------------------
+// --- the wave census channel -------------------------------------
 
 test("a census summary parses into the server's own counts", () => {
   assert.deepEqual(parseCensusSummary("[dw:census the-drowned-bell wave/gate-assault 7 2 1 1]"), {

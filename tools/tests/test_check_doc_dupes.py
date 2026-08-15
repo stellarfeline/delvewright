@@ -1,6 +1,6 @@
 """The documentation merge-artifact gate (`tools/check-doc-dupes.py`).
 
-The defect this pins, from the field (owner finding, 2026-08-03): the stage-5 DSL
+The defect this pins, from the field: the stage-5 DSL
 table of `docs/reference/compiler.md` carried `shortcuts[]` twice and
 `waves[].respawns_on_rest` twice, added by branches merged in a catch-up burst
 that each appended their rows at the same anchor. Git merged both hunks cleanly,

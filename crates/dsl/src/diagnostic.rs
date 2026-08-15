@@ -788,7 +788,7 @@ pub mod codes {
     /// body to** — today exactly one value, `aquatic`.
     ///
     /// The declaration surface exists so an author can claim a capability and
-    /// have the claim PROVEN (owner ruling, 2026-08-09). `aquatic` is the one
+    /// have the claim PROVEN. `aquatic` is the one
     /// class that carries no exemption and governs no rule: it is a ledger
     /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
     /// Declaring it could therefore never change a verdict, so it would always

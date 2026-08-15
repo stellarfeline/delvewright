@@ -16,7 +16,7 @@ the doc ascribes to it is the behavior the code has.
 
 The direction that matters is STALE-OLDER: docs are written once and the build
 moves. A gate that only rejected "newer than the build" is exactly what let a
-storybook ship a `v1.0` marker through the whole `v1.1` release green (#342), so
+storybook ship a `v1.0` marker through the whole `v1.1` release green, so
 these tests pin BOTH directions as red.
 
 These drive the detector over synthetic sources so it keeps failing for the
@@ -289,8 +289,8 @@ def test_absent_file_exits_2(gate):
 # `crates/compiler/README.md` and `crates/dsl/README.md` are rendered VERBATIM
 # as crates.io front pages. They state the Minecraft version, the `dsl_version`
 # window and the minimum Rust — the facts that decide whether a visitor can use
-# the crate — and those were bound to nothing (#388 named the risk and left it
-# open). The file set is DERIVED from the manifests, never listed.
+# the crate — and those were bound to nothing before this gate. The file set is
+# DERIVED from the manifests, never listed.
 
 
 def test_page_matching_the_build_passes(gate):

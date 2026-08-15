@@ -60,7 +60,7 @@ validation/fresh-volumes.sh          --project dw-worker-<id>   # teardown, prov
 `--project` is **required** on every one of them; an invocation without it exits
 non-zero and says why. That is the whole protocol.
 
-### Why there is no lock any more (task #185)
+### Why there is no lock any more
 
 `docker compose -p <project>` isolates containers, volumes and networks. It does
 **not** isolate the two things that are global to the Docker daemon: pinned
@@ -131,7 +131,7 @@ sacred**: acquire will not wait on it or steal it, and `dw_mutex_release_named`
 refuses to free it while any container still publishes 25565. Never install a
 teardown trap before acquisition succeeds.
 
-The rules are written the way they are because of a real incident (2026-08-02): a
+The rules are written the way they are because of a real incident: a
 hand-rolled waiter whose "did I get the lock?" guard tested directory existence
 fell through against the owner's held lock and ran a teardown that — via the then
 pinned `container_name` — destroyed a live play session and its world volume
@@ -152,14 +152,14 @@ campaign never declared: the shipped image booting a `horizon: ocean` delve as a
 void, and the PackTest runner testing a void superflat while the delve shipped an
 ocean one.
 
-## Server bootstrap: one fetch per job, not one per boot (task #41)
+## Server bootstrap: one fetch per job, not one per boot
 
 The Mojang server jar is never baked into any image (ADR-0010, EULA), so a server on
 a fresh `/data` volume bootstraps it live at first boot. Isolation gives every ladder
 its own fresh volume — which is right — but it also meant every boot ran its own live
 bootstrap, and a `tier 2` run boots **seven** servers (the datapack-load check plus
 six PackTest suites). Seven independent chances for one Mojang blip to red a required
-status check for a reason with nothing to do with the delve. PR #312 died exactly
+status check for a reason with nothing to do with the delve. A run died exactly
 there, on the 5th of 6 suites, before any datapack was evaluated.
 
 `validation/server-bootstrap-cache.sh` performs **one** fetch per job into
@@ -236,7 +236,7 @@ delvec build crates/compiler/tests/fixtures/cast-ledger \
 EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
 ```
 
-There is no `PACKTEST_CONTAINER` any more (task #185): the runner pins no
+There is no `PACKTEST_CONTAINER` any more: the runner pins no
 container name, so the compose project is the only name there is, and
 `--project` is required rather than defaulted. `validation/delve-output*/` is
 gitignored, so extra trees need no bookkeeping. This is exactly how CI's tier-2

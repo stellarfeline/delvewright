@@ -1,4 +1,4 @@
-//! DSL v0.11 body `traversal` (spec-0034, owner ruling 2026-08-09): the
+//! DSL v0.11 body `traversal` (spec-0034): the
 //! author's side of the traversal proof.
 //!
 //! Spiders really do climb, so the traversal rules cannot be absolute — and what

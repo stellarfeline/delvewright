@@ -1,6 +1,6 @@
 # spec-0031: Runtime state, and the verbs that need it
 
-- **Status**: Draft (owner design session 2026-08-08)
+- **Status**: Draft
 - **ADRs**: 0001 (the compiler emits everything), 0003 (vanilla-first),
   0006 (determinism)
 - **Related**: spec-0011 (trap hardware), spec-0022 (traps v2 — redstone keeps
@@ -62,8 +62,8 @@ It joins the effect-root set, which means it is visited by `for_each_effect_root
 and therefore covered by every walker that already exists: reachability, l10n
 inventory, effect-history replay, the dangling-function check. The recurring
 defect in this family is a hand-rolled walk that enumerates some roots and not
-others (#301, #302, #321, and a sixth instance found the same day as this spec:
-`Shortcut.on_unlock` is an effect bundle emission lowers and no root visits).
+others; `Shortcut.on_unlock` is one such — an effect bundle emission lowers and
+no root visits.
 
 Death detection must ride the existing edge (`dw.deaths` / `dw.death_ack` /
 `cp_respawn_check`), not a second detector. The stake needs the death
@@ -73,7 +73,7 @@ read-only `LastDeathLocation` player NBT, whichever a live spike confirms fires
 for non-entity deaths (void, fall, drowning). That question is load-bearing for
 a souls-shaped delve and is answered by measurement, never by recall.
 
-**Implementation notes (#346), recorded so they are not re-derived.**
+**Implementation notes, recorded so they are not re-derived.**
 
 `on_death` is campaign-wide, one bundle at `/content/on_death` — deliberately
 **not** a field on a checkpoint. *Where you come back* is a checkpoint's
@@ -158,7 +158,7 @@ these primitives exist a lift is a `sequence` of them, and so is a rising
 drawbridge, a materialising bridge, an opening wall, a sinking floor, a
 summonable cargo platform.
 
-**Owner design of record (2026-08-08).** Transport is by teleport — not by
+**Design of record.** Transport is by teleport — not by
 levitation, not by a ridden entity, and not by any redstone mechanism. One car
 exists, and it exists at exactly one floor at a time.
 
@@ -184,7 +184,7 @@ Ordering, as ticks of one `sequence`:
 **Invariant: the car always exists somewhere.** Create before clear, never the
 reverse — there is no tick at which a save could be loaded with no car.
 
-Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
+Rulings on the cases:
 
 - **Everyone on the car travels**, players and entities alike. A cargo lift is
   the same mechanism.
@@ -192,9 +192,9 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
   anyone standing on it comes along. One car means one car.
 - **Pulling a call lever at the floor the car already occupies is a no-op** —
   never a destroy-and-recreate, which would drop the occupants for a tick.
-  (Planner ruling; follows from the invariant.)
-- **A pull during a ride is ignored, not queued** (planner ruling; determinism
-  over convenience).
+  (Follows from the invariant.)
+- **A pull during a ride is ignored, not queued** (determinism over
+  convenience).
 - **Falling down the shaft is death.** A lethal volume occupies the bottom
   layer of the shaft. The car's ground-floor position sits directly above it, so
   a player who jumps from an upper floor while the car is *down* lands on the
@@ -202,8 +202,8 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
   while the same jump with the car *up* falls the whole shaft into the lethal
   volume. Interrupted rides and deliberate jumps are treated identically: no
   special protection.
-- **A recovery stake may never be placed on a block that runtime can remove**
-  (planner ruling): a stake left on the car would be deleted by the next ride.
+- **A recovery stake may never be placed on a block that runtime can remove**:
+  a stake left on the car would be deleted by the next ride.
   See spec-0032's placement rule.
 
 ## Acceptance criteria
@@ -216,7 +216,7 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    dialogue option — verified by a test that enumerates the gate's consumers
    from the type, not from a hand-written list.
 
-   **Correction (implementation, #348): a branch declaration is not a gate
+   **Correction (implementation): a branch declaration is not a gate
    consumer.** This criterion originally listed it. `BranchDecl.flags` is a
    *pinning* declaration — "these flags are SET on this branch" — read by the
    chronicle and the branch proofs; it is not a condition, and `purse == 500`
@@ -224,7 +224,7 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    alike in JSON and only one of them gates anything. Measured consumer count:
    six classes over 28 declaring sites.
 
-   **Correction (implementation, #348): the gate is a borrowed view, not a
+   **Correction (implementation): the gate is a borrowed view, not a
    flattened struct.** The obvious shape — one `Gate` struct
    `#[serde(flatten)]`ed into each site — is not available: serde rejects
    `flatten` in combination with `deny_unknown_fields`, which all 76 stage
@@ -255,7 +255,7 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    merely solid; nothing may stand on top either — so a campaign whose only
    route to an objective crosses one fails to compile, naming the volume.
 
-   **Correction (implementation, #347): three things this criterion got wrong.**
+   **Correction (implementation): three things this criterion got wrong.**
    - It did not say through which *channel* the message is stated. The obvious
      reading — vanilla's death screen, via the damage type's `message_id` — is
      blocked by spec-0029 §3: vanilla builds that component with no `fallback`,
@@ -361,7 +361,7 @@ Rulings on the cases, all owner decisions of 2026-08-08 unless marked:
    order is has to be asserted about the emission.
 10. Every gate above states its binding count, and a zero binding is a failure.
 
-## Settled by live measurement (#349, pinned 1.21.11)
+## Settled by live measurement (pinned 1.21.11)
 
 Both questions are answered. Full data: `docs/notes/death-and-teleport-spike.md`,
 `tools/spike-death-teleport/observations.json` (4140 samples), re-runnable.
