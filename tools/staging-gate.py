@@ -4,9 +4,9 @@ finding's general form is not a live, binding check on THAT build.
 
 ## Why this exists, and why a green ladder does not discharge it
 
-The owner's standing directive (2026-08-09): *her playtest is CONTENT QC only;
-every bug a compiler or a test could catch must already be fixed before she
-touches a build.* `nobodys-cave-island` cost her twenty-two rounds of finding
+The owner's standing directive: *her playtest is CONTENT QC only; every bug a
+compiler or a test could catch must already be fixed before she touches a
+build.* `nobodys-cave-island` cost her twenty-two rounds of finding
 MECHANICAL defects. The reason the existing ladder cannot promise this is that
 most of those findings were things **no check existed for at the time**. So
 "everything is green" and "she will not find a mechanical bug" are different

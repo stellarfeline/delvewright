@@ -68,7 +68,7 @@ export function markerLine(campaignId: string, token: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// The wave CENSUS channel (task #123)
+// The wave CENSUS channel
 // ---------------------------------------------------------------------------
 //
 // "What is standing at this encounter?" used to be answered by silhouette — every
@@ -76,7 +76,7 @@ export function markerLine(campaignId: string, token: string): string {
 // block. That counts a neighbouring wave's mobs and every ambush actor in
 // tracking range as members of the wave being measured, and — since they are
 // alive on both sides of a scripted death — reports them as survivors a re-seat
-// failed to remove (#230, the drowned bell's false `carried_over` findings).
+// failed to remove (the drowned bell's false `carried_over` findings).
 //
 // The wave TAG is the only exact answer, and only the server can see it. So the
 // compiler emits the census and the harness reads it: same sigil, same anchored

@@ -138,7 +138,7 @@ the same delve image CI and prod use.
 All three profiles are driven by one compiler build output at
 `validation/delve-output` (gitignored; `delvec build <campaign> -o …`).
 
-- **`play`** (owner request 2026-07-29; permanent): `docker compose --profile play
+- **`play`** (permanent): `docker compose --profile play
   up` starts *only* the shipped delve image with `127.0.0.1:25565` mapped, so the
   owner joins from their vanilla client to hand-check at any time. No tooling mods.
 - **`validate`**: `server` (the shipped delve image) + `bot`, healthcheck-gated;
@@ -155,7 +155,7 @@ All three profiles are driven by one compiler build output at
 - **Auth mode (decided):** default `ONLINE_MODE=FALSE` (offline) for frictionless
   local play and CI; set `ONLINE_MODE=TRUE` to join with a real Microsoft account.
 
-### Visual tier *(owner-directed 2026-07-31; shot list + fidelity gate BUILT M3, `crates/render`; automated vision-verdict recording still open)*
+### Visual tier *(shot list + fidelity gate BUILT M3, `crates/render`; automated vision-verdict recording still open)*
 
 > **Status (M3, `crates/render` + compiler `render_plan`):**
 > - *(built)* Deterministic **shot list** derived from the layout: the compiler
@@ -167,7 +167,7 @@ All three profiles are driven by one compiler build output at
 >   **fidelity gate** (`delve-render fidelity-gate`, newest-block fixture, magenta
 >   placeholder → exit 4). Chunky scene emission (`delve-render scene`) from the
 >   render-plan.
-> - *(built, #18)* **Player-POV tier** — the render plan now carries first-person
+> - *(built)* **Player-POV tier** — the render plan carries first-person
 >   `pov` shots (camera at eye height 1.62 on every critical-path waypoint, oriented
 >   along the walk; per-shot leg/objective + a one-sentence machine `expect`
 >   composed from campaign data). The compiler proves every POV eye is clear over

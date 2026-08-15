@@ -2,8 +2,9 @@
 #
 # `playtest-note-flow.sh` and `rehearsal-flow.sh` run their mineflayer bot as a
 # host process (not as a compose service), so they need a reachable address —
-# but a FIXED one would re-create exactly what task #185 removed: two of them,
-# or one of them beside the owner's session, contending for a single number.
+# but a FIXED one would re-create exactly what compose-project isolation removed:
+# two of them, or one of them beside the owner's session, contending for a single
+# number.
 #
 # `127.0.0.1::25565` publishes the container's 25565 on a free host port Docker
 # chooses. Read it back per project, never assume it:

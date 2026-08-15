@@ -1,4 +1,4 @@
-// The floor gate on the OTHER shape an elite takes (#222 emission, #114 harness):
+// The floor gate on the OTHER shape an elite takes:
 // parsing the plan's `actors[]` and `floor_gate` ledger, deciding which actor
 // fights THIS run can honestly reach, and the advisory it produces.
 
@@ -13,7 +13,7 @@ import {
   type ActorTrial,
 } from "../src/combat.ts";
 
-/** The reference shape from #222: an elite actor, unleashed by a strike-npc trigger. */
+/** The reference shape: an elite actor, unleashed by a strike-npc trigger. */
 function planJson(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     version: "0.8.0",
@@ -117,7 +117,7 @@ test("the floor-gate ledger parses both sides, each not-covered entry with its r
 });
 
 test("an UNTIERED hostile parses as a not-covered entry with no tier at all", () => {
-  // Task #121: the campaign unleashes a real-AI body and bills the fight
+  // The campaign unleashes a real-AI body and bills the fight
   // nothing, so the compiler writes `tier: null`. An empty ledger reads as
   // "everything is covered"; this entry is how the run report says "nothing was
   // even assessed" instead.

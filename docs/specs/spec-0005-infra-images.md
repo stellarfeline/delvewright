@@ -1,11 +1,11 @@
 # spec-0005: Infrastructure images & version manifest
 
-- **Status**: Draft (owner directional approval 2026-07-30; approves at PR review)
+- **Status**: Draft (direction approved; approval at PR review)
 - **ADRs**: 0003 (mods tooling-only), 0006 (pins), 0009 (MC 1.21.11), 0010 (EULA)
 
-Owner decision (2026-07-30): everything is version-pinned, so stop rebuilding from
-external images on every run — publish our own fixed infrastructure images once and
-pull them by digest thereafter.
+Everything is version-pinned, so stop rebuilding from external images on every
+run — publish our own fixed infrastructure images once and pull them by digest
+thereafter.
 
 ## The two images (GHCR, **public** packages)
 

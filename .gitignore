@@ -20,7 +20,7 @@ validation/run-out/
 # the Mojang jar is fetched by checksum, never redistributed (ADR-0010).
 validation/.jar-cache/
 
-# task #41 server-bootstrap overlay (validation/server-bootstrap-cache.sh): the
+# Server-bootstrap overlay (validation/server-bootstrap-cache.sh): the
 # pinned Mojang jar plus the Fabric launch jar and its Class-Path, fetched ONCE per
 # job and copied into each ladder's world volume. Never committed and never baked
 # into a layer — the jar is fetched by checksum, never redistributed (ADR-0010).
@@ -45,12 +45,12 @@ __pycache__/
 # Machine-local override of delvewright.toml (endpoints, model choices). Never
 # committed; it must never hold an API key either — configs name the env var that
 # does (docs/reference/i18n.md).
-# The local override file and ANY suffixed variant of it. The bare name alone
-# was not enough: `delvewright.local.toml_test` reached a PUBLIC repo in #334,
-# because a scratch copy made while testing the refimg provider fell outside a
-# pattern that matched only the exact name. No key leaked — the file names an
-# ENV VAR (`api_key_env`), never a value, which is the property that made a
-# mistake here survivable — but the pattern is what should have caught it.
+# The local override file and ANY suffixed variant of it. The bare name alone is
+# not enough: a scratch copy such as `delvewright.local.toml_test` falls outside a
+# pattern that matches only the exact name, and reaches a PUBLIC repo. No key can
+# leak either way — the file names an ENV VAR (`api_key_env`), never a value,
+# which is what makes a mistake here survivable — but the pattern is what catches
+# it.
 delvewright.local.toml*
 
 # Owner-private working notes — never committed (stays local even when the
@@ -77,3 +77,6 @@ dist/
 # (open_clip_torch, t2v-metrics). Multi-GB with their PyTorch dependency and
 # deliberately absent from CI — see [refscore] in delvewright.toml.
 .refscore-venv/
+
+# Local half of the constitution — operating practice, never committed
+CLAUDE.local.md

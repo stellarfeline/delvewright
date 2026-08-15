@@ -1,8 +1,8 @@
 # First-party demo levels — the mechanic showcase backlog
 
-Owner directive (2026-08-03): **every new mechanic gets a small first-party
-level that verifies and shows it off.** Not necessarily right when the
-mechanic lands — but it must be queued here, and this queue is the planning
+**Every new mechanic gets a small first-party level that verifies and shows it
+off.** Not necessarily right when the mechanic lands — but it must be queued
+here, and this queue is the planning
 agent's **standing idle work**: no urgent development task + owner not
 responding → build the next level in this list (full ladder green, content-repo
 PR, playable via the play profile).
@@ -15,8 +15,8 @@ Rules of the queue:
 - "Covered by" means a shipped full campaign already showcases the mechanic
   prominently; no separate demo needed unless the coverage rots.
 - Levels are authored via /new-delve like any campaign (dogfooding — friction
-  found here is toolchain work, which is the point; owner principle 2026-08-03:
-  polishing levels is the driver for toolchain/prompt improvement).
+  found here is toolchain work, which is the point; polishing levels is the
+  driver for toolchain/prompt improvement).
 - New mechanics: the PR that lands a mechanic adds a row here (same-PR rule,
   like docs/reference sync).
 
@@ -43,10 +43,12 @@ Rules of the queue:
 | Grammar frame reflection + `symmetric` gate (grammar.md §2, §4c) | **The Mirrored Hall** — a small symmetric hall whose every paired feature (twin transept arms, twin stairs, a rose window) is one rule and its reflection; the level's README shows the program, and the build gates on `--symmetric x` so a forgotten reflection is a red rather than a hole in a flank | pending |
 | Ocean horizon / pseudo-open-world boundary (0013) | covered by nobodys-cave-island | covered |
 | Spatial contract — declared spaces checked against the blocks (0036, ADR-0020) | **The Two Wards** — two pieces that each pass every gate alone and refuse to assemble: ward A declares a gate on its east face, ward B declares its own a course higher, and `delvec` refuses the pair by name (`DW0780`) before anything is built. The level's README then shows the same two pieces corrected, and walks the contract of one of them — an `enclosed` nave, an `open_top` yard, a `barred` shortcut, a `posted` gallery — beside the verdict block that names each opt-out | pending |
+| What the world settles bytes into — stair `shape` and a body of fluid (`DW0801`, `DW0800`) | **The Mill Race** — one small water-mill yard, built twice and shown side by side: the version a render approves, and the version the server keeps. The first has a mitred kerb pointed across its run and a channel one course short of its wall; the second is the same yard one property and one course apart. The player walks the second and reads, in the level's README, the two pictures of the first — the `.nbt` as authored, and the same cells after one block update — because the whole point of both rules is that no picture of the bytes can show it | pending |
+| Attachable supports — where a vine or a lichen may hold on (`connections::attachable_faces`) | **The Dripstone Gallery** — one small cavern room, one seeded decoration pass, and four bays a player walks in a line. Bay 1: rock on one wall only, so the growth is on that wall and on the face that *touches* it. Bay 2: no wall within reach and a solid ceiling, so the same pass hangs the growth overhead instead of dropping it — the bay that used to come out bare. Bay 3: nothing but dripstone tips and a hanging lantern, so the pass places nothing and the bay is honestly empty, because a tip cannot hold a decal and a face that names one is deleted at the first block update. Bay 4: a vine and a lichen in the same cell shape, showing the vine offered five faces and the lichen six. Its README puts the emitted states beside the picture, so the level is the claim | pending |
 | Block palette selection — screened shelf + mix report (0035) | **Two Naves** — one grammar program, one region, one seed, expanded twice under two palettes whose mean colours sit 13.5 RGB units apart and whose chromatic areas are 60% and 30%. The player walks from one into the other; the point is that a number said they were the same room and the eye says they are different buildings. Ships with its swatch sheet and both mix reports beside it, so the level IS the argument for measuring area share instead of a mean | pending |
 | Local axis frame on a paint (grammar) | **The Turning Gate** — one grammar program, one barred doorway, built four times into boxes turned against each other; the same palette role gives the right bars, stair and skull yaw in every one, and the level's own signage is the before/after. Its second half is the refusal: a scope tipped onto its side, where the yaw has no image and the build says so instead of guessing | pending |
 
-## M5 theme suite (owner-approved 2026-08-03, all five)
+## M5 theme suite (all five)
 
 Genre-diverse levels beyond the Greek-myth and souls lines; each exercises a
 distinct authoring register:

@@ -303,7 +303,7 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
             "hello-world+scheduled-ending",
             build_scheduled_hello_world(),
         ),
-        // task #74: the fixture-class family. Three templates in one campaign
+        // The fixture-class family. Three templates in one campaign
         // touch the SAME stake's marker tag (`v10_stake_embers` and one
         // `fixture_<teleport>_<stake>` per ride), which is the first time a
         // generated suite has had more than one owner of a live entity tag — the

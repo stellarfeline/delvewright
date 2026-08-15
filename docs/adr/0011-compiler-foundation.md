@@ -2,14 +2,14 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: owner decision rule (2026-07-29 planning session): "don't reinvent
-  wheels, but if our overlap with beet is low or second-development is heavy, go
-  our own way" — applied to the overlap analysis below
+- **Source**: the project rule — don't reinvent wheels, but where overlap with an
+  existing tool is low or second-development heavy, go our own way — applied to the
+  overlap analysis below
 
 ## Context
 
 Decision Point #1 from the kickoff: build the compiler on beet+mecha (Python, MIT,
-actively maintained) or Rust-native. The owner's rule makes this hinge on **how much
+actively maintained) or Rust-native. That rule makes this hinge on **how much
 of our compiler beet actually provides**. Overlap analysis:
 
 | Our need | What beet/mecha provides |

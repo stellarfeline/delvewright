@@ -95,7 +95,7 @@ want_in "fabric API sha1 -> Dockerfile.toolserver" "$FABRIC_API_SHA1" "$TOOL_DF"
 want_in "packtest sha1 -> Dockerfile.toolserver"   "$PACKTEST_SHA1"   "$TOOL_DF"
 # compose pins the toolserver by its manifest digest (spec-0005).
 want_in "toolserver digest -> compose" "$TOOL_DIGEST" "$COMPOSE"
-# ...and the Fabric LAUNCHER by name (task #41). Left at itzg's `LATEST` default this
+# ...and the Fabric LAUNCHER by name. Left at itzg's `LATEST` default this
 # is a meta.fabricmc.net request on every boot of an already-provisioned image — six
 # per `tier 2` run, each its own chance to red a required check.
 want_in "fabric launcher -> compose" "$FABRIC_LAUNCHER" "$COMPOSE"
@@ -337,7 +337,7 @@ while IFS=$'\t' read -r status msg; do
 done < "$eng_report_file"
 rm -f "$eng_report_file"
 
-echo "== Server-jar bootstrap (task #41) =="
+echo "== Server-jar bootstrap =="
 # `server_jar_url` / `server_jar_sha256` stopped being provenance-only on 2026-08-05:
 # validation/server-bootstrap-cache.sh performs the ONE live fetch of a `tier 2` run
 # and verifies it against the pin. The way a consumer cannot drift from the manifest
@@ -352,7 +352,7 @@ if [ -f "$BOOTSTRAP_SH" ]; then
   else
     fail "validation/server-bootstrap-cache.sh must read server_jar_url and server_jar_sha256 from versions.toml"
   fi
-  # `grep -c` counts the whole file; it never stops reading early (task #173).
+  # `grep -c` counts the whole file; it never stops reading early.
   strayhash="$(grep -cE '[0-9a-f]{64}' "$BOOTSTRAP_SH" || true)"
   strayurl="$(grep -cF 'piston-data.mojang.com' "$BOOTSTRAP_SH" || true)"
   if [ "$strayhash" -eq 0 ] && [ "$strayurl" -eq 0 ]; then

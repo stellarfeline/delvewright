@@ -5,9 +5,8 @@ against". It was not: it was being run unoptimized. Recorded here so the numbers
 survive the conclusion, and so the next person who suspects a slow compiler
 starts from data.
 
-Owner ruling, 2026-08-06, on seeing the ratio: **~25s is acceptable,
-optimisation is shelved, we are not optimising prematurely.** The engine work
-below is therefore *not* scheduled. It is written down only so that a future
+**~25s is acceptable, optimisation is shelved; we are not optimising
+prematurely.** The engine work below is therefore *not* scheduled. It is written down only so that a future
 round that does need it starts from the profile rather than from a guess.
 
 ## Method

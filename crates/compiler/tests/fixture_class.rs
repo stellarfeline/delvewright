@@ -1,5 +1,4 @@
-//! **The motivating scenario: a lift and a recovery stake in one room** (task
-//! #74, filed by the economy worker as an explicit out-of-scope finding, #355).
+//! **The motivating scenario: a lift and a recovery stake in one room.**
 //!
 //! A `teleport` moves ENTITIES, not blocks. The ground under a recovery stake is
 //! untouched by a ride; what travels is the marker itself, away from the position
@@ -18,11 +17,11 @@
 //! **the question is not where this thing is, it is what this thing is.**
 //!
 //! So the fix is a class carried by the object (`compiler::affordance`,
-//! `DW0544`): every entity the engine summons declares whether its position IS
+//! `DW0545`): every entity the engine summons declares whether its position IS
 //! engine state (`dw_fixture` — a place) or belongs to a body that carries it
 //! (`dw_borne` — an NPC's dialogue hitbox, which must ride whatever its speaker
 //! rides). Every selector narrowed by a positional box then excludes the fixture
-//! class, and `DW0544` proves both halves over the shipped datapack.
+//! class, and `DW0545` proves both halves over the shipped datapack.
 //!
 //! ## What lives here and what does not
 //!

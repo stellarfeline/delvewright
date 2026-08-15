@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-29
-- **Source**: kickoff handoff (2026-07-29), owner decision
+- **Source**: kickoff handoff (2026-07-29)
 
 ## Context
 

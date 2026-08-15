@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SPIKE TOOLING (task #67 phase 1) — NOT part of the shipped pipeline.
+// SPIKE TOOLING (jump kinematics, phase 1) — NOT part of the shipped pipeline.
 //
 // Measures 1.21.11 jump kinematics with a mineflayer bot against the throwaway
 // vanilla server started by run.sh. The bot IS the measurement instrument on
@@ -185,7 +185,7 @@ async function main() {
   // 1.21.11 spells this rule `fall_damage`; the legacy `fallDamage` this line
   // carried is rejected outright ("Incorrect argument for command"), so the
   // comment above was simply untrue for the whole spike and no reply was read to
-  // say so (task #70). Re-measured on the pinned server 2026-08-11.
+  // say so. Re-measured on the pinned server 2026-08-11.
   await rcon(`fill -22 ${Y_SURF - 1} -1 -19 ${Y_SURF - 1} 1 minecraft:stone`);
   await rcon("gamerule fall_damage false");
 

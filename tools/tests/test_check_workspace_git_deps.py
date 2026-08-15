@@ -1,6 +1,6 @@
 r"""Guards for `tools/check-workspace-git-deps.py`.
 
-The red it exists to prevent (PR #388, a docs-only change, in the REQUIRED
+The red it exists to prevent (a docs-only change, in the REQUIRED
 `tier 2 (datapack load + PackTest)` job, in a step named for a datapack):
 
     build the hello-world delve output
@@ -90,7 +90,7 @@ def test_registry_only_workspace_passes(checker, tmp_path, capsys):
 
 
 def test_git_dependency_in_the_root_lock_is_a_finding(checker, tmp_path, capsys):
-    """The #388 shape: the root workspace resolves a git source."""
+    """The shape above: the root workspace resolves a git source."""
     write_lock(tmp_path, "Cargo.lock", LOCAL_PKG, REGISTRY_PKG, GIT_PKG)
     checker.ROOT = tmp_path
     checker.ALLOWED = {}

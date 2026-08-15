@@ -8,7 +8,7 @@
         "id": "state/car-at-floor",
         "scope": "party",
         "initial": 1,
-        "note": "Which landing the ONE car occupies. There is exactly one car and it exists at exactly one floor at a time (owner design of record, 2026-08-08), so this datum is the whole of the lift's position."
+        "note": "Which landing the ONE car occupies. There is exactly one car and it exists at exactly one floor at a time, so this datum is the whole of the lift's position."
       },
       {
         "id": "state/ride-in-progress",

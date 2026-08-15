@@ -1,10 +1,10 @@
 # spec-0008: DSL v0.4 — expressiveness (dialogue state, props, narration, live threats, presentation)
 
-- **Status**: Approved (owner, 2026-07-31, via chat) — implementation immediately
-- **Source**: the `nobodys-cave` generation run (content PR #1, `GENERATION.md` gap
-  register) + owner direction. ADRs: 0001 (DSL→compiler), 0003 (vanilla-first),
+- **Status**: Approved — implementation immediately
+- **Source**: the `nobodys-cave` generation run (`GENERATION.md` gap
+  register). ADRs: 0001 (DSL→compiler), 0003 (vanilla-first),
   0006 (determinism).
-- **Design principle (owner, 2026-07-31, now in CLAUDE.md)**: *no hacks at any
+- **Design principle (in CLAUDE.md)**: *no hacks at any
   layer*. A vanilla-intended primitive the content needs → first-class DSL verb.
   No vanilla primitive → the feature is excluded until vanilla grows one; we never
   ship a workaround downstream.
@@ -111,7 +111,7 @@ All additive; `dsl_version` bumps to `0.4.0`; v0.3 documents stay valid.
       finale, flag-gated name consequences, props, mannequin crew — and passes
       the full ladder.
 
-## Addendum (owner-verified demos, 2026-07-31)
+## Addendum (verified demos)
 
 - **Cutscene is IN for v0.4.** Owner tested the spectator demo live: the
   two-camera-bounce re-attach defeats sneak-escape (the naive same-entity

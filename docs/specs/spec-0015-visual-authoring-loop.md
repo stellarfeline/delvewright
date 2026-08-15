@@ -1,7 +1,7 @@
 # spec-0015 — The visual authoring loop (agentic viewport)
 
-- **Status**: Draft (planner, 2026-08-01; from the owner's round-4 QA findings
-  and design discussion — camera control belongs to the designing LLM)
+- **Status**: Draft (from the round-4 QA findings — camera control belongs to
+  the designing LLM)
 - **Problem**: 3D work (scenes, camera moves, NPC blocking) has no tight
   feedback loop. Content that compiles can look wrong; the render tiers are
   fixed shot-lists that miss what the designer is actually unsure about
@@ -63,7 +63,7 @@ pan-tracking, side-track dolly, crane/orbit, low-follow), damped look-at
 springs, per-template lens/FOV, min/max shot durations, cut-on-occlusion
 rather than wall-sliding. spec adds `shot_style` presets the cutscene DSL can
 invoke; the compiler expands a style deterministically into path + look-at.
-CORRECTIONS from the research dossier (docs/notes/camera-dossier.md, PR #126):
+CORRECTIONS from the research dossier (docs/notes/camera-dossier.md):
 vanilla has NO in-game FOV control (spectator ignores speed-effect FOV and the
 proxy is an item_display) — lens feel is CAMERA DISTANCE only; `fov` remains a
 render-tier parameter. Display-entity `teleport_duration` (0–59 ticks,
@@ -81,7 +81,7 @@ stronger than the runtime cut-on-occlusion the references use).
 P1: snapshot + labels + manifest (compiler has all data; pure additive tool).
 P2: blocking chart; manifest for existing tiers. P3: shot assertions + DW.
 P4: partial rebuild + image-diff regression. Chunky stays the final-beauty
-pass; night-vision-emulated dark-area review folds in via task #60's flag.
+pass; night-vision-emulated dark-area review folds in as a snapshot flag.
 
 ## Acceptance criteria
 

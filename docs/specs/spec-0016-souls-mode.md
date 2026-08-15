@@ -1,9 +1,9 @@
 # spec-0016 — Souls-mode mechanics (M4)
 
-- **Status**: Draft (planner-personal, 2026-08-01; owner's souls direction
-  from spec-0011/0012 closing notes; consumes the jump-arc spike
-  (docs/notes/jump-arc-model.md) and the TD-routing spike (docs/notes/td-routing-spike.md, PR #147))
-- **Vision** (owner-corrected 2026-08-02): death IS the teacher. 初见杀 —
+- **Status**: Draft (souls direction from spec-0011/0012 closing notes;
+  consumes the jump-arc spike (docs/notes/jump-arc-model.md) and the
+  TD-routing spike (docs/notes/td-routing-spike.md))
+- **Vision**: death IS the teacher. 初见杀 —
   the un-telegraphed first-encounter kill — is a legitimate, essential
   souls beat: you die uninformed once, and the SECOND attempt is where
   the design pays off (positioning, luring, thrown items, routing
@@ -24,8 +24,8 @@ non-bonfire checkpoints (island-style). Proofs: bonfire placement inherits
 DW0316 (standable) + DW0315 (no stranding); a wave marked respawns_on_rest
 on the critical path re-runs its completability proof post-rest.
 
-Owner rulings (2026-08-03, from the bell first playtest — the campfire must
-be a real interaction, never a lazy "arrive" objective):
+From the bell first playtest — the campfire must be a real interaction, never
+a lazy "arrive" objective:
 
 - **Right-clicking the bonfire opens exactly two options**: *rest and save*
   vs *save only*. Save-only sets the checkpoint and nothing else. Rest does
@@ -38,10 +38,10 @@ be a real interaction, never a lazy "arrive" objective):
 - **Re-seat fidelity**: a re-seated wave is REMOVED and re-summoned
   identical — full count, full health, both sides reset. Grinding a wave
   down one hit per life is never a valid path; the die-retry stage asserts
-  count + health at re-engagement (task #108).
+  count + health at re-engagement.
 
-Owner rulings (2026-08-04, from the round-nine ladder run — a re-seated gate
-squad marched its lane and killed the bot beside a fire it had just rested at):
+From the round-nine ladder run — a re-seated gate squad marched its lane and
+killed the bot beside a fire it had just rested at:
 
 - **Stationed re-seat.** Beaten `respawns_on_rest` waves DO return, on rest and
   on death-respawn — the souls loop stands — but a re-seated wave returns to its
@@ -54,8 +54,8 @@ squad marched its lane and killed the bot beside a fire it had just rested at):
   for every wave/actor hostile, `distance(bonfire, spawn cell or lane path)` must
   exceed that hostile's `follow_range` (the declared value; the default if
   undeclared). **Error tier** — a bonfire inside aggro range is a
-  soft-lock/despair machine, because you respawn into combat. Amendment (owner
-  decision 2026-08-04): a lane's distance term is `follow_range` + the measured
+  soft-lock/despair machine, because you respawn into combat. Amendment: a
+  lane's distance term is `follow_range` + the measured
   marching drift (7.9 blocks, td-routing-spike dossier max off-lane deviation) —
   a marching squad is a corridor around its polyline, not a line; stationary
   spawn/staging cells keep the plain term.
@@ -67,9 +67,9 @@ written — pinned by tests on that identity and by generated PackTests
 squad hauled onto the party and released to native AI. The safe zone is
 `DW0478`, measured against the seated spawn cells and the proven lane polyline.
 
-Owner ruling (2026-08-05, from the bell round-five playtest — the barrow-warden
-stayed where the chase left it, at the health the chase left it, and so did the
-ambushers staged in the sewer and up in the rafters):
+From the bell round-five playtest — the barrow-warden stayed where the chase
+left it, at the health the chase left it, and so did the ambushers staged in
+the sewer and up in the rafters:
 
 - **Undefeated re-seat.** A boss or elite the party has NOT beaten is, on a
   bonfire rest and on a death-respawn at that fire, **deleted and re-summoned
@@ -90,8 +90,8 @@ Generated PackTests `souls_reseat_actor` and `souls_reseat_undefeated` drive the
 real rest function over a chipped, branded, dragged-off-its-ground elite.
 
 ### 2. Shortcut doors ("the door does not open from this side")
-The owner's definition of the pattern (2026-08-02), which this section is
-now built around: between two bonfires there are TWO routes — a **short
+The pattern this section is built around: between two bonfires there are
+TWO routes — a **short
 route** (fast, no enemies or hazards) that starts SEALED, and a **long
 route** full of enemies and mechanisms. Reaching the far side the hard
 way and interacting with a specific mechanism **permanently** opens the
@@ -113,8 +113,8 @@ no return) remains available as plain staging, unchanged by this spec.
 Deferred NPC/actor + `approach`/`strike` trigger + `spawn-actor`/`unleash`
 at corner/doorway anchors — all landed (v0.6). Missing sugar, added here:
 **`ambush{at, actors[], trigger, telegraph?}`** — one declaration
-expanding to the deferred spawns + trigger. `telegraph` is OPTIONAL
-(owner ruling 2026-08-02): the un-telegraphed ambush — the shove off the
+expanding to the deferred spawns + trigger. `telegraph` is OPTIONAL:
+the un-telegraphed ambush — the shove off the
 cliff you could not have known about — is core souls vocabulary; the
 creator has full freedom. What the engine still owes the player is
 COUNTERPLAY on the retry: the compiler proves every ambush is avoidable
@@ -126,15 +126,15 @@ second attempt meets the same ambush in the same place.
 ### 4. Timing gates
 `schedule`-driven oscillating gates: **`timed-gate{gate, open_ticks,
 closed_ticks, phase?}`** emitting a deterministic clock over the gate region
-(open-gate/close-gate alternation). Proof (owner ruling 2026-08-02): NOT
-all-phase passability — a gate that punishes bad timing is the point.
+(open-gate/close-gate alternation). Proof: NOT all-phase passability — a
+gate that punishes bad timing is the point.
 The requirement: the set of entry phases from which a walking player
 crosses the span before the gate closes covers **≥ 20% of the cycle**
 (computed from the nav model's crossing time over the gate span). Below
 20% the gate is a coin flip, not a timing read — compile error.
 
-**Addendum — the portcullis crushes** (owner directive 2026-08-03). A
-player inside the gate region at the closing tick **dies**. Optional
+**Addendum — the portcullis crushes.** A player inside the gate region at
+the closing tick **dies**. Optional
 `crush: true` (default `false`, so pre-addendum campaigns stay
 byte-identical); the closing edge deals lethal `damage` by command to
 every player whose position intersects the region, before the fill. By
@@ -224,7 +224,7 @@ proofs) and spaced > 10. Emission trap pinned by the spike: the legacy
 `PatrolTarget` compound key is silently dropped by 1.21.11 — only the
 snake_case form routes.
 
-**Non-raider waves: aggro-edge summoning** (owner design 2026-08-02).
+**Non-raider waves: aggro-edge summoning.**
 Species without patrol AI never march a lane — instead
 **`wave.summon: aggro-edge`** spawns them AT the boundary of their own
 `follow_range` from the nearest player (or the defended anchor,
@@ -239,17 +239,15 @@ region — a wave whose ring has no valid cell is a compile error, not a
 silent no-spawn (the round-1 kill-less-wave lesson).
 
 ### 7. Death-as-learning pacing rules (design contract, linted)
-One warning-tier lint survives the owner's 2026-08-02 corrections: **retry
-cost** — bonfire → point of failure ≤ 60 s traversal on the proven path
-(dying must be an investment, not a commute). Struck by owner ruling: the
-telegraph rule (初见杀 is core vocabulary — §3) and the escalation rule
-(a powerful OPTIONAL enemy near the start — the Tree Sentinel pattern:
-fight it or walk around it — is legitimate and our campaign should pay
-homage; the compiler's only obligation is proving a route AROUND every
-optional elite exists). New in its place: **optional-elite proof** — an
-enemy not on the critical path must have a proven bypass route that a
-player can walk without entering its aggro radius, or the "optional" is a
-lie.
+One warning-tier lint: **retry cost** — bonfire → point of failure ≤ 60 s
+traversal on the proven path (dying must be an investment, not a commute).
+There is deliberately no telegraph rule (初见杀 is core vocabulary — §3) and
+no escalation rule: a powerful OPTIONAL enemy near the start — the Tree
+Sentinel pattern: fight it or walk around it — is legitimate, and our
+campaign should pay homage. The compiler's obligation there is the
+**optional-elite proof** — an enemy not on the critical path must have a
+proven bypass route that a player can walk without entering its aggro
+radius, or the "optional" is a lie.
 
 ## Acceptance
 

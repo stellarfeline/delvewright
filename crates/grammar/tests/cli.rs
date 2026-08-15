@@ -374,7 +374,9 @@ fn every_expansion_prints_and_records_the_reachability_measurement() {
     assert!(reach["entry_cells"].as_u64().unwrap() > 0, "{reach}");
     assert!(reach["reachable"].as_u64().unwrap() > 0, "{reach}");
     // No gate was asked for, so the two opt-in ones must not have appeared —
-    // only the always-on spelling/shape/orientation/non-empty ones.
+    // only the always-on spelling/shape/orientation/non-empty ones. The two
+    // settling gates are absent for a third reason: this piece holds no stair
+    // and no fluid, so they have nothing to judge and report counts instead.
     let ids: Vec<&str> = report["gates"]
         .as_array()
         .unwrap()

@@ -1,13 +1,12 @@
 // Presenting the item an `interact` step requires — the mainhand half of the
-// `interact` verb (compiler PR #205, `verb_interact_held`).
+// `interact` verb (`verb_interact_held`).
 //
 // `interact.requires_item` is MAINHAND-HELD, not merely possessed: the guard the
 // compiler emits is `if items entity @s weapon.mainhand <item>`. Presenting the
 // item IS the action, so the bot has to actually hold it. Carrying it in the pack
 // — all the class loadout ever guaranteed — completes nothing: the trigger is
 // swallowed by the guard and the step dies on its own objective timeout with
-// nothing in the log to say the hand was empty. Every campaign with an
-// `interact.requires_item` failed its own bot ladder that way once #205 landed.
+// nothing in the log to say the hand was empty.
 //
 // This is actuation and diagnostics only, never a check (CLAUDE.md: the harness
 // holds no game logic). The guard stays in the datapack; a bot that cannot put the
