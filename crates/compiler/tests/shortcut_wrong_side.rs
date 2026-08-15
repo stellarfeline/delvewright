@@ -1,4 +1,4 @@
-//! Task #50 — a click trigger gets the body of the **object** at its anchor.
+//! A click trigger gets the body of the **object** at its anchor.
 //!
 //! ## The finding
 //!

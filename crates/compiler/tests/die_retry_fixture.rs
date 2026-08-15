@@ -1,5 +1,5 @@
 //! `tests/fixtures/die-retry` — the smallest campaign that lets the bot tier's
-//! **die-retry** stage bind (task #68).
+//! **die-retry** stage bind.
 //!
 //! # Why a fixture had to be built for it
 //!
@@ -7,7 +7,7 @@
 //! the governing checkpoint → walk back → re-engage, with no progression lost. It
 //! is the load-bearing combat proof of a souls-shaped delve, and its precondition
 //! is an **armed checkpoint before a mandatory encounter**. An encounter with none
-//! is excluded with an advisory (#223) — correctly, because where a campaign puts
+//! is excluded with an advisory — correctly, because where a campaign puts
 //! its rest points is `DW0379`/`DW0315`/`DW0316`'s judgement, not the bot's.
 //!
 //! Measured 2026-08-11 across every campaign and fixture in **both** repos: not

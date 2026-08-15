@@ -1,4 +1,4 @@
-//! `DW0498` — a pool draw that seats the same anchored prefab twice (task #187).
+//! `DW0498` — a pool draw that seats the same anchored prefab twice.
 //!
 //! The failure this diagnostic replaces was silence at the pool declaration
 //! followed by a per-anchor `DW0305` at whichever use site happened to reference
@@ -265,9 +265,9 @@ fn repeated_anchorless_filler_is_silent() {
 
 /// The use site the warning is about. Standing an NPC on an anchor the doubled
 /// connector carries still fails the build with `DW0305` — unchanged, that is
-/// the correct verdict — but the failure now arrives WITH the pool-level
-/// explanation instead of alone. Before task #187 the author got the symptom and
-/// had to infer the pool.
+/// the correct verdict — but the failure arrives WITH the pool-level
+/// explanation instead of alone, so the author is not left with the symptom and
+/// no way to infer the pool.
 #[test]
 fn dw0305_use_site_carries_the_pool_explanation() {
     let prefabs = prefabs_with_pools("use-site");

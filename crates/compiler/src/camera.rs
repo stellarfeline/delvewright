@@ -1,4 +1,4 @@
-//! Cutscene camera geometry (task #64 + spec-0015 shot styles): the
+//! Cutscene camera geometry (spec-0015 shot styles): the
 //! arc-length-parameterized, eased dolly with display-entity
 //! `teleport_duration` keyframe cadence, and the deterministic `shot_style`
 //! expansion. Shared between emission ([`crate::emit`]) and validation
@@ -7,7 +7,7 @@
 //!
 //! ## Why keyframes, not per-tick teleports
 //!
-//! The pre-#64 dolly teleported the camera pair every tick with no
+//! A dolly that teleports the camera pair every tick has no
 //! interpolation: a hard 20 Hz staircase — at 60–144 fps each pose is held for
 //! 3–7 frames. Display entities carry the vanilla-intended smoothing primitive
 //! `teleport_duration` (camera dossier, `docs/notes/camera-dossier.md` §1): the
@@ -16,8 +16,7 @@
 //! in-betweens — smoother than 20 Hz, and ~N× fewer commands.
 //!
 //! ## Spike measurements this module is built on (live, vanilla 1.21.11,
-//! itzg/minecraft-server:java21 + RCON driver + a mineflayer packet observer;
-//! task #64 spike, 2026-08-01)
+//! itzg/minecraft-server:java21 + RCON driver + a mineflayer packet observer)
 //!
 //! 1. `teleport_duration` is clamped server-side to `0..=59` ticks (summoning
 //!    with `100` stores `59`; `-5` stores `0`) and is synced to the client as
@@ -927,8 +926,7 @@ fn ease(u: f64) -> f64 {
 
 /// A waypoint polyline with its cumulative arc lengths: the shared answer to
 /// "where is the camera after `s` blocks of travel" — by *distance*, not by
-/// segment index, so a 3-block and a 30-block segment no longer get equal time
-/// (the pre-#64 `lerp_polyline` bug).
+/// segment index, so a 3-block and a 30-block segment never get equal time.
 struct Path {
     pts: Vec<[f64; 3]>,
     cum: Vec<f64>,
@@ -1068,8 +1066,8 @@ mod tests {
 
     /// Arc-length parameterization: on a polyline with a 9:1 segment-length
     /// ratio, the camera crosses the middle waypoint at the *distance* midpoint
-    /// of its journey, not the segment midpoint (the pre-#64 bug gave both
-    /// segments equal time).
+    /// of its journey, not the segment midpoint — the two segments never get
+    /// equal time.
     #[test]
     fn arc_length_beats_segment_index() {
         let pts = [[0.0, 0.0, 0.0], [18.0, 0.0, 0.0], [20.0, 0.0, 0.0]];

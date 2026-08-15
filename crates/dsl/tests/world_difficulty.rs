@@ -1,4 +1,4 @@
-//! DSL v0.6 `world.difficulty` + actor `attributes` (owner ruling 2026-08-03).
+//! DSL v0.6 `world.difficulty` + actor `attributes`.
 //!
 //! Difficulty was a compiler constant: `easy` for any campaign with a wave,
 //! `peaceful` for one without. Easy halves incoming player damage

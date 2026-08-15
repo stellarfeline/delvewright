@@ -1,7 +1,7 @@
-//! task #160 (bell r5 semantics audit, task #152) — souls ruling 5/7: "stage
-//! bosses never respawn on rest". Nothing structurally stopped an author
-//! declaring `respawns_on_rest: true` on a `tier: boss` wave before this file's
-//! check landed. `waves[].tier` and `waves[].respawns_on_rest` are two fields on
+//! Souls ruling 5/7: "stage bosses never respawn on rest". Without this check
+//! nothing structurally stops an author
+//! declaring `respawns_on_rest: true` on a `tier: boss` wave.
+//! `waves[].tier` and `waves[].respawns_on_rest` are two fields on
 //! the SAME [`Wave`] struct — the only place in the DSL a "boss" and a
 //! "rest-respawn" declaration can ever land on one another. An [`Actor`] carries
 //! `tier` too (spec-0023's "other shape an elite takes"), but has no

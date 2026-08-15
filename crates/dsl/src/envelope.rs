@@ -28,7 +28,7 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// (spec-0025) adds declared stage-4 `branch_points`, the per-node `happening`
 /// declaration and the named `campaign-complete` `ending`, and (spec-0016 §1
 /// owner rulings) the bonfire rest interaction — the `bonfire` effect's
-/// authorable option strings and the class-kit `flask`; v0.9 (task #179) adds
+/// authorable option strings and the class-kit `flask`; v0.9 adds
 /// declared elite/boss `drops[]` and the `collect` `dropped_by`; v0.10
 /// (spec-0031) adds **runtime state** — the stage-5 `state[]` declaration, the
 /// `set-state`/`add-state`/`clear-state` verbs and the `requires_state` numeric
@@ -133,7 +133,7 @@ pub fn is_v07(version: &str) -> bool {
 /// True if `version` enables the DSL v0.8 surface. Two specs land in it:
 /// spec-0025's stage-4 `branch_points` declaration, per-node `happening` and
 /// named `ending` on `campaign-complete`; and spec-0016 §1's bonfire **rest
-/// interaction** (owner rulings 2026-08-03) — the `bonfire` effect's authorable
+/// interaction** — the `bonfire` effect's authorable
 /// `prompt` / `rest_label` / `save_label` strings and the stage-3 kit item
 /// `flask` marker a rest replenishes. Additive over v0.7 — a campaign that
 /// declares none of it compiles byte-identically, and any use of the surface in
@@ -145,8 +145,8 @@ pub fn is_v08(version: &str) -> bool {
     ordinal(version) >= 8
 }
 
-/// True if `version` enables the DSL v0.9 surface (task #179, owner ruling
-/// 2026-08-04): declared **drops** on an elite/boss — the `drops[]` list on a
+/// True if `version` enables the DSL v0.9 surface: declared **drops** on an
+/// elite/boss — the `drops[]` list on a
 /// wave mob and on an actor, and the `collect` `dropped_by` that turns a boss's
 /// quest token into a proved link in the quest graph. Additive over v0.8: a
 /// campaign that declares none of it compiles byte-identically (every

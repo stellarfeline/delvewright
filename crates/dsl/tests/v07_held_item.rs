@@ -1,7 +1,6 @@
 //! DSL v0.7: `interact.requires_item` is a HELD gate, and `missing_item_hint` is
-//! the diegetic answer to a click that arrives without the item in hand (owner
-//! ruling, 2026-08-03). Version gating, the `DW0437` pairing rule, l10n and the
-//! schema export.
+//! the diegetic answer to a click that arrives without the item in hand.
+//! Version gating, the `DW0437` pairing rule, l10n and the schema export.
 
 mod common;
 

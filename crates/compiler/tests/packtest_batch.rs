@@ -293,7 +293,7 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
         ),
         ("hello-world+actors", build_actor_hello_world()),
         ("hello-world+handoff", build_handoff_hello_world()),
-        // task #125: the branch-aware campaign template (phased drive + await)
+        // The branch-aware campaign template (phased drive + await)
         // and the scheduled-ending await template must obey the batch model too.
         (
             "branch-two-endings",
@@ -317,7 +317,7 @@ fn suites() -> Vec<(&'static str, BuildOutput)> {
 }
 
 /// hello-world with its finale `campaign-complete` moved 240t into a closing
-/// `sequence` (the-wake's shape, task #125), so the awaiting campaign template
+/// `sequence` (the-wake's shape), so the awaiting campaign template
 /// is emitted and swept by the batch-model rules.
 fn build_scheduled_hello_world() -> BuildOutput {
     let src = common::hello_world_dir();

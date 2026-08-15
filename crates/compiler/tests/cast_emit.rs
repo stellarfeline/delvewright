@@ -180,13 +180,12 @@ fn cast_packtests_are_emitted() {
     }
 }
 
-/// task #133 (island r15): a cast template's dispatch assertion must be
-/// batch-order-free. The generated templates always zeroed every `dw.qa_*` they
-/// read but left the ledger's branch-gate flags (`requires_flags`/
-/// `forbids_flags`) to whatever the batch had — and three sibling verb
-/// templates legitimately end with a campaign flag set to 1, so whichever ran
-/// first made `cast_root_swap`'s later assert read the OTHER branch's clause
-/// (expected `dw.cast 2`, got 3). The consumer now pins every flag its ledger
+/// A cast template's dispatch assertion must be batch-order-free. Zeroing every
+/// `dw.qa_*` a template reads is not enough on its own: leaving the ledger's
+/// branch-gate flags (`requires_flags` / `forbids_flags`) to whatever the batch
+/// has lets a sibling verb template that legitimately ends with a campaign flag
+/// set to 1 make `cast_root_swap`'s later assert read the OTHER branch's clause
+/// (expected `dw.cast 2`, got 3). The consumer pins every flag its ledger
 /// reads to the value that selects the asserted scene — the generator-side
 /// defense that holds against any future flag-setting template.
 #[test]
@@ -236,8 +235,7 @@ fn cast_root_swap_pins_the_branch_gate_flags_it_asserts_under() {
     );
 }
 
-/// A ledger with no branch-gated clause emits no pin lines — byte identity for
-/// every pre-#133 cast campaign.
+/// A ledger with no branch-gated clause emits no pin lines at all.
 #[test]
 fn unbranched_cast_templates_emit_no_flag_pins() {
     let out = ledger();

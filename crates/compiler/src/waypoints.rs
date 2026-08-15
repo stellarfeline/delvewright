@@ -1,5 +1,5 @@
 //! Validation metadata: the compiler-proven critical-path waypoint polyline
-//! (`<out>/validation/critical-path-waypoints.json`, task #38).
+//! (`<out>/validation/critical-path-waypoints.json`).
 //!
 //! DW0311 ([`crate::nav::check_critical_path`]) already proves an A* route connects
 //! every walked critical-path leg over the assembled geometry. This module exports
@@ -53,15 +53,15 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
                 "to": leg.to,
                 "waypoints": wps,
             });
-            // Use-gate edges (task #59): the closed fence-gate cells this leg walks
+            // Use-gate edges: the closed fence-gate cells this leg walks
             // through with an adventure-legal right-click. Emitted only when present,
             // so gate-free campaigns stay byte-identical. The harness pathfinder's
-            // `canOpenDoors` performs the click (harness PR #110); this names the
+            // `canOpenDoors` performs the click; this names the
             // cells first-class instead of leaving them workaround folklore.
             if !leg.use_gates.is_empty() {
                 leg_json["use_gates"] = json!(leg.use_gates);
             }
-            // spec-0016 §4 timed gates (task #81): the gates whose clock can
+            // spec-0016 §4 timed gates: the gates whose clock can
             // physically interrupt THIS leg, in declared order. See
             // [`leg_crosses_gate`] for the crossing definition.
             let crossed: Vec<&str> = plan
@@ -106,7 +106,7 @@ pub fn waypoints_json(plan: &Plan, routes: &[LegRoute]) -> Value {
 /// without re-deriving it from the emitted functions. `crush` (spec-0016 §4
 /// addendum) is whether the closing edge kills players caught inside the region —
 /// the runtime bot must stage such a crossing at the gate mouth and enter only on
-/// an observed fresh window, never blind (task #140); withholding the fact would
+/// an observed fresh window, never blind; withholding the fact would
 /// force the harness to guess at a lethal mechanic the compiler emitted.
 fn timed_gate_json(g: &TimedGatePlan, (min, max): ([i32; 3], [i32; 3])) -> Value {
     json!({
@@ -166,8 +166,8 @@ fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
 /// one immediately AFTER it — the two cells flanking the crossing, on either side of
 /// the gate. Cells *inside* the region are deliberately NOT returned.
 ///
-/// These are force-kept as waypoints for the same reason a use-gate cell is (task
-/// #59) — an interaction point must never be thinned away — but the payoff here is
+/// These are force-kept as waypoints for the same reason a use-gate cell is
+/// — an interaction point must never be thinned away — but the payoff here is
 /// timing, not interaction. Corner-thinning collapses a straight corridor through a
 /// gate to its two endpoints, which asks the runtime bot to walk the WHOLE straight
 /// run inside one open window; on the-drowned-bell that is an 18-block hop through a
@@ -176,7 +176,7 @@ fn occupies_gate(c: [i32; 3], (min, max): ([i32; 3], [i32; 3])) -> bool {
 /// window admits — matching what `DW0378` actually proves, which is that the window
 /// admits crossing the SPAN, not an arbitrary run-up to it.
 ///
-/// **Why the in-region cells must not be pinned** (task #204): the harness treats
+/// **Why the in-region cells must not be pinned**: the harness treats
 /// every waypoint as an *arrive-at* goal, so a waypoint inside the region parks the
 /// bot under the gate — and a `crush: true` gate then fills that cell with the bot in
 /// it. The waypoint contract is "stand here", and standing inside a timed gate is
@@ -225,7 +225,7 @@ fn gate_mouth_cells(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> Vec<[i3
 /// corner-thinned waypoint list the harness replays is where each first-person
 /// camera stands, so a POV shot is taken at every turn/endpoint (not every cell).
 ///
-/// `force_keep` cells (a leg's use-gate cells, task #59) are always kept even
+/// `force_keep` cells (a leg's use-gate cells) are always kept even
 /// mid-straight-run: a gate the player must right-click open is an interaction
 /// point the harness needs as an explicit waypoint, never thinned away. Purely
 /// additive — every force-kept cell is a proven route cell.
@@ -234,7 +234,7 @@ pub(crate) fn thin(cells: &[[i32; 3]], force_keep: &[[i32; 3]]) -> Vec<[i32; 3]>
         return cells.to_vec();
     }
     // Keep the endpoints, every corner (direction change / floor-height step), and —
-    // for the dead-end-pocket fix (task #45) — the **cell immediately after each
+    // for the dead-end-pocket fix — the **cell immediately after each
     // corner**: the first cell of the outgoing segment. A corner where a wide room
     // narrows into a corridor is range-1-satisfiable from an off-route "pocket" cell
     // beside it (e.g. wp9 `[261,65,-3]` from `[260,65,-3]`, walled to the north), and
@@ -295,7 +295,7 @@ mod tests {
     fn corners_are_kept_so_hops_never_cut_across_the_bend() {
         // An L: east along z=0, then a turn to north at [5,65,0]. The corner is kept
         // (otherwise the straight line from start to end cuts across the bend), plus
-        // the corridor commit cell one step into the turn ([5,65,1]) — task #45.
+        // the corridor commit cell one step into the turn ([5,65,1]).
         let mut cells: Vec<[i32; 3]> = (0..=5).map(|x| [x, 65, 0]).collect();
         cells.extend((1..=4).map(|z| [5, 65, z]));
         let wps = thin(&cells, &[]);
@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn dead_end_pocket_corner_keeps_a_corridor_commit_cell() {
-        // The nobodys-cave wp9 pocket geometry (task #45): the route runs east along
+        // The nobodys-cave wp9 pocket geometry: the route runs east along
         // z=-3 through a WIDE room (so the cell just south-west of the corner is
         // standable and range-1-satisfiable), then turns north into a corridor at the
         // corner [261,65,-3]. The runtime bot can satisfy the corner's range-1 goal at
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn a_use_gate_cell_is_never_thinned_away() {
-        // A straight run through a closed fence gate at [3,65,0] (task #59): plain
+        // A straight run through a closed fence gate at [3,65,0]: plain
         // corner-thinning would collapse it to the endpoints; the force-keep set
         // pins the gate cell so the harness gets the interaction point explicitly.
         let cells: Vec<[i32; 3]> = (0..=8).map(|x| [x, 65, 0]).collect();
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(cells.first(), Some(&[24, 63, 4]));
         assert_eq!(thin(&cells, &[]), vec![[24, 63, 4], [24, 63, -14]]);
         let keep = gate_mouth_cells(&cells, region);
-        // The two cells FLANKING the gate — never the cell under it (task #204).
+        // The two cells FLANKING the gate — never the cell under it.
         assert_eq!(keep, vec![[24, 63, -9], [24, 63, -11]]);
         assert_eq!(
             thin(&cells, &keep),
@@ -405,8 +405,8 @@ mod tests {
     fn no_waypoint_ever_stands_inside_a_timed_gate_region() {
         // The harness treats every waypoint as an ARRIVE-AT goal, so a waypoint
         // inside the region parks the bot under the portcullis — and a `crush: true`
-        // gate then fills that cell with the bot in it (the-drowned-bell round-2
-        // death, task #204). The mouth pins must flank the crossing, never name it.
+        // gate then fills that cell with the bot in it — a death seen in play on
+        // the-drowned-bell. The mouth pins must flank the crossing, never name it.
         //
         // A 3-deep region, so the crossing run is several cells long: the whole run
         // must be absent from the pins.

@@ -758,8 +758,7 @@ fn run_gallery(dir: &Path, out: &Path, id: Option<String>, cols: usize, json: bo
     }
     // Emission validates every line it wrote against the pinned 1.21.11 command
     // tree, so a gallery that the server would refuse to load is never written
-    // at all (task #70: four legacy gamerules and an out-of-range byte had been
-    // silently costing `admit:load` and `admit:finish` in their entirety).
+    // at all. One rejected line costs the whole function it sits in.
     let tree = match gallery::emit(&gallery_id, &cands, cols) {
         Ok(t) => t,
         Err(errors) => {

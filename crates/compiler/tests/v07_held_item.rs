@@ -1,4 +1,4 @@
-//! `interact.requires_item` is a HELD gate (owner ruling, 2026-08-03), and
+//! `interact.requires_item` is a HELD gate, and
 //! `missing_item_hint` is the diegetic answer to a click that arrives without the
 //! item in hand.
 //!

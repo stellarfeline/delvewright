@@ -1,5 +1,5 @@
 //! v0.8 dialogue-option `tooltip` emission: the button keeps a caption, the hover
-//! box carries the full line (owner design 2026-08-04).
+//! box carries the full line.
 //!
 //! The vanilla contract this rides on, read off the pinned 1.21.11 client jar
 //! rather than assumed: a dialog action button is

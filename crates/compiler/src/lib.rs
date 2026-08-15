@@ -102,9 +102,9 @@ pub mod wrongside;
 ///
 /// Derived from `crates/compiler/Cargo.toml`'s `[package] version` at compile
 /// time — the crate manifest is the one source of truth, so this can never
-/// drift from the release identity the way a hand-typed literal did (PR #290
-/// bumped `Cargo.toml` to 1.0.0 but left this constant a hard-coded "0.1.0",
-/// so the 1.0.0 release identity never reached a single emitted artifact).
+/// drift from the release identity the way a hand-typed literal can: a version
+/// bump in `Cargo.toml` beside a hard-coded constant is a release identity that
+/// never reaches a single emitted artifact.
 pub const DELVEC_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The pinned Minecraft version (ADR-0009).

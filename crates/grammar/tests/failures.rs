@@ -1,9 +1,8 @@
 //! Failure is loud, and legible.
 //!
 //! `docs/reference/grammar.md` §4 promises the interpreter has no silent
-//! degradation. These are the cases the PR #266 review found where it either
-//! degraded quietly, aborted the process, or reported something a human could
-//! not read.
+//! degradation. These are the cases where it could otherwise degrade quietly,
+//! abort the process, or report something a human could not read.
 
 use delvewright_grammar::eval::EvalError;
 use delvewright_grammar::geom::Axis;

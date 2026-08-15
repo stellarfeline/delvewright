@@ -1,4 +1,4 @@
-//! spec-0016 §1 (owner directive 2026-08-03) — **what is in the flask.**
+//! spec-0016 §1 — **what is in the flask.**
 //!
 //! The kit `flask` marker shipped with no way to declare the bottle's contents,
 //! so every flask compiled to `minecraft:potion` with no

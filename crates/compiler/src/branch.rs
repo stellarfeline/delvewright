@@ -615,7 +615,7 @@ pub fn check_branches(c: &Campaign) -> Vec<Diagnostic> {
     d
 }
 
-/// `DW0205`, per branch (task #174). Optionality interacts with branches: a
+/// `DW0205`, per branch. Optionality interacts with branches: a
 /// branch's own flag assignment changes which cast scene an NPC wears and which
 /// options its gates admit, so a beat that is safely behind a gate on the
 /// campaign's critical path can be bare on one branch. This re-runs the

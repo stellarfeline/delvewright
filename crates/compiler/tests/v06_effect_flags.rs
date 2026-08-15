@@ -1,4 +1,4 @@
-//! DSL v0.6 (task #55) end-to-end emission: per-effect `requires_flags` wraps a
+//! DSL v0.6 end-to-end emission: per-effect `requires_flags` wraps a
 //! gated effect's commands in a per-player `execute if score @s dw.f_<flag>
 //! matches 1 run …` guard, and a block field carries a vanilla blockstate suffix
 //! verbatim into `setblock`. Driven by the `v06-flags` fixture campaign.

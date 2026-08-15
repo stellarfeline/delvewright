@@ -36,7 +36,7 @@ const STORE_REGION: Box3 = Box3::at_origin([7, 5, 14]);
 const STAIR_REGION: Box3 = Box3::at_origin([9, 6, 27]);
 const THRESHOLD_REGION: Box3 = Box3::at_origin([9, 6, 13]);
 const GRATE_REGION: Box3 = Box3::at_origin([3, 5, 14]);
-/// The topology family (task #182): vertical links, one-way bars, elite ground.
+/// The topology family: vertical links, one-way bars, elite ground.
 const SHAFT_REGION: Box3 = Box3::at_origin([4, 8, 6]);
 const DUCT_REGION: Box3 = Box3::at_origin([6, 8, 8]);
 const BAR_REGION: Box3 = Box3::at_origin([5, 5, 7]);

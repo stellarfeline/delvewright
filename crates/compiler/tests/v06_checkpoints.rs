@@ -125,7 +125,7 @@ fn setup_initialises_checkpoint_and_stealth_scores() {
         setup.contains("scoreboard objectives add dw.st_grace dummy"),
         "stealth grace objective declared"
     );
-    // Owner ruling 2026-08-01: zone presence alone = hidden. No sneak stat is
+    // Zone presence alone = hidden. No sneak stat is
     // tracked anywhere in the pack — the objectives must be gone, not just unused.
     assert!(
         !setup.contains("dw.st_sneak"),
@@ -174,7 +174,7 @@ fn on_respawn_dispatch_is_emitted() {
         ],
         "both sides of the edge are seeded, ahead of it:\n{check}"
     );
-    // task #145: `deathCount` ticks on the DEATH, not on the respawn, so both the
+    // `deathCount` ticks on the DEATH, not on the respawn, so both the
     // fire and the acknowledgement wait for a living player — otherwise the whole
     // bundle would land on the corpse and the edge would be spent.
     //
@@ -222,7 +222,7 @@ fn on_respawn_dispatch_is_emitted() {
     );
 }
 
-/// task #145 (owner playtest, tide-mill). `spawnpoint` is a hint, not a promise:
+/// `spawnpoint` is a hint, not a promise:
 /// vanilla re-validates the recorded cell on death and silently falls back to the
 /// world spawn — the campaign entrance — whenever the cell or the cell above it is
 /// solid or liquid. Past a one-way transport that is an unrecoverable softlock, so
@@ -275,7 +275,7 @@ fn respawn_re_seats_the_player_on_the_checkpoint_cell() {
     );
 }
 
-/// The environmental-death PackTest (task #145): the runtime half of the proof —
+/// The environmental-death PackTest: the runtime half of the proof —
 /// a `deathCount` edge from the campaign entrance must end ON the checkpoint, and
 /// must not fire a second time without a second death.
 #[test]
@@ -305,8 +305,8 @@ fn reseat_packtest_drives_the_death_edge_from_the_entrance() {
 }
 
 /// `begin-stealth` arms a per-tick judge that requires zone membership alone
-/// (owner ruling 2026-08-01: no sneak requirement — holding sneak collided with
-/// the spectator cutscene camera), tracks grace, and fires `on_caught`.
+/// (no sneak requirement — holding sneak collides with the spectator cutscene
+/// camera), tracks grace, and fires `on_caught`.
 #[test]
 fn stealth_beat_emits_per_tick_judge() {
     let out = build_fixture();

@@ -248,7 +248,7 @@ fn multi_shot_chains_two_dollies_in_one_bracket() {
     );
     let tick = tick_body(&out);
     let fr = frames(&tick);
-    // Keyframe cadence (task #64): shot 1 (2 s = 40 ticks, a straight dolly →
+    // Keyframe cadence: shot 1 (2 s = 40 ticks, a straight dolly →
     // widest cadence 10) emits the tick-0 snap + keyframes at 1, 11, 21, 31,
     // with the client tweening between them via `teleport_duration:10`. Shot 2
     // is a single-waypoint static shot: just its snap at 41 (the hard cut).

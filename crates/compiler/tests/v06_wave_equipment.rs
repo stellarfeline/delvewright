@@ -1,4 +1,4 @@
-//! DSL v0.6 wave-mob `equipment` emission (task #65): explicit slots land in the
+//! DSL v0.6 wave-mob `equipment` emission: explicit slots land in the
 //! summon NBT as the component-era `equipment`/`drop_chances` compounds (1.21.11
 //! silently ignores legacy `ArmorItems`/`HandItems` on `/summon`), every emitted
 //! slot at drop chance 0 (no-grind: wave gear is never lootable). Explicit

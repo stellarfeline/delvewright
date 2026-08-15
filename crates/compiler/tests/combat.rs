@@ -1,5 +1,5 @@
 //! spec-0023 §2 — compile-time combat winnability (`DW0470`–`DW0475`), plus the
-//! floor-gate coverage ledger (`DW0477`, task #113).
+//! floor-gate coverage ledger (`DW0477`).
 //!
 //! Every case is the `souls-bonfire` fixture (a `kill` objective on
 //! `wave/guards`, behind a bonfire) with ONE field changed, so what the
@@ -123,7 +123,7 @@ fn build(dir: &Path) -> Result<(BuildOutput, Vec<Diagnostic>), BuildFailure> {
 fn failure_code(dir: &Path) -> String {
     match build(dir) {
         Err(BuildFailure::Diagnostic { code, message }) => {
-            // The remediation contract (task #39): every message says what, where
+            // The remediation contract: every message says what, where
             // and how — a bare code would be a regression.
             assert!(
                 message.len() > 200,
@@ -285,7 +285,7 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
         quests["dsl_version"] = serde_json::json!("0.7.0");
         quests["content"]["waves"][0]["tier"] = serde_json::json!("boss");
         // `wave/guards` is `souls-bonfire`'s only `respawns_on_rest` wave, and
-        // souls ruling 5/7 (task #160) forbids a `tier: boss` wave from
+        // souls ruling 5/7 forbids a `tier: boss` wave from
         // re-seating on rest (`DW0499`) — a combination this test, about the
         // combat plan's tier bookkeeping, is not exercising. Clear it so the
         // mutation stays isolated to the one field under test.
@@ -346,7 +346,7 @@ fn a_combat_free_campaign_emits_no_combat_plan() {
 }
 
 // ---------------------------------------------------------------------------
-// The floor gate's coverage ledger (task #113): an elite implemented as an
+// The floor gate's coverage ledger: an elite implemented as an
 // ACTOR used to be structurally invisible to the inverted floor gate, so an
 // empty finding list read as a pass over a fight nobody had.
 // ---------------------------------------------------------------------------
@@ -512,7 +512,7 @@ fn a_staged_but_never_unleashed_puppet_is_scenery_not_a_fight() {
 
 #[test]
 fn an_untiered_hostile_actor_lands_in_not_covered() {
-    // Task #121: the ledger's own blind spot. The campaign unleashes a real-AI
+    // The ledger's own blind spot. The campaign unleashes a real-AI
     // body on the party and declares nothing about it, so before this it
     // appeared on NEITHER side — and an empty ledger reads as "everything is
     // covered" when it means "nothing was even assessed".
@@ -786,7 +786,7 @@ fn an_all_ordinary_actor_binds_the_actor_gate_but_not_the_floor_gate() {
 }
 
 // ---------------------------------------------------------------------------
-// The governing checkpoint, and the one coordinate system (#221 follow-up).
+// The governing checkpoint, and the one coordinate system.
 // ---------------------------------------------------------------------------
 
 /// Parse both harness documents out of one build.
@@ -913,7 +913,7 @@ fn the_combat_plan_step_indexes_the_exported_path() {
     assert_eq!(kill_at, 3, "{path}");
 }
 
-// --- the wave census probe (task #123, #230) --------------------------------
+// --- the wave census probe --------------------------------
 
 /// The ladder used to answer "what is standing at this encounter?" by silhouette
 /// — every entity the client tracked, no distance filter, anything taller than

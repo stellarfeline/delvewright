@@ -1,4 +1,4 @@
-//! DSL v0.8 `close-gate` seal answers (task #142 — owner island finding #34).
+//! DSL v0.8 `close-gate` seal answers.
 //!
 //! The finding: right-clicking a sealed boulder answered with **silence**, three
 //! rounds and two playtests running. A seal is a wall the party walks back to and
@@ -222,11 +222,11 @@ const SEAL_IT: &str = r#"{ "type": "close-gate", "anchor": "anchor/door" },
 
 // --- the finding itself: a sealed gate must not answer with silence ---------
 
-/// **Owner island finding #34, as a machine test.** A gate the campaign seals
-/// arms a right-click answer: interaction hitboxes over the sealed region, a
-/// `player_interacted_with_entity` advancement watching them, and a reward
-/// function that puts a line on the presser's actionbar. Before task #142 the
-/// datapack had none of the three and the stone said nothing.
+/// **A sealed gate must not answer with silence, as a machine test.** A gate the
+/// campaign seals arms a right-click answer: interaction hitboxes over the
+/// sealed region, a `player_interacted_with_entity` advancement watching them,
+/// and a reward function that puts a line on the presser's actionbar. Without
+/// all three the stone says nothing.
 #[test]
 fn a_sealed_gate_answers_a_right_click() {
     let c = parse_hw(&quests_doc("0.6.0", SEAL_IT));

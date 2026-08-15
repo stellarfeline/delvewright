@@ -7,7 +7,7 @@
 //! saw and the sugar has no second code path to drift down.
 //!
 //! `telegraph` is **optional and stays optional**: the un-telegraphed ambush is
-//! core souls vocabulary (owner ruling 2026-08-02). The declaration checks here
+//! core souls vocabulary. The declaration checks here
 //! (`DW0375`) never ask for one. What the engine owes the player is counterplay
 //! on the retry, which is geometric and lives in `compiler::nav` (`DW0376`).
 

@@ -1,4 +1,4 @@
-//! Layout-solver + keep-crawl tests (M2 task #9): deterministic multi-piece
+//! Layout-solver + keep-crawl tests: deterministic multi-piece
 //! assembly, the socket seal/clear strategy, inter-area transport, and the
 //! `DW03xx` build/solver diagnostics.
 

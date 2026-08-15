@@ -3,7 +3,7 @@
 //!
 //! # Why this exists
 //!
-//! CLAUDE.md, on the `delve-admit` finding (task #70): *an EMITTED command is
+//! CLAUDE.md, on the `delve-admit` finding: *an EMITTED command is
 //! checked against the pinned command tree by the emitter, not by a test, because
 //! the operator running the tool does not run `cargo test`.* Blocks had no such
 //! rule. The consequence is measured, not hypothetical: 1.21.11 renamed
@@ -85,7 +85,8 @@ pub const PIN_DATA_VERSION: i32 = 4671;
 // The blockstate diagnostic family (one model, five rules). Codes are defined
 // here — the crate every emitter and auditor of a block state already depends
 // on — so the next consumer reuses the rule instead of rewriting the unchecked
-// version (CLAUDE.md, task #70: the rule lived, correct, inside ONE spike).
+// version. A rule that lives, correct, inside ONE caller leaves the next one
+// nothing to reuse (CLAUDE.md).
 // Documented in docs/reference/compiler.md §diagnostics.
 // ---------------------------------------------------------------------------
 

@@ -117,7 +117,7 @@ pub fn emit(
 /// Check every `.mcfunction` in an emitted gallery tree against the pinned
 /// 1.21.11 command tree.
 ///
-/// **Why this is emission and not a test** (task #70): the gallery's `load` and
+/// **Why this is emission and not a test**: the gallery's `load` and
 /// `finish` functions each carried a line 1.21.11 refuses to parse — four legacy
 /// camelCase gamerules and a `text_opacity:255b` that overflows a signed byte.
 /// A function with one unparseable line does not fail that line; the server
@@ -216,8 +216,8 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
 
     // load: objectives, gamerules, forceload, warmup counter.
     //
-    // 1.21.11 gamerule identifiers, measured on the pinned server (task #70,
-    // re-measured 2026-08-11 against `1.21.11 / data 4671`): the whole registry
+    // 1.21.11 gamerule identifiers, measured on the pinned server
+    // (2026-08-11, against `1.21.11 / data 4671`): the whole registry
     // is snake_case and several rules were reworded, so every legacy camelCase
     // spelling answers "Incorrect argument for command" — `doDaylightCycle` ->
     // `advance_time`, `doWeatherCycle` -> `advance_weather`, `doMobSpawning` ->
@@ -302,7 +302,7 @@ fn emit_functions(placed: &[Placed]) -> Vec<(String, String)> {
         // "fully opaque" is the vanilla default `-1b`, not `255b`. `255b`
         // overflows the parser ("Failed to parse number: Value out of range"),
         // which took `admit:finish` — the spawn platform, the worldspawn and
-        // every label with it — out of the pack at load time (task #70).
+        // every label with it — out of the pack at load time.
         finish.push(format!(
             "summon minecraft:text_display {lx} {ly} {lz} {{Tags:[\"admit_label\"],billboard:\"center\",text:'{text}',text_opacity:-1b,see_through:1b}}"
         ));

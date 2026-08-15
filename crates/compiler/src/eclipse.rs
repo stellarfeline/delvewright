@@ -386,7 +386,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
         if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
             continue;
         }
-        // …and the general form of the same merge (task #50): wherever a
+        // …and the general form of the same merge: wherever a
         // compiler-owned interaction set already covers the anchor — a
         // `close-gate` seal, a sealed shortcut door — the trigger rides it and
         // summons nothing. Read from `crate::pressable`, the same authority the
