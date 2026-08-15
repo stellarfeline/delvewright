@@ -200,6 +200,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   `--write-tree` form reports five files — **a zero from a measurement that
   disagrees with an independent observer is the measurement failing, not the
   fact being absent.**
+  Two of the six share a deeper shape, and naming it catches cases the list
+  cannot enumerate: **the lookup asked the right question about the wrong key,
+  and the answer came back honest.** Hashing paths instead of contents is one.
+  The other is an environment probe that read the variable's NAME out of a config
+  file with a `grep` that matched two lines, so the indirection resolved a
+  two-line string, found nothing, and reported a live credential as absent —
+  which cost a message asking the owner to supply something she had already
+  supplied. Nothing errored, because nothing was wrong with the question. So
+  before trusting an answer, check what the question resolved to: **a computed
+  key is itself a measurement and needs its own confirmation.**
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
