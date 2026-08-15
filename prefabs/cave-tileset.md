@@ -95,9 +95,9 @@ back multimodally against the brief. Three substantive rounds:
 
 ### Algorithm-adoption pass (round-2 tileset task)
 
-A second, larger pass adopts the researched GDMC/PCG algorithms (extraction
-dossier, 2026-07-31; attribution in `docs/ACKNOWLEDGEMENTS.md`) to fix the two
-owner-visible round-1 defects — **rectangular skeletons** and **hard water edges** —
+A second, larger pass adopts the researched GDMC/PCG algorithms (attribution in
+`docs/ACKNOWLEDGEMENTS.md`) to fix the two round-1 defects a player sees —
+**rectangular skeletons** and **hard water edges** —
 without moving any socket (all pieces stay a byte-compatible drop-in for the solver;
 same seed → byte-identical `.nbt`). Techniques re-implemented from description
 (ideas-only; no code ingested):
@@ -120,7 +120,7 @@ same seed → byte-identical `.nbt`). Techniques re-implemented from description
 
 Before/after renders: `delve-demos/cave-tileset-renders/round2-algorithms/`.
 
-### Round-2 walkability regression fix (task #34)
+### Round-2 walkability regression fix
 
 The round-2 organic pass shipped two latent **seam-walkability** defects that a
 full assembly (`nobodys-cave`, seed 1184) surfaced — the critical-path bot dead-ended
@@ -155,7 +155,7 @@ build instead of a bot run: with the pre-fix `.nbt`, `delvec build nobodys-cave`
 fails `DW0311` on the entry→cavern leg; with the fixed `.nbt` it routes clean and no
 walkable cell borders the void.
 
-### Pen placement / flock-crowding fix (task #37)
+### Pen placement / flock-crowding fix
 
 Follow-up from the nobodys-cave bot ladder: the sheep pens sat on the proven
 corridor, and the wave-spawned flock crowded against a pen fence at its spawn cell.

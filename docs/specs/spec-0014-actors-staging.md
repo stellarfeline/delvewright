@@ -1,10 +1,10 @@
 # spec-0014 — Scripted actors & staging verbs (v0.6)
 
-- **Status**: Draft (planner-authored per owner direction, 2026-08-01)
+- **Status**: Draft
 - **Motivation**: the island remake's dramaturgy (herding flock, giant NPC that
   becomes a real threat, rhythm-synced cutscenes, stealth beats, positional
-  sound, per-ending art titles) needs first-class verbs. Foundation: task #46
-  live-verified that no vanilla primitive commands real-AI walking, and that a
+  sound, per-ending art titles) needs first-class verbs. Foundation: a live
+  spike verified that no vanilla primitive commands real-AI walking, and that a
   **NoAI puppet moved by compiler-emitted per-tick tp** produces real walk
   animation (rel_entity_move deltas; <8-block steps; yaw along the tangent or
   it moonwalks). Real-AI commanded movement is therefore excluded (no-hack);
@@ -62,11 +62,11 @@ under `dsl_version <= 0.5` (DW0141 pattern).
    grace and spares a sneaking one in-zone; `sequence` fires at exact ticks.
 3. Determinism: double-build byte-identity on a campaign using every verb.
 4. Client-eyes spike (recorded, not CI): walk gait for warden + sheep reads
-   as walking (cadence/yaw), per task #46's packet-level evidence.
+   as walking (cadence/yaw), per the spike's packet-level evidence.
 
 ## Non-goals
 
-Real-AI pathfinding control (excluded, task #46); combat behavior scripting for
+Real-AI pathfinding control (excluded); combat behavior scripting for
 unleashed mobs (vanilla AI takes over); crowd avoidance between concurrent
 movers (paths are authored not emergent); runtime branching inside `sequence`
 (branch via flags/objectives instead).

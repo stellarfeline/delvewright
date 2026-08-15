@@ -4,7 +4,7 @@ The defect this pins, from the field: `crates/compiler/README.md` is rendered
 VERBATIM as the front page of `crates.io/crates/delvec`, and it opened with
 "The deterministic compiler (spec-0002, ADR-0001/0006/0011)" — a citation the
 one reader who has never seen this repository cannot resolve and gains nothing
-from. `crates/dsl/README.md` opened on `spec-0001`. Both were rewritten (#388)
+from. `crates/dsl/README.md` opened on `spec-0001`. Both were rewritten
 with nothing to stop the regression, because CLAUDE.md's *Audience separation in
 docs* was held by memory alone.
 

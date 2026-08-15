@@ -236,17 +236,6 @@ pub fn is_fence_gate(name: &str) -> bool {
     strip_ns(name).ends_with("_fence_gate")
 }
 
-/// Whether a palette block id is **free water** (a source or flowing block that
-/// occupies its whole cell as fluid, with no host block), as opposed to a
-/// waterlogged solid block ([`is_waterlogged`]).
-///
-/// A stored flowing-water cell (`level>0`) also reads as `minecraft:water`; the
-/// flood treats every water cell as a full-strength source, which over-marks its
-/// reach — deliberately safe (see [`flood`]).
-pub fn is_water(name: &str) -> bool {
-    base_id(name) == "minecraft:water"
-}
-
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
 /// source** alongside the host block (MC 1.13+ waterlogging).
 ///
@@ -267,14 +256,44 @@ pub fn is_waterlogged(name: &str) -> bool {
     state_value(name, "waterlogged") == Some("true")
 }
 
-/// Whether a cell's block is a **fluid** — water or lava. Vanilla's
-/// `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable blocks)
-/// as "no support": a falling block entity passes straight through it and keeps
-/// falling, displacing the fluid when it finally lands on something solid. Used
-/// by [`settle`]; deliberately narrower than `isFree` (replaceable plants are not
-/// modelled), which only ever makes settling *more* conservative.
-fn is_liquid(name: &str) -> bool {
-    matches!(base_id(name), "minecraft:water" | "minecraft:lava")
+/// Whether a cell's block is a **free fluid** — water or lava occupying the whole
+/// cell with no host block. **The one answer to "is this block id a fluid"**; every
+/// site that has to decide what a fluid does to a walker reads it, so the answer
+/// cannot differ between two of them. Both sites do: [`occupancy_of`] classifies a
+/// prefab- or edit-authored cell with it, and [`crate::plan::RegionWrite::of_block`]
+/// classifies a runtime region write with it.
+///
+/// What it covers, and why each case is the way it is:
+/// - **Block state is irrelevant.** [`strip_ns`] drops it, so a flowing
+///   `minecraft:water[level=3]` answers the same as a source `minecraft:water`.
+///   Both leave a body swimming rather than standing, which is the only question
+///   a collision model asks; the *reach* of the flow is [`flood`]'s problem, not
+///   this predicate's. (A stored flowing cell therefore seeds the flood as a
+///   full-strength source, which over-marks its reach — deliberately safe.)
+/// - **So is the namespace**, and that is not cosmetic. Prefab palettes always
+///   carry `minecraft:`, but an author's `fill-region` block is a hand-written
+///   string, and a bare `water` passes DSL block validation
+///   (`registry::is_technical_block` normalizes before its lookup) and is emitted
+///   verbatim as `fill … water`, which vanilla resolves. A namespace-sensitive
+///   comparison here would read that as an ordinary solid and prove a floor made
+///   of it — measured, not assumed. Every other classifier in this module already
+///   goes through `strip_ns` for the same reason.
+/// - **`minecraft:lava` counts.** Nothing stands on lava either, and a model that
+///   answered only for water would prove a lava surface walkable.
+/// - **A waterlogged block does NOT count.** `oak_stairs[waterlogged=true]` is a
+///   cell occupied by its *host* block — solid, standable, and simultaneously a
+///   flood source for its neighbours ([`is_waterlogged`]). Folding it in here
+///   would delete a floor the game plainly has. The two predicates answer
+///   different questions and both are needed.
+///
+/// Vanilla's `FallingBlock.isFree` treats a fluid (and air, fire, and replaceable
+/// blocks) as "no support": a falling block entity passes straight through it and
+/// keeps falling, displacing the fluid when it finally lands on something solid.
+/// Used by [`settle`] in that role; deliberately narrower than `isFree`
+/// (replaceable plants are not modelled), which only ever makes settling *more*
+/// conservative.
+pub fn is_fluid(name: &str) -> bool {
+    matches!(strip_ns(name), "water" | "lava")
 }
 
 /// Whether a block falls under gravity when the cell below cannot support it
@@ -612,7 +631,7 @@ pub struct Settled {
 /// cell it comes to rest in. The pre-#78 model treated a `minecraft:water` cell as
 /// an immovable support, so a sand block authored over a pool "settled on the
 /// water surface" — a floating floor the game does not have, which the flood then
-/// dammed and nav then walked on. See [`is_liquid`].
+/// dammed and nav then walked on. See [`is_fluid`].
 ///
 /// Deterministic (ADR-0006): columns iterate in `BTreeMap` order and blocks stack
 /// bottom-up.
@@ -634,7 +653,7 @@ fn settle(blocks: &mut BTreeMap<[i32; 3], String>) -> Vec<Settled> {
             let name = &blocks[&[x, *y, z]];
             if is_falling_block(name) {
                 falling.push((*y, name.clone()));
-            } else if !is_liquid(name) {
+            } else if !is_fluid(name) {
                 fixed.push(*y);
             }
         }
@@ -732,6 +751,12 @@ pub fn assembled_blocks(
 
 /// The standard vanilla horizontal flow decay: a water source spreads at most this
 /// many cells horizontally before running dry (level 1..=7 → 7 steps).
+///
+/// [`flood`] applies it to **lava sources too**. Overworld lava flows 3 cells, so
+/// this over-marks a lava pool's reach — the direction [`assembled_occupancy`]'s
+/// never-under-mark contract requires, and the reason lava does not get a flow
+/// range of its own: a second constant could only ever be the smaller one, and a
+/// smaller one is the failure mode this model refuses.
 const WATER_FLOW_RANGE: u8 = 7;
 
 /// The collision-classified nav occupancy of the settled assembled world (tasks
@@ -743,12 +768,12 @@ const WATER_FLOW_RANGE: u8 = 7;
 /// | `solid` | every other non-air block (full cube unless listed in `partial`) | no | yes |
 /// | `tall` | fences + walls ([`is_tall_barrier`], 1.5-tall) | no | **no** |
 /// | `use_gates` | closed fence gates ([`is_fence_gate`], 1.5-tall, openable) | player: yes, via right-click USE; NPC/actor/wave walkers: no | **no** |
-/// | `flooded` | water reach (conservative superset) | no | no |
+/// | `flooded` | fluid reach — water and lava ([`is_fluid`]), conservative superset | no | no |
 /// | `partial` | a `solid` cell's true top-face height, in sixteenths, when < 16 | no | yes, **at that height** |
 ///
 /// **Modelled precisely**: fences, walls, fence gates (open = passable, closed =
 /// use-gate), pressure plates / tripwire and every other sub-auto-step decoration
-/// (passable, [`is_thin_decoration`]), free water AND waterlogged blocks
+/// (passable, [`is_thin_decoration`]), free fluid AND waterlogged blocks
 /// ([`is_waterlogged`]), and partial floor heights for slabs / snow layers /
 /// paths ([`collision_top_16`]). **Modelled conservatively** (treated as a full
 /// solid cube — may over-block a route, never over-prove one): stairs, doors,
@@ -761,8 +786,10 @@ pub struct Occupancy {
     /// Closed fence-gate cells: passable-with-use for the player (adventure-legal
     /// right-click), impassable for walkers that cannot use gates; never floor.
     pub use_gates: BTreeSet<[i32; 3]>,
-    /// Water-flooded cells: impassable, never floor (task #45). Disjoint from
-    /// every block set — a waterlogged cell is its host block's class, not this.
+    /// Fluid-flooded cells: impassable, never floor (task #45). Every cell a free
+    /// fluid ([`is_fluid`]) occupies, plus the reach [`flood`] gives it. Disjoint
+    /// from every block set — a waterlogged cell is its host block's class, not
+    /// this.
     pub flooded: BTreeSet<[i32; 3]>,
     /// For each `solid` cell whose walkable top face is **below** the cell top,
     /// that height in sixteenths of a block (task #78). Absent = a full cube
@@ -773,7 +800,7 @@ pub struct Occupancy {
 /// The nav occupancy of the settled assembled world (tasks #45, #59) — see
 /// [`Occupancy`] for the collision classes.
 ///
-/// ## Why water is modelled, and why as a *superset* of vanilla flow
+/// ## Why fluid is modelled, and why as a *superset* of vanilla flow
 ///
 /// A `minecraft:water` block placed by `/place template` does not stay put: vanilla
 /// fluid physics spreads it at world-load into neighbouring air cells the prefab
@@ -803,6 +830,17 @@ pub struct Occupancy {
 ///
 /// Settle runs **before** flood: a settled sand column can dam or open a channel, so
 /// the flood must see the post-gravity geometry (task #42 order preserved).
+///
+/// ## Lava is the same question, so it gets the same answer
+///
+/// A body no more stands on lava than on water, so [`occupancy_of`] classifies a
+/// free-fluid cell by [`is_fluid`] and both fluids land in `flooded`. Vanilla's two
+/// fluids differ only in *reach* — overworld lava decays over 3 cells rather than 7
+/// and forms no new sources — and the delve ships into an ordinary overworld
+/// (a superflat with the `minecraft:the_void` biome, not an ultrawarm dimension),
+/// so running lava through the water flow above over-marks its spread. That is the
+/// permitted direction: the model may call a cell molten that the game leaves dry,
+/// and may never call a molten cell floor.
 pub fn assembled_occupancy(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Occupancy {
     let assembled = assemble(plan, structures);
     occupancy_of(assembled.blocks, &assembled.open_gates)
@@ -817,6 +855,12 @@ pub fn assembled_occupancy(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) 
 /// flood — fences, walls, and gates (open or closed) included, exactly as the
 /// pre-classification full-solid model had it. The flood barrier set is therefore
 /// the union of every classified block cell, keeping the water model byte-stable.
+///
+/// A free fluid is deliberately **not** in that barrier set: it is a flood source
+/// instead, so water spreads through a lava cell rather than being dammed by one.
+/// Vanilla turns that meeting into stone or obsidian — a solid the model declines
+/// to invent, leaving the cell impassable-and-not-floor, which is the conservative
+/// half of the answer.
 pub fn occupancy_of(
     blocks: BTreeMap<[i32; 3], String>,
     open_gates: &BTreeSet<[i32; 3]>,
@@ -834,7 +878,11 @@ pub fn occupancy_of(
         if is_waterlogged(name) {
             sources.insert(*cell);
         }
-        if is_water(name) {
+        if is_fluid(name) {
+            // Water AND lava: a body stands on neither, so neither is `solid`.
+            // Reading the general predicate rather than a water-only one is the
+            // whole of this branch — a water-only test dropped lava through to
+            // the `else` and made a lava surface into floor a route proof walks.
             sources.insert(*cell);
         } else if is_passable_trap_trigger(name) || is_thin_decoration(name) {
             // A pressure plate / tripwire / carpet / thin snow drift is walkable
@@ -1339,6 +1387,113 @@ mod tests {
         assert!(
             !flooded.contains(&[8, 65, 0]),
             "a single source does not fill the floor"
+        );
+    }
+
+    // --- lava is a fluid, so it is not floor ---
+
+    /// The static half of the fluid-is-not-floor defect. A prefab cell of
+    /// `minecraft:lava` reached `occupancy_of`'s final `else` — because the branch
+    /// that catches a fluid asked `is_water` — and came out `solid`: full-cube
+    /// floor a route proof stands the party on.
+    ///
+    /// The counter-case is the same map with the block swapped for `stone`, so the
+    /// only variable between the two assertions is the block id.
+    #[test]
+    fn a_lava_cell_is_flooded_and_never_solid() {
+        let occ_of = |block: &str| {
+            let mut b = floor(64, 0, 0, 0, 0);
+            b.insert([0, 65, 0], block.to_string());
+            occupancy_of(b, &BTreeSet::new())
+        };
+        let lava = occ_of("minecraft:lava");
+        assert!(
+            !lava.solid.contains(&[0, 65, 0]),
+            "a body does not stand on lava, so its cell is not floor"
+        );
+        assert!(
+            lava.flooded.contains(&[0, 65, 0]),
+            "and it is impassable, which is what `flooded` means"
+        );
+        // Counter-case: identical geometry, a solid block.
+        let stone = occ_of("minecraft:stone");
+        assert!(
+            stone.solid.contains(&[0, 65, 0]) && !stone.flooded.contains(&[0, 65, 0]),
+            "the same cell holding stone is still ordinary floor — the block is the \
+             only variable"
+        );
+    }
+
+    /// The namespace is not part of the question, at the static site as at the
+    /// runtime one: `is_technical_block` accepts a bare `lava`, so a hand-written
+    /// block id can reach the model without `minecraft:` on it.
+    #[test]
+    fn a_bare_namespace_lava_cell_is_flooded_too() {
+        let mut b = floor(64, 0, 0, 0, 0);
+        b.insert([0, 65, 0], "lava".to_string());
+        let occ = occupancy_of(b, &BTreeSet::new());
+        assert!(!occ.solid.contains(&[0, 65, 0]));
+        assert!(occ.flooded.contains(&[0, 65, 0]));
+    }
+
+    /// Lava spreads, so a lava cell is a flood **source**, not merely a cell of
+    /// its own — and the reach it gets is water's, which over-marks (overworld
+    /// lava decays over 3). Over-marking is the only permitted direction.
+    #[test]
+    fn a_lava_source_floods_its_reach_like_water() {
+        let mut b = floor(64, -10, 10, 0, 0);
+        b.insert([0, 65, 0], "minecraft:lava".to_string());
+        let flooded = occupancy_of(b, &BTreeSet::new()).flooded;
+        for x in -7..=7 {
+            assert!(
+                flooded.contains(&[x, 65, 0]),
+                "x={x} is within lava's reach"
+            );
+        }
+        assert!(
+            !flooded.contains(&[8, 65, 0]),
+            "and the decay still ends at 7"
+        );
+    }
+
+    /// The general form, bound to the layer that decides what an author may write.
+    ///
+    /// `TECHNICAL_BLOCK_IDS` is the DSL's list of blocks that are not items — the
+    /// blocks a `fill`/`set-block` may name that no item registry can vouch for.
+    /// Every one of them must reach a class `occupancy_of` handles **on purpose**:
+    /// an air variant (no cell) or a fluid (flooded). An id that is neither falls
+    /// through to the final `else` and becomes floor, which is precisely how
+    /// `minecraft:lava` shipped as standable ground — so a sixth technical block
+    /// added to that list reds here rather than being discovered in a delve.
+    ///
+    /// It examines the list's own spellings, which are namespaced. `is_fluid` is
+    /// namespace-insensitive and is covered bare above; `is_air` is not, and what
+    /// that costs is a separate question from this one.
+    #[test]
+    fn every_technical_block_the_dsl_accepts_is_air_or_fluid_to_this_model() {
+        use delvewright_dsl::registry::TECHNICAL_BLOCK_IDS;
+        let mut fluids = 0usize;
+        for id in TECHNICAL_BLOCK_IDS {
+            assert!(
+                is_air(id) || is_fluid(id),
+                "`{id}` is a block the DSL accepts but this model classifies by its \
+                 final `else`, i.e. as full-cube floor"
+            );
+            if is_fluid(id) {
+                fluids += 1;
+                let mut b = floor(64, 0, 0, 0, 0);
+                b.insert([0, 65, 0], (*id).to_string());
+                let occ = occupancy_of(b, &BTreeSet::new());
+                assert!(!occ.solid.contains(&[0, 65, 0]), "`{id}` became floor");
+                assert!(occ.flooded.contains(&[0, 65, 0]), "`{id}` is not flooded");
+            }
+        }
+        // Binding count (playtest-methodology rule 1): a zero here would be a green
+        // that examined nothing.
+        assert_eq!(
+            (TECHNICAL_BLOCK_IDS.len(), fluids),
+            (5, 2),
+            "the DSL's technical-block list changed shape; re-derive this proof"
         );
     }
 

@@ -2,8 +2,8 @@
 
 - **Status**: Accepted
 - **Date**: 2026-07-31
-- **Source**: owner decision in conversation, 2026-07-31, prompted by the M3 asset
-  scouting sweep (spec-0007); amends the prefab-asset clause of ADR-0007
+- **Source**: the M3 asset scouting sweep (spec-0007); amends the prefab-asset
+  clause of ADR-0007
 - **Amends**: ADR-0007 (prefab/content asset licensing)
 
 ## Context

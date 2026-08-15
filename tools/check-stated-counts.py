@@ -19,7 +19,7 @@ different regions of the file — and the merged tree ships a page whose own
 sentence contradicts its own table three lines down. `check-doc-dupes`,
 `check-dw-codes`, `check-reference-versions` and `check-grammar-ir-compat` are
 all green on that tree. Docs merge as text and are never re-read; a textual
-conflict count measures nothing (CLAUDE.md, integration of #395+#400+#402+#403).
+conflict count measures nothing (CLAUDE.md).
 
 WHAT THIS CHECKS. Not the idiom count. An idiom-count check would be keyed to the
 verb that first needed it, and the next reference page to state a number would

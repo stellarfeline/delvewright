@@ -1,14 +1,14 @@
 # spec-0020: The NPC scene ledger — declared presence, checked against staging
 
-- **Status**: Draft (owner directive 2026-08-03: every story node must declare
-  where each NPC is, what they are doing, and what their right-click offers —
+- **Status**: Draft (every story node must declare where each NPC is, what
+  they are doing, and what their right-click offers —
   unless explicitly dead/removed — and both the skill prompt and the compiler
   must enforce it. Motivating defects, island round 8: two crew NPCs stood
   forgotten in the stealth alcoves while the player escaped the cave; the
   sleeping giant still offered his awake dialogue tree)
 - **ADRs**: 0001 (schema-enforced DSL), 0005 (static proofs)
 - **Builds on**: `compiler::continuity` (NPC lifecycle history), `flow.rs`
-  (DW0195 presence corner — task #81, absorbed here), per-option dialogue
+  (DW0195 presence corner, absorbed here), per-option dialogue
   flag gates (spec-0008)
 
 An unaccounted NPC is not a style problem: it is the compiler holding a
@@ -39,7 +39,7 @@ been spawned and not explicitly removed:
   the dialogue stage as context.
 - `dialogue`: what right-click offers during this quest — one of:
   - a dialogue root id (the full branching tree);
-  - `{"barks": ["…", "…"]}` — a **bark pool** (owner addition, 2026-08-03):
+  - `{"barks": ["…", "…"]}` — a **bark pool**:
     right-click yields one inconsequential in-character line, no tree, no
     consequences. The sleeping giant murmurs in his sleep; a town's
     background NPCs make small talk instead of standing mute. Lines cycle
@@ -89,7 +89,7 @@ the fixture proof; hello-world grows the minimal block. `dsl_version` bumps to
 0.7.0; pre-0.7 documents without `cast` keep building with a **warning** for
 one version window (the deprecation lever), then the requirement hardens.
 
-## Amendment (owner, 2026-08-03)
+## Amendment
 
 Two additions, landed with the implementation.
 

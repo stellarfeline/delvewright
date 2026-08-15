@@ -11,8 +11,8 @@ Behaviour references: [`grammar.md`](grammar.md) (what the back end does),
 
 ## 0. Which back end
 
-**The box-split grammar back end** (`crates/grammar`, spec-0027) — owner
-decision, 2026-08-04. It is the default and this procedure is written for it.
+**The box-split grammar back end** (`crates/grammar`, spec-0027). It is the
+default and this procedure is written for it.
 
 When the scene is not a grammar scene, the route is decided by this table —
 derived from the full technique survey (every approach this project researched,
@@ -21,8 +21,8 @@ that matches no row is **escalated, not improvised**.
 
 | The scene is… | Route | Why this route — and what is proven about it |
 |---|---|---|
-| a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers (owner, 2026-08-04). T2 is an input-modality property — the program is authored *against the referent* from the library corpus; the 2026-08-04 probe proved named referents recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
-| a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The five Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
+| a new structural piece — a building, room, passage, stair; generic (T1) **or** a specific named referent (T2) | **grammar program** (this procedure, §1–§8) | The adopted production route for both tiers. T2 is an input-modality property — the program is authored *against the referent* from the library corpus; named referents are proven recognizable this way, and the grammar's IR is what makes iteration converge where freehand geometry regresses. |
+| a variation inside an existing hand-built tileset (another keep room in the keep's own conventions) | **grammar program**, matching the tileset's palette/conventions | The Rust generators are maintained, not extended (§9). A generator's conventions are data to imitate, not a surface to grow. |
 | a named referent that plausibly exists as a **community build** | check licence-gated ingestion first (`delve-schem` + `delve-admit`, spec-0007); fall back to grammar | Availability is luck — the corpus audit found most schematic sources unverifiable or NC-tainted, so ingestion is an opportunistic shortcut, never the plan of record. Everything ingested passes the same audit/socket/lighting admission as generated pieces. |
 | genuinely un-statable by axis-aligned boxes: a **smooth** curve, a diagonal, a profile whose step varies independently of the box, a vault bending on two axes at once, or noise/terrain (§6) | **in-house generator work** (Rust: value-noise fields, 4-5-rule cellular automata, the ported craft passes) — an engine task, not an authoring step | The grammar has no smooth curve, no diagonal, no noise, no terrain, by design. This route costs a worker dispatch and says so up front; it is the one row where "make a prefab" becomes "extend the engine". **Check §6 and `grammar.md` §2c before taking it** — a stepped arch, a gable, a spire, a batter and a tapered vault are all one recursion (idiom 3), two roofs meeting in a valley are that recursion peeling a ring (idiom 3), and any shape with a mirror plane is a rule body written mirrored (idiom 7). All three were mistaken for this row. |
 | terrain or backdrop *around* the playable scene | **surround layer** (`horizon` — ocean/void today; the spec-0026 library when it lands), never a prefab | A surround is analytically known so the proofs can read it; modelling vanilla worldgen was evaluated and rejected (the compiler cannot see server terrain without re-implementing its noise — a folklore hack). |
@@ -261,6 +261,8 @@ once the prefab exists, so a `pass` never sits above a failure.
 | `states-complete` | every placed state writes **every** property its block has (`DW0737`). An omitted property means whatever a running server decides, and nothing that reads the piece before it runs — the render you check it against, the walk, the diff — can know which |
 | `oriented-fills` | an orientation-sensitive state was filled only under the identity frame, a passed `orientation` guard, or the scope's own axis frame — `{"local": …}` on the paint, which resolves its directions through the scope at fill time (`DW0736`; an image the pinned vocabulary cannot determine is refused as `DW0738`) |
 | `non-empty` | the expansion built something |
+| `stair-shape` (only when the piece holds a stair) | every written stair `shape` is the one vanilla derives from that stair's own neighbours (`DW0801`). A stair's `shape` is not stored — the world recomputes it on the first horizontal block update — so a wrong one survives the `.nbt`, the render and the contact sheet, and resets in play. A stair that writes no `shape` makes no claim and nothing can disagree with it |
+| `fluid-contained` (only when the piece holds fluid) | every fluid cell is a source, and no source has an open cell beside or below it (`DW0800`). A run direction that leaves the piece's own outer face is counted and never judged — a shoreline piece's water is the sea — and reported as a finding on every piece that has one |
 | `traversable` (`--traversable`) | a body can walk from the approach end to the exit end; add `--allow-falls` for a piece entered by stepping off a ledge |
 | `symmetric` (`--symmetric x\|y\|z`) | the piece is its own mirror image across the mid-plane of that world axis, compared by presence rather than by block state |
 | `reachable-floor` (`--reachable-floor`) | every cell of floor **under a roof** can be walked to from the grade entrance |
@@ -510,10 +512,11 @@ bytes, so it is the one step a tiled zone still does not have.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
-(`DW0733`), and the palette allowlist (`DW0730`). A grammar prefab passes it
-by construction for `DW0733` — the export already refused — but a *hand-built*
-or ingested piece does not, so `audit` is where that class is caught for
-everything else.
+(`DW0733`), block states that omit a property carrying the block's shape
+(`DW0735`), and the palette allowlist (`DW0730`). A grammar prefab passes it by
+construction for both block checks — the export refuses an unknown state and an
+under-specified shape alike — but a *hand-built* or ingested piece does not, so
+`audit` is where those classes are caught for everything else.
 
 A zone past the 48-per-axis cap hands its **manifest** to `audit` and `lighting`
 instead of an `.nbt`; both reassemble the tiles and answer about the whole
@@ -658,9 +661,47 @@ edit.
 
 ## 10. Hand-written Rust generators
 
-`prefabs/*-generator` are five standalone Cargo workspaces that predate the
+`prefabs/*-generator` are standalone Cargo workspaces that predate the
 grammar back end. They are maintained, not extended: a new piece is a grammar
 program. Running one is `cargo run --release --manifest-path
 prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
 through `prefabs/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
+
+`prefabs/connections.rs` runs at those same emitters, just before those gates.
+It fills the shape-carrying properties a state leaves unwritten — connections
+for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
+piece's own neighbours, by vanilla's rule, and never overwrites a value the
+generator wrote. The `DW0735` verdict and a vine/lichen attachment check are
+emitter post-conditions there, so a generator cannot write a disconnected
+grille and wait for admission to notice.
+
+The derivation asks each neighbour whether it presents a full face, and a
+**stair** answers from its own `shape`: a straight stair is full on the side it
+faces, a corner stair is refused outright because its second quarter moves which
+faces are full. So a stair that writes no `shape` has no answer to give, and a
+fence, wall or bars beside it stops the generator with a red naming the cell
+rather than guessing. This is narrower than the `stair-shape` gate above, where a
+stair writing no `shape` makes no claim and nothing disagrees with it: that gate
+judges a claim, this one needs a fact. A stair standing alone may still say
+nothing; a stair standing next to something that joins must say what it is.
+
+A pass that *places* a vine or a lichen asks the same module where the block may
+hold on — `attachable_faces(block, cell, at)`, which returns every supported
+face of that block, best first, and an empty list when the cell can hold
+nothing. Ask it rather than walking the neighbours by hand: the module owns
+which faces the block has and which direction each looks in, so a scan can
+neither name the face pointing away from the rock nor overlook that rock
+overhead is rock to hang from.
+
+A fence gate in a run of fencing takes its `facing` from the run, not from
+taste. A gate is joinable only across `facing.getClockWise()`, so a gate whose
+`facing` lies *along* its rail spans the perpendicular axis, joins neither
+neighbour, and opens a permanent gap. Read the axis the rail runs along at the
+gate's cell and pick a `facing` perpendicular to it; where both work, the one a
+player walking in from the approach side would place is the one to write.
+
+A regeneration replaces the `.nbt` only. The `.json` beside it is the document
+of record and several carry anchors no generator models, so rewriting one to
+pick up a `.nbt` change deletes campaign content; regenerate metadata only when
+the generator is what changed it.

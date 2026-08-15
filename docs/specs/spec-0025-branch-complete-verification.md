@@ -1,8 +1,6 @@
 # spec-0025: Branch-complete narrative verification — every branch is played, not just declared
 
-- **Status**: Approved (owner approval in conversation, 2026-08-03; chronicle
-  design is the owner's. Origin: owner directive same day — this bug class must
-  be machine-caught, never owner-swept)
+- **Status**: Approved (this bug class must be machine-caught, never swept)
 - **ADRs**: 0005 (two-layer validation — extends both layers from one critical
   path to the branch set), 0006 (determinism)
 - **Depends on**: spec-0020 (cast ledger, per-branch casts), spec-0012
@@ -29,7 +27,7 @@ campaign is verified when **every reachable narrative branch** has been proven
 generation-time review of the compiler-assembled branch chronicle. Each layer
 asserts only what it can honestly own.
 
-**Decompilation principle** (owner, 2026-08-03): the generation workflow is
+**Decompilation principle**: the generation workflow is
 natural language → design doc → DSL. Whether the DSL matches the design is
 NOT visible to an LLM — checking would mean simulating compilation in its
 head, which is unreliable by construction. So the compiler compiles the DSL
@@ -111,7 +109,7 @@ Tiering (cost honesty — a full run is ~20 min):
 Dialogue text carries meaning no compiler can check ("Where is Antiphos,
 Captain" is only wrong because Antiphos is alive HERE). The rubber-stamp risk
 is real: a reviewer handed a pile of per-node data has no way to know the
-authoritative answer, and will nod. The design (owner's, 2026-08-03):
+authoritative answer, and will nod. The design:
 
 - **The compiler assembles a per-branch chronicle** (流水账): for each
   enumerated branch, every reachable story node's `happening` line, in the

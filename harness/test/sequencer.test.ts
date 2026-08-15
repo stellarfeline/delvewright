@@ -334,10 +334,10 @@ test("retryOnDeath recovers, re-arms where the bot stands, and retries the dead 
 });
 
 test("the death retry never re-selects the class — that would teleport the bot away", async () => {
-  // task #120. `class_apply_<class>` ends in `teleport @s <campaign entry point>`
+  // `class_apply_<class>` ends in `teleport @s <campaign entry point>`
   // and the `dw.class` trigger was then re-enabled for every player on every tick,
   // so a second `/trigger dw.class` after a death silently warped the bot back to
-  // the start of the delve. The compiler seals that shut now (#122), but the rule
+  // the start of the delve. The compiler seals that shut now, but the rule
   // here does not lean on it: the whole retry path — and every die-retry
   // measurement taken through it — is about where the player RESPAWNS, so nothing
   // on it may move the bot.
@@ -431,7 +431,7 @@ test("runSequence announces each step index to the executor before dispatching i
   assert.deepEqual(begun, [0, 1, 2, 3]);
 });
 
-// --- rest steps (compiler #220) ---------------------------------------------
+// --- rest steps -------------------------------------------------------------
 
 const rest: RestStep = {
   action: "rest",

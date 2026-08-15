@@ -90,7 +90,7 @@ test("an encounter with no checkpoint yet parses with an absent one", () => {
 });
 
 test("a plan that cannot name its census is refused, never silently silhouetted", () => {
-  // The alternative is the #230 failure mode: counting whatever the client tracks
+  // The alternative is the failure mode of counting whatever the client tracks
   // and reporting ambush actors as wave mobs a re-seat left standing. A build too
   // old to state the probe cannot be measured by tag, and saying so beats guessing.
   const { census: _dropped, ...noCensus } = PLAN.encounters[0]!;
@@ -296,7 +296,7 @@ test("losing a completed objective to a death is state corruption, not difficult
   assert.match(String(v), /obj\/hold-the-gate/);
 });
 
-// --- what was waiting at the end of the loop (planner ruling 2026-08-03) ------
+// --- what was waiting at the end of the loop ----------------------------------
 
 test("a re-engaged encounter is the ordinary pass", () => {
   assert.equal(trialVerdict(trial({ outcome: "re-engaged", reEngaged: true })), undefined);
@@ -343,7 +343,7 @@ test("the corruption check outranks the stranded check", () => {
   assert.match(String(v), /LOST completed progress/);
 });
 
-// --- report integrity: a death that happened is never silent (task #102) -----
+// --- report integrity: a death that happened is never silent -----
 
 test("an opened trial starts at its FAILING values, so an abandoned one reads red", () => {
   // The record exists from the moment the harness commits to dying. If the run
@@ -402,7 +402,7 @@ test("two completed trials per encounter is full coverage and says nothing", () 
   assert.deepEqual(dieRetryCoverageFailures(plan, new Set(["wave/gate-assault"]), trials), []);
 });
 
-// --- re-seat fidelity, pure (owner ruling 2026-08-03, task #108) -------------
+// --- re-seat fidelity, pure ---------------------------------------
 
 const ANCHOR = [0, 0, 0] as const;
 
@@ -454,7 +454,7 @@ test("observationOf counts what came back, what carried over, and how far it str
 });
 
 test("the census counts the WAVE — a bystander standing beside it cannot enter the tally", () => {
-  // The #230 shape: two ambush husks and a neighbouring wave's mob are standing
+  // Two ambush husks and a neighbouring wave's mob are standing
   // where the bot is, and were standing there before it died. The server counted
   // by tag, so the observation is of the wave alone and nothing carried over.
   const obs = observationOf(census([mob(), mob()]), 2, [...ANCHOR], 40);
@@ -500,7 +500,7 @@ test("only a re-seating wave owes fidelity — a persisting wave is judged by ou
   );
 });
 
-// --- die-retry precondition: an armed checkpoint (compiler #220) -------------
+// --- die-retry precondition: an armed checkpoint -----------------------------
 
 const FIRE = { bonfire: 1, anchor: "anchor/beach-fire", pos: [97, 71, -96] as const, step: 4 };
 
@@ -527,7 +527,7 @@ test("a checkpoint that is no bonfire arms itself — nothing to contradict", ()
 });
 
 test("an encounter with NO governing checkpoint is named, skipped, and not graded", () => {
-  // Post-#223 this is the truthful reading of souls-bonfire's encounter: with
+  // This is the truthful reading of souls-bonfire's encounter: with
   // `fire_step < i`, a checkpoint armed by the encounter's OWN kill step is
   // correctly not its governing one, so the plan names none. A death there
   // respawns at world spawn — the retry loop is a full restart of the delve.

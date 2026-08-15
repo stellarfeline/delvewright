@@ -1,6 +1,6 @@
 # Camera dossier — parameterizing `shot_style`
 
-- **Status**: research note (planner-commissioned, 2026-08-01). Input to
+- **Status**: research note. Input to
   spec-0015's "Shot-style template library" section. No code changes.
 - **Question**: spec-0015 asserts that RDR2/GTA V cinematic mode and Unity
   Cinemachine are *algorithmic, not AI* — "a curated template bag, damped
@@ -228,7 +228,7 @@ CC-BY; none ships usable reference code; all ideas-only.
 *Commands/spectate* and *Spectator* pages are the authority for
 `teleport_duration` (0–59 ticks), `interpolation_duration`, `/spectate`
 semantics and spectator HUD/FOV behaviour. Mojang MC-279534 and PaperMC issue
-#11694 document interpolation quirks worth defensive testing. Prior-art
+11694 document interpolation quirks worth defensive testing. Prior-art
 datapacks were surveyed and **none is adoptable**: Cutscene Engine (Modrinth)
 is All-Rights-Reserved; the PlanetMinecraft camera packs state no license;
 `shibomb/whole-minecraft-cameraman` is MIT but is a **Paper plugin**, which

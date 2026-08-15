@@ -283,6 +283,36 @@ fn an_unresolvable_blockstate_is_dw0790_with_its_cell_count() {
     assert!(html.contains("minecraft:glowstone"));
 }
 
+/// A prefab **this test owns**, carrying one deliberately under-specified state:
+/// three cells of `minecraft:iron_bars` with no connection property written.
+///
+/// It is built here rather than read out of the library, and that is the whole
+/// point. The proof used to point at `keep-gate-room.nbt`, whose portcullis
+/// omitted exactly these properties — so its positive case was somebody else's
+/// defect, and the day the library was repaired the check went red with nothing
+/// wrong. A gate whose fixture is a live bug expires the moment the bug is
+/// fixed; this one cannot.
+///
+/// The bytes come through `delvewright_schem::convert`, the same path an
+/// imported `.schem` takes, which carries a palette through unchanged — writing
+/// the connection properties here would destroy the fixture.
+fn under_specified_prefab(dir: &Path) -> PathBuf {
+    let schem = delvewright_schem::fixtures::build_v2(
+        [3, 1, 1],
+        &["minecraft:stone", "minecraft:iron_bars"],
+        &|x, _, _| usize::from(x == 1),
+        &[],
+    );
+    let converted = delvewright_schem::convert(&schem, "under-specified", 48)
+        .expect("the hand-built schematic parses");
+    let delvewright_schem::ConvertOutput::Single(bytes) = converted.output else {
+        panic!("a 3x1x1 fixture is under the tiling cap");
+    };
+    let path = dir.join("under-specified.nbt");
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
 /// The finding the whole rewrite exists for.
 ///
 /// A palette entry that leaves properties unwritten is legal, and a running
@@ -292,11 +322,8 @@ fn an_unresolvable_blockstate_is_dw0790_with_its_cell_count() {
 /// not report a clean resolution over such a palette.
 #[test]
 fn an_under_specified_state_is_dw0791_and_names_what_gets_filled_in() {
-    let Some(nbt) = prefab("keep-gate-room.nbt") else {
-        eprintln!("skip: no content symlink");
-        return;
-    };
     let dir = tmp("underspecified");
+    let nbt = under_specified_prefab(&dir);
     let pack = pack_for(&dir, &nbt, &[]);
     let out = dir.join("page.html");
 

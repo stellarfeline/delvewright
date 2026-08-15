@@ -25,7 +25,7 @@ set -uo pipefail
 
 # Even though this spike runs on its OWN throwaway container and port, it still
 # shares the Docker host with the owner's play session. Refuse to run at all
-# while a human is playing (validation/mutex.sh; owner incident 2026-08-02).
+# while a human is playing (validation/mutex.sh).
 # shellcheck source=validation/mutex.sh
 . "$(dirname "$0")/mutex.sh"
 dw_mutex_assert_not_owner_session || exit 1
@@ -39,7 +39,7 @@ POLL_SECONDS="${POLL_SECONDS:-10}"
 WATCH_SECONDS="${WATCH_SECONDS:-150}"
 
 # Two channels, and which one a command uses is a statement about that command
-# (tools/lib/rcon.sh, task #70). `rcon` is for anything that MUST take effect and
+# (tools/lib/rcon.sh). `rcon` is for anything that MUST take effect and
 # dies when the server refuses; `rcon_raw` is for the readbacks and the idempotent
 # cleanups, where "No entity was found" is the answer, not a failure.
 #
@@ -71,7 +71,7 @@ setup_pad() {
   # answers "That position is not loaded" and places nothing — so every reading
   # this probe has taken was taken on a warden standing on whatever the world
   # generated, not on the stone pad the method describes. Found the first time the
-  # checked channel was used here (task #70): the old `>/dev/null` made the
+  # checked channel was used here: the old `>/dev/null` made the
   # refusal invisible, which is the same defect as the rejected gamerules one line
   # above, one layer along.
   rcon "forceload add $((PAD_X - 16)) $((PAD_Z - 16)) $((PAD_X + 16)) $((PAD_Z + 16))" >/dev/null || exit 1

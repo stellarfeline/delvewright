@@ -226,8 +226,8 @@ pub fn build(g: &mut Grid, seed: u64) {
     //    of the flame so the anchor stays standable (`DW0316`) and the party
     //    rests with the field — and the kneeling elite — in front of them.
     //
-    //    Placement is a `DW0478` constraint, not taste (owner ruling 2026-08-04,
-    //    task #132): a bonfire may not stand inside any hostile's aggro range,
+    //    Placement is a `DW0478` constraint, not taste: a bonfire may not stand
+    //    inside any hostile's aggro range,
     //    and the Barrow Warden kneels at `anchor/l0-elite-dormant` (23,_,16) with
     //    the default 16-block `follow_range`. The fire's first home at (19,_,29)
     //    was 13.6 blocks out — inside its sight. It now sits far down the western

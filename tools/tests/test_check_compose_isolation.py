@@ -1,9 +1,9 @@
 """The compose-isolation gate (`tools/check-compose-isolation.py`).
 
-The defect class this pins, twice from the field before task #185 removed the
-pins entirely: `validation/compose.yaml` names a container or publishes a host
+The defect class this pins, twice from the field before the pins were removed
+entirely: `validation/compose.yaml` names a container or publishes a host
 port, two concurrent ladders collide on a Docker-GLOBAL name that `-p <project>`
-does not isolate, and one teardown reaches into the other — `server` (#190), then
+does not isolate, and one teardown reaches into the other — `server`, then
 `bot` (the-drowned-bell round 2). The predecessor gate only demanded a matching
 `!reset` in a worker override, i.e. the pin survived and every caller had to
 remember an extra `-f`. Now the pin itself is the violation.

@@ -1,9 +1,8 @@
 # spec-0028: Reference-image intent alignment (optional prefab-chain step)
 
-- **Status**: Proposed (task #165; owner proposal + four rulings in chat
-  2026-08-04: scoring is rank-only, model = gpt-image-2 via BYO config in the
-  i18n-external-LLM style, the interactive-polish round is deferred until the
-  engine/toolchain stabilizes, and this is its own spec)
+- **Status**: Proposed (four rulings: scoring is rank-only, model = gpt-image-2
+  via BYO config in the i18n-external-LLM style, the interactive-polish round
+  is deferred until the engine/toolchain stabilizes, and this is its own spec)
 - **ADRs**: 0003/0004 (generation-time only), 0013 (licensing — see §4),
   0012 (skill front-end)
 - **Depends on**: spec-0027 (the builder this step feeds)
@@ -68,7 +67,7 @@ owner-approved amendment backed by accumulated batch data.
    generation-dir default that keeps them out).
 5. Owner walkthrough of the loop on one real prefab request — merge gate.
 
-## 6. As built, measured (2026-08-09)
+## 6. As built, measured
 
 `Status:` above records **approval**, and is bound to nothing about existence
 (spec-0029 sat at `Proposed` after shipping). This section records what is

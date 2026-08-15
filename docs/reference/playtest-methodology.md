@@ -57,8 +57,8 @@ observed on the island:
   then. This is the failure mode CLAUDE.md's **version-adoption discipline**
   already forbids; the island quantifies its cost.
 - **Unemitted** — declared, compiled green, and never emitted. `wave/storm-shore`
-  and `wave/storm-fire` silently never spawned until engine PR #280 closed a
-  wave-machinery emission gap; the round-22 bot run was the first time that fight
+  and `wave/storm-fire` silently never spawned until a wave-machinery emission
+  gap in the engine was closed; the round-22 bot run was the first time that fight
   existed at all, for machine or human. Guarded now by the dangling-function
   check (`DW0497`: no emitted `function <ns>:<name>` may point at a function that
   was never emitted).
@@ -77,8 +77,8 @@ waiting for the owner to hit one. Measured latency on the island:
 - The owner reported clicks landing on the wrong entity at the fire pit in **r7**.
   Fixed in **r10** by moving one anchor and adding a `strike-npc` trigger — the
   instance.
-- The general rule became `DW0489` ("the crosshair is a ray") in engine task #190,
-  **eleven rounds later**. On its first run against the real build it immediately
+- The general rule became `DW0489` ("the crosshair is a ray") **eleven rounds
+  later**. On its first run against the real build it immediately
   found a second instance: Antiphos at the cave mouth, separation `0.00` — which
   the owner had by then independently lost a click to.
 - Same shape for `DW0205`: its test table's first row is the owner's
@@ -113,9 +113,9 @@ missing first-class primitive. None was a forgotten task:
 | Finding | Reported → closed | Blocked on |
 |---|---|---|
 | Cheese must fill the room's OWN barrel, and be named | r12 → r18 | `collect` had no `container`/`item_name`/`fill_count`; the compiler stamped its own chest |
-| Boulder hint should answer right-click too | r12 → engine #142 | co-located click triggers had to merge onto one hitbox |
-| Wait branch: a body vanishes and walks back | r15 → PR #244 | a walk must start where ITS branch left the body (`DW0488`) |
-| Ending night-vision expires and flickers | r15 → PR #246 | granted sight must outlast the camera it has to survive |
+| Boulder hint should answer right-click too | r12 → engine change | co-located click triggers had to merge onto one hitbox |
+| Wait branch: a body vanishes and walks back | r15 → engine change | a walk must start where ITS branch left the body (`DW0488`) |
+| Ending night-vision expires and flickers | r15 → engine change | granted sight must outlast the camera it has to survive |
 
 Refusing to hack these downstream was correct (CLAUDE.md, *No hacks at any
 layer*); round 13 explicitly STOPped on two of them rather than shipping a
@@ -155,14 +155,14 @@ not an inference to make silently.
 
 Rules 2 and 4 were written down and obeyed by hand, which meant they were obeyed
 exactly as well as whoever remembered them. Both are now enforced:
-`docs/playtest-findings.json` is the ledger — **every finding the owner has
-reported, on any campaign, from the first M2 dress rehearsal (2026-07-30)
-onward** — and `tools/staging-gate.py` refuses to stage a build while any row's
+`docs/playtest-findings.json` is the ledger — **every finding reported on any
+campaign, from the first M2 dress rehearsal (2026-07-30) onward** — and
+`tools/staging-gate.py` refuses to stage a build while any row's
 general form is not a live, binding check on THAT build.
 
 The gate asks a question no other check in this repo asks, and it is the reason
-a green ladder does not discharge the owner's standing directive (2026-08-09:
-*her playtest is content QC only*). Most island findings were things **no check
+a green ladder does not discharge the standing rule that **a playtest is content
+QC only**. Most island findings were things **no check
 existed for at the time**, so "everything is green" and "she will not find a
 mechanical bug" are different claims and only the first was ever measurable.
 The gate re-runs nothing. Per row it asks: does a general-form check exist, and
@@ -261,13 +261,13 @@ and round records (`GENERATION.md`, rounds 3–22); the private notes (gitignore
 to end — and the two session handoffs; `hollow-vigil`'s `GENERATION.md`; the bell's
 records on `campaign/the-drowned-bell-r3` and `REMAKE.md`, the on-disk task
 archive (`~/.claude/tasks/`, 281 cards, 2026-07-30 → 2026-08-10), and the
-diagnostics catalogue in `compiler.md`, whose `(owner playtest, …)` attributions
-turned out to be the single best finding→diagnostic index in the repo.
+diagnostics catalogue in `compiler.md`, which is the closest thing the repo has
+to a finding→diagnostic index.
 
 Known gaps, each a reason a row may be missing rather than closed:
 
 - **hollow-vigil's round-1 findings are not enumerated anywhere.** Four are
-  recoverable from `spec-0002`; PRs #28–#36 may hold more.
+  recoverable from `spec-0002`.
 - **The island ledger audit's r17 addendum was lost** and is recorded as lost.
 - **The bell's round-6 batch of eight owner findings** is carried as pending
   work with no diagnostic coverage for any of the eight; only those with a clear

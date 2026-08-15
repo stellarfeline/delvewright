@@ -1,7 +1,7 @@
 # spec-0029 — i18n v2: the client picks the language
 
-Status: **Implemented and shipped** (owner directive in conversation, 2026-08-06;
-built and released in `nobodys-cave-island v1.1.0`).
+Status: **Implemented and shipped** (built and released in
+`nobodys-cave-island v1.1.0`).
 
 > The status above is verified by measurement, on the island built from
 > `delvec 1.1.0` with no `--lang`:
@@ -20,14 +20,12 @@ built and released in `nobodys-cave-island v1.1.0`).
 
 ## Context
 
-spec-0024 §2 recorded the owner ruling of 2026-08-03, option (a): v1 releases ship
+spec-0024 §2 records option (a): v1 releases ship
 **baked in one language** (`build --lang`), and v2 — *"translate keys +
 per-language files in this same resource pack, the client auto-selects its own
 locale, any unsupported locale falls back to English"* — was unblocked but not
 built. `nobodys-cave-island v1.0.0` therefore shipped Chinese-only: an English
 player joining it reads Chinese, with no fallback.
-
-The owner directed v2 built and the island re-released as v1.1 (2026-08-06).
 
 The work is smaller than it looks, because the hard half already exists.
 `dsl::l10n::each_string` already visits **every** player-visible string with a
@@ -45,7 +43,7 @@ languages ride in the resource pack the release already ships.**
    instead of the literal. The key is the existing l10n key — no new key scheme,
    no new inventory, and `each_string` stays the single authority over what is
    translatable (the property that keeps *measured* and *translated* from
-   drifting, task #168).
+   drifting).
 2. **Delivery.** `build` emits `assets/delvewright/lang/<mc_code>.json` into the
    resource pack for English **and** every declared language: a flat
    `{key: string}` map, English from the source documents, others from

@@ -105,7 +105,7 @@ function dieRetryFromEnv(env = process.env): boolean {
 }
 
 /**
- * Whether the actor floor gate runs (#114). ON whenever the build's combat plan
+ * Whether the actor floor gate runs. ON whenever the build's combat plan
  * declares a tiered actor. `DELVEWRIGHT_ACTOR_FLOOR=0` skips the engagements for
  * local iteration; the report then records each actor as SKIPPED with that
  * reason, never as measured — the same discipline `DELVEWRIGHT_DIE_RETRY=0`
@@ -116,7 +116,7 @@ function actorFloorFromEnv(env = process.env): boolean {
 }
 
 /**
- * Whether the death-loop stage runs (task #68). ON whenever the build ships a
+ * Whether the death-loop stage runs. ON whenever the build ships a
  * death plan — like die-retry it is a REQUIRED stage, not an option: a PackTest
  * fake player is permanently undamageable (measured 2026-08-03 and 2026-08-09),
  * so this tier is the ONLY place a player death can be witnessed at all, and
@@ -189,7 +189,7 @@ async function main(): Promise<number> {
     process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
   }
 
-  // task #38 / #117: if the compiler's proven waypoint artifact accompanies the
+  // If the compiler's proven waypoint artifact accompanies the
   // path being walked, the executor navigates each walked leg through it
   // (successive nearby goals) so no single distant A* solve strands the bot on a
   // large open cave. Malformed → hard failure.
@@ -197,7 +197,7 @@ async function main(): Promise<number> {
   // The artifact's legs are consumed in LOCKSTEP with the walked positions of
   // the path being walked, so each path gets ITS OWN artifact: the exported path
   // its `critical-path-waypoints.json`, a driven branch its
-  // `branch-waypoints-<slug>.json` (task #117), whose legs follow that branch's
+  // `branch-waypoints-<slug>.json`, whose legs follow that branch's
   // own step sequence. The critical-path artifact is never replayed on a branch
   // — its legs are position-ordered for a different sequence, and the wrong legs
   // would strand the bot while looking like a content fault.
@@ -214,17 +214,17 @@ async function main(): Promise<number> {
         `branch ${driven.id} is walking WITHOUT a per-branch waypoint artifact ` +
         `(${branchWaypointsFileFor(branchPathFile)} is absent): single-goal navigation ` +
         `fallback, which is terrain-flaky on open ground where waypointed navigation is ` +
-        `deterministic (task #117). Rebuild the delve with a delvec that exports ` +
+        `deterministic. Rebuild the delve with a delvec that exports ` +
         `per-branch waypoints; do not trust a strand on this run as a content verdict`;
       process.stderr.write(`[finding] ${waypointFinding}\n`);
     }
   } else {
-    // Absent → single-goal navigation, the pre-task-#38 behavior (a campaign
+    // Absent → single-goal navigation (a campaign
     // with no walked leg emits no artifact at all, so absence here is normal).
     waypoints = await loadWaypointsForCriticalPath(pathArg);
   }
 
-  // compiler #220: the path's rest steps, with their EXPORTED indices. The bot
+  // The path's rest steps, with their EXPORTED indices. The bot
   // performs them as ordinary steps; the die-retry precondition needs to know they
   // exist even when one was not reached, so it is told up front.
   const restSteps = criticalPath.steps.flatMap((s, i) =>
@@ -261,7 +261,7 @@ async function main(): Promise<number> {
   // ENCOUNTERS — the die-retry stage proves dying is safe, and the fights run under
   // bounded, labelled combat assist so bot fencing skill never caps how hard a
   // delve is allowed to be. Absent → the pre-spec-0023 run, unchanged.
-  // task #68: the build's death contract — the lethal volumes the bot may walk
+  // The build's death contract — the lethal volumes the bot may walk
   // into, the wording each promises, the `on_death` consequences and the recovery
   // stake's compile-time placement table. Handed over BEFORE the connect, because
   // it also tells the navigator which cells are impassable: the compiler treats a
@@ -293,7 +293,7 @@ async function main(): Promise<number> {
   const actorFloor = actorFloorFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
   // Which objectives this run proves — the set that decides which actor fights it
-  // can reach at all (#114). Taken from the path being WALKED, so a branch run
+  // can reach at all. Taken from the path being WALKED, so a branch run
   // (spec-0025) measures the actors its own storyline unleashes.
   const pathObjectives = new Set(
     criticalPath.steps.flatMap((s) => ("objective" in s ? [s.objective] : [])),
@@ -343,7 +343,7 @@ async function main(): Promise<number> {
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
-          // task #68: only after the path is proven. The death loop deliberately
+          // Only after the path is proven. The death loop deliberately
           // kills the player, so running it earlier would leave every later step
           // walking out of a grave — and a delve whose critical path is broken
           // has a bigger finding than its recovery stake.
@@ -402,7 +402,7 @@ async function main(): Promise<number> {
     report.recordAssists(assists);
     report.recordTrials(trials);
     // Per-encounter assist policy + how far the run got, so a reader can tell a
-    // policy-empty assist ledger from an unwired one (task #102).
+    // policy-empty assist ledger from an unwired one.
     const encounterReports: EncounterReport[] = (combatPlan?.encounters ?? []).map(
       (enc): EncounterReport => ({
         encounter: enc.objective,
@@ -414,7 +414,7 @@ async function main(): Promise<number> {
       }),
     );
     report.recordEncounters(encounterReports);
-    // #114: the compiler's floor-gate ledger, verbatim, plus one row per tiered
+    // The compiler's floor-gate ledger, verbatim, plus one row per tiered
     // actor — fought (with the outcome) or not (with the reason). Recorded even on
     // a red run: what the gate could NOT measure is exactly what a reader of a
     // failed run needs, and an actor the run never reached must still be visible.
@@ -524,7 +524,7 @@ async function main(): Promise<number> {
           ? []
           : [failure instanceof Error ? failure.message : String(failure)],
     });
-    // task #68 — the death loop. Recorded whether it ran or not, and a stage that
+    // The death loop. Recorded whether it ran or not, and a stage that
     // did not run carries the reason: a skipped stage must never be readable as a
     // passed one, and this stage is the ONLY runtime proof of the mechanic the
     // whole souls shape rests on.
@@ -585,7 +585,7 @@ async function main(): Promise<number> {
                     `${retryBinding.reason ?? "no reason given"}`,
                 ]
               : []),
-            // #223: an encounter the campaign fires NO checkpoint before had its
+            // An encounter the campaign fires NO checkpoint before has its
           // scripted death skipped, and the stage says so out loud rather than
           // passing quietly. Advisory, not a failure — every death there is a full
           // restart, which is a content staging fact the compiler's retry-cost and
@@ -619,7 +619,7 @@ async function main(): Promise<number> {
           dieRetryFailures.map((f) => `  ${f}`).join("\n"),
       );
     }
-    // task #68: a delve can be completable and still ship a broken death loop —
+    // A delve can be completable and still ship a broken death loop —
     // which, for a souls-shaped delve, is the whole game. Red in its own right.
     if (deathLoopFailures.length > 0) {
       throw new Error(

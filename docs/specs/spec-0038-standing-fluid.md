@@ -1,10 +1,10 @@
 # spec-0038: Standing fluid — declared bodies, and the flood level as runtime state
 
 - **Status**: Proposed
-- **Basis**: owner ruling 2026-08-13 — the engine supports a dynamic world; the
+- **Basis**: the engine supports a dynamic world; the
   commissioning instance is a citadel on a tidal rock whose sea level answers
   what the party has done, opening some routes and closing others. Two further
-  owner rulings, same day, shape every surface here: **flowing liquid is
+  rulings shape every surface here: **flowing liquid is
   avoided unless deliberately designed** — a water level moves as a whole
   plane, so no source ever has a lower neighbour to flow into; and **a body of
   water is saturated by construction** — every cell of its volume is a source,
@@ -41,7 +41,7 @@ the shared gate, `teleport`, `lethal_volumes[]`, and spec-0030's compile-time
    hanging in mid-air (`fill 4 65 3 6 65 5 minecraft:water` in
    `seq_*.mcfunction`). The proof asserts the party stands on water; live,
    they fall through it while it cascades off the edge. The correct model
-   exists eleven lines away — `World::flooded`, task #45: water is impassable
+   exists eleven lines away — `World::flooded`: water is impassable
    and **never standable** — and the write cannot reach it.
 2. **Nothing checks where runtime water goes or comes from.** The same probe
    compiles a fill whose sources have open lower neighbours (flow out, the
@@ -78,7 +78,7 @@ the shared gate, `teleport`, `lethal_volumes[]`, and spec-0030's compile-time
 
 `RegionEvent` carries the write's occupancy class, derived from the block id:
 a **fluid** write enters the leg world's `flooded` set (impassable, never
-standable — the task #45 rule, and spec-0030's deliberate non-goal upheld: no
+standable — the same rule, and spec-0030's deliberate non-goal upheld: no
 wading model, the conservative direction); a solid write stays `solid`; air
 stays `Clear`. One rule, in the one place that already owns region writes
 (`nav::World::with_region_state`) — `open-gate`, `close-gate`, `fill-region`,

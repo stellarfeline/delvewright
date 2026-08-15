@@ -1,7 +1,6 @@
 # spec-0012 — Checkpoints (respawn anchors)
 
-- **Status**: Proposed (split out of spec-0011 owner decision 2, 2026-07-31;
-  drafted by the planning agent)
+- **Status**: Proposed (split out of spec-0011)
 - **Motivation**: sealing emits `setworldspawn` = delve entrance, so any death
   (trap, wave, lava) restarts the run from the door. That caps how deep danger
   can sit and how punishing pacing may be. spec-0011's survivability proof
@@ -38,9 +37,9 @@
    required anchor of the critical path must still be reachable/walkable
    (DW0311 machinery re-rooted at the checkpoint). A checkpoint behind a
    one-way drop that the forward path later leaves unreachable is a build
-   error — new diagnostic **DW0315** (exit 2, prescription per the #73 rubric:
-   move the checkpoint or add a return route; do NOT delete the checkpoint to
-   silence the proof).
+   error — new diagnostic **DW0315** (exit 2; the prescription is to move the
+   checkpoint or add a return route, never to delete the checkpoint to silence
+   the proof).
 3. **spec-0011 coupling**: the survivability obligation for a lethal trap may
    assume respawn at the nearest dominating checkpoint instead of the
    entrance, once this spec is implemented.
@@ -57,8 +56,8 @@ from `dw:cp`). Setup initializes `dw:cp` to the spawn cell.
 
 - PackTest: after the checkpoint step fires, kill a fake player → asserts
   respawn at the checkpoint cell, not the entrance.
-- Harness: no new bot logic (death-aware transport from PR #59 already
-  re-acquires after respawn; waypoints re-route from the respawn cell).
+- Harness: no new bot logic (death-aware transport already re-acquires after
+  respawn; waypoints re-route from the respawn cell).
 
 ## Acceptance criteria
 
@@ -85,7 +84,7 @@ from `dw:cp`). Setup initializes `dw:cp` to the spawn cell.
 2. **Explicit `set-checkpoint` only**, no automatic per-area checkpoints
    (recommended: author intent, no magic) — confirm.
 
-## Addendum — `on_respawn` hook (planner, 2026-08-01, island-remake driven)
+## Addendum — `on_respawn` hook
 
 `set-checkpoint` gains optional `on_respawn: [effects]`: a per-player effect
 list run when a player respawns while this checkpoint is the active one
@@ -95,9 +94,9 @@ a death in an unwinnable fight. Effects must be idempotent (despawn-by-tag +
 respawn patterns); the compiler orders them deterministically. This is the M3
 substrate; full souls-mode "rest resets the world" stays M4.
 
-## Note — souls-mode reframing (owner, 2026-07-31)
+## Note — souls-mode reframing
 
-The owner's souls-mode direction (spec-0011 final section) reframes checkpoints
+The souls-mode direction (spec-0011 final section) reframes checkpoints
 as **bonfires**: resting may reset traps/enemies, and death-driven retry is a
 legitimate pattern. The open decisions above stay open and will be settled
 inside the planner's souls-mode design; this spec's respawn mechanics are the

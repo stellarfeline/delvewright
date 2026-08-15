@@ -237,8 +237,8 @@ def test_reflection_prompt_names_all_four_critique_axes():
 
 
 def test_option_label_button_budget_reaches_both_prompts():
-    """Owner ruling 2026-08-03: an over-long option label scrolls on its
-    fixed-width button. The budget must survive translation, so it is stated in
+    """An over-long option label scrolls on its fixed-width button.
+    The budget must survive translation, so it is stated in
     the translate step AND checked in the critique step."""
     inv = inventory()
     batch = inv.pending()

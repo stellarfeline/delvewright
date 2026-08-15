@@ -1,8 +1,8 @@
 # Trial 0002 — a castle's first wall section
 
-The owner set the subject, 2026-08-12, when she asked the question trial 0001
-could not answer: **can this engine produce scenery with content in it, or only
-a handsomely decorated single-storey box?**
+The subject is the question trial 0001 could not answer: **can this engine
+produce scenery with content in it, or only a handsomely decorated single-storey
+box?**
 
 Trial 0001 measured whether a recognisable *building* could be stated. This one
 measures whether a *playable* one can — rooms a party fights in, a route that
@@ -262,8 +262,8 @@ openings run through.
 
 ### What this run put on the backlog
 
-Tasks #121 (`--traversable`'s outside route), #122 (a one-way descent has no surface),
-#123 (the split-order design rule), plus the doc corrections in R4.
+`--traversable`'s outside route; a one-way descent has no surface; the split-order
+design rule; plus the doc corrections in R4.
 
 ## Instrument bounds
 

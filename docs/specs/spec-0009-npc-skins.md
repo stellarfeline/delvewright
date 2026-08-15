@@ -1,6 +1,6 @@
 # spec-0009: NPC skin pipeline — creation-first, resource-pack delivery
 
-- **Status**: Approved (owner, 2026-07-31, via chat)
+- **Status**: Approved
 - **Context**: mannequin player-model NPCs (spec-0008 §6); ADR-0003 (vanilla-first),
   0006 (determinism), 0010 (OCI packaging), 0013 (license allowlist). All mechanics
   below verified live on 1.21.11 (spike, 2026-07-31).

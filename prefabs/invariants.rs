@@ -1,9 +1,9 @@
-//! Cross-tileset generator invariants — one authority, five generators.
+//! Cross-tileset generator invariants — one authority, every generator.
 //!
-//! The five tileset generators are deliberately separate Cargo workspaces
-//! (`docs/reference/tools.md` §9) so that none of them can enter the shipped
-//! `delvec`. That isolation is worth its cost, but it must not cost us the same
-//! lesson five times: this file is included by every generator as
+//! The generators under `prefabs/*-generator` are deliberately separate Cargo
+//! workspaces (`docs/reference/tools.md` §9) so that none of them can enter the
+//! shipped `delvec`. That isolation is worth its cost, but it must not cost us
+//! the same lesson once per generator: this file is included by every one as
 //! `#[path = "../../invariants.rs"] mod invariants;` — a source include, not a
 //! dependency, so the workspaces stay independent while the rule stays single.
 //!
@@ -17,11 +17,11 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 /// The pinned 1.21.11 block-state registry, source-included the same way this
-/// file is: one authority, five generators, no dependency edge.
+/// file is: one authority, every generator, no dependency edge.
 ///
 /// `crates/schem` parses the identical file for the in-workspace emitters
 /// (`delvewright_schem::blocks`). Two readers of one file is not two authorities
-/// — the alternative here would be a *sixth* hand-maintained block list, which
+/// — the alternative here would be a *further* hand-maintained block list, which
 /// is the defect this gate exists to catch.
 const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/compiler/data/blocks-1.21.11.json");
 
@@ -34,8 +34,8 @@ fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> 
 
 /// **A generator may only emit blocks the pinned game actually has.**
 ///
-/// (Task #341 follow-up; the instance was `minecraft:chain`, renamed
-/// `minecraft:iron_chain` in 1.21.11.) A structure template carrying an unknown
+/// (One such block is `minecraft:chain`, renamed `minecraft:iron_chain` in
+/// 1.21.11.) A structure template carrying an unknown
 /// block id loads it as **air**. So this defect costs the whole feature — eight
 /// cells of bell-rope in `tk-bell-tower.nbt` — while the generator exits 0, the
 /// `.nbt` round-trips, the byte-identity check passes, and nothing anywhere

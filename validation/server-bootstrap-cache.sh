@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ONE live Mojang fetch per JOB, not one per server BOOT (task #41).
+# ONE live Mojang fetch per JOB, not one per server BOOT.
 #
 #   validation/server-bootstrap-cache.sh [--cache <dir>] [--force]
 #
@@ -10,7 +10,7 @@
 # over seven fresh `/data` volumes — the datapack-load check (VANILLA) plus six
 # PackTest suites (FABRIC), each in its own compose project — so a `tier 2` run
 # used to depend on seven independent live bootstraps, and any ONE of them failing
-# reds a required status check. PR #312 died exactly there: the 5th of 6 suites hit
+# reds a required status check. A run died exactly there: the 5th of 6 suites hit
 # `Downloading Minecraft server` -> `launchermeta.mojang.com ... Network is
 # unreachable` before a single datapack was evaluated, on the same runner and image
 # digest on which four suites had already passed.
@@ -228,7 +228,7 @@ launch="$(ls /warm/.fabric/server/fabric-loader-server-*.jar 2>/dev/null || true
 }
 # Unfold the manifest continuation lines (a wrapped header continues on a line
 # starting with one space), then read Class-Path. No early-exiting consumer on the
-# right of a pipe anywhere here (task #173).
+# right of a pipe anywhere here.
 cp_line="$(unzip -p "$launch" META-INF/MANIFEST.MF \
   | tr -d "\r" \
   | sed -e ":a" -e "N" -e "\$!ba" -e "s/\n //g" \

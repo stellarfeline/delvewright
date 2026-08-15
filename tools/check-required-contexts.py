@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """Keep `.github/required-status-checks.txt` and `ci.yml`'s job names in lockstep.
 
-WHY THIS EXISTS (task #31, owner decision 2026-08-05)
+WHY THIS EXISTS
 
-Of ten CI jobs, only three were required status checks. The other seven —
-including `tier 2`, i.e. datapack load on the pinned server plus the entire
-generated PackTest suite — were **advisory**: a red never blocked a merge. Only
-`gh pr merge`'s own refusal on an UNSTABLE state stopped anything, and `--admin`
-went straight through. The same was true of the storybook engine-version marker
-(which caught a real `DELVEC_VERSION` drift) and the determinism gate on prefab
-generators. All ten are required now.
+Every CI job is a required status check. An advisory job is one whose red never
+blocks a merge: only `gh pr merge`'s own refusal on an UNSTABLE state stops
+anything, and `--admin` goes straight through. That is no gate at all for
+`tier 2` (datapack load on the pinned server plus the entire generated PackTest
+suite), the storybook engine-version marker, or the determinism gate on prefab
+generators.
 
-That fix creates a new hazard, and this checker exists for it: branch protection
-matches a required context **by its name string**. Rename a job in `ci.yml` and
+Requiring them all creates a hazard, and this checker exists for it: branch
+protection matches a required context **by its name string**. Rename a job and
 its required context simply never reports again — every PR blocks forever, and
 the fix is itself a PR that cannot merge. This turns that deadlock into an
 ordinary red on the PR that would have caused it.

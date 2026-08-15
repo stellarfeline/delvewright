@@ -6,9 +6,6 @@ feature that first needed them. Filed in `docs/notes/` rather than
 current behaviour — the behaviour it describes is what we intend to change. The
 part that must not rot is enforced instead by `tools/check-capability-ownership.py`.
 
-Sources: owner ruling 2026-08-06 (`close-gate.sealed_hint`) and her restatement of
-the principle the same day.
-
 ## The governing question
 
 > **This is a general game engine.** Its primitives must be abstract, flexible and
@@ -56,13 +53,13 @@ Severity: **B** = blocks content today · **L** = latent.
 | # | Finding | Evidence | Sev |
 |---|---|---|---|
 | 1 | **`EnvTrigger` binds a body to a POINT, but scene objects are VOLUMES.** `EnvTrigger{at, on: use\|strike, effects}` is the general "player clicked a thing here, run effects" primitive and already carries the whole effect vocabulary, flag gating and `once`. It summons **one** interaction body at one cell. A seal, a door, a boulder occupy many cells. This single narrow binding is the root cause of most S2 rows: each volume object grew its own fleet. | general: `emit.rs:7119`. `close-gate` arms one body **per shell cell**: `emit.rs:4887`, `plan.rs:177` (`shell_cells`) | **B** |
-| 2 | Because of #1, the general mechanism was taught to **ride** the private ones rather than being widened: a trigger on a gate summons nothing and borrows the seal's hitboxes; a `strike` trigger on an NPC borrows the NPC's. | `trigger_rides_seal` `emit.rs:4846`; `seal_rider_tags` `emit.rs:4821`; `npc_hitbox_trigger_tags` `emit.rs:5646`; `DW0422` `eclipse.rs:93` | **B** |
-| 3 | `TriggerOn::StrikeNpc` exists **only** because a point-bound trigger could not reach a large NPC's body (`DW0359`, island round 7). It is shape #1 paid for once already, as a new enum variant instead of a widened binding. | `stages.rs:1766-1783` | L |
+| 2 | Because of row 1, the general mechanism was taught to **ride** the private ones rather than being widened: a trigger on a gate summons nothing and borrows the seal's hitboxes; a `strike` trigger on an NPC borrows the NPC's. | `trigger_rides_seal` `emit.rs:4846`; `seal_rider_tags` `emit.rs:4821`; `npc_hitbox_trigger_tags` `emit.rs:5646`; `DW0422` `eclipse.rs:93` | **B** |
+| 3 | `TriggerOn::StrikeNpc` exists **only** because a point-bound trigger could not reach a large NPC's body (`DW0359`, island round 7). It is shape 1 paid for once already, as a new enum variant instead of a widened binding. | `stages.rs:1766-1783` | L |
 
-| 3b | **`NarrateStyle` has no `actionbar` channel** (`chat`/`title`/`subtitle`/`art` only). This is the *mechanical* reason `sealed_hint` and `boundary.message` could not have routed through `narrate` even had someone tried — the general effect cannot reach the channel both wanted. A second narrow binding, independent of #1, on the other half of the same lift. | `NarrateStyle` `stages.rs`; `emit_narrate` `emit.rs:5523-5541` | **B** |
+| 3b | **`NarrateStyle` has no `actionbar` channel** (`chat`/`title`/`subtitle`/`art` only). This is the *mechanical* reason `sealed_hint` and `boundary.message` could not have routed through `narrate` even had someone tried — the general effect cannot reach the channel both wanted. A second narrow binding, independent of row 1, on the other half of the same lift. | `NarrateStyle` `stages.rs`; `emit_narrate` `emit.rs:5523-5541` | **B** |
 | 3c | `QuestEffect` has **27 verbs and no apply-status-effect verb at all**, so `AreaMitigation::NightVision` emits a private clocked `effect give` because there was nothing to call. A genuine capability **gap**, not a duplication — recorded here so the lift is not mis-scoped as a de-duplication. | `stages.rs:4523-4552`; `emit.rs:8218-8241` | L |
 
-**The lift for #1–#3 is one thing**: let a trigger's `at` bind to an anchor's
+**The lift for rows 1–3 is one thing**: let a trigger's `at` bind to an anchor's
 *shape* — the region the DSL already knows, and the seal already computes. Then
 `sealed_hint` is an ordinary trigger with a `narrate` effect, and every other
 volume object gets the capability free. It is emphatically **not** a new stage-5
@@ -87,9 +84,9 @@ can say anything back** — the seal.
 
 **Consequence of S2, measured.** Ten of the twelve handlers answer a press with
 **silence**, and no author-facing field exists in which to say otherwise
-(`emit.rs:7179`, `4490`, `7576`, `4742`). The owner's island finding #34 — a
-sealed boulder answering silence — was fixed for one verb; the other nine sites
-still have it.
+(`emit.rs:7179`, `4490`, `7576`, `4742`). The island playtest finding — a sealed
+boulder answering silence — was fixed for one verb; the other nine sites still
+have it.
 
 ### S1 — capability keyed to the verb, not the object class
 
@@ -104,16 +101,16 @@ still have it.
 
 ### S2/S1 — proofs and walks that enumerate sites instead of deriving them
 
-This is the shape PRs #301/#302/#321 fixed thirteen times. It is **not closed**.
+This shape has been fixed thirteen times already. It is **not closed**.
 
 | # | Finding | Evidence | Sev |
 |---|---|---|---|
-| 16b | **`shortcuts[].on_unlock` is a SIXTH effect root that no enumeration knows about.** It is a `Vec<QuestEffect>` hanging off a stage-5 struct — structurally identical in kind to `traps[].payload`, which *is* root R4 — and emission really lowers it. But it is not an `EffectRootKind` variant and not in `nested_effect_lists`. So every walk that inherits the five roots skips it: a `narrate` inside it is never l10n-inventoried, a `set-flag` inside it is invisible to the flag model and to `emit::declared_flags`. This is precisely the defect PRs #301/#302/#321 claimed to close, still live, in the one root the enumeration does not contain — and `check-effect-roots.py` cannot see it, because it greps for the five roots it knows. **Zero live campaign usage is the only reason it has not shipped as a bug.** **CLOSED (spec-0031): it is `EffectRootKind::ShortcutUnlock`, root R6** — see fix-sequence item 0 for why a root rather than the desugar this audit recommended. | field `stages.rs:1703`; lowered `emit.rs:5043`; roots `effects.rs:63-88`; nesting `stages.rs:4883` | **B** |
+| 16b | **`shortcuts[].on_unlock` is a SIXTH effect root that no enumeration knows about.** It is a `Vec<QuestEffect>` hanging off a stage-5 struct — structurally identical in kind to `traps[].payload`, which *is* root R4 — and emission really lowers it. But it is not an `EffectRootKind` variant and not in `nested_effect_lists`. So every walk that inherits the five roots skips it: a `narrate` inside it is never l10n-inventoried, a `set-flag` inside it is invisible to the flag model and to `emit::declared_flags`. This is precisely the defect those thirteen fixes claimed to close, still live, in the one root the enumeration does not contain — and `check-effect-roots.py` cannot see it, because it greps for the five roots it knows. **Zero live campaign usage is the only reason it has not shipped as a bug.** **CLOSED (spec-0031): it is `EffectRootKind::ShortcutUnlock`, root R6** — see fix-sequence item 0 for why a root rather than the desugar this audit recommended. | field `stages.rs:1703`; lowered `emit.rs:5043`; roots `effects.rs:63-88`; nesting `stages.rs:4883` | **B** |
 | 17 | **`DW0473` (unavoidable lethal damage) walks 2 of 5 effect roots** — `on_complete` and `on_objective_complete` only. A `damage-players` inside a `traps[].payload` is invisible to it, and spec-0022 made trap payloads the *intended* home for exactly that. A safety proof with a hole in the place the hazard verb lives. | `combat.rs:1084-1115` | **B** |
-| 18 | Twelve further hand-rolled effect walks still miss roots after #321: `has_any_sustain`/`DW0474` (3/5), `collect_open_gate_anchors` (3/5), `gate_open_indices` (3/5, and its comment says it "mirrors" the one above — it mirrors the gap), `collect_v06_effects` (3/5 + a private dialogue walk), `wave_area` (4/5), `required_anchors_for_area` (2-3/5), `continuity` NPC-lifecycle (2/5 — the same module walks both ways), `quests_ending_tail` (2/5), the kill-less-wave PackTest picker (1/5), `branch` beat-account (2/5), `flow` advance replay (2/5), `actor_beats` (4/5, self-documented). | as listed | **B** |
+| 18 | Twelve further hand-rolled effect walks still miss roots: `has_any_sustain`/`DW0474` (3/5), `collect_open_gate_anchors` (3/5), `gate_open_indices` (3/5, and its comment says it "mirrors" the one above — it mirrors the gap), `collect_v06_effects` (3/5 + a private dialogue walk), `wave_area` (4/5), `required_anchors_for_area` (2-3/5), `continuity` NPC-lifecycle (2/5 — the same module walks both ways), `quests_ending_tail` (2/5), the kill-less-wave PackTest picker (1/5), `branch` beat-account (2/5), `flow` advance replay (2/5), `actor_beats` (4/5, self-documented). | as listed | **B** |
 | 19 | **Two affordance registries with divergent membership.** `emit::affordances` (feeding `DW0420`/`DW0421` — "the affordance has visible hardware") is a hand-enumerated list of four kinds, and its own doc claims "the list is the definition of the class … which is what makes the proof total rather than a spot check". It is a spot check: it never sees `interact` objectives, env triggers, NPC hitboxes, seals or trapfire bodies. `eclipse::affordances` enumerates a *different* subset. | `emit.rs:4676-4724`, `eclipse.rs:308-395` | **B** |
 
-`tools/check-effect-roots.py` did not catch #17–#18: it is a 40-line proximity
+`tools/check-effect-roots.py` did not catch rows 17–18: it is a 40-line proximity
 heuristic, and these walks either spread their roots wider or reach them through
 helpers. Its own `ALLOWED` already records one such open finding
 (`required_anchors_for_area`).
@@ -125,7 +122,7 @@ Recorded with the mechanism/decision test answered. **Distinguish a naming findi
 
 | # | Primitive | Mechanism or decision? | Verdict |
 |---|---|---|---|
-| 20 | `bonfire` | The **mechanism** is "a save-and-restore point with configurable side effects": it moves a checkpoint, runs an `on_rest` bundle, re-seats declared waves. All of that is general. The *name*, and the baked English `Bonfire`/`Rest and save`/`Save only`, are the genre decision. | **Naming + defaults, not structure.** Cheap. Its private dialog (#8) is the structural half. |
+| 20 | `bonfire` | The **mechanism** is "a save-and-restore point with configurable side effects": it moves a checkpoint, runs an `on_rest` bundle, re-seats declared waves. All of that is general. The *name*, and the baked English `Bonfire`/`Rest and save`/`Save only`, are the genre decision. | **Naming + defaults, not structure.** Cheap. Its private dialog (row 8) is the structural half. |
 | 21 | `shortcuts[]` | The mechanism is "a barrier openable once, permanently, from one side, with a reachability obligation". General and genuinely useful to any game. The souls framing is in the doc comment, not the shape. | **Correctly general, genre-flavoured name.** Cheap or leave. |
 | 22 | `Wave.respawns_on_rest`, `EncounterTier::{Elite,Boss}` | `respawns_on_rest` is a mechanism (re-seat on restore). `EncounterTier` is a *billing declaration* consumed by the validation ladder — but `boss`/`elite` are genre words for what is really "the tier the content claims, which the bot must測 against". | Naming. Low priority. |
 | 23 | Baked English defaults — ~~`SEAL_HINT_DEFAULT`~~, ~~`BOUNDARY_DEFAULT_MESSAGE`~~ (**both closed by spec-0029: they now read from `dsl::chrome`, which is inventoried**), `BONFIRE_PROMPT_EN`, `BONFIRE_REST_LABEL_EN`, `BONFIRE_SAVE_LABEL_EN`, plus unnamed literals (`"Waiting for the party — "`, `"New objective: "`, `"Objective complete: "`, `"Delve Complete"`, the `"NPC"` name fallback). | A creator cannot replace these, and a **baked default is not l10n-inventoried** — so a non-English delve ships English sentences unless every site is authored by hand. | **Structural, and a real S4 instance.** The generality test fails: another game cannot re-word them. |
@@ -141,9 +138,9 @@ names `crush` and `branch_points` as proof-motivated rather than
 expressiveness-motivated.
 
 The finding is that **four of the fields audited here were introduced by a task,
-not a spec, and so recorded no ADR-0015 gate at all**: `sealed_hint` (task #142),
+not a spec, and so recorded no ADR-0015 gate at all**: `sealed_hint`,
 `missing_item_hint` (v0.7, no spec, and missing from the `DW0141` reserved list
-that claims to be exhaustive), timed-gate `disarm` (task #184), and
+that claims to be exhaustive), timed-gate `disarm`, and
 `shortcuts[].on_unlock` (a single parenthetical in spec-0016 §2, never described
 in the reference). The gate exists; the task route bypasses it.
 
@@ -169,7 +166,7 @@ it cannot be recompiled.
 
 Ordered by what is blocked today, not by size. Each names its adoption cost.
 
-0. **Bring `shortcuts[].on_unlock` inside an enumeration** (#16b). Smallest change
+0. **Bring `shortcuts[].on_unlock` inside an enumeration** (row 16b). Smallest change
    here and the only one that is a latent *correctness* bug rather than an
    expressiveness limit. Cheapest correct form is the `Ambush::to_trigger`
    pattern — desugar it into an existing root — not a sixth `EffectRootKind`.
@@ -193,8 +190,8 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
    whole meaning is the general construct; add a root when the bundle hangs off
    an object with runtime machinery of its own* (which is also why
    `traps[].payload` is R4 and not a desugared trigger).
-1. **Widen `EnvTrigger.at` from a point to an anchor's shape** (#1–#3, #3b).
-   #3b (a `narrate` `actionbar` style) is part of the same lift — without it the
+1. **Widen `EnvTrigger.at` from a point to an anchor's shape** (rows 1–3, 3b).
+   Row 3b (a `narrate` `actionbar` style) is part of the same lift — without it the
    general effect still cannot reach the channel `sealed_hint` uses. Unblocks
    the `sealed_hint` lift and every future volume object at once, and is the only
    change that prevents rows 4–10 recurring. `dsl_version` **minor bump**; purely
@@ -202,25 +199,25 @@ Ordered by what is blocked today, not by size. Each names its adoption cost.
    forced. *Do this before, or with, the `sealed_hint`/shortcut-door lift — that
    lift is the first consumer, and doing it without this produces the third
    mechanism the owner already rejected once.*
-2. **Lift `requires_flags`/`forbids_flags` to every `QuestEffect`** (#11). Blocks
+2. **Lift `requires_flags`/`forbids_flags` to every `QuestEffect`** (row 11). Blocks
    per-branch staging today. Additive, `skip_serializing_if` empty ⇒
    byte-identical for every existing campaign; minor bump, **no adoption round**.
-3. **Close the effect-root walks** (#17–#19). #17 is a safety proof with a hole and
+3. **Close the effect-root walks** (rows 17–19). Row 17 is a safety proof with a hole and
    should go first alone. No DSL change, no version bump, **no adoption** — pure
    compiler correctness. Strengthen `check-effect-roots.py` (drop the 40-line
    window; require every walk to go through `for_each_effect_root`) rather than
    fixing thirteen call sites by hand.
-4. **Name the item-stack object class** (#14). Blocks souls drop content today.
+4. **Name the item-stack object class** (row 14). Blocks souls drop content today.
    `dsl_version` minor; the six inlined shapes stay valid, so **no forced
    adoption**, but new capabilities only appear on the shared type.
-5. **Route the private interaction bodies through the widened trigger** (#5–#10),
+5. **Route the private interaction bodies through the widened trigger** (rows 5–10),
    in the order 5+6 (twins, one lift), then 7, 8, 9, 10. Emission moves ⇒ **owner
    playtest gate**, batched per CLAUDE.md, never per-PR.
-6. **Make baked defaults authorable and inventoried** (#23). Player-visible ⇒
-   playtest gate. Do it with #5–#10, not separately.
-7. **Naming-only rows** (#20–#22) — one PR, no behaviour change, whenever
-   convenient. `DialogueEffect`→`QuestEffect` unification (#16) belongs with 2.
-8. **#24 is the owner's call.** Not scheduled here.
+6. **Make baked defaults authorable and inventoried** (row 23). Player-visible ⇒
+   playtest gate. Do it with rows 5–10, not separately.
+7. **Naming-only rows** (rows 20–22) — one PR, no behaviour change, whenever
+   convenient. `DialogueEffect`→`QuestEffect` unification (row 16) belongs with 2.
+8. **Row 24 is a content-owner call.** Not scheduled here.
 
 **Honest scope.** This is materially more than one round: steps 1–4 are each a
 round of their own, and step 5 is a multi-PR sequence behind a playtest batch. The
@@ -263,7 +260,7 @@ any more and the ledger entries were dropped — the checker demanded it by name
 is the stale-exemption guard working on its first real occasion. The same demo
 reproduces today against any surviving entry (`BONFIRE_PROMPT_EN`).
 
-Check E is the one that would have caught #16b, and is the answer to "why did
+Check E is the one that would have caught row 16b, and is the answer to "why did
 `check-effect-roots.py` not catch this": that gate greps for the five roots it
 knows, so a *sixth* root is invisible to it by construction. E asks the inverse
 question — every bundle in the DSL must be claimed by some enumeration — which
