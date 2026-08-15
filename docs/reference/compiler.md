@@ -10,9 +10,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   and scripts around it — `delve-schem`, `delve-admit`, `delve-render`,
   `delve-harvest`, `tools/`, `validation/` — are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.10.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.1.0`, `dsl 0.11.0`, `mc 1.21.11`.
   Supported campaign `dsl_version`: **`0.2.0`, `0.3.0`, `0.4.0`, `0.5.0`, `0.6.0`,
-  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`** (additive supersets; `0.2.0` output stays
+  `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
   (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS`) and `versions.toml` by
@@ -181,7 +181,7 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 |---|------|--------------|-----------|
 | 1 | Load campaign dir (6 stage docs + optional `world-edits.json` + `l10n/` sidecars) | `compiler::load` | internal (≥10) on unreadable dir |
 | 2 | Parse (serde, `deny_unknown_fields`) | `dsl::parse_campaign` | `DW0100` (exit 1) |
-| 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1) |
+| 3 | Validate stages 1–7 (schema + referential, full injected registries) | `dsl::validate_campaign_with` | `DW01xx` (exit 1); also `DW0455`, a body-family code refused at declaration time |
 | 4 | l10n sidecar coverage + reserved channels + language-code mapping | `dsl::validate_l10n`, `dsl::validate_marker_channel`, `dsl::validate_tr_sigil`, `dsl::declared_mc_codes` | `DW0180`/`DW0181`/`DW0182`/`DW0183`/`DW0184` (exit 1) |
 | 5 | Analyze (branch-coherent quest/dialogue reachability + critical-path replay) | `compiler::analyze` over `compiler::flow` | `DW02xx` (exit 2) |
 | 6 | Solve jigsaw layout (per `prefab_pool` area, from seed); then read the settled draw back and report a pool that seats the same anchor-bearing prefab twice (`DW0498`, `compiler::pool`) | `compiler::solver`, `compiler::pool` | `DW030x` (exit 3); advisory `DW0498` |
@@ -189,9 +189,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
 | 10 | Nav checks (**boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
-| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make (`DW0452`/`DW0453`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
+| 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make and no body's `traversal` declaration goes unexercised (`DW0452`/`DW0453`/`DW0454`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
-| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) | `compiler::affordance` + `compiler::integrity` + `compiler::seeding` | `DW0420`/`DW0421`/`DW0495`/`DW0497` (exit 3) |
+| 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0545`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) | `compiler::affordance` + `compiler::integrity` + `compiler::seeding` | `DW0420`/`DW0421`/`DW0495`/`DW0497`/`DW0545` (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
   short-circuits (exit 1) before analysis; analysis failure (exit 2) before build.
@@ -319,6 +319,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `persona{archetype,speech_style,motivation,…,relationships[]}` | Structured; **excluded** from l10n; relationship refs validated in-stage (`DW0112`). | 0.2 |
 | `skin{texture_id,model}` (opt) | Switches body to `minecraft:mannequin`; PNG baked to resourcepack. Missing PNG → `DW0309`; bad/dup id → `DW0190`. Every summon whose entity id comes from **content** rather than this switch (`npc.base_entity`, `actor.entity`, and the `unleash` twin, which has no skin branch at all) is spliced with `pose:"standing"` when that id names a mannequin (`emit::mannequin_pose_nbt`): a mannequin summoned without an explicit pose serializes it as `DYING`, which the server then fails to encode at save (`Failed to encode value 'DYING'` in a PackTest world's teardown). A non-mannequin entity gains nothing, so existing campaigns stay byte-identical. | 0.4 |
 | `deferred` (opt, bool) | **Not** summoned at world init; the NPC's body + hitbox appear only when a `spawn-npc` effect fires, at this same `anchor` (the dual of `despawn-npc`). Default `false` = pre-0.6 behavior, byte-identical. Never spawned → `DW0197`; a `talk-to` provably ahead of every spawn → `DW0198`. | 0.6 |
+| `traversal{locomotion}` (opt) | **What this body can do when it moves** (spec-0034; reserved `DW0141` pre-0.11, fenced on THIS stage's own `dsl_version`). The author's side of the traversal proof: by default the compiler derives locomotion from the entity id, and this overrides it for one body. **One shared type on every object class that has a body, a position and a compiler-emitted route** — the stage-2 NPC and the stage-5 actor (`dsl::body_traversal_sites`, a closed sum type, so a third body class is a compile error at every consumer until it is handled) — because traversal belongs to the body, not to the verb that first needed it. `ground|climber|flier`; `aquatic` is refused (`DW0455`). **A declaration is a claim, not an opt-out**: it must change a rule's verdict or the build fails (`DW0454`), and it can never reach the error tier (`opens_gates` is derived and unauthorable, and no class is exempt from `DW0452`). It changes which rules examine the body and nothing else — routing is unchanged, every body walks the same ground A*. Emission is byte-identical whatever is declared. | 0.11 |
 
 ### Stage 3 — `classes`
 
@@ -411,7 +412,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `clear-state{state}` | Returns a declared datum to its declared `initial` (spec-0031) — the verb a flag has never had, and the reason a datum is not a flag. It **writes** the initial rather than `reset`ting the score: a reset score is *absent*, and an absent score makes `unless … matches` true, so a cleared datum would silently satisfy a `not-equals` comparison against its own starting value. | 0.10 |
 | Effect `give-effect{effect,seconds,amplifier?,hide_particles?,in?}` | Grants a vanilla **status effect** for a stated duration (spec-0031). The engine has emitted status effects since v0.6 — the `mitigation: "night-vision"` clock is a self-rescheduling, region-scoped `effect give` — and exposed none, so "blind the party for the ride" or "slowness in the deep water" had no surface at all. `effect` is any id in the pinned 1.21.11 `mob_effect` registry (`DW0192`, the same registry and the same code a wave mob's `effects[]` answers to; a bare `blindness` normalizes to `minecraft:blindness`). `in` narrows to players inside an anchor-centred box — the SAME `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter and a `lethal_volumes[]` region use, through the one `Plan::zone_box` and the one `emit::box_selector_args` — which is what makes "blind whoever is riding" expressible without blinding the delve. **`seconds` is required and there is no `infinite` spelling**: a grant whose only removal is a later command is one the player keeps forever whenever that command does not run (a logout, a crash, an interrupted chain), so the hazard is made inexpressible rather than diagnosed, `1..=50000` (`DW0541`, derived from `MAX_POTION_DURATION_TICKS`, not picked again). Emission: `effect give <audience>[<box>] <effect> <seconds> <amplifier> <hideParticles>` — vanilla's full five-token form, from the one formatter the night-vision clock now also uses, so nothing is left to a vanilla default a future version could re-pick. No `tag=!dw_cutscene` guard, deliberately: a status effect is not inherently harm, and the engine's own region-scoped grant has never carried one. | 0.10 |
 | Effect `clear-effect{effect?,in?}` | Vanilla's `effect clear` (spec-0031). **Not** how a `give-effect` is meant to end — a duration is — so it exists for effects this campaign did not grant: a potion the player drank, a `wither` a mob applied, the whole set at a bonfire. `effect` is therefore optional: absent clears everything, exactly as `effect clear <targets>` does. Pairing it with a still-live grant of the same effect in the same bundle is `DW0540`. Emission: `effect clear <audience>[<box>] [<effect>]`. | 0.10 |
-| Effect `teleport{from,to}` | Moves **everything inside a declared volume** to an anchor (spec-0031). The selector is a **region, never a block**: "whoever is standing on this block" has three different answers for a player half a foot over the edge, a player mid-jump and a player sneaking on the lip, and a volume has one. `from` is the anchor-centred `StealthZone`; `to` resolves to a literal cell at build time, so the emitted command carries absolute coordinates and does no runtime search. Emission is a call into a generated `teleport_<content-key>` function whose whole body is exactly one line: `tp @e[x=…,dx=…,y=…,dy=…,z=…,dz=…] <x> <y> <z>` — a named function for the same reason `volley` and `collapse` have one (the body is compiler-proven geometry, and a body that only ever exists spliced into a `seq_<hash>` is a body no runtime test can call). **The selection is total** — no `type=`, no `tag=`, no `limit=`, no `sort=`, and the effect's own audience is ignored (a box has no party). A machinery-type exemption of the kind `lethal_volumes[]` must carry was considered and **rejected**: a stage-2 NPC is a body plus a co-located `minecraft:interaction` carrying its dialogue, so exempting that type would move the speaker and leave the thing players click behind, in silence — and everyone inside the volume travels, players and entities alike. The cases an exemption would have hidden are refused at compile time instead (`DW0542`), which is available here and was not available to the lethal volume: a volume damages whatever *wanders* in, which the compiler cannot enumerate, while a teleport's harm is to what the compiler itself **placed**. **A teleport is not a rescue**: accumulated fall distance carries across one unchanged (measured Δ `0.0000` in 46/46 trials on the pinned 1.21.11, including teleports 143 and 157 blocks straight *up*; landing damage `floor(fall_distance) − 3`) and is charged in full at the destination, so a platform arriving under a falling player past ~20 blocks of fall is the surface they die on. No fall-distance reset is emitted: what *does* reset it was explicitly NOT measured (`docs/notes/death-and-teleport-spike.md` §5), and a mechanism invented from recall is the folklore this project forbids. The runtime half is a generated PackTest per teleport: it puts a `zombie`, an `interaction`, a `marker`, a `text_display` and an `item` in the volume — the four an exemption list of `LETHAL_EXEMPT_TYPES`'s shape would have dropped, beside a content body — asserts all five are inside the box, calls the campaign's own `teleport_<key>`, and asserts the box is then empty. That half cannot be a Rust test: whether vanilla's `@e[<box>]` really reaches every entity type is vanilla's fact, not the compiler's. Measured red→green on the pinned toolserver — with `,type=!minecraft:interaction` added to the emitted selector the template fails *Expected #tp_left 0, but got 1*. **Completability is not modelled**: nav reasons about walked routes and knows nothing of this verb, so a route that exists only through a teleport still fails `DW0311`. That is sound but incomplete (a teleport can only add reachability), and the lift's own completability lands with the lift. | 0.10 |
+| Effect `teleport{from,to}` | Moves **everything inside a declared volume** to an anchor (spec-0031). The selector is a **region, never a block**: "whoever is standing on this block" has three different answers for a player half a foot over the edge, a player mid-jump and a player sneaking on the lip, and a volume has one. `from` is the anchor-centred `StealthZone`; `to` resolves to a literal cell at build time, so the emitted command carries absolute coordinates and does no runtime search. Emission is a call into a generated `teleport_<content-key>` function whose whole body is exactly one line: `tp @e[x=…,dx=…,y=…,dy=…,z=…,dz=…,tag=!dw_fixture] <x> <y> <z>` — a named function for the same reason `volley` and `collapse` have one (the body is compiler-proven geometry, and a body that only ever exists spliced into a `seq_<hash>` is a body no runtime test can call). **The selection is total over bodies** — the six box terms plus the one class exclusion every box-narrowed entity selector in the engine carries (`tag=!dw_fixture`, `DW0545`), and no `type=`, no `limit=`, no `sort=`; the effect's own audience is ignored (a box has no party). A machinery-type exemption of the kind `lethal_volumes[]` must carry was considered and **rejected**: a stage-2 NPC is a body plus a co-located `minecraft:interaction` carrying its dialogue, so exempting that type would move the speaker and leave the thing players click behind, in silence — and everyone inside the volume travels, players and entities alike. What stands in its place is a CLASS the object declares (`DW0545`): an engine place whose position is engine state carries `dw_fixture` and is skipped, while an NPC's dialogue hitbox carries `dw_borne` and rides whatever its speaker rides. A place whose cell the compiler knows is refused outright at compile time (`DW0542`), which is available here and was not available to the lethal volume: a volume damages whatever *wanders* in, which the compiler cannot enumerate, while a teleport's harm is to what the compiler itself **placed**. **A teleport is not a rescue**: accumulated fall distance carries across one unchanged (measured Δ `0.0000` in 46/46 trials on the pinned 1.21.11, including teleports 143 and 157 blocks straight *up*; landing damage `floor(fall_distance) − 3`) and is charged in full at the destination, so a platform arriving under a falling player past ~20 blocks of fall is the surface they die on. No fall-distance reset is emitted: what *does* reset it was explicitly NOT measured (`docs/notes/death-and-teleport-spike.md` §5), and a mechanism invented from recall is the folklore this project forbids. The runtime half is a generated PackTest per teleport: it puts a `zombie`, an `interaction`, a `marker`, a `text_display` and an `item` in the volume — the four an exemption list of `LETHAL_EXEMPT_TYPES`'s shape would have dropped, beside a content body — asserts all five are inside the box, calls the campaign's own `teleport_<key>`, and asserts the box is then empty. That half cannot be a Rust test: whether vanilla's `@e[<box>]` really reaches every entity type is vanilla's fact, not the compiler's. Measured red→green on the pinned toolserver — with `,type=!minecraft:interaction` added to the emitted selector the template fails *Expected #tp_left 0, but got 1*. **Completability is not modelled**: nav reasons about walked routes and knows nothing of this verb, so a route that exists only through a teleport still fails `DW0311`. That is sound but incomplete (a teleport can only add reachability), and the lift's own completability lands with the lift. | 0.10 |
 | `forbids_flags[]` | Negative gate, accepted **everywhere `requires_flags` is** (objectives, `triggers[]`, per-effect, dialogue options, `traps[]`): the element is suppressed while ANY listed flag is set. Per-player sites emit `unless score @s dw.f_<flag> matches 1` clauses (unset-safe — flag scores are never pre-initialized, so a `scores={…=..0}` selector would wrongly fail on unset); trigger arming uses the any-player form `unless entity @a[scores={dw.f_<flag>=1..}]` (a positive selector inside a negation). Unknown flags get the same `DW0172` treatment as `requires_flags`. Reserved (`DW0141`) pre-0.6 at every site. | 0.6 |
 | `waves[]` | `{id,anchor,mobs[{entity,count,name?,attributes?,effects?,equipment?}]}`; entity validated (`DW0173`); `attributes`/`effects` are v0.4 (`DW0192`). `equipment{head?,chest?,legs?,feet?,main_hand?,off_hand?}` is v0.6 (reserved `DW0141` pre-0.6): slot item ids validate against the pinned 1.21.11 item registry (`DW0143`, the give-item family). Each slot is **either a bare item id string or `{item, enchantments{<id>: <level>}}`** (spec-0021) — the plain string stays the plain string, which is what keeps every pre-enchantment campaign byte-identical on re-serialisation; enchantments emit as the 1.21 `minecraft:enchantments` item component inside the slot compound, ids validated (`DW0433`) and levels range-checked (`DW0434`); emitted as component-era `equipment`/`drop_chances` summon NBT (never legacy `ArmorItems`/`HandItems` — 1.21.11 ignores them) with **drop chance 0 on every slot** (no-grind: wave gear is never lootable). Explicit slots merge over the armed-mob main-hand default (a helmeted skeleton keeps its bow; explicit `main_hand` overrides). A helmet is the sanctioned daylight-undead fix — never `set-time` — and that rule is **enforced**, not merely offered: a burning species staged for a fight whose ground reaches open sky under a pinned daytime hour is `DW0496`. **`drops[]` (v0.9; reserved `DW0141` pre-0.9)** names the DECLARED SUBSET this mob leaves behind — usually one piece, never automatically everything. Two entry forms: `{slot}` (a worn piece; the slot must be one the same mob's `equipment` really fills, and each slot at most once — `DW0490`) and `{item, name?}` (a quest token the fight yields rather than wears; id validated `DW0143`, `name` l10n-inventoried as `wave.<wave>.mob.<i>.drop.<n>.name`). Only an `elite`/`boss` wave may declare drops (`DW0491`) — rank-and-file gear stays unfarmable by construction. | 0.3 / tuning 0.4 / equipment 0.6 / drops 0.9 |
 | `loot[]` | `{id,anchor,items[{item,count?,name?,enchantments?}]}` (spec-0021, reserved `DW0141` pre-0.6) — contents for a container the **prefab already placed**, the same division of labour a trap has with its dispenser. The compiler never places the container; `DW0431` proves one is really there. Slot assignment is **positional and deterministic**: the nth declared stack lands in `container.<n>` (ADR-0006 — no loot tables, no RNG, no seeded shuffle). Emitted in `setup_finish` as `item replace block … container.<n> with <item>[components] <count>`, so a campaign with no `loot` is byte-identical. `name` enters the l10n inventory as `loot.<id>.item.<i>.name`, exactly like a class kit item's name. Item ids validate against the pinned registry (`DW0143`), anchors against prefab metadata (`DW0142`); `DW0432` caps a fill at 27 stacks and `DW0435` rejects two fills of one container. | 0.6 |
@@ -456,6 +457,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `end-stealth` | Ends the active stealth beat (clears the session marker). | 0.6 |
 | Stage-5 `actors[] {id,entity,name?,skin?,anchor,facing?,vulnerable?,equipment?,attributes?}` | Scripted NoAI/Silent/no-loot puppets, tag `dw_actor_<id>` (+ puppet marker `dw_pup_<id>`); `Invulnerable` unless `vulnerable` (then knockback-immune); `skin` → mannequin. Summoned by `spawn-actor`, not at load. `equipment` (spec-0021, reserved `DW0141` pre-0.6) takes **the same shape a wave mob's does** — one type, one rule set, so the two surfaces cannot drift — and is emitted into BOTH the puppet summon and the unleashed twin's NBT: unleashing swaps the body, not the costume, so the dormant elite the party has been circling is visibly the armoured thing that stands up. Every slot at drop chance 0 (no-grind: an actor's kit is never lootable). Unlike the wave path it deliberately does **not** fall back to the armed-mob default table — an actor is a directed set piece and wears exactly what was declared, which is also what keeps every pre-`equipment` campaign byte-identical. `attributes` (reserved `DW0141` pre-0.6) is likewise **the wave mob's v0.4 [`MobAttributes`] shape** — one type, one rule set, one renderer (`emit::attribute_entries`), so the two surfaces cannot drift — and rides both bodies for the same reason gear does: the twin is what actually fights. Before it, an actor was pinned to vanilla base values while every wave mob could be tuned, which is what blocked elite authoring. A `vulnerable` puppet's `knockback_resistance: 1.0` is compiler-owned, not authorable, and is emitted **first** in the list, so the no-`attributes` rendering is unchanged; the twin never inherits it (that is the caged creep's property, not the freed elite's). `drops` (v0.9, reserved `DW0141` pre-0.9) takes the same list a wave mob's does, under the same rules (`DW0490`/`DW0491`/`DW0143`, `name` inventoried as `actor.<actor>.drop.<n>.name`), and rides BOTH bodies for the same reason gear does. What the compiler adds is the removal rule: every removal it performs itself — the `unleash` that kills the cage, a `despawn-actor` of either style, a souls re-seat's re-caging — first strips the declaration off the body (`execute as @e[tag=…] run data merge entity @s {drop_chances:{…0.0f},DeathLootTable:"minecraft:empty"}`), so a declared drop is what a **player's kill** yields and nothing else. | 0.6 / equipment 0.6 / attributes 0.6 / drops 0.9 |
 | `actors[].tier` | `ordinary` (default) \| `elite` \| `boss` — the SAME [`EncounterTier`] vocabulary `waves[].tier` uses, on the other shape an elite takes (spec-0023). A wave is not the only way to build a hard fight: the set-piece souls encounter — the armoured thing kneeling among the graves that stands up when you strike it — is an **actor**, staged by `spawn-actor`, given AI by `unleash-actor`, killed by hand rather than by a `kill` objective, and it was therefore *structurally invisible* to the validation ladder's inverted floor gate (which only ever read `waves[].tier`), so an empty finding list read as a pass over a fight nobody had. Same contract as the wave field: a declaration, never a knob — emission is byte-identical whichever tier an actor carries, and nothing about the puppet or the twin changes. A tiered actor enters `validation/combat-plan.json`'s `actors[]` with the anchor to walk to, the `dw_actor_<id>` tag its body wears, the beats that spawn and unleash it (trigger id, event kind, watched anchor / struck NPC) and its declared `attributes`; whether the floor gate can measure it, and the reason when it cannot, is stated per actor and in the plan's `floor_gate` ledger (`DW0477`). Absent ⇒ `ordinary` and omitted from serialisation. Reserved `DW0141` pre-0.8. | 0.8 |
+| `actors[].traversal{locomotion}` (opt) | **What this body can do when it moves** (spec-0034; reserved `DW0141` pre-0.11, fenced on THIS stage's own `dsl_version`). The author's side of the traversal proof: by default the compiler derives locomotion from the entity id, and this overrides it for one body. **One shared type on every object class that has a body, a position and a compiler-emitted route** — the stage-2 NPC and the stage-5 actor (`dsl::body_traversal_sites`, a closed sum type, so a third body class is a compile error at every consumer until it is handled) — because traversal belongs to the body, not to the verb that first needed it. `ground|climber|flier`; `aquatic` is refused (`DW0455`). **A declaration is a claim, not an opt-out**: it must change a rule's verdict or the build fails (`DW0454`), and it can never reach the error tier (`opens_gates` is derived and unauthorable, and no class is exempt from `DW0452`). It changes which rules examine the body and nothing else — routing is unchanged, every body walks the same ground A*. Emission is byte-identical whatever is declared. | 0.11 |
 | Effect `spawn-actor{actor}` | Idempotent puppet summon at the actor's anchor. | 0.6 |
 | Effect `despawn-actor{actor,style}` | `kill` = vanilla death animation in place; `vanish` = relocate-then-kill (silent, out of view). Targets `dw_actor_<id>` (puppet or twin). **Per-actor drop (round-8, live-observed):** `vanish` emits `execute as @e[tag=dw_actor_<id>] at @s run tp @s ~ -128 ~`, not `tp @e[…] ~ -128 ~` — the bare form resolves `~ ~` against the **command source**, and every path that reaches a `despawn-actor` (a `move-actor`'s `on_arrive`, a `sequence` step, a trigger bundle) runs from the server source at world spawn, so the island's herdsman standing at `6.5,-55.5` died at `10.0,-128.0,9.0`. Masked by the `kill` on the next line, but wrong data. | 0.6 |
 | Effect `move-actor{actor,to_anchor,speed?,on_arrive[]}` | Footprint-aware A*-planned per-tick tp of the puppet, yaw along the path tangent (§4 "A walked body faces where it is walking"); `on_arrive` fires at the destination cell; unroutable → `DW0325`. `move-npc` is a thin wrapper over the same planner (player footprint). **Chained origins (round-6, live-server proven):** an actor's (and NPC's) successive moves chain — the first leg plans from the declared anchor, every later leg from the previous leg's target. Planning every leg from the declared anchor degenerated a second consecutive move (island: mouth→fire-pit at t=260, whose declared anchor IS fire-pit; t=260 is the round-6 authoring — the shipped campaign now fires that leg at t=420) into a single-waypoint instant teleport — the giant snapped instead of walking on camera. Two moves sharing `(id, to_anchor)` still share one content-keyed driver, planned from the first occurrence's origin (documented limitation of the content key). **Handoff PackTest (round-6):** for the first `move-actor` whose `on_arrive` fires a `spawn-npc` (the walker→NPC scene handoff), a generated `v06_arrive_handoff` template seals every campaign gate (`close-gate` fill), drives the arrival tick, and asserts puppet gone / NPC body present / exactly one NPC hitbox — the beat a delve soft-locks on if the handoff half-fires; gates are re-opened and entities cleared afterwards (batch model). **Concurrent moves are independent (round-8):** each `(actor, to_anchor)` gets its own start function, per-tick driver, run latch `#arun_<bare>` and step counter `#at_<bare>`, and each driver teleports only its own `dw_pup_<id>` — so N moves in flight at once cannot starve one another whatever order they start in (the island cinematic runs four sheep plus the giant). Pinned by `concurrent_move_actors_share_no_state`. The owner's round-8 report of a scheduled move that appeared not to run was chased on a live server with and without a player joined, on clean and stale scoreboards: the driver ran correctly every time (`#at` 0→288 monotonic, latch set then cleared, puppet at the destination cell), so no engine change was made for it; the beat is invisible from the player's seat for a content reason (the walk is off-camera for its whole duration and the arrival lands after the `close-gate` seal). **Overlapping legs on ONE puppet supersede:** concurrency across DIFFERENT puppets is independence (above); two legs for the SAME puppet is a contest, and the later one wins — see §4 "One body, one live walk driver". A puppet with only one planned leg carries none of that machinery (byte-identical). | 0.6 |
@@ -1739,10 +1741,26 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   this number exposes). **Emitted only for a campaign that declares a
   teleport**, so a file that exists and reports zero is a finding rather than an
   absence.
+- `<out>/validation/fixture-gate.json`: the fixture-class proof's **binding
+  ledger** (`compiler::affordance`, `DW0545`, playtest-methodology.md rule 1).
+  `fixtures_declared` and `borne_declared` (every engine-summoned hitbox, mark
+  and display, split by the class it declared), `box_selectors_examined` (every
+  `@e[…]` selector narrowed by a positional box — the region verbs of this
+  build), and `packtest_templates` (the runtime half, one per `teleport` × `stake`
+  pair; the original defect has no compile-time form at all, so this is the only
+  number that binds to it). Unlike the ledgers above this one is emitted for
+  **every** campaign, because the class binds to any build that summons an
+  affordance. `unbound` is true when either of the first two counts is zero, and
+  it is always paired with an `unbound_reason` naming WHICH arm found nothing:
+  most campaigns bind the class and not the clause (`nobodys-cave-island`
+  declares no region verb at all — 47 fixtures, 5 borne, 0 box selectors), and a
+  bare `true` over 47 examined objects is how a reader learns to skip the field.
 - `<out>/validation/traversal-gate.json`: the `DW0452`/`DW0453` proof's **binding
   ledger** (`compiler::traversal`, playtest-methodology.md rule 1). States what
   the traversal proof actually examined — `legs`, `route_cells`, and
-  `legs_by_class` per `Locomotion` (`ground`/`climber`/`flier`/`aquatic`) — plus,
+  `legs_by_class` per `Locomotion` (`ground`/`climber`/`flier`/`aquatic`, counted
+  under the class the proof USED, i.e. the declared one where a body declares) —
+  plus,
   per rule, the objects it bound to (`gate_use.cells`, `surmount.rises`), and
   `unbound` with a `reason` when the campaign plans no walked leg at all. The
   per-class count is the point: every class that carries an exemption is a class
@@ -1754,11 +1772,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   an exemption only when its membership is vanilla's own answer (`Aquatic` =
   `#minecraft:aquatic`, which exempts nothing at all) or a closed, cited list
   whose exemption is advisory-tier (`Climber` = vanilla's `Spider` and its
-  subclasses, `DW0453` only). There is no flier class on purpose: this compiler
-  routes every body with the same ground A* (`nav::plan_actor_moves` has no
-  flight handling), so a flying body walks the same route a sheep would and is
-  exactly as checkable — the class bought nothing and cost a blanket error-tier
-  exemption. `rules.jump_reach`
+  subclasses; `Flier` = a closed, cited list of the mobs that leave the ground
+  under their own power — both `DW0453` only, never the error tier, because
+  routing is identical for every body: this compiler walks a flying body down the
+  same ground A* a sheep gets, so a class may excuse the *surmount* question and
+  nothing else). A second block, `declared` (DSL v0.11, spec-0034), states the
+  **author's** side on the same page: `bodies` carrying a `traversal`
+  declaration, `by_class` under which token, `exercised` (how many changed a
+  verdict — anything less is `DW0454` and the build failed), and
+  `advisories_waived`, the `DW0453` findings those declarations removed. A
+  declaration silences a rule for a body, so a ledger that counted only what the
+  rules examined would report green over exactly the bodies an author asked to be
+  treated differently. `rules.jump_reach`
   is carried **declared-unbound on purpose**: per-entity `JUMP_STRENGTH` is
   server-code attribute data rather than registry data the compiler reads, so
   every rise is measured against the *player's* apex (`nav::MAX_JUMP_RISE_16`)
@@ -2450,10 +2475,72 @@ only grazed through a corner and certify the shot clear.
 Unroutable/clipping/stranded → `DW0307`/`DW0308`/`DW0311` at build (never a
 runtime glitch).
 
+**The world-load gate seal — what a gate's state is *before* any verb fires
+(`DW0317`).** A gate region is not empty because it is a gate; it holds whatever
+the prefab `.nbt` authors there, and both cases ship in the library:
+`hello-room`'s `anchor/door` is six cells of `iron_bars`, `island-mountain`'s
+`anchor/boulder` is twenty-seven cells of air. **Which one a gate is, is measured,
+never defaulted** (`assembled::measure_gate_seals`, taken immediately before the
+base model clears the gate cells), and a gate the world authors shut re-enters the
+model as a `Fill` at step 0 — the identical shape a shortcut gate's world-load seal
+already used. Before that measurement, a gate's state in the static model was a
+function of what *sealed* it and never of what *opened* it: "passable unless a
+`close-gate` seals it" can only fail to notice an obstruction, never invent one,
+and the mistake an author makes is forgetting to open a door. A campaign missing
+its one `open-gate` compiles clean under that default and the runtime bot then
+says *"No path to the goal!"* — a symptom that names nothing.
+
+The base occupancy model still clears every gate cell, and that is now a statement
+about the **base** world only. It has to pick one state, and "open" is the one that
+keeps `RegionWrite::Unseal` expressible — an `open-gate` is `replace`-filtered to
+the gate's own block, so a base world holding the bars would need a block-aware
+clear and would then wrongly delete a `collapse`'s debris (`DW0445`). The
+world-load `Fill` supplies the other half, and an `Unseal` cancels it by ordinary
+latest-write-wins.
+
+Three things this deliberately does **not** decide, each of them a stated gap
+rather than a silent one:
+
+* **A `timed-gate`'s region** (spec-0016 §4) is measured and never modelled shut:
+  its clock fills and clears it twice a cycle from world-load, so a permanent seal
+  would refuse a campaign that plays. `DW0378`/`DW0388` own that region.
+* **A leg whose start is inside a declared `teleport` source volume**
+  (`Plan::transit_teleports`) is judged with the seals lifted — the party may be
+  carried off that cell rather than walk away from it, and nothing in the critical
+  path records an intra-area ride the way `transport_before` records an inter-area
+  one. That restores exactly the pre-measurement verdict for such a leg, so
+  `DW0311`'s binding is unchanged; the cost is that a genuinely-blocked leg with a
+  teleport anywhere over its start is not judged.
+* **A gate opened only by an optional firing** — a trap payload, `on_death`, a shop
+  offer, a dialogue `on_respawn`, a shortcut's far-side unlock — is treated as
+  never opened, by the pre-existing rule that an optional firing may seal a region
+  and may never open one (`plan::collect_region_events`), which is also what keeps
+  every shortcut gate sealed so the delve is finishable the long way. A delve whose
+  only door-opener is a sprung trap is therefore refused; the first-class way to
+  spell "the party walks/presses here and the door opens" is an environment
+  `trigger`, which the model does credit.
+
+The `foreign_blocks` count in the ledger below exposes a fourth, older gap the
+measurement made visible: an `open-gate`'s fill is `replace`-filtered to the
+anchor's **declared** block, so any other block authored inside the gate region
+survives the opening, while this model credits the `Unseal` with the whole region.
+`cave-mouth.nbt` really does author five `mossy_cobblestone` cells inside a gate
+declaring `cobblestone` — latent, since no campaign in either repo places it today.
+
+**Binding ledger — `validation/gate-seal.json`.** Every gate the layout resolved,
+sealed or not: `gates_examined`, `sealed_at_world_load`, `modelled_as_sealed`, a
+per-gate row (`area`, `anchor`, region, `cells`, `blocked_at_world_load`,
+`foreign_blocks`), and `unbound` when the model treats none of them as shut. A
+campaign whose layout resolves no gate anchor emits no file at all, so a file that
+exists and reports zero is a finding rather than an absence — `nobodys-cave-island`
+is exactly that case, its one gate anchor being the boulder the campaign
+`close-gate`s later.
+
 **Runtime region solidity (v0.6 as `close-gate`, generalised in v0.10 by
 spec-0031; DAG-causal).** The base occupancy model treats every
 gate region as **passable** (the conservative "assume the gate the player needs is
-opened" stance `DW0306` separately proves at the piece-connectivity level) — so
+opened" stance `DW0306` separately proves at the piece-connectivity level, and the
+world-load seal above supplies the state that stance was standing in for) — so
 `open-gate` does not dynamically flip cells at nav time, and an `open-gate`-only
 campaign routes exactly as before. `close-gate` is the physical dual: the compiler
 collects every runtime region write with its firing objective's critical-path step
@@ -2773,7 +2860,7 @@ standards: `DW0312`, `DW0210`/`DW0211`, `DW0304`, `DW0306`.
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
 | `DW0101` | `stage` field ≠ document slot. |
-| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0}`). |
+| `DW0102` | Unsupported `dsl_version` (not in `{0.2.0,0.3.0,0.4.0,0.5.0,0.6.0,0.7.0,0.8.0,0.9.0,0.10.0,0.11.0}`). |
 | `DW0103` | `campaign_id` differs across stages. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
@@ -3261,6 +3348,7 @@ Exit 3 except `DW0312` (wave-capacity), `DW0313` (gravity-despawn) and `DW0342`
 | `DW0314` | An exported critical-path waypoint is not standable in the FINAL assembled world (settled + water-flooded + relight fixtures) — the build-time self-check that makes the water-flow / post-nav-mutation divergence class structurally impossible to ship. Routes come from A* over that same world, so this fires only if a later pass mutates a cell nav relied on or an endpoint resolves off the walkable set; the message names the offending cell and leg. Fix the prefab/water or the assembly — never nudge the waypoint. |
 | `DW0315` | A `set-checkpoint` (spec-0012) strands the party: re-rooting the DW0311 reachability at the checkpoint cell, the first remaining required critical-path anchor is no longer walkable from it (a checkpoint behind a one-way drop the forward path can't re-cross after respawn). The message names the checkpoint and the first unreachable anchor and prescribes moving the checkpoint or adding a return route — never deleting the checkpoint to silence the proof. |
 | `DW0316` | A `set-checkpoint` anchor has no standable footing within snap range on the final assembled model (a trap-trigger / hazard / mid-air cell) — the party would respawn into void or a wall (spec-0012). Because the relight pass already proves every reachable walkable cell meets the area's `min_light`, a checkpoint that clears this and DW0315 provably meets `min_light` too. |
+| `DW0317` | **A gate the campaign never opens.** A forced critical-path leg has no collision-free path once the gates the placed prefabs author SHUT at world-load are solid, but routes fine without them — or a visited objective's only footing is inside such a gate's region. Build-tier (exit 3), `compiler::nav`. The message names the gate anchor, its area, its region, how many of its cells the world fills, and what the campaign does to it: nothing forced opens it, or it is opened only at a later / non-ancestor step. Derived by counterfactual, exactly like `DW0510`. Prescription: fire `open-gate` from an objective the party is FORCED to complete before the leg, or route the forced path off the gate — never delete the gate, and never strip the anchor's fill block out of the prefab. `every_version`: it asks for no new surface (`open-gate` is v0.4) and states a contradiction between what the campaign places and what it requires; fencing it would leave it vacuous on every live campaign, all of which declare below the current version. |
 | `DW0378` | A `timed-gate` (spec-0016 §4) is a **coin flip, not a timing read**: the entry phases from which a walking player clears the span before it shuts cover less than **20%** of the cycle. All-phase passability is explicitly NOT the requirement — punishing bad timing is the point; punishing *every* timing is a slot machine no amount of learning the level makes fair. The crossing cost is the A* step count between the footings either side of the region with the gate open, charged at the same 4 t/block sprint model `DW0355` uses; the admitting window is `max(0, open_ticks − cross + 1)` of `open_ticks + closed_ticks`, computed in integers (no float rounding in a proof, ADR-0006) and rounded DOWN. `compiler::nav::check_timed_gates`, build-tier (exit 3). Prescription: lengthen `open_ticks`, shorten `closed_ticks`, or narrow the span — never lower the floor. The runtime counterpart is the waypoint artifact's `timed_gates` table + per-leg crossing marks (see above): the harness bot waits out the window instead of failing a leg the gate shut on. The window proof has a companion the dossier rates higher: `DW0388`, which proves the window can be **read** — that there is safe ground with a sightline to the span. |
 | `DW0376` | An `ambush` (spec-0016 §3) with **no counterplay**: standing every ambusher on the cell it will occupy, no checkpoint, bonfire or campaign entry is walkable from the trigger cell any more — the party is sealed in a pocket with the ambush and can only trade blows blind. The `DW0342` trap-avoidability machinery generalized from one hazard cell to an occupied cell set. This is NOT a telegraph requirement: 初见杀 is legitimate and determinism guarantees the second attempt meets the same ambushers in the same cells; what this proves is that the second attempt has a *play* — a retreat, luring ground, an exit. `compiler::nav::check_ambushes`, build-tier (exit 3). |
 | `DW0373` | A `shortcut` (spec-0016 §2) has **no long route**: with its gate sealed, the far-side `unlock` affordance is not walkable from the campaign entry, so the mechanism that opens the shortcut sits behind the shortcut and can never be pulled. `compiler::nav::check_shortcuts`, build-tier (exit 3). Prescription: connect the far side by a long route, or move the unlock onto one — never open the gate at world-load to silence it. |
@@ -3355,7 +3443,7 @@ exit 3).
 | `DW0445` | The critical path is no longer completable once a `collapse` has fired — the debris buries the only route. A trap is proven in its **sprung** state, because a player will step on the trigger; this is the mirror of the `shortcut` seal, which proves the delve finishable with the shortcut never taken. The post-collapse world is modelled by settling each dropped column onto the first solid cell beneath it and adding the debris as solid geometry (`World::with_sealed`), leaving the deleted region in place — deliberately conservative, so the proof can only ever be stricter than the real world, never laxer. Build-tier (exit 3), `compiler::nav`. Prescription: leave a way through the rubble, drop fewer layers, or move the collapse off the forced path. |
 | `DW0446` | A `volley`'s `from_anchor` cell is solid or flooded, so the projectile would be summoned inside geometry and never leave it. Build-tier (exit 3), `compiler::nav`. Prescription: put the anchor in the open air of the firing niche — it marks where the projectile spawns, not the wall it comes out of. |
 | `DW0447` | A payload verb centres its volume (`kill_zone` / `region_anchor`) on an anchor no placed prefab piece provides, so the box cannot be resolved. Reported rather than silently degenerating to an empty — and therefore vacuously "covered" — zone. Build-tier (exit 3), `compiler::emit`. |
-### DW045x — body clearance (`compiler::clearance`; error + advisory)
+### DW045x — body clearance and body traversal (`compiler::clearance` + `compiler::traversal` + `dsl::validate`; error + advisory)
 
 An entity is a box with a real size, and so is a block. These prove the two
 never occupy the same space — the counterpart to `DW0359`, which proves a body
@@ -3366,7 +3454,9 @@ does not occupy the same space as an *affordance*.
 | `DW0450` | An NPC or actor **body is inside solid block geometry** — at the anchor it is summoned on, or at some tick of a walked leg. Build-tier (exit 3), `compiler::clearance`. The owner's island rounds 8/10/11 defect class, in its clearest instance: `actor/polyphemus-walker`, a `minecraft:warden` (0.9 × 2.9 blocks), is `spawn-actor`ed at `anchor/mouth-side`, which resolves to `[6, 69, -45]` — and `[6, 69, -45]`, `[6, 70, -45]`, `[6, 71, -45]` are all `minecraft:cobblestone`, the cliff face beside the cave mouth. The emitted command is `summon minecraft:warden 6.5 69.0 -44.5`, straight into the rock, and every other proof was green. **The asymmetry this closes**: a *walked* destination was already safe by construction — `move-npc`/`move-actor` snap their endpoints to a standable cell (`SNAP_RADIUS`) and A* only steps through passable cells — but a *placed* body was proven only to have an anchor that RESOLVES (`DW0325`), and `summon` does no snapping, so the anchor is exactly where the body lands. Model: the entity's standing hitbox from `nav::entity_dims` (the one dims table, shared with `DW0359` and actor-footprint routing), centred on the position, rising `height` from the feet; intersected against each cell's true collision volume (`nav::World::solid_top_16` — a bottom slab is `y..y+0.5`, a `dirt_path` `y..y+15/16`), over the same assembled world every other geometry proof reads (settled, sealed, stage-7-edited, relight fixtures in). Water is not geometry and is excluded. Positions checked: every NPC anchor (incl. `deferred`), every actor anchor (incl. spawn-and-unleash), and **every emitted waypoint of every planned leg** — the exact per-tick `tp` coordinates the datapack ships. A leg reports its first offending tick only (a body dragged through twenty blocks of rock is one defect); all error-tier violations are named in one message so a single build gives the whole fix list. Prescription: move the anchor to a cell with real clearance (the message states how many cells of headroom the body needs), or give the leg a corridor the body fits. Do **not** shrink the body: `move-npc` plans on the *player* footprint by construction, so a warden-bodied NPC walked down a 2-high corridor is a route that was never sized for it — fix the route or the body, never the dims table. |
 | `DW0451` | Advisory (exit 0), same module: the hitbox is clear, but the body will still read as clipping. Two cases, both measurements the compiler can state and must not adjudicate. **(1) Model overhang** — a solid block lies within `MODEL_MARGIN` (0.2 blocks) of the hitbox horizontally, for a body **at rest** only. Vanilla mob models render past their collision box (a warden's arms, an iron golem's, a ravager's horns, a sheep's wool), so a flush body *looks* embedded although nothing overlaps; the true per-model extent is client render geometry the compiler has no data for, hence a named margin rather than a verdict. The margin is also what makes the tier discriminating: a body leaves `(1-width)/2` of its cell free per side, so 0.2 fires for a 0.9-wide warden or sheep (0.05 free) and stays silent for a 0.6-wide player-model humanoid (0.2 free) — an NPC standing against a wall, the most ordinary staging there is, produces nothing. It is restricted to bodies at rest deliberately: a body at rest is a composed pose the party looks at, while a walker in a one-block corridor is within a fraction of a block of both walls by construction, so flagging legs would report the map's dimensions once per leg. **(2) 1.5-tall barriers** — a fence, wall or closed fence-gate cell falls inside the body volume. Those fill their cell for pathing but are a narrow post or panel in reality, so whether the body interpenetrates depends on sub-block shape the occupancy model does not carry. Prescription: give the body a cell of clearance, or confirm the framing in playtest. |
 | `DW0452` | A walked leg's route contains a **move the body walking it cannot make**. Build-tier (exit 3), `compiler::traversal`. The owner's island round-21 finding B: `[18, 73, -63]` shipped `minecraft:oak_fence_gate[facing=east,open=false]` in the mountain pen's south fence line, and sixteen `move-npc`/`move-actor` legs walked straight through it — while the owner's own character could not, and had to offset to squeeze past the leaf. **Why nothing stopped it**: `nav::World::is_occupied` deliberately excludes `use_gates`, because a closed fence gate *is* passable — for the PLAYER, who opens it with an adventure-legal right-click (`World::without_gate_use` exists precisely because an autonomous mob cannot), and scripted walks were routed on the player's rules on the stated ground that "the beat's fiction controls the gate". Nothing proved that fiction. A scripted walk is a compiler-emitted `tp` polyline whose puppet performs no interaction at all, and **no runtime verb changes a fence gate's block state**, so a gate that ships `open=false` is shut for the whole delve. Model: capabilities come from the entity (`traversal::Traversal::of_entity`) rather than from a global rule — `opens_gates` is false for every mob, since no vanilla mob opens a fence gate (villagers open *doors*). Routing itself is unchanged: the edge stays available and the build now fails on it, which names the cell and the reason instead of turning it into an unroutable `DW0307`. **No locomotion class is exempt from this rule** (owner correction, round 21). `DW0452` is a COLLISION-AND-INTERACTION question, not a locomotion one: the gate leaf spans the full cell across one axis, the planned route runs down the cell's centre line, and the puppet performs no right-click — and not one of those three facts changes because the body has wings or claws. A flying body may skip the *climbing/surmounting* checks; the *collision* check it still owes. The only thing that can excuse this rule is `Traversal::opens_gates`, which is why that is a per-body field and not a constant, and why the exemption is expressed **per rule** rather than as an early skip over the whole body — an earlier draft did the latter and let a flier walk through a closed gate in silence. A leg reports its first offending cell only, and all violations land in one message. Prescription: ship the gate OPEN (a stage-7 `world-edits` fill writing `open=true` on the cell — an open fence gate has no collision at all, so the same route becomes honest for puppet and player alike), or seal the threshold and let the route take the way a body can. |
-| `DW0453` | Advisory (exit 0), same module: a walked leg goes **over a barrier line, across a full-cube course of it**. The route steps up onto a cell whose support is a full cube standing level with, and orthogonally beside, a 1.5-tall fence/wall cell, and comes back down within `traversal::SURMOUNT_WINDOW` (4) route steps — i.e. the body crossed a line the same line refuses to let it walk through. The owner's island round-21 finding A: the beach fold's ring is `minecraft:cobblestone_wall` down the east and west sides and at the north corners but full-cube `minecraft:mossy_cobblestone` along the middle of the north and south edges, so the model sees an enclosure at nine cells and an ordinary one-block ledge at five; the flock's shortest way out ran up the east face at `[7, 63, -9]`, over the north wall's top at `[7, 64, -10]` and down into the meadow, and the pen's real opening at `[6, 63, -6]` was never used. Twelve legs, all naming the same course. With `nav::resample`'s L-shaped step-up — a vertical translation in place, which is what keeps a body out of the step block's corner — this renders as an animal sliding up a stone wall. **Advisory, not an error**: the move itself is legal (a one-block rise is inside the player-class jump every body in the dims table has), and the compiler cannot tell a decorative kerb or a deliberate stile from an enclosure that was meant to hold. A partial floor (slab, `dirt_path`) beside a fence is never a course — that is floor detail, not a wall. **This is the rule locomotion legitimately governs**, and the only one: a `Locomotion::Climber` is exempt because going over is what a climber does, and a `Locomotion::Flier` because it makes no ground step-up in the first place. This advisory tier is also the only tier a hand-listed class is permitted to gate, so a misclassified species costs a missed advisory and never a missed error. Prescription: build the line out of ONE material so the model's barrier and the player's eye agree, and let the route use the opening. |
+| `DW0453` | Advisory (exit 0), same module: a walked leg goes **over a barrier line, across a full-cube course of it**. The route steps up onto a cell whose support is a full cube standing level with, and orthogonally beside, a 1.5-tall fence/wall cell, and comes back down within `traversal::SURMOUNT_WINDOW` (4) route steps — i.e. the body crossed a line the same line refuses to let it walk through. The owner's island round-21 finding A: the beach fold's ring is `minecraft:cobblestone_wall` down the east and west sides and at the north corners but full-cube `minecraft:mossy_cobblestone` along the middle of the north and south edges, so the model sees an enclosure at nine cells and an ordinary one-block ledge at five; the flock's shortest way out ran up the east face at `[7, 63, -9]`, over the north wall's top at `[7, 64, -10]` and down into the meadow, and the pen's real opening at `[6, 63, -6]` was never used. Twelve legs, all naming the same course. With `nav::resample`'s L-shaped step-up — a vertical translation in place, which is what keeps a body out of the step block's corner — this renders as an animal sliding up a stone wall. **Advisory, not an error**: the move itself is legal (a one-block rise is inside the player-class jump every body in the dims table has), and the compiler cannot tell a decorative kerb or a deliberate stile from an enclosure that was meant to hold. A partial floor (slab, `dirt_path`) beside a fence is never a course — that is floor detail, not a wall. **This is the rule locomotion legitimately governs**, and the only one: a `Locomotion::Climber` is exempt because going over is what a climber does, and a `Locomotion::Flier` because it makes no ground step-up in the first place. This advisory tier is also the only tier a hand-listed class is permitted to gate, so a misclassified species costs a missed advisory and never a missed error. Prescription: build the line out of ONE material so the model's barrier and the player's eye agree, and let the route use the opening — or, if this body really is meant to go over walls, DECLARE it (`traversal`, DSL v0.11 / spec-0034), which is not a way to switch this line off but a claim the build then holds the body to (`DW0454`). |
+| `DW0454` | **A body's `traversal` declaration is INERT** — it changed no rule's verdict, so nothing in this build holds the body to it. Build-tier (exit 3), `compiler::traversal`, DSL v0.11 (spec-0034). **Why this exists.** Spiders really do climb, so `DW0453` cannot be absolute; the author's side of that is the per-body `traversal` declaration. But a declaration that only silences a diagnostic is worse than no declaration — it converts a check into an opt-out — so the declaration is required to be PAID FOR. Model: for every declared body the compiler computes the findings its legs earn under the DECLARED class and under the class its entity id implies, and the declaration is *exercised* only where the two differ. Written as a difference of verdicts rather than as "is it a climber", so a second locomotion-governed rule joins the test by existing. Three inert shapes, each named in the message because the fix differs: the declared class is the one the species already had; the body walks no leg at all; or every leg it walks earns identical verdicts either way (no route of its goes over a barrier line, the only move locomotion governs). **What it is deliberately NOT**: a way to reach the error tier. `DW0452` has no authorable exemption at all — `Traversal::opens_gates` is derived, never declared, and no locomotion class is exempt — so a declared climber walks into a closed fence gate and the build still stops. All violations land in one message. Prescription: remove the declaration, or build the world that needs it — give the body the route that really makes the move, and the declaration is then what makes that route legal instead of a finding. |
+| `DW0455` | **A declared locomotion the engine cannot hold the body to** — today exactly `aquatic`. Numbered in the 045x body family but **validation-tier (exit 1)**, like `DW0320`: it is raised by `dsl::validate_campaign_with` at pipeline step 3, refused at declaration time rather than accepted and ignored. `aquatic` is the one class that carries no exemption and governs no rule (it is a ledger label read off vanilla's own `#minecraft:aquatic` tag), so declaring it could never change a verdict and would land in `DW0454` every time; a value whose only possible outcome is another diagnostic is a trap, not a surface. The message NAMES the gap rather than leaving it to folklore (CLAUDE.md no-hack rule): routing has ONE reachability model, standable ground, and water-flooded cells are impassable and never floor for every body, so there is nothing for an aquatic claim to feed. When routing grows a water model, this refusal is what has to be deleted to enable the value. Prescription: remove the declaration — a route that crosses water is already governed by the flooded-cell rules, and a body vanilla itself calls aquatic still reaches the binding ledger under its derived class. |
 ### DW0489 — crosshair disambiguation (`compiler::crosshair`; error + advisory)
 
 | Code | Meaning |
@@ -3681,7 +3771,7 @@ into silently — a comparison whose datum nothing drives is rejected outright �
 but a datum that is written and still never reaches the required range is not
 caught today. Stated here rather than left to be discovered.
 
-### DW0540–DW0542 — status effects and the region teleport (`dsl::validate` / `compiler::teleport`; spec-0031, DSL v0.10)
+### DW0540–DW0542 and DW0545 — status effects, the region teleport, and the fixture class (`dsl::validate` / `compiler::teleport` / `compiler::affordance`; spec-0031, DSL v0.10)
 
 `DW0540` is the one rule in this family that is about a *pattern* rather than a
 value, and it is the reason the surface is shaped the way it is. `give-effect`
@@ -3704,15 +3794,15 @@ fragile than one on a fixed tick, and it is the mandatory duration, not this
 rule, that keeps that case survivable.
 
 `DW0542` is what stands where a runtime exemption list would otherwise be. A
-`teleport`'s selector is total, so a volume drawn over an affordance the engine
-anchored to a *block* would move the entity and leave the hardware: a campfire, a
-lever or a sealed door still visible, still reachable, answering nothing. The
-affordance set is not enumerated by this proof — it is `eclipse::affordances`,
-the same authority `DW0359` measures bodies against, plus the seal shells
-`DW0422` owns — so an affordance added to the engine enters this proof by
-existing. Content bodies (NPCs, actor puppets, wave mobs) are deliberately not
-refused: moving them is the mechanism working, and it is what the cargo-lift
-ruling asks for.
+`teleport`'s selector is total over bodies, so a volume drawn over an affordance
+the engine anchored to a *block* would move the entity and leave the hardware: a
+campfire, a lever or a sealed door still visible, still reachable, answering
+nothing. The affordance set is not enumerated by this proof — it is
+`eclipse::affordances`, the same authority `DW0359` measures bodies against, plus
+the seal shells `DW0422` owns — so an affordance added to the engine enters this
+proof by existing. Content bodies (NPCs, actor puppets, wave mobs) are
+deliberately not refused: moving them is the mechanism working, and it is what
+the cargo-lift ruling asks for.
 
 Binding: `validation/teleport-gate.json` states how many teleports were declared
 and resolved, how many cells their volumes cover, how many affordances were
@@ -3721,11 +3811,94 @@ green over a runtime mechanism is the vacuity that last number exists to make
 visible. A campaign that declares no teleport emits no file at all, so a file
 that exists and reports zero is a finding rather than an absence.
 
+#### DW0545 — the fixture class: what a region verb selects
+
+`DW0542` reaches every place whose cell the compiler knows. **A recovery stake's
+marker has no such cell** — its position is the death point, or a row of the
+compile-time placement table picked by the respawn seat in force — so a lift and
+a stake in one room shipped a silent defect: the ride carried the marker away
+from the position its ledger recorded, and the next tick `stk_gc_<s>` found
+nobody holding a wager there and retired it. The wager was not uncollectable, it
+was deleted.
+
+The two obvious fixes are both defects CLAUDE.md names. *Teleport exempts engine
+machinery* re-implements a general mechanism privately inside one verb; *the
+stake ledger survives its marker moving* keys a capability to the wrong object,
+making the stake compensate for a selector that grabbed something it should never
+have grabbed. The question is upstream of both — **what does a content-authored
+region verb select?** — and the measurement answering it is short:
+
+| region verb | what its emitted selector reaches |
+|---|---|
+| `teleport` (`from`) | every **entity** in the box — the only verb with no filter at all |
+| `lethal_volumes[]` (`region`) | every entity in the box minus six **types** (`@e`), plus every player (`@a`) |
+| `give-effect` / `clear-effect` (`in`), `damage-players` (`in`), stealth zones, the night-vision area grant | **players only** (`@a`/`@s`) — no engine entity is reachable |
+| `fill-region`, `clear-region`, `collapse`, `close-gate` | **blocks**; no entity selector exists |
+
+So exactly two verbs quantify over non-player entities, and only they had the
+question to answer. They answered it differently, and one of them not at all.
+
+The fix is a **class the object declares about itself**, not a roster any verb
+holds. Every entity the engine summons carries one of two tags:
+
+- **`dw_fixture`** — *a place.* Its position IS engine state: an affordance's
+  `minecraft:interaction` hitbox, the `dw_marker` display beside it, a stake
+  marker, a cutscene's return mark. Moving it does not move a thing, it rewrites
+  a fact.
+- **`dw_borne`** — *carried by a body.* Today exactly one: an NPC's co-located
+  dialogue hitbox, which must ride whatever its speaker rides.
+
+A cutscene *camera* declares neither and that is deliberate: its own driver
+re-asserts its position every tick, so it is a body the engine flies rather than
+a place it recorded. Neither tag is authorable, and no campaign JSON can turn
+either off.
+
+Every box-narrowed entity selector then carries `tag=!dw_fixture` — **one negated
+tag for the whole engine, forever**, which is what a type roster can never be. A
+type cannot answer this question at all: an NPC's hitbox and a stake's marker are
+both `minecraft:interaction`, and a teleport must move the first and leave the
+second. `lethal_volumes[]` keeps its type roster as well, because that roster
+makes a different and still-true claim — *do not aim `/damage` at a thing that
+cannot take it*.
+
+The two arms of the rule divide by **who can act on the defect**: a place whose
+cell is known at compile time is *refused* (`DW0542`), because the author can
+move it; a place only the runtime puts down is *skipped by the selector*
+(`DW0545`), because nobody can.
+
+`DW0545` is an emission self-check over the shipped datapack, in the `DW0420` /
+`DW0421` family — it is `DW0421`'s rule (*only the owner may disturb an
+affordance's hardware*) one verb wider, since moving hardware is disturbing it,
+and one binding wider, since a region verb selects by box where `DW0421` reads a
+tag. It fires on two clauses, and both are compiler defects rather than authoring
+ones: a summon that declares neither class (the exclusion then protects nothing),
+and a box-narrowed `@e` selector with no exclusion (the class exists and this verb
+does not read it). Because it can never be caused or fixed by campaign JSON it is
+`every_version`: fencing an engine self-check by `dsl_version` would let an older
+campaign ship the defect in silence.
+
+**The runtime half is the only half that can witness the original defect**, and it
+is generated rather than argued: one PackTest template per (`teleport` × `stake`)
+pair leaves a real marker in a real volume through the campaign's own
+`stk_fill_<s>`, rides the campaign's own `teleport_<key>`, and asserts a plain
+body **left** the box while both halves of the marker stayed. The body assertion
+is what stops it being one-directional — without it, an engine whose teleport did
+nothing at all would pass.
+
+Binding: `validation/fixture-gate.json` states how many entities declared each
+class, how many box-narrowed selectors were examined, and how many runtime
+templates were generated. Zero on either of the first two counts is reported as
+`unbound` **with an `unbound_reason` naming which arm** — an empty class makes
+every exclusion decorative, while zero selectors means the class is bound and the
+clause the defect lives in is simply not exercised by this campaign. The two are
+not the same finding and the ledger never makes a reader guess which one it is.
+
 | Code | Meaning |
 |------|---------|
 | `DW0540` | **A grant whose removal is a later effect, not its own duration.** A `give-effect` is still live at the moment a `clear-effect` for the same effect fires in the same bundle. Validation-tier (exit 1), `dsl::validate`. The message carries both numbers the author needs — how long the grant runs, and how long the bundle actually needs it for. Prescription: set `seconds` to the span the effect should last and delete the `clear-effect`; a duration expires with no cooperation from anything. `clear-effect` is for effects this campaign did not grant. |
 | `DW0541` | **A duration that is not a duration.** A `give-effect`'s `seconds` is zero or past `MAX_EFFECT_SECONDS` (50 000, derived from `MAX_POTION_DURATION_TICKS`), or its `amplifier` is past vanilla's unsigned byte. Validation-tier (exit 1), `dsl::validate`. Zero is the grant that never happens — the unbound-vacuity class as a number; the ceiling is vanilla's own field width, so a value above it is a duration typed in ticks or milliseconds. |
 | `DW0542` | **A teleport volume over an affordance bound to hardware.** A `teleport`'s `from` volume covers an interaction affordance the engine placed on a block it also places — an interact objective, a click trigger, a bonfire, a shortcut unlock, a trap or timed-gate disarm, a sealed gate's answer. Build-tier (exit 3), `compiler::teleport`. The teleport moves the entity and not the block, so the player is left with something they can see and reach that answers nothing. Prescription: move the affordance out of the volume, or shrink the volume's `extent`; do NOT add a type exemption to the selector — that would tear an NPC's dialogue hitbox off its body. |
+| `DW0545` | **An engine fixture is reachable by a box.** Either an engine-summoned hitbox, mark or display declares neither class tag (`dw_fixture` / `dw_borne`), or a selector narrowed by a positional box (`@e[x=…]`) does not carry `tag=!dw_fixture`. Build-tier (exit 3), `compiler::affordance`, emission self-check over the shipped datapack. **A compiler defect, never an authoring one** — no campaign JSON can cause it and none can fix it; the message is addressed to whoever is changing the engine. Prescription for a new affordance: summon it declaring the class. For a new region verb: negate the class, never a `type=…` roster — a type cannot tell an NPC's dialogue hitbox from a recovery stake's marker, and a moving verb must carry the first and leave the second. |
 
 ### DW0543 — a prefab metadata key this delvec does not model (`compiler::registry`)
 
@@ -3936,13 +4109,23 @@ Two are `DW0526`'s, one is not, and the third is named rather than left silent.
 |---|---|---|
 | **Runtime-mutable ground** — `close-gate`, `set-block`, `collapse`, a shortcut's or a timed gate's seal | yes | the case spec-0031's ruling was written for: a stake left on a lift car is deleted by the next ride. |
 | **`fill-region` / `clear-region`** | yes, and it is *the same defect* | a `clear-region` deletes the block a marker stands on exactly as a departing car does. They enter through `QuestEffect::region_write` — the DSL's own answer to "which verbs rewrite a box" — so a later verb of that family is covered by existing rather than by being remembered. |
-| **A `teleport`'s `from` box** | **no — a deliberate ruling, follow-up finding** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
+| **A `teleport`'s `from` box** | **no — a deliberate ruling; closed by `DW0545` one layer away** | a teleport moves *entities*, not blocks: the ground under the marker is untouched, and what moves is the marker itself, away from the position the collecting player's ledger recorded — after which `stk_gc_<s>` finds nobody holding a wager there and retires it, taking the wager with it. Different defect, different fix, and not one a box check on this axis could state — `DW0526` is about **footing**, and a marker's position is chosen at RUNTIME, so no compile-time geometry test knows where it will be. |
 
 The teleport case cannot simply inherit the teleport's own `DW0542` either, and the
 reason is the shape spec-0031 named when it refused to inherit `lethal_volumes[]`'s
 exemption list into a verb that *moves* rather than *deletes*: `DW0542` tests the
 affordance authority, which carries compile-time cells, and a stake has none to
 offer it. Inheriting it would have produced a green that examined nothing.
+
+**Neither of the two fixes the finding proposed was taken, and nothing in
+`compiler::stake` changed.** "The teleport exempts engine machinery" builds a
+roster into one verb; "the stake ledger survives its marker moving" makes the
+stake compensate for a selector that grabbed something it should never have
+grabbed. The question was upstream of both — *what does a region verb select?* —
+and a marker being a **place** is a property of the marker, not of any verb. So
+the class is declared where the marker is summoned and every box-narrowed
+selector reads it (`DW0545` above). That a capability keyed to the object needed
+no cooperation from this module is the point rather than a coincidence.
 
 **Note the direction of the conservatism, because it is why this set is not
 `Plan::region_events`.** The completability model deliberately drops a non-fill

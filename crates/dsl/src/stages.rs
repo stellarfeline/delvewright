@@ -440,6 +440,190 @@ pub struct Pieces {
 }
 
 // ---------------------------------------------------------------------------
+// Body traversal — the declaration every body that moves carries (DSL v0.11,
+// spec-0034)
+// ---------------------------------------------------------------------------
+
+/// How a body gets around.
+///
+/// The compiler DERIVES this from the entity id for every body (spiders climb,
+/// ghasts fly, `#minecraft:aquatic` swims, and everything else — including every
+/// id the table has never heard of — is [`Locomotion::Ground`], the checked
+/// class). [`BodyTraversal`] is the author's side of the same vocabulary: one
+/// enum, so a declaration and a derivation can never mean different things.
+///
+/// The vocabulary lives in this crate rather than in the compiler because it is
+/// now DSL surface; the compiler re-exports it and owns the derivation table
+/// (`compiler::traversal`).
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Locomotion {
+    /// Walks, steps and jumps — the default and the CHECKED class.
+    Ground,
+    /// Climbs sheer vertical surfaces (vanilla's `Spider` class).
+    Climber,
+    /// Leaves the ground under its own power.
+    Flier,
+    /// A member of vanilla's `#minecraft:aquatic` tag. A ledger classification
+    /// that exempts nothing, which is why it may not be **declared**
+    /// (`DW0455`) — see [`BodyTraversal`].
+    Aquatic,
+}
+
+impl Locomotion {
+    /// The stable kebab token this class is written and reported under.
+    pub fn token(self) -> &'static str {
+        match self {
+            Locomotion::Ground => "ground",
+            Locomotion::Climber => "climber",
+            Locomotion::Flier => "flier",
+            Locomotion::Aquatic => "aquatic",
+        }
+    }
+
+    /// Every class, in ledger order — so a report can never silently drop a row
+    /// when a class is added.
+    pub const ALL: [Locomotion; 4] = [
+        Locomotion::Ground,
+        Locomotion::Climber,
+        Locomotion::Flier,
+        Locomotion::Aquatic,
+    ];
+}
+
+/// What a body can do when it moves, **declared by the author** (DSL v0.11,
+/// spec-0034).
+///
+/// Carried by every object class in the DSL that has a body and a position and
+/// is walked by a compiler-emitted route — the stage-2 [`Npc`] and the stage-5
+/// [`Actor`]. It is deliberately one shared type on both rather than a field
+/// per consumer: traversal is a property of a body that moves, not of the verb
+/// that first needed it (CLAUDE.md), and a second bespoke field would be the
+/// defect rather than the fix.
+///
+/// **A declaration is a claim the build holds you to, never an opt-out.** The
+/// compiler compares the verdicts this body earns under the declared class
+/// against the ones it earns under its species' derived class; a declaration
+/// that changes no verdict is inert and is `DW0454`. So declaring `climber` on
+/// a sheep is only accepted where that sheep's route really does go over a
+/// barrier line — the exception is authored and proven, instead of happening by
+/// accident and merely rendering.
+///
+/// **What is deliberately NOT here: `opens_gates`.** Passing a closed fence gate
+/// is a right-click, a scripted walk is a compiler-emitted `tp` polyline whose
+/// puppet performs no interaction at all, and no runtime verb changes a fence
+/// gate's block state. Declaring it would not make it true, so the error tier
+/// (`DW0452`) has no authorable exemption and a declaration can never reach it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BodyTraversal {
+    /// How this body gets around, overriding what its entity id implies.
+    pub locomotion: Locomotion,
+}
+
+/// One object class that has a body, a position, and a compiler-emitted route —
+/// i.e. one consumer of [`BodyTraversal`].
+///
+/// A sum type rather than a flattened tuple, so **adding a body class is a
+/// compile error at every consumer** until each one says what it does with it.
+/// The alternative — each rule walking the classes it happens to remember — is
+/// the defect class CLAUDE.md names: a hand-rolled walk that
+/// enumerated three of five effect roots.
+///
+/// Deliberately NOT a member: [`WaveMob`]. A wave mob has a body and a position,
+/// but it is driven by **native vanilla AI**, never by a compiler-emitted route,
+/// so the compiler makes no claim about the moves it makes and a locomotion
+/// declaration on it could change no verdict. It becomes a consumer the day the
+/// lane proof reasons about how its bodies move — and it joins here, through
+/// this same type, rather than through a field of its own.
+#[derive(Clone, Copy, Debug)]
+pub enum BodyRef<'a> {
+    /// A stage-2 NPC, walked by `move-npc`.
+    Npc(&'a Npc),
+    /// A stage-5 scripted actor, walked by `move-actor`.
+    Actor(&'a Actor),
+}
+
+impl<'a> BodyRef<'a> {
+    /// The declaring stage's wire name (`npcs` / `quests`) — also the stage
+    /// whose `dsl_version` fences this body's declaration.
+    pub fn stage(self) -> &'static str {
+        match self {
+            BodyRef::Npc(_) => "npcs",
+            BodyRef::Actor(_) => "quests",
+        }
+    }
+
+    /// The body's declared id.
+    pub fn id(self) -> &'a str {
+        match self {
+            BodyRef::Npc(n) => n.id.as_str(),
+            BodyRef::Actor(a) => a.id.as_str(),
+        }
+    }
+
+    /// The entity id written on the body. **Not necessarily the body that
+    /// ships**: a `skin` re-dresses it as a `minecraft:mannequin`, which is the
+    /// compiler's rule (`nav::npc_body_entity`) and stays there.
+    pub fn declared_entity(self) -> &'a str {
+        match self {
+            BodyRef::Npc(n) => n.base_entity.as_str(),
+            BodyRef::Actor(a) => a.entity.as_str(),
+        }
+    }
+
+    /// This body's traversal declaration, if it carries one.
+    pub fn traversal(self) -> Option<&'a BodyTraversal> {
+        match self {
+            BodyRef::Npc(n) => n.traversal.as_ref(),
+            BodyRef::Actor(a) => a.traversal.as_ref(),
+        }
+    }
+}
+
+/// A body that carries a [`BodyTraversal`] declaration, with the JSON pointer at
+/// it.
+#[derive(Clone, Debug)]
+pub struct BodyTraversalSite<'a> {
+    /// Which object class declared it, and the object itself.
+    pub body: BodyRef<'a>,
+    /// JSON pointer at the `traversal` field, for a diagnostic path.
+    pub path: String,
+    /// The declaration.
+    pub traversal: &'a BodyTraversal,
+}
+
+/// Every body in the campaign that DECLARES a traversal, in stage order.
+///
+/// The one enumeration of the declaration's consumers, shared by the DSL's value
+/// check (`DW0455`) and by the compiler's proof (`DW0454`), so "which object
+/// classes carry this" is answered in exactly one place.
+pub fn body_traversal_sites(c: &crate::envelope::Campaign) -> Vec<BodyTraversalSite<'_>> {
+    let mut out: Vec<BodyTraversalSite<'_>> = Vec::new();
+    for (i, n) in c.npcs.content.npcs.iter().enumerate() {
+        if let Some(t) = &n.traversal {
+            out.push(BodyTraversalSite {
+                body: BodyRef::Npc(n),
+                path: format!("/content/npcs/{i}/traversal"),
+                traversal: t,
+            });
+        }
+    }
+    for (i, a) in c.quests.content.actors.iter().enumerate() {
+        if let Some(t) = &a.traversal {
+            out.push(BodyTraversalSite {
+                body: BodyRef::Actor(a),
+                path: format!("/content/actors/{i}/traversal"),
+                traversal: t,
+            });
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Stage 2 — npcs
 // ---------------------------------------------------------------------------
 
@@ -487,6 +671,13 @@ pub struct Npc {
     /// init, byte-identical to pre-0.6.
     #[serde(default, skip_serializing_if = "is_false")]
     pub deferred: bool,
+    /// What this body can do when it moves (DSL v0.11, spec-0034). Absent = the
+    /// class the compiler derives from `base_entity` (or from `minecraft:mannequin`
+    /// when `skin` is set — the body that actually ships). See [`BodyTraversal`]:
+    /// the declaration must change a verdict or it is `DW0454`, and it can never
+    /// reach the error tier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traversal: Option<BodyTraversal>,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG ships in the
@@ -3170,6 +3361,13 @@ pub struct Actor {
     /// souls re-seat) never scatters its axe.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drops: Vec<MobDrop>,
+    /// What this body can do when it moves (DSL v0.11, spec-0034) — the same
+    /// [`BodyTraversal`] a stage-2 [`Npc`] carries, because traversal belongs to
+    /// the body and not to the stage that declares it. Absent = the class the
+    /// compiler derives from `entity` (or from `minecraft:mannequin` when `skin`
+    /// is set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traversal: Option<BodyTraversal>,
 }
 
 /// A cardinal facing keyword (DSL v0.6). Emitted as the puppet's spawn yaw
@@ -4389,19 +4587,28 @@ pub enum QuestEffect {
     /// it is the same one every tick. `from` is the anchor-centred
     /// [`StealthZone`] box the rest of the engine already uses.
     ///
-    /// **The selection is total.** Emission is a single `tp @e[<box>] <cell>`
-    /// with no `type=`, no `tag=`, no `limit=` and no `sort=` — every entity in
-    /// the volume moves, and `crates/compiler/tests/v10_teleport.rs` asserts that
-    /// from the emitted selector rather than from anyone's memory. A
-    /// machinery-type exemption of the kind a `lethal_volumes[]` entry must carry
-    /// was considered and **rejected**: an NPC is a body plus a co-located
-    /// `minecraft:interaction` hitbox, so exempting `minecraft:interaction` —
-    /// as the lethal volume does — would teleport the speaker and leave its
-    /// dialogue box behind. The two engine affordances that are bound to hardware
-    /// the teleport cannot move are refused at compile time instead (`DW0542`).
-    /// Owner ruling
+    /// **The selection is total over bodies.** Emission is a single `tp
+    /// @e[<box>,tag=!dw_fixture] <cell>` with no `type=`, no `limit=` and no
+    /// `sort=` — every body in the volume moves, and
+    /// `crates/compiler/tests/v10_teleport.rs` asserts that from the emitted
+    /// selector rather than from anyone's memory. A machinery-**type** exemption
+    /// of the kind a `lethal_volumes[]` entry must carry was considered and
+    /// **rejected**: an NPC is a body plus a co-located `minecraft:interaction`
+    /// hitbox, so exempting `minecraft:interaction` — as the lethal volume does —
+    /// would teleport the speaker and leave its dialogue box behind. Owner ruling
     /// 2026-08-08 is that everyone on the car travels, players and entities
-    /// alike; totality is how that is true.
+    /// alike; totality over bodies is how that is true.
+    ///
+    /// The one narrowing is a **class the engine's own furniture declares about
+    /// itself**: `dw_fixture` means *my position IS engine state*. A bonfire's
+    /// hitbox, a shortcut lever and a recovery stake's marker are places, not
+    /// passengers, and carrying one does not move a thing — it rewrites a fact
+    /// (for a stake, the ledger holds the marker's coordinates, and the next tick
+    /// retires a marker nobody has a wager at). Places whose cell is known at
+    /// compile time are refused outright instead, because the author can move
+    /// them (`DW0542`); places the runtime puts down are excluded by the selector,
+    /// because nobody can (`DW0545`). Nothing an author writes carries either tag,
+    /// and no campaign JSON can turn either off.
     ///
     /// **A teleport is not a rescue.** Accumulated fall distance carries across
     /// one unchanged and is charged in full at the destination — measured Δ

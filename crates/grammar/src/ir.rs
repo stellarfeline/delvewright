@@ -396,6 +396,20 @@ impl Reorient {
         self.mirror = mirror;
         self
     }
+
+    /// A half-turn about the vertical: local `X` and local `Z` both reversed,
+    /// local `Y` left alone.
+    ///
+    /// The piece faces the way it came. Named because it is the case a route
+    /// doubling back always wants — a hairpin leg, a spiral stair's return
+    /// flight, a corridor entered from the other end — and because it is the
+    /// one combination of two reflections that is a *rotation*
+    /// ([`crate::geom::Orientation::is_rotation`]), so a chiral piece stays the
+    /// hand it was built. Writing it as a single [`Reorient::flip`] gives a
+    /// mirror image instead, which is a different piece.
+    pub fn turned(self) -> Reorient {
+        self.flip(Axis::X).flip(Axis::Z)
+    }
 }
 
 /// A subdivision of the current scope along one local axis.

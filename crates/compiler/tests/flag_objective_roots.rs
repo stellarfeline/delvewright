@@ -101,7 +101,7 @@ fn quests_doc(prelude: &str, effects: &str) -> String {
              "radius": 2, "after": ["obj/talk"] }}
         ],
         "on_objective_complete": {{
-          "obj/talk": [ {effects} ]
+          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }}, {effects} ]
         }},
         "on_complete": [ {{ "type": "campaign-complete" }} ]
       }}
@@ -329,7 +329,7 @@ fn every_effect_root_declares_the_objectives_it_writes() {
           {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
              "radius": 2, "after": ["obj/talk"] }}
         ],
-        "on_objective_complete": {{ "obj/talk": [ {} ] }},
+        "on_objective_complete": {{ "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }}, {} ] }},
         "on_complete": [ {}, {{ "type": "campaign-complete" }} ]
       }}
     ]

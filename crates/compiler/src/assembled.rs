@@ -538,15 +538,136 @@ fn structure_cells_inner(bytes: &[u8], stateful: bool) -> Vec<([i32; 3], String,
     out
 }
 
+/// **What the assembled world puts inside one gate anchor's region at world-load.**
+///
+/// A gate region is not empty because it is a gate; it holds whatever the prefab
+/// `.nbt` authors there, and the two cases both ship in the shipped library:
+/// `hello-room`'s `anchor/door` is six cells of `iron_bars` (a barred doorway the
+/// campaign must `open-gate`), and `island-mountain`'s `anchor/boulder` is
+/// twenty-seven cells of air (an open cave mouth a `close-gate` seals later).
+/// Which one a gate is, is a **measurement**, never a default — see
+/// [`Assembled::gate_seals`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GateSeal {
+    /// The area the carrying piece was placed in.
+    pub area: String,
+    /// The gate anchor name (`anchor/door`).
+    pub anchor: String,
+    /// The gate region's inclusive corners (absolute world coords) — the key
+    /// `crate::plan::RegionEvent` uses, so a world-load seal and an `open-gate`
+    /// on the same anchor meet in the one latest-write-wins model.
+    pub region: ([i32; 3], [i32; 3]),
+    /// How many cells the region has.
+    pub cells: usize,
+    /// How many of them hold a non-air block at world-load. `0` = the gate is
+    /// authored **open**; anything else = authored **sealed**.
+    pub blocked: usize,
+    /// How many blocked cells hold a block other than the one the anchor declares
+    /// — the residue an `open-gate` will **not** clear, because the emitted fill is
+    /// `replace`-filtered to the declared block. `0` is the healthy case. See
+    /// `docs/reference/compiler.md` for the stated limitation this number exposes.
+    pub foreign: usize,
+}
+
+impl GateSeal {
+    /// Whether the assembled world authors this gate shut.
+    pub fn sealed(&self) -> bool {
+        self.blocked > 0
+    }
+
+    /// This gate's row in the `validation/gate-seal.json` ledger.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "area": self.area,
+            "anchor": self.anchor,
+            "from": self.region.0,
+            "to": self.region.1,
+            "cells": self.cells,
+            "blocked_at_world_load": self.blocked,
+            "foreign_blocks": self.foreign,
+            "sealed": self.sealed(),
+        })
+    }
+}
+
+/// **The world-load gate ledger** (`validation/gate-seal.json`,
+/// `docs/reference/playtest-methodology.md` rule 1): what the completability model
+/// measured about every gate the layout resolves.
+///
+/// It exists because the failure this whole measurement replaces was invisible in
+/// exactly this way — the model's answer for a gate was a constant, so a green
+/// carried no information about whether any gate had been looked at. A campaign
+/// with no gate anchor emits no file at all, so a file that exists and reports
+/// `"sealed": 0` is a finding (every gate is authored open) rather than an absence.
+pub fn gate_seal_ledger(seals: &[GateSeal], modelled: usize) -> serde_json::Value {
+    serde_json::json!({
+        "gates_examined": seals.len(),
+        "sealed_at_world_load": seals.iter().filter(|s| s.sealed()).count(),
+        "modelled_as_sealed": modelled,
+        "gates": seals.iter().map(GateSeal::to_json).collect::<Vec<_>>(),
+        "unbound": modelled == 0,
+    })
+}
+
+/// Measure what the placed world authors inside every resolved gate anchor's
+/// region, **before** [`placed_blocks`] clears those cells out of the base model.
+///
+/// Deterministic (ADR-0006): `plan.anchors` is a `BTreeMap<(area, anchor), _>`, so
+/// the ledger is emitted in `(area, anchor)` order.
+pub(crate) fn measure_gate_seals(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    blocks: &BTreeMap<[i32; 3], String>,
+) -> Vec<GateSeal> {
+    let mut out = Vec::new();
+    for ((area, anchor), resolved) in anchors {
+        let ResolvedAnchor::Gate { from, to, block } = resolved else {
+            continue;
+        };
+        let declared = base_id(block);
+        let (mut cells, mut blocked, mut foreign) = (0usize, 0usize, 0usize);
+        for cell in region_cells(*from, *to) {
+            cells += 1;
+            let Some(name) = blocks.get(&cell) else {
+                continue; // absent from the map = air
+            };
+            if is_air(name) {
+                continue;
+            }
+            blocked += 1;
+            if base_id(name) != declared {
+                foreign += 1;
+            }
+        }
+        out.push(GateSeal {
+            area: area.clone(),
+            anchor: anchor.clone(),
+            region: (*from, *to),
+            cells,
+            blocked,
+            foreign,
+        });
+    }
+    out
+}
+
+/// What [`placed_blocks`] produces: the un-settled world plus the two facts about
+/// it that survive gravity settling unchanged.
+struct Placed {
+    /// The un-settled cell→block map.
+    blocks: BTreeMap<[i32; 3], String>,
+    /// Fence-gate cells authored `open=true` ([`Assembled::open_gates`]).
+    open_gates: BTreeSet<[i32; 3]>,
+    /// The per-gate world-load measurement ([`Assembled::gate_seals`]).
+    gate_seals: Vec<GateSeal>,
+}
+
 /// The un-settled cell→block map: placed structures + solver seals + gate clears,
 /// exactly as the two legacy models built it — plus the set of fence-gate cells
 /// whose authored block state is `open=true` (task #59: an open gate threshold is
-/// passable; a closed one is passable-with-use). Kept separate from settling so
-/// unit tests can exercise each half.
-fn placed_blocks(
-    plan: &Plan,
-    structures: &BTreeMap<String, Vec<u8>>,
-) -> (BTreeMap<[i32; 3], String>, BTreeSet<[i32; 3]>) {
+/// passable; a closed one is passable-with-use), plus the per-gate world-load
+/// measurement ([`GateSeal`]) taken immediately before the gate clear. Kept
+/// separate from settling so unit tests can exercise each half.
+fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     for area in &plan.areas {
@@ -592,7 +713,22 @@ fn placed_blocks(
             }
         }
     }
-    // Gate thresholds are passable (an open-gate effect fills them with air).
+    // **The base world holds every gate threshold open, and that is a choice about
+    // the BASE world only.**
+    //
+    // It has to pick one state, and "open" is the one that keeps the fill/clear
+    // model expressible: `crate::plan::RegionWrite::Unseal` (what `open-gate`
+    // emits) is `replace`-filtered to the gate's own block, so a model that held
+    // the bars here would need a block-aware clear to remove them and would then
+    // wrongly clear a `collapse`'s debris resting in the same doorway (`DW0445`).
+    //
+    // What is NOT decided here is whether the gate is shut *at world-load*: that
+    // is measured, one line above the clear, and re-enters the model as a
+    // world-load `Fill` at step 0 — the identical shape a shortcut gate's seal
+    // already uses. Before this measurement existed, the base world's choice was
+    // silently also the answer to "is this gate ever shut", so a campaign that
+    // never opened its door compiled green and shipped unplayable.
+    let gate_seals = measure_gate_seals(&plan.anchors, &blocks);
     for resolved in plan.anchors.values() {
         if let ResolvedAnchor::Gate { from, to, .. } = resolved {
             for cell in region_cells(*from, *to) {
@@ -601,7 +737,11 @@ fn placed_blocks(
             }
         }
     }
-    (blocks, open_gates)
+    Placed {
+        blocks,
+        open_gates,
+        gate_seals,
+    }
 }
 
 /// The outcome of gravity settling for one falling block: the world cell it ended
@@ -723,18 +863,27 @@ pub struct Assembled {
     /// Fence-gate cells whose authored block state is `open=true` (task #59):
     /// passable thresholds, as opposed to closed gates (passable-with-use).
     pub open_gates: BTreeSet<[i32; 3]>,
+    /// One entry per **resolved gate anchor**, in `(area, anchor)` order, saying
+    /// what the placed world puts in its region at world-load ([`GateSeal`]).
+    ///
+    /// Every gate is listed, sealed or not, because the binding count of every
+    /// proof that reads this is "how many gates were examined", not "how many
+    /// happened to be shut" (CLAUDE.md: *a green gate that binds to nothing is
+    /// vacuous*).
+    pub gate_seals: Vec<GateSeal>,
 }
 
 /// Assemble the world: placed structures + solver seals + gate clears, then
 /// gravity-settle, returning both the settled map and the per-falling-block
 /// outcomes. Shared root for [`assembled_blocks`] and the gravity-despawn check.
 pub fn assemble(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Assembled {
-    let (mut blocks, open_gates) = placed_blocks(plan, structures);
-    let settled = settle(&mut blocks);
+    let mut placed = placed_blocks(plan, structures);
+    let settled = settle(&mut placed.blocks);
     Assembled {
-        blocks,
+        blocks: placed.blocks,
         settled,
-        open_gates,
+        open_gates: placed.open_gates,
+        gate_seals: placed.gate_seals,
     }
 }
 
@@ -1161,6 +1310,93 @@ fn despawn_message(settled: &[Settled], pieces: &[PieceBox]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A one-cell-thick gate anchor at `z`, spanning x 0..=1, y 64..=65.
+    fn gate_anchors(block: &str) -> BTreeMap<(String, String), ResolvedAnchor> {
+        let mut a = BTreeMap::new();
+        a.insert(
+            ("area/keep".to_string(), "anchor/door".to_string()),
+            ResolvedAnchor::Gate {
+                from: [0, 64, 6],
+                to: [1, 65, 6],
+                block: block.to_string(),
+            },
+        );
+        a
+    }
+
+    /// **Both shipped gates are real, and only a measurement tells them apart.**
+    /// `hello-room`'s barred doorway is authored solid; `island-mountain`'s cave
+    /// mouth is authored air and only a `close-gate` ever fills it. Assuming
+    /// either one is how the model got the other wrong.
+    #[test]
+    fn a_gate_is_sealed_or_open_by_what_the_world_puts_in_it() {
+        let anchors = gate_anchors("minecraft:iron_bars");
+        let open = measure_gate_seals(&anchors, &BTreeMap::new());
+        assert_eq!(open.len(), 1, "the gate is examined either way");
+        assert_eq!(open[0].cells, 4);
+        assert_eq!(open[0].blocked, 0);
+        assert!(!open[0].sealed(), "an empty gate region is authored OPEN");
+
+        let mut blocks = BTreeMap::new();
+        for cell in region_cells([0, 64, 6], [1, 65, 6]) {
+            blocks.insert(cell, "minecraft:iron_bars".to_string());
+        }
+        let shut = measure_gate_seals(&anchors, &blocks);
+        assert_eq!(shut[0].blocked, 4);
+        assert!(shut[0].sealed(), "a filled gate region is authored SHUT");
+        assert_eq!(shut[0].foreign, 0);
+        assert_eq!(shut[0].anchor, "anchor/door");
+        assert_eq!(shut[0].area, "area/keep");
+    }
+
+    /// Air by any of its three spellings is not a seal, and a blockstate is the
+    /// same block: `iron_bars[east=true]` is what a placed doorway really holds.
+    #[test]
+    fn air_is_not_a_seal_and_a_blockstate_is_the_same_block() {
+        let anchors = gate_anchors("minecraft:iron_bars");
+        let mut blocks = BTreeMap::new();
+        blocks.insert([0, 64, 6], "minecraft:cave_air".to_string());
+        blocks.insert([1, 64, 6], "minecraft:void_air".to_string());
+        blocks.insert(
+            [0, 65, 6],
+            "minecraft:iron_bars[east=true,west=true]".to_string(),
+        );
+        let m = measure_gate_seals(&anchors, &blocks);
+        assert_eq!(m[0].blocked, 1, "only the bars count");
+        assert_eq!(
+            m[0].foreign, 0,
+            "a blockstate is the declared block, not a foreign one"
+        );
+    }
+
+    /// **The residue an `open-gate` will not clear.** The emitted fill is
+    /// `replace`-filtered to the anchor's declared block, so a cell holding
+    /// anything else survives the opening. `cave-mouth.nbt` really does author
+    /// five `mossy_cobblestone` cells inside a gate declaring `cobblestone`; the
+    /// count is reported rather than silently modelled away.
+    #[test]
+    fn a_block_the_gate_does_not_declare_is_counted_as_foreign() {
+        let anchors = gate_anchors("minecraft:cobblestone");
+        let mut blocks = BTreeMap::new();
+        blocks.insert([0, 64, 6], "minecraft:cobblestone".to_string());
+        blocks.insert([1, 64, 6], "minecraft:mossy_cobblestone".to_string());
+        let m = measure_gate_seals(&anchors, &blocks);
+        assert_eq!(m[0].blocked, 2);
+        assert_eq!(m[0].foreign, 1);
+    }
+
+    /// The ledger says what it examined, and calls a zero a zero.
+    #[test]
+    fn the_ledger_reports_an_unbound_measurement_as_unbound() {
+        let anchors = gate_anchors("minecraft:iron_bars");
+        let seals = measure_gate_seals(&anchors, &BTreeMap::new());
+        let j = gate_seal_ledger(&seals, 0);
+        assert_eq!(j["gates_examined"], 1);
+        assert_eq!(j["sealed_at_world_load"], 0);
+        assert_eq!(j["modelled_as_sealed"], 0);
+        assert_eq!(j["unbound"], true);
+    }
 
     #[test]
     fn unsupported_falling_block_over_void_despawns() {

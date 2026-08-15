@@ -159,7 +159,7 @@ const STRIKE_ON_NPC: &str = r#"{
 fn npc_hitbox_wears_the_colocated_strike_trigger_tag() {
     let line = npc_hitbox_line(&build(STRIKE_ON_NPC));
     assert!(
-        line.contains(r#"Tags:["dw_npc_keeper","dw_trig_wake"]"#),
+        line.contains(r#"Tags:["dw_borne","dw_npc_keeper","dw_trig_wake"]"#),
         "npc hitbox must carry the strike trigger's tag:\n{line}"
     );
 }
@@ -208,7 +208,7 @@ fn strike_trigger_off_an_npc_anchor_keeps_its_standalone_hitbox() {
     assert!(
         all.lines()
             .any(|l| l.starts_with("summon minecraft:interaction")
-                && l.contains(r#"Tags:["dw_trig_ward"]"#)),
+                && l.contains(r#"Tags:["dw_fixture","dw_trig_ward"]"#)),
         "an off-NPC strike trigger still summons its own hitbox:\n{all}"
     );
 }
@@ -245,7 +245,7 @@ fn strike_trigger_away_from_an_npc_changes_nothing() {
     }"#;
     let line = npc_hitbox_line(&build(away));
     assert!(
-        line.ends_with(r#"Tags:["dw_npc_keeper"]}"#),
+        line.ends_with(r#"Tags:["dw_borne","dw_npc_keeper"]}"#),
         "an unrelated strike trigger must not touch the npc hitbox:\n{line}"
     );
 }
@@ -400,7 +400,7 @@ fn strike_npc_rides_the_npc_hitbox_and_summons_nothing() {
     let out = build(STRIKE_NPC);
     let line = npc_hitbox_line(&out);
     assert!(
-        line.ends_with(r#"Tags:["dw_npc_keeper","dw_trig_wake"]}"#),
+        line.ends_with(r#"Tags:["dw_borne","dw_npc_keeper","dw_trig_wake"]}"#),
         "the NPC's hitbox must carry the strike-npc trigger's tag:\n{line}"
     );
     let standalone = all_functions(&out)

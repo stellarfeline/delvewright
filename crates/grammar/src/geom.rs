@@ -312,6 +312,27 @@ impl Orientation {
         let a = self.axes();
         a[0] != a[1] && a[1] != a[2] && a[0] != a[2]
     }
+
+    /// True when the frame is a **rotation** — proper, chirality-preserving —
+    /// and false when it is a reflection.
+    ///
+    /// The determinant of the signed permutation: the parity of the axis
+    /// permutation times the parity of the reflections. A half-turn about the
+    /// vertical (local `X` and local `Z` both reversed) is proper, which is why
+    /// a route doubling back is genuinely the same piece turned round and not a
+    /// mirror image of it — a distinction a caller placing a chiral piece has
+    /// to be able to ask about, and which [`Orientation::reversed`] alone
+    /// cannot answer.
+    pub fn is_rotation(&self) -> bool {
+        debug_assert!(self.is_permutation());
+        let a = self.axes();
+        // A 3-permutation is odd exactly when it is a transposition, i.e. when
+        // exactly one local axis keeps its namesake.
+        let fixed = (0..3).filter(|&i| a[i] == Axis::from_index(i)).count();
+        let perm_even = fixed != 1;
+        let flips_even = self.mirror.axes().iter().filter(|r| **r).count() % 2 == 0;
+        perm_even == flips_even
+    }
 }
 
 #[cfg(test)]

@@ -134,10 +134,43 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
     .to_string()
 }
 
+/// hello-world's npcs doc with the keeper's body and traversal declaration
+/// chosen by the caller, re-fenced to v0.11 (spec-0034).
+///
+/// The declaration is fenced on the **npcs** document's own `dsl_version`, which
+/// is why this fixture can adopt it without touching the quests stage — the
+/// per-stage fence, exercised rather than asserted.
+fn npcs_declaring(base_entity: &str, locomotion: Option<&str>) -> String {
+    let mut doc: serde_json::Value = serde_json::from_str(&read_hw("npcs.json")).unwrap();
+    doc["dsl_version"] = serde_json::json!("0.11.0");
+    let npc = &mut doc["content"]["npcs"][0];
+    npc["base_entity"] = serde_json::json!(base_entity);
+    if let Some(l) = locomotion {
+        npc["traversal"] = serde_json::json!({ "locomotion": l });
+    }
+    doc.to_string()
+}
+
 /// Build the fixture campaign with the keeper as the only walker; `Ok` carries
 /// the advisory diagnostics.
 fn build(edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
     build_with(QUESTS_WALK.to_string(), edits)
+}
+
+/// Build with a chosen npcs document — the stage-2 half of the traversal
+/// declaration.
+fn build_npcs(npcs: String, edits: String) -> Result<Vec<Diagnostic>, BuildFailure> {
+    build_all(Some(npcs), QUESTS_WALK.to_string(), edits).map(|(_, w)| w)
+}
+
+/// …keeping the emitted tree, so a fixture can read the binding ledger.
+fn build_npcs_gate(npcs: String, edits: String) -> serde_json::Value {
+    let (out, _) = build_all(Some(npcs), QUESTS_WALK.to_string(), edits).expect("fixture builds");
+    serde_json::from_slice(
+        out.get("validation/traversal-gate.json")
+            .expect("the traversal proof emits its binding ledger"),
+    )
+    .expect("the ledger is valid JSON")
 }
 
 /// The `(code, message)` of a coded build failure — every failure these fixtures
@@ -169,9 +202,18 @@ fn build_out(
     quests: String,
     edits: String,
 ) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
+    build_all(None, quests, edits)
+}
+
+/// Build with a chosen npcs AND quests document.
+fn build_all(
+    npcs: Option<String>,
+    quests: String,
+    edits: String,
+) -> Result<(emit::BuildOutput, Vec<Diagnostic>), BuildFailure> {
     let raw = RawCampaign {
         world: read_hw("world.json"),
-        npcs: read_hw("npcs.json"),
+        npcs: npcs.unwrap_or_else(|| read_hw("npcs.json")),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
         quests,
@@ -441,6 +483,254 @@ fn a_climber_is_exempt_from_the_advisory_tier_only() {
     .expect_err("climbing is not gate-opening");
     let (code, message) = coded(err);
     assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{message}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0034 — the author's side: a declaration the build holds you to
+// ---------------------------------------------------------------------------
+
+/// A wall line the route must cross over its one full-cube course — the shape
+/// that raises `DW0453` for a walking body.
+fn surmountable_wall() -> String {
+    barrier_line("minecraft:cobblestone_wall", "minecraft:stone", 0)
+}
+
+/// **The ruling, as a red that turns green.** A sheep-bodied
+/// keeper that walks over a wall is a finding; the author who really means it to
+/// climb declares so, and the finding is answered — by the declaration, on the
+/// body, rather than by nobody.
+///
+/// Both halves in one test on purpose: the silence is only evidence if the same
+/// fixture, one field different, speaks.
+#[test]
+fn declaring_a_climber_answers_the_surmount_advisory_it_earns() {
+    let undeclared = build_npcs(npcs_declaring("minecraft:sheep", None), surmountable_wall())
+        .expect("surmounting is advisory");
+    let w = undeclared
+        .iter()
+        .find(|d| d.code == DW_BARRIER_SURMOUNTED)
+        .unwrap_or_else(|| {
+            panic!("an undeclared sheep that climbs is the finding: {undeclared:#?}")
+        });
+    assert!(
+        w.message.contains("npc/keeper") && w.message.contains("traversal"),
+        "the advisory must name the declaration as the other resolution: {}",
+        w.message
+    );
+    let declared = build_npcs(
+        npcs_declaring("minecraft:sheep", Some("climber")),
+        surmountable_wall(),
+    )
+    .expect("a declared climber going over a wall is what a climber does");
+    assert!(
+        !declared.iter().any(|d| d.code == DW_BARRIER_SURMOUNTED),
+        "the declaration answers the advisory: {declared:#?}"
+    );
+}
+
+/// …and the ledger states what that declaration cost, so the exemption is
+/// visible rather than inferred from an empty findings list (CLAUDE.md: a green
+/// gate that binds to nothing is vacuous).
+#[test]
+fn the_ledger_states_what_the_declarations_claimed_and_what_they_waived() {
+    let gate = build_npcs_gate(
+        npcs_declaring("minecraft:sheep", Some("climber")),
+        surmountable_wall(),
+    );
+    assert_eq!(gate["declared"]["bodies"], serde_json::json!(1), "{gate}");
+    assert_eq!(
+        gate["declared"]["exercised"],
+        serde_json::json!(1),
+        "{gate}"
+    );
+    assert_eq!(
+        gate["declared"]["advisories_waived"],
+        serde_json::json!(1),
+        "a declaration that waived no advisory bought nothing: {gate}"
+    );
+    assert_eq!(
+        gate["declared"]["by_class"]["climber"],
+        serde_json::json!(1),
+        "{gate}"
+    );
+    // …and the legs are counted under the class the proof actually used.
+    assert_eq!(gate["legs_by_class"]["climber"], gate["legs"], "{gate}");
+    // A campaign that declares nothing reports a zero binding on this axis, and
+    // says so rather than omitting the block.
+    let none = build_npcs_gate(npcs_declaring("minecraft:sheep", None), surmountable_wall());
+    assert_eq!(none["declared"]["bodies"], serde_json::json!(0), "{none}");
+}
+
+/// **The direction that drifts, second half**: a declaration the world does not
+/// support. The same declared climber over a wall line with a real opening —
+/// no route of its ever goes over anything — is `DW0454`, not a free exemption.
+///
+/// This is the property that keeps the surface a declaration instead of an
+/// opt-out: you may claim your sheep climbs, and the build then requires the
+/// climb.
+#[test]
+fn a_declaration_the_world_never_exercises_is_dw0454() {
+    let err = build_npcs(
+        npcs_declaring("minecraft:sheep", Some("climber")),
+        barrier_line("minecraft:cobblestone_wall", "minecraft:air", 0),
+    )
+    .expect_err("a claim nothing pays for is refused");
+    let (code, message) = coded(err);
+    assert_eq!(code, "DW0454", "{message}");
+    assert!(
+        message.contains("npc/keeper") && message.contains("INERT"),
+        "the message must name the body and the verdict: {message}"
+    );
+    assert!(
+        message.contains("/content/npcs/0/traversal"),
+        "the message must name the declaration's path: {message}"
+    );
+    assert!(
+        message.contains("goes OVER a barrier line"),
+        "the message must name the move the class governs: {message}"
+    );
+}
+
+/// …and so is a declaration that merely restates what the entity id already
+/// implies. A `ground` villager is a ground body with or without the field, so
+/// the field holds it to nothing.
+#[test]
+fn a_declaration_that_restates_the_species_is_dw0454() {
+    let err = build_npcs(
+        npcs_declaring("minecraft:villager", Some("ground")),
+        surmountable_wall(),
+    )
+    .expect_err("restating the derived class buys nothing");
+    let (code, message) = coded(err);
+    assert_eq!(code, "DW0454", "{message}");
+    assert!(
+        message.contains("already a `ground`"),
+        "the message must say WHY it is inert: {message}"
+    );
+}
+
+/// **A declaration can never reach the error tier.** `DW0452` is a
+/// collision-and-interaction question with no authorable exemption: a puppet
+/// makes no right-click whatever its paperwork says. The declared climber that
+/// silences the advisory tier in the fixture above walks into the same closed
+/// gate and the build still stops.
+#[test]
+fn a_declared_climber_still_cannot_walk_through_a_closed_gate() {
+    let err = build_npcs(
+        npcs_declaring("minecraft:sheep", Some("climber")),
+        barrier_line(
+            "minecraft:oak_fence",
+            "minecraft:oak_fence_gate[facing=north,open=false]",
+            0,
+        ),
+    )
+    .expect_err("no declaration opens a fence gate");
+    let (code, message) = coded(err);
+    assert_eq!(code, DW_TRAVERSAL_IMPOSSIBLE, "{message}");
+    assert!(message.contains("npc/keeper"), "{message}");
+}
+
+/// The declaration is not a one-way weakening: it TIGHTENS just as well. A
+/// spider is a derived `Climber` and silent over a wall; the author who wants a
+/// ground-bound spider says so, and the same route earns the advisory.
+///
+/// The undeclared half runs first, or the advisory could be coming from
+/// anywhere.
+#[test]
+fn declaring_ground_binds_a_spider_back_to_the_surmount_rule() {
+    let silent = build_npcs(
+        npcs_declaring("minecraft:spider", None),
+        surmountable_wall(),
+    )
+    .expect("a spider over a wall is what a spider does");
+    assert!(
+        !silent.iter().any(|d| d.code == DW_BARRIER_SURMOUNTED),
+        "a derived climber must be silent, or the declared half proves nothing: {silent:#?}"
+    );
+    let bound = build_npcs(
+        npcs_declaring("minecraft:spider", Some("ground")),
+        surmountable_wall(),
+    )
+    .expect("surmounting stays advisory");
+    assert!(
+        bound
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("npc/keeper")),
+        "declaring `ground` must bind the body back to the rule: {bound:#?}"
+    );
+}
+
+/// A declaration on a body that never walks is inert for a third reason, and the
+/// message says which — the fix differs (give it a route, or drop the field).
+#[test]
+fn a_declaration_on_a_body_that_never_moves_is_dw0454() {
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&npcs_declaring("minecraft:sheep", Some("climber"))).unwrap();
+    // A second NPC that declares a traversal and is never the subject of a
+    // `move-npc`. The keeper keeps its walk, so the fixture still binds.
+    let mut extra = doc["content"]["npcs"][0].clone();
+    extra["id"] = serde_json::json!("npc/statue");
+    extra["anchor"] = serde_json::json!("anchor/exit");
+    doc["content"]["npcs"]
+        .as_array_mut()
+        .unwrap()
+        .push(extra.clone());
+    doc["content"]["npcs"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("traversal");
+    let err = build_npcs(doc.to_string(), surmountable_wall())
+        .expect_err("a body that never moves has no locomotion to declare");
+    let (code, message) = coded(err);
+    assert_eq!(code, "DW0454", "{message}");
+    assert!(
+        message.contains("npc/statue") && message.contains("walks no leg at all"),
+        "the message must name the third shape: {message}"
+    );
+}
+
+/// **The second consumer, exercised.** Traversal is a property of a body that
+/// moves, so it is one shared type on the stage-2 NPC and the stage-5 actor —
+/// and a surface built onto one class and left inert on its sibling is exactly
+/// the defect CLAUDE.md names. So the actor half runs the whole shape too: the
+/// same wall, the same claim, the same proof, on the other object class.
+#[test]
+fn the_stage_5_actor_carries_the_same_declaration_and_the_same_proof() {
+    let declared = |l: Option<&str>| {
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&quests_with_actor("minecraft:sheep")).unwrap();
+        doc["dsl_version"] = serde_json::json!("0.11.0");
+        if let Some(l) = l {
+            doc["content"]["actors"][0]["traversal"] = serde_json::json!({ "locomotion": l });
+        }
+        doc.to_string()
+    };
+    let undeclared = build_with(declared(None), surmountable_wall()).expect("advisory tier");
+    assert!(
+        undeclared
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
+        "the fixture must flag the ACTOR, or the declared half proves nothing: {undeclared:#?}"
+    );
+    let climber = build_with(declared(Some("climber")), surmountable_wall())
+        .expect("a declared climber going over a wall is what a climber does");
+    assert!(
+        !climber
+            .iter()
+            .any(|d| d.code == DW_BARRIER_SURMOUNTED && d.message.contains("actor/subject")),
+        "the declaration must reach the actor: {climber:#?}"
+    );
+    let err = build_with(
+        declared(Some("climber")),
+        barrier_line("minecraft:cobblestone_wall", "minecraft:air", 0),
+    )
+    .expect_err("an actor's claim is held to the same standard an npc's is");
+    let (code, message) = coded(err);
+    assert_eq!(code, "DW0454", "{message}");
+    assert!(
+        message.contains("actor/subject") && message.contains("/content/actors/0/traversal"),
+        "{message}"
+    );
 }
 
 /// The build's binding ledger is emitted and states a non-zero count for a

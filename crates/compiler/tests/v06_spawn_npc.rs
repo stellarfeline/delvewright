@@ -155,7 +155,7 @@ fn deferred_npc_leaves_world_init_and_spawns_on_effect() {
     );
     assert!(
         spawn.contains("summon minecraft:interaction")
-            && spawn.contains("Tags:[\"dw_npc_keeper\"]"),
+            && spawn.contains("Tags:[\"dw_borne\",\"dw_npc_keeper\"]"),
         "spawn-npc must summon the interaction hitbox too:\n{spawn}"
     );
     // Idempotent, and the two guards must discriminate body from hitbox: a single
