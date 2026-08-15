@@ -41,10 +41,10 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::assets::Assets;
-use crate::blockcolor::is_air;
-use crate::meta::PrefabMeta;
-use crate::nbt::Structure;
+use crate::view::assets::Assets;
+use crate::view::blockcolor::is_air;
+use crate::view::meta::PrefabMeta;
+use crate::view::nbt::Structure;
 use resources::{Flags, PageResources, Texture, UnderSpecified, Unresolved};
 
 /// Schema id of the model block embedded in the page.
@@ -183,10 +183,11 @@ impl ViewerModel {
     /// because a page of a building sliced at an arbitrary plane is a review
     /// that passes and means nothing.
     pub fn load(input: &Path) -> Result<ViewerModel, String> {
-        let (piece, meta_path) = crate::tileset::load_piece(input).map_err(|e| e.to_string())?;
+        let (piece, meta_path) =
+            crate::view::tileset::load_piece(input).map_err(|e| e.to_string())?;
         let tiles = match &piece {
-            crate::tileset::PieceInput::Single(_) => 1,
-            crate::tileset::PieceInput::Zone { tiles, .. } => *tiles,
+            crate::view::tileset::PieceInput::Single(_) => 1,
+            crate::view::tileset::PieceInput::Zone { tiles, .. } => *tiles,
         };
         let structure = piece.structure().clone();
         let meta = PrefabMeta::at_path(&meta_path)?;
@@ -266,7 +267,7 @@ impl std::fmt::Display for BuildError {
                 write!(
                     f,
                     "the block-entity texture table and Minecraft {} disagree: ",
-                    delvewright_schem::blocks::MC_VERSION
+                    delvewright_dsl::blocks::MC_VERSION
                 )?;
                 let body: Vec<String> = ids
                     .iter()
@@ -360,7 +361,7 @@ pub fn build_page(
     // source is a resource pack, which is entitled to be partial, and the same
     // absence is the ordinary unresolved-resource finding.
     if !special_unresolved.is_empty() {
-        if assets.declared_version().as_deref() == Some(delvewright_schem::blocks::MC_VERSION) {
+        if assets.declared_version().as_deref() == Some(delvewright_dsl::blocks::MC_VERSION) {
             return Err(BuildError::SpecialTextures(special_unresolved));
         }
         for (block, id) in &special_unresolved {
@@ -379,7 +380,7 @@ pub fn build_page(
 
     let data = PageData {
         schema: SCHEMA,
-        mc_version: delvewright_schem::blocks::MC_VERSION,
+        mc_version: delvewright_dsl::blocks::MC_VERSION,
         eye_height: EYE_HEIGHT,
         way_in_stems: WAY_IN_STEMS.iter().map(|s| s.to_string()).collect(),
         models: out,
@@ -438,7 +439,7 @@ fn build_model(
             )));
         }
         index_of[i] = entries.len() as u16;
-        let (ns, id) = crate::blockcolor::base_id(state);
+        let (ns, id) = crate::view::blockcolor::base_id(state);
         entries.push(Some(PaletteEntry {
             name: format!("{ns}:{id}"),
             props: resources::state_properties(state),
@@ -611,15 +612,15 @@ fn escape_html(s: &str) -> String {
 /// `palette` subcommand's payload.
 pub fn palette_for(
     models: &[ViewerModel],
-    deriver: &crate::blockcolor::Deriver<'_>,
-) -> crate::blockcolor::PaletteTable {
+    deriver: &crate::view::blockcolor::Deriver<'_>,
+) -> crate::view::blockcolor::PaletteTable {
     let mut states: Vec<&str> = Vec::new();
     for m in models {
         for s in &m.structure.palette {
             states.push(s.as_str());
         }
     }
-    crate::blockcolor::PaletteTable::derive(deriver, states)
+    crate::view::blockcolor::PaletteTable::derive(deriver, states)
 }
 
 #[cfg(test)]

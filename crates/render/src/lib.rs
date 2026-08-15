@@ -1,54 +1,54 @@
-//! `delvewright-render` — the deterministic render layer (spec-0007 rendering
-//! infra / spec-0003 visual tier, M3). Productionizes the spike-render-fidelity
-//! spike.
+//! `delvewright-render` — the **GPU half** of the deterministic render layer
+//! (spec-0007 rendering infra / spec-0003 visual tier, M3). Productionizes the
+//! spike-render-fidelity spike.
 //!
-//! - [`nbt`] — vanilla-structure `.nbt` → Nucleation adapter.
-//! - [`assets`] — lazy read access to the client jar / resource pack.
-//! - [`blockcolor`] — blockstate → colour and shape, derived from that source.
-//! - [`viewer`] — prefabs → one self-contained interactive HTML page
-//!   (`delve-render viewer`), the camera a reviewer drives.
+//! This crate is what `nucleation`/`wgpu` reaches, and that is the whole reason
+//! it is a crate of its own. ADR-0021 §1 moved the CPU render surface —
+//! `viewer`, `scene`, `panorama`, `contact-sheet`, `index`, `palette` — into
+//! `delvec`, so a creator installs one binary and nothing render-shaped is a
+//! second download. What stayed behind is `piece`, `batch` and `fidelity-gate`,
+//! the three arms that mesh and rasterise.
+//!
+//! **They stayed for a distribution reason, never a capability one** (ADR-0021
+//! §3). The shelf's Linux targets are static-musl on purpose, and three separate
+//! things block a GPU arm there: a fully static binary cannot `dlopen` a Vulkan
+//! loader, `nucleation` carries a C build script with no musl cross-compiler in
+//! the release recipe, and the shelf's linker has no `libdl.a` to resolve
+//! `-ldl` against. So these arms are built from a checkout instead — which takes
+//! nothing away, because the source build is what guarantees a creator can run
+//! every validation the pipeline needs, and the skill's `Init` section builds
+//! this crate at the step that needs it rather than letting the step degrade.
+//!
+//! - [`render`] — headless GPU render wrapper (Nucleation / wgpu), and the one
+//!   place a parsed structure becomes a `UniversalSchematic`.
 //! - [`shots`] — per-piece shot planner (`delve-render piece`).
 //! - [`view`] — author-declared cameras (`piece --view`): a bearing and a
-//!   subject box, in the language `<stem>-shots.json` already writes back. Not
-//!   to be confused with [`viewer`], which is the interactive page: `view` aims
-//!   ONE still frame the renderer then bakes, `viewer` hands the camera to a
-//!   person at review time. Both answer "the planned set is not square-on at
-//!   this face"; only `view` answers it in a file a report can cite.
-//! - [`render`] — headless GPU render wrapper (Nucleation / wgpu).
+//!   subject box, in the language `<stem>-shots.json` already writes back. It
+//!   aims ONE still frame the renderer then bakes, where `delvec viewer` hands
+//!   the camera to a person at review time. Both answer "the planned set is not
+//!   square-on at this face"; only this one answers it in a file a report can
+//!   cite.
+//! - [`occupancy`] — where a body fits inside a prefab, and where its eye goes.
 //! - [`detect`] — missing-texture (magenta) color-key scan (the fidelity gate).
 //! - [`fidelity`] — the built-in newest-block gate fixture.
-//! - [`meta`] — prefab metadata (sockets/anchors) for interior shots.
-//! - [`occupancy`] — where a body fits inside a prefab, and where its eye goes.
-//! - [`tileset`] — a zone too big for one structure template, reassembled from
-//!   its manifest so an author reviews one scene and never a fragment.
-//! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
-//!   (free-camera path — the renderer for the first-person player-POV shots).
-//! - [`panorama`] — the whole-map 45° oblique release panorama.
-//! - [`cache`] — Chunky's derived per-scene caches, and their invalidation.
-//! - [`index`] — shot index: (image ↔ expect) pairs for the vision reviewer.
-//! - [`sheet`] — the contact sheet: many candidate renders on one page, ordered
-//!   by a similarity score that RANKS and never gates (spec-0027 §3 curation,
-//!   spec-0028 §3).
-//! - [`font`] — the built-in 5×7 bitmap font the sheet labels cells with.
-//! - [`diag`] — diagnostics + exit codes (`DW072x`, plus the review page's
-//!   `DW079x` block).
+//!
+//! The CPU pieces these rest on are not copied here — they are the same modules
+//! `delvec` carries, named through this crate so the arms above keep one
+//! spelling: [`diag`] (the shared `DW072x`/`DW079x` catalog), [`meta`] (prefab
+//! metadata — sockets and anchors) and [`nbt`] (the vanilla structure reader).
+//! Everything else the CPU surface owns is reached as
+//! `delvewright_compiler::view::…` at its use site, so that a reader can always
+//! tell which side of the shelf split a thing is on.
 
-pub mod assets;
-pub mod blockcolor;
-pub mod cache;
 pub mod detect;
-pub mod diag;
 pub mod fidelity;
-pub mod font;
-pub mod index;
-pub mod meta;
-pub mod nbt;
 pub mod occupancy;
-pub mod panorama;
 pub mod render;
-pub mod scene;
-pub mod sheet;
 pub mod shots;
-pub mod tileset;
 pub mod view;
-pub mod viewer;
+
+// One definition, two spellings — the same arrangement `delvewright_schem` has
+// for `prefab`. These modules moved into `delvec` with the CPU surface; naming
+// them here keeps `crate::nbt` / `crate::diag` / `crate::meta` inside this
+// crate's own modules resolving to that one definition rather than to a copy.
+pub use delvewright_compiler::view::{diag, meta, nbt};

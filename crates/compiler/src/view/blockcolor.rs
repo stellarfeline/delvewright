@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::assets::Assets;
+use crate::view::assets::Assets;
 
 /// The default biome whose tints colour a prefab when none is named. Plains is
 /// vanilla's own reference point for the colormaps (temperature 0.8, downfall

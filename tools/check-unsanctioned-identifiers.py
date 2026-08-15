@@ -129,8 +129,8 @@ ALLOWED: dict[str, str] = {
 # --------------------------------------------------------------------------
 FLOOR: dict[str, int] = {
     "crates/render/README.md": 3,
-    "crates/render/src/panorama.rs": 1,
-    "crates/render/src/viewer/page.css": 1,
+    "crates/compiler/src/view/panorama.rs": 1,
+    "crates/compiler/src/view/viewer/page.css": 1,
 }
 
 

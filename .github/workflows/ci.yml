@@ -134,7 +134,7 @@ jobs:
         with:
           node-version: "24"
       - name: the viewer's key and mouse mapping does what it says (node --test)
-        run: node --test crates/render/tests/controls.test.mjs
+        run: node --test crates/compiler/tests/controls.test.mjs
       # Authored JSON has ONE canonical form, so an insertion is a one-line
       # diff instead of a whole-file rewrite
       # — a three-key insertion into a non-canonical zh-cn sidecar once produced

@@ -35,8 +35,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::assets::Assets;
-use crate::blockcolor::{base_id, is_air};
+use crate::view::assets::Assets;
+use crate::view::blockcolor::{base_id, is_air};
 
 /// One texture as the page carries it.
 #[derive(Debug, Clone, Serialize)]
@@ -242,7 +242,7 @@ pub struct PageResources {
 /// Extract everything the page needs for `states`, which are full blockstate
 /// strings (`minecraft:oak_stairs[facing=north,...]`) with their cell counts.
 pub fn extract(assets: &Assets, states: &BTreeMap<String, u32>) -> PageResources {
-    let registry = delvewright_schem::blocks::BlockRegistry::v1_21_11();
+    let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
     let mut out = PageResources::default();
 
     // Distinct block ids, so a definition is read once however many states of it
@@ -698,7 +698,7 @@ fn collect_when(when: Option<&serde_json::Value>, out: &mut BTreeSet<String>) {
 
 /// Find palette entries that leave selecting properties unwritten.
 fn under_specified(
-    registry: &delvewright_schem::blocks::BlockRegistry,
+    registry: &delvewright_dsl::blocks::BlockRegistry,
     states: &BTreeMap<String, u32>,
     out: &mut PageResources,
 ) {

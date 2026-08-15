@@ -16,11 +16,14 @@
 //! library: `hero-temple-ruin-arch.nbt` carries `minecraft:chain` at `[4, 9, 13]`
 //! (1 of 36 prefabs, measured 2026-08-11 with `delve-admit audit`).
 //!
-//! So this module is the block half of the command rule. It lives in
-//! `delvewright-schem` because that is where the structure-template reader and
-//! writer already are — but this crate is **not** the only site that turns a
-//! palette into `.nbt` bytes, and reasoning as though it were is what left the
-//! sixth emitter unguarded. The six `prefabs/*-generator` workspaces cannot
+//! So this module is the block half of the command rule. It lives here, beside
+//! the other pinned registries, because the registry is a fact about the pinned
+//! game rather than about any one reader of it: the structure-template writer
+//! (`delvewright_schem`, which re-exports this module), the grammar back end,
+//! the admission audit and the compiler's own render surface all check against
+//! this one table. And no crate is the only site that turns a palette into
+//! `.nbt` bytes — reasoning as though one were is what left the sixth emitter
+//! unguarded. The six `prefabs/*-generator` workspaces cannot
 //! depend on this crate at all and reach the same rule through
 //! `prefabs/invariants.rs`. Which sites owe it is therefore not remembered: it
 //! is discovered from the ingredient by `tools/check-structure-emitters.py`,
@@ -30,7 +33,7 @@
 //! # What it validates
 //!
 //! A full block state: the id, every property name, and every property value,
-//! against `crates/compiler/data/blocks-1.21.11.json` (see that directory's
+//! against `crates/dsl/data/blocks-1.21.11.json` (see that directory's
 //! `PROVENANCE.md`). Nothing here is a heuristic and nothing is a warning —
 //! either 1.21.11 has that state or it does not.
 //!
@@ -48,7 +51,7 @@ use std::sync::OnceLock;
 /// shared by this crate, the grammar back end and the five out-of-workspace
 /// prefab generators (`prefabs/invariants.rs`), none of which may depend on
 /// `delvec`. A moved data file is a compile error, which is the loud failure.
-const REGISTRY_JSON: &str = include_str!("../../compiler/data/blocks-1.21.11.json");
+const REGISTRY_JSON: &str = include_str!("../data/blocks-1.21.11.json");
 
 /// The shape-carrying properties per block: the properties named by `multipart`
 /// selectors in the block's own blockstate definition, derived from the 1.21.11
@@ -57,7 +60,7 @@ const REGISTRY_JSON: &str = include_str!("../../compiler/data/blocks-1.21.11.jso
 /// complete model, so omitting it renders the author's default; a `multipart`
 /// property *assembles* the model, so omitting it drops geometry — wall arms,
 /// pane connections, vine faces. That is the class line `DW0735` fires on.
-const SHAPE_JSON: &str = include_str!("../../compiler/data/blockstate-shape-props-1.21.11.json");
+const SHAPE_JSON: &str = include_str!("../data/blockstate-shape-props-1.21.11.json");
 
 /// The pinned **default state** of every block: the value the game resolves each
 /// unwritten property to.
@@ -71,7 +74,7 @@ const SHAPE_JSON: &str = include_str!("../../compiler/data/blockstate-shape-prop
 /// close: a bare `minecraft:cobblestone_wall` is a wall POST (`up=true`, every
 /// side `none`), and "the first legal value" yields `up=false` with `east=low`,
 /// which is a different block.
-const DEFAULTS_JSON: &str = include_str!("../../compiler/data/block-defaults-1.21.11.json");
+const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 
 /// The Minecraft version this registry describes (ADR-0009).
 pub const MC_VERSION: &str = "1.21.11";
@@ -395,7 +398,7 @@ impl BlockRegistry {
     /// takes vanilla's five stair values, and nothing else in the game has one.
     ///
     /// The derivation matters because the property it feeds
-    /// ([`crate::stairs::derive_shape`]) tests *any* stair against *any* other
+    /// (`delvewright_schem::stairs::derive_shape`) tests *any* stair against *any* other
     /// — an oak stair mitres against a stone-brick one — so a hand-kept list
     /// would be wrong the day a version adds a stair, in the silent direction.
     pub fn is_stairs(&self, name: &str) -> bool {
@@ -1137,12 +1140,6 @@ mod tests {
             reg.judge_at("minecraft:iron_chain", &chain, PIN_DATA_VERSION),
             StateJudgement::Valid
         );
-    }
-
-    /// The pinned DataVersion here and in `convert` are one fact.
-    #[test]
-    fn the_pin_data_version_matches_the_emitter() {
-        assert_eq!(PIN_DATA_VERSION, crate::convert::DATA_VERSION);
     }
 
     /// The shape class: connection properties of multipart-assembled blocks

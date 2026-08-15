@@ -184,6 +184,15 @@ enum Command {
         #[arg(short, long, default_value = "shot-patch.json")]
         out: String,
     },
+    /// The CPU render arms (ADR-0021 §1): `viewer`, `scene`, `panorama`,
+    /// `contact-sheet`, `palette` and `index`. Flattened in rather than nested
+    /// under a group, because the surface a creator installs is one binary and
+    /// these are ordinary subcommands of it — `delvec viewer …`, not
+    /// `delvec render viewer …`. The arms that need a GPU (`piece`, `batch`,
+    /// `fidelity-gate`) are built from a checkout instead (ADR-0021 §3); no
+    /// capability is lost by that, only a prebuilt path.
+    #[command(flatten)]
+    View(delvewright_compiler::view::cli::ViewCommand),
 }
 
 #[derive(Subcommand)]
@@ -306,6 +315,7 @@ fn main() -> ExitCode {
             layout,
             out,
         } => run_calibrate(report, layout, out, cli.json),
+        Command::View(cmd) => cmd.run(cli.json),
     }
 }
 

@@ -231,7 +231,7 @@ pub fn render_structure(
     strip_ceiling: bool,
     p: &RenderParams,
 ) -> Result<Frame, String> {
-    let schem = crate::nbt::build_schematic(st, strip_ceiling).map_err(|e| e.to_string())?;
+    let schem = build_schematic(st, strip_ceiling).map_err(|e| e.to_string())?;
     let mesh = schem
         .to_mesh(pack, &MeshConfig::default())
         .map_err(|e| format!("mesh: {e:?}"))?;
@@ -267,6 +267,35 @@ pub fn render_structure(
         height: p.dim,
         rgba,
     })
+}
+
+/// Rebuild a parsed [`Structure`](crate::nbt::Structure) as a Nucleation
+/// `UniversalSchematic`. When
+/// `strip_ceiling` is set, blocks at the top Y layer are omitted, yielding a
+/// "dollhouse" cutaway so an orbit camera can see the (roofed) interior — used
+/// for the per-piece interior/anchor shots (a validation artifact, never
+/// shipped). `air` states are skipped (they carry no mesh).
+pub fn build_schematic(
+    st: &crate::nbt::Structure,
+    strip_ceiling: bool,
+) -> Result<nucleation::UniversalSchematic, crate::nbt::NbtError> {
+    use nucleation::{BlockState, UniversalSchematic};
+    let mut schem = UniversalSchematic::new("delve-prefab".to_string());
+    let top_y = st.size[1] - 1;
+    for (pos, idx) in &st.blocks {
+        if strip_ceiling && pos[1] >= top_y {
+            continue;
+        }
+        let state_str = &st.palette[*idx];
+        if state_str == "minecraft:air" {
+            continue;
+        }
+        let bs = BlockState::from_block_string(state_str).map_err(|e| {
+            crate::nbt::NbtError(format!("cannot parse block state `{state_str}`: {e:?}"))
+        })?;
+        schem.set_block(pos[0], pos[1], pos[2], &bs);
+    }
+    Ok(schem)
 }
 
 #[cfg(test)]

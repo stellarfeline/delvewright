@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 /// (`delvewright_schem::blocks`). Two readers of one file is not two authorities
 /// — the alternative here would be a *further* hand-maintained block list, which
 /// is the defect this gate exists to catch.
-const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/compiler/data/blocks-1.21.11.json");
+const BLOCK_REGISTRY_JSON: &str = include_str!("../crates/dsl/data/blocks-1.21.11.json");
 
 fn block_registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
     static REGISTRY: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();

@@ -11,7 +11,7 @@
 //! Every emitted file is named after the scene's own Chunky `name`
 //! ([`scene_file_stem`]) — because Chunky treats `name` as the scene's identity
 //! and will re-save a loaded scene, and key its caches, under it. See that
-//! function's docs; [`crate::cache`] is the other half.
+//! function's docs; [`crate::view::cache`] is the other half.
 //!
 //! ## Ocean horizons
 //!
@@ -80,7 +80,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::diag::{DW_INPUT, Diagnostic};
+use crate::view::diag::{DW_INPUT, Diagnostic};
 
 /// The Chunky snapshot-core version the spike verified against 1.21.11. Recorded
 /// here + in `versions.toml [render]` + the README (Chunky 1.21.x needs snapshot
@@ -397,7 +397,7 @@ pub fn scene_name(shot_id: &str) -> String {
 /// `bar.dump` into the scene directory. Emitting a file under any other name
 /// therefore left a second, diverging scene description on disk and — worse —
 /// put every cache on a stem re-emission would never invalidate, which is
-/// exactly the stale-render trap [`crate::cache`] exists to close. Verified
+/// exactly the stale-render trap [`crate::view::cache`] exists to close. Verified
 /// against the pinned core by rendering a panorama (2026-08-06).
 pub fn scene_file_stem(campaign_id: &str, shot_id: &str) -> String {
     format!("{}_{}", scene_name(campaign_id), scene_name(shot_id))
@@ -585,7 +585,7 @@ pub fn scenes_from_plan(
 mod tests {
     use super::*;
 
-    const FIXTURE: &[u8] = include_bytes!("../tests/fixtures/render-plan-mini.json");
+    const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-mini.json");
 
     #[test]
     fn malformed_plan_json_is_dw0721() {
@@ -781,7 +781,7 @@ mod tests {
         }
     }
 
-    const OCEAN_FIXTURE: &[u8] = include_bytes!("../tests/fixtures/render-plan-ocean.json");
+    const OCEAN_FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/view/render-plan-ocean.json");
 
     #[test]
     fn ocean_horizon_scenes_stand_on_the_water_world_plane() {
@@ -818,7 +818,7 @@ mod tests {
     #[test]
     fn golden_scene_matches() {
         let scenes = scenes_from_plan(FIXTURE, &SceneOptions::default(), &[]).unwrap();
-        let golden = include_bytes!("../tests/fixtures/golden/spawn.json");
+        let golden = include_bytes!("../../tests/fixtures/view/golden/spawn.json");
         let (_, spawn) = scenes.iter().find(|(n, _)| n == "mini_spawn.json").unwrap();
         assert_eq!(
             std::str::from_utf8(spawn).unwrap(),

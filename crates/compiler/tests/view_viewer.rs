@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const BIN: &str = env!("CARGO_BIN_EXE_delve-render");
+const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
 fn tmp(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("delve-viewer-{}-{tag}", std::process::id()));
@@ -42,12 +42,12 @@ fn png_bytes() -> Vec<u8> {
 
 /// Every block id a prefab's palette names.
 fn blocks_in(nbt: &Path) -> BTreeSet<String> {
-    let st = delvewright_render::nbt::parse_structure(nbt).expect("parse prefab");
+    let st = delvewright_compiler::view::nbt::parse_structure(nbt).expect("parse prefab");
     st.palette
         .iter()
-        .filter(|s| !delvewright_render::blockcolor::is_air(s))
+        .filter(|s| !delvewright_compiler::view::blockcolor::is_air(s))
         .map(|s| {
-            let (ns, id) = delvewright_render::blockcolor::base_id(s);
+            let (ns, id) = delvewright_compiler::view::blockcolor::base_id(s);
             format!("{ns}:{id}")
         })
         .collect()
@@ -121,9 +121,9 @@ fn pack_for(dir: &Path, nbt: &Path, omit: &[&str]) -> PathBuf {
 
 fn viewer(nbt: &Path, out: &Path, pack: &Path) -> std::process::Output {
     Command::new(BIN)
+        .arg("viewer")
         .arg("--textures")
         .arg(pack)
-        .arg("viewer")
         .arg(nbt)
         .arg("-o")
         .arg(out)
@@ -220,9 +220,9 @@ fn a_directory_of_prefabs_is_one_page_in_a_stable_order() {
     let out = dir.join("library.html");
 
     let r = Command::new(BIN)
+        .arg("viewer")
         .arg("--textures")
         .arg(&pack)
-        .arg("viewer")
         .arg(&src)
         .arg("-o")
         .arg(&out)
@@ -363,9 +363,9 @@ fn the_run_states_what_each_check_examined() {
     let out = dir.join("page.html");
     let r = Command::new(BIN)
         .arg("--json")
+        .arg("viewer")
         .arg("--textures")
         .arg(&pack)
-        .arg("viewer")
         .arg(&nbt)
         .arg("-o")
         .arg(&out)
@@ -418,9 +418,9 @@ fn a_missing_prefab_is_dw0721_exit2() {
     let pack = dir.join("pack");
     fake_pack(&pack, &BTreeSet::new(), &[]);
     let r = Command::new(BIN)
+        .arg("viewer")
         .arg("--textures")
         .arg(&pack)
-        .arg("viewer")
         .arg(dir.join("nope.nbt"))
         .arg("-o")
         .arg(dir.join("page.html"))
@@ -543,9 +543,9 @@ fn a_tiled_zone_is_one_building_on_the_page() {
     let out = dir.join("zone.html");
     let r = Command::new(BIN)
         .arg("--json")
+        .arg("viewer")
         .arg("--textures")
         .arg(&pack)
-        .arg("viewer")
         .arg(&zone)
         .arg("-o")
         .arg(&out)
@@ -577,9 +577,9 @@ fn a_tiled_zone_is_one_building_on_the_page() {
 
     // And pointing at one tile by name is refused rather than rendered.
     let r = Command::new(BIN)
+        .arg("viewer")
         .arg("--textures")
         .arg(&pack)
-        .arg("viewer")
         .arg(zone.join("zone.x0y0z0.nbt"))
         .arg("-o")
         .arg(dir.join("fragment.html"))
@@ -727,7 +727,7 @@ fn ci_runs_the_control_mapping_tests() {
         panic!("cannot read {}", ci.display());
     };
     assert!(
-        text.contains("node --test crates/render/tests/controls.test.mjs"),
+        text.contains("node --test crates/compiler/tests/controls.test.mjs"),
         "ci.yml no longer runs the viewer's control mapping tests"
     );
     assert!(

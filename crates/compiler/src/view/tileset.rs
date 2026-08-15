@@ -1,7 +1,7 @@
 //! Reviewing a tiled zone as ONE scene.
 //!
 //! A zone past the 48-per-axis structure-template cap ships as several `.nbt`
-//! files plus a manifest (`delvewright_schem::split::TileSet`). That is
+//! files plus a manifest (`delvewright_dsl::split::TileSet`). That is
 //! packaging, and packaging must not reach the person doing the reviewing: an
 //! author looking at a gate ward wants the gate ward, not tile 0,0,1 of it. So
 //! the renderer reassembles the tiles into one [`Structure`] before it plans a
@@ -16,9 +16,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use delvewright_schem::split::{TileSet, fragment_refusal, read_tile_set, tile_evidence};
+use delvewright_dsl::split::{TileSet, fragment_refusal, read_tile_set, tile_evidence};
 
-use crate::nbt::{NbtError, Structure, parse_structure};
+use crate::view::nbt::{NbtError, Structure, parse_structure};
 
 /// What a path handed to `delve-render piece` turned out to be.
 #[derive(Debug)]
@@ -151,7 +151,7 @@ pub fn assemble(dir: &Path, set: &TileSet) -> Result<Structure, NbtError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use delvewright_schem::split::TilePart;
+    use delvewright_dsl::split::TilePart;
 
     fn part(file: &str, offset: [i32; 3], size: [i32; 3]) -> TilePart {
         TilePart {

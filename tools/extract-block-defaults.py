@@ -22,7 +22,7 @@ Reproduce:
     curl -sSL -o /tmp/blocks.min.json \\
       https://raw.githubusercontent.com/misode/mcmeta/1.21.11-summary/blocks/data.min.json
     python3 tools/extract-block-defaults.py /tmp/blocks.min.json \\
-      crates/compiler/data/block-defaults-1.21.11.json
+      crates/dsl/data/block-defaults-1.21.11.json
 
 The source SHA-256 is pinned below and checked, and every extracted default is
 checked to be one of that property's own legal values — a table that disagreed
