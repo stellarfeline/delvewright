@@ -362,7 +362,7 @@ fn a_copy_edited_out_of_step_is_green_on_every_gate() {
         println!(
             "  {:<14} {}  bound {:<7} {}",
             gate.id,
-            if gate.pass { "pass" } else { "FAIL" },
+            if gate.passed() { "pass" } else { "FAIL" },
             gate.bound,
             gate.detail
         );

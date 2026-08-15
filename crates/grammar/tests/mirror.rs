@@ -176,7 +176,7 @@ fn red_one_rule_at_both_sites_opens_the_far_flank_and_every_other_gate_stays_gre
     );
     for id in ["blocks-exist", "non-empty", "traversable"] {
         let g = gate(&report, id);
-        assert!(g.pass && g.bound > 0, "{id}: {}", g.detail);
+        assert!(g.passed() && g.bound > 0, "{id}: {}", g.detail);
     }
 }
 
@@ -205,14 +205,14 @@ fn green_the_reflected_arm_puts_its_end_wall_on_the_outside() {
 fn the_symmetry_gate_reads_the_hole_the_other_gates_cannot() {
     let broken = judged(&run(&transept(Node::call("arm"))), Some(Axis::X));
     let g = gate(&broken, "symmetric");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 660, "10 pairs per column, 6 x 11 columns");
     assert!(g.detail.contains("differ"), "{}", g.detail);
     assert!(!broken.is_pass());
 
     let whole = judged(&run(&transept(reflected_arm())), Some(Axis::X));
     let g = gate(&whole, "symmetric");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert_eq!(g.bound, 660);
     assert!(whole.is_pass());
 }
@@ -241,7 +241,7 @@ fn the_symmetry_gate_over_a_one_cell_axis_binds_to_nothing_and_says_so() {
     );
     let g = gate(&report, "symmetric");
     assert_eq!(g.bound, 0);
-    assert!(!g.pass, "a zero binding is not a pass");
+    assert!(!g.passed(), "a zero binding is not a pass");
     assert!(
         report
             .findings
@@ -291,7 +291,7 @@ fn the_symmetry_gate_compares_presence_because_a_facing_does_not_reflect() {
         },
     );
     assert!(
-        gate(&report, "symmetric").pass,
+        gate(&report, "symmetric").passed(),
         "two facings, one silhouette"
     );
 }

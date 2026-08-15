@@ -254,7 +254,7 @@ fn the_floor_gate_cannot_see_the_hole_the_symmetry_gate_exists_for() {
     );
     let gate = |r: &gates::Report, id: &str| {
         let g = r.gates.iter().find(|g| g.id == id).expect("gate ran");
-        (g.pass, g.bound)
+        (g.passed(), g.bound)
     };
 
     assert!(!gate(&holed, "symmetric").0, "the hole must red it");

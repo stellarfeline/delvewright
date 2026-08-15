@@ -249,7 +249,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             Diagnostic::warning(DW_CONTRACT, finding.clone()).print(json);
         }
         for gate in &verdict.gates {
-            if !gate.pass {
+            if !gate.passed() {
                 contract_failed = true;
                 Diagnostic::error(
                     DW_CONTRACT,
