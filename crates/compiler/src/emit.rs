@@ -18423,6 +18423,7 @@ mod tests {
             drops: Vec::new(),
             attributes: None,
             tier: None,
+            traversal: None,
         }
     }
 
@@ -18743,6 +18744,7 @@ mod loot_emit_tests {
             attributes: None,
             tier: None,
             drops: Vec::new(),
+            traversal: None,
         }
     }
 
