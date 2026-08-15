@@ -546,6 +546,148 @@ fn open_socket_is_sealed_with_wall() {
     );
 }
 
+/// The same seal strategy, on the assembly that never ran a solver: a
+/// **single-prefab area**. Its lone piece has no second piece to mate with, so
+/// every connector it declares is unmated by construction and owes a wall fill —
+/// "every unmated socket is sealed with wall material" is a property of a PLACED
+/// PIECE, not of having run the layout solver.
+///
+/// Keyed to the solver, it reached only pool areas, and a single-prefab area
+/// shipped the connector's 3×3 doorway standing open onto whatever the horizon
+/// says lies beyond the piece, with the `minecraft:jigsaw` authoring marker left
+/// in its sill as a real block a player can stand on. The seal fill covers that
+/// cell, which is why this test asserts containment of the socket rather than a
+/// literal box.
+///
+/// The world-level consequence is `DW0322`: those doorway cells are reachable
+/// walkable ground one step from a void drop. That symptom is content-dependent —
+/// it needs something to make the doorway reachable — so it is deliberately not
+/// what this test measures.
+#[test]
+fn a_single_prefab_areas_lone_piece_seals_the_sockets_it_cannot_mate() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let meta = prefabs
+        .get("prefab/cave-shore")
+        .expect("the library carries prefab/cave-shore");
+    // Binding count: a library piece that stopped declaring connectors would make
+    // every assertion below vacuously true.
+    assert!(
+        !meta.connectors.is_empty(),
+        "this proof binds to a connector-bearing prefab; prefab/cave-shore declares none"
+    );
+    let connectors = meta.connectors.len();
+    let socket_local = meta.connectors[0].local_pos;
+
+    let dir = std::env::temp_dir().join(format!(
+        "delvewright-single-prefab-seal-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::hello_world_dir(), &dir);
+    let world_path = dir.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&world_path).unwrap()).unwrap();
+    world["content"]["areas"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "area/cove",
+            "name": "The Cove",
+            "prefab": "prefab/cave-shore"
+        }));
+    std::fs::write(&world_path, serde_json::to_string_pretty(&world).unwrap()).unwrap();
+
+    let loaded = load_campaign_dir(&dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+
+    let cove = plan
+        .areas
+        .iter()
+        .find(|a| a.area_id == "area/cove")
+        .expect("the cove is placed");
+    assert_eq!(
+        cove.seals.len(),
+        connectors,
+        "one seal per connector, all unmated: {:?}",
+        cove.seals
+    );
+    let origin = cove.pieces[0].pos;
+    let socket = [
+        origin[0] + socket_local[0],
+        origin[1] + socket_local[1],
+        origin[2] + socket_local[2],
+    ];
+    for seal in &cove.seals {
+        assert_eq!(
+            seal.block, "minecraft:stone_bricks",
+            "an unmated socket is walled, never cleared to air"
+        );
+    }
+    let covers_socket = cove
+        .seals
+        .iter()
+        .any(|s| (0..3).all(|axis| s.from[axis] <= socket[axis] && socket[axis] <= s.to[axis]));
+    assert!(
+        covers_socket,
+        "the wall fill must cover the socket cell {socket:?} — that is where the jigsaw \
+         marker stands and where the doorway opens: {:?}",
+        cove.seals
+    );
+
+    // And it reaches the shipped world, not just the plan. The build also has to
+    // SUCCEED: with the doorway open this campaign is `DW0322` — a reachable
+    // walkable cell one step from a void drop, which is the finding this seal
+    // closes.
+    let out = build_campaign(&dir);
+    let setup = std::str::from_utf8(
+        out.get("datapack/data/hello-world/function/setup_finish.mcfunction")
+            .expect("setup_finish is emitted"),
+    )
+    .unwrap();
+    for seal in &cove.seals {
+        let line = format!(
+            "fill {} {} {} {} {} {} minecraft:stone_bricks",
+            seal.from[0], seal.from[1], seal.from[2], seal.to[0], seal.to[1], seal.to[2]
+        );
+        assert!(
+            setup.lines().any(|l| l == line),
+            "expected `{line}` in setup_finish:\n{setup}"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The other half, and the reason the change above moves no shipped bytes: a
+/// prefab that declares no connector has no socket to seal, so a single-prefab
+/// area binding one emits exactly what it did before. Every campaign and fixture
+/// in the tree is of that shape.
+#[test]
+fn a_connectorless_single_prefab_area_still_gets_no_seals() {
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let mut examined = 0usize;
+    for area in &plan.areas {
+        let meta = prefabs.get(&area.pieces[0].prefab_id).unwrap();
+        assert!(
+            meta.connectors.is_empty(),
+            "fixture drift: `{}` now declares connectors, so this is no longer the \
+             connectorless case",
+            area.pieces[0].prefab_id
+        );
+        assert!(
+            area.seals.is_empty(),
+            "no connector, no seal: {:?}",
+            area.seals
+        );
+        examined += 1;
+    }
+    assert_eq!(examined, 1, "hello-world places exactly one area");
+}
+
 /// Branching growth (lifts the old `DW0304` one-terminal limit): requiring two
 /// dead-end terminals carried by *distinct* pieces (boss-hall's `anchor/boss` +
 /// small-a's `anchor/chest`) places **both** on separate branches off a tee/cross,
