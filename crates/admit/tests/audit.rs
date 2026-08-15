@@ -233,32 +233,93 @@ fn the_rename_passes_the_audit() {
 
 /// `DW0734`: the same unknown id in a template that PRE-DATES the pin is not a
 /// defect — the game datafixes every structure it loads against the file's
-/// `DataVersion`, and `chain` → `iron_chain` is registered at schema 4541.
-/// The shipped proof is `prefabs/hero-temple-ruin-arch.nbt` (DataVersion 2975,
-/// carries `minecraft:chain`, loads fine); refusing it under `DW0733` was a
-/// measured false positive. The audit warns — loud enough to catch a typo no
-/// fixer will ever map — and passes.
+/// `DataVersion`, and `chain` becomes `iron_chain`. The shipped proof is
+/// `prefabs/hero-temple-ruin-arch.nbt` (DataVersion 2975, carries
+/// `minecraft:chain`, loads fine); refusing it under `DW0733` was a measured
+/// false positive. The audit warns — loud enough to catch a typo no fixer will
+/// ever map — and passes.
+///
+/// The allowlist is the DEFAULT one on purpose. This test used to hand it a
+/// bespoke list containing `minecraft:chain`, "so the test isolates the
+/// DataVersion rule" — and that workaround was the whole defect in miniature:
+/// the default list does not contain `minecraft:chain` (it contains
+/// `minecraft:iron_chain`, which is the block the server holds), so the audit
+/// warned in one breath and refused the identical cell under `DW0730` in the
+/// next. Nothing here isolates that any more; the two rules have to agree.
 #[test]
 fn a_pre_pin_template_with_a_datafixable_id_warns_instead_of_failing() {
     let mut s = fixtures::renamed_block_piece();
     s.data_version = 2975; // hero-temple-ruin-arch's actual DataVersion
-    // The allowlist is a separate question; permit the piece's palette so the
-    // test isolates the DataVersion rule.
-    let allow = Allowlist::from_file(
-        r#"{ "allow": ["minecraft:air", "minecraft:stone_bricks", "minecraft:glowstone",
-                       "minecraft:chain"] }"#,
-    )
-    .unwrap();
-    let (rep, _) = audit("arch", &s, &allow);
+    let (rep, _) = audit("arch", &s, &Allowlist::default_building());
     assert!(rep.is_pass(), "{:?}", rep.findings);
     assert_eq!(rep.unknown_blocks, 0);
     assert_eq!(rep.pre_pin_unknown, 1);
+    assert_eq!(rep.not_allowlisted, 0);
     let f = rep
         .findings
         .iter()
         .find(|f| f.code == "DW0734")
         .expect("DW0734 must fire");
     assert_eq!(f.severity, "warning");
+    assert!(f.message.contains("2975"), "{}", f.message);
+    // The warning names the id the server will hold, not only the one it will
+    // not: a reader who has to guess which of three chains the fixer picks has
+    // not been told anything.
+    assert!(f.message.contains("minecraft:iron_chain"), "{}", f.message);
+}
+
+/// `DW0730` over the id the game LOADS, in both directions.
+///
+/// The allowlist is a list of names at the pin, so a pre-pin palette must be
+/// resolved before it is judged — but resolving it must not become a way in.
+/// Both halves are asserted here, because a fix that only made the arch pass
+/// would be indistinguishable from widening the list.
+#[test]
+fn the_allowlist_judges_the_id_the_game_loads_and_still_refuses_a_dead_one() {
+    // 1. The renamed id resolves to an allowlisted block: admitted.
+    let mut arch = fixtures::renamed_block_piece();
+    arch.data_version = 2975;
+    let (rep, _) = audit("arch", &arch, &Allowlist::default_building());
+    assert_eq!(rep.not_allowlisted, 0, "{:?}", rep.findings);
+
+    // 2. The SAME id at the pin resolves to nothing — no fixer runs — so it is
+    //    still refused, and by both rules.
+    let mut at_pin = fixtures::renamed_block_piece();
+    at_pin.data_version = delvewright_schem::blocks::PIN_DATA_VERSION;
+    let (rep, _) = audit("bell-tower", &at_pin, &Allowlist::default_building());
+    assert!(!rep.is_pass());
+    assert_eq!(rep.unknown_blocks, 1);
+    assert_eq!(rep.not_allowlisted, 1, "{:?}", rep.findings);
+
+    // 3. A pre-pin id nothing renames stays refused: resolution is not a pass.
+    let mut typo = fixtures::clean_room();
+    typo.data_version = 2975;
+    typo.set_cell(
+        [2, 1, 2],
+        delvewright_admit::structure::PaletteEntry::simple("minecraft:chian"),
+        None,
+    );
+    let (rep, _) = audit("typo", &typo, &Allowlist::default_building());
+    assert!(!rep.is_pass());
+    assert_eq!(rep.not_allowlisted, 1, "{:?}", rep.findings);
+
+    // 4. A pre-pin rename whose TARGET the allowlist does not permit is refused
+    //    on the target, and the diagnostic names both ids — otherwise the
+    //    reviewer is sent to look for a block the file does not contain.
+    let narrow = Allowlist::from_file(
+        r#"{ "allow": ["minecraft:air", "minecraft:stone_bricks", "minecraft:glowstone"] }"#,
+    )
+    .unwrap();
+    let (rep, _) = audit("arch", &arch, &narrow);
+    assert!(!rep.is_pass());
+    assert_eq!(rep.not_allowlisted, 1);
+    let f = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0730")
+        .expect("DW0730 must fire");
+    assert!(f.message.contains("minecraft:iron_chain"), "{}", f.message);
+    assert!(f.message.contains("minecraft:chain"), "{}", f.message);
     assert!(f.message.contains("2975"), "{}", f.message);
 }
 

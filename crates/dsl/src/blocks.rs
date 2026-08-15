@@ -76,6 +76,29 @@ const SHAPE_JSON: &str = include_str!("../data/blockstate-shape-props-1.21.11.js
 /// which is a different block.
 const DEFAULTS_JSON: &str = include_str!("../data/block-defaults-1.21.11.json");
 
+/// The block-id **renames** the game's DataFixerUpper applies on load: an id the
+/// pin does not have -> the id it becomes, with the greatest `DataVersion` at
+/// which the old id still existed.
+///
+/// A fourth table because there is a fourth question, and the repo was answering
+/// it twice with two different answers. The registry says *whether the pin has
+/// this id*; it cannot say *what the pin will hold instead* — and a check that
+/// judges a pre-pin template's id AS WRITTEN is judging a name in the wrong
+/// vocabulary. `delve-admit audit` did exactly that: the spelling rule passed
+/// `minecraft:chain` in a DataVersion-2975 template because the fixer migrates
+/// it, and the palette allowlist refused the same cell in the next breath
+/// because `minecraft:chain` is not a name at the pin.
+///
+/// Derived from Mojang's own published data by
+/// `tools/extract-block-renames.py` (see `crates/compiler/data/PROVENANCE.md`):
+/// which ids left the registry and when, from the per-version block registries;
+/// what each became, from the crafting recipe whose ingredient side is
+/// unchanged across the version step. A removal the recipe graph cannot pair is
+/// deliberately ABSENT rather than guessed, and absence fails closed — the
+/// audit still refuses the id, so an incomplete table costs a false red and
+/// never a false pass.
+const RENAMES_JSON: &str = include_str!("../data/block-renames-1.21.11.json");
+
 /// The Minecraft version this registry describes (ADR-0009).
 pub const MC_VERSION: &str = "1.21.11";
 
@@ -221,12 +244,50 @@ impl fmt::Display for BlockError {
 
 impl std::error::Error for BlockError {}
 
+/// One entry of the vendored rename table.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BlockRename {
+    /// The id the pinned version holds instead.
+    pub to: String,
+    /// The greatest `DataVersion` at which the OLD id still existed — a lower
+    /// bound on the schema that performs the rename, because the fix landed
+    /// somewhere inside the development cycle that follows and the fixer
+    /// schedule lives in the game jar. A file at or below this certainly
+    /// pre-dates the fix; above it, this table says nothing.
+    pub valid_through: i32,
+}
+
+/// Where a written block id ends up once the game has datafixed a file that
+/// declares `data_version` — the question an allowlist, a palette screen or a
+/// render surface has to ask before it judges a NAME.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadedId<'a> {
+    /// The pin holds this id as written. Also the answer for a non-`minecraft:`
+    /// namespace, which is a datapack's own block and none of this registry's
+    /// business.
+    AsWritten,
+    /// The pin does not have the id, and a derived rename reaches it from this
+    /// file's `DataVersion`: the game loads `to`.
+    Renamed {
+        /// The id the pin will hold.
+        to: &'a str,
+        /// The bound the resolution turned on.
+        valid_through: i32,
+    },
+    /// The pin does not have the id and no rename in the vendored table reaches
+    /// it from this `DataVersion`. **Not** a claim that the game loads nothing —
+    /// a claim that this repo cannot say what it loads, which is why every
+    /// caller treats it as the id as written and refuses rather than passes.
+    Unresolved,
+}
+
 /// Every block id in the pinned version, with every property's legal values —
 /// plus, per block, which of those properties are shape-carrying.
 pub struct BlockRegistry {
     blocks: BTreeMap<String, BTreeMap<String, Vec<String>>>,
     shape: BTreeMap<String, Vec<String>>,
     defaults: BTreeMap<String, BTreeMap<String, String>>,
+    renames: BTreeMap<String, BlockRename>,
 }
 
 impl BlockRegistry {
@@ -240,7 +301,39 @@ impl BlockRegistry {
                 .expect("the vendored shape-property table is valid JSON"),
             defaults: serde_json::from_str(DEFAULTS_JSON)
                 .expect("the vendored block default-state table is valid JSON"),
+            renames: serde_json::from_str(RENAMES_JSON)
+                .expect("the vendored block rename table is valid JSON"),
         })
+    }
+
+    /// The derived rename table, keyed by the id that no longer exists.
+    pub fn renames(&self) -> &BTreeMap<String, BlockRename> {
+        &self.renames
+    }
+
+    /// **Which id the game will actually load**, for a template that declares
+    /// `data_version`.
+    ///
+    /// Minecraft datafixes every structure `.nbt` it loads against the file's
+    /// own `DataVersion`, so a pre-pin template's id is written in an older
+    /// vocabulary and nothing may judge it as a name at the pin without first
+    /// resolving it. This is that resolution, and it is deliberately
+    /// conservative: a rename applies only where the file is at or below the
+    /// last `DataVersion` the old id existed at, so a file in the gap between
+    /// that bound and the pin resolves to [`LoadedId::Unresolved`] and is
+    /// refused rather than waved through.
+    pub fn loaded_id_at(&self, name: &str, data_version: i32) -> LoadedId<'_> {
+        let namespaced = namespace(name).into_owned();
+        if !namespaced.starts_with("minecraft:") || self.blocks.contains_key(&namespaced) {
+            return LoadedId::AsWritten;
+        }
+        match self.renames.get(&namespaced) {
+            Some(r) if data_version <= r.valid_through => LoadedId::Renamed {
+                to: &r.to,
+                valid_through: r.valid_through,
+            },
+            _ => LoadedId::Unresolved,
+        }
     }
 
     /// How many blocks the pinned version has. A binding count: a check that
@@ -1164,7 +1257,7 @@ mod tests {
     /// The DataVersion-aware rule: `minecraft:chain` at the pin is the
     /// tk-bell-tower defect (loads as air, error); the same id at DataVersion
     /// 2975 is `hero-temple-ruin-arch.nbt`, which the game datafixes on load
-    /// (`chain` → `iron_chain`, schema 4541) — a warning, never a refusal.
+    /// (`chain` → `iron_chain`) — a warning, never a refusal.
     #[test]
     fn judge_at_separates_the_bell_tower_defect_from_the_ruin_arch_false_positive() {
         let reg = BlockRegistry::v1_21_11();
@@ -1186,6 +1279,87 @@ mod tests {
             reg.judge_at("minecraft:iron_chain", &chain, PIN_DATA_VERSION),
             StateJudgement::Valid
         );
+    }
+
+    /// **Which id the game will hold** — the question `judge_at` deliberately
+    /// does not answer and every name-judging check downstream of it needs.
+    #[test]
+    fn loaded_id_at_resolves_a_pre_pin_rename_and_refuses_to_guess_past_its_bound() {
+        let reg = BlockRegistry::v1_21_11();
+        // hero-temple-ruin-arch.nbt: below the old id's last DataVersion, so
+        // the fixer certainly runs.
+        assert_eq!(
+            reg.loaded_id_at("minecraft:chain", 2975),
+            LoadedId::Renamed {
+                to: "minecraft:iron_chain",
+                valid_through: 4440,
+            }
+        );
+        assert_eq!(
+            reg.loaded_id_at("chain", 4440),
+            LoadedId::Renamed {
+                to: "minecraft:iron_chain",
+                valid_through: 4440,
+            }
+        );
+        // Above the bound the schedule is unknown to this repo, so the table
+        // says nothing rather than guessing — which is what makes a caller
+        // REFUSE instead of pass.
+        assert_eq!(
+            reg.loaded_id_at("minecraft:chain", 4441),
+            LoadedId::Unresolved
+        );
+        assert_eq!(
+            reg.loaded_id_at("minecraft:chain", PIN_DATA_VERSION),
+            LoadedId::Unresolved
+        );
+        // An id nothing renamed, at any DataVersion.
+        assert_eq!(
+            reg.loaded_id_at("minecraft:nonesuch", 2975),
+            LoadedId::Unresolved
+        );
+        // Ids the pin has, and a datapack's own block, are held as written.
+        assert_eq!(
+            reg.loaded_id_at("minecraft:iron_chain", 2975),
+            LoadedId::AsWritten
+        );
+        assert_eq!(
+            reg.loaded_id_at("minecraft:stone", PIN_DATA_VERSION),
+            LoadedId::AsWritten
+        );
+        assert_eq!(
+            reg.loaded_id_at("delvewright:nonesuch", 2975),
+            LoadedId::AsWritten
+        );
+    }
+
+    /// The vendored rename table's own contract, asserted against the registry
+    /// beside it rather than trusted: a row whose `from` still exists is not a
+    /// rename, a row whose `to` does not exist points at nothing, and a bound
+    /// at or above the pin would resolve a file the fixer never touches.
+    ///
+    /// The binding count is asserted too — an empty table would satisfy every
+    /// clause above by examining nothing, which is the shape CLAUDE.md names.
+    #[test]
+    fn every_vendored_rename_leaves_the_registry_and_lands_inside_it() {
+        let reg = BlockRegistry::v1_21_11();
+        assert!(
+            !reg.renames().is_empty(),
+            "binding count is zero: the rename table has no rows, so nothing below examined anything"
+        );
+        for (from, rename) in reg.renames() {
+            assert!(!reg.has(from), "{from} is still a block at the pin");
+            assert!(
+                reg.has(&rename.to),
+                "{from} -> {} is not a block at the pin",
+                rename.to
+            );
+            assert!(
+                rename.valid_through < PIN_DATA_VERSION,
+                "{from}: valid_through {} is not below the pin",
+                rename.valid_through
+            );
+        }
     }
 
     /// The shape class: connection properties of multipart-assembled blocks

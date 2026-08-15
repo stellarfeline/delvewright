@@ -1,0 +1,6 @@
+{
+  "minecraft:chain": {
+    "to": "minecraft:iron_chain",
+    "valid_through": 4440
+  }
+}

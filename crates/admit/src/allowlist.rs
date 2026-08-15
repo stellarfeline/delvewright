@@ -32,6 +32,7 @@
 
 use std::collections::BTreeSet;
 
+use delvewright_schem::blocks::{BlockRegistry, LoadedId};
 use serde::Deserialize;
 
 use crate::structure::PaletteEntry;
@@ -80,11 +81,60 @@ impl Allowlist {
         self.suffixes.iter().any(|suf| local.ends_with(suf))
     }
 
-    /// True when a whole palette entry is permitted (checks the name only —
-    /// properties do not affect admissibility).
-    pub fn permits_entry(&self, entry: &PaletteEntry) -> bool {
-        self.permits(&entry.name)
+    /// **Judge a palette entry on the id the game will actually load.**
+    ///
+    /// This list is a list of names AT THE PIN. A template that pre-dates the
+    /// pin writes its palette in an older vocabulary, and the game renames those
+    /// ids on load — so testing the id AS WRITTEN asks a question about a
+    /// spelling the running server never sees. That is not hypothetical: the
+    /// audit's own spelling rule passes `minecraft:chain` in a DataVersion-2975
+    /// template because the DataFixerUpper migrates it to `minecraft:iron_chain`
+    /// (`DW0734`), and the next check refused the identical cell because
+    /// `minecraft:chain` is not a name here (`DW0730`). One tool, two verdicts,
+    /// on one block.
+    ///
+    /// The resolution is [`BlockRegistry::loaded_id_at`]'s, not this list's: what
+    /// the pin holds is a fact about the game, and an allowlist that carried its
+    /// own rename knowledge would be a second authority on it. What this method
+    /// exists for is that the composition cannot be forgotten — there is no
+    /// longer a way to ask this list about a palette entry without saying which
+    /// `DataVersion` the entry was written at.
+    ///
+    /// An id the pin does not have and the rename table cannot reach is judged
+    /// as written, which refuses it. That is the direction that stays sound: an
+    /// id no fixer maps is a dead id, and a dead id in a palette is exactly what
+    /// a reviewer must be shown.
+    pub fn judge_entry<'a>(
+        &self,
+        entry: &'a PaletteEntry,
+        registry: &'a BlockRegistry,
+        data_version: i32,
+    ) -> Judged<'a> {
+        let (judged, renamed_from) = match registry.loaded_id_at(&entry.name, data_version) {
+            LoadedId::Renamed { to, .. } => (to, Some(entry.name.as_str())),
+            LoadedId::AsWritten | LoadedId::Unresolved => (entry.name.as_str(), None),
+        };
+        Judged {
+            permitted: self.permits(judged),
+            judged,
+            renamed_from,
+        }
     }
+}
+
+/// What [`Allowlist::judge_entry`] decided, and **which id it decided about**.
+///
+/// The second half is the point: a verdict on a pre-pin palette entry is a
+/// verdict on a name the file does not contain, so a diagnostic that printed
+/// only the written id would be describing a check it did not run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Judged<'a> {
+    /// Whether the allowlist permits it.
+    pub permitted: bool,
+    /// The id actually tested — what a 1.21.11 server holds after datafixing.
+    pub judged: &'a str,
+    /// The id as WRITTEN, when a rename was resolved on the way here.
+    pub renamed_from: Option<&'a str>,
 }
 
 impl Default for Allowlist {

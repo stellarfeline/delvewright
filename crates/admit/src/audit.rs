@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use delvewright_schem::blocks::{DW_SHAPE_OMITTED, DW_STATE_PRE_PIN, StateJudgement};
+use delvewright_schem::blocks::{DW_SHAPE_OMITTED, DW_STATE_PRE_PIN, LoadedId, StateJudgement};
 use delvewright_schem::convert::{forbidden_nbt, strip_ns};
 use delvewright_schem::nbt::Nbt;
 use delvewright_schem::split::TilePart;
@@ -292,14 +292,25 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                 StateJudgement::PrePin(e) => {
                     unknown_reported[b.state as usize] = true;
                     pre_pin_unknown += 1;
+                    // WHICH id the fixer produces is derived, not left to the
+                    // reader: the same resolution the allowlist judges on, said
+                    // out loud, so the warning names the block that will be
+                    // there rather than only the one that will not.
+                    let resolution = match registry.loaded_id_at(&entry.name, s.data_version) {
+                        LoadedId::Renamed { to, valid_through } => format!(
+                            ", and the derived rename table maps it to `{to}` (the old id's \
+                             last DataVersion is {valid_through})"
+                        ),
+                        LoadedId::AsWritten | LoadedId::Unresolved => String::new(),
+                    };
                     diags.push(
                         Diagnostic::warning(
                             DW_STATE_PRE_PIN,
                             format!(
                                 "{e}; the template's DataVersion {} pre-dates the pin \
-                                 ({}), so load-time datafixing is expected to migrate \
-                                 this state — verify in-game that it does, because an \
-                                 id no fixer maps (a typo) still loads as air",
+                                 ({}){resolution}, so load-time datafixing is expected to \
+                                 migrate this state — verify in-game that it does, because \
+                                 an id no fixer maps (a typo) still loads as air",
                                 s.data_version,
                                 delvewright_schem::blocks::PIN_DATA_VERSION
                             ),
@@ -341,18 +352,37 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
             }
         }
 
-        // 4. palette allowlist.
-        if !allow.permits_entry(entry) && !allow_reported[b.state as usize] {
+        // 4. palette allowlist — over the id a 1.21.11 SERVER will hold, not
+        //    the id the bytes spell. The allowlist is a list of names at the
+        //    pin, and a pre-pin template's palette is written in an older
+        //    vocabulary that the game renames on load. Judging it as written
+        //    made this tool contradict itself inside one run: rule 3 above
+        //    passes `minecraft:chain` at DataVersion 2975 as a warning, because
+        //    the fixer migrates it, and this rule refused the same cell as
+        //    not-allowlisted. The resolution belongs to the registry
+        //    (`loaded_id_at`), the permission to the list, and the composition
+        //    is `judge_entry` so no caller can do only half of it.
+        let judged = allow.judge_entry(entry, registry, s.data_version);
+        if !judged.permitted && !allow_reported[b.state as usize] {
             allow_reported[b.state as usize] = true;
             not_allowlisted += 1;
+            let via = match judged.renamed_from {
+                Some(written) => format!(
+                    " (written `{written}`, which this template's DataVersion {} \
+                     datafixes to `{}`)",
+                    s.data_version, judged.judged
+                ),
+                None => String::new(),
+            };
             diags.push(
                 Diagnostic::error(
                     DW_ALLOWLIST,
                     format!(
-                        "block `{}` is not in the palette allowlist — swap it for an allowlisted \
-                         block, or, if the prefab genuinely needs it, propose adding it to the \
-                         allowlist under review. Do NOT bypass the allowlist to admit the asset",
-                        entry.name
+                        "block `{}`{via} is not in the palette allowlist — swap it for an \
+                         allowlisted block, or, if the prefab genuinely needs it, propose adding \
+                         it to the allowlist under review. Do NOT bypass the allowlist to admit \
+                         the asset",
+                        judged.judged
                     ),
                 )
                 .at(b.pos),
