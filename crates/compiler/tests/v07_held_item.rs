@@ -45,6 +45,9 @@ fn quests_doc(extra: &str) -> String {
           {{ "type": "interact", "id": "obj/pry", "anchor": "anchor/exit",
              "requires_item": "{ITEM}", "after": ["obj/talk"]{extra} }}
         ],
+        "on_objective_complete": {{
+          "obj/talk": [ {{ "type": "open-gate", "anchor": "anchor/door" }} ]
+        }},
         "on_complete": [ {{ "type": "campaign-complete" }} ]
       }}
     ]

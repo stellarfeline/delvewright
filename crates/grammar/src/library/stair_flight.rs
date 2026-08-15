@@ -51,16 +51,21 @@
 //! several flights stacked, which needs a **switchback**: a second flight
 //! climbing back the way the first came.
 //!
-//! A switchback is **this rule and its reflection**. It peels its treads off the
-//! local `Z`-max end (`[rel, abs]`, recursion first); under `mirror: {z}` the
-//! same rule peels them off `Z`-min and climbs the other way. Two lanes side by
-//! side in `X`, one of each, joined at the top of the first, is a dogleg that
-//! doubles the rise per unit of length and recurses for as many flights as `Y`
-//! allows.
+//! A switchback is **this rule under a turned frame**. It peels its treads off
+//! the local `Z`-max end (`[rel, abs]`, recursion first); under `mirror: {z}`
+//! the same rule peels them off `Z`-min and climbs the other way. A return
+//! flight wants more than that: it climbs back the way it came *with the wall
+//! on the same hand*, which is a half-turn about the vertical — a reversal in
+//! local `X` and `Z` both, and therefore a rotation rather than a reflection
+//! ([`crate::ir::Reorient::turned`]). Two lanes side by side in `X`, the second
+//! turned, joined at the top of the first, is a dogleg that doubles the rise per
+//! unit of length and recurses for as many flights as `Y` allows.
 //!
 //! Not built here — the round's obligation was an ascending route and its gate,
 //! and a second run shape is a design decision, not a corollary. It is recorded
-//! because the construction is available and the shape recurs.
+//! because the construction is available and the shape recurs; `cliff_path`
+//! under [`crate::ir::Reorient::turned`] is the worked example
+//! (`tests/staging.rs`).
 //!
 //! # The gates
 //!

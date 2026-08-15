@@ -67,24 +67,24 @@ pub use registry::{
     VendoredEntityRegistry, VendoredItemRegistry, is_potion_id, is_technical_block,
 };
 pub use schema::stage_schema;
-pub use stages::for_each_campaign_effect;
 pub use stages::{
     Actor, Ambush, Area, AreaLighting, AreaMitigation, BONFIRE_PROMPT_EN, BONFIRE_REST_LABEL_EN,
-    BONFIRE_SAVE_LABEL_EN, BonfireLabels, Boundary, BranchDecl, BranchPoint, CameraShot,
-    CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks, CastDialogue,
-    CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent, CollectBy,
-    CompareOp, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
+    BONFIRE_SAVE_LABEL_EN, BodyTraversal, BonfireLabels, Boundary, BranchDecl, BranchPoint,
+    CameraShot, CameraSubject, CameraTarget, CameraWaypoint, Carrier, CastAbsence, CastBarks,
+    CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
+    CollectBy, CompareOp, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
     DialogueOption, EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot,
     Facing, Fixture, Forfeit, Happening, HappeningVerb, Horizon, ItemDrop, KitItem, LethalVolume,
-    Lethality, Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS, MobAttributes,
-    MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin, NpcsContent,
-    Objective, OnFull, Persona, Pieces, PlannedQuest, PotionContents, PotionEffect, Prop, Quest,
-    QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep, Shop,
-    ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare, StateDecl,
-    StateScope, StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect, TrapReset,
-    TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon,
-    WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
+    Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS,
+    MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
+    NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest, PotionContents, PotionEffect,
+    Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
+    Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare,
+    StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
+    TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
+pub use stages::{BodyRef, BodyTraversalSite, body_traversal_sites, for_each_campaign_effect};
 pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
     SocketState, TreeKind, WorldEdit, WorldEditsContent,

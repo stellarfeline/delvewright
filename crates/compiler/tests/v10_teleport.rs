@@ -3,16 +3,26 @@
 //!
 //! **Acceptance criterion 7 lives here.** "The selection is total" is a property
 //! of an emitted selector, and the only way to know it is to read the selector
-//! the compiler actually wrote. So `the_teleport_selection_is_total` parses the
-//! emitted `tp` command and asserts its selector carries **exactly** the six box
-//! terms and nothing else — no `type=`, no `tag=`, no `limit=`, no `sort=`, no
-//! `nbt=`. Every entity in the volume is moved, and there is no declared filter
-//! excluding any of them.
+//! the compiler actually wrote. So `the_teleport_selection_is_total_over_bodies`
+//! parses the emitted `tp` command and asserts its selector carries the six box
+//! terms plus exactly one narrowing — `tag=!dw_fixture` — and nothing else: no
+//! `type=`, no second `tag=`, no `limit=`, no `sort=`, no `nbt=`.
 //!
-//! That is a deliberate divergence from `lethal_volumes[]` (#347), which had to
-//! exempt five engine machinery types by name. The reasoning, and what stands in
-//! the exemption's place, is in `compiler::teleport`; the test that makes the
-//! substitute real is `a_teleport_over_a_bound_affordance_is_dw0542`.
+//! Total over **bodies** is what the criterion always meant and what the owner's
+//! cargo-lift ruling asks for. A fixture is not a passenger: its position IS
+//! engine state (a recovery stake's marker, an affordance hitbox), so carrying it
+//! does not move a thing, it rewrites a fact — and for a stake the tick after the
+//! ride deletes the marker and the wager with it. The class is decided at the
+//! OBJECT (`compiler::affordance`, `DW0545`), which is why one negated tag can
+//! stand where a type roster cannot.
+//!
+//! That roster is still a deliberate divergence from `lethal_volumes[]` (#347),
+//! which exempts five engine machinery types by name: a teleport must never
+//! exempt a TYPE, because an NPC is a body plus a co-located
+//! `minecraft:interaction` and the type says nothing about which of the two it
+//! is. The reasoning is in `compiler::teleport`; the test that makes the
+//! compile-time half real is `a_teleport_over_a_bound_affordance_is_dw0542`, and
+//! the runtime half is `crates/compiler/tests/fixture_class.rs`.
 //!
 //! The status-effect half asserts the emitted `effect give` / `effect clear`, and
 //! — more importantly — that the *engine's own* night-vision grant now goes
@@ -220,11 +230,18 @@ fn teleport_line(out: &BuildOutput) -> String {
     hits[0].to_string()
 }
 
-/// **Acceptance criterion 7.** The emitted selector is the volume and nothing
-/// else: six box terms, no filter of any kind. Read off the emission, so a future
+/// **Acceptance criterion 7.** The emitted selector is the volume, narrowed by
+/// exactly one thing: the fixture class. Read off the emission, so a future
 /// exemption cannot be added without this failing.
+///
+/// The assertion pins the permitted filter by its exact spelling rather than
+/// counting terms, so it stays the same proof it always was: any `type=`,
+/// `limit=`, `sort=` or `nbt=` term still reds here, and so does a second tag.
+/// What it now also states is *which* narrowing is licit and why there is exactly
+/// one — a negated CLASS, decided at the object, never a roster of types decided
+/// inside this verb (`DW0545`, `compiler::affordance`).
 #[test]
-fn the_teleport_selection_is_total() {
+fn the_teleport_selection_is_total_over_bodies() {
     let out = build("total");
     let line = teleport_line(&out);
     let args = line
@@ -232,18 +249,26 @@ fn the_teleport_selection_is_total() {
         .and_then(|(_, r)| r.split_once(']'))
         .expect("an `@e[...]` selector")
         .0;
-    let keys: Vec<&str> = args
-        .split(',')
+    let terms: Vec<&str> = args.split(',').collect();
+    let keys: Vec<&str> = terms
+        .iter()
         .map(|t| t.split_once('=').expect("a `key=value` term").0)
         .collect();
     assert_eq!(
         keys,
-        ["x", "dx", "y", "dy", "z", "dz"],
-        "the selection must be TOTAL over the volume: every entity inside is moved, and no \
-         term may narrow it. `lethal_volumes[]` exempts five machinery types by name; a \
-         teleport must not, because an NPC is a body plus a co-located \
-         `minecraft:interaction` and exempting that type would move the speaker and leave \
-         its dialogue box behind. See `compiler::teleport`. Emitted: {line}"
+        ["x", "dx", "y", "dy", "z", "dz", "tag"],
+        "the selection must be TOTAL over BODIES: every body inside the volume is moved, and \
+         the only term that may narrow it is the fixture-class exclusion. `lethal_volumes[]` \
+         exempts five machinery TYPES by name; a teleport must not, because an NPC is a body \
+         plus a co-located `minecraft:interaction` and exempting that type would move the \
+         speaker and leave its dialogue box behind. See `compiler::teleport`. Emitted: {line}"
+    );
+    assert_eq!(
+        terms[6], "tag=!dw_fixture",
+        "the one permitted narrowing is the fixture class — an entity whose position IS engine \
+         state (a stake marker, an affordance hitbox), which a lift must leave where the \
+         ledger recorded it. Any other tag term is a bespoke exemption wearing the class's \
+         clothes. Emitted: {line}"
     );
     // …and the destination is a compile-time literal, not a runtime search.
     let dest: Vec<&str> = line.rsplitn(4, ' ').collect();
@@ -426,12 +451,18 @@ fn the_runtime_half_is_generated_and_counted() {
              volume MUST exempt, and this template is what says a teleport does not:\n{t}"
         );
     }
+    // The scratch holders are suffixed with the teleport's own key: fake players
+    // on `dw.sys` are batch-global, so a campaign with two rides sharing `#tp_in`
+    // is one interleaving away from an intermittent red (`packtest_batch.rs`,
+    // which now sweeps the `lift-stake` family and found exactly that).
     assert!(
-        t.contains("assert score #tp_in dw.sys matches 5"),
+        t.lines()
+            .any(|l| l.starts_with("assert score #tp_in_") && l.ends_with("dw.sys matches 5")),
         "bound, not assumed: every witness is inside the box before anything moves:\n{t}"
     );
     assert!(
-        t.contains("assert score #tp_left dw.sys matches 0"),
+        t.lines()
+            .any(|l| l.starts_with("assert score #tp_left_") && l.ends_with("dw.sys matches 0")),
         "…and none is left behind:\n{t}"
     );
     let gate: serde_json::Value =

@@ -454,6 +454,15 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      that opens a box into water (the water flows back in and the proof does not
      know), and a clear over rubble another mechanism dropped there (a `collapse`
      debris field, a shut timed gate) — those stay solid.
+   - **A prefab's gate is SHUT until the campaign opens it.** A gate anchor's
+     region holds whatever the prefab authors there — `hello-room`'s doorway is
+     iron bars, the island's cave mouth is air — and the compiler measures which.
+     If anything the party must reach lies past a barred gate, some objective they
+     are **forced** to complete has to `open-gate` it first, or the build fails
+     naming the anchor (`DW0317`). "Forced" excludes every optional bundle: a trap
+     payload, `on_death`, a shop offer, a shortcut's far-side unlock. To spell
+     "the party walks up to this and the door opens", use an environment
+     `trigger` — that one counts.
    - **A place that kills is DECLARED, never faked with the art.** A cliff whose
      fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
      declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
@@ -528,6 +537,19 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      `lethal_volume`, never deleting the stake. Souls behaviour is
      `max_live: 1, on_full: "replace"`; no death cost at all is `max_live: 0`; a
      memorial at every death site is a larger `max_live` with `on_full: "keep"`.
+   - **A body that moves unlike its species DECLARES it, and the build holds it to
+     the claim.** `traversal { locomotion: ground|climber|flier }` on a stage-2 NPC
+     or a stage-5 actor (`dsl_version` 0.11.0 on that body's own stage). By default
+     the compiler reads locomotion off the entity id — spiders climb, ghasts fly,
+     everything else walks and is checked — so a walked leg that goes OVER a wall
+     line instead of round to its opening is `DW0453`. If that is your fiction (a
+     sheep that climbs), declare it and the advisory is answered. It is **not** an
+     off switch: a declaration that changes no verdict is refused (`DW0454`), so
+     you may only claim a climber where the route really climbs; `aquatic` is
+     refused outright (`DW0455`) because nothing in the model could hold a body to
+     it; and no declaration touches the error tier — a declared climber still
+     cannot walk through a closed fence gate (`DW0452`). Declare it on the body,
+     never on the beat.
    - Hint wording: give landmark-relative directions from places the player already
      knows (the entrance hall, the gate, a named NPC) — never room-shape jargon
      ("corner room", "L-shaped hall") or solver-internal terms (anchor/piece/socket

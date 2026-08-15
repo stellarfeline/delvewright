@@ -841,4 +841,35 @@ pub mod codes {
     /// the check raises the diagnostic and the general fence decides whether it
     /// reaches a verdict.
     pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::since("DW0429", 11);
+
+    /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
+    /// body to** — today exactly one value, `aquatic`.
+    ///
+    /// The declaration surface exists so an author can claim a capability and
+    /// have the claim PROVEN. `aquatic` is the one
+    /// class that carries no exemption and governs no rule: it is a ledger
+    /// label the compiler derives from vanilla's own `#minecraft:aquatic` tag.
+    /// Declaring it could therefore never change a verdict, so it would always
+    /// land in `DW0454` — and a value whose only possible outcome is another
+    /// diagnostic is a trap, not a surface.
+    ///
+    /// The gap it names, stated rather than left to folklore (CLAUDE.md's
+    /// no-hack rule): the compiler routes **every** body on standable ground,
+    /// and `flooded` cells are impassable and never floor for every body. There
+    /// is no water-traversal model for a declaration to feed, so there is
+    /// nothing to hold an aquatic claim to. When routing grows one, this
+    /// refusal is what has to be deleted to enable the value.
+    ///
+    /// Error tier, raised in `validate_campaign_with`, so the run ends at the
+    /// validation tier (exit 1). Prescription: remove the declaration — a body whose
+    /// route crosses water is governed by the flooded-cell rules already, and
+    /// the derived aquatic class still reaches the binding ledger.
+    ///
+    /// [`Binds::EveryVersion`]: it judges what the document SAYS — an authored
+    /// value the engine refuses — so its verdict is a function of the campaign
+    /// alone and there is nothing to grandfather. The surface that carries the
+    /// value is itself fenced per stage at 0.11 by [`RESERVED`], which is where
+    /// the version gate belongs; fencing this code as well would only stop
+    /// rejecting a bad document, which is the direction [`Binds`] warns about.
+    pub const TRAVERSAL_UNPROVABLE: DwCode = DwCode::every_version("DW0455");
 }

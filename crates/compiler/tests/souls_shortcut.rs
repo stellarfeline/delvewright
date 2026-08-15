@@ -71,7 +71,7 @@ fn setup_places_the_unlock_affordance_and_leaves_the_gate_alone() {
     let out = build_fixture();
     let setup = fn_body(&out, "setup_finish");
     assert!(
-        setup.contains("Tags:[\"dw_sc_inner_door\"]"),
+        setup.contains("Tags:[\"dw_fixture\",\"dw_sc_inner_door\"]"),
         "the far-side unlock affordance is summoned at world init: {setup}"
     );
     assert!(

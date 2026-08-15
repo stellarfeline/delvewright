@@ -115,7 +115,7 @@ fn bonfire_arms_a_rest_affordance_and_does_not_move_the_checkpoint() {
         "the bonfire beat summons its rest affordance, guarded on absence"
     );
     assert!(
-        all.contains("Tags:[\"dw_bonfire_0\"]"),
+        all.contains("Tags:[\"dw_fixture\",\"dw_bonfire_0\"]"),
         "the affordance carries the bonfire's stable content-ordered tag"
     );
     // The beat that arms the bonfire must NOT itself carry `spawnpoint @a` — that

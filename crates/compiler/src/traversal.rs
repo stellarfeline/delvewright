@@ -53,7 +53,51 @@
 //! ## The traversal model
 //!
 //! The traversal a route needs is compared against what the body walking it can
-//! do — [`Traversal`], derived from the entity id.
+//! do — [`Traversal`], derived from the entity id, or **declared by the author**
+//! and then proven (below).
+//!
+//! ## The author's side: a declaration the build holds you to (spec-0034)
+//!
+//! Spiders really do climb, so the rules here cannot be absolute — which means
+//! there has to be a way to say "this body is an exception", or the exception
+//! happens by accident and merely renders. That is
+//! [`delvewright_dsl::BodyTraversal`], carried by every object class with a body,
+//! a position and a compiler-emitted route: the stage-2 NPC and the stage-5
+//! actor, through **one** shared type
+//! ([`delvewright_dsl::body_traversal_sites`]) rather than a field per consumer.
+//!
+//! Three properties keep it a declaration rather than an opt-out, and each is
+//! pinned by a test:
+//!
+//! 1. **It cannot reach the error tier.** [`Traversal::of_body`] takes
+//!    `opens_gates` from the derivation and never from the author, and
+//!    [`exempt_from_gate_rule`] is false for every class — so `DW0452` binds a
+//!    declared body exactly as it binds an undeclared one. Wings, claws and
+//!    paperwork all fail to open a fence gate.
+//! 2. **It must change a verdict.** The surmount scan runs for every body,
+//!    exempt or not, and the declaration is *exercised* only where the findings
+//!    under the declared class differ from the findings under the derived one.
+//!    A declaration that changes nothing is [`DW_TRAVERSAL_DECLARATION_INERT`],
+//!    an error — so declaring `climber` on a sheep is accepted only where that
+//!    sheep's route really does go over a barrier line. The comparison is
+//!    written as a difference of verdicts, not as "is it a climber", so a second
+//!    locomotion-governed rule joins it by existing.
+//! 3. **A value the model cannot hold a body to is refused at declaration
+//!    time**, not accepted and quietly ignored: `aquatic` governs no rule (it is
+//!    a ledger label off vanilla's own tag), so declaring it is `DW0455` in the
+//!    DSL crate, with the gap named — routing has one reachability model,
+//!    standable ground, and flooded cells are impassable for every body.
+//!
+//! What a declaration deliberately does **not** do is change how a route is
+//! computed. Every body is routed on ground rules, which was already true of a
+//! derived class (a ghast actor walks), so the declaration inherits a documented
+//! property rather than introducing folklore. It changes which rules examine the
+//! body, and nothing else.
+//!
+//! And the proof cannot be dodged by a campaign that assembles nothing: this
+//! module runs inside `emit`'s `assembles_world` arm, which is true whenever the
+//! campaign has any NPC or actor ([`crate::clearance::has_bodies`]) — exactly the
+//! condition under which a declaration can exist at all.
 //!
 //! ## Two rules, two different questions — and therefore two exemption axes
 //!
@@ -204,55 +248,28 @@ pub const DW_TRAVERSAL_IMPOSSIBLE: DwCode = DwCode::every_version("DW0452");
 /// the course is a kerb or an enclosure is a content judgement.
 pub const DW_BARRIER_SURMOUNTED: DwCode = DwCode::every_version("DW0453");
 
+/// `DW0454`: a body's `traversal` declaration is **inert** — it changed no
+/// rule's verdict, so nothing in this build holds the body to it (spec-0034).
+///
+/// [`Binds::EveryVersion`](delvewright_dsl::Binds::EveryVersion), like its two
+/// neighbours: the verdict is a function of the campaign alone — the author's
+/// own declaration set against the world the author built — so there is nothing
+/// to grandfather. The surface that carries the declaration is fenced per stage
+/// at 0.11 by `DW0141`, so a campaign below 0.11 cannot raise this code at all.
+pub const DW_TRAVERSAL_DECLARATION_INERT: DwCode = DwCode::every_version("DW0454");
+
 /// How many route steps after a rise still count as "and came down the other
 /// side". Four: the island's crossing takes one step up, at most two along the
 /// top and one down, and a window this short is what keeps an ordinary ledge the
 /// route genuinely uses (climb up, walk, stay up) out of the tier.
 pub const SURMOUNT_WINDOW: usize = 4;
 
-/// How a body gets around, derived from its entity id. See the module docs for
-/// the membership rule, the asymmetry it is built around, and why there is no
-/// flier class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Locomotion {
-    /// Walks, steps and jumps — **the default and the checked class**. Every
-    /// entity vanilla data does not positively answer lands here, including
-    /// unrecognised ids and every flying body (this compiler routes them on the
-    /// ground regardless).
-    Ground,
-    /// Climbs sheer vertical surfaces: vanilla's `Spider` class and its
-    /// subclasses. Exempt from [`DW_BARRIER_SURMOUNTED`] only.
-    Climber,
-    /// Leaves the ground under its own power. Exempt from
-    /// [`DW_BARRIER_SURMOUNTED`] only — a flier makes no ground step-up, but
-    /// wings do not open a fence gate, so [`DW_TRAVERSAL_IMPOSSIBLE`] binds it
-    /// exactly like a sheep.
-    Flier,
-    /// A member of vanilla's `#minecraft:aquatic` tag. A ledger classification
-    /// that exempts **nothing** — see the module docs.
-    Aquatic,
-}
-
-impl Locomotion {
-    /// The stable token this class is reported under in [`TraversalGate`].
-    pub fn token(self) -> &'static str {
-        match self {
-            Locomotion::Ground => "ground",
-            Locomotion::Climber => "climber",
-            Locomotion::Flier => "flier",
-            Locomotion::Aquatic => "aquatic",
-        }
-    }
-
-    /// Every class, in ledger order — so [`TraversalGate::to_json`] can never
-    /// silently drop a row when a class is added.
-    pub const ALL: [Locomotion; 4] = [
-        Locomotion::Ground,
-        Locomotion::Climber,
-        Locomotion::Flier,
-        Locomotion::Aquatic,
-    ];
-}
+/// How a body gets around. **The vocabulary lives in the DSL crate** since
+/// spec-0034 made it authorable ([`delvewright_dsl::BodyTraversal`]) — one enum,
+/// so what an author declares and what this module derives can never mean two
+/// different things. The derivation table, the membership rule and the asymmetry
+/// it is built around stay here; see the module docs.
+pub use delvewright_dsl::{BodyRef, BodyTraversal, Locomotion};
 
 /// Which locomotion classes [`DW_TRAVERSAL_IMPOSSIBLE`] declines to examine.
 ///
@@ -337,6 +354,20 @@ pub struct Traversal {
 }
 
 impl Traversal {
+    /// The traversal capabilities the build actually uses for a body: its
+    /// declaration if it made one, else what its species implies.
+    ///
+    /// `opens_gates` is taken from the derivation in **both** cases and is never
+    /// authorable — see [`Traversal::opens_gates`] and the module docs. A
+    /// declaration cannot reach the error tier.
+    pub fn of_body(entity: &str, declared: Option<Locomotion>) -> Traversal {
+        let derived = Traversal::of_entity(entity);
+        Traversal {
+            locomotion: declared.unwrap_or(derived.locomotion),
+            opens_gates: derived.opens_gates,
+        }
+    }
+
     /// The traversal capabilities of `entity`, by vanilla behaviour.
     ///
     /// Every id this cannot positively answer falls to [`Locomotion::Ground`] —
@@ -383,6 +414,33 @@ pub struct TraversalGate {
     pub gate_rule_cells: usize,
     /// Rises tested against the surmount rule (`DW0453`).
     pub surmount_rule_rises: usize,
+    /// The author-declared side of the proof (spec-0034).
+    pub declared: DeclaredLedger,
+}
+
+/// What the campaign's own `traversal` declarations bought — the second binding
+/// axis spec-0034 introduces.
+///
+/// A declaration silences a rule for a body, so counting only what the rules
+/// examined would report green over exactly the bodies an author asked the proof
+/// to treat differently. `bodies` says how many made a claim, `by_class` under
+/// which token, `exercised` how many the world actually paid for, and
+/// `advisories_waived` how many `DW0453` findings the claims removed — so a
+/// reader can see the cost of every exemption this build granted.
+///
+/// `exercised` equals `bodies` in any build that succeeds: an unexercised
+/// declaration is `DW0454`. It is still reported, because the ledger is also
+/// read off a build that is being debugged.
+#[derive(Clone, Debug, Default)]
+pub struct DeclaredLedger {
+    /// Bodies carrying a `traversal` declaration.
+    pub bodies: usize,
+    /// Declared bodies per declared [`Locomotion`] token.
+    pub by_class: BTreeMap<&'static str, usize>,
+    /// Declarations that changed at least one rule's verdict for their body.
+    pub exercised: usize,
+    /// `DW0453` advisories a declaration removed.
+    pub advisories_waived: usize,
 }
 
 impl TraversalGate {
@@ -400,10 +458,35 @@ impl TraversalGate {
                 serde_json::json!(self.legs_by_class.get(class.token()).copied().unwrap_or(0)),
             );
         }
+        let mut declared_by_class = serde_json::Map::new();
+        for class in Locomotion::ALL {
+            declared_by_class.insert(
+                class.token().to_string(),
+                serde_json::json!(
+                    self.declared
+                        .by_class
+                        .get(class.token())
+                        .copied()
+                        .unwrap_or(0)
+                ),
+            );
+        }
         let mut v = serde_json::json!({
             "legs": self.legs,
             "route_cells": self.route_cells,
             "legs_by_class": by_class,
+            // spec-0034: what the campaign's own declarations claimed and what
+            // the world paid for them. A declaration SILENCES a rule, so a
+            // ledger that counted only what the rules examined would report
+            // green over exactly the bodies an author asked to be treated
+            // differently.
+            "declared": {
+                "bodies": self.declared.bodies,
+                "by_class": declared_by_class,
+                "exercised": self.declared.exercised,
+                "advisories_waived": self.declared.advisories_waived,
+                "code": DW_TRAVERSAL_DECLARATION_INERT,
+            },
             "rules": {
                 "gate_use": { "code": DW_TRAVERSAL_IMPOSSIBLE, "cells": self.gate_rule_cells },
                 "surmount": { "code": DW_BARRIER_SURMOUNTED, "rises": self.surmount_rule_rises },
@@ -451,6 +534,9 @@ struct Leg<'a> {
     cells: &'a [[i32; 3]],
     /// The entity whose body (and capabilities) the puppet wears.
     entity: String,
+    /// The locomotion this body's author DECLARED, if any (spec-0034). `None` =
+    /// the class derived from [`Leg::entity`].
+    declared: Option<Locomotion>,
     /// JSON pointer at the declaration, for a warning's diagnostic path.
     path: String,
     /// The DSL stage the declaration lives in.
@@ -484,6 +570,7 @@ fn legs<'a>(
             to_anchor: &m.to_anchor,
             cells: &m.cells,
             entity: crate::nav::npc_body_entity(n),
+            declared: n.traversal.map(|t| t.locomotion),
             path: format!("/content/npcs/{i}"),
             stage: "npcs",
         });
@@ -506,6 +593,7 @@ fn legs<'a>(
             to_anchor: &m.to_anchor,
             cells: &m.cells,
             entity: crate::nav::actor_body_entity(a),
+            declared: a.traversal.map(|t| t.locomotion),
             path: format!("/content/actors/{i}"),
             stage: "quests",
         });
@@ -548,8 +636,22 @@ pub fn check_traversal(
     let mut gate = TraversalGate::default();
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<Diagnostic> = Vec::new();
+    // Every DECLARED body in the campaign, whether or not it ever walks — a
+    // declaration on a body that never moves is exactly as inert as one whose
+    // route never uses it, and enumerating from the legs would miss it entirely.
+    let mut declared = declared_bodies(plan);
+    for (key, d) in &declared {
+        let _ = key;
+        gate.declared.bodies += 1;
+        *gate
+            .declared
+            .by_class
+            .entry(d.declared.token())
+            .or_insert(0) += 1;
+    }
     for leg in legs(plan, moves, actor_moves) {
-        let cap = Traversal::of_entity(&leg.entity);
+        let derived = Traversal::of_entity(&leg.entity).locomotion;
+        let cap = Traversal::of_body(&leg.entity, leg.declared);
         gate.legs += 1;
         gate.route_cells += leg.cells.len();
         *gate
@@ -557,6 +659,9 @@ pub fn check_traversal(
             .entry(cap.locomotion.token())
             .or_insert(0) += 1;
         // --- DW0452: a traversal this body cannot perform. -------------------
+        //
+        // `cap.opens_gates` is derived and never authorable, and no locomotion
+        // class is exempt, so a declaration provably cannot reach this tier.
         if !cap.opens_gates && !exempt_from_gate_rule(cap.locomotion) {
             gate.gate_rule_cells += leg.cells.len();
             if let Some(&cell) = leg.cells.iter().find(|&&c| world.is_use_gate(c)) {
@@ -564,31 +669,32 @@ pub fn check_traversal(
             }
         }
         // --- DW0453: a barrier line surmounted over a full-cube course. ------
-        if exempt_from_surmount_rule(cap.locomotion) {
-            continue;
+        //
+        // The scan runs for EVERY body, exempt or not, because a declaration is
+        // only honest if the build can say what it changed: the finding is what
+        // the effective class then suppresses or raises, and the difference
+        // between the two classes is what makes the declaration exercised.
+        let scan = scan_surmounts(world, leg.cells);
+        let derived_silent = exempt_from_surmount_rule(derived);
+        let effective_silent = exempt_from_surmount_rule(cap.locomotion);
+        if !effective_silent {
+            gate.surmount_rule_rises += scan.rises;
+            if let Some((from, support, barrier)) = scan.first {
+                warnings.push(surmount_advisory(&leg, from, support, barrier));
+            }
         }
-        let mut reported = false;
-        for i in 0..leg.cells.len().saturating_sub(1) {
-            let (from, onto) = (leg.cells[i], leg.cells[i + 1]);
-            if onto[1] <= from[1] {
-                continue;
+        if let Some(d) = declared.get_mut(&decl_key(leg.stage, leg.id)) {
+            d.legs += 1;
+            // The declaration is EXERCISED when it changes a verdict — stated as
+            // a comparison of the findings the two classes produce, not as "is
+            // it a climber", so a second locomotion-governed rule joins this
+            // test by existing rather than by being remembered here.
+            if scan.first.is_some() && derived_silent != effective_silent {
+                d.exercised = true;
+                if effective_silent {
+                    gate.declared.advisories_waived += 1;
+                }
             }
-            gate.surmount_rule_rises += 1;
-            if reported {
-                continue;
-            }
-            let support = [onto[0], onto[1] - 1, onto[2]];
-            let Some(barrier) = barrier_course(world, support) else {
-                continue;
-            };
-            // …and came down the other side. A body that climbs onto a ledge and
-            // stays there has used the ledge, not crossed the line.
-            let end = (i + 1 + SURMOUNT_WINDOW).min(leg.cells.len());
-            if !leg.cells[i + 2..end].iter().any(|c| c[1] <= from[1]) {
-                continue;
-            }
-            warnings.push(surmount_advisory(&leg, from, support, barrier));
-            reported = true;
         }
     }
     if let Some(first) = errors.first() {
@@ -608,7 +714,176 @@ pub fn check_traversal(
             message,
         });
     }
+    gate.declared.exercised = declared.values().filter(|d| d.exercised).count();
+    // --- DW0454: a declaration nothing in this build holds the body to. ------
+    let inert: Vec<String> = declared
+        .values()
+        .filter(|d| !d.exercised)
+        .map(inert_declaration)
+        .collect();
+    if let Some(first) = inert.first() {
+        let mut message = first.clone();
+        if inert.len() > 1 {
+            let _ = write!(
+                message,
+                " {} further inert traversal declaration(s) in this build:",
+                inert.len() - 1
+            );
+            for e in &inert[1..] {
+                let _ = write!(message, " {e};");
+            }
+        }
+        return Err(TraversalError {
+            code: DW_TRAVERSAL_DECLARATION_INERT,
+            message,
+        });
+    }
     Ok((warnings, gate))
+}
+
+/// What the surmount scan found on one route: how many rises it looked at, and
+/// the FIRST rise that crossed a barrier line over a full-cube course.
+///
+/// Split out of the rule so it can run for every body regardless of class. A
+/// declaration that exempts a body has to be shown to have exempted something —
+/// which means the finding must be computed even where it is then suppressed.
+struct SurmountScan {
+    /// Rises in the route (a step onto a higher cell).
+    rises: usize,
+    /// `(from, support, barrier)` of the first crossing, if any. A leg reports
+    /// at most one: a herd over one wall is one defect, not sixteen ticks of it.
+    first: Option<([i32; 3], [i32; 3], [i32; 3])>,
+}
+
+/// Scan a route for barrier-line crossings — the class-independent half of
+/// `DW0453`.
+fn scan_surmounts(world: &World, cells: &[[i32; 3]]) -> SurmountScan {
+    let mut scan = SurmountScan {
+        rises: 0,
+        first: None,
+    };
+    for i in 0..cells.len().saturating_sub(1) {
+        let (from, onto) = (cells[i], cells[i + 1]);
+        if onto[1] <= from[1] {
+            continue;
+        }
+        scan.rises += 1;
+        if scan.first.is_some() {
+            continue;
+        }
+        let support = [onto[0], onto[1] - 1, onto[2]];
+        let Some(barrier) = barrier_course(world, support) else {
+            continue;
+        };
+        // …and came down the other side. A body that climbs onto a ledge and
+        // stays there has used the ledge, not crossed the line.
+        let end = (i + 1 + SURMOUNT_WINDOW).min(cells.len());
+        if !cells[i + 2..end].iter().any(|c| c[1] <= from[1]) {
+            continue;
+        }
+        scan.first = Some((from, support, barrier));
+    }
+    scan
+}
+
+/// One body that declared a `traversal`, and what this build did with it.
+struct DeclaredBody {
+    /// `npcs` / `quests`.
+    stage: &'static str,
+    /// JSON pointer at the `traversal` field.
+    path: String,
+    /// The body's id.
+    id: String,
+    /// The entity whose body actually ships (mannequin rule applied).
+    entity: String,
+    /// The class the author declared.
+    declared: Locomotion,
+    /// The class the entity implies.
+    derived: Locomotion,
+    /// Walked legs this body has.
+    legs: usize,
+    /// Whether the declaration changed a verdict on any of them.
+    exercised: bool,
+}
+
+/// The `(stage, id)` key a declaration and a leg are matched on.
+fn decl_key(stage: &str, id: &str) -> String {
+    format!("{stage}\u{1}{id}")
+}
+
+/// Every body in the campaign that declares a `traversal`, from the DSL's own
+/// closed enumeration of the declaration's consumers
+/// ([`delvewright_dsl::body_traversal_sites`]) rather than from a walk this
+/// module remembers to keep in step.
+fn declared_bodies(plan: &Plan) -> BTreeMap<String, DeclaredBody> {
+    let mut out = BTreeMap::new();
+    for site in delvewright_dsl::body_traversal_sites(plan.campaign) {
+        // The mannequin rule is the compiler's (`nav::npc_body_entity`), so the
+        // match lives here — and it is a match on a closed sum type, so a third
+        // body class cannot be added without this line failing to compile.
+        let entity = match site.body {
+            BodyRef::Npc(n) => crate::nav::npc_body_entity(n),
+            BodyRef::Actor(a) => crate::nav::actor_body_entity(a),
+        };
+        let derived = Traversal::of_entity(&entity).locomotion;
+        out.insert(
+            decl_key(site.body.stage(), site.body.id()),
+            DeclaredBody {
+                stage: site.body.stage(),
+                path: site.path.clone(),
+                id: site.body.id().to_string(),
+                entity,
+                declared: site.traversal.locomotion,
+                derived,
+                legs: 0,
+                exercised: false,
+            },
+        );
+    }
+    out
+}
+
+/// The `DW0454` message: the declaration bought nothing, so nothing holds the
+/// body to it.
+///
+/// Three distinguishable shapes, because the fix differs: the body never walks
+/// at all; the body walks but no route makes the move the class governs; or the
+/// declared class is the one the species already had.
+fn inert_declaration(d: &DeclaredBody) -> String {
+    let (declared, derived) = (d.declared.token(), d.derived.token());
+    let why = if d.declared == d.derived {
+        format!(
+            "`{}` is already a `{derived}` by its entity id, so the declaration restates what the \
+             compiler derives and changes nothing",
+            d.entity
+        )
+    } else if d.legs == 0 {
+        "this body walks no leg at all — no `move-npc` and no `move-actor` ever routes it — so \
+         there is no move for a locomotion class to govern"
+            .to_string()
+    } else {
+        format!(
+            "every leg this body walks earns exactly the same verdicts under `{declared}` as under \
+             the `{derived}` its entity id implies: no route of its goes OVER a barrier line, \
+             which is the only move locomotion governs (`{DW_BARRIER_SURMOUNTED}`)"
+        )
+    };
+    format!(
+        "{} `{}` ({}) at `{}` declares `traversal.locomotion: {declared}`, and the declaration is \
+         INERT: {why}. A declaration is a claim the build holds the body to, never a way to switch a \
+         check off — that is the whole point of being able to declare one — so a claim nothing in \
+         this build can pay for is refused rather than recorded. Note what this rule is NOT: \
+         `{DW_TRAVERSAL_IMPOSSIBLE}`, the error tier, has no authorable exemption at all (passing \
+         a closed fence gate is a right-click no puppet makes, whatever its body), so no \
+         declaration was ever going to be answered there. Prescription: either remove the \
+         declaration, or build the world that needs it — if this body really is meant to go over \
+         a wall the party has to walk round, give it the route that does, and the declaration is \
+         then what makes that route legal instead of a finding.",
+        if d.stage == "npcs" { "npc" } else { "actor" },
+        d.id,
+        d.entity,
+        d.path,
+    )
 }
 
 /// How a walking body is described in a message.
@@ -663,7 +938,12 @@ fn surmount_advisory(
          jump every body in the dims table has, and the compiler cannot tell a decorative kerb or \
          a deliberate stile from an enclosure that was meant to hold. Judged in playtest. \
          Prescription: build the line out of ONE material so the model's barrier and the player's \
-         eye agree, and let the route use the opening."
+         eye agree, and let the route use the opening. If instead this body really is meant to go \
+         over walls — a spider-sheep, a thing that climbs in your fiction whatever its entity id \
+         says — DECLARE it: `\"traversal\": {{\"locomotion\": \"climber\"}}` on the body \
+         (dsl_version 0.11.0). That is not a way to switch this line off: the build then requires \
+         the route to really make the move, and refuses a declaration that buys nothing \
+         ({DW_TRAVERSAL_DECLARATION_INERT})."
     );
     Diagnostic::warning(DW_BARRIER_SURMOUNTED, leg.stage, leg.path.clone(), text)
 }
