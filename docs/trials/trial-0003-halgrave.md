@@ -24,9 +24,9 @@ constant nothing checks.
 run may change them.** The material handed to the agent may be corrected
 between runs where the ladder in §Attribution attributes a failure to it, and
 every correction is recorded in the run's own row; the rubric and the F-rows
-never move. This record carries no verdict yet, so `check-trial-verdicts`
-holds it red by design until run 0's rubric lands — that red is the gate
-saying "brief, not result", and it is the intended state.
+never move. A brief-only record is held red by `check-trial-verdicts` until
+its first run's rubric lands, by design — the red is the gate saying "brief,
+not result".
 
 ## The brief given to the agent
 
@@ -279,4 +279,131 @@ delivered bytes, in the claim-audit form the prior trials fixed.
 
 ## Run 0 — result
 
-Not yet run.
+Run on the campaign's development branch, `worker/halgrave-map` in the content
+repo: `design/programs/map.json` at document version `1.5.0`, eight includes
+under `z0`…`z7`, 31 own rules and 77 own params (628 rules / 275 params / 109
+roles after composition), a 19-space / 23-edge / 8-region map contract, region
+79 × 72 × 436 = 2 479 968 cells, seed 1, expansion 2.5 s. The full
+instrumentation this brief demanded is `design/map-composition-log.md` on that
+branch; the six named views and shot manifest are `design/review/map/`.
+
+**Verdict: fail — F3, F4, F6, F8.** Ten gates pass, six contract gates red,
+zero gates bound to zero. Every red is one fact cashed: **five of the eight
+zone programs declare no spatial contract.**
+
+**Re-derived before judging**, per this record's own claim-audit obligation.
+The judge rebuilt `delve-grammar` from the engine tree this record lives on,
+checked the run branch out fresh, and re-ran the expansion: all six reds
+reproduce at the same counts, cell lists included. The five-absent-contracts
+claim was re-checked against the eight programs' own bytes (Z0, Z3, Z5, Z6,
+Z7 carry no `contract` key; Z1/Z2/Z4 carry 4/6/6 spaces). F1's diff and F5's
+perturbation were performed by the judge, below. This is two builds agreeing,
+not one measurement repeated.
+
+### Failure criteria, judged
+
+| # | Verdict | Evidence |
+|---|---|---|
+| F1 | pass | `include bound 8`; `git diff` from the run's base over the eight zone programs: zero changes — `map.json` and the `zones.json` entry are the only writes to the programs directory |
+| F2 | pass | expands at the recorded region and seed; every development refusal is in the log verbatim, resolved or carried as a red |
+| F3 | **fail** | `contract-well-formed` 50, `contract-coverage` 41 412 (15 879 uncovered), `contract-closure` 6 636 (21 cells), `contract-edge-proof` 21 (3 edges), `contract-reachability` 6 578 (3 167 unreached), `contract-anchors` 184 (130 unbound) |
+| F4 | **fail** | 6 of 10 seams declared (3 proved, 3 red); 4 undeclarable — a contract edge needs a declared space at each end and the contractless side supplies none |
+| F5 | pass | 28 identities in one `all` with no `otherwise`; `sea_y` is one param read by every floor and both seas. Demo performed by the judge: `ward_datum` −3 → −2 refuses at the outermost scope printing every operand (`left = 7, right = 8`); unperturbed expands. The demo as written was unperformable — no zone declares a floor param to move, which is itself R6 debt — so the equivalent demo at the map's own datum is what is accepted, and the criterion's wording assumed a part obligation the parts do not meet |
+| F6 | **fail** | the belfry is not a declared space, so no edge can end there and no walk can be asked to arrive; the whole-box claim that would fake it is closed by four independent `contract-well-formed` refusals; nothing in the crown band is in reached space. The band measurement "off the delivered bytes" cannot be taken at all — a red expansion writes no prefab, a failure case the criterion did not anticipate |
+| F7 | pass | at reduced strength, stated: the program of record writes no prefab, so determinism holds on the expansion report (byte-identical across two processes) and at full strength only on the massing variant — 42 files by `cmp`, a contents-only digest, and an independent NBT parser at 0 of 2 479 968 cells differing |
+| F8 | **fail** | two written planes disagree in the delivered geometry: ward floor −3 against the text's −1.5 (Z3 fixes its head-to-floor rise at 3, no param), belfry +39 against +30 (Z7 fixes foot-to-belfry at 25, no param). Both are guarded at their measured values, so both are loud facts rather than drift |
+
+### Rubric
+
+| # | Answer |
+|---|---|
+| R1 | **partial** — one place, yes; a castle at the brief's proportions, no |
+| R2 | **partial** — five of seven planes agree; the ward is a hole (deeper than written); the cistern is beneath; the tower's climb agrees in section, disagrees in every view a person can take, and is unprovable as a route |
+| R3 | **no** — six red, counts under F3, none bound to zero |
+| R4 | four language gaps, one library class, two compounded causes, one unattributed — §attribution below |
+| R5 | 3 proved / 3 red / 4 undeclarable; **0 by construction** — see the note |
+| R6 | five zones own no contract; no zone declares a datum param; Z3 and Z7 fix the two offsets the whole needed; Z5's long axis cannot turn without changing what it builds; Z1 and Z2 declare ways out and in on unmatable axes |
+
+**R1, recorded so a later reader can disagree.** Judged from the massing
+variant's views — the substitution is stated in the bound. It is one place:
+one rock out of one sea, one material authority over the dressed stone, and a
+tower with the bell built into it, the hole of sky and the copper mass both
+surviving at silhouette scale. Nothing anywhere reads as eight buildings
+touching. It is not the castle the reference describes: the site plan is a
+1 : 5.5 ribbon, the west elevation is a 436-block mole with a small block on
+it, and from the wake point the crown subtends 6.7° against the reference's
+derived 27°. The variant blanks the gatehouse front and the cloister arcading
+— two of the five silhouette bands — so it can only understate the built
+fabric; the ribbon and the subtense are properties of the composed boxes,
+shared with `map.json` exactly, and do not move with the substitution.
+
+**R5's note, owed by the brief's own rule.** The binary "by construction or by
+hand-computed constant" turned out to miss the class all three proved seams
+are in: rises resting on **measured** offsets — the twelve `*_off` params were
+read from the parts' bytes, cross-checked by a second instrument, and guarded
+at expansion. Loud against a drifting box; silent against a drifting zone
+interior, because no part declares the offset as a param the guard could bind.
+The criterion is not edited; the honest answer to it is "neither — a third
+thing", for all three.
+
+### Attribution, by the ladder
+
+| Finding | Bucket | Ladder evidence |
+|---|---|---|
+| six contract reds, five undeclarable seams, unreached belfry | **library** | clause demanded it; the log names it; probed against the parts' own bytes (five programs carry no `contract` key), and the reduced probe — dropping the four red seam edges — moves neither 15 879 nor 130, so the debt is the missing contracts, not the seams |
+| a part's `exterior` edges are refused when the part is buried; a part's out-of-walk kinds evaporate under composition; a whole-box claim is closed by the one-floor rule, overlap refusals and the roofed-`open` refusal | **language** | the run's refusal transcripts, re-adjudicated by the judge against the documented contract surface: no construct restates a composed part's exterior face as an interior seam, claims a sub-box of an included call, or adopts a part's computed kind. Falsifies the assumption in spec-0040 §4 that a part's contract survives composition intact |
+| the whole cannot restyle a part's `local` roles | **language** | ten framed roles named in the log; a plain paint pushed over a framed role would strip the frame `DW0736` protects, and no framed-role rebind exists on the documented surface |
+| ward at −3, belfry at +39 | **library** | Z3's head-to-floor rise and Z7's foot-to-belfry rise are fixed arithmetic with no param, named to the field; noted that the design texts half-agree — +39 is the crown height the whole-map brief independently derives |
+| the site is a chain: wake → belfry 338 blocks at 6.7° | **two findings, not averaged** | **library** — the parts' own depths along the route's declared order sum to 350, and a `split` partitions; and **brief-class, of the campaign's material** — the whole-map reference demands a standoff the parts' declared regions arithmetically exclude, computable from `zones.json` alone before any run. No composition could satisfy both documents |
+| Z1 and Z2 cannot mate by declared faces (north face out, west face in; one shared plane can never be both) | **unattributed — language or library** | fixable either by a face-adaptation construct or by a part obligation that declared ways in and out be co-axial with the route; which is right is a design ruling, not an evidence question. The map-built corridor workaround exists and is a `via` volume, not a mating |
+| — | **model: nothing** | no failed criterion lacks a decision-log entry; every claimed gap survived its probe; the tier-retry trigger never fires. Verified, not accepted: the judge re-checked each claimed impossibility against the documented surface rather than trusting the log |
+
+### Findings about the trial's and the repository's own machinery
+
+- **spec-0040 §3/AC1's binding mechanism does not exist.** A `composition`
+  block in `zones.json` binds nothing; the audit calls the map "a program
+  nothing expands and nothing checks" until an ordinary `zones` entry names
+  it — which is the binding this brief's own vacuity table relied on, and it
+  held. The UNRUN shape inside an Accepted spec: the named artifact would
+  have looked like compliance while invoking nothing. AC8 is also unmet —
+  `include` is absent from the coverage report and no corpus program writes
+  one. Both flagged for spec correction.
+- **The sixth-vacuity probe came back "partly, and the machine names which
+  part."** Declaring the contractless boxes out-of-walk passes four gates —
+  a buried box supplies `sealed` for free and an open box `facade` for free,
+  exactly the defect-supplied evidence this brief's review question asks
+  about — and the full blanket closes on the one half-cut box, which earns
+  nothing, with closure correctly red at `bound 0`.
+- **A shot manifest asserts what the bytes do not support**: `cutaway=true`
+  recorded as applied on the composed subject while the PNG is byte-identical
+  to the uncut view; three control subjects visibly cut. The section view was
+  therefore not used for any verdict here. Backlog: the render layer's
+  manifest is a reply nobody reads.
+- **`contract-coverage` names cells, never regions or prefixes** — attributing
+  15 879 cells to five zones took arithmetic on standalone counts plus a
+  probe; a per-prefix breakdown would make the attribution a printed line.
+
+### What run 1 should be
+
+Not a tier retry — the ladder produced no model attribution to confirm. Run 1
+is this brief verbatim, after three things that are not the run's to do:
+
+1. the five zones' part-debt round — contracts and datum params, each under
+   its own zone review;
+2. the two language surfaces land or are refused by name in a spec revision:
+   adopting a composed part's exterior edge as an interior seam, and giving
+   a composing site some claim over a contractless part's volume;
+3. a design ruling on the two questions run 0 established as design, not
+   evidence: the compactness contradiction (part extents against the whole's
+   standoff), and the unattributed face-mating question.
+
+Run 1 then measures the thing run 0 could not: whether composition succeeds
+when the parts owe what spec-0040 §4 says a part owes.
+
+## Instrument bounds
+
+| Verdict | Bound | Judged from |
+|---|---|---|
+| R1 run 0 | artifact-bound | the six named views of the massing variant (Z1, Z2, Z4 as solid masses — the program of record is red and writes no prefab; substitution stated), plus the aspect and standoff measured on the composed boxes, which the variant shares with `map.json` exactly |
+| R2 run 0 | artifact-bound | the 28 guard identities and the expansion report, re-run by the judge; the section image was not used (cutaway inert on this subject) |
+| R3 run 0 | artifact-bound | the full gate report, re-run by the judge on an independently built binary over a fresh checkout of the run branch |
