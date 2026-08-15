@@ -329,6 +329,74 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
     assert_eq!(unbound.finding().unwrap().code, "DW0803");
 }
 
+/// `DW0803` is bound to **both** entry points a stale tile can arrive through,
+/// and the second one is why the check exists at all.
+///
+/// `emit::build_with_warnings` protects the datapack. `main::read_structures`
+/// is the one place every CLI consumer of prefab bytes passes through — `build`,
+/// `snapshot`, `viewer`, `blocking-chart` — and a REVIEW artifact drawn from a
+/// stale tile is a picture that lies, which no later gate can catch because the
+/// picture is what a reviewer checks the world against. A check bound only to
+/// the build would have been correct and would have protected nothing here.
+#[test]
+fn a_stale_tile_is_refused_by_the_review_commands_too_not_only_by_build() {
+    let root = scratch("cli-stale");
+    let dir = root.join("prefabs");
+    common::write_tiled_zone(&dir, "tiled-corridor", anchors());
+    let campaign_path = campaign_dir(&root, "tiled-corridor");
+
+    // Honest library first: both commands succeed, so the refusals below are
+    // about the stale tile and not about the fixture.
+    for cmd in ["build", "snapshot"] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+            .args([
+                cmd,
+                campaign_path.to_str().unwrap(),
+                "--prefabs",
+                dir.to_str().unwrap(),
+                "--out",
+                root.join(format!("ok-{cmd}")).to_str().unwrap(),
+            ])
+            .output()
+            .expect("run delvec");
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{cmd} on an honest tiled zone: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // One tile swapped for an older export; the manifest is untouched.
+    std::fs::write(
+        dir.join("tiled-corridor.x0y0z1.nbt"),
+        common::structure_nbt([9, 5, 11], &[([0, 0, 0], "minecraft:stone")]),
+    )
+    .unwrap();
+
+    for cmd in ["build", "snapshot"] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+            .args([
+                cmd,
+                campaign_path.to_str().unwrap(),
+                "--prefabs",
+                dir.to_str().unwrap(),
+                "--out",
+                root.join(format!("stale-{cmd}")).to_str().unwrap(),
+            ])
+            .output()
+            .expect("run delvec");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_ne!(out.status.code(), Some(0), "{cmd} must refuse: {text}");
+        assert!(text.contains("DW0803"), "{cmd}: {text}");
+        assert!(text.contains("tiled-corridor.x0y0z1.nbt"), "{cmd}: {text}");
+    }
+}
+
 /// Same DSL, same seed, byte-identical datapack — for a tiled placement
 /// specifically (ADR-0006).
 #[test]
