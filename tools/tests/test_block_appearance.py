@@ -399,6 +399,81 @@ def test_program_mixes_reach_inline_fills_not_only_named_roles():
     ]
 
 
+def test_program_mixes_read_a_paint_written_in_the_scopes_own_frame():
+    """A `{"local": ...}` paint is the same states in the scope's axis frame. The
+    frame decides which world direction a property names; it moves no block and
+    changes no colour, so it is measured exactly like a bare paint.
+
+    Skipping the wrapper is not a gap in one role's numbers — a program whose
+    whole palette is local binds to ZERO paints, and a zero binding that nothing
+    prints is the shelf listing arriving in place of a measurement.
+    """
+    program = {
+        "palette": {
+            "grille": {"local": "minecraft:stone_bricks"},
+            "crag": {
+                "local": [
+                    {"weight": 3, "block": "minecraft:cobbled_deepslate"},
+                    {"weight": 1, "block": "minecraft:blackstone"},
+                ]
+            },
+        },
+        "rules": {
+            "wall": [
+                {
+                    "weight": 1,
+                    "body": {
+                        "op": "fill",
+                        "material": {
+                            "local": [
+                                {"weight": 1, "block": "minecraft:sandstone"},
+                                {"weight": 1, "block": "minecraft:andesite"},
+                            ]
+                        },
+                    },
+                }
+            ]
+        },
+    }
+    found = dict(ba.program_mixes(program))
+    assert found["palette.grille"] == [("minecraft:stone_bricks", 1.0)]
+    assert sorted(b for b, _ in found["palette.crag"]) == [
+        "minecraft:blackstone",
+        "minecraft:cobbled_deepslate",
+    ]
+    inline = [name for name in found if name.startswith("fill@")]
+    assert inline, f"a local inline fill went unread: {sorted(found)}"
+    assert sorted(b for b, _ in found[inline[0]]) == [
+        "minecraft:andesite",
+        "minecraft:sandstone",
+    ]
+    # A `{"role": ...}` material is a REFERENCE to a named paint, already reported
+    # from `palette`, and must not be read a second time as an inline one.
+    role_ref = {"rules": {"r": [{"body": {"op": "fill", "material": {"role": "crag"}}}]}}
+    assert ba.program_mixes(role_ref) == []
+
+
+def test_a_program_that_binds_to_nothing_prints_the_finding_not_the_shelf(tmp_path):
+    """The zero-binding FINDING was written, correct, and unreachable: the report
+    was gated on there being something to say, so a program this reader did not
+    understand fell through to the whole-shelf listing and exited 0.
+
+    A mix report is owed by the REQUEST, so `--program` over a paintless program
+    states its binding of zero.
+    """
+    program = tmp_path / "empty.json"
+    program.write_text(json.dumps({"version": "1.4.0", "palette": {}, "rules": {}}))
+    proc = subprocess.run(
+        [sys.executable, str(TOOL), "--program", str(program)],
+        capture_output=True,
+        text=True,
+    )
+    assert "binding: 0 paint(s) examined, 0 mix(es) with >= 2 members" in proc.stdout
+    assert "FINDING: zero binding" in proc.stdout
+    # The tell of the old behaviour: the full shelf arriving instead of a report.
+    assert "minecraft:acacia_button" not in proc.stdout
+
+
 def test_block_state_strings_reduce_to_their_block():
     assert ba.base_block("minecraft:oak_stairs[facing=east,half=top]") == "minecraft:oak_stairs"
     assert ba.base_block("stone") == "minecraft:stone"
