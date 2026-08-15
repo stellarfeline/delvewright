@@ -2871,9 +2871,12 @@ front of the IR. Later phases of spec-0027.
 
 The §4 palette budget's **measurement** does exist, out of the compiler:
 `python3 tools/block-appearance.py --program <p.json>` reads every `palette` role
-and every inline `fill` material of a program and reports each mix's
-`chroma_mass`, `chromatic_area`, **named** `loudest_member` with its area share,
-and `dominant_hue`, stating its binding count. What is missing is the *binding* —
+and every inline `fill` material of a program — in either frame, since a
+`{"local": …}` paint is the same states and the frame moves no block and changes
+no colour — and reports each mix's `chroma_mass`, `chromatic_area`, **named**
+`loudest_member` with its area share, and `dominant_hue`, stating its binding
+count. A program it finds no paint in reports a binding of **zero** as a finding,
+which is the answer a palette written in a form this reader does not model gives. What is missing is the *binding* —
 the compiler cannot run it, because the numbers are measured from the EULA-gated
 client jar and whether the derived table may be committed is spec-0035 §7's open
 question for the owner. Until that is answered the measurement is an authoring
