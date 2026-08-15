@@ -49,6 +49,14 @@ that has already landed there. A worker still working cannot cause its pull
 request to be merged, and a worker whose pull request HAS merged has, by
 construction, nothing left in that tree that the remote does not hold.
 
+That key is only worth what the QUESTION is worth, so the question is asked
+about the branch being decided — one query per branch — rather than by fetching
+a list and hoping the branch is on it. A bulk `gh pr list --limit N` returns the
+N most recent requests and never says it stopped; two open requests on this
+machine fell outside a 200-row window and were reported as "no pull request on
+the remote for this branch", which is a fact about a fetch dressed as a fact
+about the remote. See `Authority` for the full account.
+
 That key is necessary and never sufficient. Every reclamation additionally
 demands, and every one of these outranks it:
 
@@ -297,53 +305,120 @@ def repo_slug(repo: Path) -> str | None:
     return url or None
 
 
-def pull_requests(slug: str, *, timeout: int) -> tuple[dict[str, dict] | None, str]:
-    """branch -> the most decisive pull request the REMOTE holds for it.
+# The most requests one branch can plausibly have carried. An answer that
+# reaches this is treated as possibly truncated and therefore as NO authority —
+# see `Authority.for_branch`.
+PER_BRANCH_LIMIT = 50
 
-    One call per repository, not one per branch: a per-branch loop is slow
-    enough that a hook would be tempted to skip it, and a skipped authority is
-    an unauthorised deletion waiting to happen.
+# A branch may carry several pull requests. OPEN dominates: an open request over
+# a branch means work is still expected on it, whatever a superseded closed one
+# says.
+STATE_RANK = {"OPEN": 3, "MERGED": 2, "CLOSED": 1}
 
-    When `gh` is unavailable, unauthenticated or slow, this returns None and
-    NOTHING in that repository is reclaimable. The absence of the authority is
-    never read as permission.
+
+class Authority:
+    """The remote's pull-request state, ASKED ABOUT THE BRANCH BEING DECIDED.
+
+    One query per branch, never a bulk listing filtered locally. That is not a
+    style preference — it is the difference between an answer about the remote
+    and an answer about a fetch.
+
+    The first version of this asked once per repository with
+    `gh pr list --state all --limit 200` and looked branches up in the result.
+    `gh` returns the most recent N and says nothing about having stopped, so two
+    branches whose requests sat outside that window were reported as "no pull
+    request on the remote for this branch" — a fact about a truncated fetch,
+    stated as a fact about the remote, with a confident count printed beside it
+    saying how many branches were "known". That is the UNTRAVERSED vacuity mode
+    (CLAUDE.md): coverage that stops partway and reports as though it had
+    covered everything. It was fail-safe only by accident of which way the
+    missing rows happened to fall, and it made the tool structurally unable to
+    reclaim anything older than one page — which is exactly the accumulation it
+    exists to drain.
+
+    THE PROPERTY THIS RESTORES: a branch's absence from an answer means the
+    remote says there is no request for it, never that the query stopped early.
+    Each per-branch answer also proves it is not itself truncated — an answer
+    that fills `PER_BRANCH_LIMIT` is treated as no authority at all rather than
+    as its first rows.
+
+    Consulted lazily, only for a tree that has already passed every rung above
+    it, so the cost is a query per branch actually being decided rather than
+    one per worktree, and the answer is cached.
     """
-    code, out, err = run(
-        [
-            "gh",
-            "pr",
-            "list",
-            "-R",
-            slug,
-            "--state",
-            "all",
-            "--limit",
-            "200",
-            "--json",
-            "number,state,headRefName,title",
-        ],
-        timeout=timeout,
-    )
-    if code != 0:
-        return None, (err.strip().splitlines() or ["gh failed"])[0]
-    try:
-        rows = json.loads(out or "[]")
-    except json.JSONDecodeError as exc:
-        return None, f"gh returned unparseable JSON ({exc})"
 
-    # A branch may carry several pull requests. OPEN dominates: an open request
-    # over a branch means work is still expected on it, whatever a superseded
-    # closed one says.
-    rank = {"OPEN": 3, "MERGED": 2, "CLOSED": 1}
-    best: dict[str, dict] = {}
-    for row in rows:
-        head = row.get("headRefName") or ""
-        if not head:
-            continue
-        prev = best.get(head)
-        if prev is None or rank.get(row.get("state", ""), 0) > rank.get(prev["state"], 0):
-            best[head] = row
-    return best, ""
+    def __init__(self, slug: str | None, *, timeout: int):
+        self.slug = slug
+        self.timeout = timeout
+        self.cache: dict[str, tuple[dict | None, str]] = {}
+        self.queries = 0
+        self.failures = 0
+
+    def for_branch(self, branch: str) -> tuple[dict | None, str]:
+        """(the decisive request for `branch`, error).
+
+        `(None, "")` is the remote's own "there is no request for this branch".
+        A non-empty error means the authority could not be established, and
+        nothing is reclaimable on it — absence of the authority is never read
+        as permission.
+        """
+        if self.slug is None:
+            return None, "no origin remote, so no pull-request authority exists"
+        if branch in self.cache:
+            return self.cache[branch]
+
+        self.queries += 1
+        code, out, err = run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "-R",
+                self.slug,
+                "--head",
+                branch,
+                "--state",
+                "all",
+                "--limit",
+                str(PER_BRANCH_LIMIT),
+                "--json",
+                "number,state,headRefName,title",
+            ],
+            timeout=self.timeout,
+        )
+        answer: tuple[dict | None, str]
+        if code != 0:
+            self.failures += 1
+            answer = (None, (err.strip().splitlines() or ["gh failed"])[0])
+        else:
+            try:
+                rows = json.loads(out or "[]")
+            except json.JSONDecodeError as exc:
+                self.failures += 1
+                answer = (None, f"gh returned unparseable JSON ({exc})")
+            else:
+                if len(rows) >= PER_BRANCH_LIMIT:
+                    # The answer reached the limit, so it may have been cut off
+                    # at it. Fail closed rather than decide on its first rows.
+                    self.failures += 1
+                    answer = (
+                        None,
+                        f"the answer for this branch filled the {PER_BRANCH_LIMIT}-row limit, "
+                        "so it may be truncated and is not treated as authoritative",
+                    )
+                else:
+                    # `--head` is matched by the remote, but a stray row would
+                    # decide the wrong branch, so it is re-checked here.
+                    mine = [r for r in rows if (r.get("headRefName") or "") == branch]
+                    best = None
+                    for row in mine:
+                        if best is None or STATE_RANK.get(row.get("state", ""), 0) > STATE_RANK.get(
+                            best.get("state", ""), 0
+                        ):
+                            best = row
+                    answer = (best, "")
+        self.cache[branch] = answer
+        return answer
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +572,7 @@ def measure(wt: Worktree) -> None:
     wt.lease = read_lease(wt.path)
 
 
-def decide(wt: Worktree, *, self_paths: set[Path], prs: dict[str, dict] | None, pr_error: str) -> None:
+def decide(wt: Worktree, *, self_paths: set[Path], authority: Authority) -> None:
     """The verdict ladder. Order is the design: every KEEP above the reclaim
     rung outranks the pull-request authority, so no amount of "it merged" can
     reach a tree holding work or a tree something points into."""
@@ -563,15 +638,18 @@ def decide(wt: Worktree, *, self_paths: set[Path], prs: dict[str, dict] | None, 
             f"--tree {wt.path} --apply"
         )
         return
-    if prs is None:
+    pr, pr_error = authority.for_branch(wt.branch)
+    wt.pr = pr
+    if pr_error:
         wt.verdict = "KEEP"
         wt.reason = f"NO PR AUTHORITY — {pr_error}; absence of the authority is not permission"
         return
-    pr = prs.get(wt.branch)
-    wt.pr = pr
     if pr is None:
         wt.verdict = "KEEP"
-        wt.reason = "no pull request on the remote for this branch — the work has not landed"
+        wt.reason = (
+            "the remote, asked about this branch, holds no pull request for it — "
+            "the work has not landed"
+        )
         return
     state = pr.get("state", "?")
     if state not in {"MERGED", "CLOSED"}:
@@ -697,8 +775,7 @@ class RepoSweep:
         self.main: Path | None = None
         self.trees: list[Worktree] = []
         self.error: str | None = None
-        self.pr_error = ""
-        self.prs: dict[str, dict] | None = None
+        self.authority: Authority | None = None
         self.stale_branches: list[str] = []
 
 
@@ -734,13 +811,9 @@ def sweep(
     self_paths = {real(REPO), real(Path.cwd())}
 
     for rs in sweeps:
-        slug = repo_slug(rs.path)
-        if slug is None:
-            rs.pr_error = "no origin remote, so no pull-request authority exists"
-        else:
-            rs.prs, rs.pr_error = pull_requests(slug, timeout=gh_timeout)
+        rs.authority = Authority(repo_slug(rs.path), timeout=gh_timeout)
         for wt in rs.trees:
-            decide(wt, self_paths=self_paths, prs=rs.prs, pr_error=rs.pr_error)
+            decide(wt, self_paths=self_paths, authority=rs.authority)
         rs.stale_branches = harness_branches(rs.path)
 
     return sweeps, index
@@ -796,10 +869,32 @@ def render(
         if rs.error:
             print(f"    COULD NOT ENUMERATE — {rs.error}", file=out)
             continue
-        if rs.pr_error:
-            print(f"    pull-request authority: UNAVAILABLE — {rs.pr_error}", file=out)
-        elif rs.prs is not None:
-            print(f"    pull-request authority: {len(rs.prs)} branch(es) known to the remote", file=out)
+        # What the authority actually covered, never a number that merely reads
+        # as coverage. It is asked one branch at a time, about the branch being
+        # decided, so the only honest figure is how many branches were asked.
+        if rs.authority is not None:
+            a = rs.authority
+            if a.slug is None:
+                print("    pull-request authority: UNAVAILABLE — no origin remote", file=out)
+            elif a.queries == 0:
+                print(
+                    "    pull-request authority: not consulted — no tree reached that rung",
+                    file=out,
+                )
+            elif a.failures == a.queries:
+                print(
+                    f"    pull-request authority: UNAVAILABLE — all {a.queries} query(ies) failed, "
+                    "so nothing in this repository is reclaimable",
+                    file=out,
+                )
+            else:
+                failed = f", {a.failures} unanswered" if a.failures else ""
+                print(
+                    f"    pull-request authority: {a.queries} branch(es) asked directly{failed} "
+                    f"(one query per branch — a branch's absence from an answer is the remote's "
+                    f"answer, not a page boundary)",
+                    file=out,
+                )
         if not rs.trees:
             print("    no worktrees beyond the main checkout", file=out)
         for wt in rs.trees:

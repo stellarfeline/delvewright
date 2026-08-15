@@ -35,20 +35,41 @@ def git(cwd, *args):
     ).stdout
 
 
-def fake_gh(tmp_path, rows):
-    """A `gh` that answers with `rows` and nothing else.
+def fake_gh(tmp_path, rows, *, page=0):
+    """A `gh` that PAGES, the way the real one does.
 
-    Named `gh` and placed first on PATH, so the real invocation — flags, `-R`,
-    `--json` field list, JSON parsing — is the thing being exercised.
+    This oracle reads its own arguments, and that is the whole point. The first
+    version of the authority fetched one bulk `gh pr list` per repository and
+    looked branches up in the result; `gh` returns the most recent N and never
+    says it stopped, so two branches whose requests sat outside the window were
+    reported as "no pull request on the remote". An oracle that answered the
+    same rows to every question could not tell the two designs apart.
+
+    So: a query carrying `--head BRANCH` is answered from the FULL set, the way
+    the remote answers a question about one branch. A bulk listing is answered
+    with the first `page` rows only — by default NONE, which is what a query
+    that stopped early looks like from the inside. Every reclaim assertion in
+    this file therefore also asserts that the tool asked about the branch it was
+    deciding.
+
+    `rows` is newest-first, as `gh` returns them: index 0 is the newest request,
+    and anything past `page` is only reachable by asking about it.
     """
     bindir = tmp_path / "fakebin"
     bindir.mkdir(exist_ok=True)
-    payload = json.dumps(rows)
     script = bindir / "gh"
     script.write_text(
-        "#!/usr/bin/env bash\n"
-        "# every argument is ignored; this is an oracle, not a client\n"
-        f"cat <<'JSON'\n{payload}\nJSON\n",
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        'sys.stdout.reconfigure(newline="\\n")\n'
+        f"ROWS = {json.dumps(rows)}\n"
+        f"PAGE = {page}\n"
+        "args = sys.argv[1:]\n"
+        'head = args[args.index("--head") + 1] if "--head" in args else None\n'
+        "if head is None:\n"
+        "    print(json.dumps(ROWS[:PAGE]))\n"
+        "else:\n"
+        '    print(json.dumps([r for r in ROWS if r["headRefName"] == head]))\n',
         encoding="utf-8",
     )
     script.chmod(0o755)
@@ -217,6 +238,64 @@ def test_open_pull_request_wins_over_a_stale_closed_one(fx, tmp_path):
 def test_no_pull_request_at_all_is_kept(fx, tmp_path):
     wt = fx.worktree("wt-fresh", "just-dispatched")
     assert verdict_for(sweep(fx, fake_gh(tmp_path, [])), wt)[0] == "KEEP"
+
+
+def test_a_request_outside_the_first_page_is_still_found(fx, tmp_path):
+    """The defect this replaced, made falsifiable.
+
+    `landed`'s request is old: it is the second row, and a bulk listing that
+    returns one page contains only the newest. The previous design fetched that
+    page and concluded "no pull request on the remote for this branch", which is
+    a statement about a fetch wearing the clothes of a statement about the
+    remote. Asking about the branch finds it, and the tree is reclaimed.
+    """
+    wt = fx.worktree("wt-landed", "landed")
+    old_request = 259
+    rows = [
+        {"number": 466, "state": "OPEN", "headRefName": "something-recent", "title": "t"},
+        {"number": old_request, "state": "MERGED", "headRefName": "landed", "title": "t"},
+    ]
+    bindir = fake_gh(tmp_path, rows, page=1)
+
+    out = sweep(fx, bindir)
+    v, why = verdict_for(out, wt)
+    assert v == "RECLAIM", "a request older than one page was missed"
+    assert str(old_request) in why
+
+
+def test_an_answer_that_fills_the_limit_is_not_authoritative(fx, tmp_path):
+    """A per-branch answer can itself be cut off at its limit. Fail closed."""
+    wt = fx.worktree("wt-landed", "landed")
+    rows = [
+        {"number": 100 + i, "state": "MERGED", "headRefName": "landed", "title": "t"}
+        for i in range(50)
+    ]
+    v, why = verdict_for(sweep(fx, fake_gh(tmp_path, rows)), wt)
+    assert v == "KEEP"
+    assert "NO PR AUTHORITY" in why and "truncated" in why
+
+
+def test_the_authority_reports_what_it_actually_covered(fx, tmp_path):
+    """A number that reads as coverage and is not coverage is worse than none.
+
+    The line this replaced printed how many branches a bulk listing happened to
+    contain, which measured the size of a fetch and read as knowledge of the
+    remote.
+    """
+    fx.worktree("wt-a", "a")
+    fx.worktree("wt-b", "b")
+    out = sweep(fx, fake_gh(tmp_path, []))
+    assert "2 branch(es) asked directly" in out
+    assert "known to the remote" not in out
+
+
+def test_the_authority_is_not_consulted_for_a_tree_decided_above_it(fx, tmp_path):
+    """Rungs above the authority answer without asking — and say so."""
+    wt = fx.worktree("wt-dirty", "landed")
+    (wt / "unsaved.txt").write_text("x\n", encoding="utf-8")
+    out = sweep(fx, fake_gh(tmp_path, MERGED))
+    assert "not consulted — no tree reached that rung" in out
+    assert verdict_for(out, wt)[0] == "KEEP"
 
 
 def test_absent_authority_is_never_permission(fx, tmp_path):
