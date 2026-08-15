@@ -84,13 +84,24 @@ exactly the condition under which a declaration can exist at all.
 `dsl_version` 0.11.0, additive. The fence is **per stage**: the NPC declaration is
 gated on the `npcs` document's own `dsl_version`, the actor declaration on the
 `quests` document's, so a campaign may adopt the surface one stage at a time.
-Declaring below 0.11.0 is `DW0141`. There is no requirement half — nothing obliges
-a body to declare anything, and a campaign that declares none emits byte-for-byte
-what it emitted before.
+Declaring below 0.11.0 is `DW0141`. This surface has no requirement half —
+nothing obliges a body to declare anything, and a campaign that declares none
+routes exactly as it did before, under its species' derived class.
+
+0.11.0 is shared with the press-answer lift, which does carry a requirement:
+at 0.11.0 and above a sealed body nothing answers is `DW0429`. That obligation
+is not this surface's and does not reach a body; a campaign meets it by
+answering its own sealed gates and doors.
 
 **Adoption**: no active campaign declares traversal, so no adoption round is owed
-by this version. `nobodys-cave-island` (the one active campaign) stays on its
-current per-stage versions and its shipped datapack is byte-identical.
+by this surface. `nobodys-cave-island` (the one active campaign) stays on its
+current per-stage versions — `quests` at 0.8.0, below the fence — and every
+verdict and every player-facing line it had is unchanged. Its emitted datapack is
+not byte-identical: the seal answer at `anchor/boulder` runs through the general
+trigger path, so the build loses two files, gains three, and moves the tag list
+on `seal_arm_boulder`. Reproduction of the released delve is its pinned engine's
+job (`versions.toml` + OCI), which is what a fence grandfathers rather than
+emitted identifiers.
 
 ## Acceptance criteria
 

@@ -14,7 +14,7 @@ use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::load::load_campaign_dir;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::parse_campaign;
 
 const NS: &str = "souls-shortcut";
 
@@ -26,7 +26,7 @@ fn build_fixture() -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::fenced_diagnostics(&campaign, &items, &prefabs, &entities);
     assert!(
         diags.is_empty(),
         "souls-shortcut must validate clean: {diags:#?}"

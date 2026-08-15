@@ -81,8 +81,8 @@ pub use stages::{
     Prop, Quest, QuestEffect, QuestPlanContent, QuestsContent, Relationship, Role, SequenceStep,
     Shop, ShopOffer, Shortcut, ShotStyle, SkinModel, SlotDrop, SoundAt, Stake, StateCompare,
     StateDecl, StateScope, StateWrite, StealthZone, TimedGate, Trap, TrapDisarm, TrapEffect,
-    TrapReset, TrapTrigger, Trigger, TriggerOn, Wave, WaveLane, WaveMob, WaveSummon, WorldContent,
-    WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
+    TrapReset, TrapTrigger, Trigger, TriggerAudience, TriggerOn, Wave, WaveLane, WaveMob,
+    WaveSummon, WorldContent, WorldDifficulty, WorldTime, WorldWeather, is_potion_bearing_item,
 };
 pub use stages::{BodyRef, BodyTraversalSite, body_traversal_sites, for_each_campaign_effect};
 pub use stages::{

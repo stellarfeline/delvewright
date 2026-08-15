@@ -128,9 +128,11 @@ fn style_scale(style: NarrateStyle) -> u32 {
         // subtitle. An art title is a title, so it too is ×4.
         NarrateStyle::Title | NarrateStyle::Art => 4,
         NarrateStyle::Subtitle => 2,
-        // Chat wraps and scrolls — no width budget. Never reaches here
-        // (`narrate_on_screen` excludes it), but keep the match total and honest.
-        NarrateStyle::Chat => 1,
+        // Chat wraps and scrolls — no width budget. The actionbar draws at ×1 and
+        // vanilla neither wraps nor truncates it, but it is a reply strip rather
+        // than a banner and is not width-policed. Neither reaches here
+        // (`narrate_on_screen` excludes both), but keep the match total and honest.
+        NarrateStyle::Chat | NarrateStyle::Actionbar => 1,
     }
 }
 

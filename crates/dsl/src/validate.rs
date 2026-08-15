@@ -17,8 +17,8 @@ use crate::registry::{
     VendoredItemRegistry,
 };
 use crate::stages::{
-    EditFrame, EncounterTier, Locomotion, MorphOp, Objective, QuestEffect, RegionShape, TriggerOn,
-    WorldEdit, body_traversal_sites,
+    EditFrame, EncounterTier, Locomotion, MorphOp, NarrateStyle, Objective, QuestEffect,
+    RegionShape, TriggerOn, WorldEdit, body_traversal_sites,
 };
 
 /// Validate a campaign against all spec-0001 rules using the vendored v0
@@ -1368,21 +1368,41 @@ fn reserved(c: &Campaign, d: &mut Vec<Diagnostic>) {
     reserved_v09(c, d);
     reserved_v10(c, d);
     reserved_v11(c, d);
+    press_answer_checks(c, d);
+    press_obligation_checks(c, d);
 }
 
-/// DSL v0.11 reserved-feature gating (spec-0034): the per-body `traversal`
-/// declaration.
+/// DSL v0.11 reserved-feature gating. **Two surfaces land in this version**, and
+/// this is the one fence for both:
+///
+/// * spec-0034's per-body `traversal` declaration — what a body can do when it
+///   moves — on the stage-2 NPC and the stage-5 actor;
+/// * the **press-answer lift** — a `narrate` `actionbar` style and a trigger's
+///   `audience: presser`.
 ///
 /// **Fenced per stage, because the surface is per stage.** The stage-2 NPC's
-/// declaration is gated on the `npcs` document's own `dsl_version` and the
-/// stage-5 actor's on the `quests` document's, so a campaign may adopt the
+/// traversal declaration is gated on the `npcs` document's own `dsl_version` and
+/// the stage-5 actor's on the `quests` document's, so a campaign may adopt the
 /// surface one stage at a time — which is what keeps every 0.2–0.10 campaign
-/// compiling untouched.
+/// compiling untouched. The press-answer lift is carried entirely by stage-5
+/// documents, so its fence reads the `quests` version alone.
 ///
-/// There is no requirement half. Nothing obliges a body to declare anything; the
-/// derived class is exactly what every pre-0.11 build used, so a campaign that
-/// declares none emits byte-for-byte what it emitted before.
+/// The press-answer additions are one capability and share one fence: without
+/// the channel a press answer cannot be written where a player reads replies,
+/// and without the addressee it is broadcast to a party three quarters of whom
+/// are elsewhere. Together they are what makes `close-gate.sealed_hint`
+/// expressible as an ordinary trigger.
+///
+/// Declaring any of it below 0.11.0 is `DW0141`. **The version does have a
+/// requirement half**, and it is not this function's: at 0.11.0 and above a
+/// sealed body nothing answers is `DW0429`, raised unconditionally by
+/// [`press_obligation_checks`] and fenced by [`crate::fence`] off the code's own
+/// [`crate::Binds::Since`] 11. Nothing obliges a body to declare traversal, and
+/// nothing obliges a campaign to adopt either half of the lift — the obligation
+/// binds a campaign that has ALREADY declared a sealed body, once its quests
+/// stage reaches 0.11.0.
 fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    // spec-0034: the per-body `traversal` declaration, stage 2.
     if !is_v11(c.npcs.dsl_version.as_str()) {
         for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
             if npc.traversal.is_none() {
@@ -1417,6 +1437,48 @@ fn reserved_v11(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     actor.id
                 ),
             ));
+        }
+    }
+    // The press-answer lift, stage 5. Both halves ride the `quests` version, so
+    // one guard carries them — and it is a SEPARATE guard from the actor
+    // traversal one above rather than a shared `if`, because the two surfaces
+    // are fenced independently and a future stage move must not silently take
+    // the other with it.
+    if !is_v11(c.quests.dsl_version.as_str()) {
+        // The style rides `for_each_campaign_effect`, so a `narrate` nested
+        // inside a `sequence` step or an `on_arrive` bundle is fenced exactly
+        // like a top-level one — the fence is as total as the surface.
+        crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+            if matches!(
+                eff,
+                QuestEffect::Narrate {
+                    style: Some(NarrateStyle::Actionbar),
+                    ..
+                }
+            ) {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("{path}/style"),
+                    "the `actionbar` narrate style (the reply strip above the hotbar) requires \
+                     dsl_version 0.11.0 — raise this stage's `dsl_version` to 0.11.0, or use \
+                     `chat`/`title`/`subtitle`"
+                        .to_string(),
+                ));
+            }
+        });
+        for (i, t) in c.quests.content.triggers.iter().enumerate() {
+            if t.addresses_presser() {
+                d.push(Diagnostic::error(
+                    codes::RESERVED,
+                    "quests",
+                    format!("/content/triggers/{i}/audience"),
+                    "a trigger `audience` of `presser` (the effects run as the one player who \
+                     clicked, instead of addressing the party) requires dsl_version 0.11.0 — \
+                     raise this stage's `dsl_version` to 0.11.0, or remove the field"
+                        .to_string(),
+                ));
+            }
         }
     }
 }
@@ -1454,6 +1516,168 @@ fn body_traversal_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         ));
     }
 }
+
+/// `DW0427`/`DW0428`: the two ways a trigger's **press answer** surface can be
+/// declared wrong (DSL v0.11).
+///
+/// Both are about the trigger as an *object*, not about any effect inside it, so
+/// they sit together and are checked over the one trigger authority.
+fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    for (i, t) in c.quests.content.triggers.iter().enumerate() {
+        if t.addresses_presser() && !matches!(t.on, TriggerOn::Use) {
+            d.push(Diagnostic::error(
+                codes::TRIGGER_AUDIENCE_UNATTRIBUTABLE,
+                "quests",
+                format!("/content/triggers/{i}/audience"),
+                format!(
+                    "trigger `{}` watches a `{}` and asks for `audience: presser`, but vanilla \
+                     can only attribute a RIGHT-click to a player. \
+                     `minecraft:player_interacted_with_entity` is the one criterion that runs a \
+                     function as the clicker; a left-click is recorded in the interaction \
+                     entity's `attack` NBT, which names a UUID no command can become, and an \
+                     `approach` has no click at all. Guessing — polling the record and hoping the \
+                     nearest player is the striker — is the kind of downstream folklore this \
+                     engine refuses (CLAUDE.md: a capability with no vanilla primitive under it \
+                     is excluded, not faked). Prescription: make it an `on: use` trigger, or drop \
+                     `audience` and let the beat address the party",
+                    t.id,
+                    t.on.kind()
+                ),
+            ));
+        }
+        let local = crate::l10n::local_id(t.id.as_str());
+        if local.starts_with(RESERVED_TRIGGER_PREFIX) {
+            d.push(Diagnostic::error(
+                codes::TRIGGER_ID_RESERVED,
+                "quests",
+                format!("/content/triggers/{i}/id"),
+                format!(
+                    "trigger id `{}` opens with `{RESERVED_TRIGGER_PREFIX}`, which the compiler \
+                     reserves for the triggers it synthesizes itself — today the press answer \
+                     every sealed gate and shortcut door gives (`trigger/dw-press-…`). Two \
+                     triggers with one id would share one `dw_trig_…` tag and one emitted \
+                     function, so one of them would silently vanish. Prescription: rename it; any \
+                     kebab id not starting with `{RESERVED_TRIGGER_PREFIX}` is yours",
+                    t.id
+                ),
+            ));
+        }
+    }
+}
+
+/// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11),
+/// uniformly over the pressable class.
+///
+/// A sealed thing is something the party walks up to and pushes on — a `shortcut`
+/// door on the wrong side of the loop, a `close-gate`'s wall — and the press has
+/// to say something. The compiler will not say it for them: a baked default is a
+/// design statement (about tone, about what this thing is) made on the author's
+/// behalf and never disclosed, so the obligation is stated instead of filled.
+///
+/// **One rule for the whole pressable class, not one per verb.** A shortcut door
+/// and a sealed gate are two objects of the same class, and giving them two
+/// defaulting policies would be exactly the "capability keyed to the verb" defect
+/// CLAUDE.md's worked example is about — which this surface *is*. So above the
+/// fence both are held to the same obligation, and `plan::press_answer_sites`
+/// carries the single shared list they are read from.
+///
+/// **Two ways to discharge it**, and they are the same thing said at two layers:
+///
+/// * a `use` trigger anchored on the body — the general verb, available to every
+///   pressable object (`QuestsContent::answers_press_at`);
+/// * for a `close-gate`, an authored `sealed_hint` — the sugar, which *is* the
+///   author defining the wording. The compiler lowering that onto the general
+///   path is not the compiler putting words in a player's mouth.
+///
+/// A `strike` discharges neither: pressing a thing is a right-click, and a
+/// left-click reply is a gesture the player may never make.
+///
+/// **Fenced on the quests stage's `dsl_version`.** This is a tightening, not new
+/// surface, and the fence is what makes an already-approved design keep its
+/// verdicts: the same declared version yields the same behaviour. Below
+/// 0.11.0 a silent door still compiles and
+/// still emits nothing, and an unauthored `close-gate` still takes the compiler's
+/// canonical English — `plan::SilencePolicy`'s two grandfathered arms, which
+/// differ from each other only because the two classes historically differed.
+///
+/// The fence is the general one: `DW0429` is declared [`Binds::Since`] 0.11.0 on
+/// its own [`DwCode`](crate::DwCode), and [`crate::fence::Fenced`] grandfathers
+/// it against a quests stage below that version. This check therefore raises the
+/// diagnostic unconditionally and never tests a version itself — a private
+/// `is_v11(...)` guard here would be a second, narrower copy of the mechanism
+/// that already governs exactly this case.
+fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+
+    // Every gate anchor some `close-gate` seals, and whether any firing on it
+    // authored a wording. Keyed by ANCHOR because the seal is a place, not an
+    // event — the same reason `plan::collect_seal_hints` dedups by anchor and
+    // `DW0423` refuses two firings that disagree.
+    let mut sealed: BTreeMap<&str, (bool, String)> = BTreeMap::new();
+    crate::stages::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        let Some(anchor) = eff.close_gate_anchor() else {
+            return;
+        };
+        let entry = sealed
+            .entry(anchor.as_str())
+            .or_insert_with(|| (false, path.to_string()));
+        entry.0 |= eff.close_gate_sealed_hint().is_some();
+    });
+    for (anchor, (authored, path)) in sealed {
+        if authored || quests.answers_press_at(anchor) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SEALED_BODY_UNANSWERED,
+            "quests",
+            path,
+            format!(
+                "this `close-gate` seals `{anchor}`, and nothing says what the wall answers when \
+                 the party presses it. A seal is a thing the party walks back to and pushes on, \
+                 so the press has to say something — and the compiler will not word it for you: a \
+                 baked default decides this wall's tone on your behalf and never tells you it \
+                 did. Two ways to say it, and either is enough: add `\"sealed_hint\": \"<what the \
+                 wall says>\"` to this effect, or anchor a trigger on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the wall says>\"}}]}}`. The trigger form \
+                 is the general one and can carry a sound, a flag gate or any other effect"
+            ),
+        ));
+    }
+
+    for (i, sc) in quests.shortcuts.iter().enumerate() {
+        let gate = sc.gate.as_str();
+        if quests.answers_press_at(gate) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            codes::SEALED_BODY_UNANSWERED,
+            "quests",
+            format!("/content/shortcuts/{i}"),
+            format!(
+                "shortcut `{}` bars the gate `{gate}` from world-load, and nothing in the \
+                 campaign answers a right-click on it — so a player who walks the long way \
+                 round, arrives at the wrong side of the door and pushes on it is told nothing. \
+                 That is the press a shortcut loop most invites. The compiler will not word it \
+                 for you: a baked default would be the engine deciding this door's tone and \
+                 never saying that it had. A `shortcut` carries no wording field, deliberately — \
+                 the line is a trigger. Prescription: add a trigger anchored on the gate — \
+                 `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
+                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+                 \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \
+                 the door's own hitboxes, fires only from the sealed side, and retires when the \
+                 door opens. Any `use` trigger on `{gate}` discharges this, whatever it does",
+                sc.id
+            ),
+        ));
+    }
+}
+
+/// The id prefix the compiler reserves for triggers it synthesizes
+/// (`plan::press_answer_trigger_id`). Stated here because the *reservation* is a
+/// DSL-level fact even though today's only user is in the compiler.
+const RESERVED_TRIGGER_PREFIX: &str = "dw-";
 
 /// DSL v0.10 reserved-feature gating (spec-0031). **Two surfaces land in this
 /// version**, and this is the one fence for both:
@@ -1956,7 +2180,12 @@ fn state_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     // actor the same way. Seeding it `false` — as this walk first did — read
     // every root as player-bearing and let three of the seven through.
     crate::effects::for_each_effect_root(c, &mut |site, effs| {
-        let scheduled = !site.kind().runs_with_acting_player();
+        // Per SITE, not per kind (DSL v0.11): a trigger declaring
+        // `audience: presser` is dispatched by the interaction advancement and so
+        // DOES have an acting player, while every other trigger is polled with
+        // none. Asking the kind would refuse a `player`-scoped read that the
+        // emitter can serve — the mirror of the bug this seed was added to fix.
+        let scheduled = !site.runs_with_acting_player();
         check_player_state_not_scheduled(effs, &declared, site.stage, &site.path, scheduled, d);
     });
 

@@ -11,7 +11,7 @@ use delvewright_compiler::emit::{self, BuildOutput};
 use delvewright_compiler::gates;
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
 
 /// A hello-world `quests` doc that opens `anchor/door` on the talk objective and
 /// runs `on_complete` (a raw JSON array body, no surrounding brackets) after the
@@ -160,7 +160,7 @@ fn close_gate_emits_fill_with_declared_block() {
     // Validation-tier gate-block check passes (anchor/door declares iron_bars).
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let mut diags = validate_campaign_with(&c, &items, &prefabs, &entities);
+    let mut diags = common::fenced_diagnostics(&c, &items, &prefabs, &entities);
     diags.extend(gates::check_close_gates(&c, &prefabs));
     assert!(
         diags.is_empty(),
