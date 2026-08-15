@@ -233,7 +233,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # hanging off the face pointing away from the rock. At this pin it is 0 red over
 # 390, and the count moved because writing a connection splits one omitted entry
 # into the several fully-specified ones the piece actually places.
-sha = "f0dd59669f784d64a67bb6ff5223a25879875f72"
+sha = "f28f15394eef6813a88122137e3050b1da28c6f9"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
