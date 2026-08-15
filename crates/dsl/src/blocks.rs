@@ -108,6 +108,10 @@ pub const DW_STATE_UNDER_SPECIFIED: &str = "DW0737";
 /// pinned vocabulary cannot map onto the world frame the scope was given
 /// (error).
 pub const DW_LOCAL_FRAME_UNRESOLVABLE: &str = "DW0738";
+/// A world-frame fill of a frame-sensitive block state stood under a
+/// reorientation that this region resolved to the identity, so `DW0736` had no
+/// frame to judge it against. **Undecided**, neither pass nor fail.
+pub const DW_ORIENTED_FILL_UNDECIDED: &str = "DW0742";
 
 /// The verdict on one block state, judged against the pin **and** the
 /// `DataVersion` of the file that carries it.
@@ -530,6 +534,48 @@ impl BlockRegistry {
             }
         }
         None
+    }
+
+    /// **The same question asked of a set of frames instead of one**: which
+    /// properties of this state ANY of `frames` would land wrong.
+    ///
+    /// [`Self::oriented_mismatch`] answers "does this state survive THIS
+    /// frame", and its first act is to return `None` for the identity. That is
+    /// correct, and it is also why a `None` from it is two different facts
+    /// wearing one answer: *judged against a frame and found sound*, or *never
+    /// judged at all*. Telling those apart is not a question about the state
+    /// alone either — it is a question about which frames the scope could have
+    /// stood in, which is why the caller supplies them
+    /// (`delvewright_grammar::orient::FrameSet`).
+    ///
+    /// The answer is the union of what `oriented_mismatch` reports over
+    /// `frames`, so the two can never disagree about what frame-sensitivity
+    /// means. That matters more than the cost of asking 48 times: a hand-kept
+    /// list of sensitive property NAMES would call a symmetric run of bars
+    /// sensitive (its `east` moves to `south`, and the state already gives
+    /// `south` the same value, so no frame lands it wrong), would call an
+    /// `axis=y` pillar sensitive under a request that pins the vertical, and
+    /// would go stale the moment the pin adds a block. Asking the judge is what
+    /// keeps the two definitions one definition.
+    ///
+    /// Each frame is `(local_to_world, reflected)`, exactly as
+    /// `oriented_mismatch` reads them. Sorted `key=value`, deterministic
+    /// (ADR-0006). Empty for a state none of these frames disturbs — a plain
+    /// `minecraft:stone`, a `waterlogged` slab, a symmetric pane — for a foreign
+    /// namespace and for an id the pin does not know.
+    pub fn frame_sensitive(
+        &self,
+        name: &str,
+        properties: &BTreeMap<String, String>,
+        frames: impl IntoIterator<Item = ([usize; 3], [bool; 3])>,
+    ) -> Vec<String> {
+        let mut found: std::collections::BTreeSet<String> = Default::default();
+        for (perm, reflected) in frames {
+            if let Some(hit) = self.oriented_mismatch(name, properties, perm, reflected) {
+                found.insert(hit);
+            }
+        }
+        found.into_iter().collect()
     }
 
     /// **The same transform, applied instead of judged**: the image of

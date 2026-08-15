@@ -75,7 +75,7 @@ fn a_bare_bars_fill_reds_the_shape_gate_and_the_export() {
     let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "shape-complete");
-    assert!(!g.pass);
+    assert!(!g.passed());
     assert!(g.bound > 0, "the gate bound nothing");
     assert!(g.detail.contains("DW0735"), "{}", g.detail);
     assert!(
@@ -97,7 +97,7 @@ fn the_shipped_grate_writes_its_connections_and_passes() {
     let out = expand(&broken_grate(), ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "shape-complete");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.bound >= 4, "bound {} states", g.bound);
     assert!(
         out.model
@@ -136,7 +136,7 @@ fn a_state_that_omits_a_property_reds_the_completeness_gate() {
     let report = gates::judge(&out, gates::Options::default());
 
     let g = gate(&report, "states-complete");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert!(g.bound > 0, "the gate bound nothing");
     assert!(g.detail.contains("DW0737"), "{}", g.detail);
     assert!(
@@ -148,7 +148,7 @@ fn a_state_that_omits_a_property_reds_the_completeness_gate() {
     // ...and the class line holds: this is NOT a shape defect, so the harder
     // gate stays green. A `DW0737` that also reds `DW0735` would mean the two
     // are one rule and one of them is redundant.
-    assert!(gate(&report, "shape-complete").pass);
+    assert!(gate(&report, "shape-complete").passed());
 }
 
 /// GREEN: the same stair with every property written passes, and the corpus it
@@ -165,7 +165,7 @@ fn a_fully_written_state_passes_the_completeness_gate() {
     let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "states-complete");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(g.bound >= 4, "bound {} states", g.bound);
 }
 
@@ -176,9 +176,9 @@ fn a_bare_wall_reds_both_halves_of_the_family() {
     let program = grate_with_bare_bars();
     let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
-    assert!(!gate(&report, "shape-complete").pass);
+    assert!(!gate(&report, "shape-complete").passed());
     let whole = gate(&report, "states-complete");
-    assert!(!whole.pass);
+    assert!(!whole.passed());
     assert!(whole.detail.contains("DW0737"), "{}", whole.detail);
     // The whole class names every omitted property; the shape half names four.
     assert!(whole.detail.contains("waterlogged"), "{}", whole.detail);
@@ -188,15 +188,41 @@ fn a_bare_wall_reds_both_halves_of_the_family() {
 // DW0736 — the orientation defect
 // ---------------------------------------------------------------------------
 
-/// The naive repair is correct at the identity region…
+/// The naive repair is **undecided** at the identity region — and this test is
+/// where that gap was written down as a pass.
+///
+/// The two tests are one pair: the next one hands the same program a box whose
+/// long axis is world X and the same literal is refused outright. So the green
+/// here never meant "sound"; it meant the root's `z: largest` resolved to the
+/// identity at THIS box's proportions and `DW0736` short-circuited before it
+/// read a property. `DW0742` is that distinction, and the gate now says it
+/// (`GateState::Undecided`) instead of printing the word every reader stops at.
 #[test]
-fn unguarded_connections_pass_where_nothing_is_reoriented() {
+fn unguarded_connections_are_undecided_where_the_region_turns_nothing() {
     let program = grate_with_unguarded_connections();
     let out = expand(&program, ROW_ALONG_Z, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "oriented-fills");
-    assert!(g.pass, "{}", g.detail);
+    assert!(
+        !g.failed(),
+        "nothing here is wrong at this region: {}",
+        g.detail
+    );
+    assert!(
+        !g.passed(),
+        "and nothing here was examined either: {}",
+        g.detail
+    );
+    assert_eq!(g.state, gates::GateState::Undecided, "{}", g.detail);
     assert!(g.bound > 0);
+    assert_eq!(g.undecided, 1, "{}", g.detail);
+    assert!(g.detail.contains("DW0742"), "{}", g.detail);
+    // The report as a whole is still `fail`: this fixture also omits
+    // `waterlogged`, which is `states-complete`'s business and not this gate's.
+    // A red anywhere outranks an undecided everywhere, which is the precedence
+    // a report's headline is supposed to have.
+    assert_eq!(report.verdict, "fail");
+    assert!(!gate(&report, "states-complete").passed());
 }
 
 /// …and RED the moment the zone hands the piece a box whose long axis is
@@ -210,7 +236,7 @@ fn unguarded_connections_red_the_orientation_gate_under_a_turned_box() {
     let out = expand(&program, ROW_ALONG_X, &ExpandOptions::seeded(1)).unwrap();
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "oriented-fills");
-    assert!(!g.pass);
+    assert!(!g.passed());
     assert!(g.detail.contains("DW0736"), "{}", g.detail);
     assert!(g.detail.contains("grate_bars"), "{}", g.detail);
     assert!(g.detail.contains("orientation"), "{}", g.detail);
@@ -236,7 +262,7 @@ fn the_shipped_grate_selects_the_matching_variant_under_a_turned_box() {
     );
     let report = gates::judge(&out, gates::Options::default());
     let g = gate(&report, "oriented-fills");
-    assert!(g.pass, "{}", g.detail);
+    assert!(g.passed(), "{}", g.detail);
     assert!(
         out.model
             .palette()
@@ -362,19 +388,24 @@ fn one_local_frame_role_writes_the_right_bar_in_every_orientation() {
         assert_eq!(out.oriented.resolved, 1, "the frame's binding count");
         assert!(out.oriented.carrying >= 1, "and it is still examined");
         let report = gates::judge(&out, gates::Options::default());
-        assert!(gate(&report, "oriented-fills").pass);
-        assert!(gate(&report, "shape-complete").pass);
-        assert!(gate(&report, "states-complete").pass);
+        assert!(gate(&report, "oriented-fills").passed());
+        assert!(gate(&report, "shape-complete").passed());
+        assert!(gate(&report, "states-complete").passed());
         export_zone(&program, region, &ExpandOptions::seeded(3), "bar")
             .expect("a framed piece exports in either orientation");
     }
 }
 
 /// **RED, the same piece, the mechanism misused.** Rebinding the role to the
-/// identical state in the WORLD frame is the whole difference: it is right
-/// where nothing turned and wrong the moment the piece does, which is the
-/// `DW0736` shape the frame exists to remove. The gate still binds — same
-/// fill, same population — and now it fails.
+/// identical state in the WORLD frame is the whole difference: it is
+/// undecidable where the box turned nothing and wrong the moment the piece
+/// turns, which is the `DW0736` shape the frame exists to remove. The gate
+/// still binds — same fill, same population — and now it fails.
+///
+/// The `BAR_ALONG_Z` half is `DW0742` and not a pass. "Correct while nothing
+/// turns" was never something this expansion established: it is the sentence
+/// the third answer exists to stop anyone writing, because what nothing turned
+/// is this BOX, and the piece's own root asks for whichever axis is longest.
 #[test]
 fn dropping_the_frame_reds_the_same_bar_under_a_turned_box() {
     let mut program = far_side_bar();
@@ -385,20 +416,20 @@ fn dropping_the_frame_reds_the_same_bar_under_a_turned_box() {
 
     let flat = expand(&program, BAR_ALONG_Z, &ExpandOptions::seeded(3)).unwrap();
     assert_eq!(flat.oriented.resolved, 0, "no frame left to resolve");
-    assert!(
-        gates::judge(&flat, gates::Options::default())
-            .gates
-            .iter()
-            .find(|g| g.id == "oriented-fills")
-            .unwrap()
-            .pass,
-        "a world literal is correct while nothing turns"
+    let flat_gate = gates::judge(&flat, gates::Options::default());
+    let g = gate(&flat_gate, "oriented-fills");
+    assert_eq!(
+        g.state,
+        gates::GateState::Undecided,
+        "a world literal at a box that turns nothing is unexamined, not correct: {}",
+        g.detail
     );
+    assert!(g.detail.contains("DW0742"), "{}", g.detail);
 
     let turned = expand(&program, BAR_ALONG_X, &ExpandOptions::seeded(3)).unwrap();
     let report = gates::judge(&turned, gates::Options::default());
     let g = gate(&report, "oriented-fills");
-    assert!(!g.pass, "{}", g.detail);
+    assert!(!g.passed(), "{}", g.detail);
     assert_eq!(g.bound, flat.oriented.fills as usize, "the same population");
     assert!(g.detail.contains("DW0736"), "{}", g.detail);
     let err = export_zone(&program, BAR_ALONG_X, &ExpandOptions::seeded(3), "bar").unwrap_err();
