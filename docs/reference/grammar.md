@@ -2404,7 +2404,8 @@ qualified rule name — a composed prefab's anchors say which piece they came
 from.
 
 **That promise is bounded, and the bound is a property of the seed stream rather
-than of composition.** It holds when *nothing was drawn before the piece was
+than of composition** (spec-0040 §1.4, established by probe; §5 for what it
+costs a review). It holds when *nothing was drawn before the piece was
 reached*. The seeded stream is one sequential splitmix64 consumed in traversal
 order (`src/rng.rs`), so a sibling that draws first shifts every draw the piece
 makes afterwards: geometry chosen by mutually exclusive guards is unaffected — a

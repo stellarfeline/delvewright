@@ -1297,13 +1297,16 @@ impl Alternative {
 /// rule and the seam's byte-identity promise are the ones already pinned by
 /// `tests/compose.rs`.
 ///
-/// What it deliberately does **not** carry is a way to pass arguments here. A
-/// composed part's parameters and palette roles arrive under the prefix, and the
-/// destination rebinds them with the general mechanism that already exists for
-/// exactly that — a `bind` node around the `call` (`1.3.0`). A second binding
-/// surface at the include site would be a private copy of it, weaker (it could
-/// not vary per call site) and invisible to every check written for the general
-/// one.
+/// What it deliberately does **not** carry is a way to pass arguments here, and
+/// the spec decides that rather than leaving it open: spec-0040 §4 ("the whole
+/// owes a part: the datums, bound once") states that every whole-map fact a part
+/// obeys locally is one map-level `param` **pushed down by `bind`**, stated in
+/// exactly one place. A composed part's parameters and palette roles arrive
+/// under the prefix, so the `bind` node around the `call` (`1.3.0`) already
+/// reaches them. A second binding surface at the include site would be a private
+/// copy of it, weaker — it could not vary per call site, which is what makes one
+/// `water_y` bindable into eight wet zones — and invisible to every check
+/// written for the general one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Include {
@@ -1320,6 +1323,12 @@ pub struct Include {
     /// Explicit per-anchor renames, source stem to the stem the composition
     /// carries: the document form of
     /// [`crate::compose::AnchorRenames`](crate::compose::AnchorRenames).
+    ///
+    /// It belongs on the include and nowhere else, which spec-0040 §4 states as
+    /// a thing a part owes the whole: renameable anchor stems, "so two parts
+    /// declaring one stem are the include site's explicit decision, never a
+    /// silent union". A prefix would derive the new names instead, and silently
+    /// move every anchor a campaign already binds.
     ///
     /// A `BTreeMap` for the same reason the Rust type is one: a stem cannot be
     /// renamed twice, and iteration order is the map's rather than the author's

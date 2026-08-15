@@ -89,9 +89,15 @@ fn two_zone_map() -> Program {
 // The claim: the document surface reaches the Rust composition exactly
 // ---------------------------------------------------------------------------
 
-/// The three programs `tests/compose.rs` pins the seam over,
-/// composed from JSON alone, produce the program the Rust call produces — and
-/// therefore the same bytes and the same anchors.
+/// **spec-0040 AC7, first half**: "document-level include reproduces the
+/// Rust-composed bytes for the three programs the existing seam test pins, from
+/// JSON alone".
+///
+/// Those three are `watch_bay`, `store_room` and `cliff_path` — the ones
+/// `tests/compose.rs` pins, one of which places its tell by a recursion and one
+/// of which draws its variants from the seed. Composed from JSON alone they
+/// produce the program the Rust call produces, and therefore the same bytes and
+/// the same anchors.
 ///
 /// Binding: three source programs × four seeds, each compared on three
 /// independent things (the resolved `Program` value, the expanded model's
@@ -155,6 +161,12 @@ fn a_document_include_reproduces_the_rust_composition() {
 
 /// A map is not one piece under a host: it is **two** pieces in boxes the map
 /// allocated, with a whole-map datum pushed into one of them.
+///
+/// The shape spec-0040 §4 requires of "the whole owes a part: the datums, bound
+/// once" — one map-level `param`, stated in exactly one place, pushed down by
+/// `bind`. Its worked example is a single `water_y` bound into every wet zone;
+/// this is that arrangement at two zones, which is the smallest size at which
+/// "one place" is a claim about anything.
 #[test]
 fn two_documents_compose_into_one_map_and_the_map_binds_a_datum() {
     let dir = scratch("two-zone-map");
@@ -275,8 +287,14 @@ fn the_include_order_does_not_reach_the_composed_program() {
 /// **The bound on the byte-identity promise.** A composed piece keeps its
 /// standalone bytes only when nothing drew from the stream before it.
 ///
-/// The seeded stream is one sequential splitmix64 consumed in traversal order,
-/// so a sibling that draws first shifts every draw the piece makes. This asserts
+/// spec-0040 §1.4 established this by probe — the seeded stream is one
+/// sequential splitmix64 consumed in traversal order, so two programs identical
+/// except that an earlier sibling draws produce different bytes inside the same
+/// called piece — and §5 draws the consequence the reference text has to carry:
+/// texture is composition-relative, so the review that certifies a composed
+/// piece's appearance is the composed one.
+///
+/// A sibling that draws first shifts every draw the piece makes. This asserts
 /// **both** halves against the same source program: the host that draws nothing
 /// reproduces the piece exactly, and the host that draws one coin — a coin whose
 /// two outcomes are geometrically identical, so nothing but the stream position
@@ -355,9 +373,12 @@ fn the_seam_is_byte_identical_only_when_nothing_drew_first() {
 // The version fence
 // ---------------------------------------------------------------------------
 
-/// A document below the fence is refused **by
-/// name** — the construct, the version that introduced it, and the version it
-/// declares — never accepted with the include quietly dropped.
+/// **spec-0040 AC7, second half**: "a loader below the fenced `Program` version
+/// refuses the surface by name".
+///
+/// By name means the construct, the version that introduced it and the version
+/// the document declares — never accepted with the include quietly dropped,
+/// which is the silent-wrongness ADR-0018 §7 built the fence against.
 #[test]
 fn a_document_below_the_fence_refuses_the_include_by_name() {
     let dir = scratch("fence");
@@ -655,6 +676,10 @@ fn the_document_surface_refuses_what_only_a_file_can_be_wrong_about() {
 /// The anchor rename is the document form of `include_renaming`, with the same
 /// refusals — including the typo guard, which is the one a document surface
 /// would otherwise lose.
+///
+/// spec-0040 §4 puts the rename here deliberately, as something a part owes the
+/// whole: renameable anchor stems, "so two parts declaring one stem are the
+/// include site's explicit decision, never a silent union".
 #[test]
 fn the_document_renames_anchors_and_refuses_a_rename_that_matches_nothing() {
     let dir = scratch("renames");

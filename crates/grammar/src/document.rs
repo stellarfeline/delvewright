@@ -5,10 +5,20 @@
 //!
 //! [`crate::compose::include_renaming`] composes one `Program` into another and
 //! has done since the first zone was written. It is a Rust API, and a `&Program`
-//! is obtainable only from a Rust constructor — so composition happened only in
-//! engine source, and a creator authoring JSON, which is the only surface a
-//! creator has, could not compose two program files at all. Every campaign was
-//! stuck at one program per zone.
+//! is obtainable only from a Rust constructor — spec-0040 §1.2 measured the
+//! consequence: there is no document or CLI surface for include, so composition
+//! happens only in engine source, and a creator authoring JSON, which is the
+//! only surface a creator has, cannot compose two program files at all. Every
+//! campaign is therefore stuck at one program per zone.
+//!
+//! spec-0040 §6.2 names the capability that closes it and allows two forms — a
+//! manifest-driven compose step (CLI), **or** an include block in the `Program`
+//! document fenced at the next `Program` version (ADR-0018 §7). This is the
+//! second: a manifest step would put composition outside the artifact of record,
+//! and only the document form composes *any* program into *any* program. The
+//! spec's conditions on it are that the refusals, the anchor-rename rule and the
+//! seam byte-identity promise are the ones `compose` already has, which is why
+//! nothing below reimplements any of them.
 //!
 //! The missing piece is not a composition mechanism. It is the **file half**: an
 //! `include` names another document, resolving it reads that document, and
@@ -67,10 +77,17 @@
 //! seeded stream is one sequential splitmix64 consumed in traversal order
 //! (`crate::rng`), so a sibling that draws earlier shifts every later draw:
 //! geometry from mutually exclusive guards is unaffected, weighted mixes
-//! re-texture. A composition is therefore byte-identical to its
-//! parts only in the shape the seam test pins — a host that draws nothing before
-//! the call — and `tests/document_include.rs` demonstrates both halves rather
-//! than asserting the promise it would like to be true.
+//! re-texture. spec-0040 §1.4 established that by probe — two programs identical
+//! except that an earlier sibling draws produce different bytes inside the same
+//! called piece — and §5 records what it costs: texture is composition-relative,
+//! so a per-zone accepted render certifies that zone's geometry, palette and
+//! distribution but not its exact texture bytes, and the review that certifies
+//! appearance is the composed one.
+//!
+//! A composition is therefore byte-identical to its parts only in the shape the
+//! seam test pins — a host that draws nothing before the call — and
+//! `tests/document_include.rs` demonstrates both halves rather than asserting
+//! the promise it would like to be true.
 
 use std::collections::BTreeSet;
 use std::fmt;
