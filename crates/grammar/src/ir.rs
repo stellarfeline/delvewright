@@ -24,8 +24,9 @@ use serde::{Deserialize, Serialize};
 use crate::block::BlockState;
 use crate::geom::{Axis, Mirror, Orientation};
 use crate::version::{
-    BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, has_bind,
-    has_contract, has_local_frame, has_mirror, is_supported_version,
+    BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE,
+    MIRROR_SINCE, has_bind, has_contract, has_include, has_local_frame, has_mirror,
+    is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -1286,6 +1287,47 @@ impl Alternative {
 // Programs
 // ---------------------------------------------------------------------------
 
+/// One document-level composition: another program **file**, and the prefix its
+/// vocabulary arrives under.
+///
+/// This is [`crate::compose::include_renaming`] made writable in the artifact of
+/// record. It carries no semantics of its own: a loader reads `program`,
+/// resolves that document's own includes first, and hands the result to the same
+/// Rust call a zone program has always made, so every refusal, the anchor-rename
+/// rule and the seam's byte-identity promise are the ones already pinned by
+/// `tests/compose.rs`.
+///
+/// What it deliberately does **not** carry is a way to pass arguments here. A
+/// composed part's parameters and palette roles arrive under the prefix, and the
+/// destination rebinds them with the general mechanism that already exists for
+/// exactly that — a `bind` node around the `call` (`1.3.0`). A second binding
+/// surface at the include site would be a private copy of it, weaker (it could
+/// not vary per call site) and invisible to every check written for the general
+/// one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Include {
+    /// The program document to compose, as a path **relative to the document
+    /// that writes this include**.
+    ///
+    /// Relative, and refused if absolute: a document naming `/Users/…` builds on
+    /// one machine and on no other, which is the same defect ADR-0006 forbids in
+    /// emitted output, one layer up in the input.
+    pub program: String,
+    /// The prefix every rule, parameter and palette role of that document takes
+    /// — and therefore the first segment of the symbol a `call` reaches it by.
+    pub prefix: String,
+    /// Explicit per-anchor renames, source stem to the stem the composition
+    /// carries: the document form of
+    /// [`crate::compose::AnchorRenames`](crate::compose::AnchorRenames).
+    ///
+    /// A `BTreeMap` for the same reason the Rust type is one: a stem cannot be
+    /// renamed twice, and iteration order is the map's rather than the author's
+    /// (ADR-0006).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rename_anchors: BTreeMap<String, String>,
+}
+
 /// A complete grammar program.
 ///
 /// `BTreeMap` throughout: iteration order is the authoring-independent, stable
@@ -1312,6 +1354,23 @@ pub struct Program {
     /// Role-to-block bindings — the style controls.
     #[serde(default)]
     pub palette: BTreeMap<String, Paint>,
+    /// The other program documents this one composes, in the order it composes
+    /// them.
+    ///
+    /// A `Vec` and not a map, because a prefix is not a key the format sorts by:
+    /// the order is the author's sequence and it round-trips exactly. It does
+    /// not reach the composed output — every name a composition carries lands in
+    /// a `BTreeMap`, so two orders of the same include list resolve to the same
+    /// program byte for byte, and only which of two colliding claims is *named
+    /// first* depends on it.
+    ///
+    /// **Resolved before anything reads the program.** A `Program` with a
+    /// non-empty `include` is a document, not a program: its `call`s reach rules
+    /// no `rules` map holds yet. [`Program::validate`] therefore refuses it by
+    /// name rather than letting `expand` discover a missing rule, and
+    /// [`crate::document::load`] is what turns one into the other.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<Include>,
     /// Rules, each a non-empty list of alternatives in declaration order.
     pub rules: BTreeMap<String, Vec<Alternative>>,
     /// The spatial contract, when the program declares one. Absent means the
@@ -1469,6 +1528,16 @@ pub enum ProgramError {
         space: String,
         /// What named it.
         referenced_by: String,
+    },
+    /// The program still carries an unresolved [`Include`], so the rules its
+    /// `call`s reach have not arrived yet.
+    UnresolvedInclude {
+        /// The prefix the first unresolved include declares.
+        prefix: String,
+        /// The document it names.
+        program: String,
+        /// How many includes are outstanding.
+        count: usize,
     },
     /// A bar names a palette role bound to a weighted mix. A bar is one
     /// material: "mostly a bar" is not a state a gate can be in.
@@ -1631,6 +1700,20 @@ impl fmt::Display for ProgramError {
                 "the contract's {referenced_by} names {space:?}, which is not a declared space \
                  (an endpoint is a declared space or {EXTERIOR:?})"
             ),
+            ProgramError::UnresolvedInclude {
+                prefix,
+                program,
+                count,
+            } => write!(
+                f,
+                "this program declares {count} `include`(s) that were never resolved — the first \
+                 composes {program:?} under the prefix {prefix:?}. An include names another \
+                 program FILE, so resolving it reads a file, which validation deliberately never \
+                 does; until it is resolved the rules a `{prefix}/…` call reaches do not exist in \
+                 this program at all. Load the document with `document::load` (what \
+                 `delve-grammar --file` does) rather than deserialising it straight into an \
+                 expansion"
+            ),
             ProgramError::BarBlockIsAMix { role, region } => write!(
                 f,
                 "the bar over region {region:?} is built from the palette role {role:?}, which is \
@@ -1653,9 +1736,24 @@ impl Program {
             start: start.to_string(),
             params: BTreeMap::new(),
             palette: BTreeMap::new(),
+            include: Vec::new(),
             rules: BTreeMap::new(),
             contract: None,
         }
+    }
+
+    /// Compose another program document under a prefix (builder form).
+    ///
+    /// The Rust caller that already has a `&Program` wants
+    /// [`crate::compose::include`] instead — this is the *document's* form, and
+    /// it names a file that only a loader can read.
+    pub fn including(mut self, program: &str, prefix: &str) -> Program {
+        self.include.push(Include {
+            program: program.to_string(),
+            prefix: prefix.to_string(),
+            rename_anchors: BTreeMap::new(),
+        });
+        self
     }
 
     /// Declare the document version (builder form) — what a program written
@@ -1780,6 +1878,19 @@ impl Program {
                 version: self.version.clone(),
             });
         }
+        // The fence, then the resolution state, and both before anything reads a
+        // rule. A document that still carries includes has a vocabulary that has
+        // not arrived, so every reference check below would report the *symptom*
+        // — an unknown rule named `z0/plan` — and name neither the include nor
+        // the loader that was skipped.
+        self.check_include_fence()?;
+        if let Some(first) = self.include.first() {
+            return Err(ProgramError::UnresolvedInclude {
+                prefix: first.prefix.clone(),
+                program: first.program.clone(),
+                count: self.include.len(),
+            });
+        }
         if !self.rules.contains_key(&self.start) {
             return Err(ProgramError::UnknownRule {
                 symbol: self.start.clone(),
@@ -1806,6 +1917,28 @@ impl Program {
             self.check_paint(&format!("palette:{role}"), paint)?;
         }
         self.check_contract()?;
+        Ok(())
+    }
+
+    /// The `include` fence on its own, because two things must apply it.
+    ///
+    /// [`Program::validate`] applies it like every other fence. The **loader**
+    /// has to apply it too, and first: it is the thing that acts on an include,
+    /// and resolution consumes the list — so a loader that composed first and
+    /// left the fence to a later `validate` would build exactly the document the
+    /// fence exists to refuse and then find nothing left to refuse it by.
+    pub fn check_include_fence(&self) -> Result<(), ProgramError> {
+        if !has_include(&self.version) && !self.include.is_empty() {
+            return Err(ProgramError::FencedConstruct {
+                construct: "an `include` list",
+                since: INCLUDE_SINCE,
+                declared: self.version.clone(),
+                written_by: format!(
+                    "the program (composing {:?} under {:?})",
+                    self.include[0].program, self.include[0].prefix
+                ),
+            });
+        }
         Ok(())
     }
 

@@ -157,6 +157,18 @@ delve-grammar coverage [--json <path>]   # which IR constructs no example demons
 delve-grammar audit [--library] [--campaign-root <path>]... [--exclusions <path>]
 ```
 
+**A program file composes another program file** (grammar.md §5c). A document's
+`include` list names other program documents by relative path and the prefix each
+arrives under; `--file` on every command resolves them before anything reads the
+program, and `audit` resolves each zone program's the same way, so a program
+composed by a zone is judged inside its composition. Every command that reads a
+document prints what it composed, prefix by prefix, with its binding count;
+`audit --campaign-root` totals it over the campaign corpus and states a zero
+rather than dropping the line. A program file that no `zones.json` entry names
+and no zone program composes is still a red. The surface is fenced at program
+document version `1.5.0`, and a document below it is refused by name rather than
+built with its includes dropped.
+
 **There is no maximum region.** A vanilla structure template holds 48 blocks per
 axis; an expansion past that is written as a set of `≤48` tiles plus one
 manifest, cut deterministically from the region alone. The cap is an internal
@@ -184,7 +196,8 @@ before starting a piece.
 
 `delve-grammar audit` is the sweep: it expands and judges EVERY program of a
 corpus at the expansion that corpus declares, prints a binding count per gate
-plus the corpus-wide count of fills resolved out of the scope's own axis frame,
+plus the corpus-wide count of fills resolved out of the scope's own axis frame
+and, over the campaign corpus, of program documents composed by another,
 and writes nothing. `--library` walks the rule library, whose registry carries
 each entry's region and seed; `--campaign-root <content repo>` walks every
 `campaigns/<campaign>/design/programs/` there, driven by that campaign's own

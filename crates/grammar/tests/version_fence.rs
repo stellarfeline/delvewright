@@ -138,7 +138,7 @@ fn the_fence_is_on_the_reflection_and_not_on_the_frame() {
 /// level up.
 #[test]
 fn an_unknown_version_is_refused_rather_than_parsed_best_effort() {
-    for unknown in ["0.9.0", "1.5.0", "2.0.0", "", "latest"] {
+    for unknown in ["0.9.0", "1.6.0", "2.0.0", "", "latest"] {
         let program = with_body(Node::fill("stone")).at_version(unknown);
         match program.validate() {
             Err(ProgramError::UnsupportedVersion { version }) => assert_eq!(version, unknown),

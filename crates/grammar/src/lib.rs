@@ -104,6 +104,7 @@ pub mod block;
 pub mod compose;
 pub mod contract;
 pub mod coverage;
+pub mod document;
 pub mod eval;
 pub mod expand;
 pub mod explain;
@@ -123,6 +124,7 @@ pub mod version;
 pub use block::BlockState;
 pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming};
 pub use contract::{ContractReport, ExteriorFace, NoBodyKind, exterior_faces};
+pub use document::{Composition, DocumentError, Loaded};
 pub use expand::{
     Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ResolvedBar,
     ResolvedContract, ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume,
@@ -135,8 +137,8 @@ pub use export::{
 pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
 pub use ir::{
-    Bar, Contract, Edge, EdgeClass, Envelope, Facing, Mark, MarkAt, MarkIndex, NoBodyDecl, Program,
-    ProgramError, Side, SpaceDecl,
+    Bar, Contract, Edge, EdgeClass, Envelope, Facing, Include, Mark, MarkAt, MarkIndex, NoBodyDecl,
+    Program, ProgramError, Side, SpaceDecl,
 };
 pub use model::VoxelModel;
 pub use version::{
