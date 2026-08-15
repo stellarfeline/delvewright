@@ -1,9 +1,7 @@
-//! The two reds, in a form that COMPILES on `origin/main` as well as on this
-//! branch — no new API is touched, only the DSL parser and the validator.
-//!
-//! Run it on either tree with:
-//!   cp <this file> crates/compiler/tests/press_answer_red.rs
-//!   cargo test -p delvec --test press_answer_red
+//! The two reds. Only the DSL parser and the validator are touched, so the file
+//! compiles against an engine that does not carry this surface — but see
+//! [`a_barred_door_with_nothing_to_say_is_refused`] for why running it there
+//! measures two things at once and is not the red it appears to be.
 
 mod common;
 
@@ -43,9 +41,18 @@ const ANSWER: &str = r#"{ "id": "trigger/from-the-wrong-side", "at": "anchor/doo
 /// press produces silence, and the compiler will not word the door on the
 /// author's behalf.
 ///
-/// On `origin/main` there is no such obligation, so the campaign is accepted and
-/// ships the silence. This is the direction that drifts — a door is added, nobody
-/// writes its line, and every board stays green.
+/// The direction that drifts is a door added, nobody writing its line, and every
+/// board staying green.
+///
+/// **What a run on an engine without this surface actually shows, and why it is
+/// not the red it looks like.** The obligation is fenced at `dsl_version`
+/// 0.11.0, so demonstrating it needs a document that declares 0.11.0 — which an
+/// engine whose ceiling is 0.10.0 refuses outright (`unsupported dsl_version`,
+/// then a cascade of `DW0141`). Such a run therefore measures two things at once
+/// and cannot separate "this engine lacks the obligation" from "this engine
+/// lacks the version". The honest red for a fenced obligation is the fence
+/// itself: unfence `DW0429` and `seal_hint::a_pre_0_11_seal_keeps_its_default`
+/// goes red, which is the pair that proves the grandfathering is real.
 #[test]
 fn a_barred_door_with_nothing_to_say_is_refused() {
     let mut c = fixture();
@@ -61,9 +68,9 @@ fn a_barred_door_with_nothing_to_say_is_refused() {
 /// **RED 1b — the same silence, on the other object of the same class.**
 ///
 /// A `close-gate` that seals a wall and authors no `sealed_hint` is the identical
-/// defect: the party presses the stone and the compiler decides what it says. On
-/// `origin/main` it is not merely accepted, it is *defaulted* — the engine picks
-/// the tone and never discloses that it did.
+/// defect: the party presses the stone and the compiler decides what it says.
+/// Below the fence a seal is not merely accepted, it is *defaulted* — the engine
+/// picks the tone and never discloses that it did.
 ///
 /// The two must be refused by ONE rule. Two objects of one class with two
 /// defaulting policies is the "capability keyed to the verb" defect this whole
@@ -120,8 +127,8 @@ fn an_unauthored_seal_is_refused_by_the_same_rule() {
 ///
 /// The general verb is `EnvTrigger{on: use}` + `narrate`. To say what a
 /// wrong-side answer says it needs the reply CHANNEL (`actionbar`) and the
-/// ADDRESSEE (`presser`). On `origin/main` neither exists, so the document does
-/// not even parse — which is what made the refusal above impossible to demand.
+/// ADDRESSEE (`presser`). Without both, the document does not even parse — which
+/// is what made the refusal above impossible to demand.
 #[test]
 fn the_campaign_can_write_a_wrong_side_answer() {
     let t = serde_json::from_str::<EnvTrigger>(ANSWER).unwrap_or_else(|e| {
