@@ -785,6 +785,64 @@ pub mod codes {
     /// write, or gate it on something the bundle does not itself change.
     pub const STATE_READ_AFTER_WRITE: DwCode = DwCode::every_version("DW0527");
 
+    /// (v0.11) **A press answer addressed to a click vanilla cannot attribute.**
+    /// A trigger declares `audience: presser` on something other than an
+    /// `on: use`.
+    ///
+    /// `minecraft:player_interacted_with_entity` is the only vanilla criterion
+    /// that runs a function as the player who clicked, and it fires on
+    /// right-clicks alone. A left-click is recorded in the interaction entity's
+    /// `attack` NBT — a UUID no command can become — and an `approach` involves no
+    /// click at all. Approximating it (polling the record and assuming the nearest
+    /// player) is the downstream folklore CLAUDE.md's no-hack rule excludes, so the
+    /// capability is refused rather than faked.
+    ///
+    /// [`Binds::EveryVersion`]: its verdict is a function of the document alone
+    /// — a contradiction between two authored fields on one trigger — and
+    /// `audience` itself is unwritable below 0.11.0 (`DW0141`), so no campaign
+    /// can go green-to-red on it without being edited.
+    pub const TRIGGER_AUDIENCE_UNATTRIBUTABLE: DwCode = DwCode::every_version("DW0427");
+
+    /// (v0.11) **A trigger id in the compiler's reserved `dw-` namespace.** The
+    /// compiler synthesizes triggers of its own — today the press answer every
+    /// sealed gate and shortcut door gives (`trigger/dw-press-…`) — and two
+    /// triggers sharing an id would share one `dw_trig_…` tag and one emitted
+    /// function, so one of them would silently disappear. Reserving the prefix
+    /// makes the collision impossible by construction instead of improbable.
+    ///
+    /// [`Binds::EveryVersion`], and deliberately: the collision it prevents is
+    /// real at *every* version, because a `close-gate` below 0.11.0 is still
+    /// given a synthesized `dw-press-…` answer. It requires the campaign to HAVE
+    /// nothing — it forbids one shape of id — so fencing it would be fencing a
+    /// wellformedness rule, which [`Binds`] names as the wrong direction.
+    pub const TRIGGER_ID_RESERVED: DwCode = DwCode::every_version("DW0428");
+
+    /// (v0.11) **A sealed body with no press answer**, uniformly over the
+    /// pressable class. A `shortcuts[]` door or
+    /// a `close-gate`'s wall is sealed, and nothing says what it answers when the
+    /// party presses it — no `use` trigger anchored on it, and (for a
+    /// `close-gate`) no authored `sealed_hint`.
+    ///
+    /// The compiler deliberately does **not** fill that silence. A baked default
+    /// is the compiler making a design statement — about tone, about what this
+    /// specific door is — on the author's behalf, and then never telling them it
+    /// did; an error makes the author say it. Same rule as "no hacks at any
+    /// layer": if content needs a thing, the DSL exposes it and the author
+    /// declares it, rather than a lower layer inventing it.
+    ///
+    /// One rule for the whole pressable class: two objects of the same class do
+    /// not get two defaulting policies, which would be the "capability keyed to
+    /// the verb" defect this very surface is CLAUDE.md's worked example of.
+    ///
+    /// [`Binds::Since`] 0.11.0, because it is a tightening — it requires the
+    /// campaign to HAVE something it need not have had before. A campaign
+    /// authored under the older rule keeps its verdicts and its behaviour: a
+    /// door still says nothing, a seal still takes the compiler's canonical
+    /// English. The fence is [`crate::fence`]'s, not a private version test:
+    /// the check raises the diagnostic and the general fence decides whether it
+    /// reaches a verdict.
+    pub const SEALED_BODY_UNANSWERED: DwCode = DwCode::since("DW0429", 11);
+
     /// (v0.11, spec-0034) **A declared locomotion the engine cannot hold the
     /// body to** — today exactly one value, `aquatic`.
     ///

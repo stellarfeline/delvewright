@@ -64,9 +64,7 @@ use delvewright_compiler::flow::gate_flags;
 use delvewright_compiler::load::{LoadedCampaign, load_campaign_dir};
 use delvewright_compiler::plan::Plan;
 use delvewright_compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{
-    Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign, validate_campaign_with,
-};
+use delvewright_dsl::{Campaign, EffectRootKind, EffectSite, QuestEffect, parse_campaign};
 
 /// The `souls-shortcut` fixture is the base for every row, because it is the only
 /// one in the tree that already carries a **shortcut** — root 6 needs real
@@ -258,7 +256,7 @@ fn prefabs() -> PrefabRegistry {
 }
 
 fn assert_validates(c: &Campaign, k: EffectRootKind) {
-    let d = validate_campaign_with(
+    let d = common::fenced_diagnostics(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs(),

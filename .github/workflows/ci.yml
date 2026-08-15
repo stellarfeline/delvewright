@@ -527,6 +527,25 @@ jobs:
       # first rule cannot bind, are both in the script's own docstring.
       - name: no version number names two surfaces after this merges
         run: python3 tools/check-version-ledger-uniqueness.py
+      # Every new mechanic owes a demo level (CLAUDE.md), and the demo queue is
+      # not a backlog — it is the form an engine capability's confirmation takes,
+      # so a capability with no row cannot be put in front of anyone. That
+      # obligation lived in a doc line, which is the UNRUN shape, and behaved
+      # like it: over 416 changes on main `docs/demo-levels.md` was edited six
+      # times, sixteen rows were seeded retroactively in one sitting, and for
+      # the twelve days after that seeding nothing was added while the compiler,
+      # the grammar and the render layer all gained author-facing surface. No
+      # syntactic mark on a diff says "mechanic" — a new DW code fires on 101,
+      # a `feat(` subject on 140, a `docs/reference/` heading on 94 — so the
+      # demand keys off the one signal that was measured to be clean: a new
+      # long flag on a binary under `crates/`, every one of which `tools.md`
+      # classes `agent` or `human`. That fires on 16 of 416 (3.8%), and all
+      # sixteen landed a capability. Its recall is a third, stated in the
+      # script rather than implied: a capability with no command-line surface
+      # is invisible to it. Uses the fetch above; no further network action.
+      # Deterministic, offline, stdlib-only python3.
+      - name: a change that adds author-facing surface adds its demo row
+        run: python3 tools/check-demo-levels.py
       # A required status check answers for the uptime of every host it reaches,
       # and a git dependency is the reach nothing in cargo's surface lets a job
       # decline: it is cloned during RESOLUTION of the workspace that declares it,

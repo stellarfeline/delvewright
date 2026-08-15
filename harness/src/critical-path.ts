@@ -46,10 +46,13 @@
  * do, and the compiler proves no forced leg crosses a volume — `DW0510`), so a
  * v0.10 path is walked exactly as a v0.9 one is.
  *
- * **v0.11** (spec-0033) adds the per-body `traversal` declaration — what a body
- * can do when it moves. It is a compile-time claim about `move-npc`/`move-actor`
- * puppets, proven by `delvec` before anything ships (`DW0454`), and it exports no
- * step, reorders none, and changes nothing the bot walks: a v0.11 path is walked
+ * **v0.11** adds two surfaces, and neither reaches the bot. The per-body
+ * `traversal` declaration (spec-0034) — what a body can do when it moves — is a
+ * compile-time claim about `move-npc`/`move-actor` puppets, proven by `delvec`
+ * before anything ships (`DW0454`). The press-answer lift — a `narrate`
+ * `actionbar` style and a trigger's `audience: presser` — is a reply to a
+ * right-click on a sealed body, a gesture no critical path makes. Both export no
+ * step, reorder none, and change nothing the bot walks: a v0.11 path is walked
  * exactly as a v0.10 one is.
  *
  * This allowlist must never trail the compiler's own `SUPPORTED_DSL_VERSION`
