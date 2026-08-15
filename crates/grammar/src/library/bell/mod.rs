@@ -51,7 +51,7 @@
 //! | Zone | State | Composed from | Missing |
 //! |---|---|---|---|
 //! | Z0 Barrow Shore | [`barrow_shore`] | `elite_ground` | — (**E** is the whole of Z0's vocabulary) |
-//! | Z1 Cliff Road | [`cliff_road`] | `cliff_path` + the zone's gulf | switchback landing (no catalogue entry — see below) |
+//! | Z1 Cliff Road | [`cliff_road`] | two `cliff_path`s (the far one turned round) + the zone's gulf and hairpin head | — |
 //! | Z2 Gatehouse | [`gate_ward`] | `watch_bay` + `ambush_door` + `disarm_stand` + `boulder_stair` + `tee_passage` + `far_side_bar` + `threshold_motif` + `drop_shaft` + the zone's plinth and branch strip | — |
 //! | Z3 Drowned Lower Ward | [`drowned_ward`] | `causeway` + `tee_passage` + `elite_ground` + `far_side_bar` + the zone's branch strip | — |
 //! | Z4 Chapel Ward (hub) | [`chapel_ward`] | `dumbwaiter` + `hearth_ward` + `tee_passage` + `far_side_bar` + the zone's branch strip | — |
@@ -195,15 +195,40 @@
 //!    deeper-than-wide, so the bar's own `z(Largest)` aims its travel at the
 //!    chain.
 //!
-//! **Z1 is a single run, not a switchback**, and that is a finding rather than a
-//! shortcut. A switchback alternates which side the drop is on, which is a
-//! reflection of the run, and `reorient`'s `mirror` expresses one. What is not
-//! settled is whether `cliff_path` in particular survives it — its lane and
-//! recesses are placed by `reorient` rather than by split order — and the corner
-//! still wants a `cliff_turn` landing rule joining two runs, which does not
-//! exist; inventing that landing inline is exactly the geometry this module does
-//! not write. What is programmed is the owner-mandated set piece itself: the
-//! one-wide ledge, the niches, and the drop beside them.
+//! **Z1 is a switchback — CLOSED.** The open question was whether `cliff_path`
+//! survives a reflection at all, "its lane and recesses being placed by
+//! `reorient` rather than by split order". It is measured rather than argued,
+//! and the premise is false: nothing in `cliff_path` is placed by `reorient`.
+//! The ledge, recess and backing are three pieces of an `X` split, and the one
+//! `reorient` inside the rule writes no block — strip it and the model is
+//! byte-identical, only the recess anchor's derived facing changes
+//! (`tests/staging.rs::the_recess_reorientation_aims_an_anchor_and_writes_nothing`).
+//!
+//! What the hairpin needs is narrower than a reflection. Its second leg keeps
+//! the drop on the outer hand *while travelling the other way*, which is a
+//! **half-turn about the vertical** — a reversal in local `X` *and* `Z`, and
+//! therefore a rotation, proper and chirality-preserving
+//! ([`crate::geom::Orientation::is_rotation`]). [`crate::ir::Reorient::turned`]
+//! is that half-turn, so Z1's far leg is the near leg *turned round*: same rule,
+//! same parameters, no second copy of the rule body — which would have been
+//! review shape 2, a general mechanism privately re-implemented inside a verb.
+//! `tests/staging.rs::the_cliff_path_turned_round_is_the_same_path_mirrored`
+//! asserts the turned expansion is the plain one mirrored, cell by cell.
+//!
+//! One thing `cliff_path` did need: its corpse prop is per-frame guarded inline
+//! states, and the guard set stopped at the two unreflected horizontal frames,
+//! so a turned leg refused the whole rule. It now covers the half-turn of each
+//! (`rotation` 0 and 12 beside 8 and 4), which is the reachable set given the
+//! root pins local `Y` to world `Y`.
+//!
+//! The `cliff_turn` landing rule was not needed. The hairpin's head is
+//! `turn_run` cells of solid crag up to road level — mass and absence, which is
+//! exactly what a zone program *does* write, and it carries no encounter
+//! geometry. What Z1 programs is the whole owner-mandated set piece: two
+//! one-wide ledges either side of one gulf, niches on both, and — the reason the
+//! switchback was a blocker rather than a refinement — **a niche on the later
+//! leg visible from the earlier one**, which is the fairness §4 entry K rests on
+//! and which a single run cannot deliver at all.
 
 pub mod barrow_shore;
 pub mod bell_tower;

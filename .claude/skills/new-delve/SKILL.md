@@ -452,6 +452,15 @@ For each stage in order — world → npcs → classes → quest-plan → quests
      that opens a box into water (the water flows back in and the proof does not
      know), and a clear over rubble another mechanism dropped there (a `collapse`
      debris field, a shut timed gate) — those stay solid.
+   - **A prefab's gate is SHUT until the campaign opens it.** A gate anchor's
+     region holds whatever the prefab authors there — `hello-room`'s doorway is
+     iron bars, the island's cave mouth is air — and the compiler measures which.
+     If anything the party must reach lies past a barred gate, some objective they
+     are **forced** to complete has to `open-gate` it first, or the build fails
+     naming the anchor (`DW0317`). "Forced" excludes every optional bundle: a trap
+     payload, `on_death`, a shop offer, a shortcut's far-side unlock. To spell
+     "the party walks up to this and the door opens", use an environment
+     `trigger` — that one counts.
    - **A place that kills is DECLARED, never faked with the art.** A cliff whose
      fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
      declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
