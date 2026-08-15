@@ -168,6 +168,102 @@ print(f"  ok   no PT_INTERP in {e_phnum} program headers (statically linked)")
 PY
 }
 
+# ------------------------------------------------- ADR-0021 §1: the surface is
+# unconditional code. A cargo feature would ship a same-name-different-capability
+# binary — an artifact whose name promises a surface its bytes may not carry —
+# and nothing else in this repo would notice, because every test builds with the
+# same feature set. So the rule is asserted here, where the artifact is made.
+#
+# This half needs no binary and therefore runs for EVERY target, cross or not.
+assert_no_feature_gated_surface() {
+  python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+root = pathlib.Path(sys.argv[1])
+src = root / "crates" / "compiler" / "src"
+# A clap item is a `#[derive(Parser)]`/`#[derive(Subcommand)]` type or anything
+# inside one. A feature gate ANYWHERE in those files could remove a subcommand,
+# a variant or a flag, so the rule is the file, not a line-by-line adjacency
+# guess that a reformat would slip past.
+CLAP = re.compile(r"#\[derive\((?:[^)]*\b(?:Parser|Subcommand|Args|ValueEnum)\b[^)]*)\)\]")
+GATE = re.compile(r"#\[(?:cfg|cfg_attr)\(\s*(?:[^)]*\b)?feature\s*=")
+examined, findings = 0, []
+for f in sorted(src.rglob("*.rs")):
+    text = f.read_text(encoding="utf-8")
+    if not CLAP.search(text):
+        continue
+    examined += 1
+    for i, line in enumerate(text.splitlines(), 1):
+        if GATE.search(line):
+            findings.append(f"{f.relative_to(root)}:{i}: {line.strip()}")
+if examined == 0:
+    print("  FAIL no file in crates/compiler/src declares a clap type — this "
+          "check examined nothing, which is a vacuous pass, not a pass")
+    raise SystemExit(1)
+for hit in findings:
+    print(f"  FAIL feature gate on a clap surface: {hit}")
+if findings:
+    raise SystemExit(1)
+print(f"  ok   no cargo feature gates any subcommand ({examined} clap-bearing "
+      f"file(s) examined)")
+PY
+}
+
+# The other half: the BUILT binary lists exactly the subcommands the source
+# declares. Executable only on the host's own triple, like the `--version` check
+# below; on a cross build it says so by name rather than passing quietly.
+assert_help_matches_source() { # <binary>
+  python3 - "$ROOT" "$1" <<'PY'
+import importlib.util, pathlib, re, subprocess, sys
+sys.stdout.reconfigure(newline="\n")  # CRLF-proof: tools/check-python-shell-newlines.py
+root, binary = pathlib.Path(sys.argv[1]), sys.argv[2]
+
+# ONE parser. `tools/check-skill-version.py` already reads the clap surface out
+# of the crate's sources, and a second copy here would be a mirror that drifts —
+# which is the defect this project names rather than a saving.
+spec = importlib.util.spec_from_file_location(
+    "check_skill_version", root / "tools" / "check-skill-version.py")
+gate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gate)
+main_rs = root / "crates" / "compiler" / "src" / "main.rs"
+sources = [main_rs.read_text(encoding="utf-8")]
+sources += [f.read_text(encoding="utf-8")
+            for f in sorted(main_rs.parent.rglob("*.rs")) if f != main_rs]
+declared = set(gate.parse_cli("\n".join(sources))[0])
+
+out = subprocess.run([binary, "--help"], capture_output=True, text=True).stdout
+block, built = False, set()
+for line in out.splitlines():
+    if line.startswith("Commands:"):
+        block = True
+        continue
+    if block:
+        if re.match(r"^[A-Za-z].*:$", line):
+            break
+        m = re.match(r"^  ([a-z][a-z0-9-]*)\s", line)
+        if m and m.group(1) != "help":
+            built.add(m.group(1))
+
+if not built:
+    print("  FAIL the built binary lists no subcommands — this check examined "
+          "nothing, which is a vacuous pass")
+    raise SystemExit(1)
+missing = sorted(declared - built)
+extra = sorted(built - declared)
+if missing:
+    print(f"  FAIL the source declares {missing} but the built binary does not "
+          f"offer them — the artifact's name promises a surface its bytes do "
+          f"not carry")
+if extra:
+    print(f"  FAIL the built binary offers {extra}, which the source parse does "
+          f"not know about — the parser has fallen behind the CLI")
+if missing or extra:
+    raise SystemExit(1)
+print(f"  ok   built binary offers exactly the {len(built)} subcommand(s) the "
+      f"source declares")
+PY
+}
+
 # ---------------------------------------------------------------- --check-only
 # The standing gate (CI job `engine binaries (cross-build shelf)`). `cargo check`
 # rather than a full link because ONE ubuntu runner can check all five targets —
@@ -180,6 +276,9 @@ PY
 # drags in a C toolchain fails here too.
 check_only() {
   local failed=0
+  # ADR-0021 §1, and it is bound to BOTH entry points on purpose: a check that
+  # only runs on the release path is one the standing gate never exercises.
+  assert_no_feature_gated_surface || failed=$((failed + 1))
   echo "== cross-build shelf: cargo check for every target in versions.toml =="
   for t in "${TARGETS[@]}"; do
     printf '  -- %s\n' "$t"
@@ -222,6 +321,8 @@ build_one() { # <triple>
 
   case "$t" in *-linux-musl) assert_no_dynamic_interpreter "$bin" ;; esac
 
+  assert_no_feature_gated_surface
+
   # The binary must be able to state its own identity, and it must be the
   # version this release claims. On a cross build we cannot run it, so the
   # check is by target: run it only when it is the host's own triple.
@@ -235,8 +336,9 @@ build_one() { # <triple>
       exit 1
     fi
     printf '  ok   host-target binary reports: %s\n' "$reported"
+    assert_help_matches_source "$bin"
   else
-    printf '  --   %s is a cross build; --version not executable here\n' "$t"
+    printf '  --   %s is a cross build; --version and the --help surface check are not executable here\n' "$t"
   fi
 
   archive="delvec-v$VERSION-$t.tar.gz"

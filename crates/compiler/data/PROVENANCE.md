@@ -4,6 +4,15 @@ These files pin the game data the compiler validates against (ADR-0009 = MC
 1.21.11, ADR-0011 = vendored command tree + item registry). They change only if
 ADR-0009's revisit triggers fire.
 
+**The block tables live in `crates/dsl/data/`**, and this file is their
+provenance too — one record for one pinned game version, rather than a second
+copy that can fall a version behind. `blocks-1.21.11.json`,
+`blockstate-shape-props-1.21.11.json` and `block-defaults-1.21.11.json` sit
+beside the module that reads them (`delvewright_dsl::blocks`, re-exported as
+`delvewright_schem::blocks`), because `delvec` is published to crates.io and may
+only depend on published crates — and the CPU render surface it carries reads the
+block registry. Every reproduce command below names the path it writes.
+
 ## Route taken
 
 Mojang's official data generator was **not** run locally: it requires Java 21 and

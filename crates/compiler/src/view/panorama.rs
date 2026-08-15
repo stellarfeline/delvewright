@@ -1,4 +1,4 @@
-//! The whole-map release panorama (`delve-render panorama`).
+//! The whole-map release panorama (`delvec panorama`).
 //!
 //! Every content release ships one 45° oblique view of the entire delve (owner
 //! decision, 2026-08-06). The camera for it is *computed from the layout*, not

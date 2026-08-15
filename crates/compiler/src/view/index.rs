@@ -66,7 +66,7 @@ struct IndexEntry {
     /// (absent for shots of undeclared areas — index bytes unchanged for them).
     #[serde(skip_serializing_if = "Option::is_none")]
     lighting: Option<serde_json::Value>,
-    /// [`REVIEW_POLICY`] for shots whose scene `delve-render scene` emulates
+    /// [`REVIEW_POLICY`] for shots whose scene `delvec scene` emulates
     /// (dark-with-night-vision stamp): tells the reviewing agent/vision model
     /// the image approximates the night-vision player view — judge layout and
     /// readability from it, never the world's real lighting.
@@ -90,7 +90,7 @@ pub fn index_from_plan(plan_json: &[u8]) -> Result<Vec<u8>, Diagnostic> {
         .shots
         .iter()
         .map(|s| {
-            // The same predicate `delve-render scene` applies, over the same
+            // The same predicate `delvec scene` applies, over the same
             // stamp — index and scene can never disagree about which shots are
             // emulated.
             let stamp: Option<LightingStamp> = s

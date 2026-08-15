@@ -1,7 +1,22 @@
 # delve-render
 
-The deterministic **render layer** (spec-0007 rendering infra + spec-0003 visual
-tier, M3). Productionizes the `spike-render-fidelity` spike. Renders are
+The **GPU arms** of the deterministic render layer (spec-0007 rendering infra +
+spec-0003 visual tier, M3). Productionizes the `spike-render-fidelity` spike.
+
+The CPU arms are `delvec` subcommands (ADR-0021 §1) — `delvec viewer`,
+`delvec scene`, `delvec panorama`, `delvec contact-sheet`, `delvec palette`,
+`delvec index` — and they are documented below beside the arms they work with,
+because a reviewer uses them together. What is in THIS binary is `piece`,
+`batch` and `fidelity-gate`: the three that mesh and rasterise through
+Nucleation/wgpu.
+
+This binary is built from a checkout and is not on the release shelf
+(ADR-0021 §3). That is about distribution and not about capability: the shelf's
+Linux targets are static-musl, a fully static binary cannot `dlopen` a Vulkan
+loader, and Nucleation carries a C build script no musl cross-compiler in the
+release recipe can run. Every validation the pipeline needs stays runnable on the
+creator's own machine because the source build is the guarantee — the skill's
+`Init` section builds this crate at the step that needs it. Renders are
 **validation artifacts** — they prove a delve *looks right* before a human joins
 (invisible interact markers, unlit rooms, backwards NPCs, literal-JSON name tags)
 — and are **never shipped** (so they are excluded from ADR-0006 byte-identity;
@@ -15,11 +30,13 @@ Two renderers, one 1.21.11 **fidelity gate**:
 - **Chunky** (GPL-3.0, out-of-process, path tracer) — the **official renderer**
   for whole-scene review frames, storybook scene illustrations and the per-release
   whole-map panorama (owner decision, 2026-08-06). **Not bundled**;
-  `delve-render scene` / `panorama` emit Chunky scene JSON and `ChunkyLauncher.jar`
+  `delvec scene` / `panorama` emit Chunky scene JSON and `ChunkyLauncher.jar`
   renders them as a separate program (see "Chunky scenes" and
   [`docs/reference/tools.md` §4a](../../docs/reference/tools.md)).
 
 ## Commands
+
+GPU arms, in this binary:
 
 ```
 delve-render [--json] [--textures <jar>] [--size <px>] <command>
@@ -28,19 +45,31 @@ piece <prefab.nbt> -o <dir>     planned multi-angle set for one prefab
                                 [--view SPEC]... cameras you aim yourself
 batch <dir> -o <dir>            piece set for every .nbt in a library dir [--view SPEC]...
 fidelity-gate [-o <dir>]        render the newest-block fixture; FAIL on placeholder
-scene <build-dir> -o <dir>      Chunky scene JSON per shot from render-plan.json
-panorama <build-dir> -o <dir>   the whole-map 45° oblique release panorama
-                                [--bearing se|sw|ne|nw] [--spp 300]
-index <build-dir> -o <file>     shot index (image ↔ expect pairs) for vision review
-contact-sheet <dir> -o <png>    many candidate renders on ONE page, for curation
-                                [--scores f] [--shot ext-se] [--columns N]
-                                [--thumb 256] [--title T]
-viewer <nbt|dir|manifest>... -o <html>
-                                ONE self-contained interactive page: a camera the
-                                reviewer drives [--title T]
-palette <nbt|dir>... -o <json>  the derived per-blockstate colour/shape table
-                                [--biome id]
 ```
+
+CPU arms, in `delvec` — same code, same diagnostics, one binary a creator
+already has:
+
+```
+delvec scene <build-dir> -o <dir>       Chunky scene JSON per shot from render-plan.json
+                                        [--world path] [--size px]
+delvec panorama <build-dir> -o <dir>    the whole-map 45° oblique release panorama
+                                        [--bearing se|sw|ne|nw] [--spp 300]
+                                        [--world path] [--size px]
+delvec index <build-dir> -o <file>      shot index (image ↔ expect pairs) for vision review
+delvec contact-sheet <dir> -o <png>     many candidate renders on ONE page, for curation
+                                        [--scores f] [--shot ext-se] [--columns N]
+                                        [--thumb 256] [--title T]
+delvec viewer <nbt|dir|manifest>... -o <html>
+                                        ONE self-contained interactive page: a camera the
+                                        reviewer drives [--title T] [--textures jar]
+delvec palette <nbt|dir>... -o <json>   the derived per-blockstate colour/shape table
+                                        [--biome id] [--textures jar]
+```
+
+`--textures` and `--size` were globals of this binary and are declared by the
+`delvec` arms that read them, so `delvec build --help` does not grow a flag it
+has no use for. No arm lost one it ever consumed.
 
 **Exit codes**: `0` ok · `2` input/usage · `3` output · `4` **fidelity-gate
 failure** (missing-texture placeholder detected) · `5` renderer/GPU/textures
@@ -49,9 +78,9 @@ JSON object per line under `--json`.
 
 **Textures** (the 1.21.11 client jar — never committed, EULA) resolve from
 `--textures <path>`, then `$DELVEWRIGHT_CLIENT_JAR`, then
-`~/.chunky/resources/minecraft.jar`. The `scene` / `panorama` commands need no
-textures (they emit JSON); Chunky itself reads the same jar when it renders them,
-and it is never redistributed.
+`~/.chunky/resources/minecraft.jar`, by one function both binaries call. The
+`scene` / `panorama` arms need no textures (they emit JSON); Chunky itself reads
+the same jar when it renders them, and it is never redistributed.
 
 | Code | Meaning |
 | --- | --- |
@@ -126,13 +155,13 @@ crop (`tests/fixtures/heavy_core_placeholder.png`) and an end-to-end
 delve-render fidelity-gate -o /tmp/fg          # exit 0 = pass, 4 = placeholder found
 ```
 
-## `scene` — Chunky scenes from `render-plan.json`
+## `delvec scene` — Chunky scenes from `render-plan.json`
 
 The compiler emits `render-plan.json` in every build output — a deterministic
 shot list (spawn, per-NPC, interact, gate both-sides, piece seam, one interior per
 room, **and player-POV**), each shot with a camera (`pos` + `yaw`/`pitch` degrees,
 optional `fov`) and a machine-generated `expect` checklist derived from the DSL.
-`delve-render scene` converts each shot into a **Chunky scene description JSON**
+`delvec scene` converts each shot into a **Chunky scene description JSON**
 (one file per shot, `chunkList` covering the layout AABB).
 
 **Player-POV shots are the Chunky path, by design.** The `pov` shots
@@ -203,7 +232,7 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
   --profile play up --build server
 #    docker cp <container>:/data/world ./world
 # 2. emit scenes, point their world.path at ./world, render, extract the PNG
-delve-render scene out -o scenes --world ./world
+delvec scene out -o scenes --world ./world
 java -jar ChunkyLauncher.jar -scene-dir scenes -render <name> -f -target 500
 java -jar ChunkyLauncher.jar -scene-dir scenes -snapshot <name> <name>.png
 ```
@@ -214,9 +243,9 @@ running one render **process per scene** with `-threads`, and tier `-target` —
 ~64 draft, ~300 final, 500 review set. The progress line `(N of 900)` counts
 **scanlines**, not samples.
 
-## `panorama` — the whole-map release illustration
+## `delvec panorama` — the whole-map release illustration
 
-`delve-render panorama <build-dir> -o <dir>` emits one scene framing the entire
+`delvec panorama <build-dir> -o <dir>` emits one scene framing the entire
 delve: a 45° oblique camera on a corner bearing (`--bearing se|sw|ne|nw`, default
 `se`), aimed at the centre of `layout_aabb` and pushed back until all eight
 corners of the box are inside a 40° frame with a 12% margin — solved exactly, not
@@ -266,9 +295,9 @@ emission aimed every POV camera at the ground; the offsets were confirmed by
 rendering nobodys-cave-island POV shots (2026-08-01). See `scene.rs` header for
 the full derivation.
 
-## `index` — (image ↔ expect) pairs for the vision reviewer
+## `delvec index` — (image ↔ expect) pairs for the vision reviewer
 
-`delve-render index <build-dir> -o shot-index.json` reads `render-plan.json` and
+`delvec index <build-dir> -o shot-index.json` reads `render-plan.json` and
 writes one entry per shot: `id`, `kind`, `leg`/`objective` (POV shots), the `image`
 filename a renderer produces (the scene's own stem + `.png`, matching `scene`), and the shot's
 `expect` list. This is the visual tier's deliverable — a reviewing agent / vision
@@ -280,9 +309,9 @@ The ladder step `validation/render-shots.sh <build-dir>` runs `scene` +
 `panorama` + `index` together, producing the Chunky scene set (review shots plus
 `<campaign>_panorama_se`) and the index in one shot.
 
-## `contact-sheet` — many candidates, one page, the owner's eye is the selector
+## `delvec contact-sheet` — many candidates, one page, the owner's eye is the selector
 
-`delve-render contact-sheet <dir> -o <sheet.png>` is the curation step of the
+`delvec contact-sheet <dir> -o <sheet.png>` is the curation step of the
 prefab authoring loop (spec-0027 §3): the grammar expander builds N seed-varied
 candidates, `batch` images them, and this puts them on one page the owner picks
 massing from. **It needs no GPU and no client jar** — it composites renders that
@@ -326,10 +355,10 @@ absence spelled in code — do not satisfy it by relaxing the guard.
 
 ```sh
 delve-render batch prefabs/zone2 -o .sheets/renders        # GPU + client jar
-delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+delvec contact-sheet .sheets/renders -o .sheets/zone2.png
 python3 ../../tools/refscore.py --sheet .sheets/zone2.json \
     --reference .refimg/zone2.png --backend open-clip -o .sheets/zone2-scores.json
-delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \
+delvec contact-sheet .sheets/renders -o .sheets/zone2.png \
     --scores .sheets/zone2-scores.json
 ```
 
@@ -340,7 +369,7 @@ runs would make "cell 7" mean two things. Two runs over the same inputs produce
 the same page byte for byte (`tests/sheet.rs`). Sheets are working material like
 every render — `.sheets/` is gitignored, nothing here ships.
 
-## `viewer` — the camera the reviewer drives
+## `delvec viewer` — the camera the reviewer drives
 
 A still render answers *is the set pretty*. Only a camera the reviewer drives
 answers *what is it like to be in here*. `viewer` emits **one self-contained
@@ -348,8 +377,8 @@ answers *what is it like to be in here*. `viewer` emits **one self-contained
 `file://` and survives the strict CSP an Artifact is published under.
 
 ```sh
-delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
-delve-render viewer campaigns/prefabs -o .sheets/library.html   # all of them, one page
+delvec viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
+delvec viewer campaigns/prefabs -o .sheets/library.html   # all of them, one page
 ```
 
 **The blocks are drawn by [deepslate](https://github.com/misode/deepslate)**

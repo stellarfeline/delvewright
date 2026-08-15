@@ -2,7 +2,7 @@
 # Rebuild the vendored deepslate bundle the prefab review page embeds.
 #
 # The page is one self-contained file with no external references of any kind, so
-# the renderer's whole browser side ships inside it. `crates/render/src/viewer/
+# the renderer's whole browser side ships inside it. `crates/compiler/src/view/viewer/
 # deepslate.bundle.js` is that byte block; this script is how it is produced, and
 # running it is the only sanctioned way to change it.
 #
@@ -33,7 +33,7 @@ GL_MATRIX_VERSION="3.4.4"
 ESBUILD_VERSION="0.28.2"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-out="$repo_root/crates/render/src/viewer/deepslate.bundle.js"
+out="$repo_root/crates/compiler/src/view/viewer/deepslate.bundle.js"
 work="$(mktemp -d "${TMPDIR:-/tmp}/delve-deepslate.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 

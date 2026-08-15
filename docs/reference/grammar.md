@@ -2880,7 +2880,7 @@ question for the owner. Until that is answered the measurement is an authoring
 aid an author runs, not a gate, and it must not be described as one. It is also
 whole-zone today: scoping it to player-reachable mass is the risk §5 records.
 
-The **contact sheet** is built: `delve-render contact-sheet` lays a directory of
+The **contact sheet** is built: `delvec contact-sheet` lays a directory of
 candidate renders out as one page, optionally ordered by a similarity score
 against a reference image (`tools/refscore.py`, spec-0028 §3 — the score RANKS
 the page and never gates it). What is still missing between the expander and

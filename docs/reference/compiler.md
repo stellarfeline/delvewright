@@ -4502,13 +4502,13 @@ failure · `5` renderer/GPU · `10` internal.
 #### `delve-render` dark-shot REVIEW POLICY (night-vision emulation)
 
 For shots stamped `{"profile": "dark", "mitigation": "night-vision"}` — and only
-those — `delve-render scene` emits the Chunky scene with a review-only
+those — `delvec scene` emits the Chunky scene with a review-only
 `materials` override: every non-light-emitting block of the build's shipped
 structure palettes (union over `datapack/data/*/structure/*.nbt`, sorted,
 deduped, state brackets stripped) gets a low uniform emittance
 (`scene::REVIEW_EMITTANCE` = 0.05), and the scene carries
 `"delvewrightReviewPolicy": "night-vision-emulated — review only"` (Chunky
-ignores unknown keys). `delve-render index` marks the same shots with
+ignores unknown keys). `delvec index` marks the same shots with
 `review_policy` and passes the `lighting` stamp through. **This is an honest
 approximation, not ground truth**: faint uniform self-glow is the closest
 Chunky analogue of Minecraft night vision (which renders every block at full,

@@ -80,7 +80,7 @@
 # THE SCORE RANKS; IT NEVER GATES (owner ruling). Cross-domain calibration
 # between a painterly reference and a voxel render is unproven, so a number here
 # decides where a candidate sits on the page, never whether it is on the page. A
-# low-scoring candidate is still present, last. `delve-render contact-sheet`
+# low-scoring candidate is still present, last. `delvec contact-sheet`
 # refuses (DW0725) any ordering that is not a permutation of the candidate set;
 # promoting the score to a threshold needs its own owner-approved amendment
 # backed by accumulated batch data.

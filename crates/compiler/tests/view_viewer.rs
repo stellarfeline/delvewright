@@ -1,4 +1,4 @@
-//! `delve-render viewer` — the interactive review page.
+//! `delvec viewer` — the interactive review page.
 //!
 //! These need neither a GPU nor the (never-committed, EULA-gated) client jar:
 //! `--textures` accepts an unpacked resource directory as well as a jar, so the

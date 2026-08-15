@@ -487,7 +487,7 @@ fn emulation_overrides(palette: &[String]) -> BTreeMap<String, MaterialOverride>
 /// newline) so it rides the determinism gate as a validation artifact.
 ///
 /// `world_palette` is the union of the build's structure `.nbt` palettes (see
-/// `delve-render scene` in `main.rs`), consumed only by the night-vision REVIEW
+/// `delvec scene` in `main.rs`), consumed only by the night-vision REVIEW
 /// POLICY (module docs): shots stamped dark-with-night-vision get a review-only
 /// `materials` override built from it; every other shot ignores it entirely. A
 /// dark-stamped shot with an empty (post-filter) palette is a `DW0721` error —

@@ -19,7 +19,9 @@ Rust binaries run from repo root as
 `cargo run -q -p <package> --bin <bin> -- <args>` (packages below), or from a
 `cargo build` target directory. The one exception is `delve-render`, whose crate
 is its own workspace: it takes `--manifest-path crates/render/Cargo.toml` instead
-of `-p` (§4).
+of `-p` (§4). Its three GPU arms are the only tool surface here that is not in a
+`-p`-reachable workspace crate; the rest of the render layer is `delvec`
+subcommands (§1).
 
 **How you get `delvec`** (ADR-0017 — three true paths, pick by what you are
 doing). Everything else in this file is pipeline-repo-only and has one path.
@@ -34,12 +36,15 @@ A release archive and `cargo install delvec@<version>` at the same version are
 the same engine: both are built from the tag whose name equals
 `versions.toml [engine].version`, and the release workflow refuses to run when
 they disagree. They are not the same *bytes*: the archive is stripped and the
-`cargo install` build is not (8,053,424 B vs 10,012,928 B at v1.1.0).
+`cargo install` build is not (10,718,048 B vs 13,146,688 B at v1.1.0, both
+measured on one host — these figures move by a megabyte between toolchains, so
+compare only numbers taken the same way).
 
-**How big is all this?** `delvec` is ~3 MB to download and ~8 MB installed; the
-prefab library is another ~95 KB; nothing else in the authoring loop is large.
+**How big is all this?** `delvec` is ~4 MB to download and ~11 MB installed —
+one binary carrying the compiler and the whole CPU render surface; the prefab
+library is another ~95 KB; nothing else in the authoring loop is large.
 The measured inventory — per platform, what each install path costs, what the
-validation tiers cost on top, and why the binary is 8 MB rather than 1 MB — is
+validation tiers cost on top, and why the binary is 11 MB rather than 1 MB — is
 [`distribution-size.md`](distribution-size.md). Read it before quoting a size.
 
 **Profile.** Either form is fine: the workspace sets `[profile.dev] opt-level = 1`
@@ -71,6 +76,22 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
 | `edit preview <dir>` | same replay + renders, never writes the campaign | `--batch <file>`, `-o edit-shots` |
 | `calibrate <report>` | harvested shot proposals → `anchor + offset` DSL patch (spec-0019) | `--layout <creator-datapack/layout.json>` (required), `-o shot-patch.json` |
+| `viewer <nbt\|dir\|manifest>…` | ONE self-contained interactive page: a camera the reviewer drives, every block drawn from the pinned version's own model | `-o page.html` (required), `--title`, `--textures <jar>` |
+| `palette <nbt\|dir>…` | the derived per-blockstate colour/shape table | `-o palette.json` (required), `--biome minecraft:plains`, `--textures <jar>` |
+| `scene <build-dir>` | Chunky scene JSONs from `render-plan.json` | `-o <dir>` (required), `--world world`, `--size 1024` |
+| `panorama <build-dir>` | the whole-map 45° oblique release panorama | `-o <dir>` (required), `--world world`, `--bearing se\|sw\|ne\|nw`, `--spp 300`, `--size 1024` |
+| `contact-sheet <dir>` | many candidates, ONE page, for the owner to curate | `-o sheet.png` (required), `--scores`, `--shot ext-se`, `--columns N`, `--thumb 256`, `--title` |
+| `index <build-dir>` | image ↔ expect pairs for a reviewing agent | `-o shot-index.json` (required) |
+
+The last six are the **CPU render surface**, and they are `delvec` subcommands
+rather than a second download (ADR-0021 §1): the surface a creator installs is
+one binary. They are the same code, the same `DW072x`/`DW079x` diagnostics and
+the same texture-resolution ladder that the GPU arms in §4 use — what changed is
+which executable carries them. Nothing here reaches a GPU or `nucleation`, which
+is what keeps `delvec` compiling for all five shelf targets including the two
+static-musl ones. Deep behaviour for all of them, GPU and CPU together, is §4 and
+[`../../crates/render/README.md`](../../crates/render/README.md), because a
+reviewer uses them together.
 
 Global flags on every subcommand: `--json`, `--prefabs <dir>` (default
 `campaigns/prefabs`), `--lang <code>` (default `en`), `--version`.
@@ -337,12 +358,26 @@ One bad line costs the whole function: four legacy camelCase gamerules and a
 `admit:finish` whole, leaving a gallery world with no objectives, nothing
 forceloaded, no piece placed and no label summoned.
 
-## 4. `delve-render` — render layer (`crates/render`, package `delvewright-render`) · agent
+## 4. `delve-render` — the render layer's GPU arms (`crates/render`, package `delvewright-render`) · agent
 
-Textured prefab shot sets, the missing-texture fidelity gate, and Chunky scene
-emission for whole-scene / player-POV review. Needs the 1.21.11 client jar via
+Textured prefab shot sets and the missing-texture fidelity gate: the three arms
+that mesh and rasterise through Nucleation/wgpu. Needs the 1.21.11 client jar via
 `--textures` or `$DELVEWRIGHT_CLIENT_JAR`. See
 [`../../crates/render/README.md`](../../crates/render/README.md).
+
+**The rest of the render layer is `delvec`** (§1): `viewer`, `palette`, `scene`,
+`panorama`, `contact-sheet` and `index` are CPU and ship in the one binary a
+creator installs. Everything this section says about cameras, scenes, the
+contact sheet and the review page holds for them under those names.
+
+`delve-render` is **not on the release shelf**, and that is a distribution
+statement rather than a capability one (ADR-0021 §3). The shelf's Linux targets
+are static-musl on purpose, a fully static binary cannot `dlopen` a Vulkan
+loader, and `nucleation` carries a C build script no musl cross-compiler in the
+release recipe can run. Completeness is guaranteed by the source build, not by
+the shelf: a creator who needs these three arms builds this crate from a
+checkout, which is what the skill's `Init` section does at the step that needs
+it.
 
 **This one crate is its OWN cargo workspace**, so it is the one entry on this page
 that `-p` does not reach: build and run it as
@@ -362,22 +397,30 @@ delve-render piece <nbt|manifest.json> -o <dir> [--view SPEC]…
 delve-render batch <prefab-dir> -o <dir> [--view SPEC]…
                                              # the same for a whole library
 delve-render fidelity-gate [-o <dir>]        # FAIL if any missing-texture placeholder renders
-delve-render scene <build-dir> -o <dir> [--world world]   # Chunky scene JSONs from render-plan.json
-delve-render panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300]
+```
+
+Global on `delve-render`: `--json`, `--textures <path>`, `--size 1024`. The CPU
+arms live in `delvec`, where `--textures` and `--size` are declared by the arms
+that read them rather than globally, so `delvec build --help` does not grow a
+flag it has no use for:
+
+```
+delvec scene <build-dir> -o <dir> [--world world] [--size 1024]
+                                             # Chunky scene JSONs from render-plan.json
+delvec panorama <build-dir> -o <dir> [--world world] [--bearing se|sw|ne|nw] [--spp 300] [--size 1024]
                                              # the whole-map 45° oblique release panorama
-delve-render index <build-dir> -o <file>     # image <-> expect pairs for a reviewing agent
-delve-render contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
+delvec index <build-dir> -o <file>           # image <-> expect pairs for a reviewing agent
+delvec contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
-delve-render viewer <nbt|dir|manifest.json>... -o <page.html> [--title T]
+delvec viewer <nbt|dir|manifest.json>... -o <page.html> [--title T] [--textures <jar>]
                                              # ONE interactive page: a camera the reviewer drives,
                                              # every block drawn from the pinned version's own model
-delve-render palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains]
+delvec palette <nbt|dir>... -o <palette.json> [--biome minecraft:plains] [--textures <jar>]
                                              # the derived per-blockstate colour/shape table
 ```
 
-Global: `--json`, `--textures <path>`, `--size 1024`. Exit codes and the dark-shot
-review policy: [`compiler.md` §5](compiler.md).
+Exit codes and the dark-shot review policy: [`compiler.md` §5](compiler.md).
 
 ### `piece` / `batch` — the per-prefab set · agent runs it, human reads it
 
@@ -507,10 +550,10 @@ recorded on every run; a score set that bound to **zero** candidates is an error
 
 ```sh
 delve-render batch prefabs/zone2 -o .sheets/renders          # (GPU + client jar)
-delve-render contact-sheet .sheets/renders -o .sheets/zone2.png
+delvec contact-sheet .sheets/renders -o .sheets/zone2.png
 python3 tools/refscore.py --sheet .sheets/zone2.json \
     --reference .refimg/zone2.png --backend open-clip -o .sheets/zone2-scores.json
-delve-render contact-sheet .sheets/renders -o .sheets/zone2.png \
+delvec contact-sheet .sheets/renders -o .sheets/zone2.png \
     --scores .sheets/zone2-scores.json                        # the ranked page
 ```
 
@@ -554,8 +597,8 @@ opens from `file://` and survives the strict CSP a Claude Artifact is published
 under. Every byte is inline.
 
 ```sh
-delve-render viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
-delve-render viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
+delvec viewer campaigns/prefabs/island-mountain.nbt -o .sheets/mountain.html
+delvec viewer campaigns/prefabs -o .sheets/library.html      # all 36, one page
 ```
 
 **The blocks are real blocks.** The page carries the pinned client jar's own
@@ -719,7 +762,7 @@ same EULA-gated jar `delve-render` resolves.
 Render + extract:
 
 ```sh
-delve-render scene <build-dir> -o scenes --world ./world      # or: panorama
+delvec scene <build-dir> -o scenes --world ./world      # or: panorama
 java -jar ChunkyLauncher.jar -scene-dir scenes -render <scene-name> -f
 java -jar ChunkyLauncher.jar -scene-dir scenes -snapshot <scene-name> out.png
 ```
@@ -766,7 +809,7 @@ effectively unavailable on Apple Silicon, so there is no GPU path; do not wait f
 one. Go wide instead: one `java -jar ChunkyLauncher.jar … -render` **process per
 scene**, run in parallel (give each `-threads <n>` so they do not all claim every
 core), and tier the sample budget with `-target` — ~64 for a draft you only need
-to judge framing on, ~300 for final art (`delve-render panorama --spp`'s default),
+to judge framing on, ~300 for final art (`delvec panorama --spp`'s default),
 500 for the review scene set (`scene`'s `sppTarget`).
 
 ## 5. `delve-harvest` — playtest note harvester (`crates/orchestrator`, package `delvewright-orchestrator`) · human
@@ -801,7 +844,7 @@ Never shipped inside a delve.
 | `tools/build-deepslate-bundle.sh` | agent (rare) | `tools/build-deepslate-bundle.sh` — rebuild the renderer the prefab review page embeds (`crates/render/src/viewer/deepslate.bundle.js`). Needs `npm` and network; installs into a scratch directory, never into the repo. Pins deepslate, gl-matrix and esbuild by exact version, applies the local banner/shield texture-id patch with an exact expected hit count, and prints the licence of everything in the bundle. Two consecutive builds are byte-identical, which is what keeps the page byte-identical (ADR-0006). Refuses if upstream has moved the ids it patches — which is the signal to drop the patch rather than widen it |
 | `tools/i18n-translate.py` | agent | `python3 tools/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only; `--reflect` runs the three-step translate → critique → revise pass; see [`i18n.md`](i18n.md) |
 | `tools/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delve-render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers: `gemini-native` (the Interactions API — anchors on reference images, **no seed**) and `ideogram-v3` (style-CODE anchor **and** a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native` today) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`: the anchor a series needs is only recoverable from what the provider actually returns, and the docs do not promise a style code comes back. Output goes to `.refimg/` (gitignored) — generation-time working material, never shipped, never in the content repo, so output licensing never touches a shipped asset (ADR-0013) and nothing here can move a delve's bytes |
-| `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delve-render contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
+| `tools/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (owner ruling, spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delvec contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delve-render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (today's backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
 | `tools/derive-client-langs.py` | human | `python3 tools/derive-client-langs.py [--version V] [--rust]` — re-derives `dsl::mclang::CLIENT_LANGS` (the language files the **pinned** client loads) from Mojang's version manifest → version metadata → asset index, printing the sha1 of every document it read so the derivation is auditable. Run it when ADR-0009's Minecraft pin moves, diff the printed table into `crates/dsl/src/mclang.rs`, `cargo fmt`. Never run by CI or by a build — the compiler must not reach the network (ADR-0006) |
 | `tools/skin/` (`delve_skin`) | agent | `python -m delve_skin all <cast.json> --skins-dir D --catalog-dir D --preview-dir D [--id ID] [--scale N]`, or the `build` / `preview` / `catalog` stages individually. Needs its own venv (`pip install -r tools/skin/requirements.txt`); see [`../../tools/skin/README.md`](../../tools/skin/README.md) |
 | `tools/build-every-campaign.py` | CI + agent (run it before proposing any engine change that touches emission, layout or validation) | `python3 tools/build-every-campaign.py --delvec <binary> [--content <checkout>]` — builds **every campaign** the pinned content repo carries, in **every language its `world.json` declares**, and reds if one stops building. Closes the gap that let a change reach 10/10 green while stopping the flagship released campaign `nobodys-cave-island` from building at all (26 × `DW0364`): every other gate builds a FIXTURE, and a fixture exercises one verb, where a campaign is the only place the verbs meet a real prefab library, a real layout solve and a real translation sidecar. Campaigns are **discovered** (any dir under `<content>/campaigns/` with a `world.json`), never listed, so the next content re-pin gates a new campaign with nobody remembering. `--delvec` is required and never inferred — the gate's whole subject is *which engine* built the campaign. A campaign that cannot build today goes in `.github/campaign-build-exclusions.toml`, which **inverts** the assertion rather than removing it: still built, must still fail, and must fail with **exactly** the recorded `expect_codes` — an extra code is a new break that was hiding behind the exclusion, and a SUCCESS is an expired exclusion, both red. Currently one entry: `hollow-vigil`, `DW0331`. States its binding count every run (discovered / built green / known-red, each named); discovering zero campaigns, building zero campaigns, or an exclusion naming a campaign that no longer exists are each a red. Runs in CI as `campaign builds (every campaign in the content repo)`, on every push |
@@ -874,7 +917,7 @@ Shell entry points:
 | `validation/ephemeral-port.yaml` | agent | an EPHEMERAL loopback publish for the flows that drive a bot from the HOST (`playtest-note-flow.sh`, `rehearsal-flow.sh`). Docker picks the number; read it back with `docker compose -p <id> … port <service> 25565`, never assume it |
 | `validation/warden-probe.sh` | agent (spike) | `[POLL_SECONDS=n] [WATCH_SECONDS=n] [CONTAINER=name] validation/warden-probe.sh` — measures what a summoned 1.21.11 warden actually does (dig-down timing, `dig_cooldown`/`anger` NBT, difficulty effects) against a **throwaway** pinned server, never the shared stack. Refuses to run while the mutex reads `owner-play-session` |
 | `validation/fresh-volumes.sh` | agent | `validation/fresh-volumes.sh --project <compose-project>` — tear ONE compose project down and **prove** its containers and volumes are gone. `--project` is REQUIRED: no default, and `COMPOSE_PROJECT_NAME` is deliberately not honoured, because an invisible default's cost is somebody else's live world. The old daemon-wide `--all` is GONE — it matched `server-data$` across every project and force-removed the pinned `delvewright-*` names, i.e. an outage rather than a teardown. It additionally refuses a project whose container publishes host 25565 (an owner-facing session, human possibly inside). Run it before any re-run of the bot ladder — the entry scripts do it for you: `docker compose -p <proj> … down -v` silently leaves `<proj>_server-data` behind whenever an exited container of that project still holds it, and the stale volume carries the scoreboard, so the re-run starts with objectives already complete and the bot reports a **false CONTENT failure** (three misattributed red runs, island round 13) |
-| `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delve-render scene` + `panorama` + `index`), including the first-person POV shots and the whole-map release panorama (`<campaign>_panorama_se`) |
+| `validation/render-shots.sh <build-dir> [out-dir]` | agent | turn a build output into the Chunky scene set + shot index (`delvec scene` + `panorama` + `index`), including the first-person POV shots and the whole-map release panorama (`<campaign>_panorama_se`) |
 | `validation/playtest-note-flow.sh` | CI (tier 3) | `EULA=TRUE validation/playtest-note-flow.sh` — drives the whole spec-0006 note loop non-interactively and asserts the report. Runs in a per-invocation compose project (`dw-noteflow-$$`, override with `DW_COMPOSE_PROJECT`) on an ephemeral host port, so it needs no lock |
 | `validation/rehearsal-flow.sh` | CI (tier 3) | `EULA=TRUE validation/rehearsal-flow.sh` — drives the whole spec-0019 calibration loop (`dw.aim`/`dw.faster`/`dw.mark`/`dw.done` → harvest → `delvec calibrate`) and asserts the patch resolves back to the cell the bot marked. Per-invocation compose project (`dw-rehearsal-$$`) on an ephemeral host port, like note-flow |
 | `validation/branch-runs.sh` | agent (**required for a branching campaign**) + CI (tier 3) | `EULA=TRUE [DELVEWRIGHT_BRANCHES=…] validation/branch-runs.sh --project dw-<id> [--out <dir>]` (`--project`, or `DW_COMPOSE_PROJECT`, is REQUIRED) — spec-0025 §3 branch runs: walk every branch the tier selects, **each in its own fresh world** (party progress only moves forward, so a second branch needs a second world), and merge the per-branch run reports into `validation/run-out/<project>/branch-runs.json` — per branch: ran/skipped-with-reason/**INFRA-FAILED** and the result (an attempted branch whose compose run exited without writing any run report renders as an infra failure — a validation-infrastructure fault, distinct from a red run and from a tier skip). `--out` / `DW_RUN_OUT` relocates the merged + per-branch reports; the bot's own report is read from the compose mount, which is now project-scoped too (`DW_BOT_OUT`, so two loops from one checkout cannot overwrite each other's reports) and FILED under the out dir. The branch set and the selection come from the build's `validation/branch-plan.json` via `harness/src/branch-select.ts`, i.e. the same code the run uses, so a tier can never select a branch the run then refuses. Isolation is by construction: own compose project, no pinned container name, no host port, teardown via `fresh-volumes.sh --project`. One critical-path run proves ONE storyline; this is what makes "provably completable" quantify over branches |

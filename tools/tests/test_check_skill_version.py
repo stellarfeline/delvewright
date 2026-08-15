@@ -317,6 +317,50 @@ def test_cli_parse_finds_subcommands_and_globals(gate):
     assert {"version", "lang"} <= globals_
 
 
+def test_a_flattened_enum_contributes_its_own_variants(gate):
+    """`#[command(flatten)] View(ViewCommand)` is not a subcommand called `view`.
+
+    `delvec`'s CPU render arms are declared in `src/view/cli.rs` and flattened
+    into the top-level enum, so clap offers `delvec viewer` and `delvec scene`
+    and offers no `delvec view` at all. A parser that stopped at the variant name
+    would assert the exact opposite of the truth in both directions — inventing a
+    subcommand and hiding six — and it would do it while reporting a healthy
+    binding count.
+    """
+    source = MAIN_RS + """
+#[derive(Subcommand)]
+pub enum ViewCommand {
+    /// One self-contained page.
+    Viewer {
+        inputs: Vec<PathBuf>,
+        #[arg(short, long)]
+        out: PathBuf,
+        #[arg(long)]
+        textures: Option<String>,
+    },
+    /// Chunky scenes.
+    Scene {
+        build_dir: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+        #[arg(long, default_value = "world")]
+        world: String,
+    },
+}
+"""
+    source = source.replace(
+        "    Edit {",
+        "    #[command(flatten)]\n    View(crate::view::cli::ViewCommand),\n    Edit {",
+        1,
+    )
+    subcommands, _ = gate.parse_cli(source)
+    assert "viewer" in subcommands, "the flattened enum's variants are the subcommands"
+    assert "scene" in subcommands
+    assert "view" not in subcommands, "the flattening variant is not itself a subcommand"
+    assert subcommands["viewer"] == {"out", "textures"}
+    assert subcommands["scene"] == {"out", "world"}
+
+
 def test_nested_action_is_not_a_top_level_subcommand(gate, capsys):
     """`delvec edit apply` exists; `delvec apply` does not."""
     write_skill(gate, GOOD_FRONTMATTER, "1. `delvec apply <dir>`\n")

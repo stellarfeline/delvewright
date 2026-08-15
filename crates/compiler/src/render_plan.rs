@@ -3,7 +3,7 @@
 //! The compiler knows every world coordinate, so the visual-tier camera plan is
 //! **computed, not guessed**: one deterministic shot list derived from the layout,
 //! each shot carrying a camera (pos + orientation) and a machine-generated
-//! `expect` checklist derived from the DSL. `delve-render scene` turns this into
+//! `expect` checklist derived from the DSL. `delvec scene` turns this into
 //! Chunky scenes; the generation-time vision agent reviews each render against its
 //! `expect` strings (findings are DSL-addressable, same shape as playtest notes).
 //!
@@ -16,7 +16,7 @@
 //! - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
 //!
 //! This matches the camera axes the spike-render-fidelity spike verified for
-//! Chunky (`yaw ≈ π/2` faces −Z, positive pitch = down); `delve-render scene`
+//! Chunky (`yaw ≈ π/2` faces −Z, positive pitch = down); `delvec scene`
 //! converts these degrees to Chunky's radians directly.
 //!
 //! ## Determinism
@@ -62,7 +62,7 @@
 //! stay byte-identical. The stamp is pure metadata for the render layer: a
 //! declared-dark scene renders pure black in an honest path tracer (the first
 //! Chunky run proved exposure boosts cannot reveal a sealed cave — no light means
-//! amplified noise), so `delve-render scene` uses the stamp to apply its
+//! amplified noise), so `delvec scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
 use delvewright_dsl::{AreaMitigation, Campaign, Horizon, LightingProfile, Objective};
@@ -734,7 +734,7 @@ fn short(id: &str) -> String {
 ///   real fixtures for a path tracer to see);
 /// - only `mitigation` declared → `{"profile": "dark", "mitigation":
 ///   "night-vision"}` (the area is *meant* to be dark and the players are
-///   equipped — an honest render of it is black, so `delve-render scene`
+///   equipped — an honest render of it is black, so `delvec scene`
 ///   applies its documented night-vision review emulation);
 /// - both declared → lit profile plus the mitigation (fixtures light the scene;
 ///   no emulation needed or applied);
