@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.4.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.5.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -84,7 +84,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.4.0";
 /// * `1.3.0` — the scope's names as a frame: the `bind` node.
 /// * `1.4.0` — the state's own frame: a `local` paint, on a palette role or
 ///   inline on a `fill`.
-pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"];
+/// * `1.5.0` — the document's own composition: the program-level `include`
+///   list, which names another program **file** and the prefix its vocabulary
+///   arrives under.
+pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] =
+    &["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
 /// and the name of the fence constant that change defines for it.
@@ -112,6 +116,9 @@ pub const BIND_SINCE: &str = "1.3.0";
 
 /// The version at which a block state may name the scope's own axes.
 pub const LOCAL_FRAME_SINCE: &str = "1.4.0";
+
+/// The version at which a document may compose another program **document**.
+pub const INCLUDE_SINCE: &str = "1.5.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -154,6 +161,7 @@ pub fn minor_ordinal(version: &str) -> u32 {
         "1.2.0" => 2,
         "1.3.0" => 3,
         "1.4.0" => 4,
+        "1.5.0" => 5,
         _ => 0,
     }
 }
@@ -176,6 +184,11 @@ pub fn has_bind(version: &str) -> bool {
 /// True if `version` may write a block state in the scope's own axis names.
 pub fn has_local_frame(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(LOCAL_FRAME_SINCE)
+}
+
+/// True if `version` may compose another program document.
+pub fn has_include(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(INCLUDE_SINCE)
 }
 
 #[cfg(test)]
@@ -222,6 +235,7 @@ mod tests {
             ("CONTRACT_SINCE", CONTRACT_SINCE, has_contract),
             ("BIND_SINCE", BIND_SINCE, has_bind),
             ("LOCAL_FRAME_SINCE", LOCAL_FRAME_SINCE, has_local_frame),
+            ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
         ];
         assert_eq!(
             fences.len(),

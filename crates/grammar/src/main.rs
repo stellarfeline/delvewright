@@ -45,6 +45,7 @@ use clap::{Parser, Subcommand};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::coverage;
+use delvewright_grammar::document::{self, Loaded};
 use delvewright_grammar::gates;
 use delvewright_grammar::ir::{Paint, Program};
 use delvewright_grammar::{Axis, Box3, ExpandOptions, expand, export, library};
@@ -208,25 +209,34 @@ fn bad_input(msg: impl std::fmt::Display) -> ExitCode {
 
 impl Source {
     /// Load the program, naming what failed.
-    fn load(&self) -> Result<(String, Program), String> {
+    ///
+    /// `--file` goes through `document::load`, which is the **only** thing that
+    /// resolves an `include`: a document that composes another names a FILE, and
+    /// nothing but a loader may read one. A program that arrives with its
+    /// includes unresolved is refused by `Program::validate` rather than
+    /// expanded, so this is not a step a caller can quietly skip.
+    fn load(&self) -> Result<(String, Loaded), String> {
         match (&self.program, &self.file) {
             (Some(id), None) => match library::by_id(id) {
-                Some(p) => Ok((id.clone(), p)),
+                Some(program) => Ok((
+                    id.clone(),
+                    Loaded {
+                        program,
+                        compositions: Vec::new(),
+                    },
+                )),
                 None => Err(format!(
                     "no library program {id:?} — `delve-grammar list` names them all"
                 )),
             },
             (None, Some(path)) => {
-                let bytes =
-                    std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-                let program: Program = serde_json::from_slice(&bytes)
-                    .map_err(|e| format!("parse {}: {e}", path.display()))?;
+                let loaded = document::load(path).map_err(|e| e.to_string())?;
                 let id = path
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("program")
                     .to_string();
-                Ok((id, program))
+                Ok((id, loaded))
             }
             _ => Err("give exactly one of --program or --file".to_string()),
         }
@@ -343,11 +353,39 @@ fn run_list() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Say what a document composed, on every command that reads one.
+///
+/// Printed whether the count is zero or not, and on stderr so it never lands in
+/// `show`'s piped JSON. A composition is the one thing about a program that the
+/// file on disk does not say — the rules arrived from somewhere else — so an
+/// operator who is looking at a green verdict learns what the green was over.
+fn composition_to_stderr(loaded: &Loaded) {
+    if loaded.compositions.is_empty() {
+        return;
+    }
+    eprintln!(
+        "  {:<15} bound {:<6} composed program document(s)",
+        "include",
+        loaded.includes()
+    );
+    for c in &loaded.compositions {
+        eprintln!(
+            "      {}{} ← {} ({})",
+            "  ".repeat(c.depth),
+            c.prefix,
+            c.source.display(),
+            c.name
+        );
+    }
+}
+
 fn run_show(source: &Source) -> ExitCode {
-    let (_, program) = match source.load() {
-        Ok(p) => p,
+    let loaded = match source.load() {
+        Ok((_, l)) => l,
         Err(e) => return bad_input(e),
     };
+    composition_to_stderr(&loaded);
+    let program = loaded.program;
     match serde_json::to_string_pretty(&program) {
         Ok(json) => {
             println!("{json}");
@@ -361,10 +399,12 @@ fn run_show(source: &Source) -> ExitCode {
 }
 
 fn run_check(source: &Source) -> ExitCode {
-    let (id, program) = match source.load() {
+    let (id, loaded) = match source.load() {
         Ok(p) => p,
         Err(e) => return bad_input(e),
     };
+    composition_to_stderr(&loaded);
+    let program = loaded.program;
     match program.validate() {
         Ok(()) => {
             println!(
@@ -454,10 +494,12 @@ fn run_expand(
     options: gates::Options,
     out: &Path,
 ) -> ExitCode {
-    let (default_id, mut program) = match source.load() {
+    let (default_id, loaded) = match source.load() {
         Ok(p) => p,
         Err(e) => return bad_input(e),
     };
+    composition_to_stderr(&loaded);
+    let mut program = loaded.program;
 
     // The id is settled and checked FIRST, before anything is expanded, judged,
     // printed or written.
@@ -764,8 +806,9 @@ struct ZoneEntry {
 const ZONE_MANIFEST: &str = "zones.json";
 
 /// One thing to audit: what to call it, what to expand, where, at which seed,
-/// and which optional gates it claims.
-type AuditItem = (String, Program, [u32; 3], u64, gates::Options);
+/// which optional gates it claims, and how many program documents it composed
+/// to become the program that is expanded.
+type AuditItem = (String, Program, [u32; 3], u64, gates::Options, usize);
 
 /// What one gate id totalled to across the corpus.
 #[derive(Default)]
@@ -950,29 +993,38 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
             }
         };
 
-        let mut named: Vec<PathBuf> = Vec::new();
+        let mut named: BTreeSet<PathBuf> = BTreeSet::new();
+        // Every program file some manifest-named zone actually COMPOSED. A
+        // composed part is judged inside its composition, so it is not itself a
+        // manifest entry — but this is not an author's declaration that it is
+        // covered. It is the loader's record of having read it, which a program
+        // file nothing composes cannot produce. A file that no manifest names
+        // and no document composes is still the red below.
+        let mut composed_files: BTreeSet<PathBuf> = BTreeSet::new();
         for zone in &manifest.zones {
             let path = programs.join(&zone.program);
-            named.push(path.clone());
-            let bytes = match std::fs::read(&path) {
-                Ok(b) => b,
+            named.insert(document::normalised_path(&path));
+            // The same loader `--file` uses, and for the same reason: a zone
+            // program may compose another program document, and `audit` is the
+            // sweep that judges the campaign corpus. Reading these two entry
+            // points differently is how a surface ends up checked on one path
+            // and silently unresolved on the other.
+            let loaded = match document::load(&path) {
+                Ok(l) => l,
                 Err(e) => {
                     errors.push(format!(
-                        "{}: zone {:?} names {:?}: {e}",
+                        "{}: zone {:?}: {e}",
                         manifest_path.display(),
-                        zone.id,
-                        zone.program
+                        zone.id
                     ));
                     continue;
                 }
             };
-            let program: Program = match serde_json::from_slice(&bytes) {
-                Ok(p) => p,
-                Err(e) => {
-                    errors.push(format!("{}: {e}", path.display()));
-                    continue;
-                }
-            };
+            let composed_here = loaded.includes();
+            for c in &loaded.compositions {
+                composed_files.insert(document::normalised_path(&c.source));
+            }
+            let program = loaded.program;
             let symmetric = match zone.symmetric.as_deref().map(parse_axis).transpose() {
                 Ok(a) => a,
                 Err(e) => {
@@ -995,16 +1047,19 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
                     symmetric,
                     reachable_floor: zone.reachable_floor,
                 },
+                composed_here,
             ));
         }
         for file in &files {
-            if !named.contains(file) {
-                errors.push(format!(
-                    "{}: no entry in {ZONE_MANIFEST} names it, so it is a zone program nothing \
-                     expands and nothing checks",
-                    file.display()
-                ));
+            let key = document::normalised_path(file);
+            if named.contains(&key) || composed_files.contains(&key) {
+                continue;
             }
+            errors.push(format!(
+                "{}: no entry in {ZONE_MANIFEST} names it and no zone program composes it, so it \
+                 is a program nothing expands and nothing checks",
+                file.display()
+            ));
         }
     }
     if errors.is_empty() {
@@ -1041,6 +1096,11 @@ fn run_audit(
                 lib.region,
                 lib.seed,
                 lib.gates,
+                // A library program is Rust, so it composes with
+                // `compose::include` and never with a document include. Zero
+                // here is a fact about the corpus, not a gap in the sweep, and
+                // the summary line below says which corpus the total came from.
+                0,
             ));
         }
     }
@@ -1115,7 +1175,11 @@ fn run_audit(
 
     let mut audited: Vec<Audited> = Vec::new();
     let mut failed = false;
-    for (label, program, region, seed, opts) in work {
+    let mut document_includes = 0usize;
+    let mut composing_programs = 0usize;
+    for (label, program, region, seed, opts, includes) in work {
+        document_includes += includes;
+        composing_programs += usize::from(includes > 0);
         match audit_one(label, &program, region, seed, opts) {
             Ok(a) => audited.push(a),
             Err(e) => {
@@ -1285,6 +1349,32 @@ fn run_audit(
             ""
         }
     );
+    // The document-include surface's binding count, over the corpus where the
+    // surface can exist at all.
+    //
+    // Scoped to the campaign corpus deliberately, and this is not an opt-out: a
+    // library program is `fn() -> Program`, so it has no document to compose
+    // another document FROM, and a zero over it would be a category error
+    // printed as a finding. A library entry that did carry an unresolved
+    // include is not quietly excused either — it reds at expansion, because
+    // `validate` refuses an unresolved include by name.
+    //
+    // A zero over the campaign corpus is stated and is NOT a red: a campaign is
+    // entitled to one program per zone. The number is how a later reader learns
+    // the surface exists and that nothing here reached it.
+    if !campaign_roots.is_empty() {
+        println!(
+            "  {:<16} bound {:<8} over {:<3} campaign program(s){}",
+            "include",
+            document_includes,
+            composing_programs,
+            if document_includes == 0 {
+                " — nothing in this corpus composes another program document"
+            } else {
+                ""
+            }
+        );
+    }
     for id in &order {
         let t = &bound[id];
         // The undecided binding is printed beside the bound one, always, and

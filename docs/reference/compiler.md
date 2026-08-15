@@ -300,7 +300,7 @@ exported via `delvec schema`). Introduced-by column cites the spec.
 | `seed` (u64) | Sole downstream randomness (layout PRNG). | 0.1 |
 | `target_minutes` | Informational (pacing). | 0.1 |
 | `languages[]` (opt) | BCP-47 codes; `en` implicit/never listed; drives l10n coverage + `--lang`. | 0.3 i18n |
-| `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, base_y, 0]`, where `base_y` is the **horizon datum**: `void` → 64, `ocean` → 60 (see `horizon`). | 0.1 / pool 0.2 |
+| `areas[]` | 1..N. Each binds **exactly one** of `prefab` or `prefab_pool`+`pieces{min,max}` (else `DW0160`). Area origin = `[i·256, base_y, 0]`, where `base_y` is the **horizon datum**: `void` → 64, `ocean` → 60 (see `horizon`). Either way the placed pieces go through the same socket seal (`solver::seal_layout`, see *Assembled-world model*): a single-prefab area places one piece, so **every connector it declares is unmated and is walled**. A prefab with no connector yields no seal. | 0.1 / pool 0.2 |
 | `areas[].lighting {fixture,min_light}` (opt) | spec-0010: relight pass guarantees `min_light` (1..=14, default 7; `DW0196` out of range) over reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. | 0.5 |
 | `areas[].mitigation` (opt) | `night-vision` — the first-class darkness declaration (v0.6). The compiler emits a self-rescheduling **1 s (20t)** `night_vision_tick` that runs `effect give @a[<this area's placed bounds>] minecraft:night_vision <lease> 0 true` (amplifier 0, particles hidden). The lease is `max(12, longest camera + 10 + 1)` seconds — **the camera-coverage guarantee**: a granted vision effect must outlast any authored camera it can overlap, plus vanilla's 10 s wind-down, so it can never begin ramping down on screen. 12 s is the floor and is what a campaign with no cutscene still emits (byte-identical to pre-0.6.1). The longest camera is measured from the ticks `camera::shot_ticks` really emits, and the campaign-wide max is used because the compiler cannot know which cutscene a player who steps out of a mitigated area will land in — the island's ending transports the party from the mitigated island to `area/open-sea` and immediately plays a 15 s camera, which the old 12 s lease could not survive. A player who leaves the area keeps sight for ≤ the lease: deliberate, since no vanilla primitive strips one effect on region exit without stripping effects the story granted, and the alternative is a visible flicker. Independent of `lighting`. This declaration is the **sole** `DW0210` night-vision mitigation. | 0.6 |
 | `time` (opt) | `day`/`noon`/`dusk`/`night`/`midnight`/`dawn` (default `noon`; `sunrise` is accepted as a synonym of `dawn`). Dimension-global initial state, emitted in the sealing baseline. Vanilla's `/time set` takes either a keyword or a raw tick count, so the DSL is not limited to the four keywords: the four vanilla states emit their **keyword verbatim** (`time set night`) and the other two emit the equivalent **tick form** (`dusk` -> `time set 12000`, `dawn` -> `time set 23000`). One table maps every state to its argument and its `time query daytime` read-back (`WorldTime::spec`), so the sealed-state PackTest asserts the right value and no shipped campaign's bytes move. `dusk` is the **sunset onset** (12000, the sky visibly going orange), deliberately not 13000 — 13000 is the sun already down, which is exactly what the `night` keyword sets, so it would make `dusk` a synonym rather than its own beat; `dawn` (23000) is the sunrise onset. `dusk`/`dawn` count as night for the sky-light model (`DW0210`), which is the conservative direction (both skies are in fact brighter than midnight). Same enum for the `set-time` effect. | 0.5 / dusk+dawn 0.5 |
@@ -1990,7 +1990,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 
 `crate::assembled` builds the one authoritative cell→block map of the world the
 shipped delve actually assembles — placed prefab structures (`/place template`),
-solver socket seals, gate clears — **then settles gravity-affected blocks**.
+socket seals, gate clears — **then settles gravity-affected blocks**.
+
+**Socket sealing is a property of a placed piece, not of the layout solver.**
+`solver::seal_layout` runs over the placed pieces of **every** area, pool or
+single-prefab: a mated socket's jigsaw block is cleared to air, leaving a clean
+3×3 passage; an unmated one is walled with `minecraft:stone_bricks` over the
+connector's whole opening, which also overwrites the `minecraft:jigsaw` marker
+standing in its sill. A single-prefab area places exactly one piece and so has
+nothing to mate with — every connector its prefab declares is unmated and is
+walled. That is why the model never contains a jigsaw marker, and why `DW0322`
+does not read a connector's doorway as a walkable cell one step from a void drop.
+A prefab that declares no connector yields no seal at all.
 
 **Blockstates rotate with their piece**. `/place template … <rotation>`
 rotates a structure's blockstates as well as its cell positions, so
