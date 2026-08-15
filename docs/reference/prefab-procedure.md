@@ -98,6 +98,7 @@ by four numbers:
 
 ```sh
 python3 tools/block-appearance.py --mix 'sandstone=3,smooth_sandstone=3,andesite=4'
+python3 tools/block-appearance.py --mix 'deepslate[axis=y]=3,stone=1'   # states, properties and all
 python3 tools/block-appearance.py --program my-piece.json   # every role + inline fill
 ```
 
@@ -108,8 +109,15 @@ and `void_area` — `minecraft:air` is a member like any other, so a role that i
 sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units —
 nothing — while the chromatic area falls 60% → 30%, which is a different
 building. The craft rule the numbers serve is 60/30/10: **the loud member gets
-10%, not 60%.** Every report states its binding count, and a zero binding is a
-finding, not a pass.
+10%, not 60%.** A paint written in the scope's own axis frame — `{"local": …}`,
+which is how any orientation-carrying role is written — is the same states, so
+it is measured like any other.
+
+Every report leads with its binding count as **`examined of declared`**, where
+declared is the palette's own role count plus each inline fill. Read those two
+numbers before the colours: `18 of 18` is a measurement of the palette, `8 of
+18` is not, and a declared paint the tool could not read is named with its
+reason and exits 2. A zero binding is a finding, not a pass.
 
 **2c. Look at it.** A shortlist is not a choice.
 

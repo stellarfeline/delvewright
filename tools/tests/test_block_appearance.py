@@ -348,23 +348,73 @@ def test_report_refuses_a_member_it_cannot_measure(by_id):
     assert "refusing" in str(excinfo.value)
 
 
+def binding_for(*specs: str, declared: int | None = None, unread=()) -> ba.Binding:
+    paints = [(f"mix{i + 1}", ba.parse_mix(spec)) for i, spec in enumerate(specs)]
+    return ba.Binding(
+        declared=len(paints) + len(unread) if declared is None else declared,
+        paints=paints,
+        unread=list(unread),
+    )
+
+
 def test_zero_binding_is_reported_as_a_finding(by_id, capsys):
     """AC5. A single-member paint is not a mix, and a report over none of them
     must say so rather than print a clean page."""
     out = report("sandstone", by_id, "solid")
-    ba.print_mix_report([out], 1)
+    ba.print_mix_report([out], binding_for("sandstone"))
     printed = capsys.readouterr().out
-    assert "binding: 1 paint(s) examined, 0 mix(es) with >= 2 members" in printed
+    assert "binding: 1 of 1 declared paint(s) examined, 0 mix(es) with >= 2 members" in printed
     assert "FINDING: zero binding" in printed
     # ...and a stone+air paint is NOT zero binding.
-    ba.print_mix_report([report("sandstone=1,air=1", by_id, "eroded")], 1)
+    ba.print_mix_report(
+        [report("sandstone=1,air=1", by_id, "eroded")], binding_for("sandstone=1,air=1")
+    )
     assert "1 mix(es) with >= 2 members" in capsys.readouterr().out
 
 
 def test_binding_count_is_stated_on_every_artifact(by_id, capsys):
     """AC5: on EVERY artifact it writes — the human table and the JSON both."""
-    ba.print_mix_report([report(MIX_A, by_id, "A"), report(MIX_B, by_id, "B")], 2)
-    assert "binding: 2 paint(s) examined, 2 mix(es) with >= 2 members" in capsys.readouterr().out
+    binding = binding_for(MIX_A, MIX_B)
+    ba.print_mix_report([report(MIX_A, by_id, "A"), report(MIX_B, by_id, "B")], binding)
+    assert (
+        "binding: 2 of 2 declared paint(s) examined, 2 mix(es) with >= 2 members"
+        in capsys.readouterr().out
+    )
+    assert binding.as_json()["paints_declared"] == 2
+    assert binding.as_json()["paints_examined"] == 2
+
+
+def test_the_binding_count_is_stated_against_the_declared_total_not_its_own_output():
+    """The count's teeth. `examined` is what the reader understood, and while the
+    total was derived from it too, the two agreed by construction whatever was
+    skipped — a palette of eighteen roles of which two were read printed "2
+    paints examined" and exited 0.
+
+    So the total is the DECLARED one, an unread paint is carried rather than
+    dropped, and the pair can disagree.
+    """
+    binding = ba.Binding(
+        declared=8,
+        paints=[("palette.a", [("minecraft:stone", 1.0)])],
+        unread=[("palette.b", "not a paint: a JSON NoneType")],
+    )
+    assert binding.examined == 1
+    assert binding.declared == 8
+    assert "1 of 8 declared paint(s) examined" in binding.line()
+    findings = "\n".join(binding.findings())
+    assert "1 declared paint(s) could not be read" in findings
+    assert "palette.b" in findings
+    assert binding.as_json()["unread_finding"] is True
+
+
+def test_member_count_is_arithmetic_so_the_count_precedes_any_measurement():
+    """The binding line has to be statable before `mix_report` — which refuses on
+    an unmeasurable member — or a refusal deep in the report is why a report
+    carries no count at all."""
+    assert ba.member_count([("minecraft:sandstone", 1.0)]) == 1
+    assert ba.member_count([("minecraft:sandstone", 0.5), ("minecraft:air", 0.5)]) == 2
+    # Two void members are one void share, exactly as `mix_report` counts it.
+    assert ba.member_count([("minecraft:air", 0.5), ("minecraft:cave_air", 0.5)]) == 1
 
 
 def test_program_mixes_reach_inline_fills_not_only_named_roles():
@@ -398,7 +448,10 @@ def test_program_mixes_reach_inline_fills_not_only_named_roles():
             ]
         },
     }
-    found = dict(ba.program_mixes(program))
+    reading = ba.program_paints(program)
+    found = dict(reading.paints)
+    assert reading.unread == []
+    assert len(reading.declared) == 3
     assert "palette.wall" in found and "palette.ruin" in found
     inline = [name for name in found if name.startswith("fill@")]
     assert inline, f"no inline fill found in {sorted(found)}"
@@ -444,7 +497,9 @@ def test_program_mixes_read_a_paint_written_in_the_scopes_own_frame():
             ]
         },
     }
-    found = dict(ba.program_mixes(program))
+    reading = ba.program_paints(program)
+    found = dict(reading.paints)
+    assert reading.unread == [], reading.unread
     assert found["palette.grille"] == [("minecraft:stone_bricks", 1.0)]
     assert sorted(b for b, _ in found["palette.crag"]) == [
         "minecraft:blackstone",
@@ -457,14 +512,138 @@ def test_program_mixes_read_a_paint_written_in_the_scopes_own_frame():
         "minecraft:sandstone",
     ]
     # A `{"role": ...}` material is a REFERENCE to a named paint, already reported
-    # from `palette`, and must not be read a second time as an inline one.
+    # from `palette`. It declares no second paint, so it is neither read NOR
+    # counted as unread — a reference reported as a skipped role would red every
+    # correct program in the corpus, which is a check nobody would keep.
     role_ref = {"rules": {"r": [{"body": {"op": "fill", "material": {"role": "crag"}}}]}}
-    assert ba.program_mixes(role_ref) == []
+    reference = ba.program_paints(role_ref)
+    assert reference.paints == []
+    assert reference.unread == []
+    assert reference.declared == []
+
+
+@pytest.mark.parametrize(
+    ("value", "tell"),
+    [
+        ({"local": {"block": "minecraft:tuff"}}, "`local` wrapper holding an object"),
+        ({"role": "other"}, "never to another role"),
+        ({"blocks": ["minecraft:tuff"]}, "object with keys"),
+        ([], "empty weighted list"),
+        ([{"weight": 3}], "not `{\"block\""),
+        ([{"block": "minecraft:tuff", "weight": 0}], "not positive"),
+        ([{"block": "minecraft:tuff", "weight": "heavy"}], "not a number"),
+        (None, "a JSON NoneType"),
+        (7, "a JSON int"),
+        ("   ", "empty block state"),
+    ],
+)
+def test_a_paint_this_reader_cannot_read_is_named_never_dropped(value, tell):
+    """Never a partial answer and never a silent omission from a total: each of
+    these is a role a piece really has, so a report that leaves it out describes
+    a palette the program does not declare."""
+    members, why = ba.classify_paint(value)
+    assert members is None
+    assert tell in why, why
+
+
+def test_every_declared_paint_leaves_the_reader_by_exactly_one_door():
+    """The structural half of the count. `declared` is the document's own tally —
+    one entry per palette key and per inline fill — and a paint the reader does
+    not understand is carried into `unread` rather than falling out of the sum.
+    """
+    program = {
+        "palette": {
+            "plain": "minecraft:stone",
+            "framed": {"local": "minecraft:deepslate[axis=y]"},
+            "broken": {"local": {"block": "minecraft:tuff"}},
+            "empty": [],
+            "null": None,
+        },
+        "rules": {
+            "r": [
+                {
+                    "body": {
+                        "op": "split",
+                        "children": [
+                            {"op": "fill", "material": {"role": "plain"}},
+                            {"op": "fill", "material": "minecraft:tuff"},
+                            {"op": "fill", "material": {"what": "no"}},
+                        ],
+                    }
+                }
+            ]
+        },
+    }
+    reading = ba.program_paints(program)
+    assert len(reading.declared) == 7, reading.declared
+    assert len(reading.paints) == 3
+    assert len(reading.unread) == 4
+    assert len(reading.paints) + len(reading.unread) == len(reading.declared)
+    assert sorted(label for label, _ in reading.unread) == [
+        "fill@rules/r[0]/body/children[2]",
+        "palette.broken",
+        "palette.empty",
+        "palette.null",
+    ]
 
 
 def test_block_state_strings_reduce_to_their_block():
     assert ba.base_block("minecraft:oak_stairs[facing=east,half=top]") == "minecraft:oak_stairs"
     assert ba.base_block("stone") == "minecraft:stone"
+
+
+# --------------------------------------------------------------------------
+# `--mix` over the block states the DSL is actually authored in
+# --------------------------------------------------------------------------
+
+
+def test_a_mix_member_may_carry_its_properties():
+    """A block state is `name[key=value,key=value]`, so a member's separators BOTH
+    occur inside one. Splitting on every occurrence refused the paints written
+    most precisely, and the workaround — stripping the properties by hand —
+    submits a different paint for measurement.
+    """
+    assert ba.parse_mix("deepslate[axis=y]=3,stone=1") == [
+        ("minecraft:deepslate", 0.75),
+        ("minecraft:stone", 0.25),
+    ]
+    # The real one from the corpus: five properties, four commas, five `=`.
+    bars = "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]"
+    assert ba.parse_mix(f"{bars}=1,stone=1") == [
+        ("minecraft:iron_bars", 0.5),
+        ("minecraft:stone", 0.5),
+    ]
+    # And a member with properties and no weight is still one member at weight 1.
+    assert ba.parse_mix(f"{bars}") == [("minecraft:iron_bars", 1.0)]
+
+
+@pytest.mark.parametrize(
+    ("spec", "tell"),
+    [
+        ("stone=", "is not a weight"),
+        ("stone=heavy", "is not a weight"),
+        ("stone=0", "must be a positive number"),
+        ("stone=-2", "must be a positive number"),
+        ("stone=nan", "must be a positive number"),
+        ("stone=1=2", "outside its block state"),
+        ("deepslate[axis=y=3,stone=1", "unterminated block-state property list"),
+        ("stone]=1", "never opened"),
+        ("=3", "names no block"),
+        (",,", "no members"),
+    ],
+)
+def test_a_malformed_weight_is_refused_and_says_which_member(spec, tell):
+    """Accepting the properties must not turn a genuinely broken spec into a
+    quietly smaller mix — the failure mode one layer over."""
+    with pytest.raises(SystemExit) as excinfo:
+        ba.parse_mix(spec)
+    assert tell in str(excinfo.value), excinfo.value
+
+
+def test_splitting_ignores_a_separator_inside_a_property_list_only():
+    outside = ba.split_outside_state("a[x=1,y=2],b", ",", "t")
+    assert outside == ["a[x=1,y=2]", "b"]
+    assert ba.split_outside_state("a[x=1]=3", "=", "t") == ["a[x=1]", "3"]
 
 
 # --------------------------------------------------------------------------
@@ -683,7 +862,7 @@ def test_a_program_that_binds_to_nothing_prints_the_finding_not_the_shelf(
     program.write_text(json.dumps({"version": "1.4.0", "palette": {}, "rules": {}}))
     done = run_over_synthetic(synthetic_jar, "--program", str(program))
     assert done.returncode == 0, done.stderr
-    assert "binding: 0 paint(s) examined, 0 mix(es) with >= 2 members" in done.stdout
+    assert "binding: 0 of 0 declared paint(s) examined, 0 mix(es) with >= 2 members" in done.stdout
     assert "FINDING: zero binding" in done.stdout
     # The tell of the old behaviour: the shelf listing arriving instead of a
     # report. The test above proves this shelf is one that does print.
@@ -730,10 +909,104 @@ def test_a_local_frame_palette_is_measured_through_the_entry_point(tmp_path, syn
     )
     done = run_over_synthetic(synthetic_jar, "--program", str(program))
     assert done.returncode == 0, done.stderr
-    assert "binding: 3 paint(s) examined, 2 mix(es) with >= 2 members" in done.stdout
+    assert "binding: 3 of 3 declared paint(s) examined, 2 mix(es) with >= 2 members" in done.stdout
     assert "FINDING: zero binding" not in done.stdout
     assert "palette.crag" in done.stdout
     assert "fill@rules/wall[0]/body" in done.stdout
+
+
+def test_a_palette_role_the_reader_cannot_read_is_a_red_not_a_smaller_number(
+    tmp_path, synthetic_jar
+):
+    """The count's binding, at the level an author meets it.
+
+    Four zone producers each read a `binding:` line as a pass over their whole
+    palette; it counted only the roles the reader had understood, so the line
+    agreed with itself and the exit code stayed 0. A declared role that was not
+    measured is now a RED that names the role and why.
+    """
+    program = tmp_path / "partly-unreadable.json"
+    program.write_text(
+        json.dumps(
+            {
+                "version": "1.4.0",
+                "palette": {
+                    "wall": "minecraft:stone_bricks",
+                    "framed": {"local": "minecraft:blackstone"},
+                    "broken": {"local": {"block": "minecraft:sandstone"}},
+                    "hollow": [],
+                },
+                "rules": {"r": [{"body": {"op": "fill", "material": {"role": "wall"}}}]},
+            }
+        )
+    )
+    done = run_over_synthetic(synthetic_jar, "--program", str(program))
+    assert done.returncode == 2, done.stdout
+    assert "binding: 2 of 4 declared paint(s) examined" in done.stdout
+    assert "2 declared paint(s) could not be read" in done.stdout
+    assert "palette.broken" in done.stdout
+    assert "palette.hollow" in done.stdout
+    # The two it COULD read are still reported: a red is information, not a halt.
+    assert "palette.framed" in done.stdout
+
+
+def test_the_binding_count_survives_a_refusal_inside_the_measurement(
+    tmp_path, synthetic_jar
+):
+    """`mix_report` refuses a member it cannot measure, and that refusal used to
+    arrive before anything had stated a binding — so the worst-informed run
+    produced the least information. The count is arithmetic on the parsed paints,
+    so it is stated first and the refusal follows it."""
+    program = tmp_path / "unmeasurable.json"
+    program.write_text(
+        json.dumps(
+            {
+                "version": "1.4.0",
+                # A real 1.21.11 id that the five-block synthetic jar has no
+                # texture for, so the measurement — not the reader — refuses.
+                "palette": {"gilt": "minecraft:gold_block"},
+                "rules": {},
+            }
+        )
+    )
+    done = run_over_synthetic(synthetic_jar, "--program", str(program))
+    assert done.returncode != 0
+    assert "refusing to report mix" in done.stderr
+    assert "binding: 1 of 1 declared paint(s) examined" in done.stderr
+
+
+def test_a_program_whose_paints_carry_properties_is_measured_through_the_entry_point(
+    tmp_path, synthetic_jar
+):
+    """The `--program` path and the `--mix` path must agree about what a block
+    state is: a role written `deepslate[axis=y]` is the same paint whether it
+    arrives from a document or from the command line."""
+    program = tmp_path / "stateful.json"
+    program.write_text(
+        json.dumps(
+            {
+                "version": "1.4.0",
+                "palette": {
+                    "course": {
+                        "local": [
+                            {"weight": 3, "block": "minecraft:cobbled_deepslate"},
+                            {"weight": 1, "block": "minecraft:blackstone[axis=y]"},
+                        ]
+                    }
+                },
+                "rules": {},
+            }
+        )
+    )
+    from_document = run_over_synthetic(synthetic_jar, "--program", str(program))
+    assert from_document.returncode == 0, from_document.stderr
+    from_flag = run_over_synthetic(
+        synthetic_jar, "--mix", "cobbled_deepslate=3,blackstone[axis=y]=1"
+    )
+    assert from_flag.returncode == 0, from_flag.stderr
+    for share in ("75.0%", "25.0%"):
+        assert share in from_document.stdout
+        assert share in from_flag.stdout
 
 
 def test_every_subprocess_run_of_the_tool_goes_through_run_tool():
