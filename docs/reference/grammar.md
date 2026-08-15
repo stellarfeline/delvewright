@@ -2963,10 +2963,12 @@ expansion produced all of it.
 }
 ```
 
-- The key is a **different name**, never `structure` with an extra field. Every
-  existing consumer requires `structure`, so a tool that has not learned about
-  tile sets fails to parse this file rather than reading it as a prefab with no
-  blocks in it.
+- The key is a **different name**, never `structure` with an extra field: the
+  two are alternatives, and a document carrying both — or neither — is refused
+  naming both keys. There is one document type for both packagings
+  (`delvewright_dsl::prefab::PrefabMeta`), so a block added to it reaches a
+  tiled zone and a single-template piece at once, and a consumer reaches the
+  blocks through `templates()` without asking which shape it was handed.
 - `offset` is **zone-relative**: add it to a tile-local cell to get the zone
   cell. That is the only transform reassembly needs.
 - The cuts come from `delvewright_schem::split::plan_split`, the same function
@@ -2990,8 +2992,13 @@ The rest of the loop takes the manifest and treats the zone as one thing:
 manifest to use instead — a render of a fragment is a review that passes and
 means nothing, and a verdict over one tile reads as a verdict over the zone.
 
-Not built: compiler-side placement of a tile group in world assembly, and
-jigsaw connector emission. Both are queued.
+The engine takes the manifest too: `delvec` loads a tiled zone as one prefab,
+and world assembly places its tiles at their zone-relative offsets as one piece
+(`compiler.md` §4, "A piece's blocks arrive as one template or as a tile set").
+A campaign binds `prefab/<id>` in the same line whichever packaging the zone
+uses.
+
+Not built: jigsaw connector emission. Queued.
 
 Refusals, all loud: an `id` that is not a lowercase-kebab path segment, an empty
 region, and a model containing a block the structure safety strip would replace

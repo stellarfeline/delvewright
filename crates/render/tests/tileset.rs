@@ -359,7 +359,7 @@ fn a_single_prefabs_metadata_is_not_a_manifest() {
     let meta = dir.join("piece.json");
     std::fs::write(
         &meta,
-        r#"{"prefab_id":"prefab/piece","structure":{"file":"piece.nbt","id":"piece"}}"#,
+        r#"{"prefab_id":"prefab/piece","structure":{"file":"piece.nbt","id":"piece","size":[3,3,3],"data_version":4671}}"#,
     )
     .unwrap();
 

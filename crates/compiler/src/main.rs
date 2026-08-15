@@ -1040,8 +1040,8 @@ fn read_structures(
     // no piece placed (spec-0017) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            files.push(piece.structure_file.clone());
+        for template in area.pieces.iter().flat_map(|p| &p.templates) {
+            files.push(template.structure_file.clone());
         }
     }
     files.extend(delvewright_compiler::edit::fragment_structure_files(

@@ -1406,16 +1406,6 @@ fn fragment(
              the id"
         ),
     })?;
-    let bytes = structures
-        .get(&meta.structure.file)
-        .ok_or_else(|| EditError {
-            code: DW_EDIT_UNRESOLVED,
-            message: format!(
-                "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file `{}` \
-             was not loaded — the prefab library entry points at a missing `.nbt`",
-                meta.structure.file
-            ),
-        })?;
     let origin = resolve_frame_point(plan, area, bid, frame, at).map_err(|message| EditError {
         code: DW_EDIT_UNRESOLVED,
         message,
@@ -1431,7 +1421,33 @@ fn fragment(
     // runtime `setblock` lines. Reading bare ids turned the hello-room prefab's
     // `lantern[hanging=true]` into a floor lantern stamped into mid-air, which
     // vanilla drops on the next chunk tick.
-    let cells = assembled::structure_cells_stateful(bytes);
+    //
+    // Every template of the piece, at its piece-local offset: a stamped
+    // fragment is the whole piece, and a piece past the vanilla cap ships as
+    // several templates. Reading only the first would stamp part of a building
+    // and report success — the failure a tile set has no other detector for.
+    let mut cells: Vec<([i32; 3], String, Option<bool>)> = Vec::new();
+    for template in meta.templates() {
+        let bytes = structures.get(template.file).ok_or_else(|| EditError {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file \
+                     `{}` was not loaded — the prefab library entry points at a missing `.nbt`",
+                template.file
+            ),
+        })?;
+        for (local, name, open) in assembled::structure_cells_stateful(bytes) {
+            cells.push((
+                [
+                    local[0] + template.offset[0],
+                    local[1] + template.offset[1],
+                    local[2] + template.offset[2],
+                ],
+                name,
+                open,
+            ));
+        }
+    }
     if cells.is_empty() {
         return Err(EditError {
             code: DW_EDIT_UNRESOLVED,
@@ -1713,7 +1729,7 @@ pub fn fragment_structure_files(
                 if let WorldEdit::Fragment { prefab, .. } = edit
                     && let Some(meta) = prefabs.get(prefab.as_str())
                 {
-                    files.insert(meta.structure.file.clone());
+                    files.extend(meta.templates().iter().map(|t| t.file.to_string()));
                 }
             }
         }

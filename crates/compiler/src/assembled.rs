@@ -405,6 +405,36 @@ pub fn region_cells(a: [i32; 3], b: [i32; 3]) -> impl Iterator<Item = [i32; 3]> 
     })
 }
 
+/// The extent `[x, y, z]` a structure template declares in its own `size` tag,
+/// or `None` when the bytes do not decode as one.
+///
+/// The template's own claim about how big it is, as distinct from the metadata's
+/// claim about the same thing. Nothing else can tell the two apart, which is
+/// what makes a stale `.nbt` beside a fresh manifest undetectable without it.
+pub fn structure_size(bytes: &[u8]) -> Option<[i32; 3]> {
+    let mut raw = Vec::new();
+    flate2::read::GzDecoder::new(bytes)
+        .read_to_end(&mut raw)
+        .ok()?;
+    let fastnbt::Value::Compound(root) = fastnbt::from_bytes::<fastnbt::Value>(&raw).ok()? else {
+        return None;
+    };
+    let fastnbt::Value::List(size) = root.get("size")? else {
+        return None;
+    };
+    if size.len() != 3 {
+        return None;
+    }
+    let mut out = [0i32; 3];
+    for (i, v) in size.iter().enumerate() {
+        match v {
+            fastnbt::Value::Int(n) => out[i] = *n,
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 /// Parse a gzipped vanilla structure `.nbt`, returning its non-air block cells as
 /// `(local [x, y, z], block id)`. Unparseable structures contribute nothing.
 pub fn structure_named_cells(bytes: &[u8]) -> Vec<([i32; 3], String)> {
@@ -671,8 +701,12 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     let mut blocks: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            let Some(bytes) = structures.get(&piece.structure_file) else {
+        for (piece, template) in area
+            .pieces
+            .iter()
+            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+        {
+            let Some(bytes) = structures.get(&template.structure_file) else {
                 continue;
             };
             // Blockstate-preserving read: waterlogging, slab halves and
@@ -684,9 +718,9 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 let name = rotate_state(&name, piece.rotation);
                 let t = piece.rotation.transform(local);
                 let cell = [
-                    piece.pos[0] + t[0],
-                    piece.pos[1] + t[1],
-                    piece.pos[2] + t[2],
+                    template.pos[0] + t[0],
+                    template.pos[1] + t[1],
+                    template.pos[2] + t[2],
                 ];
                 if is_fence_gate(&name) && open == Some(true) {
                     open_gates.insert(cell);

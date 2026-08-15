@@ -105,8 +105,8 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            structures.insert(piece.structure_file.clone(), nbt.clone());
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
+            structures.insert(t.structure_file.clone(), nbt.clone());
         }
     }
     emit::build(

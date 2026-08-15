@@ -73,14 +73,50 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::registry::Lighting;
+use crate::split::TileSet;
+
+/// The one `.json` in a prefab library that is **not** a prefab document:
+/// the pool declaration (`{"pools": {...}}`), read by the compiler's registry.
+///
+/// Named once because more than one tool walks the library directory — the
+/// registry, `delvec view`'s page builder, `delve-render batch` — and each of
+/// them opens every `.json` it finds. A walker that does not know this name
+/// hands a pool file to [`PrefabMeta::from_json`] and reports it as a malformed
+/// prefab, which is a true statement about the bytes and a wrong one about the
+/// file.
+pub const POOLS_FILE: &str = "pools.json";
 
 /// A prefab's sibling metadata file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrefabMeta {
     /// The DSL prefab id, `prefab/<id>`.
     pub prefab_id: String,
-    /// The structure-template reference.
-    pub structure: StructureMeta,
+    /// The structure-template reference, for a piece whose blocks fit one
+    /// template.
+    ///
+    /// Exactly one of this and [`Self::structure_set`] is present — see the
+    /// type's own note on the two packagings, and [`Self::from_json`], which is
+    /// where "exactly one" is enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<StructureMeta>,
+    /// The tile set, for a piece whose blocks did not fit one template.
+    ///
+    /// **Packaging, not authoring.** A zone past the 48-per-axis structure cap
+    /// ships as several `.nbt` files plus this manifest; everything else about
+    /// the document — the id, the zone-local `anchors`, the `connectors`, the
+    /// one `lighting` block, the one provenance row — is what it is for a
+    /// single-template piece, because it describes the same building. Nothing
+    /// that refers to a piece may ask which of the two it is: read
+    /// [`Self::templates`].
+    ///
+    /// This was a second document type (`TileSetMeta`, in the schem crate),
+    /// field-for-field this one with `structure` swapped for `structure_set`.
+    /// The copy had already lost `waterline_y`, so a tiled shore could not
+    /// declare the waterline the ocean-horizon invariant (`DW0344`) keys off and
+    /// went silently unchecked. One document is what makes that class of drift
+    /// unrepresentable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure_set: Option<TileSet>,
     /// Named anchors, keyed by DSL anchor name. `{}` for a piece that declares
     /// none.
     #[serde(default)]
@@ -261,6 +297,28 @@ pub struct StructureMeta {
     pub generator: Option<String>,
 }
 
+/// One structure template a piece's blocks arrive in, and where in the piece it
+/// sits.
+///
+/// **The unit every placer works in.** A single-template prefab has exactly one,
+/// at `offset` `[0, 0, 0]`; a tiled zone has one per tile at its manifest
+/// offset. Nothing that places, stamps or reads a piece's blocks needs to know
+/// which of the two it was handed — that is the whole point of the type, and the
+/// reason [`PrefabMeta::templates`] is the only way to reach a `.nbt` filename.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PieceTemplate<'a> {
+    /// The datapack structure id (a path segment).
+    pub id: &'a str,
+    /// The `.nbt` filename, relative to the metadata file.
+    pub file: &'a str,
+    /// This template's origin in **piece-local** coordinates — add it to a
+    /// template-local cell to get the piece cell. `[0, 0, 0]` for a
+    /// single-template piece.
+    pub offset: [i32; 3],
+    /// The template's extent `[x, y, z]`.
+    pub size: [i32; 3],
+}
+
 /// One entry of the `anchors` map.
 ///
 /// A point anchor carries `pos` (+ optionally `facing`); a gate anchor carries a
@@ -415,8 +473,121 @@ pub struct GeneratedBy {
 
 impl PrefabMeta {
     /// Parse metadata from JSON text.
+    ///
+    /// **The one reader of both packagings.** "Which shape is this" has exactly
+    /// two answers and no third, so a document declaring neither block, or both,
+    /// is refused here rather than handed half-read to a step that will place
+    /// some of its blocks. A tile set is validated as it is read
+    /// ([`TileSet::validate`]) for the same reason: a manifest that does not
+    /// tile its own volume reassembles into a building with a hole in it and
+    /// reports success.
     pub fn from_json(text: &str) -> Result<PrefabMeta, String> {
-        serde_json::from_str(text).map_err(|e| format!("invalid prefab metadata: {e}"))
+        let meta: PrefabMeta =
+            serde_json::from_str(text).map_err(|e| format!("invalid prefab metadata: {e}"))?;
+        match (&meta.structure, &meta.structure_set) {
+            (None, None) => {
+                return Err("prefab metadata has neither a `structure` block nor a \
+                            `structure_set` block — it does not say what blocks it describes"
+                    .to_string());
+            }
+            (Some(_), Some(_)) => {
+                return Err(
+                    "prefab metadata has BOTH a `structure` block and a `structure_set` \
+                            block — a piece's blocks arrive one way or the other, and a reader \
+                            cannot be asked which one is the building"
+                        .to_string(),
+                );
+            }
+            (None, Some(set)) => set
+                .validate()
+                .map_err(|e| format!("`structure_set`: {e}"))?,
+            (Some(_), None) => {}
+        }
+        Ok(meta)
+    }
+
+    /// Every structure template this piece's blocks arrive in, in a
+    /// deterministic order (grid order for a tile set).
+    ///
+    /// Empty only for a value built in code that declares neither block, which
+    /// [`Self::from_json`] refuses — nothing read from disk is in that state.
+    pub fn templates(&self) -> Vec<PieceTemplate<'_>> {
+        if let Some(s) = &self.structure {
+            return vec![PieceTemplate {
+                id: &s.id,
+                file: &s.file,
+                offset: [0, 0, 0],
+                size: s.size,
+            }];
+        }
+        self.structure_set
+            .iter()
+            .flat_map(|set| {
+                set.parts.iter().map(|p| PieceTemplate {
+                    id: &p.id,
+                    file: &p.file,
+                    offset: p.offset,
+                    size: p.size,
+                })
+            })
+            .collect()
+    }
+
+    /// The piece's extent `[x, y, z]` — the WHOLE building, whichever packaging
+    /// its blocks arrived in. `[0, 0, 0]` only for the value
+    /// [`Self::templates`] documents as unreachable from disk.
+    pub fn size(&self) -> [i32; 3] {
+        match (&self.structure, &self.structure_set) {
+            (Some(s), _) => s.size,
+            (None, Some(set)) => set.size,
+            (None, None) => [0, 0, 0],
+        }
+    }
+
+    /// The MC data version the piece's templates target (ADR-0009), when it
+    /// declares one.
+    pub fn data_version(&self) -> Option<i32> {
+        match (&self.structure, &self.structure_set) {
+            (Some(s), _) => Some(s.data_version),
+            (None, Some(set)) => Some(set.data_version),
+            (None, None) => None,
+        }
+    }
+
+    /// True when the piece's blocks arrive as several templates — a fact about
+    /// packaging that only a tool reporting on packaging may ask.
+    pub fn is_tiled(&self) -> bool {
+        self.structure_set.is_some()
+    }
+
+    /// The filename stem the piece's files are named from — the single
+    /// template's `id`, or the tile set's `base`. They are the same concept
+    /// under two keys, so a diagnostic that wants to name the piece's document
+    /// asks here rather than reaching into one packaging.
+    pub fn base(&self) -> &str {
+        match (&self.structure, &self.structure_set) {
+            (Some(s), _) => &s.id,
+            (None, Some(set)) => &set.base,
+            (None, None) => "",
+        }
+    }
+
+    /// The tile grid `[x, y, z]`; `[1, 1, 1]` for a piece that fit one
+    /// template. Packaging, like [`Self::is_tiled`].
+    pub fn grid(&self) -> [i32; 3] {
+        self.structure_set
+            .as_ref()
+            .map_or([1, 1, 1], |set| set.grid)
+    }
+
+    /// Read the document at `path`, or `Ok(None)` when there is no file there.
+    pub fn read(path: &Path) -> Result<Option<PrefabMeta>, String> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        PrefabMeta::from_json(&text).map(Some)
     }
 
     /// Load `<nbt_path>.json` (the sibling metadata), or `Ok(None)` when absent.
@@ -465,13 +636,14 @@ impl PrefabMeta {
     ) -> PrefabMeta {
         PrefabMeta {
             prefab_id: format!("prefab/{id}"),
-            structure: StructureMeta {
+            structure: Some(StructureMeta {
                 file: format!("{id}.nbt"),
                 id: id.to_string(),
                 size,
                 data_version,
                 generator: Some(generator.to_string()),
-            },
+            }),
+            structure_set: None,
             anchors: BTreeMap::new(),
             connectors: Vec::new(),
             lighting: Some(Lighting {
@@ -705,6 +877,151 @@ mod tests {
         assert_eq!(g["pos"], serde_json::json!([0, 1, 0]));
         assert!(g.get("region").is_none(), "{g}");
         assert!(g.get("block").is_none(), "{g}");
+    }
+
+    /// A tiled zone's manifest is a prefab document like any other: it is read,
+    /// one block of it is edited, and it is written back whole — and the keys
+    /// this version does not model survive.
+    ///
+    /// It used to be a *second type* (`TileSetMeta`), field-for-field this one.
+    /// The copy is what this test is really about: the same round trip, on the
+    /// same struct, is what makes a block added here reach both packagings.
+    #[test]
+    fn a_tile_set_manifest_round_trips_through_an_edit() {
+        let text = r#"{
+  "prefab_id": "prefab/notre-dame",
+  "structure_set": {
+    "base": "notre-dame",
+    "size": [31, 48, 93],
+    "part_max": 48,
+    "grid": [1, 1, 2],
+    "data_version": 4671,
+    "generator": "crates/grammar",
+    "parts": [
+      { "file": "notre-dame.x0y0z0.nbt", "id": "a", "grid_index": [0,0,0], "offset": [0,0,0], "size": [31,48,48] },
+      { "file": "notre-dame.x0y0z1.nbt", "id": "b", "grid_index": [0,0,1], "offset": [0,0,48], "size": [31,48,45] }
+    ]
+  },
+  "anchors": { "anchor/crossing": { "pos": [15, 1, 56], "facing": "south" } },
+  "connectors": [],
+  "lighting": { "profile": "unmeasured" },
+  "waterline_y": 12,
+  "license": {
+    "source": "original",
+    "spdx": "GPL-3.0-or-later",
+    "note": "n",
+    "provenance": "p",
+    "generated_by": { "generator": "grammar", "program": "nd", "program_hash": "sha256:00", "seed": 1 }
+  },
+  "a_key_no_engine_models": { "kept": true }
+}
+"#;
+        let mut meta = PrefabMeta::from_json(text).unwrap();
+        assert!(meta.is_tiled());
+        assert_eq!(meta.size(), [31, 48, 93]);
+        assert_eq!(meta.data_version(), Some(4671));
+        assert_eq!(meta.license.as_ref().unwrap().spdx, "GPL-3.0-or-later");
+        // The whole point of one document: a block the copy had lost is here.
+        assert_eq!(meta.waterline_y, Some(12));
+
+        // The templates, in grid order, with their piece-local offsets.
+        let templates = meta.templates();
+        assert_eq!(templates.len(), 2);
+        assert_eq!(templates[0].file, "notre-dame.x0y0z0.nbt");
+        assert_eq!(templates[0].offset, [0, 0, 0]);
+        assert_eq!(templates[1].id, "b");
+        assert_eq!(templates[1].offset, [0, 0, 48]);
+        assert_eq!(templates[1].size, [31, 48, 45]);
+
+        meta.lighting = Some(Lighting {
+            profile: crate::registry::LightingProfile::Lit,
+            measured_min_light: Some(6),
+            measured: Some(String::new()),
+            rationale: None,
+            method: Some("static estimate".to_string()),
+        });
+        let after: serde_json::Value = serde_json::from_str(&meta.to_json()).unwrap();
+        let before: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(after["license"], before["license"]);
+        assert_eq!(after["structure_set"], before["structure_set"]);
+        assert_eq!(after["anchors"], before["anchors"]);
+        assert_eq!(after["waterline_y"], before["waterline_y"]);
+        assert_eq!(after["lighting"]["profile"], "lit");
+        assert!(
+            after.get("structure").is_none(),
+            "a tiled document must not grow an empty `structure` key: {after}"
+        );
+        // Reading is total here too: a key this version has never heard of
+        // survives an edit rather than being deleted by the tool that made it.
+        assert_eq!(
+            after["a_key_no_engine_models"], before["a_key_no_engine_models"],
+            "an unmodelled key must survive a read-modify-write"
+        );
+    }
+
+    /// A single-template piece is one template at the origin, so nothing that
+    /// places blocks has to ask which packaging it was handed.
+    #[test]
+    fn a_single_template_piece_is_one_template_at_the_origin() {
+        let text = r#"{
+  "prefab_id": "prefab/x",
+  "structure": { "file": "x.nbt", "id": "x", "size": [3, 4, 5], "data_version": 4671 }
+}
+"#;
+        let meta = PrefabMeta::from_json(text).unwrap();
+        assert!(!meta.is_tiled());
+        assert_eq!(meta.size(), [3, 4, 5]);
+        assert_eq!(
+            meta.templates(),
+            vec![PieceTemplate {
+                id: "x",
+                file: "x.nbt",
+                offset: [0, 0, 0],
+                size: [3, 4, 5],
+            }]
+        );
+    }
+
+    /// "Which shape is this" has exactly two answers and no third: a document
+    /// with neither block, and one with both, are refusals rather than a
+    /// half-read document handed to a step that places some of its blocks.
+    #[test]
+    fn a_document_that_does_not_say_what_blocks_it_describes_is_refused() {
+        let err = PrefabMeta::from_json(r#"{"prefab_id":"prefab/x"}"#).unwrap_err();
+        assert!(err.contains("structure_set"), "{err}");
+        assert!(err.contains("structure"), "{err}");
+
+        let both = r#"{
+  "prefab_id": "prefab/x",
+  "structure": { "file": "x.nbt", "id": "x", "size": [3, 3, 3], "data_version": 4671 },
+  "structure_set": {
+    "base": "x", "size": [3, 3, 3], "part_max": 48, "grid": [1, 1, 1],
+    "data_version": 4671, "generator": "g",
+    "parts": [ { "file": "x.x0y0z0.nbt", "id": "x0", "grid_index": [0,0,0], "offset": [0,0,0], "size": [3,3,3] } ]
+  }
+}
+"#;
+        let err = PrefabMeta::from_json(both).unwrap_err();
+        assert!(err.contains("BOTH"), "{err}");
+    }
+
+    /// A manifest that does not tile its own zone is refused **by the reader**,
+    /// so every consumer of the document meets it at the same place — and none
+    /// of them reassembles a building with a hole in it and reports success.
+    #[test]
+    fn a_manifest_that_does_not_tile_its_zone_is_refused_by_the_reader() {
+        let text = r#"{
+  "prefab_id": "prefab/holed",
+  "structure_set": {
+    "base": "holed", "size": [4, 4, 100], "part_max": 48, "grid": [1, 1, 1],
+    "data_version": 4671, "generator": "g",
+    "parts": [ { "file": "holed.x0y0z0.nbt", "id": "h0", "grid_index": [0,0,0], "offset": [0,0,0], "size": [4,4,48] } ]
+  }
+}
+"#;
+        let err = PrefabMeta::from_json(text).unwrap_err();
+        assert!(err.contains("cover"), "{err}");
+        assert!(err.contains("hole"), "{err}");
     }
 
     /// A piece nothing has regenerated has no row, and the key is absent rather

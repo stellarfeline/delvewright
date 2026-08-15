@@ -20,7 +20,7 @@ use delvewright_admit::diag::{
 };
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, DEFAULT_DARK_THRESHOLD, Zone};
-use delvewright_admit::meta::{self, AnchorEdit, License, PrefabDoc, PrefabMeta, Region};
+use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::Structure;
 use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
@@ -629,7 +629,7 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         // `spdx: UNKNOWN` and no provenance row — a document asserting that
         // nothing is known about an asset whose provenance is sitting in the
         // file next to it, and asserting it silently.
-        let mut doc = match PrefabDoc::read(&meta_path) {
+        let mut doc = match PrefabMeta::read(&meta_path) {
             Ok(Some(d)) => d,
             Ok(None) => {
                 return no_provenance_err(input, &meta_path, json);

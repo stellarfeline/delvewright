@@ -974,7 +974,7 @@ fn is_stair(registry: &PrefabRegistry, prefab_id: &str) -> bool {
 fn footprint_area(registry: &PrefabRegistry, prefab_id: &str) -> i32 {
     registry
         .get(prefab_id)
-        .map(|m| m.structure.size[0] * m.structure.size[2])
+        .map(|m| m.size()[0] * m.size()[2])
         .unwrap_or(0)
 }
 
@@ -1015,7 +1015,7 @@ fn place_piece(
             ),
         )
     })?;
-    let (bbox_min, bbox_max) = rotation.bbox(pos, meta.structure.size);
+    let (bbox_min, bbox_max) = rotation.bbox(pos, meta.size());
     let idx = pieces.len();
     let mated = vec![false; meta.connectors.len()];
     pieces.push(PlacedPiece {
@@ -1059,7 +1059,7 @@ fn attach_piece(
     })?;
     let cand = Candidate {
         prefab_id,
-        size: meta.structure.size,
+        size: meta.size(),
         connectors: &meta.connectors,
     };
 
