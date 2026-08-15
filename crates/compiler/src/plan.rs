@@ -611,6 +611,21 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub region_events: Vec<RegionEvent>,
+    /// **Where the party can be CARRIED rather than walk**: every declared
+    /// `teleport`'s resolved source volume (DSL v0.10, spec-0031), content-ordered.
+    /// Empty for every campaign that declares no `teleport`, which is what keeps
+    /// those campaigns' routing byte-identical.
+    ///
+    /// The completability model reads it for one purpose: a walked leg whose
+    /// *start* lies inside one of these boxes is a leg the party may never walk, so
+    /// a world-load gate seal is not applied to it and
+    /// [`crate::nav::DW_GATE_NEVER_OPENED`] declines to judge it. It deliberately
+    /// carries **no firing step**: the suppression must hold for a branch path too,
+    /// whose step indices are its own, and here the conservative direction is *not
+    /// to fire* — refusing a campaign over a door the party is teleported past is
+    /// the false positive this model must not have. The class left unproven as a
+    /// result is named in `docs/reference/compiler.md`.
+    pub transit_teleports: Vec<([i32; 3], [i32; 3])>,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
     /// (spec-0017 PR 3), keyed by batch id — the editor's per-batch snapshot
     /// framing for massing batches. Empty for a campaign without massing.
@@ -1706,6 +1721,8 @@ impl<'a> Plan<'a> {
             fire_step: 0,
         }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
+        // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
+        let transit_teleports = collect_transit_teleports(campaign, &anchors);
 
         let region_events = region_events;
 
@@ -1735,6 +1752,7 @@ impl<'a> Plan<'a> {
             timed_gates,
             seal_hints,
             region_events,
+            transit_teleports,
             strict_ancestor_steps,
             massing_bounds,
         })
@@ -3355,6 +3373,33 @@ fn collect_region_events(
             write,
             fire_step,
         });
+    });
+    out
+}
+
+/// Collect every declared `teleport`'s resolved source volume with the step it
+/// fires at ([`TeleportTransit`]), over the **same** general effect walk the
+/// region-write model uses — so a `teleport` nested in a `sequence` step, in a trap
+/// payload or in a shop offer is found by existing rather than by being
+/// remembered.
+///
+/// Unlike [`collect_region_events`] it draws no forced/optional distinction: a
+/// firing that may never happen must not be *leaned on* to prove a delve
+/// completable, and must not be *ignored* when the question is whether the party is
+/// even standing where the proof thinks they are. See [`Plan::transit_teleports`].
+fn collect_transit_teleports(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<([i32; 3], [i32; 3])> {
+    let mut out = Vec::new();
+    for_each_gate_effect(campaign, &mut |_site, e| {
+        let Some((from, _to)) = e.teleport() else {
+            return;
+        };
+        // A dangling `from` anchor is `DW0360`'s finding, not this model's.
+        if let Some(region) = zone_box_in(anchors, from) {
+            out.push(region);
+        }
     });
     out
 }
