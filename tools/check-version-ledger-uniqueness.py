@@ -137,7 +137,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # `pub const <NAME>: &[&str] = &[ "a", "b" ];` — the ordered version list every
 # ledger exposes under its own constant name.
-LIST_RE_TEMPLATE = r"pub const {const}: &\[&str\] = &\[(.*?)\];"
+#
+# `=\s*&\[` rather than `= &\[`, because rustfmt breaks the line after the `=`
+# once the list outgrows one line, and it did the first time a sixth version was
+# added. This accepts the SAME construct across a line break; it does not accept
+# any other shape, and a genuine drift still raises `ShapeDrift`.
+LIST_RE_TEMPLATE = r"pub const {const}: &\[&str\] =\s*&\[(.*?)\];"
 # `pub const RESERVED_VERSIONS: &[(&str, &str)] = &[("1.1.0", "MIRROR_SINCE")];`
 RESERVED_LIST_RE = re.compile(
     r"pub const RESERVED_VERSIONS: &\[\(&str, &str\)\] = &\[(.*?)\];", re.DOTALL

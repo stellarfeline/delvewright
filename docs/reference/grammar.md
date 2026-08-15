@@ -101,6 +101,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `start` | rule name | expanded into the whole region |
 | `params` | name → i64 | size/kind controls; read by `{"expr":"param"}`. A declaration **and** a default: the outermost binding frame |
 | `palette` | role → paint | style controls; a paint is a block-state string or a weighted list. Also a frame — `bind` overrides it over a subtree |
+| `include` | `[{program, prefix, rename_anchors}]` | other program **files** composed into this one (§5c); resolved by the loader before anything reads the program |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
 | `contract` | `{entry, spaces, no_body, edges}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
 
@@ -124,6 +125,7 @@ The ledger is every number the format has and the one surface each names
 | `1.2.0` | the spatial contract — the program-level `contract` block and the scope-bound `claim` node | yes |
 | `1.3.0` | the scope's names as a frame — the `bind` node | yes |
 | `1.4.0` | the state's own frame — a `local` paint, on a palette role or inline on a `fill` | yes |
+| `1.5.0` | the document's own composition — the program-level `include` list | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -1010,9 +1012,11 @@ Two mechanisms answer it, and both are enforced by
 | `ir::EdgeClass.via` | `1.2.0` | `via ir::Program.contract` |
 | `ir::Mark.facing` | `1.0.0` | — |
 | `ir::Mark.index` | `1.0.0` | — |
+| `ir::Include.rename_anchors` | `1.5.0` | `via ir::Program.include` |
 | `ir::Node.palette` | `1.3.0` | `BIND_SINCE` |
 | `ir::Node.params` | `1.3.0` | `BIND_SINCE` |
 | `ir::Program.contract` | `1.2.0` | `CONTRACT_SINCE` |
+| `ir::Program.include` | `1.5.0` | `INCLUDE_SINCE` |
 | `ir::Program.palette` | `1.0.0` | — |
 | `ir::Program.params` | `1.0.0` | — |
 | `ir::Reorient.mirror` | `1.1.0` | `MIRROR_SINCE` |
@@ -2398,6 +2402,86 @@ the program alone, over three programs × four seeds (`tests/compose.rs`). The
 one thing that does change is an anchor's `declared_by`, which becomes the
 qualified rule name — a composed prefab's anchors say which piece they came
 from.
+
+**That promise is bounded, and the bound is a property of the seed stream rather
+than of composition** (spec-0040 §1.4, established by probe; §5 for what it
+costs a review). It holds when *nothing was drawn before the piece was
+reached*. The seeded stream is one sequential splitmix64 consumed in traversal
+order (`src/rng.rs`), so a sibling that draws first shifts every draw the piece
+makes afterwards: geometry chosen by mutually exclusive guards is unaffected — a
+single applicable candidate never draws — while weighted alternatives and mixes
+re-texture. `tests/document_include.rs` demonstrates both halves against one
+program: the host that draws nothing reproduces the piece exactly, and a host
+that first tosses a coin whose two outcomes are geometrically identical does not
+(4 of 4 seeds). The consequence for review is that a composed piece's *texture*
+is certified by the composed render, never by the piece's own.
+
+### `include` — how one program **document** composes another
+
+`compose::include` above is a Rust API over two `&Program` values. The
+**`include` list** is the same composition written in the document, so a program
+file composes another program file with no Rust in between. It is fenced at
+document version `1.5.0`:
+
+```json
+{
+  "version": "1.5.0",
+  "name": "two-zone-map",
+  "start": "map",
+  "params": { "head": 4 },
+  "include": [
+    { "program": "watch-bay.json", "prefix": "z0" },
+    { "program": "store-room.json", "prefix": "z1",
+      "rename_anchors": { "tell": "cellar-tell" } }
+  ],
+  "rules": { "map": [ { "body": { "op": "split", "axis": "z", "sizes": [
+    {"size":"absolute","blocks":{"expr":"int","value":24}},
+    {"size":"absolute","blocks":{"expr":"int","value":14}} ], "children": [
+    { "op": "bind", "params": { "z0/head": {"expr":"param","name":"head"} },
+      "body": { "op": "call", "symbol": "z0/gate_passage" } },
+    { "op": "call", "symbol": "z1/stores" } ] } } ] }
+}
+```
+
+`program` is a path **relative to the document that writes the include**;
+`prefix` is what every rule, parameter and palette role of that document takes,
+and therefore the first segment of the symbol a `call` reaches it by — the
+composed document's own `start` rule, qualified. `rename_anchors` is the
+document form of `include_renaming`, with the same three refusals.
+
+**It carries no way to pass arguments, deliberately.** A composed part's
+parameters and palette roles arrive under its prefix, so the mechanism that
+already rebinds a name over a subtree — a `bind` node around the `call`
+(`1.3.0`) — reaches them, and reaches them per call site. A binding surface on
+the include itself would be a weaker private copy of it.
+
+Resolution is the loader's, never validation's: an include names a file, and
+`Program::validate` deliberately reads none. The resolved program is exactly the
+value the equivalent chain of `compose::include_renaming` calls produces
+(asserted over the three programs the seam test pins), so everything downstream
+is untouched by the fact that composition happened. A `Program` that reaches
+`expand` with its include list still unresolved is refused by name
+(`ProgramError::UnresolvedInclude`) rather than expanded with the composed
+vocabulary missing.
+
+Both entry points that read a program file go through the loader — `--file` on
+every command, and each zone program `audit` collects — so a program composed by
+a zone is judged inside its composition. A program file that no `zones.json`
+entry names **and** no zone program composes is still the audit red it was.
+
+What the document surface refuses on its own, because only a file can be wrong
+about it: an absolute path or one written with `\` (it would build on one
+machine and no other), an empty path, a cycle (named with the whole chain, never
+a stack overflow), and one prefix claimed twice (refused at the include list
+rather than as a clash on whichever rule name sorted first). A composed
+document is validated **against the version it declares** before any of it is
+copied, so composition cannot launder a document whose declared version is a
+lie. Two spellings of one path — `a.json` and `./a.json` — are one document.
+
+`delve-grammar check` / `show` / `expand` print what they composed, prefix by
+prefix, with its binding count; `audit --campaign-root` totals it over the
+campaign corpus and states a zero rather than omitting the line. A zero there is
+not a red: a campaign is entitled to one program per zone.
 
 ### The frame constrains composition
 
