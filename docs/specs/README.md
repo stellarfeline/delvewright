@@ -41,3 +41,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0031](spec-0031-runtime-state-and-interactive-verbs.md) | Runtime state, and the verbs that need it | Draft |
 | [spec-0032](spec-0032-economy-and-recovery-stake.md) | Currency, trade, and the recovery stake | Draft |
 | [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |
+| [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Proposed |
