@@ -1,6 +1,6 @@
 # spec-0039: The gallery campaign — every declared DSL surface, bound in one artifact
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Specs**: 0033 (the corpus precedent: coverage of an authoring surface is a
   measured artifact, not a claim), 0025/0023 (the plans the exercise proof
   reads), 0015 (the render arms), 0004 (fixture-build discipline for CI)
