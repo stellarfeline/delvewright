@@ -53,11 +53,14 @@ running it or reading the shipped behaviour record, not recalled:
    bytes inside the same called piece. Geometry from mutually exclusive guards
    is unaffected (a single candidate never draws); weighted mixes re-texture.
    Consequence in §5 and §8.
-5. **The compiler cannot yet place a composed map.** A whole map exceeds the
-   48-per-axis template cap on any axis, so it exports as a tile set — and
-   `delvec` refuses tile-set metadata by design (`DW0346` names the queued
-   work). Confirmed in `compiler::registry` as well as in the diagnostic text.
-   Every model in §2 is behind this one capability (§6.1).
+5. **The compiler places a composed map.** A whole map exceeds the
+   48-per-axis template cap on any axis, so it exports as a tile set; a
+   tile-set manifest loads, is indexed under its own prefab id, and is placed
+   as one piece at one extent, with anchors, contract and `waterline_y`
+   staying zone-relative. `DW0346` keeps only what it always meant about any
+   document — that this one is malformed: tiles that do not cover the zone
+   exactly, a tile past `part_max`, an empty parts list, or a document
+   declaring neither structure block or both.
 6. **Areas do not touch.** An area's origin is `[i·256, base_y, 0]`
    (`compiler.md` stage 1), and a grammar prefab enters an area by direct
    placement only (no connectors). A contiguous whole is therefore one area
@@ -423,13 +426,11 @@ of this spec — and §8 records the alternative.
 
 ## 6. Capabilities required, in order
 
-1. **Tile-set placement in `delvec`** (the already-queued chunked-export
-   phase 2 that `DW0346` names). Required by every composition model,
-   including doing nothing (three zones already exceed the cap alone). The
-   compiler places a manifest's tiles at their zone-relative offsets as one
-   piece; anchors, contract and `waterline_y` remain zone-relative; the
-   assembled world double-builds byte-identically. `DW0346`'s tile-set case
-   retires when this lands.
+1. **Tile-set placement in `delvec`** — built (§1.5): the compiler places a
+   manifest's tiles at their zone-relative offsets as one piece, anchors,
+   contract and `waterline_y` stay zone-relative, and the assembled world
+   double-builds byte-identically. Every composition model needs it,
+   including doing nothing: three zones exceed the cap alone.
 2. **Document-level include** — built (§1.2): the `include` list, fenced at
    `1.5.0`, with the `compose::include_renaming` semantics, refusals and
    seam byte-identity promise; extended to `splits` when spec-0037 lands
