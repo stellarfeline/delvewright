@@ -110,6 +110,40 @@ pub const DW_GATE_NEVER_OPENED: DwCode = DwCode::every_version("DW0317");
 /// filled on purpose and needs to be told that filling it with water is what took
 /// the footing away — not sent hunting for a wedged doorway that is not there.
 pub const DW_FLUID_FILL_ON_CRITICAL_PATH: DwCode = DwCode::every_version("DW0544");
+/// `DW0546`: a forced critical-path leg stands on footing laid by a beat the party
+/// is **not forced to play** — a plank dropped by a sprung trap, a stair repaired by
+/// a bought offer, a bridge lowered from a shortcut's far side.
+///
+/// The general form of an asymmetry that runs through every runtime write: a solid
+/// block answers two questions at once, and only one of them is conservative when
+/// the firing is uncertain. *Is the party blocked?* — assume it happened; assuming a
+/// wall can only make the proof harder. *Can the party stand there?* — assume it did
+/// not; assuming floor is what makes the proof easier, and easier is the direction
+/// that ships. The model therefore carries an unforced fill as impassable AND not
+/// floor ([`World::with_unforced`]), which is the pointwise-worst of the two futures
+/// and sound in both.
+///
+/// Derived by counterfactual, exactly like [`DW_LETHAL_ON_CRITICAL_PATH`],
+/// [`DW_GATE_NEVER_OPENED`] and [`DW_FLUID_FILL_ON_CRITICAL_PATH`]: the leg is
+/// re-routed over the identical world with every unforced fill credited as ordinary
+/// floor ([`RegionState::as_if_forced`]) — which is precisely the model this compiler
+/// ran before forcedness reached the geometry — and if *that* world routes, the
+/// unforced footing is what closed the leg and the boxes are named with the beats
+/// that lay them.
+///
+/// A code of its own rather than a [`DW_CRITICAL_UNROUTABLE`] variant for the reason
+/// its three siblings are: the prefab is innocent and the geometry reads open. The
+/// author is looking at a `fill-region` they wrote on purpose and must be told that
+/// its *root* is the defect — the box is right, the block is right, the beat is
+/// skippable — because "no collision-free path" would send them to hunt a wedged
+/// doorway that is not there.
+///
+/// `every_version`, on the same test [`DW_GATE_NEVER_OPENED`] states: the rule asks
+/// for no surface a campaign may not have (every effect root it names has existed
+/// since the root was added) and detects that what a campaign already says is
+/// unsound. Fencing it at the current version would leave it vacuous on every live
+/// campaign, all of which declare below it.
+pub const DW_UNFORCED_FOOTING: DwCode = DwCode::every_version("DW0546");
 /// `DW0315`: a `set-checkpoint` (spec-0012) that would strand the party — from the
 /// checkpoint cell, a remaining required critical-path anchor is no longer
 /// walkable (a checkpoint behind a one-way drop). Re-roots the DW0311 reachability
@@ -1309,6 +1343,54 @@ impl World {
         w
     }
 
+    /// A copy of this world with `extra` cells holding a block that **may or may not
+    /// be there** — a solid laid by a beat the party is not forced to play
+    /// ([`RegionState::unforced`]).
+    ///
+    /// The cell is made impassable and **not floor**: impassable because the party
+    /// may arrive to find the box walled, not floor because they may equally arrive
+    /// to find it as the world built it. `tall` is exactly that class already — the
+    /// model's word for "blocks passage, and nothing stands on top" — so this reuses
+    /// it rather than inventing a fifth occupancy set for a property that has one.
+    ///
+    /// **A cell the base world already holds solid is left alone, and that is what
+    /// keeps this from refusing correct campaigns.** If the box was floor before the
+    /// write, then it is floor whether or not the write happens: both futures agree,
+    /// there is nothing uncertain about standing there, and only a fill over a cell
+    /// the world does NOT already floor can lend the path footing it might not have.
+    /// So the rule binds precisely to laying NEW floor, which is the defect, and not
+    /// to re-surfacing existing floor, which is decoration.
+    fn with_unforced(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        let mut w = World {
+            solid: self.solid.clone(),
+            tall: self.tall.clone(),
+            use_gates: self.use_gates.clone(),
+            flooded: self.flooded.clone(),
+            partial: self.partial.clone(),
+            lethal: self.lethal.clone(),
+            lethal_regions: self.lethal_regions.clone(),
+            pinned: self.pinned.clone(),
+            world_load_seals: self.world_load_seals.clone(),
+            clocked_gates: self.clocked_gates.clone(),
+            transit_teleports: self.transit_teleports.clone(),
+            flood_written: self.flood_written.clone(),
+            flood_regions: self.flood_regions.clone(),
+            ambient: self.ambient.clone(),
+            built: self.built.clone(),
+        };
+        for c in extra {
+            if w.solid.contains(c) {
+                continue; // floor either way — no uncertainty to model
+            }
+            w.use_gates.remove(c);
+            w.partial.remove(c);
+            w.tall.insert(*c);
+            // This proof's premise from here on, exactly as a seal or a flood is.
+            w.pinned.insert(*c);
+        }
+        w
+    }
+
     /// This world as of one point in the quest DAG: every region a runtime write
     /// has filled forced solid, every region a runtime write has cleared emptied,
     /// every region a runtime write has filled with a fluid flooded
@@ -1323,11 +1405,13 @@ impl World {
         // Writes are applied last-to-strictest, so where two regions overlap the
         // more restrictive answer wins and the result needs no tie-break on
         // declaration order (ADR-0006). A fill beats a clear — a proof that
-        // survives the seal is the conservative answer — and a flood beats a fill,
-        // because a flooded cell is everything a walled cell is (impassable) and
-        // one thing more (not floor).
+        // survives the seal is the conservative answer — an UNFORCED fill beats a
+        // forced one, being a wall that additionally may not be stood on, and a
+        // flood beats them all, because a flooded cell is everything a walled cell
+        // is (impassable) and one thing more (not floor).
         self.with_cleared(&st.cleared)
             .with_sealed(&st.solid)
+            .with_unforced(&st.unforced)
             .with_flooded(&st.flooded, &st.flood_regions)
     }
 
@@ -3314,14 +3398,86 @@ struct RegionState {
     /// looks perfectly open, exactly as [`World::lethal_regions`] does for a lethal
     /// volume.
     flood_regions: Vec<([i32; 3], [i32; 3])>,
+    /// Cells an **unforced** fill has written by this point: a solid block laid from
+    /// a beat the party may never play ([`crate::plan::RegionEvent::is_forced`]).
+    ///
+    /// A fourth set for the same reason `flooded` is a third: the two answers differ
+    /// in the direction that matters. The party may arrive to find this box walled,
+    /// so the proof may not walk *through* it; the party may equally arrive to find
+    /// it as the world built it, so the proof may not stand *on* it. That is the
+    /// pointwise-worst of the two futures, and it is the only reading of an unforced
+    /// fill that is sound in both.
+    ///
+    /// Folding it into `solid` is what let a forced leg cross a chasm on a plank a
+    /// trapped chest lays — provably completable, and physically unwalkable for a
+    /// party that never opened the chest.
+    unforced: BTreeSet<[i32; 3]>,
+    /// The boxes behind `unforced`, each with the beat that lays it in words —
+    /// carried for the same reason `flood_regions` is, so a route failure can NAME
+    /// the beat instead of reporting geometry that reads perfectly open.
+    unforced_regions: Vec<UnforcedBox>,
 }
+
+/// One box an unforced fill writes, with the beat that lays it in words — the blame
+/// unit [`DW_UNFORCED_FOOTING`] reports.
+type UnforcedBox = (([i32; 3], [i32; 3]), String);
+
+/// Per region, the causally-latest write that precedes a leg: its firing step, what
+/// it leaves, whether the party is forced to cause it, and the beat to blame if they
+/// are not. Forcedness travels WITH the winner, so latest-write-wins needs no special
+/// case for a forced write landing on top of an unforced one.
+type LatestWrite = (usize, RegionWrite, bool, String);
 
 impl RegionState {
     /// Nothing has been written by this point — the caller routes the base world
     /// and clones nothing.
     fn is_empty(&self) -> bool {
-        self.solid.is_empty() && self.cleared.is_empty() && self.flooded.is_empty()
+        self.solid.is_empty()
+            && self.cleared.is_empty()
+            && self.flooded.is_empty()
+            && self.unforced.is_empty()
     }
+
+    /// This state as it would be **if every unforced fill were credited** — the
+    /// counterfactual [`DW_UNFORCED_FOOTING`] is derived from, and exactly the model
+    /// this compiler ran before a firing's forcedness reached the geometry.
+    ///
+    /// A leg that routes here and nowhere else failed *because* the only footing it
+    /// had was laid by a beat nobody has to play.
+    fn as_if_forced(&self) -> RegionState {
+        let mut st = self.clone();
+        st.solid.extend(st.unforced.iter().copied());
+        st.unforced.clear();
+        st
+    }
+}
+
+/// The unforced boxes a route's `cells` stand in or on, each named with the beat that
+/// lays it — the cell itself and the cell **below** it, because footing is what this
+/// asks about, exactly as [`World::flood_regions_over`] does.
+///
+/// A free function over the ledger rather than a method on [`RegionState`], because
+/// the caller has already handed the state's other halves to the route it proved and
+/// must not be made to keep the whole value alive to say what went wrong.
+fn unforced_blame_over(regions: &[UnforcedBox], cells: &[[i32; 3]]) -> Vec<String> {
+    let touched: Vec<[i32; 3]> = cells
+        .iter()
+        .flat_map(|c| [*c, [c[0], c[1] - 1, c[2]]])
+        .collect();
+    regions
+        .iter()
+        .filter(|((lo, hi), _)| {
+            touched
+                .iter()
+                .any(|c| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i])))
+        })
+        .map(|((lo, hi), why)| {
+            format!(
+                "[{}, {}, {}]..[{}, {}, {}] (laid by {why})",
+                lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+            )
+        })
+        .collect()
 }
 
 /// The state of every runtime-written region on a walked leg arriving at the
@@ -3378,34 +3534,51 @@ impl World {
         world_load: bool,
     ) -> RegionState {
         // Per region, the causally-latest write that precedes this leg (ancestor of
-        // the arrival objective); higher `fire_step` overrides.
-        let mut latest: BTreeMap<([i32; 3], [i32; 3]), (usize, RegionWrite)> = BTreeMap::new();
+        // the arrival objective); higher `fire_step` overrides. The winner carries
+        // its own forcedness and blame, so a forced write landing after an unforced
+        // one on the same box restores ordinary footing by winning, with no special
+        // case: latest-write-wins already says which firing the party will find.
+        let mut latest: BTreeMap<([i32; 3], [i32; 3]), LatestWrite> = BTreeMap::new();
         let world_load: Vec<RegionEvent> = if world_load {
+            // FORCED: a gate the placed prefabs author shut is shut because the world
+            // was built that way, not because anyone played a beat.
             self.modelled_seals()
-                .map(|s| RegionEvent {
-                    region: s.region,
-                    write: RegionWrite::Fill,
-                    fire_step: 0,
-                })
+                .map(|s| RegionEvent::forced(s.region, RegionWrite::Fill, 0))
                 .collect()
         } else {
             Vec::new()
         };
         for ev in world_load.into_iter().chain(region_events.iter().cloned()) {
             if ancestor(ev.fire_step, arrival) {
-                let e = latest.entry(ev.region).or_insert((ev.fire_step, ev.write));
+                let key = (
+                    ev.fire_step,
+                    ev.write,
+                    ev.is_forced(),
+                    ev.blame().to_string(),
+                );
+                let e = latest.entry(ev.region).or_insert_with(|| key.clone());
                 if ev.fire_step >= e.0 {
-                    *e = (ev.fire_step, ev.write);
+                    *e = key;
                 }
             }
         }
         let mut st = RegionState::default();
-        for (region, (_, write)) in latest {
-            // An `Unseal` contributes to neither set: it removes the gate's own
-            // block, and the base world holds the gate cells empty. It matters
-            // above, in latest-write-wins, where it is what cancels a fill —
-            // including the world-load fill this gate was born with.
+        for (region, (_, write, forced, blame)) in latest {
+            // An `Unseal` contributes to no set: it removes the gate's own block, and
+            // the base world holds the gate cells empty. It matters above, in
+            // latest-write-wins, where it is what cancels a fill — including the
+            // world-load fill this gate was born with.
+            //
+            // A `Fill` splits on forcedness and nothing else does. `Flood` needs no
+            // split (impassable and never floor is already the worst of both
+            // futures); `Clear` and `Unseal` never reach here unforced, because
+            // `plan::collect_region_events` drops them — an unforced firing may make
+            // a region impassable and may never make one passable.
             let into = match write {
+                RegionWrite::Fill if !forced => {
+                    st.unforced_regions.push((region, blame));
+                    &mut st.unforced
+                }
                 RegionWrite::Fill => &mut st.solid,
                 RegionWrite::Clear => &mut st.cleared,
                 RegionWrite::Flood => {
@@ -3757,6 +3930,21 @@ fn route_visited(
             leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
+        // The unforced counterfactual is built HERE, while `st` is still whole: the
+        // world as it would be if every fill laid by a skippable beat were credited
+        // as ordinary floor, which is precisely the model this compiler ran before
+        // forcedness reached the geometry. Built only for a leg that has such a fill
+        // at all — every other campaign routes over the identical single world and
+        // pays nothing. Its blame ledger is taken by value for the same reason.
+        let unforced_regions = st.unforced_regions.clone();
+        let has_unforced = !st.unforced.is_empty();
+        let credited_owned;
+        let credited: Option<&World> = if st.unforced.is_empty() {
+            None
+        } else {
+            credited_owned = world.with_region_state(&st.as_if_forced());
+            Some(&credited_owned)
+        };
         let sealed = st.solid;
         let flooded = st.flooded;
         // The lethal-free view of this same leg, built once and only when the
@@ -3862,6 +4050,24 @@ fn route_visited(
                 ),
             })
         };
+        // And the same blame move for the premise this family was missing: a solid
+        // laid by a beat nobody has to play.
+        let unforced_snap_err = |at: [i32; 3], talk_to: bool| -> Option<NavError> {
+            let credited = credited?;
+            let cell = credited.snap_endpoint(at, talk_to)?;
+            let boxes = unforced_blame_over(&unforced_regions, &[cell]).join("; ");
+            Some(NavError {
+                code: DW_UNFORCED_FOOTING,
+                message: format!(
+                    "critical path: the only footing within {SNAP_RADIUS} blocks of visited \
+                     anchor {at:?} is laid at runtime by a beat the party is NOT forced to play \
+                     — {boxes}. A party that never plays that beat arrives at this objective \
+                     and finds no ground to stand on. Fire the fill from an objective the party \
+                     is FORCED to complete before this one, put the floor in the prefab, or move \
+                     the objective; do NOT keep the beat optional and hope."
+                ),
+            })
+        };
         let start = match leg_world.snap_endpoint(from, false) {
             Some(c) => c,
             None => {
@@ -3869,6 +4075,9 @@ fn route_visited(
                     return Err(e);
                 }
                 if let Some(e) = fluid_snap_err(from, false) {
+                    return Err(e);
+                }
+                if let Some(e) = unforced_snap_err(from, false) {
                     return Err(e);
                 }
                 if let Some(e) = gate_snap_err(from, false) {
@@ -3893,6 +4102,9 @@ fn route_visited(
                     return Err(e);
                 }
                 if let Some(e) = fluid_snap_err(to, pair[1].talk_to) {
+                    return Err(e);
+                }
+                if let Some(e) = unforced_snap_err(to, pair[1].talk_to) {
                     return Err(e);
                 }
                 if let Some(e) = gate_snap_err(to, pair[1].talk_to) {
@@ -3961,6 +4173,37 @@ fn route_visited(
                     ),
                 });
             }
+            // Then the unforced fill, for the same reason and in the same shape: the
+            // route the author believes in exists, and what closed it is that its
+            // floor is laid by a beat the party can walk past. Asked before the gate
+            // counterfactual because it is the more specific answer — a gate the
+            // campaign never opens is about a door, this is about who has to press
+            // it — and because an unforced fill over a gate region would otherwise
+            // be reported as a missing `open-gate` the author has already written.
+            if let Some(credited) = credited
+                && let (Some(s2), Some(g2)) = (
+                    credited.snap_endpoint(from, false),
+                    credited.snap_endpoint(to, pair[1].talk_to),
+                )
+                && let Some(cells) = credited.find_path(s2, g2)
+            {
+                let boxes = unforced_blame_over(&unforced_regions, &cells).join("; ");
+                return Err(NavError {
+                    code: DW_UNFORCED_FOOTING,
+                    message: format!(
+                        "critical path: the only route from {from:?} (floor {start:?}) to \
+                         {to:?} (floor {goal:?}) needs footing laid at runtime by a beat the \
+                         party is NOT forced to play — {boxes}. The geometry would carry the \
+                         party if that beat always fired; it does not, so a party that skips it \
+                         is stranded here. The fill still SEALS for the proof — an unforced \
+                         write may make a region impassable — it just may not be stood on. \
+                         Move the fill onto an objective the party is FORCED to complete before \
+                         this leg, build the floor into the prefab, or route the forced path \
+                         around the box; do NOT leave the path depending on a beat that can be \
+                         skipped."
+                    ),
+                });
+            }
             // Then the gate counterfactual: the identical world as it would be if
             // every gate the placed prefabs author shut had been born open — which
             // is precisely the model this compiler used to ship. A leg that routes
@@ -4000,7 +4243,21 @@ fn route_visited(
             // is an unroutable leg the campaign built on purpose, so it may not be
             // reported as a wedged doorway — the "go and fix a prefab that was never
             // wrong" answer this whole family exists to avoid.
-            let gate_hint = if !flooded.is_empty() && sealed.is_empty() {
+            // An UNFORCED fill still walls the leg, and the author still has to be
+            // told which write did it. It is asked before the generic seam answer
+            // for exactly the reason every code in this family exists: `sealed` is
+            // empty here only because the seal came from a beat nobody has to play,
+            // and "wedged doorway seam" would send someone to fix a prefab that is
+            // perfectly correct. The blocking half of an unforced write is credited
+            // in full — it is only the footing half that is withheld.
+            let gate_hint = if sealed.is_empty() && has_unforced {
+                "a runtime fill fired from a beat the party is NOT forced to play — a `close-gate` \
+                 or `fill-region` in a trap payload, a shop offer, a death bundle or a shortcut's \
+                 far side — has walled a region on/before this leg. An unforced write still SEALS \
+                 for the proof (the delve must survive it) even though the footing it would lay is \
+                 not credited (`DW0546`), so this wall is real. Move the fill off the forced path, \
+                 fire it later, or clear it before this leg — do NOT delete the proof."
+            } else if !flooded.is_empty() && sealed.is_empty() {
                 "a runtime region write has filled a box with FLUID on/before this leg, and it \
                  blocks the forced path. Water and lava are impassable to a walker, so a filled \
                  box is a wall whatever its block. Move the box off the forced path, fire the \
@@ -8833,11 +9090,7 @@ mod tests {
             "the open corridor must route with no gate events"
         );
         // A close-gate seals the pass-through before the leg to `b` (fire_step 0 < 2).
-        let close = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err =
             route_visited(&world, &[a, b], std::slice::from_ref(&close), &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
@@ -8847,11 +9100,7 @@ mod tests {
             err.message
         );
         // Reopening the gate before the leg (open-gate at a later fire_step) restores it.
-        let open = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Unseal,
-            fire_step: 1,
-        };
+        let open = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Unseal, 1);
         assert!(
             route_visited(&world, &[a, b], &[close, open], &linear).is_ok(),
             "a gate reopened by open-gate before the leg must route again"
@@ -8871,18 +9120,10 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let fill = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let fill = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = route_visited(&world, &[a, b], std::slice::from_ref(&fill), &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
-        let clear = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Clear,
-            fire_step: 1,
-        };
+        let clear = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Clear, 1);
         assert!(
             route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
             "a region cleared before the leg must route again"
@@ -8907,20 +9148,12 @@ mod tests {
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
         let floor_box = ([2, 64, 0], [2, 64, 0]);
-        let solid_fill = RegionEvent {
-            region: floor_box,
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let solid_fill = RegionEvent::forced(floor_box, RegionWrite::Fill, 0);
         assert!(
             route_visited(&world, &[a, b], std::slice::from_ref(&solid_fill), &linear).is_ok(),
             "filling a floor cell with a block leaves it floor"
         );
-        let fluid_fill = RegionEvent {
-            region: floor_box,
-            write: RegionWrite::Flood,
-            fire_step: 0,
-        };
+        let fluid_fill = RegionEvent::forced(floor_box, RegionWrite::Flood, 0);
         let err =
             route_visited(&world, &[a, b], std::slice::from_ref(&fluid_fill), &linear).unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
@@ -8948,11 +9181,7 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let flood = RegionEvent {
-            region: ([2, 65, 0], [2, 66, 0]),
-            write: RegionWrite::Flood,
-            fire_step: 0,
-        };
+        let flood = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Flood, 0);
         let err =
             route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear).unwrap_err();
         assert_eq!(err.code, DW_CRITICAL_UNROUTABLE);
@@ -8975,18 +9204,10 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let over_floor = RegionEvent {
-            region: ([2, 64, 0], [2, 64, 0]),
-            write: RegionWrite::Flood,
-            fire_step: 0,
-        };
+        let over_floor = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
         // A solid fill over a box that covers the same cell, declared either side of
         // the flood. Both orders must refuse.
-        let wider_solid = RegionEvent {
-            region: ([1, 64, 0], [3, 64, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let wider_solid = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
         for events in [
             vec![over_floor.clone(), wider_solid.clone()],
             vec![wider_solid, over_floor],
@@ -9014,18 +9235,10 @@ mod tests {
         let world = floored(5, 1, 65, &[]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let flood = RegionEvent {
-            region: ([2, 64, 0], [2, 64, 0]),
-            write: RegionWrite::Flood,
-            fire_step: 0,
-        };
+        let flood = RegionEvent::forced(([2, 64, 0], [2, 64, 0]), RegionWrite::Flood, 0);
         // A different box (so it is a different region, with its own latest write)
         // covering the flooded floor cell and the air above it.
-        let clear = RegionEvent {
-            region: ([2, 64, 0], [2, 65, 0]),
-            write: RegionWrite::Clear,
-            fire_step: 1,
-        };
+        let clear = RegionEvent::forced(([2, 64, 0], [2, 65, 0]), RegionWrite::Clear, 1);
         let err = route_visited(&world, &[a, b], &[flood, clear], &linear).unwrap_err();
         assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH);
     }
@@ -9057,11 +9270,7 @@ mod tests {
             route_visited(&world, &[a, b], &[], &linear).is_err(),
             "the walled corridor must not route before the clear"
         );
-        let clear = RegionEvent {
-            region: ([2, 65, 0], [2, 66, 0]),
-            write: RegionWrite::Clear,
-            fire_step: 0,
-        };
+        let clear = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Clear, 0);
         assert!(
             route_visited(&world, &[a, b], std::slice::from_ref(&clear), &linear).is_ok(),
             "the cleared wall must be passable from the DAG point the clear fires at"
@@ -9087,11 +9296,7 @@ mod tests {
             "the debris blocks the corridor"
         );
         for write in [RegionWrite::Unseal, RegionWrite::Clear] {
-            let ev = RegionEvent {
-                region: ([2, 65, 0], [2, 66, 0]),
-                write,
-                fire_step: 0,
-            };
+            let ev = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), write, 0);
             assert!(
                 route_visited(&buried, &[a, b], std::slice::from_ref(&ev), &linear).is_err(),
                 "{write:?} must not delete another proof's forced-solid cells"
@@ -9107,11 +9312,7 @@ mod tests {
     #[test]
     fn close_gate_seal_is_dag_causal_not_linear() {
         let world = floored(5, 1, 65, &[]);
-        let close = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 8,
-        };
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 8);
         let a = at_step([0, 65, 0], 9);
         let b = at_step([4, 65, 0], 10);
         // Parallel: neither the close (step 8) nor the prior position (step 9) is a
@@ -9140,11 +9341,7 @@ mod tests {
         // Open gate → reachable.
         assert!(verify_checkpoints(&world, &cps, &positions, &[], &linear).is_ok());
         // Sealed before the party reaches the target (fire_step 0 < 1) → stranded.
-        let close = RegionEvent {
-            region: ([2, 65, 0], [2, 65, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let close = RegionEvent::forced(([2, 65, 0], [2, 65, 0]), RegionWrite::Fill, 0);
         let err = verify_checkpoints(
             &world,
             &cps,
@@ -10248,11 +10445,7 @@ mod tests {
         world.solid.remove(&[4, 66, 1]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let close = RegionEvent {
-            region: ([2, 65, 0], [2, 66, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let close = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Fill, 0);
         let open_legs = route_walked_legs(&world, &[a, b], &[], &linear);
         assert!(
             open_legs[0].0.cells.contains(&[2, 65, 0]),
@@ -10285,11 +10478,7 @@ mod tests {
         world.solid.remove(&[4, 66, 1]);
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let close = RegionEvent {
-            region: ([2, 65, 0], [2, 66, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        let close = RegionEvent::forced(([2, 65, 0], [2, 66, 0]), RegionWrite::Fill, 0);
         let tc = [2, 65, 2];
         let traps = [lethal_trap(tc, TrapReset::Rearm, None)];
         let spawn = [[0, 65, 0]];
@@ -10502,5 +10691,143 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(world.find_path([0, 64, 0], [4, 64, 10]).unwrap(), first);
         }
+    }
+
+    // --- unforced footing (DW0546) -------------------------------------------
+
+    /// A corridor whose floor is missing at `x = 2`: the two ends are separated by a
+    /// one-cell void gap, so nothing routes end to end until something floors it.
+    fn gapped_floor() -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..5i32 {
+            if x != 2 {
+                solid.insert([x, 64, 0]); // floor, minus the gap
+            }
+            solid.insert([x, 67, 0]); // ceiling
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// **The rule, at the layer it lives on.** The identical fill over the identical
+    /// box carries the forced leg when the party cannot avoid causing it, and does
+    /// not when they can. Only the root differs.
+    ///
+    /// Red before forcedness reached the geometry: both cases routed, because a fill
+    /// was a fill and the model had no way to say who had to fire it.
+    #[test]
+    fn only_a_forced_fill_lays_footing_the_critical_path_may_use() {
+        let world = gapped_floor();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let gap = ([2, 64, 0], [2, 64, 0]);
+
+        let forced = RegionEvent::forced(gap, RegionWrite::Fill, 0);
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&forced), &linear).is_ok(),
+            "a plank the party cannot avoid laying is floor they certainly have"
+        );
+
+        let unforced = RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`");
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&unforced), &linear)
+            .expect_err("a plank laid by a skippable beat may not carry the forced path");
+        assert_eq!(err.code, DW_UNFORCED_FOOTING); // DW0546
+        assert!(
+            err.message.contains("[2, 64, 0]..[2, 64, 0]"),
+            "the message must name the box: {}",
+            err.message
+        );
+        assert!(
+            err.message.contains("the payload of trap `t`"),
+            "the message must name the beat: {}",
+            err.message
+        );
+    }
+
+    /// The blocking half of an unforced write is credited in FULL — only the footing
+    /// half is withheld. A fill laid across the corridor closes the leg whoever fires
+    /// it, and the author is told which write walled them rather than sent to hunt a
+    /// wedged doorway.
+    ///
+    /// This is the half that keeps the fix from being a quiet weakening: an unforced
+    /// write is strictly *more* restrictive than a forced one, never less.
+    #[test]
+    fn an_unforced_fill_still_seals_and_says_which() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let wall = RegionEvent::unforced(
+            ([2, 65, 0], [2, 66, 0]),
+            RegionWrite::Fill,
+            0,
+            "the payload of trap `t`",
+        );
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&wall), &linear)
+            .expect_err("an unforced fill across the corridor is still a wall");
+        assert_eq!(err.code, DW_CRITICAL_UNROUTABLE); // DW0311
+        assert!(
+            err.message.contains("close-gate") && err.message.contains("NOT forced"),
+            "the message must name the unforced write, never blame the prefab: {}",
+            err.message
+        );
+    }
+
+    /// **The case that keeps this from refusing correct campaigns.** A fill over a
+    /// cell the world already holds solid changes nothing about footing: the box is
+    /// floor whether or not the beat fires, both futures agree, and there is no
+    /// uncertainty to model. Re-surfacing an existing floor is decoration, and the
+    /// rule binds to laying NEW floor.
+    #[test]
+    fn an_unforced_fill_over_existing_floor_is_not_a_finding() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let repave = RegionEvent::unforced(
+            ([2, 64, 0], [2, 64, 0]),
+            RegionWrite::Fill,
+            0,
+            "the payload of trap `t`",
+        );
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&repave), &linear).is_ok(),
+            "a fill over a cell that was already floor takes nothing away"
+        );
+    }
+
+    /// A **forced** write landing later on the same box restores ordinary footing,
+    /// with no special case: latest-write-wins already says which firing the party
+    /// will find, and the winner carries its own forcedness.
+    #[test]
+    fn a_later_forced_fill_wins_over_an_earlier_unforced_one() {
+        let world = gapped_floor();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 3);
+        let gap = ([2, 64, 0], [2, 64, 0]);
+        let events = [
+            RegionEvent::unforced(gap, RegionWrite::Fill, 0, "the payload of trap `t`"),
+            RegionEvent::forced(gap, RegionWrite::Fill, 2),
+        ];
+        assert!(
+            route_visited(&world, &[a, b], &events, &linear).is_ok(),
+            "a beat the party must complete re-lays the plank for certain"
+        );
+    }
+
+    /// An unforced **flood** needs no split and gets none: impassable and never floor
+    /// is already the pointwise-worst of "the water is there" and "it is not", so it
+    /// is judged exactly as a forced flood is — `DW0544`, not `DW0546`.
+    #[test]
+    fn an_unforced_flood_is_judged_as_a_flood() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let flood = RegionEvent::unforced(
+            ([2, 64, 0], [2, 64, 0]),
+            RegionWrite::Flood,
+            0,
+            "the payload of trap `t`",
+        );
+        let err = route_visited(&world, &[a, b], std::slice::from_ref(&flood), &linear)
+            .expect_err("a fluid fill takes the floor away whoever fires it");
+        assert_eq!(err.code, DW_FLUID_FILL_ON_CRITICAL_PATH); // DW0544
     }
 }
