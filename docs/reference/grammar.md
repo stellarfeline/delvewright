@@ -126,6 +126,7 @@ The ledger is every number the format has and the one surface each names
 | `1.3.0` | the scope's names as a frame — the `bind` node | yes |
 | `1.4.0` | the state's own frame — a `local` paint, on a palette role or inline on a `fill` | yes |
 | `1.5.0` | the document's own composition — the program-level `include` list | yes |
+| `1.6.0` | the contract's reach (spec-0041) — the `qualify` node, optional `rise` on `stair`/`drop` edges, `face` on exterior edges | reserved |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
