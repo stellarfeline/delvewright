@@ -74,7 +74,9 @@ pub struct Gate {
     /// `pass`, `fail`, or `undecided`.
     pub state: GateState,
     /// **How many objects the gate examined.** A gate that examined zero
-    /// objects is not a pass; `Report::findings` says so by name.
+    /// objects is not a pass: unless it can say why the emptiness is honest
+    /// (see [`Gate::empty_ok`]) it is turned red by [`seal_zero_bindings`], and
+    /// `Report::findings` names it.
     pub bound: usize,
     /// Of `bound`, how many this expansion could not decide — the binding count
     /// of the third answer, reported the way every other binding count is.
@@ -83,6 +85,41 @@ pub struct Gate {
     pub undecided: usize,
     /// What the gate found, in one line.
     pub detail: String,
+    /// **Why a binding of ZERO is an honest answer for THIS expansion**, or
+    /// `None` — which is what every gate says unless it can compute otherwise.
+    ///
+    /// A gate that examined nothing has proved nothing, so the default is that
+    /// a zero binding refuses ([`seal_zero_bindings`] is the one place that
+    /// decides). But some populations are empty because the thing they would
+    /// have judged genuinely is not there, and demanding the author invent one
+    /// is the same vacuity a rung out: the only way to green a gate over
+    /// out-of-walk floor, on a piece with none, is to declare out-of-walk floor
+    /// that does not exist.
+    ///
+    /// The field is what separates the two, and there are two rules about what
+    /// may go in it — the constitution's review questions, applied here:
+    ///
+    /// 1. **It is computed, never authored.** A string an author writes to
+    ///    excuse a zero is an opt-out secured by the author's own word. Every
+    ///    justification here is derived from the blocks and from what the
+    ///    document declares, and the author cannot write it directly.
+    /// 2. **The defect the gate exists to catch must not be able to produce
+    ///    it.** Emptying the population must cost the author *more* proof, not
+    ///    less — the obligation has to reappear, in full, on another gate whose
+    ///    own population the author cannot empty. Where it does not, the answer
+    ///    is `None` and the zero refuses.
+    ///
+    /// A gate carrying `Some` at a zero binding is **withheld from the report
+    /// entirely** rather than printed green: a pass over nothing reads like a
+    /// pass. The justification is enumerated instead, so the fact is never
+    /// lost. This is the same answer `stair-shape` and `fluid-contained` reach
+    /// by never being constructed — a piece holding no stair has nothing to
+    /// judge — stated once so it does not have to be re-derived per gate.
+    ///
+    /// Not serialised when absent: a report should not carry a field that says
+    /// "nothing to excuse here" on every gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty_ok: Option<String>,
 }
 
 impl Gate {
@@ -109,6 +146,92 @@ pub(crate) fn verdict(pass: bool) -> GateState {
     } else {
         GateState::Fail
     }
+}
+
+/// What a report says about a gate that examined nothing. One string, so the
+/// finding, the gate's own detail and every test assert the same words.
+pub(crate) const ZERO_BINDING: &str = "examined ZERO objects — its verdict binds to nothing";
+
+/// **The one place a binding of zero is judged**, and the only authority on
+/// what one means.
+///
+/// There used to be three, and they disagreed. `judge` raised a zero binding as
+/// a *finding* and let the report pass; `contract::check` raised its own the
+/// same way; and the corpus audit folded `bound == 0` into its red set for
+/// every gate unconditionally. So the same program was green through the door a
+/// creator runs on their own machine and red through the door CI runs — and the
+/// creator's door was the weaker one, which is the worse direction for two
+/// authorities to disagree in.
+///
+/// The rule, now stated once:
+///
+/// - A gate that examined nothing and **cannot say why that is honest** is
+///   **red**. Not a finding: a finding is a line in a report, and this project
+///   has shipped five gates whose obligation lived in a line nobody was made to
+///   read. The audit's verdict was the right one and it is the one kept, since
+///   between two disagreeing doors the strict one is never the one to drop.
+/// - A gate that examined nothing and **can** ([`Gate::empty_ok`]) is
+///   **withheld** — struck from the report rather than printed green, because a
+///   pass over nothing reads exactly like a pass over something. Its
+///   justification goes to the enumeration, which is a list a reviewer reads.
+/// - A gate that examined nothing and **already failed** is left exactly as it
+///   is, justification or not. Withholding is for a gate with nothing to say;
+///   a gate that has found something says it.
+///
+/// Idempotent, because it runs at two levels: `contract::check` seals its own
+/// gates (its report has three consumers of its own — `delve-admit`'s spatial
+/// audit and the export refusal among them, and neither of those goes through
+/// `judge`), and `judge` seals the whole list afterwards so that a gate added
+/// later cannot escape by being added in the wrong place.
+pub(crate) fn seal_zero_bindings(
+    gates: &mut Vec<Gate>,
+    findings: &mut Vec<String>,
+    enumeration: &mut Vec<String>,
+) {
+    gates.retain(|gate| {
+        if gate.bound > 0 || !gate.passed() {
+            return true;
+        }
+        match &gate.empty_ok {
+            Some(why) => {
+                let line = format!("gate `{}` is not emitted over this piece: {why}", gate.id);
+                if !enumeration.contains(&line) {
+                    enumeration.push(line);
+                }
+                false
+            }
+            None => true,
+        }
+    });
+    for gate in gates.iter_mut() {
+        if gate.bound > 0 {
+            continue;
+        }
+        gate.state = GateState::Fail;
+        if !gate.detail.contains(ZERO_BINDING) {
+            gate.detail = format!("this gate {ZERO_BINDING}. {}", gate.detail);
+        }
+        let finding = format!("gate `{}` {ZERO_BINDING}", gate.id);
+        if !findings.contains(&finding) {
+            findings.push(finding);
+        }
+    }
+    // **The invariant, checked rather than trusted.** Everything downstream —
+    // the corpus audit's red set, the export refusal, `delve-admit`'s spatial
+    // audit — now reads a gate's own state and asks nothing further about its
+    // binding. That is only sound while no report can carry a gate that is
+    // green over nothing, so the claim is asserted here instead of being left
+    // to whoever adds the next gate. A doc line is not an invocation; this is
+    // the invocation, and it sits on the one path every report is built by.
+    debug_assert!(
+        !gates.iter().any(|g| g.bound == 0 && g.passed()),
+        "a gate is green over a binding of zero, so the two doors no longer agree: {:?}",
+        gates
+            .iter()
+            .filter(|g| g.bound == 0 && g.passed())
+            .map(|g| g.id)
+            .collect::<Vec<_>>()
+    );
 }
 
 /// Numbers with no threshold. Not gates, and deliberately not presented as any.
@@ -437,6 +560,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         id: "blocks-exist",
         state: verdict(bad.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: model.palette().len(),
         detail: if bad.is_empty() {
             format!(
@@ -477,6 +601,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         id: "shape-complete",
         state: verdict(omissions.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: used.len(),
         detail: if omissions.is_empty() {
             format!(
@@ -523,6 +648,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         id: "states-complete",
         state: verdict(under.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: used.len(),
         detail: if under.is_empty() {
             format!(
@@ -571,6 +697,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             GateState::Pass
         },
         undecided: audit.undecided.len(),
+        empty_ok: None,
         bound: audit.fills as usize,
         detail: if !audit.unguarded.is_empty() {
             format!(
@@ -645,6 +772,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             id: "stair-shape",
             state: verdict(shapes.mismatches.is_empty()),
             undecided: 0,
+            empty_ok: None,
             bound: shapes.bound,
             detail: if shapes.mismatches.is_empty() {
                 format!(
@@ -663,6 +791,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             id: "fluid-contained",
             state: verdict(fluid.leaks.is_empty()),
             undecided: 0,
+            empty_ok: None,
             bound: fluid.bound,
             detail: if fluid.leaks.is_empty() {
                 settle::fluid_summary(&fluid)
@@ -679,6 +808,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         id: "non-empty",
         state: verdict(filled > 0),
         undecided: 0,
+        empty_ok: None,
         bound: region_cells,
         detail: format!("{filled} filled cell(s) of {region_cells} in the region"),
     });
@@ -727,6 +857,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                     id: "traversable",
                     state: verdict(bound >= 2 && severed.is_empty()),
                     undecided: 0,
+                    empty_ok: None,
                     bound,
                     detail: if bound < 2 {
                         format!(
@@ -772,6 +903,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
                     id: "traversable",
                     state: verdict(walked && bound > 0),
                     undecided: 0,
+                    empty_ok: None,
                     bound,
                     detail: format!(
                         "{} standable cell(s) at the approach end, {} at the exit end; walking{} \
@@ -830,6 +962,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             id: "symmetric",
             state: verdict(broken.is_empty() && pairs > 0),
             undecided: 0,
+            empty_ok: None,
             bound: pairs,
             detail: if broken.is_empty() {
                 format!(
@@ -855,6 +988,7 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             id: "reachable-floor",
             state: verdict(bound > 0 && reach.unreachable_sheltered == 0),
             undecided: 0,
+            empty_ok: None,
             bound,
             detail: format!(
                 "{} standable cell(s) under a roof; {} of them have no walking route from the {} \
@@ -878,16 +1012,13 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
         });
     }
 
+    // Every zero binding in the whole list, contract gates included, judged by
+    // the one rule. It ran here excluding `contract-*` and again inside
+    // `contract::check`, and neither raised more than a finding — see
+    // `seal_zero_bindings` for why that was the wrong verdict and why this is
+    // now the only site that decides it.
+    seal_zero_bindings(&mut gates, &mut findings, &mut enumeration);
     for gate in &gates {
-        // The contract's own gates raise their zero bindings by name inside
-        // `contract::check`, which is where the second door reads them from too;
-        // repeating them here would print each twice.
-        if gate.bound == 0 && !gate.id.starts_with("contract-") {
-            findings.push(format!(
-                "gate `{}` examined ZERO objects — its verdict binds to nothing",
-                gate.id
-            ));
-        }
         // The undecided binding, raised by name the way a zero binding is —
         // and for the same reason. A reader who takes `undecided` for a softer
         // pass is exactly the reader this whole module exists to stop, so the

@@ -47,9 +47,14 @@ Two library modules exist for the tool and are public for it:
   footprint area/perimeter, silhouette complexity, per-block shares, local-frame
   fills, stairs, fluid cells, still (`waterlogged`) cells, run directions leaving
   the piece, and **reachability** (§4d) — how much of the floor a body reaches on
-  foot and where the rest of it sits. A zero binding count, and a program declaring no
-  anchors, are reported
-  as findings rather than folded into a pass.
+  foot and where the rest of it sits.
+  **A gate that examined zero objects is red**, and is named as a finding as
+  well; the one exception is a gate that can compute why its emptiness is
+  honest, which is withheld from the report rather than printed green and
+  states its justification in the enumeration (§2d). `stair-shape` and
+  `fluid-contained` reach the same place by never being constructed. The rule
+  lives in one function, `gates::seal_zero_bindings`, so the corpus audit and
+  the door a creator runs locally cannot drift apart.
 
 `library::PROGRAMS` is the registry the tool enumerates, so a rule added to the
 library reaches `delve-grammar list` without the tool being edited. The `bell::`
@@ -926,10 +931,23 @@ contract; there is no flag.
 | `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face | exterior edges |
 | `contract-no-body-majority` | a piece mostly out of walk says so | standable cells |
 
-A binding of zero is red on closure, edge proof and reachability, and is stated
-by name as a finding on every gate. One space and no interior edge is the
-exception the vacuity rule names: a room with a door has no traversal claim to
-prove, and that is a printed finding rather than a red.
+**A binding of zero is red, unless the gate can compute why the emptiness is
+honest — in which case the gate is not emitted at all.** One rule, one place
+(`gates::seal_zero_bindings`), read by every door, so `expand`, the corpus audit
+and `delve-admit` give the same verdict on the same piece.
+
+Three gates can reach an honest zero, and each says what discharges it:
+
+| gate | zero is honest when | what stops it being an escape |
+| --- | --- | --- |
+| `contract-no-body` | nothing is out of walk, and every standable cell lies in a declared space or a transit volume | deleting a region does not delete its cells; they land in a space, where reachability must walk a body to each and closure must seal around them — strictly more proof |
+| `contract-edge-proof` | the contract declares one space, so no interior edge could have been proved | two spaces with nothing between them is a graph that is decoration, and reds |
+| `contract-anchors` | the piece names no place inside itself | a piece holding a misplaced anchor still binds non-zero and still reds; reaching zero means deleting every anchor, which deletes the only way a campaign can name a location in the piece |
+
+Everywhere else a zero binding refuses. A withheld gate is named in the
+enumeration with its justification, so nothing is lost by not printing it — and
+a green line over an empty population is never printed, because it reads exactly
+like a green line over a full one.
 
 The verdict also **enumerates every opt-out instance**: each open envelope, each
 sightline, each out-of-walk region with its computed kind and its anchors, each
@@ -1398,8 +1416,15 @@ delve-grammar audit --campaign-root ../content      # every campaign's zones
 
 It enumerates a corpus, expands every member at the expansion that corpus
 declares, runs the same `gates::judge` `expand` runs, prints a binding count per
-gate over the whole sweep, and writes nothing. It reds when any gate fails, when
-any gate examined zero objects, and when the corpus it was pointed at was empty.
+gate over the whole sweep, and writes nothing. It reds when any gate fails and
+when the corpus it was pointed at was empty.
+
+A gate that examined zero objects reds here too — as an ordinary gate failure,
+decided by `gates::seal_zero_bindings` before the report reaches this command,
+and therefore identically through `expand` (§2d). The sweep applies no
+zero-binding rule of its own: a gate that has computed why its emptiness is
+honest is withheld from the report, and every gate that does reach the sweep
+with a binding of zero is already red.
 
 A program whose gates are all green but not all decided prints as `UNDECIDED`
 with the gates that could not decide, by name and with their counts, and does

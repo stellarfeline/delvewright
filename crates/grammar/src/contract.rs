@@ -377,16 +377,13 @@ pub fn check(
     gates.push(exterior_faces_gate(&ix, model, &mut enumeration));
     gates.push(no_body_majority(&ix, &kinds));
 
-    // §2.9's vacuity reds are stated where the reader is, not only in the gate
-    // that carries them: a binding of zero is a finding by name.
-    for gate in &gates {
-        if gate.bound == 0 {
-            findings.push(format!(
-                "contract gate `{}` examined ZERO objects — its verdict binds to nothing",
-                gate.id
-            ));
-        }
-    }
+    // §2.9's vacuity reds, judged by the one rule that judges every other
+    // gate's. Sealed HERE and not only in `gates::judge`, because this report
+    // has consumers that never reach `judge`: `delve-admit`'s spatial audit
+    // reads it straight, and `export::refuse_broken_contract` refuses an
+    // artifact on it. A zero binding raised here as a finding and nowhere as a
+    // verdict is how a contract gate over nothing shipped a green.
+    crate::gates::seal_zero_bindings(&mut gates, &mut findings, &mut enumeration);
     if ix.contract.spaces.len() == 1 && ix.contract.edges.is_empty() {
         findings.push(
             "the contract declares one space and no edges: nothing about how a body moves through \
@@ -665,6 +662,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         id: "contract-well-formed",
         state: verdict(bad.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound,
         detail: if bad.is_empty() {
             format!(
@@ -682,7 +680,12 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
 
 // --- §2.2 coverage ---------------------------------------------------------
 
-fn coverage(ix: &Index) -> Gate {
+/// Standable floor the contract accounts for nowhere — §2.2's population, and
+/// also what makes an EMPTY `no_body` an honest claim rather than an unasked
+/// question. Shared so the two cannot drift apart: if this said one thing to
+/// the coverage gate and another to the out-of-walk gate, the second would be
+/// excusing itself against a fact the first never established.
+fn uncovered_standable(ix: &Index) -> BTreeSet<[i32; 3]> {
     let mut covered: BTreeSet<[i32; 3]> = ix.all_space_cells.clone();
     covered.extend(ix.all_no_body_cells.iter().copied());
     for (i, edge) in ix.contract.edges.iter().enumerate() {
@@ -690,11 +693,16 @@ fn coverage(ix: &Index) -> Gate {
             covered.extend(ix.via_cells[i].iter().copied());
         }
     }
-    let uncovered: BTreeSet<[i32; 3]> = ix.standable.difference(&covered).copied().collect();
+    ix.standable.difference(&covered).copied().collect()
+}
+
+fn coverage(ix: &Index) -> Gate {
+    let uncovered = uncovered_standable(ix);
     Gate {
         id: "contract-coverage",
         state: verdict(uncovered.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: ix.standable.len(),
         detail: if uncovered.is_empty() {
             format!(
@@ -813,6 +821,7 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
         id: "contract-closure",
         state: verdict(breaches.is_empty() && examined > 0),
         undecided: 0,
+        empty_ok: None,
         bound: examined,
         detail: if !breaches.is_empty() {
             breaches.join(" · ")
@@ -973,15 +982,32 @@ fn edge_proof(ix: &Index, model: &VoxelModel) -> Gate {
     }
 
     // A zero binding is red **where an edge could have existed**. One space and
-    // no edges is a room with a door, and spec-0036 §2.9 keeps that as a printed
-    // finding rather than a red; two or more spaces with nothing proved between
-    // them is a graph that is decoration, which is the thing the vacuity rule is
-    // for.
+    // no edges is a room with a door, and there is no interior traversal to
+    // prove; two or more spaces with nothing proved between them is a graph
+    // that is decoration, which is the thing the vacuity rule is for.
+    //
+    // This gate has decided its own zero honestly since it was written — and
+    // the corpus audit reddened it anyway, because that door folded every
+    // `bound == 0` into its red set without asking the gate. The judgement was
+    // never missing here; it was being overruled. `empty_ok` is where it is now
+    // stated so that the one rule reads it instead of second-guessing it.
+    //
+    // The defect cannot produce it: the population is empty only when the
+    // document declares a single space, and a document cannot merge two spaces
+    // to dodge an edge proof without §2.1 refusing the merged space for
+    // spanning more than one floor, or §2.5 having to walk a body across the
+    // whole of it from the entry.
     let could_have = ix.contract.spaces.len() > 1;
+    let empty_ok = (proved == 0 && !could_have && bad.is_empty()).then(|| {
+        "the contract declares one space, so there is no interior edge that could have been \
+         proved: a room with a door makes no claim about moving BETWEEN spaces"
+            .to_string()
+    });
     Gate {
         id: "contract-edge-proof",
         state: verdict(bad.is_empty() && (proved > 0 || !could_have)),
         undecided: 0,
+        empty_ok,
         bound: proved,
         detail: if !bad.is_empty() {
             bad.join(" · ")
@@ -1152,10 +1178,38 @@ fn no_body_gate(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) -> Gat
         .iter()
         .map(|(k, n)| format!("{n} cell(s) {k}"))
         .collect();
+    // **Why declaring no out-of-walk region at all is honest, and when it is
+    // not.** A piece where every standable cell is play space has no
+    // out-of-walk floor to classify, and the only way to hand this gate an
+    // object would be to declare a region that is not there — the exact vacuity
+    // it exists to catch, one rung out.
+    //
+    // What makes the emptiness a CLAIM rather than a gap is that the floor did
+    // not go anywhere: every standable cell must still land in a declared space
+    // or a traversal edge's transit volume. That is §2.2's population, and an
+    // author cannot empty it without the piece having no floor at all.
+    //
+    // So the defect cannot produce this. Deleting a region that qualifies for
+    // nothing does not delete its cells: they must then sit in a space, where
+    // §2.5 makes a body walk to every one of them through declared edges and
+    // §2.3 closes the boundary around them. That is strictly more proof than
+    // any `no_body` kind asks for, which is the test — an escape hatch that
+    // costs more than the thing it escapes is not an escape hatch.
+    let unaccounted = uncovered_standable(ix);
+    let empty_ok =
+        (kinds.is_empty() && !ix.standable.is_empty() && unaccounted.is_empty()).then(|| {
+            format!(
+                "the contract declares no out-of-walk region, and it does not need one: all {} \
+                 standable cell(s) lie in a declared space or a traversal edge's transit volume, \
+                 so every piece of floor here is play space and §2.5 must walk a body to it",
+                ix.standable.len()
+            )
+        });
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
         undecided: 0,
+        empty_ok,
         bound: kinds.len(),
         detail: if bad.is_empty() {
             format!(
@@ -1487,6 +1541,7 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
         id: "contract-reachability",
         state: verdict(unreached.is_empty() && !targets.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -1593,10 +1648,33 @@ fn anchors_gate(
         .iter()
         .map(|(k, n)| format!("{n} in a {k}"))
         .collect();
+    // **A piece that names no place inside itself.** A corridor or a wall
+    // segment declares no anchor, and there is then no anchor that could sit
+    // outside a declared element — the obligation is per anchor, and the set is
+    // empty. The repo has always held this: every fixture in
+    // `tests/contract_check.rs` passes `no_anchors()` and asserts the report
+    // PASSES. Only the corpus audit disagreed, by folding every `bound == 0`
+    // into its red set without asking the gate.
+    //
+    // The defect cannot produce it, and this one is worth stating exactly,
+    // because the reasoning is not the same as the other two. The defect is an
+    // anchor that lands outside every declared element. A piece holding one
+    // *plus any other anchor* still binds non-zero and still reds — so emptying
+    // the population is not a dodge available to a piece that has anchors at
+    // all. Reaching zero means deleting every anchor including the good ones,
+    // which deletes the only way a campaign can name a location inside the
+    // piece: the escape route destroys the thing the anchors were for.
+    let empty_ok = anchors.is_empty().then(|| {
+        "the piece declares no anchor, so no anchor can sit outside a declared element. Nothing \
+         in a campaign can name a place inside this piece either, which is a fact about the piece \
+         rather than a gate's verdict"
+            .to_string()
+    });
     Gate {
         id: "contract-anchors",
         state: verdict(unresolved.is_empty()),
         undecided: 0,
+        empty_ok,
         bound: anchors.len(),
         detail: if unresolved.is_empty() {
             format!(
@@ -1763,6 +1841,7 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
+        empty_ok: None,
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")
@@ -1815,6 +1894,7 @@ fn no_body_majority(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) ->
         id: "contract-no-body-majority",
         state: verdict(!majority || excused),
         undecided: 0,
+        empty_ok: None,
         bound: total,
         detail: if !majority {
             format!(
