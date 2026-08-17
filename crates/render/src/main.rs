@@ -418,6 +418,12 @@ fn run_batch(dir: &Path, out: &Path, view_specs: &[String], cli: &Cli) -> ExitCo
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
+        // The pool declaration is the one `.json` in a prefab library
+        // that is not a prefab document.
+        if path.file_name().and_then(|n| n.to_str()) == Some(delvewright_schem::prefab::POOLS_FILE)
+        {
+            continue;
+        }
         match delvewright_schem::split::read_tile_set(path) {
             Ok(Some(set)) => {
                 for part in &set.parts {

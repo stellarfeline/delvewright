@@ -16,8 +16,8 @@
 //! into a `lighting` block.
 
 pub use delvewright_schem::prefab::{
-    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PrefabDoc,
-    PrefabMeta, Region, StructureMeta, TileSetMeta,
+    Anchor, AnchorEdit, Connector, GeneratedBy, License, Lighting, LightingProfile, PieceTemplate,
+    PrefabMeta, Region, StructureMeta,
 };
 
 use crate::light::LightProbe;
@@ -39,7 +39,7 @@ use crate::light::LightProbe;
 /// A probe that bound to nothing is never written; the caller refuses first
 /// (`DW0752`), because "unbound" is a finding about the piece and not a
 /// lighting profile.
-pub fn set_lighting_from_probe(doc: &mut PrefabDoc, p: &LightProbe) {
+pub fn set_lighting_from_probe(doc: &mut PrefabMeta, p: &LightProbe) {
     debug_assert!(
         !p.is_unbound(),
         "an unbound probe is a finding, not a profile"
@@ -51,7 +51,7 @@ pub fn set_lighting_from_probe(doc: &mut PrefabDoc, p: &LightProbe) {
          dark_threshold={}. Re-probe live for borderline pieces.",
         p.measured_cells, p.entry_cells, p.standable_cells, p.dark_threshold
     ));
-    doc.set_lighting(match (p.profile, p.measured_min_light) {
+    doc.lighting = Some(match (p.profile, p.measured_min_light) {
         ("dark", Some(m)) => Lighting {
             profile: LightingProfile::Dark,
             measured_min_light: Some(m as i64),

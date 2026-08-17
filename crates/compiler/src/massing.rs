@@ -363,7 +363,7 @@ fn mate_replacement(
                 first_pos[1] - tl[1],
                 first_pos[2] - tl[2],
             ];
-            let (bmin, bmax) = rot.bbox(pos, meta.structure.size);
+            let (bmin, bmax) = rot.bbox(pos, meta.size());
             if layout
                 .pieces
                 .iter()
@@ -558,7 +558,7 @@ fn insert_at(
                 ws[1] + ds[1] - tl[1],
                 ws[2] + ds[2] - tl[2],
             ];
-            let (bmin, bmax) = rot.bbox(pos, meta.structure.size);
+            let (bmin, bmax) = rot.bbox(pos, meta.size());
             if layout
                 .pieces
                 .iter()

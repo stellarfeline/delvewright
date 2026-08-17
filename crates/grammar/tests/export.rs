@@ -199,7 +199,7 @@ fn the_tiles_reassemble_into_exactly_the_expansion() {
         "grammar-keep",
     );
     let model = &set.expansion.model;
-    let parts = &set.metadata.structure_set.parts;
+    let parts = &set.metadata.structure_set.as_ref().unwrap().parts;
     assert_eq!(parts.len(), set.tiles.len());
 
     let mut covered = 0u64;
@@ -253,10 +253,12 @@ fn the_cuts_are_a_function_of_the_region_alone() {
         &ExpandOptions::seeded(9999),
         "grammar-keep",
     );
-    assert_eq!(a.metadata.structure_set.grid, b.metadata.structure_set.grid);
+    assert_eq!(a.metadata.grid(), b.metadata.grid());
     let layout = |s: &delvewright_grammar::export::TileSetExport| -> Vec<([i32; 3], [i32; 3])> {
         s.metadata
             .structure_set
+            .as_ref()
+            .unwrap()
             .parts
             .iter()
             .map(|p| (p.offset, p.size))
@@ -290,7 +292,15 @@ fn writing_a_tile_set_lands_every_file_the_manifest_names() {
         std::fs::read_to_string(dir.join("grammar-keep.json")).unwrap(),
         set.metadata_json
     );
-    for (part, tile) in set.metadata.structure_set.parts.iter().zip(&set.tiles) {
+    for (part, tile) in set
+        .metadata
+        .structure_set
+        .as_ref()
+        .unwrap()
+        .parts
+        .iter()
+        .zip(&set.tiles)
+    {
         let on_disk = std::fs::read(dir.join(&part.file)).unwrap();
         assert_eq!(on_disk, tile.nbt, "{}", part.file);
     }
@@ -465,8 +475,8 @@ fn the_structure_matches_the_size_the_metadata_declares() {
     )
     .unwrap();
     let view = delvewright_schem::convert::read_structure(&export.nbt).unwrap();
-    assert_eq!(view.size, export.metadata.structure.size);
-    assert_eq!(view.data_version, export.metadata.structure.data_version);
+    assert_eq!(view.size, export.metadata.size());
+    assert_eq!(view.data_version, export.metadata.data_version().unwrap());
 
     // ...and every cell is the block the model put there, rebased to local.
     let model = &export.expansion.model;
@@ -516,7 +526,7 @@ fn writing_an_export_uses_the_names_the_metadata_declares() {
     .unwrap();
     export.write_to_dir(&dir).unwrap();
 
-    let nbt = std::fs::read(dir.join(&export.metadata.structure.file)).unwrap();
+    let nbt = std::fs::read(dir.join(export.metadata.templates()[0].file)).unwrap();
     let meta = std::fs::read_to_string(dir.join("grammar-temple.json")).unwrap();
     assert_eq!(nbt, export.nbt);
     assert_eq!(meta, export.metadata_json);

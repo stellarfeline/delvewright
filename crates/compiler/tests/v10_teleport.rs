@@ -185,8 +185,10 @@ fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, S
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(prefab_dir.join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(prefab_dir.join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -353,10 +355,10 @@ fn a_campaign_without_a_teleport_emits_no_ledger() {
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
             structures.insert(
-                piece.structure_file.clone(),
-                std::fs::read(prefab_dir.join(&piece.structure_file)).unwrap(),
+                t.structure_file.clone(),
+                std::fs::read(prefab_dir.join(&t.structure_file)).unwrap(),
             );
         }
     }

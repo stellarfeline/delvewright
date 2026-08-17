@@ -319,19 +319,16 @@ fn cli_validate_reports_dw0346_at_exit_1() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// A tile-set manifest is refused with the QUEUED WORK named, not with the
-/// generic newer-schema advice.
+/// A tile-set manifest LOADS, and the registry indexes the zone it describes.
 ///
-/// The distinction is the point. `structure_set` is a shape this delvec fully
-/// understands and cannot yet place — compiler-side placement of a tile group
-/// is chunked export phase 2 — so telling the operator to "upgrade delvec, or
-/// fix the field" would send them after a fix that does not exist. And the zone
-/// must be skipped loudly rather than half-placed. The pre-check that spots
-/// `structure_set` is what carries this: a manifest names no `structure`, so
-/// the parse would otherwise fail as a bare "missing field" — a true statement
-/// about the bytes and a useless one about the situation.
+/// It used to be refused — `DW0346` naming "chunked export phase 2" as queued
+/// work — which is why a campaign could produce a zone it could not build a
+/// world out of. What replaces the refusal is the thing the refusal was
+/// standing in for: the piece is in the registry under its own id, at the
+/// WHOLE zone's size, with its anchors where the author put them, and with one
+/// template per tile.
 #[test]
-fn a_tile_set_manifest_is_refused_naming_the_queued_work() {
+fn a_tile_set_manifest_loads_as_the_zone_it_describes() {
     let tmp = prefab_copy("tile-set");
     let hello = tmp.join("hello-room.json");
     let mut meta: serde_json::Value =
@@ -355,17 +352,74 @@ fn a_tile_set_manifest_is_refused_naming_the_queued_work() {
 
     let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
     let d = prefabs.load_diagnostics();
+    assert!(
+        d.is_empty(),
+        "a tile-set manifest is not a load failure: {d:#?}"
+    );
+    let zone = prefabs
+        .get("prefab/hello-room")
+        .expect("the zone is indexed under its own prefab id");
+    assert!(zone.is_tiled());
+    assert_eq!(zone.size(), [20, 10, 84], "the WHOLE zone, not one tile");
+    assert_eq!(zone.grid(), [1, 1, 2]);
+    let templates = zone.templates();
+    assert_eq!(templates.len(), 2);
+    assert_eq!(templates[1].offset, [0, 0, 48]);
+    // The document's other blocks are the same blocks a single-template piece
+    // carries — the packaging changed and nothing else did.
+    assert!(zone.anchors.contains_key("spawn"));
+    assert!(zone.lighting.is_some());
+    assert!(zone.license.is_some());
+}
+
+/// ...and a manifest that does not tile its own zone is STILL `DW0346`. The
+/// code keeps meaning "this metadata document is malformed" and stops meaning
+/// "this delvec cannot place a tile set".
+#[test]
+fn a_manifest_that_does_not_tile_its_zone_is_still_dw0346() {
+    let tmp = prefab_copy("tile-set-holed");
+    let hello = tmp.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hello).unwrap()).unwrap();
+    let obj = meta.as_object_mut().unwrap();
+    obj.remove("structure");
+    obj.insert(
+        "structure_set".to_string(),
+        serde_json::json!({
+            "base": "hello-room", "size": [20, 10, 84], "part_max": 48,
+            "grid": [1, 1, 2], "data_version": 4671, "generator": "crates/grammar",
+            "parts": [
+                { "file": "hello-room.x0y0z0.nbt", "id": "hello-room.x0y0z0",
+                  "grid_index": [0, 0, 0], "offset": [0, 0, 0], "size": [20, 10, 48] }
+            ]
+        }),
+    );
+    std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
+    let d = prefabs.load_diagnostics();
     assert_eq!(d.len(), 1, "exactly one failing file: {d:#?}");
     assert_eq!(d[0].code, DW_PREFAB_META_INVALID);
-    assert!(d[0].message.contains("TILE SET"), "{:?}", d[0].message);
-    assert!(
-        d[0].message.contains("phase 2"),
-        "the refusal must name the queued work, not a fix that does not exist: {:?}",
-        d[0].message
-    );
-    assert!(
-        !d[0].message.contains("upgrade delvec"),
-        "the newer-schema prescription is wrong here and must not be given: {:?}",
-        d[0].message
-    );
+    assert!(d[0].message.contains("cover"), "{:?}", d[0].message);
+    assert!(prefabs.get("prefab/hello-room").is_none());
+}
+
+/// A document that names neither `structure` nor `structure_set` is `DW0346`
+/// naming both keys — "which shape is this" has two answers and no third, and
+/// a bare serde "missing field `structure`" was a true statement about the
+/// bytes and a useless one about the situation.
+#[test]
+fn a_document_that_names_no_blocks_is_dw0346_naming_both_keys() {
+    let tmp = prefab_copy("no-blocks");
+    let hello = tmp.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hello).unwrap()).unwrap();
+    meta.as_object_mut().unwrap().remove("structure");
+    std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
+    let d = prefabs.load_diagnostics();
+    assert_eq!(d.len(), 1, "{d:#?}");
+    assert_eq!(d[0].code, DW_PREFAB_META_INVALID);
+    assert!(d[0].message.contains("structure_set"), "{:?}", d[0].message);
 }

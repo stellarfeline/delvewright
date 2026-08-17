@@ -354,6 +354,19 @@ holds after the tile has been copied away from its manifest — a tile is
 recognised by the name `<base>.x<i>y<j>z<k>.nbt` it carries, not by what happens
 to sit in the directory beside it.
 
+**Which commands owe that refusal is enumerated, not listed.**
+`crates/admit/tests/fragment_doors.rs` walks the parser itself
+(`delvewright_admit::cli::Cli`) and requires every command it finds to be
+classified exactly once: a command that opens a piece an author named refuses a
+lone tile with `DW0739`, both beside its manifest and after being copied away
+from it; one that does not is named with its reason. A command added and
+classified nowhere is a red, which is what makes the guard's absence at the NEXT
+command impossible to ship. The exemption cannot be used to smuggle a door
+through, because a second obligation binds every command alike: **none of them
+may exit 0 when handed a tile.** A command that genuinely does not read
+structure bytes cannot digest one and report success, so an entry claiming that
+is checked on the very invocation it calls irrelevant.
+
 Gallery curation is the **human** half — the owner walks a browse world and leaves
 notes; the agent only builds and harvests:
 
@@ -1061,7 +1074,8 @@ air over the sand — every tool in the repo drew it as still water. The block
 knowledge is not restated: `crates/schem/src/fluid.rs` is source-included by the
 same mechanism, so the emitters and `delve-admit audit` read one rule. A run
 direction that leaves the piece's own outer face is counted and never failed
-(what is beyond a face is not in these bytes), and every piece prints its own
+here (what is beyond a face is not in these bytes — the compiler's `DW0318`
+judges it at placement, against the campaign's horizon), and every piece prints its own
 binding — sources examined, cells held `waterlogged`, runs at the edge — so a
 piece that quietly lost its water does not read like a piece that holds it.
 

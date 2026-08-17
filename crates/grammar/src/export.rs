@@ -133,20 +133,17 @@ pub use delvewright_schem::prefab::{
     SpatialContract, StructureMeta as StructureMetadata,
 };
 
-/// The manifest of a zone too big for one structure template.
+/// The manifest of a zone too big for one structure template is the SAME
+/// document — [`PrefabMetadata`] with its `structure_set` block filled in
+/// instead of its `structure` block.
 ///
-/// Defined beside [`PrefabMetadata`] in the crate that owns the document's
-/// shape, for the reason that module's header gives: a document written by one
-/// tool and edited by another must have exactly one definition, or the editor
-/// deletes whatever it does not model. It is the *reading* half that was
-/// missing — a write-only manifest is a document no admission step can correct,
-/// and the steps handed one answered about a single tile instead.
-///
-/// It stays a type of its own rather than a variant of `PrefabMeta` for the
-/// reason its `structure_set` doc gives: `PrefabMeta` *requires* `structure`, so
-/// a tool that has not learned about tile sets fails to parse this document
-/// instead of reading it as a prefab with no blocks.
-pub use delvewright_schem::prefab::TileSetMeta as TileSetMetadata;
+/// It was a type of its own, on the stated ground that `PrefabMeta` requires
+/// `structure` and so a tool that had not learned about tile sets would fail to
+/// parse a manifest rather than read it as a prefab with no blocks. That was a
+/// stopgap for a delvec that could not place a tile group; the compiler places
+/// them now, and Rust's own `Option` gives the stronger version of the same
+/// guarantee — a reader that has not faced the question does not compile.
+pub type TileSetMetadata = PrefabMetadata;
 
 // ---------------------------------------------------------------------------
 // Export
@@ -280,7 +277,7 @@ impl ZoneExport {
     pub fn grid(&self) -> [i32; 3] {
         match self {
             ZoneExport::Single(_) => [1, 1, 1],
-            ZoneExport::Tiled(e) => e.metadata.structure_set.grid,
+            ZoneExport::Tiled(e) => e.metadata.grid(),
         }
     }
 
@@ -491,13 +488,14 @@ pub fn export_prefab(
     let hash = program_hash(program);
     let metadata = PrefabMetadata {
         prefab_id: format!("prefab/{id}"),
-        structure: StructureMetadata {
+        structure: Some(StructureMetadata {
             file: format!("{id}.nbt"),
             id: id.to_string(),
             size,
             data_version: DATA_VERSION,
             generator: Some(GENERATOR.to_string()),
-        },
+        }),
+        structure_set: None,
         anchors: anchor_metadata(&expansion),
         // The export emits no jigsaw connectors (see the module header), and
         // says so with an empty list rather than by omitting the key: a piece
@@ -514,7 +512,7 @@ pub fn export_prefab(
 
     Ok(PrefabExport {
         prefab_id: metadata.prefab_id.clone(),
-        structure_file: metadata.structure.file.clone(),
+        structure_file: metadata.templates()[0].file.to_string(),
         metadata_file: format!("{id}.json"),
         nbt,
         metadata_json,
@@ -604,7 +602,8 @@ pub fn export_zone(
     let hash = program_hash(program);
     let metadata = TileSetMetadata {
         prefab_id: format!("prefab/{id}"),
-        structure_set: TileSet {
+        structure: None,
+        structure_set: Some(TileSet {
             base: id.to_string(),
             size,
             part_max,
@@ -612,7 +611,7 @@ pub fn export_zone(
             data_version: DATA_VERSION,
             generator: GENERATOR.to_string(),
             parts,
-        },
+        }),
         anchors: anchor_metadata(&expansion),
         // Same claim, same key, same reason as the single-template export: an
         // empty list says "no sockets", an absent key says nothing at all.
@@ -625,6 +624,7 @@ pub fn export_zone(
             size,
             Some((plan.grid, tiles.len())),
         )),
+        waterline_y: None,
         spatial_contract: contract_metadata(&expansion),
         // A freshly exported manifest models every key it writes; the map is
         // what a LATER engine's key survives in on the way back out.

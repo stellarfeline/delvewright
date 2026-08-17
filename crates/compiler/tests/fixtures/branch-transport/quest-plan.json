@@ -55,11 +55,11 @@
       },
       {
         "act": 2,
-        "area": "area/galley",
+        "area": "area/landing",
         "depends_on": [
           "quest/bolt"
         ],
-        "goal": "Row out to the galley and put the moor behind you for good.",
+        "goal": "Row out to the shore and put the moor behind you for good.",
         "id": "quest/away",
         "mandatory": true,
         "npcs": []

@@ -117,6 +117,13 @@ NOT_EMITTERS = {
         "nothing; reads its own bytes back in the same function."
     ),
     "crates/compiler/tests/boundary_assembled.rs": "test fixture for the assembled-world model.",
+    "crates/compiler/tests/common/mod.rs": (
+        "test fixture for the tiled-placement proof: synthesises a sealed corridor past the "
+        "48-per-axis cap as two tiles plus a manifest, into a per-test temp dir. Its whole "
+        "palette is two literal ids in the same function (`minecraft:stone`, "
+        "`minecraft:glowstone`), and nothing writes it into a prefab library — the bytes exist "
+        "to be read back by the same test that wrote them."
+    ),
     "crates/compiler/tests/emit.rs": "test fixture for the emitted datapack.",
     "crates/compiler/tests/lava_floor.rs": (
         "test fixture for the fluid-occupancy proof: hand-frames a synthetic room whose floor "

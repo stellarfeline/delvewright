@@ -120,7 +120,9 @@ pub fn judge(grid: &VoxelModel) -> Settling {
                 format!(
                     "a body of fluid reaches this piece's own outer face in {} run direction(s) \
                      — what is beyond a face is not in these bytes, so this is counted and not \
-                     judged. Whatever this piece is placed against decides where that water goes",
+                     judged. Whatever this piece is placed against decides where that water goes, \
+                     and the compiler holds it to that: `DW0318` refuses a build whose fluid ends \
+                     up outside every placed piece under a void horizon",
                     bodies.at_edge.len()
                 ),
             )

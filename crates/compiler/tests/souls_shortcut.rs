@@ -36,8 +36,10 @@ fn build_fixture() -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -299,8 +301,10 @@ fn a_shortcut_with_no_long_route_is_rejected_by_the_critical_path_proof() {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let err = emit::build(

@@ -82,11 +82,12 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
     let meta = registry
         .get("prefab/grammar-temple")
         .expect("the exported prefab id is the one the registry indexes");
-    assert_eq!(meta.structure.file, "grammar-temple.nbt");
-    assert_eq!(meta.structure.id, "grammar-temple");
-    assert_eq!(meta.structure.size, [13, 14, 21]);
-    assert_eq!(meta.structure.data_version, 4671);
-    assert_eq!(meta.structure.generator.as_deref(), Some("crates/grammar"));
+    let structure = meta.structure.as_ref().expect("a single-template export");
+    assert_eq!(structure.file, "grammar-temple.nbt");
+    assert_eq!(structure.id, "grammar-temple");
+    assert_eq!(structure.size, [13, 14, 21]);
+    assert_eq!(structure.data_version, 4671);
+    assert_eq!(structure.generator.as_deref(), Some("crates/grammar"));
 
     // Anchors-empty metadata is a *valid* prefab, not a broken one: it simply
     // offers no staging points yet. The registry must index it as such.
@@ -106,7 +107,7 @@ fn a_grammar_temple_lands_in_the_prefab_library_and_loads() {
 
     // ...and the structure the metadata points at is one the engine's own
     // decoder reads back cell for cell.
-    let nbt = std::fs::read(dir.join(&meta.structure.file)).unwrap();
+    let nbt = std::fs::read(dir.join(meta.templates()[0].file)).unwrap();
     let cells: BTreeMap<[i32; 3], String> =
         delvewright_compiler::assembled::structure_cells_stateful(&nbt)
             .into_iter()
@@ -325,9 +326,9 @@ fn the_staging_rules_indexed_anchors_all_reach_the_registry() {
                 .unwrap_or_else(|| panic!("{name} lost {want}: {:#?}", meta.anchors));
             let pos = anchor.pos.expect("a staging anchor names a cell");
             assert!(
-                (0..3).all(|i| pos[i] >= 0 && pos[i] < meta.structure.size[i]),
+                (0..3).all(|i| pos[i] >= 0 && pos[i] < meta.size()[i]),
                 "{name}/{want} sits at {pos:?}, outside the {:?} structure",
-                meta.structure.size
+                meta.size()
             );
             assert!(anchor.facing.is_some(), "{name}/{want} has no facing");
             assert!(
