@@ -11,7 +11,7 @@
 //! `PrefabRegistry`, and placed the way a campaign places them.
 
 use delvewright_compiler::faces;
-use delvewright_compiler::plan::{AreaPlacement, PiecePlacement};
+use delvewright_compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
 use delvewright_compiler::registry::PrefabRegistry;
 use delvewright_compiler::solver::Rotation;
 use delvewright_grammar::library::spatial_contract::spatial_contract;
@@ -43,8 +43,12 @@ fn placed(area: &str, pos: [i32; 3], rotation: Rotation) -> AreaPlacement {
         area_id: area.to_string(),
         pieces: vec![PiecePlacement {
             prefab_id: "prefab/twin-room".to_string(),
-            structure_id: "twin-room".to_string(),
-            structure_file: "twin-room.nbt".to_string(),
+            templates: vec![PlacedTemplate {
+                structure_id: "twin-room".to_string(),
+                structure_file: "twin-room.nbt".to_string(),
+                pos,
+                size: [11, 6, 15],
+            }],
             pos,
             size: [11, 6, 15],
             rotation,

@@ -1040,8 +1040,8 @@ fn read_structures(
     // no piece placed (spec-0017) — the replay needs those bytes too.
     let mut files: Vec<String> = Vec::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            files.push(piece.structure_file.clone());
+        for template in area.pieces.iter().flat_map(|p| &p.templates) {
+            files.push(template.structure_file.clone());
         }
     }
     files.extend(delvewright_compiler::edit::fragment_structure_files(
@@ -1073,6 +1073,21 @@ fn read_structures(
                 }
             }
         }
+    }
+    // The templates are the size their metadata says they are (`DW0803`).
+    //
+    // Bound here as well as inside `emit::build_with_warnings`, and the second
+    // binding is the point: this function is the ONE place every CLI consumer
+    // of prefab bytes passes through — `build`, `snapshot`, `viewer` and
+    // `blocking-chart` — and a review artifact drawn from a stale tile is a
+    // picture that lies, which is worse than a datapack that does not build.
+    // The check is pure, so running it twice on the build path costs a walk and
+    // reports the same verdict.
+    if let Err(delvewright_compiler::emit::BuildFailure::Diagnostic { code, message }) =
+        delvewright_compiler::emit::check_template_extents(plan, &structures)
+    {
+        print_build_error(code, &message, json);
+        return Err(3);
     }
     Ok(structures)
 }

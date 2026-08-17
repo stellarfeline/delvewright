@@ -226,7 +226,7 @@ pub fn assert_fluid_is_contained(id: &str, size: [i32; 3], cells: &Cells) -> Flu
     // that quietly lost its water reads exactly like a piece that holds it.
     println!(
         "  fluid-contained {id}: {} source(s) examined, {} held (waterlogged), {} run \
-         direction(s) at the piece's own outer face",
+         direction(s) at the piece's own outer face (judged at placement by DW0318, not here)",
         binding.examined, binding.held, binding.at_edge
     );
     binding

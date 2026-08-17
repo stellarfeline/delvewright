@@ -233,12 +233,14 @@ pub struct FluidAudit {
 ///
 /// The direction that leaves open is stated rather than hidden: an author could
 /// in principle answer a real red by extending the body to the region face, and
-/// this gate would then only count it. What closes that properly is a face
-/// contract that can say *what is beyond this face* for fluid the way
-/// spec-0036 §2.8 already says it for traversal — the declaration surface does
-/// not exist yet, and inventing one here would be a fourth mechanism. Until it
-/// does, the count is printed on every run so the trade is visible in the
-/// report rather than in this comment.
+/// this gate would then only count it. **What closes it is the placement**, and
+/// it is closed: the compiler's `DW0318` takes the assembled world and refuses
+/// any fluid cell lying outside every placed piece under a void horizon, where
+/// there is nothing beyond a face to hold it. That is the deferral answered at
+/// the layer that has the fact, rather than a fifth declaration surface here
+/// asking an author to promise it. The count is still printed on every run,
+/// because it is what tells a reviewer that this piece is relying on its
+/// neighbour.
 pub fn fluid_bodies(model: &VoxelModel) -> FluidAudit {
     let mut audit = FluidAudit::default();
     // Down first, then the four sides: the order fluid itself takes, so the
@@ -356,7 +358,8 @@ pub fn fluid_summary(audit: &FluidAudit) -> String {
             .collect();
         s.push_str(&format!(
             "; {} run direction(s) leave the piece (from {}{}) — what is beyond a face is not in \
-             these bytes, so this is counted and not judged",
+             these bytes, so this is counted and not judged. The placement decides it: `DW0318` \
+             refuses this water if the piece is placed against nothing under a void horizon",
             audit.at_edge.len(),
             named.join(", "),
             if audit.at_edge.len() > named.len() {

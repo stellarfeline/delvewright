@@ -685,17 +685,44 @@ impl AreaPlacement {
 pub struct PiecePlacement {
     /// Bound prefab id (`prefab/…`).
     pub prefab_id: String,
-    /// Datapack structure id path segment (e.g. `hello-room`).
-    pub structure_id: String,
-    /// Structure `.nbt` filename (relative to `prefabs/`).
-    pub structure_file: String,
-    /// World-space `/place template` position `[x, y, z]` (where local `(0,0,0)`
-    /// lands).
+    /// The structure templates this piece's blocks arrive in, each already
+    /// placed in world space — one for a single-template prefab, one per tile
+    /// for a zone past the vanilla 48-per-axis cap.
+    ///
+    /// **A piece is one piece however many files it ships as.** Tiling is a
+    /// packaging fact about a file format, so it is absorbed here, at the one
+    /// place a `.nbt` filename is reachable from: everything above this — the
+    /// area's anchors, its seals, the face-contract mating check, the pool
+    /// draw, massing — sees the piece the author bound, at its size, with its
+    /// rotation. Everything below it emits one `/place template` per entry and
+    /// never asks how many there were.
+    pub templates: Vec<PlacedTemplate>,
+    /// World-space `/place template` position `[x, y, z]` of the PIECE (where
+    /// piece-local `(0,0,0)` lands). Each template's own position is derived
+    /// from it and is on [`PlacedTemplate::pos`].
     pub pos: [i32; 3],
-    /// Unrotated prefab size `[sx, sy, sz]` (from prefab metadata).
+    /// Unrotated prefab size `[sx, sy, sz]` — the WHOLE piece, from prefab
+    /// metadata, never one tile's extent.
     pub size: [i32; 3],
     /// Placement rotation (identity for single-prefab areas).
     pub rotation: Rotation,
+}
+
+/// One structure template of a placed piece, in world space.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedTemplate {
+    /// Datapack structure id path segment (e.g. `hello-room`, or
+    /// `z0-barrow-shore.x0y0z1` for a tile).
+    pub structure_id: String,
+    /// Structure `.nbt` filename (relative to `prefabs/`).
+    pub structure_file: String,
+    /// World-space `/place template` position `[x, y, z]` — where THIS
+    /// template's local `(0,0,0)` lands, already carrying the piece rotation
+    /// applied to the template's piece-local offset. Equal to the piece's own
+    /// `pos` for a single-template prefab.
+    pub pos: [i32; 3],
+    /// The template's extent `[x, y, z]`, unrotated.
+    pub size: [i32; 3],
 }
 
 impl PiecePlacement {
@@ -703,6 +730,34 @@ impl PiecePlacement {
     pub fn bbox(&self) -> ([i32; 3], [i32; 3]) {
         self.rotation.bbox(self.pos, self.size)
     }
+}
+
+/// The templates a piece's metadata declares, placed in world space at `pos`
+/// under `rotation`.
+///
+/// Vanilla `/place template … <rotation>` rotates about the placement position,
+/// so a tile at piece-local `offset` lands at `pos + rotation(offset)` and its
+/// own cells then rotate about that — which composes to exactly
+/// `pos + rotation(offset + local)`, the whole zone rotated about the piece
+/// origin. That identity is what lets a tiled zone be rotated at all, and it is
+/// the same arithmetic [`Rotation::bbox`] already uses.
+fn placed_templates(
+    meta: &delvewright_dsl::prefab::PrefabMeta,
+    pos: [i32; 3],
+    rotation: Rotation,
+) -> Vec<PlacedTemplate> {
+    meta.templates()
+        .into_iter()
+        .map(|t| {
+            let o = rotation.transform(t.offset);
+            PlacedTemplate {
+                structure_id: t.id.to_string(),
+                structure_file: t.file.to_string(),
+                pos: [pos[0] + o[0], pos[1] + o[1], pos[2] + o[2]],
+                size: t.size,
+            }
+        })
+        .collect()
 }
 
 /// A resolved anchor (absolute world coords).
@@ -1312,7 +1367,7 @@ fn check_ocean_waterline(
                         piece.prefab_id,
                         piece.pos[1],
                         delta.abs(),
-                        meta.structure.id,
+                        meta.base(),
                     ),
                 ));
             }
@@ -1466,7 +1521,7 @@ impl<'a> Plan<'a> {
                 // Byte impact is confined to what was broken: a prefab with no
                 // connectors yields no seals, so every campaign and fixture that
                 // binds one is byte-identical.
-                let (bbox_min, bbox_max) = Rotation::None.bbox(origin, meta.structure.size);
+                let (bbox_min, bbox_max) = Rotation::None.bbox(origin, meta.size());
                 let seals = solver::seal_layout(
                     prefabs,
                     &[solver::PlacedPiece {
@@ -1482,10 +1537,9 @@ impl<'a> Plan<'a> {
                     area_id: area_id.clone(),
                     pieces: vec![PiecePlacement {
                         prefab_id,
-                        structure_id: meta.structure.id.clone(),
-                        structure_file: meta.structure.file.clone(),
+                        templates: placed_templates(meta, origin, Rotation::None),
                         pos: origin,
-                        size: meta.structure.size,
+                        size: meta.size(),
                         rotation: Rotation::None,
                     }],
                     seals,
@@ -1592,10 +1646,9 @@ impl<'a> Plan<'a> {
                     }
                     pieces.push(PiecePlacement {
                         prefab_id: placed.prefab_id.clone(),
-                        structure_id: meta.structure.id.clone(),
-                        structure_file: meta.structure.file.clone(),
+                        templates: placed_templates(meta, placed.pos, placed.rotation),
                         pos: placed.pos,
-                        size: meta.structure.size,
+                        size: meta.size(),
                         rotation: placed.rotation,
                     });
                 }

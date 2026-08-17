@@ -177,6 +177,128 @@ fn structure_sentinel(bytes: &[u8]) -> Option<([i32; 3], String)> {
     best
 }
 
+/// `DW0803`: a placed structure template is not the size the prefab metadata
+/// says it is.
+///
+/// Two documents claim the same fact — the `.nbt`'s own `size` tag, and the
+/// metadata's `structure.size` (or a tile's `structure_set.parts[].size`) — and
+/// **every pass but the placement itself reads the metadata's**. The forceload
+/// span, the piece AABB the mating check compares, massing's footprint and the
+/// tiling arithmetic that puts a tile at its offset are all computed from the
+/// declared size; the blocks come from the bytes. When they disagree the world
+/// is built wrong in a way no other check can see, because each half is
+/// internally consistent.
+///
+/// Tiling is what makes this reachable: a zone's manifest and its tiles are
+/// several files that a `cp`, a partial re-export or a hand edit can leave at
+/// different ages, and a stale tile then lands at the offset the manifest gives
+/// it — sliding part of a building through the rest of it. A single-template
+/// prefab has the same exposure and had the same silence.
+///
+/// Build tier: the world would be wrong, so it is not built.
+pub const DW_TEMPLATE_EXTENT: DwCode = DwCode::every_version("DW0803");
+
+/// How much of the world [`check_template_extents`] actually examined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TemplateExtentBinding {
+    /// Structure templates the plan places, tiles counted individually.
+    pub placed: usize,
+    /// Templates whose bytes were loaded and decoded, so their declared extent
+    /// could be compared — the binding count.
+    pub checked: usize,
+}
+
+impl TemplateExtentBinding {
+    /// The advisory a zero binding owes its reader, or `None`.
+    ///
+    /// A world with placed pieces whose templates none of decoded is not a
+    /// clean run of this check: it is the check examining nothing while
+    /// reporting success, which is the shape a green gate takes when it has
+    /// stopped binding to anything.
+    pub fn finding(&self) -> Option<delvewright_dsl::Diagnostic> {
+        (self.placed > 0 && self.checked == 0).then(|| {
+            delvewright_dsl::Diagnostic::warning(
+                DW_TEMPLATE_EXTENT,
+                "build",
+                "template-extent binding",
+                format!(
+                    "the template-extent invariant examined 0 of {} placed structure \
+                     template(s): none of their `.nbt` bytes were loaded or decodable, so the \
+                     check passed without comparing anything. A metadata size that disagrees \
+                     with its blocks would not have been seen",
+                    self.placed
+                ),
+            )
+        })
+    }
+}
+
+/// Compare every placed template's declared extent against the extent its own
+/// bytes declare. See [`DW_TEMPLATE_EXTENT`].
+///
+/// A template whose bytes are absent from `structures` is not a finding here —
+/// that is `DW0300`'s job at load — but it does not count toward the binding
+/// either, which is what [`TemplateExtentBinding`] exists to say out loud.
+pub fn check_template_extents(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> Result<TemplateExtentBinding, BuildFailure> {
+    let mut binding = TemplateExtentBinding {
+        placed: 0,
+        checked: 0,
+    };
+    for area in &plan.areas {
+        for (piece, template) in area
+            .pieces
+            .iter()
+            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+        {
+            binding.placed += 1;
+            let Some(bytes) = structures.get(&template.structure_file) else {
+                continue;
+            };
+            let Some(actual) = crate::assembled::structure_size(bytes) else {
+                continue;
+            };
+            binding.checked += 1;
+            if actual != template.size {
+                let whole = if piece.templates.len() == 1 {
+                    String::new()
+                } else {
+                    format!(
+                        " It is one of {} tiles of that zone, so the rest of the zone is placed \
+                         around a piece that is not the shape the manifest says it is.",
+                        piece.templates.len()
+                    )
+                };
+                return Err(BuildFailure::Diagnostic {
+                    code: DW_TEMPLATE_EXTENT,
+                    message: format!(
+                        "prefab `{}`: structure template `{}` is {}x{}x{} in its own `.nbt`, but \
+                         the prefab metadata declares it {}x{}x{}. Every pass but the placement \
+                         reads the declared size — the forceload span, the piece AABB the \
+                         face-contract check compares, massing's footprint — so the world would \
+                         be built around a shape that is not the one whose blocks arrive.{whole} \
+                         The `.nbt` and its metadata are not the same export: re-export the \
+                         piece, or fix whichever of the two is stale. Do NOT adjust the declared \
+                         size to match: the sizes are two claims about one fact and the fix is to \
+                         make them one export again",
+                        piece.prefab_id,
+                        template.structure_file,
+                        actual[0],
+                        actual[1],
+                        actual[2],
+                        template.size[0],
+                        template.size[1],
+                        template.size[2],
+                    ),
+                });
+            }
+        }
+    }
+    Ok(binding)
+}
+
 /// Build the full `<out>/` tree from a plan and the prefab structure bytes
 /// (`structure_file` → raw `.nbt`). Runs the command-tree validator over every
 /// emitted `.mcfunction`; a validation failure is a build error.
@@ -231,6 +353,15 @@ pub fn build_with_warnings(
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
+    // The templates are the size their metadata says they are (DW0803). Bound
+    // here, before any model is built out of them, because every later pass —
+    // the forceload span, the mating check, massing, the whole assembled world
+    // — is computed from the metadata's `size` while the blocks come from the
+    // bytes, and nothing else compares the two.
+    let template_binding = check_template_extents(plan, structures)?;
+    // Stated with the verdict: a check that examined nothing is not a pass.
+    let mut extent_findings = template_binding.finding().into_iter().collect::<Vec<_>>();
+
     // Gravity-despawn gate: before any downstream model
     // is built, reject a prefab whose gravity floor (sand/gravel/…) sits
     // unsupported over the delve's `the_void` world and would despawn at placement,
@@ -262,6 +393,7 @@ pub fn build_with_warnings(
     // seats the same anchor-bearing prefab twice) lead, since they describe the
     // world every later pass reasons over, then the replay's own.
     let mut warnings: Vec<delvewright_dsl::Diagnostic> = plan.warnings.clone();
+    warnings.append(&mut extent_findings);
     warnings.extend(
         edit_replay
             .as_ref()
@@ -351,6 +483,12 @@ pub fn build_with_warnings(
     // that exists and reports `"modelled_as_sealed": 0` is a finding rather than
     // an absence.
     let mut gate_seal_ledger: Option<serde_json::Value> = None;
+    // The fluid-escape proof's binding ledger (`compiler::nav`, `DW0318`): how
+    // much water the assembled world holds and how much of it ended up outside
+    // every placed piece, stated against the horizon. Filled by every campaign
+    // that assembles a world — including a bone-dry one, which then ships a
+    // ledger reading zero rather than nothing at all.
+    let mut fluid_escape_ledger: Option<serde_json::Value> = None;
     // The lethal-volume proofs' binding ledger (`compiler::lethal`), filled inside
     // the world block below. `None` for a campaign that declares no volume — no
     // ledger, no artifact, no byte moved for anybody who has not opted in.
@@ -463,7 +601,10 @@ pub fn build_with_warnings(
                     // island is one — would have got a vacuous green out of the
                     // completability model while every fixture went red.
                     crate::nav::World::from_occupancy(occ)
-                        .with_ambient(crate::nav::Ambient::of_plan(plan))
+                        .with_ambient(
+                            crate::nav::Ambient::of_plan(plan),
+                            crate::nav::built_volume(plan),
+                        )
                         .with_world_load_seals(plan, er.assembled.gate_seals.clone())
                 }
                 None => {
@@ -516,6 +657,48 @@ pub fn build_with_warnings(
             // that, while their twelve siblings — identical geometry, anchors one
             // block lower — were green, which is what proved the interior walk
             // region boundary-safe and the roof a disconnected component.
+            // `DW0318` over the finished world: fluid that ran out of the built
+            // volume. It runs BEFORE the boundary proof, and the order is
+            // load-bearing. Two independent reasons, and the second is why this
+            // is not a style choice:
+            //
+            // 1. The boundary proof cannot see this at all. It examines
+            //    reachable WALKABLE cells, and a flooded cell is impassable and
+            //    never floor, so escaped water is in neither the reachable set
+            //    nor its neighbour scan, under either horizon.
+            // 2. Worse, escaped water makes the boundary proof LIE. Its
+            //    per-column fall-arrest scan (`nav::boundary_void`'s `col_min`)
+            //    counts a flooded cell as arrest, so a bottomless column with a
+            //    waterfall running down it reads as supported — and the proof
+            //    goes quiet on precisely the columns the water escaped through.
+            //    Measured on the shipped `island-beach-camp` piece placed under
+            //    `horizon: void`: 9792 escaped cells, and `DW0322` silent.
+            //
+            // So escaping fluid is a false premise of the proof that runs next,
+            // exactly as an unsettled gravity block is a false premise of
+            // everything downstream of `DW0313`. Clear it first.
+            //
+            // The ledger is measured unconditionally and emitted below, even
+            // when the verdict is a pass and even when the world holds no water
+            // at all: "0 fluid cells examined" is the reading a dry campaign
+            // should be able to show, and a check whose only output is silence
+            // is one nobody can tell apart from a check that did not run.
+            // Measured here for the LEDGER, which is owed even on a pass and
+            // even by a bone-dry world. The sequencing itself is no longer this
+            // call site's to hold: `verify_boundary_safety` runs the same proof
+            // first, because a boundary verdict taken over a world the water is
+            // still running out of is not a verdict (see its doc comment). This
+            // call and that one cannot disagree — the measurement is pure and
+            // reads the same two sets.
+            let fluid_escape = crate::nav::measure_fluid_escape(&world);
+            fluid_escape_ledger = Some(fluid_escape.ledger());
+            if let Some(e) = fluid_escape.finding() {
+                return Err(BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                });
+            }
+
             crate::nav::verify_boundary_safety(&world, &crate::edit::anchor_starts(plan)).map_err(
                 |e| BuildFailure::Diagnostic {
                     code: e.code,
@@ -933,10 +1116,10 @@ pub fn build_with_warnings(
     // structures (one `.nbt` per distinct structure id, even if reused across
     // several placed pieces — the insert is idempotent, same bytes)
     for area in &plan.areas {
-        for piece in &area.pieces {
-            if let Some(bytes) = structures.get(&piece.structure_file) {
+        for template in area.pieces.iter().flat_map(|p| &p.templates) {
+            if let Some(bytes) = structures.get(&template.structure_file) {
                 out.insert(
-                    format!("datapack/data/{ns}/structure/{}.nbt", piece.structure_id),
+                    format!("datapack/data/{ns}/structure/{}.nbt", template.structure_id),
                     bytes.clone(),
                 );
             }
@@ -948,11 +1131,11 @@ pub fn build_with_warnings(
     // runtime can verify each `place template` landed (see `setup` emission).
     let mut sentinels: Sentinels = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            if let Some(bytes) = structures.get(&piece.structure_file)
+        for template in area.pieces.iter().flat_map(|p| &p.templates) {
+            if let Some(bytes) = structures.get(&template.structure_file)
                 && let Some(s) = structure_sentinel(bytes)
             {
-                sentinels.insert(piece.structure_file.clone(), s);
+                sentinels.insert(template.structure_file.clone(), s);
             }
         }
     }
@@ -1230,6 +1413,13 @@ pub fn build_with_warnings(
     // body regardless of class, so the count itself shows that rule is total.
     if let Some(gate) = &traversal_gate {
         put_json(&mut out, "validation/traversal-gate.json", &gate.to_json());
+    }
+    // The fluid-escape binding ledger (`DW0318`): the horizon the verdict was
+    // stated against, the pieces and fluid cells examined, and how many cells
+    // ended up outside the built volume. `None` only for a campaign that
+    // assembles no world at all.
+    if let Some(ledger) = &fluid_escape_ledger {
+        put_json(&mut out, "validation/fluid-escape.json", ledger);
     }
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
@@ -2449,10 +2639,17 @@ fn emit_functions(
                 Some(t) => format!(" {t}"),
                 None => String::new(),
             };
-            place_all.push(format!(
-                "place template {ns}:{} {} {} {}{rot}",
-                piece.structure_id, piece.pos[0], piece.pos[1], piece.pos[2]
-            ));
+            // One command per TEMPLATE, not per piece: a zone past the vanilla
+            // 48-per-axis cap ships as several of them and is placed as several
+            // of them, at the world positions the plan already resolved. A
+            // single-template piece has exactly one, at the piece's own
+            // position, so its line is byte-identical to before.
+            for template in &piece.templates {
+                place_all.push(format!(
+                    "place template {ns}:{} {} {} {}{rot}",
+                    template.structure_id, template.pos[0], template.pos[1], template.pos[2]
+                ));
+            }
         }
     }
     fns.push(("place_all".to_string(), lines(&place_all)));
@@ -2482,13 +2679,21 @@ fn emit_functions(
         sentinel_count += 1;
     }
     for area in &plan.areas {
-        for piece in &area.pieces {
-            if let Some((local, block)) = sentinels.get(&piece.structure_file) {
+        // One sentinel per TEMPLATE. A `place template` can fail for one tile
+        // of a zone and land for the rest — a chunk that has not loaded yet is
+        // exactly how that happens — so a per-piece sentinel would report a
+        // zone placed when eight ninths of it was there.
+        for (piece, template) in area
+            .pieces
+            .iter()
+            .flat_map(|p| p.templates.iter().map(move |t| (p, t)))
+        {
+            if let Some((local, block)) = sentinels.get(&template.structure_file) {
                 let w = piece.rotation.transform(*local);
                 let (sx, sy, sz) = (
-                    piece.pos[0] + w[0],
-                    piece.pos[1] + w[1],
-                    piece.pos[2] + w[2],
+                    template.pos[0] + w[0],
+                    template.pos[1] + w[1],
+                    template.pos[2] + w[2],
                 );
                 place_verify.push(format!(
                     "execute if block {sx} {sy} {sz} {block} run scoreboard players add #placeok dw.sys 1"

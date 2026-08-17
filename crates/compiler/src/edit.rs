@@ -441,17 +441,18 @@ fn check_batch_invariants(
     // hazard is stranding instead (`nav::verify_boundary_safety`). Deriving it
     // from the plan here is what keeps that proof from testing a false premise.
     let ambient = crate::nav::Ambient::of_plan(plan);
+    let built = crate::nav::built_volume(plan);
     let world = crate::nav::World::from_occupancy(assembled::occupancy_of(
         assembled.blocks.clone(),
         &assembled.open_gates,
     ))
-    .with_ambient(ambient.clone());
+    .with_ambient(ambient.clone(), built.clone());
     let with_fixtures = if relight.extra_solid.is_empty() {
         world
     } else {
         let mut occ = assembled::occupancy_of(assembled.blocks.clone(), &assembled.open_gates);
         occ.solid.extend(relight.extra_solid.iter().copied());
-        crate::nav::World::from_occupancy(occ).with_ambient(ambient)
+        crate::nav::World::from_occupancy(occ).with_ambient(ambient, built)
     };
     let ctx = |e: crate::nav::NavError| EditError {
         code: e.code,
@@ -460,6 +461,28 @@ fn check_batch_invariants(
     if crate::nav::needs_world(plan) {
         crate::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
+    }
+    // `DW0318` BEFORE the boundary proof, and the order is load-bearing rather
+    // than tidy: `nav::boundary_void` counts a flooded cell as fall-arrest, so a
+    // bottomless column with water pouring down it reads as *supported* and the
+    // boundary proof goes quiet on exactly the columns the water escaped
+    // through. Escaping fluid is therefore a false premise of the proof that
+    // runs next, the same way an unsettled gravity block is a false premise of
+    // everything downstream of `DW0313`. Clear it first, then ask about the
+    // player.
+    //
+    // A batch can create the condition either way round — `fill` with a fluid
+    // block, or a `carve` that opens the wall which was holding one — and the
+    // flood model re-runs over the edited world every batch regardless. Naming
+    // the batch is what this call site adds over the stage-10 floor.
+    //
+    // `verify_boundary_safety` runs this same proof first and would raise the
+    // same finding, so what this call adds is the ATTRIBUTION and nothing else:
+    // `ctx` names the batch that made the world leak, which a reader chasing a
+    // stage-7 edit needs and the stage-10 floor cannot know. The sequence
+    // itself is no longer this call site's to get right.
+    if let Some(e) = crate::nav::measure_fluid_escape(&with_fixtures).finding() {
+        return Err(ctx(e));
     }
     let starts = anchor_starts(plan);
     crate::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
@@ -1406,16 +1429,6 @@ fn fragment(
              the id"
         ),
     })?;
-    let bytes = structures
-        .get(&meta.structure.file)
-        .ok_or_else(|| EditError {
-            code: DW_EDIT_UNRESOLVED,
-            message: format!(
-                "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file `{}` \
-             was not loaded — the prefab library entry points at a missing `.nbt`",
-                meta.structure.file
-            ),
-        })?;
     let origin = resolve_frame_point(plan, area, bid, frame, at).map_err(|message| EditError {
         code: DW_EDIT_UNRESOLVED,
         message,
@@ -1431,7 +1444,33 @@ fn fragment(
     // runtime `setblock` lines. Reading bare ids turned the hello-room prefab's
     // `lantern[hanging=true]` into a floor lantern stamped into mid-air, which
     // vanilla drops on the next chunk tick.
-    let cells = assembled::structure_cells_stateful(bytes);
+    //
+    // Every template of the piece, at its piece-local offset: a stamped
+    // fragment is the whole piece, and a piece past the vanilla cap ships as
+    // several templates. Reading only the first would stamp part of a building
+    // and report success — the failure a tile set has no other detector for.
+    let mut cells: Vec<([i32; 3], String, Option<bool>)> = Vec::new();
+    for template in meta.templates() {
+        let bytes = structures.get(template.file).ok_or_else(|| EditError {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file \
+                     `{}` was not loaded — the prefab library entry points at a missing `.nbt`",
+                template.file
+            ),
+        })?;
+        for (local, name, open) in assembled::structure_cells_stateful(bytes) {
+            cells.push((
+                [
+                    local[0] + template.offset[0],
+                    local[1] + template.offset[1],
+                    local[2] + template.offset[2],
+                ],
+                name,
+                open,
+            ));
+        }
+    }
     if cells.is_empty() {
         return Err(EditError {
             code: DW_EDIT_UNRESOLVED,
@@ -1713,7 +1752,7 @@ pub fn fragment_structure_files(
                 if let WorldEdit::Fragment { prefab, .. } = edit
                     && let Some(meta) = prefabs.get(prefab.as_str())
                 {
-                    files.insert(meta.structure.file.clone());
+                    files.extend(meta.templates().iter().map(|t| t.file.to_string()));
                 }
             }
         }

@@ -1013,7 +1013,12 @@ Symptom → tool:
   never mirrors). Check §2c before escalating. **Size is not on this list**
   either: a region of any extent expands, and one past the 48-per-axis
   structure-template cap is written as a tile set plus a manifest at
-  `<id>.json`. Never shrink a scene to fit a file format.
+  `<id>.json`. Never shrink a scene to fit a file format. **Tiling changes
+  nothing downstream of the export**: the campaign binds `prefab/<id>` in the
+  same line it binds any piece, its anchors are the zone coordinates the
+  program marked, and world assembly places the whole zone. Nothing an author
+  writes says a piece is tiled, and a stage document that mentions a tile is
+  wrong.
 
   A piece that comes from **outside** (a community schematic) instead enters via
   `delve-schem convert` and then the same admission chain with

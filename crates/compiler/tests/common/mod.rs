@@ -299,3 +299,219 @@ pub fn fenced_diagnostics(
         .reported()
         .to_vec()
 }
+
+// ---------------------------------------------------------------------------
+// A tiled zone, synthesised
+// ---------------------------------------------------------------------------
+
+/// Gzip-framed vanilla structure NBT: `size`, a palette and the given non-air
+/// cells.
+///
+/// It writes the `size` tag, which the hand-rolled builders scattered through
+/// the emit tests do not — and `size` is the template's own claim about how big
+/// it is, which is exactly what `DW0803` compares the metadata against. A
+/// generator that omits it produces bytes no extent check can bind to.
+pub fn structure_nbt(size: [i32; 3], cells: &[([i32; 3], &str)]) -> Vec<u8> {
+    use fastnbt::Value;
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    let mut names: Vec<String> = Vec::new();
+    let mut blocks: Vec<Value> = Vec::new();
+    for (p, n) in cells {
+        let state = names.iter().position(|x| x == n).unwrap_or_else(|| {
+            names.push((*n).to_string());
+            names.len() - 1
+        });
+        let mut b = HashMap::new();
+        b.insert(
+            "pos".to_string(),
+            Value::List(p.iter().map(|v| Value::Int(*v)).collect()),
+        );
+        b.insert("state".to_string(), Value::Int(state as i32));
+        blocks.push(Value::Compound(b));
+    }
+    let palette = Value::List(
+        names
+            .iter()
+            .map(|n| {
+                let mut c = HashMap::new();
+                c.insert("Name".to_string(), Value::String(n.clone()));
+                Value::Compound(c)
+            })
+            .collect(),
+    );
+    let mut root = HashMap::new();
+    root.insert(
+        "size".to_string(),
+        Value::List(size.iter().map(|v| Value::Int(*v)).collect()),
+    );
+    root.insert("DataVersion".to_string(), Value::Int(4671));
+    root.insert("palette".to_string(), palette);
+    root.insert("blocks".to_string(), Value::List(blocks));
+    let raw = fastnbt::to_bytes(&Value::Compound(root)).unwrap();
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(&raw).unwrap();
+    enc.finish().unwrap()
+}
+
+/// The zone the tiled-placement tests are built on: a sealed stone corridor
+/// `9 x 5 x 60`, which is past the vanilla 48-per-axis cap on `z` and therefore
+/// ships as two tiles (`z` 0..47 and 48..59).
+pub const TILED_ZONE_SIZE: [i32; 3] = [9, 5, 60];
+
+/// The `z` at which [`TILED_ZONE_SIZE`] is cut, which is the vanilla cap.
+pub const TILED_ZONE_CUT: i32 = 48;
+
+/// Every non-air cell of the sealed corridor, in whole-zone coordinates.
+///
+/// Sealed on all six sides so the world it makes is one a body cannot fall out
+/// of: boundary safety is about a campaign's content and must not be the thing
+/// a tiling test ends up measuring.
+fn tiled_zone_cells() -> Vec<([i32; 3], &'static str)> {
+    let [sx, sy, sz] = TILED_ZONE_SIZE;
+    let mut cells = Vec::new();
+    for z in 0..sz {
+        for y in 0..sy {
+            for x in 0..sx {
+                if x == 0 || x == sx - 1 || y == 0 || y == sy - 1 || z == 0 || z == sz - 1 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                } else if y == sy - 2 && z % 6 == 3 && x == sx / 2 {
+                    // A light line, so the corridor is a lit interior rather
+                    // than a declared-lit claim about a dark box.
+                    cells.push(([x, y, z], "minecraft:glowstone"));
+                }
+            }
+        }
+    }
+    cells
+}
+
+/// Write the tiled corridor into `dir` as a prefab library entry: two `.nbt`
+/// tiles plus the one metadata document naming them.
+///
+/// `anchors` is written verbatim into the document, in WHOLE-ZONE coordinates —
+/// which is the property tiling must not disturb: an anchor is a fact about the
+/// building, and a cut never moves one.
+///
+/// `extra` is added to the corridor's own cells, also in whole-zone
+/// coordinates, and is how a caller puts something in the zone that the cut
+/// then has to survive — a pool of water past the cut, say. It is an argument
+/// rather than a second writer because what a caller varies is what is IN the
+/// zone; a `write_tiled_zone_with_water` would leave whoever wants lava, or a
+/// chest, with nowhere to go.
+pub fn write_tiled_zone(
+    dir: &Path,
+    id: &str,
+    anchors: serde_json::Value,
+    extra: &[([i32; 3], &str)],
+) {
+    std::fs::create_dir_all(dir).unwrap();
+    let [sx, sy, sz] = TILED_ZONE_SIZE;
+    let cut = TILED_ZONE_CUT;
+    let cells = tiled_zone_cells();
+    // Later wins, so `extra` may carve as well as add: a cell it names replaces
+    // the shell cell underneath it rather than fighting with it.
+    let mut by_pos: std::collections::BTreeMap<[i32; 3], &str> = cells.into_iter().collect();
+    for (pos, name) in extra {
+        by_pos.insert(*pos, *name);
+    }
+    let cells: Vec<([i32; 3], &str)> = by_pos.into_iter().collect();
+    let mut parts = Vec::new();
+    for (i, (z0, depth)) in [(0, cut), (cut, sz - cut)].into_iter().enumerate() {
+        let tile: Vec<([i32; 3], &str)> = cells
+            .iter()
+            .filter(|(p, _)| p[2] >= z0 && p[2] < z0 + depth)
+            .map(|(p, n)| ([p[0], p[1], p[2] - z0], *n))
+            .collect();
+        let file = format!("{id}.x0y0z{i}.nbt");
+        std::fs::write(dir.join(&file), structure_nbt([sx, sy, depth], &tile)).unwrap();
+        parts.push(serde_json::json!({
+            "file": file,
+            "id": format!("{id}.x0y0z{i}"),
+            "grid_index": [0, 0, i as i32],
+            "offset": [0, 0, z0],
+            "size": [sx, sy, depth],
+        }));
+    }
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{id}"),
+        "structure_set": {
+            "base": id,
+            "size": TILED_ZONE_SIZE,
+            "part_max": cut,
+            "grid": [1, 1, 2],
+            "data_version": 4671,
+            "generator": "crates/compiler/tests/common",
+            "parts": parts,
+        },
+        "anchors": anchors,
+        "connectors": [],
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-15" },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Test fixture.",
+            "provenance": "Synthesised by crates/compiler/tests/common::write_tiled_zone."
+        }
+    });
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+}
+
+/// Write a single-template prefab into `dir`: one `.nbt` plus its metadata.
+///
+/// The companion of [`write_tiled_zone`] on the other packaging, so a test that
+/// is about something else — where a piece ends, where its water goes — can
+/// compose a piece without caring which packaging it got.
+pub fn write_single_prefab(
+    dir: &Path,
+    id: &str,
+    size: [i32; 3],
+    cells: &[([i32; 3], &str)],
+    anchors: serde_json::Value,
+) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(format!("{id}.nbt")), structure_nbt(size, cells)).unwrap();
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{id}"),
+        "structure": {
+            "file": format!("{id}.nbt"),
+            "id": id,
+            "size": size,
+            "data_version": 4671,
+            "generator": "crates/compiler/tests/common",
+        },
+        "anchors": anchors,
+        "connectors": [],
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-15" },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Test fixture.",
+            "provenance": "Synthesised by crates/compiler/tests/common::write_single_prefab."
+        }
+    });
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+}
+
+/// The hello-world campaign materialised at `dst`, with its one area rebound to
+/// `prefab/<id>`. Shared by every test that needs a real campaign around a
+/// synthetic piece.
+pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
+    std::fs::create_dir_all(dst).unwrap();
+    for f in STAGE_FILES {
+        std::fs::copy(hello_world_dir().join(f), dst.join(f)).unwrap();
+    }
+    patch_file(&dst.join("world.json"), |v| {
+        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
+    });
+    dst.to_path_buf()
+}

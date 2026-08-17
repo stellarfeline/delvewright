@@ -638,6 +638,13 @@ fn collect_pieces(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, Diagnostic> {
             if path.extension().and_then(|x| x.to_str()) != Some("json") {
                 continue;
             }
+            // The pool declaration is the one `.json` here that is not a
+            // prefab document (`delvewright_dsl::prefab::POOLS_FILE`).
+            if path.file_name().and_then(|n| n.to_str())
+                == Some(delvewright_dsl::prefab::POOLS_FILE)
+            {
+                continue;
+            }
             match delvewright_dsl::split::read_tile_set(path) {
                 Ok(Some(set)) => {
                     for part in &set.parts {

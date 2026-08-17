@@ -4,7 +4,7 @@
 use delvewright_admit::fixtures;
 use delvewright_admit::jigsaw;
 use delvewright_admit::light::{self, Zone};
-use delvewright_admit::meta::{self, License, LightingProfile, PrefabDoc, PrefabMeta};
+use delvewright_admit::meta::{self, License, LightingProfile, PrefabMeta};
 use delvewright_admit::socket::{self, SocketDecl};
 use delvewright_admit::structure::{Structure, roundtrip};
 
@@ -150,16 +150,11 @@ fn light_probe_calls_lit_room_lit_and_dark_room_dark() {
 fn light_probe_writes_estimate_method_into_metadata() {
     let s = fixtures::clean_room();
     let probe = light::probe(&Zone::single(&s), light::DEFAULT_DARK_THRESHOLD);
-    let mut doc = PrefabDoc::Single(PrefabMeta::skeleton(
-        "clean",
-        s.size,
-        s.data_version,
-        "test",
-        license(),
-    ));
+    let mut doc = PrefabMeta::skeleton("clean", s.size, s.data_version, "test", license());
     meta::set_lighting_from_probe(&mut doc, &probe);
     let lighting = doc
-        .lighting()
+        .lighting
+        .as_ref()
         .expect("a probe writes a lighting block")
         .clone();
     assert_eq!(lighting.profile, LightingProfile::Lit);
@@ -238,9 +233,12 @@ fn a_probed_profile_still_carries_its_measurement() {
     );
     let unlit = fixtures::dark_room();
     let probe = light::probe(&Zone::single(&unlit), light::DEFAULT_DARK_THRESHOLD);
-    let mut doc = PrefabDoc::Single(meta);
+    let mut doc = meta;
     meta::set_lighting_from_probe(&mut doc, &probe);
-    let lighting = doc.lighting().expect("a probe writes a lighting block");
+    let lighting = doc
+        .lighting
+        .as_ref()
+        .expect("a probe writes a lighting block");
     assert!(lighting.measured_min_light.is_some());
     assert!(lighting.measured.is_some());
 }
