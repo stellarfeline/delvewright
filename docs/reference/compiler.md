@@ -441,7 +441,7 @@ Quest DAG skeleton: `depends_on` acyclic (`DW0130`), `finale` declared
 | Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**/**actionbar**; `text` → l10n; `sound` validated (`DW0326`); `art` = the `delve:art` pixel-banner font, glyph-checked (`DW0328`), width-checked (`DW0330`); **`actionbar`** = the reply strip above the hotbar, the channel every compiler-written reply already used, not width-checked (vanilla neither wraps nor truncates it, and a reply is a fragment rather than a banner). | 0.4 / art 0.6 / actionbar 0.11 |
 | Trigger `audience: party\|presser` | Who a trigger's bundle addresses. `party` (default, and what every trigger did before 0.11) is polled on the tick with no executor and addresses `@a`. `presser` is dispatched by a `minecraft:player_interacted_with_entity` advancement and runs **as the player who right-clicked**, so `@s` is the presser — which also makes a `player`-scoped `requires_state` legal there (`DW0503` asks the site, not the root class). Vanilla can attribute right-clicks only, so `presser` on a `strike` / `strike-npc` / `approach` is `DW0427`. | 0.11 |
 | Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]` (v0.6). | 0.4 / state 0.6 |
-| Effect `fill-region{region,block}` | **Fill a declared region with a block at runtime** (spec-0031). `region` is the existing anchor-centred box (`anchor ± extent`, the same `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter, a `collapse` ceiling and a `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`); `block` is registry-checked with the same `DW0193` `set-block` gets. Emission is one unfiltered `fill <lo> <hi> <block>`. This is the **general spelling** of the capability `open-gate`/`close-gate` carried privately: those two are this operation with the box and the block read off a prefab gate anchor instead of authored, and `set-block` is the one-cell case at a point anchor. All of them lower through `emit::fill_region_command` and are modelled by one completability rule (`plan::RegionEvent`), so a third consumer inherits the proof instead of re-deriving it. Completability: from the DAG point the effect fires at, the cells become what the **block** makes them — **solid** for a block that is a full cube, exactly as a `close-gate` seal is (a critical path that must cross afterwards fails `DW0311`), and **flooded** for `minecraft:water` / `minecraft:lava` (`assembled::is_fluid`): impassable, and never floor, because nothing stands on a fluid. A fill carries no `replace` filter, so a fluid fill over floor takes the floor away; a forced leg that needed that footing is `DW0544`. | 0.10 |
+| Effect `fill-region{region,block}` | **Fill a declared region with a block at runtime** (spec-0031). `region` is the existing anchor-centred box (`anchor ± extent`, the same `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter, a `collapse` ceiling and a `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`); `block` is registry-checked with the same `DW0193` `set-block` gets. Emission is one unfiltered `fill <lo> <hi> <block>`. This is the **general spelling** of the capability `open-gate`/`close-gate` carried privately: those two are this operation with the box and the block read off a prefab gate anchor instead of authored, and `set-block` is the one-cell case at a point anchor. All of them lower through `emit::fill_region_command` and are modelled by one completability rule (`plan::RegionEvent`), so a third consumer inherits the proof instead of re-deriving it. Completability: from the DAG point the effect fires at, the cells become what the **block** makes them — **solid** for a block that is a full cube, exactly as a `close-gate` seal is (a critical path that must cross afterwards fails `DW0311`), and **flooded** for `minecraft:water` / `minecraft:lava` (`assembled::is_fluid`): impassable, and never floor, because nothing stands on a fluid. A fill carries no `replace` filter, so a fluid fill over floor takes the floor away; a forced leg that needed that footing is `DW0544`. **Whose firing it is also counts**: a fill fired from a root the party can skip — a trap payload, a shop offer, a death bundle, a shortcut's far side — still SEALS the region (the proof must survive it) but does not lay footing the forced path may stand on, because the same block that walls a doorway floors the cell above it and only the first reading is conservative. A forced leg whose only footing comes from such a fill is `DW0546`. | 0.10 |
 | Effect `clear-region{region}` | **Clear a declared region to air at runtime** (spec-0031) — the physical dual of `fill-region`, and the general spelling of what `open-gate` does to a gate anchor's box. Emission is the same `fill` with `minecraft:air` and, unlike `open-gate`, **no `replace` filter**: an author's clear empties the box rather than scrubbing one block id out of it. Completability: the cells are **passable** from the DAG point the effect fires at — the half no gate could ever exercise, because the assembled model already holds every gate cell open unconditionally. Two limits are stated rather than discovered. (1) A cleared cell the model already floods stays impassable: clearing a block does not remove water, it lets the water in. A clear that *opens* a dry box into adjacent water is not modelled — re-deriving the flood needs the block map the collision view does not carry — so that campaign's route proof is optimistic there, and a runtime `fill-region` of a fluid is a second way to put water next to such a clear. (2) A clear never removes cells another proof has forced solid (`nav::World::pinned`): a `collapse`'s debris, an ambush's occupied cells, a timed gate's shut span. Clearing a region says the blocks the campaign put there are gone, not that another proof's hazard never happened. | 0.10 |
 | Effect `requires_flags[]` / `forbids_flags[]` (any effect) | Per-effect gates (v0.6): `requires_flags` wraps the effect's command(s) in a per-player `execute if score @s dw.f_<flag> matches 1 … run …`; `forbids_flags` adds `unless score @s dw.f_<flag> matches 1` clauses to the same guard (suppressed once any listed flag is set for the acting player). Valid on any `on_objective_complete` / `on_complete` / trigger effect **except** terminal `campaign-complete`; refs resolve like objective flags (`DW0172`). | 0.6 |
 | Effect `despawn-npc{npc}` | Removes NPC + hitbox. | 0.4 |
@@ -4145,6 +4145,57 @@ next to a filled box is credited as dry, and the server may flood it.
 | Code | Meaning |
 |------|---------|
 | `DW0544` | **A forced leg stands where a runtime write leaves fluid.** A critical-path leg has no collision-free path once runtime fluid fills are impassable and unstandable, but routes fine when they are treated as solid — or a visited objective's only footing lies in one. Build-tier (exit 3), `compiler::nav`. The message names the boxes the fluid-free route needs footing in. Prescription: fill with a block that is floor, put the walkable surface in the cell below the fluid, or route the forced path around the box; never swap in a solid you do not want in the world just to get green. |
+
+### DW0546 — footing laid by a beat nobody has to play (`compiler::nav`)
+
+A runtime write is registered with the answer to one more question than the block
+alone can settle: **is the party guaranteed to cause this firing?**
+(`plan::RegionEvent::is_forced`.) It is computed from the effect's root — a quest
+`on_objective_complete` bundle, a quest `on_complete`, an environment trigger and
+the world's own load-time seals are forced; a `traps[].payload`, a
+`set-checkpoint` `on_respawn` bundle, a `shortcuts[].on_unlock`, the campaign's
+`on_death` and a `shops[].offers[].effects` are not. The DSL carries **no field on
+which an author can assert it**, and a `RegionEvent` cannot be constructed without
+stating it, so the answer is a property of where the effect sits in the document
+and nothing else.
+
+The distinction exists because a solid block answers two questions at once and
+only one of them is conservative when the firing is uncertain:
+
+- *Is the party blocked?* Assume it happened. Assuming a wall can only make the
+  proof harder, so the **blocking half of an unforced write is credited in full** —
+  a `close-gate` in a trap payload still seals, and a forced path that must
+  re-cross it still fails.
+- *Can the party stand there?* Assume it did not. Assuming floor is what makes the
+  proof easier, and easier is the direction that ships.
+
+So an unforced fill is carried as impassable **and not floor**
+(`World::with_unforced`) — the pointwise-worst of the two futures, and sound in
+both. **A cell the assembled world already holds solid is left alone**, which is
+what binds the rule to laying NEW floor rather than to re-surfacing existing
+floor: if the box was floor before the write, it is floor whether or not the beat
+fires, and there is nothing uncertain to model.
+
+A **flood** takes no such split. Impassable and never floor is already the worst
+of "the water is there" and "it is not", so an unforced flood is judged exactly as
+a forced one and stays `DW0544`. A **clear** and an **unseal** never reach the
+model unforced at all: `plan::collect_region_events` drops them, because an
+unforced firing may make a region impassable and may never make one passable —
+which is the same rule that keeps every shortcut gate sealed so the delve is
+finishable the long way. Latest-write-wins needs no special case either: the
+winning write carries its own forcedness, so a forced fill landing later on the
+same box restores ordinary footing by winning.
+
+`DW0546` is derived by counterfactual, exactly like `DW0510`, `DW0317` and
+`DW0544`: the leg is re-routed over the identical world with every unforced fill
+credited as ordinary floor (`RegionState::as_if_forced`), and if *that* world
+routes, the unforced footing is what closed the leg. It is asked before the gate
+counterfactual, because an unforced fill over a gate region would otherwise be
+reported as a missing `open-gate` the author has already written.
+
+| Code | Meaning |
+|------|---------|
+| `DW0546` | **A forced leg stands on footing laid by a beat the party can skip.** A critical-path leg has no collision-free path once fills fired from unforced roots are impassable-and-not-floor, but routes fine when they are credited as floor — or a visited objective's only footing lies on one. Build-tier (exit 3), `compiler::nav`. The message names each box and the beat that lays it (the trap, the shop offer, the shortcut, the death bundle). Prescription: fire the fill from an objective the party is FORCED to complete before the leg, build the floor into the prefab, or route the forced path around the box; never leave the path depending on a beat that can be skipped. A leg the unforced fill *walled* rather than floored is an ordinary `DW0311` whose hint names the write, for the same reason `DW0544`'s counterpart is. |
 
 ### DW0510–DW0512 — lethal volumes (`compiler::nav` / `compiler::lethal` / `dsl::validate`; spec-0031, DSL v0.10)
 

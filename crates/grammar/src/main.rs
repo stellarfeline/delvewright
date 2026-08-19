@@ -113,8 +113,14 @@ enum Command {
     /// zone programs — the artifacts of record — had nothing walking them at
     /// all. This is the walk: it enumerates a corpus, expands every member at
     /// the expansion the corpus itself declares, runs the same `gates::judge`
-    /// `expand` runs, and reds if any gate fails, if any gate bound to zero,
-    /// or if the corpus it was pointed at was empty.
+    /// `expand` runs, and reds if any gate fails or if the corpus it was
+    /// pointed at was empty.
+    ///
+    /// A gate that bound to zero reds here too — but as an ordinary gate
+    /// failure, decided by `gates::seal_zero_bindings` before the report
+    /// reaches this command, and therefore identically through `expand`. This
+    /// command used to apply its own zero-binding rule on top, which made it a
+    /// second authority that disagreed with the creator's own door.
     ///
     /// It never writes a prefab. Judging is the whole job.
     Audit {
@@ -1219,12 +1225,16 @@ fn run_audit(
     let mut held_red = 0usize;
     let mut undecided_programs = 0usize;
     for a in &audited {
-        let bad: Vec<&gates::Gate> = a
-            .report
-            .gates
-            .iter()
-            .filter(|g| g.failed() || g.bound == 0)
-            .collect();
+        // `g.failed()` and nothing else. This used to read
+        // `g.failed() || g.bound == 0`, which made the audit a SECOND authority
+        // on what a zero binding means: `contract-edge-proof` had already
+        // decided that one space and no interior edge is an honest zero, and
+        // this line overruled it — while the door a creator runs on their own
+        // machine passed the same program. The rule now lives in
+        // `gates::seal_zero_bindings`, which every door reads: an unjustified
+        // zero binding arrives here already red, and a justified one is not a
+        // gate in this report at all.
+        let bad: Vec<&gates::Gate> = a.report.gates.iter().filter(|g| g.failed()).collect();
         // Never folded into `bad`: an undecided gate refuses nothing and must
         // not red the sweep, or the third answer becomes a fail with a softer
         // name. It is printed per program, by name, so it cannot be lost.
@@ -1294,13 +1304,7 @@ fn run_audit(
         failed = true;
         println!("  {:<44} FAIL", a.label);
         for g in bad {
-            println!(
-                "      {:<16} {}  bound {:<6} {}",
-                g.id,
-                if g.failed() { "FAIL" } else { "zero-bound" },
-                g.bound,
-                g.detail
-            );
+            println!("      {:<16} FAIL  bound {:<6} {}", g.id, g.bound, g.detail);
         }
         for g in &unsure {
             println!(
