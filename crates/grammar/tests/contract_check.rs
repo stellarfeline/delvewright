@@ -1008,3 +1008,134 @@ fn the_same_empty_declaration_reds_when_floor_is_left_unaccounted_for() {
         report.findings
     );
 }
+
+// ---------------------------------------------------------------------------
+// The refusal names the route
+// ---------------------------------------------------------------------------
+
+/// The one-floor clause of a `contract-well-formed` detail, on its own.
+///
+/// The detail is every complaint joined with " · ", so asserting over the whole
+/// string cannot tell "the climb sentence was added to the one-floor refusal"
+/// from "the word `stair` appears somewhere else in this report". Scoping to the
+/// clause is what makes the NEGATIVE half below mean anything.
+fn one_floor_clause(detail: &str) -> String {
+    detail
+        .split(" · ")
+        .find(|part| part.contains("is ONE floor"))
+        .unwrap_or_else(|| panic!("no one-floor refusal in this detail: {detail}"))
+        .to_string()
+}
+
+/// **A climb refused as a space is told where treads live** (spec-0036 §1a; the
+/// diagnostic-reachability finding of trial-0001's contract round).
+///
+/// The invariant is right and stays: a space is one floor, which is what makes
+/// an edge's rise measurable. What is wrong is that the refusal is *routeless
+/// from where the author is standing*. An author who models a climb as one
+/// space — which is what a recursive rule hands them, one region name over every
+/// tread — is told which invariant they broke and nothing about where the treads
+/// actually belong. The engine does know: it refuses a via-less stair with "a
+/// stair's treads belong to the edge". That sentence only ever fires for an
+/// author who has ALREADY declared a stair edge, so it is unreachable from the
+/// space-shaped mistake, and the space-shaped mistake is the one people make.
+/// Three zones were reported undeclarable and a design round was dispatched for
+/// a capability that already existed.
+///
+/// So: when the offending span is a **contiguous climb** — every level reachable
+/// from the one below — the one-floor refusal names the construct that does hold
+/// it, by the identifiers an author types: a `stair` edge and its `via`.
+///
+/// **What would make this test vacuous**, in the order the modes bite:
+///
+/// 1. *Asserting only the added sentence.* An unconditional append to every
+///    one-floor refusal would pass, and the message would then be wrong on every
+///    multi-level space that is not a climb. The second half of this test is the
+///    whole point: a space whose standable levels have a GAP is not a climb, and
+///    it must NOT be sent down the stair route. Delete that half and the test
+///    stops measuring.
+/// 2. *Asserting only the route and not the invariant.* Replacing the one-floor
+///    refusal with an explanation would pass. `is ONE floor` is asserted on both
+///    fixtures so the invariant cannot be traded for the message.
+/// 3. *A zero binding.* `contract-well-formed` binds to spaces + out-of-walk
+///    regions + edges; over an empty contract it examines nothing and could go
+///    red for reasons unrelated to floors. `bound` is asserted on both fixtures.
+/// 4. *A red from somewhere else in the detail.* `one_floor_clause` scopes every
+///    assertion to the one-floor complaint, so neither half can be satisfied by
+///    another gate's or another clause's wording.
+/// 5. *Matching prose instead of the surface.* The route is asserted by the two
+///    identifiers an author must write — the `stair` class and the `via` field —
+///    not by a sentence, so the wording stays free and the test stays about
+///    whether the author is told what to type.
+#[test]
+fn a_climb_refused_as_one_space_is_told_that_treads_belong_to_a_stairs_via() {
+    // The climb. `stair_piece`'s blocks — foot at y1, three treads at y1/y2/y3,
+    // head at y4 — declared the wrong way: one union name over the whole thing.
+    let (b, _) = stair_piece();
+    let mut c = contract("flight");
+    c.spaces.insert(
+        "flight".to_string(),
+        space(
+            "enclosed",
+            vec![
+                region([1, 1, 1], [5, 4, 4]),
+                region([1, 1, 5], [5, 6, 7]),
+                region([1, 4, 8], [5, 7, 11]),
+            ],
+        ),
+    );
+    c.edges.push(with_via(
+        edge("flight", "exterior", "walk"),
+        "front-door",
+        vec![region([0, 1, 2], [0, 2, 2])],
+    ));
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.bound > 0, "the gate examined nothing: {:?}", g);
+
+    let clause = one_floor_clause(&g.detail);
+    assert!(
+        clause.contains("is ONE floor"),
+        "the invariant is still what refuses this, and it is not traded for the \
+         explanation: {clause}"
+    );
+    assert!(
+        clause.contains("stair"),
+        "a contiguous climb's refusal names the edge class that holds treads, so an \
+         author who modelled it as a space can reach the construct that works: {clause}"
+    );
+    assert!(
+        clause.contains("via"),
+        "and names the transit volume the treads become — the half the via-less-stair \
+         refusal already states, which is unreachable from here: {clause}"
+    );
+
+    // The other side. A space that spans levels WITHOUT being a climb — a
+    // shelf three courses up, standable at y3, with nothing standable at y2 to
+    // reach it from — is refused for the same reason and must NOT be routed to a
+    // stair. Nothing climbs here, so a `via` full of treads is not the answer,
+    // and a refusal that says it is has been appended rather than computed.
+    let (mut b, c) = hall();
+    b.stone([4, 2, 4], [4, 2, 4]);
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(
+        !g.passed(),
+        "the shelf is a second level and is refused as one: {}",
+        g.detail
+    );
+    assert!(g.bound > 0, "the gate examined nothing: {:?}", g);
+
+    let clause = one_floor_clause(&g.detail);
+    assert!(
+        clause.contains("is ONE floor"),
+        "the same invariant refuses it: {clause}"
+    );
+    assert!(
+        !clause.contains("stair"),
+        "a gapped span is not a climb, so the stair route does not apply to it — a \
+         refusal that names it here was appended to every one-floor red rather than \
+         computed from this one: {clause}"
+    );
+}

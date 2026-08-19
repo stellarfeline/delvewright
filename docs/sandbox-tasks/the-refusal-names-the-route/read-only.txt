@@ -1,0 +1,43 @@
+# Read-only paths, as extended regexes, one per line.
+#
+# Matched against the MODIFIED / DELETED / RENAMED half of the returned patch
+# (`git diff --name-only --diff-filter=MDR`). Any hit is a failed task. See
+# CHECKLIST.md step 1 for the exact command; it is the first thing the reviewer
+# runs, before looking at anything else.
+#
+# The filter is deliberate. Deleting or rewriting an existing test is the defect
+# this list exists to catch; ADDING a new test file is legitimate and is reviewed
+# on its merits (CHECKLIST.md step 2). Inline `#[cfg(test)]` tests inside `src/`
+# cannot be caught by a path pattern at all, so CHECKLIST.md step 3 greps for
+# them separately.
+#
+# Comment lines (#) and blank lines are stripped by the checklist command.
+
+# --- the acceptance test, and every other test in the repository -------------
+# The acceptance test IS the specification. Editing it is editing the
+# specification to match the implementation, which is the failure this list
+# exists to catch. The other tests are the proof that nothing else broke; a
+# change that needs one of them relaxed has broken something.
+^crates/[^/]+/tests/
+^harness/
+^packtest/
+
+# --- thresholds, allowlists and exclusion sets -------------------------------
+# Every one of these is a list of things a check is allowed to ignore. Adding a
+# line to any of them makes a red disappear without fixing anything.
+^\.github/required-status-checks\.txt$
+^\.github/campaign-build-exclusions\.toml$
+^\.github/zone-audit-exclusions\.json$
+^\.github/content-zone-corpus\.json$
+
+# --- CI configuration --------------------------------------------------------
+^\.github/workflows/
+^\.github/actions/
+^\.github/scripts/
+^validation/
+
+# --- the checks themselves ---------------------------------------------------
+^tools/check-
+
+# --- this packet -------------------------------------------------------------
+^docs/sandbox-tasks/
