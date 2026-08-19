@@ -9220,14 +9220,15 @@ mod tests {
             route_visited(&world, &[a, b], &[], &linear).is_err(),
             "the chasm must not route before anything lays floor in it"
         );
-        let plank = RegionEvent {
-            region: ([1, 64, 0], [3, 64, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        // FORCED, and it has to be: this test asserts the leg routes and exports,
+        // and only a fill the party cannot skip carries a forced leg's footing. The
+        // unforced spelling of this very plank is the opposite verdict — see
+        // `the_export_self_check_reads_a_legs_world_with_the_unforced_reading`.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
         assert!(
             route_visited(&world, &[a, b], std::slice::from_ref(&plank), &linear).is_ok(),
-            "the proof must credit floor the campaign lays before the leg is walked"
+            "the proof must credit floor the campaign lays from a beat the party cannot skip, \
+             before the leg is walked"
         );
         let legs: Vec<LegRoute> =
             route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
@@ -9263,11 +9264,9 @@ mod tests {
         let world = chasm();
         let a = at_step([0, 65, 0], 1);
         let b = at_step([4, 65, 0], 2);
-        let plank = RegionEvent {
-            region: ([1, 64, 0], [3, 64, 0]),
-            write: RegionWrite::Fill,
-            fire_step: 0,
-        };
+        // FORCED for the same reason: the leg has to route at all before a later
+        // pass can be shown to break it.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
         let legs: Vec<LegRoute> =
             route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
                 .into_iter()
@@ -9281,6 +9280,117 @@ mod tests {
         assert!(
             err.message.contains("[2, 65, 0]"),
             "the message must name the offending cell: {}",
+            err.message
+        );
+    }
+
+    /// **The junction of the two halves, at the one point where it is directly
+    /// observable.** The export self-check judges a leg in the world the leg was
+    /// proven over ([`LegRoute::proven_world`]), and that world is built by
+    /// [`World::with_region_state`] — which also applies the unforced reading
+    /// ([`World::with_unforced`]). So the self-check inherits forcedness for free,
+    /// and neither half alone says so: one decided *which world* the check reads,
+    /// the other decided *what an unforced fill does to a world*.
+    ///
+    /// Same world, same leg, same exported cells. The only thing that differs
+    /// between the two verdicts below is whether the plank under `[2,65,0]` was
+    /// laid by a beat the party cannot skip.
+    ///
+    /// **What would make this test vacuous**, stated so a later reader can check
+    /// it rather than trust it:
+    ///
+    /// * If the chasm did not really lack the floor, the accept would pass for the
+    ///   wrong reason — the bare world would already be standable and
+    ///   `proven_world` would be doing nothing. Asserted below.
+    /// * If the exported route did not really cross the laid cell, both verdicts
+    ///   would be about a cell nobody stands on. Asserted below.
+    /// * If `verify_exported_routes` returned `Err` for some unrelated cell, the
+    ///   refusal would look right and mean nothing. The code is asserted, and the
+    ///   message is required to name one of the cells standing on the plank.
+    ///
+    /// One thing this test deliberately does NOT claim: that a whole campaign can
+    /// reach the refusing branch. It cannot — `route_visited` refuses an unforced
+    /// footing as `DW0546` before any route is exported, so at campaign scale this
+    /// reading is defence in depth rather than the live gate. That is why the
+    /// unforced leg here is constructed rather than routed: `route_walked_legs`
+    /// over an unforced plank correctly produces no leg at all, which is asserted
+    /// too. The campaign-scale statement of the same junction is
+    /// `crates/compiler/tests/laid_footing_root.rs`.
+    #[test]
+    fn the_export_self_check_reads_a_legs_world_with_the_unforced_reading() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let box_ = ([1, 64, 0], [3, 64, 0]);
+
+        // Not assumed: the bare assembled world really has no floor here, so
+        // anything that stands at [2,65,0] is standing on something a runtime
+        // write laid.
+        assert!(
+            !world.is_standable([2, 65, 0]),
+            "the chasm must really be a chasm, or neither verdict below means anything"
+        );
+
+        // --- forced: the leg routes, and the export self-check accepts it -------
+        let forced = RegionEvent::forced(box_, RegionWrite::Fill, 0);
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], std::slice::from_ref(&forced), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
+        assert_eq!(legs.len(), 1, "the forced plank must carry a walked leg");
+        assert!(
+            legs[0].cells.contains(&[2, 65, 0]),
+            "the exported route must really cross the laid cell: {:?}",
+            legs[0].cells
+        );
+        // Reverting the leg-carries-its-world half reds HERE: judged against the
+        // bare `world`, [2,65,0] has no floor and this becomes `DW0314`.
+        verify_exported_routes(&world, &legs)
+            .expect("footing the party cannot skip must pass the export self-check");
+
+        // --- unforced: the same cells, in a world that may not hold the plank ---
+        // `route_walked_legs` will not produce this leg — an unforced plank is
+        // impassable and not floor, so nothing routes across it. That is the
+        // campaign-scale verdict, and it is asserted rather than assumed.
+        assert!(
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &[RegionEvent::unforced(
+                    box_,
+                    RegionWrite::Fill,
+                    0,
+                    "a trap nobody must spring"
+                )],
+                &linear,
+            )
+            .is_empty(),
+            "an unforced plank must not carry a walked leg at all"
+        );
+        // So the leg is carried over from the forced run with only its region
+        // state re-marked: identical cells, identical world, one bit different.
+        let mut unforced_state = RegionState::default();
+        unforced_state
+            .unforced
+            .extend(crate::assembled::region_cells(box_.0, box_.1));
+        let mut leg = legs[0].clone();
+        leg.region_state = unforced_state;
+        // Reverting the footing half reds HERE: with an unforced fill folded back
+        // into `solid`, [2,65,0] is floored and the self-check accepts a waypoint
+        // standing on a plank the party may never have laid.
+        let err = verify_exported_routes(&world, std::slice::from_ref(&leg))
+            .expect_err("a waypoint standing on unforced footing must not be exported");
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE); // DW0314
+        // The refusal must be ABOUT the plank, not about some other cell that
+        // happens to be unstandable — that is the vacuity this assertion removes.
+        // Which of the three cells standing on the box is reported is the loop's
+        // order and not a claim, so any of them satisfies it.
+        assert!(
+            [[1, 65, 0], [2, 65, 0], [3, 65, 0]]
+                .iter()
+                .any(|c| err.message.contains(&format!("{c:?}"))),
+            "the refusal must name a cell whose footing is the uncertain plank: {}",
             err.message
         );
     }
