@@ -3831,7 +3831,7 @@ fn route_walked_legs(
             leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
-        let sealed = st.solid;
+        let sealed = st.solid.clone();
         let (Some(start), Some(goal)) = (
             leg_world.snap_endpoint(pair[0].pos, false),
             leg_world.snap_endpoint(pair[1].pos, pair[1].talk_to),
@@ -3851,6 +3851,11 @@ fn route_walked_legs(
                     to_step: pair[1].src_step,
                     cells,
                     use_gates,
+                    // The leg carries the world it was PROVEN over, not just the
+                    // route. Anything that re-judges these cells has to ask this
+                    // value for the world to judge them in — see
+                    // [`LegRoute::proven_world`].
+                    region_state: st,
                 },
                 sealed,
             ));
@@ -6257,6 +6262,31 @@ pub struct LegRoute {
     /// pathfinder's `canOpenDoors` performs the adventure-legal click); always
     /// kept as thinned waypoints.
     pub use_gates: Vec<[i32; 3]>,
+    /// The runtime-region state in force while the player walks this leg — the
+    /// world the A* above actually ran in ([`World::walked_leg_region_state`]).
+    ///
+    /// **Private, and it is the point.** A `LegRoute` is only ever produced by
+    /// [`route_walked_legs`], which is the single site that decides this value; a
+    /// consumer that wants to re-judge these cells cannot supply an opinion of its
+    /// own, it can only ask [`LegRoute::proven_world`]. Before the leg carried it,
+    /// the state was computed, used for the route, and dropped — so the
+    /// standability self-check re-judged the cells against the base world and
+    /// refused every route that crossed floor the campaign lays at runtime.
+    region_state: RegionState,
+}
+
+impl LegRoute {
+    /// The world this leg's route was proven over: `world` as this leg's runtime
+    /// region writes leave it. `None` when the leg has no runtime writes in force,
+    /// which is every leg of every campaign that writes no region — those judge
+    /// `world` itself and clone nothing.
+    ///
+    /// The one way to obtain a leg's world. It exists so that "which world does
+    /// this route mean" has exactly one answer, held by the value that carries the
+    /// route, rather than one answer per caller.
+    fn proven_world(&self, world: &World) -> Option<World> {
+        (!self.region_state.is_empty()).then(|| world.with_region_state(&self.region_state))
+    }
 }
 
 /// Compute the proven A* cell route for every WALKED critical-path leg (transport
@@ -6323,13 +6353,25 @@ pub fn branch_path_routes(
 }
 
 /// `DW0314`: an exported critical-path waypoint is not standable in the FINAL
-/// assembled world (settled + water-flooded + relight fixtures). A build-time
-/// self-check over the very cells the harness will replay: it makes it structurally
-/// impossible to ship a waypoint the game floods or walls (the water-flow /
-/// post-nav-mutation divergence class). Every cell a leg exports comes
-/// from `find_path` over this same world, so this can only fire if a later pass
-/// mutates a cell nav relied on or an endpoint resolves off the walkable set — in
-/// which case it is a compiler/assembly defect to escalate, never a cell to nudge.
+/// assembled world (settled + water-flooded + relight fixtures) **as that leg's own
+/// runtime region writes leave it**. A build-time self-check over the very cells the
+/// harness will replay: it makes it structurally impossible to ship a waypoint the
+/// game floods or walls (the water-flow / post-nav-mutation divergence class).
+///
+/// The qualifier is load-bearing, because a leg is not walked over the bare
+/// assembled world. A campaign may lay floor at runtime — a repaired stair, a
+/// lowered bridge, a placed plank — and the leg that crosses it is routed over the
+/// world those writes produce ([`LegRoute::proven_world`]). Judging the bare world
+/// here instead refused every such route: the plank is not in the assembled model,
+/// so its cells read "no floor" and a correct campaign could not ship.
+///
+/// Every cell a leg exports comes from `find_path` over the world this check now
+/// rebuilds, so it can only fire if a later pass mutates a cell nav relied on or an
+/// endpoint resolves off the walkable set — in which case it is a compiler/assembly
+/// defect to escalate, never a cell to nudge. That is the case it is kept for: an
+/// edit batch that buries a room the content needs walkable is still caught,
+/// because a terrain edit is not a runtime region write and no leg state restores
+/// it.
 pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
 
 /// Assert every exported waypoint cell is standable in `world` — the final model the
@@ -6340,16 +6382,26 @@ pub const DW_WAYPOINT_NOT_STANDABLE: DwCode = DwCode::every_version("DW0314");
 /// loudly instead of stranding the bot at runtime.
 pub fn verify_exported_routes(world: &World, routes: &[LegRoute]) -> Result<(), NavError> {
     for leg in routes {
+        // The world this leg was PROVEN over, obtained from the leg rather than
+        // decided here. `world` is the final assembled model (settled + flooded +
+        // fixtures); the leg's own runtime region writes are laid over it, which is
+        // exactly the model the A* ran in. Judging `world` bare instead is the
+        // second opinion this field exists to remove: a leg the campaign lays floor
+        // for is walkable when it is walked and not before, so the bare world calls
+        // its cells "no floor" and refuses a route that is correct.
+        let leg_world_owned = leg.proven_world(world);
+        let leg_world: &World = leg_world_owned.as_ref().unwrap_or(world);
         for &cell in &leg.cells {
-            if !world.is_standable(cell) {
+            if !leg_world.is_standable(cell) {
                 return Err(NavError {
                     code: DW_WAYPOINT_NOT_STANDABLE,
                     message: format!(
                         "critical-path waypoint export: cell {cell:?} on the leg to {to:?} is not \
-                         standable in the final assembled world (it is solid, water-flooded, or \
-                         has no floor). A proven route must not cross a cell a later pass mutated \
-                         — this is the water-flow / post-nav-mutation divergence class: fix the \
-                         prefab/water or the assembly, do not move the waypoint. (leg from {from:?})",
+                         standable in the final assembled world as this leg's runtime region \
+                         writes leave it (it is solid, water-flooded, or has no floor). A proven \
+                         route must not cross a cell a later pass mutated — this is the \
+                         water-flow / post-nav-mutation divergence class: fix the prefab/water or \
+                         the assembly, do not move the waypoint. (leg from {from:?})",
                         to = leg.to,
                         from = leg.from,
                     ),
@@ -8642,6 +8694,9 @@ mod tests {
             to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0], [2, 65, 0], [3, 65, 0]],
             use_gates: Vec::new(),
+            // No runtime write on this leg: the bare world is the world it was
+            // proven over, so the flooded cell has nothing to explain it away.
+            region_state: RegionState::default(),
         }];
         let err = verify_exported_routes(&world, &routes).unwrap_err();
         assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE);
@@ -8657,6 +8712,7 @@ mod tests {
             to_step: 1,
             cells: vec![[0, 65, 0], [1, 65, 0]],
             use_gates: Vec::new(),
+            region_state: RegionState::default(),
         }];
         assert!(verify_exported_routes(&world, &dry).is_ok());
     }
@@ -9128,6 +9184,235 @@ mod tests {
             route_visited(&world, &[a, b], &[fill, clear], &linear).is_ok(),
             "a region cleared before the leg must route again"
         );
+    }
+
+    /// A floor at `y=64` with a three-cell gap at `x ∈ {1,2,3}` — the two ends are
+    /// separated by open void, so nothing routes end to end until something lays
+    /// floor in the gap.
+    fn chasm() -> World {
+        let mut solid = BTreeSet::new();
+        for x in 0..5i32 {
+            if !(1..=3).contains(&x) {
+                solid.insert([x, 64, 0]); // floor, minus the gap
+            }
+            solid.insert([x, 67, 0]); // ceiling
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// A `fill-region` that LAYS floor — a repaired stair, a lowered bridge, a
+    /// placed plank — carries the critical path across a gap, and the exported
+    /// waypoints are judged in the same world the route was proven in.
+    ///
+    /// The two halves used to disagree about this world, and only one of them was
+    /// wrong. The completability proof ([`route_visited`]) has read the leg's
+    /// runtime region state since spec-0031; the waypoint self-check
+    /// ([`verify_exported_routes`]) re-judged the very same cells against the BARE
+    /// assembled world, where the plank does not exist. So a leg over runtime-laid
+    /// floor routed and was then refused `DW0314` for having "no floor" — and a
+    /// campaign whose critical path crosses a bridge it lowers could not ship.
+    #[test]
+    fn a_critical_path_over_runtime_laid_floor_routes_and_exports() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        assert!(
+            route_visited(&world, &[a, b], &[], &linear).is_err(),
+            "the chasm must not route before anything lays floor in it"
+        );
+        // FORCED, and it has to be: this test asserts the leg routes and exports,
+        // and only a fill the party cannot skip carries a forced leg's footing. The
+        // unforced spelling of this very plank is the opposite verdict — see
+        // `the_export_self_check_reads_a_legs_world_with_the_unforced_reading`.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
+        assert!(
+            route_visited(&world, &[a, b], std::slice::from_ref(&plank), &linear).is_ok(),
+            "the proof must credit floor the campaign lays from a beat the party cannot skip, \
+             before the leg is walked"
+        );
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
+        assert_eq!(legs.len(), 1, "the walked leg must be exported");
+        assert!(
+            legs[0].cells.contains(&[2, 65, 0]),
+            "the exported route must cross the laid floor: {:?}",
+            legs[0].cells
+        );
+        // The half that was wrong. Judged against the bare world these cells have
+        // no floor; judged against the world the leg was proven over, they do.
+        assert!(
+            !world.is_standable([2, 65, 0]),
+            "the bare assembled world really does lack the floor — otherwise this \
+             test proves nothing"
+        );
+        verify_exported_routes(&world, &legs)
+            .expect("a waypoint on floor the campaign lays must pass the export self-check");
+    }
+
+    /// The direction the self-check exists for is untouched: a cell a **later pass**
+    /// mutated is still `DW0314`, because a terrain edit is not a runtime region
+    /// write and no leg state restores it.
+    ///
+    /// Same leg, same laid plank, same exported route — but the final world has had
+    /// one of the route's cells walled since the route was proven. The leg's own
+    /// region state cannot explain that cell away, so the refusal stands.
+    #[test]
+    fn a_later_pass_that_walls_a_proven_cell_is_still_dw0314() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        // FORCED for the same reason: the leg has to route at all before a later
+        // pass can be shown to break it.
+        let plank = RegionEvent::forced(([1, 64, 0], [3, 64, 0]), RegionWrite::Fill, 0);
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], std::slice::from_ref(&plank), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
+        // A later pass drops a block into a cell the proven route walks through.
+        let mutated = world.with_sealed(&[[2, 65, 0]].into_iter().collect());
+        let err = verify_exported_routes(&mutated, &legs)
+            .expect_err("a walled waypoint must still be refused");
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE); // DW0314
+        assert!(
+            err.message.contains("[2, 65, 0]"),
+            "the message must name the offending cell: {}",
+            err.message
+        );
+    }
+
+    /// **The junction of the two halves, at the one point where it is directly
+    /// observable.** The export self-check judges a leg in the world the leg was
+    /// proven over ([`LegRoute::proven_world`]), and that world is built by
+    /// [`World::with_region_state`] — which also applies the unforced reading
+    /// ([`World::with_unforced`]). So the self-check inherits forcedness for free,
+    /// and neither half alone says so: one decided *which world* the check reads,
+    /// the other decided *what an unforced fill does to a world*.
+    ///
+    /// Same world, same leg, same exported cells. The only thing that differs
+    /// between the two verdicts below is whether the plank under `[2,65,0]` was
+    /// laid by a beat the party cannot skip.
+    ///
+    /// **What would make this test vacuous**, stated so a later reader can check
+    /// it rather than trust it:
+    ///
+    /// * If the chasm did not really lack the floor, the accept would pass for the
+    ///   wrong reason — the bare world would already be standable and
+    ///   `proven_world` would be doing nothing. Asserted below.
+    /// * If the exported route did not really cross the laid cell, both verdicts
+    ///   would be about a cell nobody stands on. Asserted below.
+    /// * If `verify_exported_routes` returned `Err` for some unrelated cell, the
+    ///   refusal would look right and mean nothing. The code is asserted, and the
+    ///   message is required to name one of the cells standing on the plank.
+    ///
+    /// One thing this test deliberately does NOT claim: that a whole campaign can
+    /// reach the refusing branch. It cannot — `route_visited` refuses an unforced
+    /// footing as `DW0546` before any route is exported, so at campaign scale this
+    /// reading is defence in depth rather than the live gate. That is why the
+    /// unforced leg here is constructed rather than routed: `route_walked_legs`
+    /// over an unforced plank correctly produces no leg at all, which is asserted
+    /// too. The campaign-scale statement of the same junction is
+    /// `crates/compiler/tests/laid_footing_root.rs`.
+    #[test]
+    fn the_export_self_check_reads_a_legs_world_with_the_unforced_reading() {
+        let world = chasm();
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let box_ = ([1, 64, 0], [3, 64, 0]);
+
+        // Not assumed: the bare assembled world really has no floor here, so
+        // anything that stands at [2,65,0] is standing on something a runtime
+        // write laid.
+        assert!(
+            !world.is_standable([2, 65, 0]),
+            "the chasm must really be a chasm, or neither verdict below means anything"
+        );
+
+        // --- forced: the leg routes, and the export self-check accepts it -------
+        let forced = RegionEvent::forced(box_, RegionWrite::Fill, 0);
+        let legs: Vec<LegRoute> =
+            route_walked_legs(&world, &[a, b], std::slice::from_ref(&forced), &linear)
+                .into_iter()
+                .map(|(leg, _)| leg)
+                .collect();
+        assert_eq!(legs.len(), 1, "the forced plank must carry a walked leg");
+        assert!(
+            legs[0].cells.contains(&[2, 65, 0]),
+            "the exported route must really cross the laid cell: {:?}",
+            legs[0].cells
+        );
+        // Reverting the leg-carries-its-world half reds HERE: judged against the
+        // bare `world`, [2,65,0] has no floor and this becomes `DW0314`.
+        verify_exported_routes(&world, &legs)
+            .expect("footing the party cannot skip must pass the export self-check");
+
+        // --- unforced: the same cells, in a world that may not hold the plank ---
+        // `route_walked_legs` will not produce this leg — an unforced plank is
+        // impassable and not floor, so nothing routes across it. That is the
+        // campaign-scale verdict, and it is asserted rather than assumed.
+        assert!(
+            route_walked_legs(
+                &world,
+                &[a, b],
+                &[RegionEvent::unforced(
+                    box_,
+                    RegionWrite::Fill,
+                    0,
+                    "a trap nobody must spring"
+                )],
+                &linear,
+            )
+            .is_empty(),
+            "an unforced plank must not carry a walked leg at all"
+        );
+        // So the leg is carried over from the forced run with only its region
+        // state re-marked: identical cells, identical world, one bit different.
+        let mut unforced_state = RegionState::default();
+        unforced_state
+            .unforced
+            .extend(crate::assembled::region_cells(box_.0, box_.1));
+        let mut leg = legs[0].clone();
+        leg.region_state = unforced_state;
+        // Reverting the footing half reds HERE: with an unforced fill folded back
+        // into `solid`, [2,65,0] is floored and the self-check accepts a waypoint
+        // standing on a plank the party may never have laid.
+        let err = verify_exported_routes(&world, std::slice::from_ref(&leg))
+            .expect_err("a waypoint standing on unforced footing must not be exported");
+        assert_eq!(err.code, DW_WAYPOINT_NOT_STANDABLE); // DW0314
+        // The refusal must be ABOUT the plank, not about some other cell that
+        // happens to be unstandable — that is the vacuity this assertion removes.
+        // Which of the three cells standing on the box is reported is the loop's
+        // order and not a claim, so any of them satisfies it.
+        assert!(
+            [[1, 65, 0], [2, 65, 0], [3, 65, 0]]
+                .iter()
+                .any(|c| err.message.contains(&format!("{c:?}"))),
+            "the refusal must name a cell whose footing is the uncertain plank: {}",
+            err.message
+        );
+    }
+
+    /// A leg that writes no region judges the bare world, clones nothing, and is
+    /// the answer it always was — the fast path every campaign without a runtime
+    /// region takes.
+    #[test]
+    fn a_leg_with_no_runtime_write_judges_the_bare_world() {
+        let world = floored(5, 1, 65, &[]);
+        let a = at_step([0, 65, 0], 1);
+        let b = at_step([4, 65, 0], 2);
+        let legs: Vec<LegRoute> = route_walked_legs(&world, &[a, b], &[], &linear)
+            .into_iter()
+            .map(|(leg, _)| leg)
+            .collect();
+        assert_eq!(legs.len(), 1);
+        assert!(
+            legs[0].proven_world(&world).is_none(),
+            "a leg with no runtime write must not clone a world"
+        );
+        verify_exported_routes(&world, &legs).expect("an ordinary leg still passes");
     }
 
     // --- what a write LEAVES: fluid is not floor ----------------------------
