@@ -20,8 +20,7 @@
 - **Non-goals**: ways across assembly seams (face contract, spec-0036 §2.8 /
   `DW0780`); reversible or repeating ways (`close-gate` semantics unchanged —
   a way opens once); partial or staged openings; any change to the proving
-  zone's geometry or any campaign content; the optional-root footing
-  asymmetry in general (§1.6d — named as its own finding); `vision` edges
+  zone's geometry or any campaign content; `vision` edges
   (no traversal claim, so nothing to be contingent about).
 
 ## 1. The measured ground
@@ -55,8 +54,8 @@ the refusal; its committed program declares no `contract` block.
    unwalled, so no `sealed`; unanchored, so no `posted` — and red.
 4. **The runtime half exists and is general.** `fill-region` / `clear-region`
    are campaign effects (dsl `0.10.0`, spec-0031), and the completability
-   model credits a runtime fill as solid **and as footing** from the quest-DAG
-   point its effect fires (`RegionWrite` / `RegionState`,
+   model credits a **forced** runtime fill as solid **and as footing** from
+   the quest-DAG point its effect fires (`RegionWrite` / `RegionState`,
    `crates/compiler/src/plan.rs`, `nav.rs`; the `DW0544` counterfactual
    exercises the footing direction).
 5. **The prefab contract crosses into the compiler as bytes, not as claims.**
@@ -73,15 +72,26 @@ the refusal; its committed program declares no `contract` block.
      targets an anchor-centred box (`StealthZone { anchor, extent }`), which
      can neither name an offset cell nor a named export — the same
      too-narrow binding spec-0031's lift round recorded;
-   - c. the exported-route verifier (`DW0314`,
-     `nav::verify_exported_routes`) judges every leg against the base
-     assembled world with **no region state**, while the router routes each
-     leg **with** it — so a leg over runtime-laid floor is exported and then
-     refused, pinned in `crates/compiler/tests/v10_lift.rs`;
-   - d. and one soundness asymmetry, recorded here as a finding for its own
-     round: `collect_region_events` keeps a fill from an *optional* root, so
-     footing can be credited from an effect that may never fire. This spec
-     closes it for ways (§2.5) and does not silently rewrite it in general.
+   - c. the export self-check (`DW0314`, `nav::verify_exported_routes`) was
+     measured judging every exported leg against the base assembled world
+     with **no region state**, while the router routes each leg **with**
+     it — so a leg over runtime-laid floor was routed and then refused. The
+     completability router itself has always been region-aware; the defect
+     is the self-check's alone, and nothing executing pinned it — the
+     record was a doc comment in `crates/compiler/tests/v10_lift.rs` and a
+     sentence of prose, which is not a pin. The alignment is in flight as
+     its own repair, arriving at §2.5's requirement on its own merits —
+     shared calibration stated outright, the runtime tier named as the only
+     independent observer — and AC10 holds whichever change lands first;
+   - d. one soundness asymmetry this spec first recorded as an open finding
+     — footing credited from a fill whose root the party can skip — is now
+     settled ground: footing is credited only from a region write **forced
+     on every completion path**, decided at the effect root and carried
+     privately, with two named constructors the only way to build a
+     `RegionEvent`, so the authoring surface has no field on which to
+     assert it (`DW0546`; an unforced fill reads as impassable and not
+     floor, an unforced clear never reaches the model, a cell already solid
+     is left alone). §2.5 inherits this rather than restating it.
 
 ## 2. Surface
 
@@ -173,22 +183,26 @@ object (the gate anchor), not this one.
   point the region is solid-and-footing (laid) or passable (cleared) — the
   existing `RegionState` machinery, fed from prefab metadata instead of an
   authored box.
-- **Footing is credited only from a forced opening.** An `open-way` on an
-  optional root opens the way in play but proves nothing: required content
-  whose only route crosses it is red naming the optional root. This is §1.6d
-  closed for ways.
-- **The exported-route verifier judges each leg against that leg's region
-  state** — the same worldview the router used. The current disagreement is
-  one instrument carrying two calibrations, and its false red is what makes
-  runtime-laid floor unshippable today. Alignment is deliberate shared
-  calibration — verifier and router are one instrument — so the independent
-  observer for this claim is the runtime tier (§7.13), never a second static
-  check.
+- **Footing is credited only from a forced opening — inherited, not
+  restated.** `open-way`'s event is built through the same two constructors
+  every region write must use, so its forcedness is decided by where it sits
+  (§1.6d, `DW0546`) and this spec adds no crediting rule of its own. What it
+  adds is the object-keyed name: an `open-way` on an unforced root opens the
+  way in play but proves nothing, and required content whose only route
+  crosses it is red naming the **way** — not only the box and the beat.
+- **The export self-check judges each leg against the region state it was
+  proven over** — the same worldview the router used. A self-check that
+  disagrees with its router is one instrument carrying two calibrations, and
+  its false red is what made runtime-laid floor unshippable when this spec
+  measured it (§1.6c); this spec requires the property, whichever change
+  delivers it. Shared calibration here is deliberate — verifier and router
+  are one instrument — so the independent observer for this claim is the
+  runtime tier (§7.13), never a second static check.
 - **Disposition is enumerated, per staged way, in the compile verdict**:
   opened by which effect at which DAG point, or never opened with the cell
   count behind it. A required element — objective anchor, staged body, any
   campaign reference — resolving into a space the piece's contract reaches
-  only through a never-opened (or optional-only) way is **red naming both**.
+  only through a never-opened (or unforced-only) way is **red naming both**.
   Nothing else about a never-opened way is red: a door that never opens is
   content. Which verdict a way gets is computed from what is staged behind
   it; the author picks nothing.
@@ -249,9 +263,10 @@ second hatch is added to the gate it relaxes.
    reachability generalisation, fence — fixtures are §1.2's twins, distilled.
 2. Export + `delve-admit` halves (`edge` grows `way`; audit agrees with
    `expand` through both doors).
-3. Compiler: `open-way` (dsl `0.12.0`), metadata-fed region events,
-   forced-only footing for ways, route-verifier alignment, disposition
-   enumeration and its reds.
+3. Compiler: `open-way` (dsl `0.12.0`), metadata-fed region events through
+   the named constructors, disposition enumeration and its reds. Forced-only
+   footing is landed and the self-check alignment is in flight as its own
+   repair; this step consumes both rather than building either.
 4. Docs and skills in the same PRs: `grammar.md` §2d, `compiler.md` catalog,
    `prefab-procedure.md`, `tools.md`, `/new-delve`.
 5. Tower adoption round in the content repo, same milestone.
@@ -304,7 +319,7 @@ second hatch is added to the gate it relaxes.
    avoids, not a variant of the fix.
 9. **Ordering has teeth.** A campaign whose objective stands beyond a laid
    way compiles when a forced `open-way` precedes it in the DAG; the same
-   campaign with the effect moved after the objective, or onto an optional
+   campaign with the effect moved after the objective, or onto an unforced
    root, is red naming way, effect and objective. The fixture demonstrates
    the way is load-bearing: deleting the opening effect must produce the red.
    *Vacuous if* the objective is reachable by any other route, which makes
