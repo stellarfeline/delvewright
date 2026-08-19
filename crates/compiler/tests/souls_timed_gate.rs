@@ -36,8 +36,10 @@ fn build_fixture() -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     emit::build(
@@ -70,8 +72,10 @@ fn the_fixture_gate_can_be_watched_before_it_is_entered() {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     // The campaign declares a timed gate, so the proof has something to judge …
@@ -265,8 +269,10 @@ fn build_with_crush(crush: bool) -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     emit::build(

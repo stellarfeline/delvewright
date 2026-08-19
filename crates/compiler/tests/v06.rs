@@ -215,8 +215,10 @@ fn build_v06(quests: &str) -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -276,8 +278,10 @@ fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) ->
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();

@@ -179,13 +179,6 @@ impl TileSet {
     }
 }
 
-/// Only the field that says which shape a prefab metadata file is.
-#[derive(Deserialize)]
-struct MetadataShape {
-    #[serde(default)]
-    structure_set: Option<TileSet>,
-}
-
 /// Read a prefab metadata file and say whether it describes a tile set.
 ///
 /// `Ok(None)` means an ordinary single-template prefab — the caller carries on
@@ -193,18 +186,19 @@ struct MetadataShape {
 /// malformed file, never a shrug: every consumer that opens prefab metadata
 /// must be able to tell the two shapes apart, and the way a tool "handles" a
 /// tile set it has never heard of is by reading none of its blocks.
+///
+/// **It reads the whole document through [`crate::prefab::PrefabMeta`], not a
+/// private view of one key.** A narrow reader here was a second reader: it
+/// accepted a document that declares no blocks at all as "not a tile set", and
+/// it validated the manifest on a path the prefab registry never took. One
+/// reader means a manifest is refused the same way by the renderer, the
+/// admission tools and world assembly, or by none of them.
 pub fn read_tile_set(path: &Path) -> Result<Option<TileSet>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let shape: MetadataShape =
-        serde_json::from_slice(&bytes).map_err(|e| format!("parse {}: {e}", path.display()))?;
-    match shape.structure_set {
-        None => Ok(None),
-        Some(set) => {
-            set.validate()
-                .map_err(|e| format!("{}: {e}", path.display()))?;
-            Ok(Some(set))
-        }
-    }
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let meta = crate::prefab::PrefabMeta::from_json(&text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(meta.structure_set)
 }
 
 #[derive(Serialize)]
@@ -495,7 +489,10 @@ mod tests {
         );
         std::fs::write(
             dir.join("zone.json"),
-            serde_json::to_string(&serde_json::json!({ "structure_set": set })).unwrap(),
+            serde_json::to_string(
+                &serde_json::json!({ "prefab_id": "prefab/zone", "structure_set": set }),
+            )
+            .unwrap(),
         )
         .unwrap();
         for part in &set.parts {
@@ -575,7 +572,7 @@ mod tests {
         let single = dir.join("single.json");
         std::fs::write(
             &single,
-            r#"{"prefab_id":"prefab/x","structure":{"file":"x.nbt","id":"x","size":[2,2,2]}}"#,
+            r#"{"prefab_id":"prefab/x","structure":{"file":"x.nbt","id":"x","size":[2,2,2],"data_version":4671}}"#,
         )
         .unwrap();
         assert_eq!(read_tile_set(&single).unwrap(), None);
@@ -587,7 +584,10 @@ mod tests {
         let tiled = dir.join("tiled.json");
         std::fs::write(
             &tiled,
-            serde_json::to_string(&serde_json::json!({ "structure_set": set })).unwrap(),
+            serde_json::to_string(
+                &serde_json::json!({ "prefab_id": "prefab/zone", "structure_set": set }),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(read_tile_set(&tiled).unwrap().unwrap(), set);
@@ -598,7 +598,10 @@ mod tests {
         let bad = tile_set([4, 4, 60], vec![([0, 0, 0], [4, 4, 48])]);
         std::fs::write(
             &broken,
-            serde_json::to_string(&serde_json::json!({ "structure_set": bad })).unwrap(),
+            serde_json::to_string(
+                &serde_json::json!({ "prefab_id": "prefab/zone", "structure_set": bad }),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert!(read_tile_set(&broken).unwrap_err().contains("cover"));

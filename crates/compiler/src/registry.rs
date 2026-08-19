@@ -434,7 +434,7 @@ impl PrefabRegistry {
                     continue;
                 }
             };
-            if file == "pools.json" {
+            if file == delvewright_dsl::prefab::POOLS_FILE {
                 match serde_json::from_str::<PoolsFile>(&raw) {
                     Ok(pf) => {
                         for (id, def) in pf.pools {
@@ -446,33 +446,14 @@ impl PrefabRegistry {
                 }
                 continue;
             }
-            // A tile-set manifest is a shape this delvec understands and cannot
-            // yet PLACE, which is a different fact from a schema it has never
-            // heard of — and "upgrade delvec, or fix the field" is advice that
-            // would not have worked. Placing a tile group in world assembly is
-            // queued (chunked export phase 2); until it lands, say so.
-            if serde_json::from_str::<serde_json::Value>(&raw)
-                .ok()
-                .and_then(|v| v.get("structure_set").cloned())
-                .is_some()
-            {
-                load_diagnostics.push(Diagnostic::error(
-                    DW_PREFAB_META_INVALID,
-                    "prefabs",
-                    file.clone(),
-                    format!(
-                        "prefab metadata `{file}` describes a TILE SET (`structure_set`): a zone \
-                         too big for one 48-per-axis structure template, exported as several \
-                         `.nbt` tiles plus this manifest. Placing a tile group during world \
-                         assembly is queued engine work (chunked export phase 2) and this delvec \
-                         cannot do it, so the zone is skipped rather than half-placed. Authoring \
-                         and review already handle it: `delve-render piece` and `delve-admit \
-                         audit` both take this manifest."
-                    ),
-                ));
-                continue;
-            }
-            match serde_json::from_str::<PrefabMeta>(&raw) {
+            // Both packagings — one template, or a tile set past the vanilla
+            // 48-per-axis cap — are the same document and are read by the one
+            // reader that defines it (`PrefabMeta::from_json`, which also
+            // refuses a manifest that does not tile its own zone). A private
+            // shape test here was what made a tiled zone unbuildable: the
+            // registry knew what the document was and answered `DW0346`, so a
+            // campaign could produce a zone and not build a world out of it.
+            match PrefabMeta::from_json(&raw) {
                 Ok(meta) => {
                     // A key this delvec does not model is kept, not refused —
                     // and not silent either. It is one of exactly two things: a

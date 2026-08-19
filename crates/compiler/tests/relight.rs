@@ -88,8 +88,8 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            structures.insert(piece.structure_file.clone(), nbt.clone());
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
+            structures.insert(t.structure_file.clone(), nbt.clone());
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -124,8 +124,8 @@ fn build_localized(
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            structures.insert(piece.structure_file.clone(), nbt.clone());
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
+            structures.insert(t.structure_file.clone(), nbt.clone());
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -156,8 +156,10 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -409,8 +411,10 @@ fn hello_room_measures_not_dark() {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let r = light::relight(&plan, &structures);

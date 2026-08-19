@@ -118,8 +118,8 @@ fn build_with(moat: &str) -> Result<BuildOutput, BuildFailure> {
     let nbt = room_with_moat(moat);
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
-        for piece in &area.pieces {
-            structures.insert(piece.structure_file.clone(), nbt.clone());
+        for t in area.pieces.iter().flat_map(|p| &p.templates) {
+            structures.insert(t.structure_file.clone(), nbt.clone());
         }
     }
     emit::build(

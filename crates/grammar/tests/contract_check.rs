@@ -929,3 +929,82 @@ fn an_out_of_walk_region_that_holds_no_standable_cell_is_red() {
         g.detail
     );
 }
+
+// ---------------------------------------------------------------------------
+// A binding of zero, from both sides
+// ---------------------------------------------------------------------------
+
+/// **The honest empty.** A piece where every standable cell is play space
+/// declares no out-of-walk region, and there is then nothing for §2.6 to
+/// classify. The only way to hand that gate an object would be to declare a
+/// region that is not there — the vacuity the gate exists to catch, one rung
+/// out — so the gate is WITHHELD rather than printed green, and says why.
+///
+/// The pair below is what makes this a claim rather than a licence: the same
+/// empty declaration reds the moment the floor stops being accounted for.
+#[test]
+fn an_empty_out_of_walk_declaration_is_withheld_when_every_cell_is_play_space() {
+    let (b, c) = hall();
+    assert!(
+        c.no_body.is_empty(),
+        "the fixture declares no out-of-walk floor"
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    assert!(report.is_pass(), "{:#?}", report.gates);
+    assert!(
+        !report.gates.iter().any(|g| g.id == "contract-no-body"),
+        "a gate over nothing claimed a verdict instead of being withheld: {:#?}",
+        report.gates
+    );
+    // Three gates are withheld over this hall — the out-of-walk one under test,
+    // plus `contract-edge-proof` (one space) and `contract-anchors` (the
+    // fixture names no place). Each says which it is, so pick the one meant.
+    let why = report
+        .enumeration
+        .iter()
+        .find(|e| e.contains("contract-no-body") && e.contains("is not emitted"))
+        .unwrap_or_else(|| panic!("withheld silently: {:#?}", report.enumeration));
+    assert!(
+        why.contains("standable cell(s) lie in a declared space"),
+        "the justification must name the computed fact that discharges it, not merely assert \
+         that nothing was declared: {why}"
+    );
+}
+
+/// **The vacuous empty, one edit away.** The identical building and the
+/// identical empty `no_body`, with the declared space pulled back off part of
+/// the floor. Nothing is out of walk and nothing accounts for those cells
+/// either, so the emptiness is no longer a claim about the piece — and the gate
+/// reds instead of being withheld.
+///
+/// This is the property the withholding is secured by, shown failing: the
+/// excuse is a computed fact about the blocks, and an author cannot reach it by
+/// declaring less. Deleting an out-of-walk region does not delete its cells;
+/// they have to land somewhere that owes MORE proof, not less.
+#[test]
+fn the_same_empty_declaration_reds_when_floor_is_left_unaccounted_for() {
+    let (b, mut c) = hall();
+    // The hall's own space, pulled back off the last courses of its floor.
+    c.spaces.insert(
+        "hall".to_string(),
+        space("enclosed", vec![region([1, 1, 1], [9, 4, 4])]),
+    );
+    assert!(c.no_body.is_empty(), "still declaring no out-of-walk floor");
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-no-body");
+    assert_eq!(g.bound, 0, "the population is empty in BOTH fixtures");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("examined ZERO objects"),
+        "a zero binding must say so in the gate a reader sees, not only in a finding: {}",
+        g.detail
+    );
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.contains("contract-no-body") && f.contains("examined ZERO objects")),
+        "{:#?}",
+        report.findings
+    );
+}

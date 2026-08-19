@@ -64,8 +64,10 @@ fn build_hello_world() -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -95,8 +97,10 @@ fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
-            let bytes = std::fs::read(common::prefabs_dir().join(&piece.structure_file)).unwrap();
-            structures.insert(piece.structure_file.clone(), bytes);
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                structures.insert(t.structure_file.clone(), bytes);
+            }
         }
     }
     let tree = CommandTree::v1_21_11();
@@ -1085,10 +1089,10 @@ mod gravity_despawn {
         // Supported: a stone substrate under the sand surface → nothing despawns.
         let mut good: BTreeMap<String, Vec<u8>> = BTreeMap::new();
         for area in &plan.areas {
-            for piece in &area.pieces {
-                bad.entry(piece.structure_file.clone())
+            for t in area.pieces.iter().flat_map(|p| &p.templates) {
+                bad.entry(t.structure_file.clone())
                     .or_insert_with(|| structure_nbt(&[([0, 0, 0], "minecraft:sand")]));
-                good.entry(piece.structure_file.clone()).or_insert_with(|| {
+                good.entry(t.structure_file.clone()).or_insert_with(|| {
                     structure_nbt(&[
                         ([0, 0, 0], "minecraft:stone"),
                         ([0, 1, 0], "minecraft:sand"),
