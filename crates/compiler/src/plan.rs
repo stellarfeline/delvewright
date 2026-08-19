@@ -517,13 +517,64 @@ pub struct RegionEvent {
     pub write: RegionWrite,
     /// The `critical_path` step index at which this firing happens.
     pub fire_step: usize,
+    /// **Whether the party is guaranteed to cause this firing**, computed from the
+    /// quest graph and the effect's root — never asserted by an author, because the
+    /// DSL has no surface on which to assert it (see [`collect_region_events`]).
+    ///
+    /// Private, with [`RegionEvent::forced`] / [`RegionEvent::unforced`] as the only
+    /// ways in, so a `RegionEvent` **cannot be built without answering this
+    /// question**. It is the same move [`RegionWrite::of_block`] makes for the block:
+    /// the model's premises are constructed, not defaulted.
+    forced: bool,
+    /// The beat this firing hangs off, in words, for a diagnostic to name. Empty for
+    /// a forced write, which never needs blaming.
+    blame: String,
 }
 
 impl RegionEvent {
+    /// A write the party **cannot avoid causing**: a quest bundle they must complete,
+    /// an environment trigger, or a wall the placed world is born holding.
+    pub fn forced(region: ([i32; 3], [i32; 3]), write: RegionWrite, fire_step: usize) -> Self {
+        RegionEvent {
+            region,
+            write,
+            fire_step,
+            forced: true,
+            blame: String::new(),
+        }
+    }
+
+    /// A write that **may never happen**: a sprung trap, a bought offer, a death, a
+    /// shortcut taken from the far side. `blame` names the beat in words.
+    pub fn unforced(
+        region: ([i32; 3], [i32; 3]),
+        write: RegionWrite,
+        fire_step: usize,
+        blame: impl Into<String>,
+    ) -> Self {
+        RegionEvent {
+            region,
+            write,
+            fire_step,
+            forced: false,
+            blame: blame.into(),
+        }
+    }
+
     /// Whether this write overwrites the region with a block
     /// ([`RegionWrite::fills`]).
     pub fn fills(&self) -> bool {
         self.write.fills()
+    }
+
+    /// Whether the party is guaranteed to cause this firing.
+    pub fn is_forced(&self) -> bool {
+        self.forced
+    }
+
+    /// The beat this firing hangs off, in words; empty when it is forced.
+    pub fn blame(&self) -> &str {
+        &self.blame
     }
 }
 
@@ -1830,10 +1881,13 @@ impl<'a> Plan<'a> {
         // so the critical path, the checkpoints and the traps are all proven over
         // a world where no shortcut has been taken. The delve must be finishable
         // the long way; the shortcut is a reward, never a requirement.
-        region_events.extend(shortcuts.iter().map(|sc| RegionEvent {
-            region: sc.gate_region,
-            write: RegionWrite::of_block(&sc.gate_block),
-            fire_step: 0,
+        // FORCED, and the word is exact: what is unforced about a shortcut is the
+        // player OPENING it, and that firing is registered separately (and dropped,
+        // being an unseal from an optional root). The door standing shut is a fact
+        // about the world at load — nobody has to do anything for it to be true — so
+        // its footing is footing the party really has.
+        region_events.extend(shortcuts.iter().map(|sc| {
+            RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
         let strict_ancestor_steps = compute_strict_ancestor_steps(campaign, &objective_steps);
         // v0.10 (spec-0031): where the party can be CARRIED rather than walk.
@@ -1921,10 +1975,8 @@ impl<'a> Plan<'a> {
         cp: &CriticalPath,
     ) -> (Vec<RegionEvent>, BTreeMap<usize, BTreeSet<usize>>) {
         let mut region_events = collect_region_events(self.campaign, &self.anchors, &cp.obj_step);
-        region_events.extend(self.shortcuts.iter().map(|sc| RegionEvent {
-            region: sc.gate_region,
-            write: RegionWrite::of_block(&sc.gate_block),
-            fire_step: 0,
+        region_events.extend(self.shortcuts.iter().map(|sc| {
+            RegionEvent::forced(sc.gate_region, RegionWrite::of_block(&sc.gate_block), 0)
         }));
         let ancestors = compute_strict_ancestor_steps(self.campaign, &cp.obj_step);
         (region_events, ancestors)
@@ -3718,15 +3770,28 @@ fn zone_box_in(
 ///   bundle have no step of their own (proximity, a sprung trap, a death), so all
 ///   three are rooted conservatively at step 0, which precedes every leg.
 ///
-/// The two **optional** roots — a trap the party may never trip, a death nobody is
-/// forced to suffer — register their `close-gate`s only. An unguaranteed firing may
-/// be assumed to have happened exactly when assuming so is conservative: it can
-/// seal a region (the proof must survive the seal), it can never unseal one (the
-/// proof may not lean on a wall the player might never open). That is the same rule
-/// a shortcut gate already obeys — sealed for the whole model, because the delve
-/// must be finishable the long way. Environment triggers keep their older
-/// both-directions treatment unchanged; narrowing that is a different proof's
-/// verdict and is not this function's call to make.
+/// The **optional** roots — a trap the party may never trip, a death nobody is
+/// forced to suffer, an offer nobody is forced to buy — register their *filling*
+/// writes only. An unguaranteed firing may be assumed to have happened exactly when
+/// assuming so is conservative: it can seal a region (the proof must survive the
+/// seal), it can never unseal one (the proof may not lean on a wall the player might
+/// never open). That is the same rule a shortcut gate already obeys — sealed for the
+/// whole model, because the delve must be finishable the long way. Environment
+/// triggers keep their older both-directions treatment unchanged; narrowing that is a
+/// different proof's verdict and is not this function's call to make.
+///
+/// **A fill from such a root is registered, and marked unforced, because "it sealed"
+/// and "you can stand on it" are two different conclusions and only the first is
+/// conservative.** The same solid block that walls a doorway floors the cell above
+/// it, so a fill assumed-to-have-happened both blocks the party (harder — sound) and
+/// carries them (easier — unsound). Dropping the event would lose the seal; keeping
+/// it as an ordinary fill lends the forced path footing off a beat nobody has to
+/// play. So the event is kept and the *uncertainty travels with it*
+/// ([`RegionEvent::is_forced`]); `crate::nav` is where the two conclusions part.
+///
+/// A **flood** needs no such split and gets none: a flooded cell is impassable and
+/// never floor, which is already the pointwise-worst of "the water is there" and "it
+/// is not", so an unforced flood is exactly as conservative as a forced one.
 fn collect_region_events(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
@@ -3734,6 +3799,40 @@ fn collect_region_events(
 ) -> Vec<RegionEvent> {
     let mut out = Vec::new();
     for_each_gate_effect(campaign, &mut |site, e| {
+        // How a firing is BLAMED when it turns out to be unforced. Worded off the
+        // root the site already carries, so the diagnostic names the beat an author
+        // can go and look at rather than a JSON pointer alone.
+        let blame = || match site.root {
+            EffectRoot::TrapPayload(t) => {
+                format!(
+                    "the payload of trap `{}`, which the party may never spring",
+                    t.id
+                )
+            }
+            EffectRoot::DialogueRespawn => format!(
+                "a `set-checkpoint` `on_respawn` bundle at `{}`, which runs only if somebody dies",
+                site.path
+            ),
+            EffectRoot::ShortcutUnlock => format!(
+                "a shortcut's `on_unlock` bundle at `{}`, which fires only if the party opens the \
+                 shortcut from its far side",
+                site.path
+            ),
+            EffectRoot::OnDeath => format!(
+                "the campaign's `on_death` bundle at `{}`, which runs only if somebody dies",
+                site.path
+            ),
+            EffectRoot::ShopOffer => format!(
+                "a shop offer's effects at `{}`, which fire only if the party buys it",
+                site.path
+            ),
+            // Not reachable: these three are forced, and a forced event carries no
+            // blame. Worded rather than `unreachable!()` so a later root added to
+            // the optional list cannot panic the compiler.
+            EffectRoot::ObjectiveComplete(_)
+            | EffectRoot::QuestComplete(_)
+            | EffectRoot::Trigger(_) => format!("the effect bundle at `{}`", site.path),
+        };
         let (fire_step, forced) = match site.root {
             EffectRoot::ObjectiveComplete(oid) => (obj_step.get(oid).copied().unwrap_or(0), true),
             EffectRoot::QuestComplete(q) => (quest_complete_step(q, obj_step), true),
@@ -3790,10 +3889,10 @@ fn collect_region_events(
             // survive it.
             return;
         }
-        out.push(RegionEvent {
-            region,
-            write,
-            fire_step,
+        out.push(if forced {
+            RegionEvent::forced(region, write, fire_step)
+        } else {
+            RegionEvent::unforced(region, write, fire_step, blame())
         });
     });
     out
