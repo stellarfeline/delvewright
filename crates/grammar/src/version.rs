@@ -87,8 +87,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.5.0";
 /// * `1.5.0` — the document's own composition: the program-level `include`
 ///   list, which names another program **file** and the prefix its vocabulary
 ///   arrives under.
-pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] =
-    &["1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
+/// * `1.6.0` — the contract's reach (spec-0041, reserved): the `qualify` node,
+///   optional `rise` on `stair`/`drop` edges, and `face` on exterior edges.
+pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
+    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0",
+];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
 /// and the name of the fence constant that change defines for it.
@@ -100,10 +103,12 @@ pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] =
 /// (`tools/check-version-ledger-uniqueness.py`), because at that point the
 /// surface has landed and the reservation is refusing a version the engine can
 /// honour.
-///
-/// Empty today: every number in the ledger names a surface this crate
-/// implements.
-pub const RESERVED_VERSIONS: &[(&str, &str)] = &[];
+pub const RESERVED_VERSIONS: &[(&str, &str)] = &[
+    // spec-0041: the `qualify` node, optional `rise` on `stair`/`drop`, and
+    // `face` on exterior edges — one surface, one number. The implementing
+    // change defines the constant and deletes this row in the same edit.
+    ("1.6.0", "QUALIFY_SINCE"),
+];
 
 /// The version at which a frame may carry a reflection.
 pub const MIRROR_SINCE: &str = "1.1.0";
@@ -162,6 +167,7 @@ pub fn minor_ordinal(version: &str) -> u32 {
         "1.3.0" => 3,
         "1.4.0" => 4,
         "1.5.0" => 5,
+        "1.6.0" => 6,
         _ => 0,
     }
 }
@@ -198,10 +204,35 @@ mod tests {
     #[test]
     fn the_latest_version_is_supported_and_is_the_newest_entry() {
         assert!(is_supported_version(LATEST_PROGRAM_VERSION));
-        assert_eq!(
-            SUPPORTED_PROGRAM_VERSIONS.last(),
-            Some(&LATEST_PROGRAM_VERSION)
-        );
+        // The newest ACCEPTED entry is the latest; a reserved entry may sit
+        // above it (a reservation is in the ledger and not accepted), and
+        // every entry above the latest must be exactly that.
+        assert_eq!(accepted_versions().last(), Some(LATEST_PROGRAM_VERSION));
+        for v in SUPPORTED_PROGRAM_VERSIONS {
+            if minor_ordinal(v) > minor_ordinal(LATEST_PROGRAM_VERSION) {
+                assert!(
+                    reserved_for(v).is_some(),
+                    "{v} is newer than the latest implemented version and not reserved"
+                );
+            }
+        }
+        // A reservation names a surface this crate does not implement, so it
+        // must be refused, and it must be newer than every implemented one —
+        // a reservation below the latest would shadow a landed surface.
+        for (v, anchor) in RESERVED_VERSIONS {
+            assert!(
+                !is_supported_version(v),
+                "reserved {v} ({anchor}) is accepted"
+            );
+            assert!(
+                minor_ordinal(v) > minor_ordinal(LATEST_PROGRAM_VERSION),
+                "reserved {v} ({anchor}) is not newer than {LATEST_PROGRAM_VERSION}"
+            );
+            assert!(
+                SUPPORTED_PROGRAM_VERSIONS.contains(v),
+                "reserved {v} ({anchor}) is not in the ledger"
+            );
+        }
         // Every entry has an ordinal of its own: a version added to the list but
         // not to `minor_ordinal` would silently share `1.0.0`'s fence.
         let mut seen = Vec::new();
@@ -239,11 +270,19 @@ mod tests {
         ];
         assert_eq!(
             fences.len(),
-            SUPPORTED_PROGRAM_VERSIONS.len() - 1,
-            "binding count {}: every ledger version above 1.0.0 names one surface, so a \
-             fence is missing from this table or from the ledger",
+            SUPPORTED_PROGRAM_VERSIONS.len() - 1 - RESERVED_VERSIONS.len(),
+            "binding count {}: every ledger version above 1.0.0 names one surface — a fence \
+             constant here, or a reservation whose sibling change will define one — so a fence \
+             is missing from this table or from the ledger",
             fences.len()
         );
+        // A reserved version enables nothing: its surface is not implemented,
+        // so every fence must read as shut at it.
+        for (v, _) in RESERVED_VERSIONS {
+            for (name, _, open) in fences {
+                assert!(!open(v), "{name} is open at reserved {v}");
+            }
+        }
         for (name, since, open) in fences {
             assert!(is_supported_version(since), "{name}");
             assert!(open(since), "{name} does not open at {since}");
