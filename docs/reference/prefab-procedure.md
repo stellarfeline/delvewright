@@ -588,7 +588,7 @@ use.
 | `connectors` | no (`[]`) | Jigsaw sockets `{name, target, local_pos[3], facing, opening[2], joint}`. |
 | `lighting` | no | `{profile, measured_min_light?, measured?, rationale?, method?}`. |
 | `license` | no | `{source, spdx, note, provenance, generated_by?}`. |
-| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one raises `DW0364` rather than passing on an empty check. |
+| `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one is reported by `DW0344` rather than passing on an empty check, and there is no exemption for a piece that "needs none". |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 
 An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
