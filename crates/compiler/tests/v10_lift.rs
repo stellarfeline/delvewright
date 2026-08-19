@@ -46,7 +46,7 @@
 //!
 //! The first draft of this fixture put BOTH critical-path objectives on `spawn`
 //! — hello-room has four anchors, two are car stations whose cells a
-//! `fill-region` makes solid (so `DW0314` forbids routing through them) and one
+//! `fill-region` makes solid (so no proven route crosses them) and one
 //! is the upper call lever, which left exactly one. `join_place` teleports every
 //! joining player onto the spawn cell, and both objectives' completion boxes
 //! contain it, so **the world tick completed the whole campaign with no player
