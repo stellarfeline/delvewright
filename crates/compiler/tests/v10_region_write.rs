@@ -383,3 +383,90 @@ fn a_bare_water_fill_is_refused_exactly_like_the_namespaced_one() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// --- floor the campaign LAYS, end to end ------------------------------------
+
+/// A `quests` doc whose second objective is reached by walking onto a step the
+/// campaign **fills at runtime**: `obj/talk` lays a block in `anchor/exit`'s cell
+/// (world `[5,65,8]`), and `obj/exit` then stands on top of it at `anchor/perch`
+/// (world `[5,66,8]`). The step does not exist in the assembled world; it exists
+/// only from the point in the quest graph where the fill fires.
+fn quests_doc_over_a_laid_step() -> String {
+    r#"{
+  "dsl_version": "0.10.0",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {
+    "quests": [
+      {
+        "id": "quest/open-the-door",
+        "trigger": { "type": "campaign-start" },
+        "objectives": [
+          { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/perch",
+            "radius": 2, "after": ["obj/talk"] }
+        ],
+        "on_objective_complete": {
+          "obj/talk": [
+            { "type": "open-gate", "anchor": "anchor/door" },
+            { "type": "fill-region",
+              "region": { "anchor": "anchor/exit", "extent": [0, 0, 0] },
+              "block": "minecraft:oak_planks" }
+          ]
+        },
+        "on_complete": [ { "type": "campaign-complete" } ]
+      }
+    ]
+  }
+}"#
+    .to_string()
+}
+
+/// **A critical path that crosses floor the campaign lays at runtime ships.**
+///
+/// The whole delve, end to end: the party talks to the keeper, that lays a plank
+/// in the cell at `[5,65,8]`, and the last objective is reached by standing on it
+/// at `[5,66,8]`. Nothing in the assembled world holds that step — it is authored
+/// as a runtime region write, which is exactly what `fill-region` is for.
+///
+/// This campaign could not be built. The completability proof credited the plank
+/// (it has read the leg's runtime region state since spec-0031), so the leg routed
+/// — and the waypoint self-check then re-judged those very cells against the BARE
+/// assembled world, where the plank does not exist, and refused the build `DW0314`
+/// for a waypoint with "no floor". Two halves of the compiler disagreeing about
+/// one world, with the router right and the check wrong.
+///
+/// The leg now carries the world it was proven over, so there is nothing left to
+/// disagree with.
+#[test]
+fn a_critical_path_over_a_runtime_laid_step_builds() {
+    let dir = prefabs_with_anchor("dw-region-write-laid-step", "anchor/perch", [5, 2, 8]);
+    let laid = parse_hw(&quests_doc_over_a_laid_step());
+    let out = try_build(&laid, &dir)
+        .expect("a critical path over floor the campaign lays at runtime must build");
+
+    // Bound, not assumed. Three things must be true or this test proves nothing:
+    // the delve really does emit the fill, the exported waypoints really do stand
+    // on the laid step, and the step really is absent from the assembled world.
+    let functions = all_functions(&out);
+    assert!(
+        functions.contains("fill 5 65 8 5 65 8 minecraft:oak_planks"),
+        "the campaign must actually lay the step it walks on"
+    );
+    let waypoints: serde_json::Value = out
+        .iter()
+        .find(|(p, _)| p.as_str() == "validation/critical-path-waypoints.json")
+        .map(|(_, b)| serde_json::from_slice(b).unwrap())
+        .expect("the proven critical path must be exported for the harness");
+    let stands_on_the_step = waypoints["legs"]
+        .as_array()
+        .expect("legs")
+        .iter()
+        .flat_map(|l| l["waypoints"].as_array().expect("waypoints").iter())
+        .any(|w| w.as_array().map(|c| c == &[5, 66, 8]).unwrap_or(false));
+    assert!(
+        stands_on_the_step,
+        "the exported route must actually stand on the laid step: {waypoints:#}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
