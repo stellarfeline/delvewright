@@ -15,8 +15,8 @@
   fence), 0006 (determinism), 0001 (the compiler emits everything)
 - **Specs**: 0036 (extended — every obligation and §0 untouched), 0031 (the
   runtime region verbs this binds to), 0040 (composition consumes the result;
-  its seam obligations are not touched), 0041 (sibling in flight; claims
-  document version `1.6.0`, which is why this spec claims `1.7.0`)
+  its seam obligations are not touched), 0041 (landed; holds document
+  version `1.6.0` in the ledger, which is why this spec claims `1.7.0`)
 - **Non-goals**: ways across assembly seams (face contract, spec-0036 §2.8 /
   `DW0780`); reversible or repeating ways (`close-gate` semantics unchanged —
   a way opens once); partial or staged openings; any change to the proving
@@ -79,10 +79,12 @@ the refusal; its committed program declares no `contract` block.
      completability router itself has always been region-aware; the defect
      is the self-check's alone, and nothing executing pinned it — the
      record was a doc comment in `crates/compiler/tests/v10_lift.rs` and a
-     sentence of prose, which is not a pin. The alignment is in flight as
-     its own repair, arriving at §2.5's requirement on its own merits —
-     shared calibration stated outright, the runtime tier named as the only
-     independent observer — and AC10 holds whichever change lands first;
+     sentence of prose, which is not a pin. The alignment has since landed
+     as its own repair (`verify_exported_routes` judges each leg over
+     `LegRoute::proven_world` — the world its region writes produce),
+     arriving at §2.5's requirement on its own merits — shared calibration
+     stated outright, the runtime tier named as the only independent
+     observer — so AC10 asserts a property main already holds;
    - d. one soundness asymmetry this spec first recorded as an open finding
      — footing credited from a fill whose root the party can skip — is now
      settled ground: footing is credited only from a region write **forced
@@ -194,8 +196,8 @@ object (the gate anchor), not this one.
   proven over** — the same worldview the router used. A self-check that
   disagrees with its router is one instrument carrying two calibrations, and
   its false red is what made runtime-laid floor unshippable when this spec
-  measured it (§1.6c); this spec requires the property, whichever change
-  delivers it. Shared calibration here is deliberate — verifier and router
+  measured it (§1.6c); the property is landed (§1.6c), and this spec
+  consumes it rather than delivering it. Shared calibration here is deliberate — verifier and router
   are one instrument — so the independent observer for this claim is the
   runtime tier (§7.13), never a second static check.
 - **Disposition is enumerated, per staged way, in the compile verdict**:
@@ -242,11 +244,13 @@ second hatch is added to the gate it relaxes.
 
 ## 5. Version fences and adoption
 
-- Grammar document **`1.7.0`** — `1.6.0` is claimed by spec-0041, in flight;
-  whichever change lands second carries the other's number in
-  `RESERVED_VERSIONS`, and `tools/check-version-ledger-uniqueness.py` holds
-  both ledgers against `origin/main`. Fenced per the `version.rs` pattern: a
-  `WAY_SINCE` constant, refusal naming construct and both versions.
+- Grammar document **`1.7.0`** — `1.6.0` is settled: spec-0041 landed, and
+  `crates/grammar/src/version.rs` holds it in the ledger and in
+  `RESERVED_VERSIONS` as `("1.6.0", "QUALIFY_SINCE")`. `1.7.0` is claimed by
+  nothing; this spec's implementation adds its reservation alongside, and
+  `tools/check-version-ledger-uniqueness.py` holds both ledgers against
+  `origin/main`. Fenced per the `version.rs` pattern: a `WAY_SINCE`
+  constant, refusal naming construct and both versions.
 - Campaign dsl **`0.12.0`** for `open-way`, per-stage fence and `DW0141`
   reservation pattern. No open branch claims either number (checked against
   every open branch and against the open pull-request list, two observers).
@@ -265,8 +269,8 @@ second hatch is added to the gate it relaxes.
    `expand` through both doors).
 3. Compiler: `open-way` (dsl `0.12.0`), metadata-fed region events through
    the named constructors, disposition enumeration and its reds. Forced-only
-   footing is landed and the self-check alignment is in flight as its own
-   repair; this step consumes both rather than building either.
+   footing and the self-check alignment are both landed; this step consumes
+   both rather than building either.
 4. Docs and skills in the same PRs: `grammar.md` §2d, `compiler.md` catalog,
    `prefab-procedure.md`, `tools.md`, `/new-delve`.
 5. Tower adoption round in the content repo, same milestone.
