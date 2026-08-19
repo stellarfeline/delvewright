@@ -210,6 +210,18 @@ validation/          # docker compose: headless server + bot, same image as CI &
   supplied. Nothing errored, because nothing was wrong with the question. So
   before trusting an answer, check what the question resolved to: **a computed
   key is itself a measurement and needs its own confirmation.**
+  The costliest such key is the one that names an INSTRUMENT. A pin held in a
+  variable, or a document's phrase "the pinned engine", is a computed key whose
+  value moves — so **a frozen measurement names its instrument literally**, by
+  the exact revision, never through the indirection. Otherwise moving the pin
+  silently re-reads every recorded figure against a different instrument, and
+  nothing anywhere says so. Of four occurrences in one session of something
+  long-lived being judged by a version of a tool it does not have, three named
+  that tool by indirection rather than by revision.
+  The same trap has a cheap textual form worth naming because it is committed so
+  easily: **a `grep` for a phrase the file wraps across a line break returns
+  zero**, and zero reads as absent. Ask what the pattern could match before
+  believing what it did not.
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
