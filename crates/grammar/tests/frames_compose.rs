@@ -278,13 +278,30 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         symmetric.detail
     );
     // This hall's contract is deliberately the smallest one that can carry a
-    // claim: one `open` space, one way out, no floor. Every obligation that has
-    // nothing to look at is therefore RED, not quietly green — closure has no
-    // envelope to examine, no edge runs between two spaces, and no declared
-    // space holds a cell to stand in. That is the spec-0036 §2.9 vacuity rule
-    // doing its job on a fixture that is about the mirror, not about the
-    // building, and asserting it here is what stops the rule being softened the
-    // next time a fixture trips it.
+    // claim: one `open` space, one way out, **no floor**. Every obligation that
+    // has nothing to look at is therefore RED, not quietly green. That is the
+    // vacuity rule doing its job on a fixture that is about the mirror, not
+    // about the building, and asserting it here is what stops the rule being
+    // softened the next time a fixture trips it.
+    //
+    // The list used to name two, and the comment above it already asked for
+    // more than the list delivered. Three of these gates draw their population
+    // from the standable floor, and this hall has none — so `contract-coverage`
+    // held that every one of ZERO cells was accounted for, and
+    // `contract-no-body-majority` that ZERO cells were not a majority of ZERO.
+    // Both printed a green over an empty population, which is the exact thing
+    // the sentence above says must not happen; only the corpus audit, which
+    // this fixture never reaches, was catching them. `gates::seal_zero_bindings`
+    // is now the one place that decides, so both doors agree and the assertion
+    // matches its own comment.
+    //
+    // Two gates are ABSENT rather than red, and that is the other half of the
+    // same rule: `contract-edge-proof` over one space and `contract-anchors`
+    // over a piece that names no place have each computed why their emptiness
+    // is honest, so they are withheld instead of printed. What makes that
+    // different from the three above is that nothing here can supply their
+    // populations — a second space and an anchor are things the building would
+    // have to actually gain.
     let red: Vec<&str> = report
         .gates
         .iter()
@@ -293,9 +310,30 @@ fn a_mirrored_rule_claims_the_mirror_image_box_and_the_blocks_agree() {
         .collect();
     assert_eq!(
         red,
-        vec!["contract-closure", "contract-reachability"],
+        vec![
+            "contract-coverage",
+            "contract-closure",
+            "contract-no-body",
+            "contract-reachability",
+            "contract-no-body-majority",
+        ],
         "{:#?}",
         report.gates
+    );
+    for id in ["contract-edge-proof", "contract-anchors"] {
+        assert!(
+            !report.gates.iter().any(|g| g.id == id),
+            "`{id}` printed a verdict over nothing instead of being withheld: {:#?}",
+            report.gates
+        );
+    }
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("`contract-anchors` is not emitted")),
+        "a withheld gate must say why, or the fact is lost: {:#?}",
+        report.enumeration
     );
     assert!(
         report

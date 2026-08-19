@@ -540,6 +540,90 @@ fn every_library_program_passes_the_settling_gates() {
     );
 }
 
+/// **The two doors give the same verdict, over the whole corpus.**
+///
+/// `expand` and `audit` used to disagree about what a binding of zero means:
+/// the gate report raised one as a finding and passed, while the corpus audit
+/// folded every `bound == 0` into its red set — so the door a creator runs on
+/// their own machine was the WEAKER of the two, which is the worse direction
+/// for two authorities to disagree in. The audit's own filter now reads nothing
+/// but `Gate::failed()`, which is sound exactly while this holds: **no report
+/// carries a gate that is green over nothing.**
+///
+/// Asserted over every program at its declared expansion rather than on a
+/// fixture, because the defect it guards is a gate someone adds later without
+/// deciding what its emptiness means.
+///
+/// **What this test does and does not demonstrate, stated because the
+/// difference is the whole subject.** Its per-gate predicate has NO live
+/// instance in this corpus: no library program binds a gate to zero today, so
+/// disabling the rule it guards leaves this sweep green. That is an unbound
+/// predicate — a gate bound to plenty of objects whose *test* bit on none of
+/// them — and naming it is the obligation rather than an excuse. The live
+/// red→green demonstrations are the fixture pair in `tests/contract_check.rs`,
+/// which do go red when the rule is removed; this sweep is the regression guard
+/// that stops a NEW gate or program introducing a green-over-nothing silently.
+///
+/// So both counts are pinned rather than merely asserted non-zero. A zero-bound
+/// gate appearing in this corpus, or a gate starting to be withheld in it, is
+/// something to come and look at — not something to discover later.
+#[test]
+fn no_library_program_reports_a_gate_that_is_green_over_nothing() {
+    use delvewright_grammar::gates;
+    let (mut programs_swept, mut gates_seen) = (0usize, 0usize);
+    let (mut zero_bound, mut withheld) = (0usize, 0usize);
+    for entry in library::PROGRAMS {
+        let program = (entry.build)();
+        let out = expand(
+            &program,
+            Box3::at_origin(entry.region),
+            &ExpandOptions::seeded(entry.seed),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
+        let report = gates::judge(&out, entry.gates);
+        programs_swept += 1;
+        for gate in &report.gates {
+            gates_seen += 1;
+            zero_bound += usize::from(gate.bound == 0);
+            assert!(
+                !(gate.bound == 0 && gate.passed()),
+                "{}: gate `{}` is green over a binding of ZERO. Either its emptiness is honest, \
+                 in which case it computes an `empty_ok` and is withheld, or it is not, in which \
+                 case it reds — a green over nothing is what made the corpus audit disagree with \
+                 the creator's own door. {}",
+                entry.id,
+                gate.id,
+                gate.detail
+            );
+        }
+        // A withheld gate never vanishes quietly: whatever was struck from the
+        // verdict list says so in the enumeration, which is a list a reviewer
+        // reads rather than a count a script can satisfy.
+        for line in &report.enumeration {
+            if line.contains("is not emitted") {
+                withheld += 1;
+                assert!(
+                    line.contains("gate `"),
+                    "{}: a withheld gate must name itself: {line}",
+                    entry.id
+                );
+            }
+        }
+    }
+    assert!(
+        programs_swept >= 30 && gates_seen >= 150,
+        "the sweep saw {programs_swept} program(s) and {gates_seen} gate(s) — it bound to almost \
+         nothing, which is the rule it is asserting failing on itself"
+    );
+    assert_eq!(
+        (zero_bound, withheld),
+        (0, 0),
+        "pinned: no library program binds a gate to zero, and none has a gate withheld. A change \
+         here is not a failure — it is the first live instance in this corpus of the rule this \
+         test guards, and it wants reading before the pin is moved"
+    );
+}
+
 /// The other two members of the blockstate family (`DW0735`, `DW0736`),
 /// asserted over the whole corpus the same way: every library program judges
 /// green on `shape-complete` and `oriented-fills` at its documented region.
