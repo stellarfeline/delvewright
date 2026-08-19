@@ -83,6 +83,22 @@ running it or reading the shipped behaviour record, not recalled:
    because a buried box supplies `sealed` and an open box supplies `facade`
    for free — the defect supplying the opt-out's own evidence. The composed
    render read as one place: the decision of §2 is not what failed.
+9. **Extent already flows down; nothing stops it flowing up.** The
+   whole-constrains-part half of allocation is built: `split` partitions, an
+   absolute split too big for its scope refuses naming both numbers, a write
+   outside the model region never ships, and a part handed too little refuses
+   for itself, loudly (`grammar.md` §4a, §5c). A part cannot overrun its box,
+   and never did. What is unconstrained is the reverse: the map's own region
+   is a free manifest value, and the first map composed at scale set it to
+   the arithmetic sum of the parts' pre-existing depths — verified on the
+   manifest itself: seven Z bands, each equal to one zone row's declared
+   depth, summing to exactly the map row's 436 — yielding a 1 : 5.5 site
+   against a brief asking a compact stepped mass, the crown subtending 6.7°
+   from the arrival point against a derived 27°, computable from `zones.json`
+   alone before any composition ran (trial-0003, R1 and the compactness
+   attribution). The parts predate the site plan, so by the time anything
+   composed them their total was a fact: §3's ordering sentence bound
+   nothing — the UNRUN shape, inside this spec.
 
 ## 2. The decision: the map is a program
 
@@ -155,8 +171,10 @@ Two files, both campaign content, both in the campaign's `design/`:
 The map program is authored **before the zones are final, as the site plan**:
 its first version allocates boxes, datums and seam edges with the zone entry
 rules as stubs, and zones are then authored into the boxes it hands them. (A
-campaign whose zones predate it — the adoption case — authors the map program
-around the existing zone programs instead; the obligations are identical.)
+campaign whose zones predate it — the adoption case — is the transitional
+class of §3c: the site plan is still derived from the whole's brief, never
+from the parts' extents, and every pre-existing part confronts its allocation
+at the map's first expansion.)
 The whitebox step **is** the map program's first green expansion: every zone
 placed, every seam edge proven, contract obligations green over the whole,
 route and datum identities holding. Appearance work follows, under §5.
@@ -180,6 +198,10 @@ composition*: the orphan red above. *A dead manifest surface is written*:
 manifest field that binds nothing cannot be written in the belief that it
 binds, which is the exact shape a `composition` block would have had.
 *A composed zone is staged alone*: the export-metadata refusal below.
+*A part is authored before the whole has allocated its box*: the §3c
+allocation identity, whose entry points are enumerated there — a
+pre-existing part is a red with a named debtor, never a fact the site
+plan inherits.
 
 - Every command that reads a document prints what it composed, prefix by
   prefix, with its `include` binding count; `audit --campaign-root` totals
@@ -246,6 +268,95 @@ Stated as obligations, so they are checked rather than remembered:
    many were examined. A map reporting zero has either no designed ground or a
    binding failure, and those two must not look alike.
 
+## 3c. The allocation cascade: extent flows down, never up
+
+Between a whole and its parts, "how big" has exactly one authority, and it is
+the whole's design of record. §1.9 is the measured failure of the other
+direction: a site plan whose totals were inherited from the parts. The rule:
+**extent flows from brief to region to boxes to parts. A part that does not
+fit is cut down or redesigned; the container is never grown to what the parts
+happen to sum to.** Each link, with its check and its status:
+
+1. **Brief → region and plan.** The whole's geometric facts — extent,
+   proportions, standoffs, whatever the campaign's written design fixes — are
+   declared as map params and guarded as identities over the map's own region
+   and top-level splits. `cmp` guards over integers state all of them today;
+   this link adds no surface. A site plan violating its own brief facts
+   refuses at expansion naming both numbers. What the machine cannot check,
+   stated plainly: that the transcribed numbers are faithful to the written
+   brief, and the brief to the confirmed reference — that is the design
+   gate's reading, fact by fact against the text, the trial-0003 R2 shape.
+   The reference image stays rank-only (spec-0028): guards bind to the
+   written design of record, never to a picture.
+2. **Region → boxes.** Built: `split` partitions, so allocations cannot sum
+   past the region; an oversized split refuses naming both numbers.
+3. **Box → part.** Built (§1.9): a part cannot write outside its box, and a
+   part handed too little refuses for itself. Overrunning an allocation is
+   already a refusal by name; no new machinery is owed here.
+4. **The part's own row names the same box.** New, and the ordering lives in
+   it: for every composed prefix that also has its own manifest row, `audit`
+   compares the row's region **extents** (not origins — standalone
+   development sits wherever it likes) to the box the composition allocates
+   that prefix, up to the include site's declared reorientation. A mismatch
+   is a refusal naming the prefix and both extent triples. The box a part is
+   reviewed in is the box the composition places it in, or the review
+   certifies a different object.
+
+**Why link 4 is the ordering, bound to events.** The entry points by which a
+part can exist, enumerated:
+
+- *A part with its own manifest row*: the link-4 identity, red at `audit`,
+  which both repos' CI runs on every push and pull request.
+- *A composed-only part* (no row): the allocated box is the only box it is
+  ever judged at; the ordering is structural.
+- *A draft* (`--file`, ad-hoc region): drafting, upstream of record. Every
+  artifact-of-record event — audit judgement, the review set, export, the
+  release freeze — reads the manifest or the composition, so a draft becomes
+  a part only through one of the two cases above.
+- *A part that predates the site plan*: the transitional class, below.
+
+Authoring a part first therefore remains typable — nothing can forbid a
+file — and stays outside the record: the moment it enters, it confronts an
+allocation the brief governs, and a disagreement is a red naming its debtor,
+never a fact the plan inherits.
+
+**Revising an allocation, distinct from overrunning one.** The site plan is a
+first draft, not an oracle; a part negotiates by refusing its box, and the
+plan is then deliberately revised. A revision is a geometry-class change (§5)
+to the map program: the splits move, the recorded signature hash moves with
+them as one visible diff line, the design review reopens — and the link-1
+identities re-run, so a revision can redistribute extent within the brief's
+facts but cannot grow past them unless the brief params move in the same
+diff. A change to the brief params is a change to the whole's design of
+record: it goes through the campaign's design gate as a reference-set
+decision, never inside a part-fit round. Sixth-vacuity test, applied: the
+permission demands that the whole's own identities still hold over the
+revised plan and that the whole's review reopens — a part wanting more room
+can supply neither; all it can force is a visible trade against the other
+allocations. There is deliberately no per-part surface: no exemption flag, no
+oversize acknowledgement, no site-side waiver. The only two authorable moves
+are revising the part and revising the plan, and each is proved where it
+lands.
+
+**The transitional class: parts that predate their site plan.** A campaign
+adopted into composition holds parts whose extents were chosen when no
+allocation existed — the state the first composed campaign is in. Handling,
+named rather than exempted:
+
+- The site plan is derived from the campaign's written brief exactly as the
+  fresh case is — never from the parts' extents. A map region set to the sum
+  of part depths is the refused direction whatever the campaign's age.
+- Every pre-existing part confronts its allocation at the map's first
+  expansion. A part in debt — guards refusing the box, or the link-4
+  mismatch — stays red, attributed per prefix, the same debtor-naming
+  consequence a contractless part carries (§4); the remedy is that part's own
+  revision under its own zone review.
+- The whole's brief and reference are not re-derived from the parts, and a
+  transitional path that amounts to cutting the whole down to what the parts
+  sum to is refused. A brief fact the campaign genuinely wants changed is a
+  design-gate decision about the whole, taken before the plan is re-derived,
+  never a consequence of part arithmetic.
+
 ## 4. Mutual consistency: what a part owes, what the whole owes, what is checked
 
 **A part owes the whole:**
@@ -269,7 +380,9 @@ Stated as obligations, so they are checked rather than remembered:
 **The whole owes a part:**
 
 1. **A box that satisfies its guards** — and takes the refusal as the answer
-   when it does not.
+   when it does not. The answer is the part revised, or the plan deliberately
+   revised under §3c's proofs — never a box grown in place to what the part
+   demands: the plan's totals answer to the brief, not to the parts.
 2. **The datums, bound once.** Every whole-map fact a part obeys locally is
    one map-level `param` pushed down by `bind`, stated in exactly one place.
    The worked example is the single water plane: one `water_y`, bound into
@@ -440,6 +553,13 @@ of this spec — and §8 records the alternative.
    its own document states by hand, and every carried-contract obligation
    of §4 binds zero — which is a stated fact in the composition report,
    never a silent one.
+4. **The allocation identity in `audit`** (§3c link 4): per composed prefix
+   with its own manifest row, extents compared up to the declared
+   reorientation, refusal naming the prefix and both triples; the
+   composition report states the compared-row count, a zero by name. Until
+   it lands, the ordering rests on links 1–3 alone and the report says so.
+   The rest of §3c's cascade is built (splits partition, oversize refuses,
+   guards exist) and adds no authoring surface.
 
 Nothing else is required. Named partitions (spec-0037) reduce the map
 program's restated-plan cost and are wanted, not prerequisite.
@@ -506,6 +626,17 @@ program's restated-plan cost and are wanted, not prerequisite.
     fixture.
 11. `docs/reference/` (grammar, tools, prefab-procedure, compiler DW rows)
     updated in the same PRs that land each piece, per the tooling-sync rule.
+12. Allocation identity red demo: a fixture map composing a part that has its
+    own manifest row is green with extents agreeing; the same fixture with
+    the row grown one block on one axis is an audit red naming the prefix and
+    both extent triples; a reoriented include agrees under its declared
+    frame. The fixture asserts the compared-row count is non-zero — a
+    composed-only corpus makes the identity vacuous.
+13. Brief identity red demo: a map fixture guarding one proportion fact over
+    its own region and top splits is green as written and red when one
+    allocation grows past the plan, naming both numbers. The fixture asserts
+    the guard reads the region extent — an identity over two program
+    constants the plan cannot move demonstrates nothing (the AC4 shape).
 
 ## 8. Open, stated as open
 
