@@ -10707,16 +10707,9 @@ fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
 /// cell is `setworldspawn`, the class-apply teleport, the first-join placement,
 /// and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
-    for area in &plan.areas {
-        for name in plan::ENTRY_ANCHOR_NAMES {
-            if let Some(ResolvedAnchor::Point { pos, .. }) =
-                plan.anchors.get(&(area.area_id.clone(), name.to_string()))
-            {
-                return Some(*pos);
-            }
-        }
-    }
-    None
+    plan.areas
+        .iter()
+        .find_map(|area| plan.entry_point(&area.area_id))
 }
 
 // ---------------------------------------------------------------------------
