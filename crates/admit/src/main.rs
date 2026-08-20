@@ -16,13 +16,15 @@ use delvewright_admit::audit::{self, audit};
 use delvewright_admit::catalog::CatalogCard;
 use delvewright_admit::cli::{CatalogCmd, Cli, Command};
 use delvewright_admit::diag::{
-    DW_CONTRACT, DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING,
-    DW_UNBOUND, Diagnostic,
+    DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING, DW_UNBOUND,
+    Diagnostic,
 };
 use delvewright_admit::gallery::{self, Candidate};
 use delvewright_admit::light::{self, Zone};
 use delvewright_admit::meta::{self, AnchorEdit, License, PrefabMeta, Region};
+use delvewright_admit::settling;
 use delvewright_admit::socket::{self, SocketDecl};
+use delvewright_admit::spatial::Door;
 use delvewright_admit::structure::Structure;
 use delvewright_schem::split::{TilePart, TileSet, fragment_refusal, tile_evidence};
 
@@ -96,48 +98,31 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         None => Allowlist::default_building(),
     };
 
-    // The spatial contract's second door (spec-0036 §1c), run before the palette
-    // audit's verdict is printed so that a piece whose blocks disagree with its
-    // own declared spaces cannot be admitted. Bound to `audit` and not to a flag
-    // of its own: `audit` is what CI runs over the prefab library and what the
-    // admission procedure runs on every piece, so a contract that is declared is
-    // a contract that is checked.
-    let mut contract_failed = false;
-    if nbt.extension().and_then(|s| s.to_str()) != Some("json")
-        && let Ok(bytes) = std::fs::read(nbt)
-        && let Ok(structure) = Structure::read(&bytes)
-        && let Ok(Some(meta)) = PrefabMeta::beside_nbt(nbt)
-        && let Some(verdict) = delvewright_admit::spatial::audit(&structure, &meta)
-    {
-        for line in &verdict.enumeration {
-            Diagnostic::warning(DW_CONTRACT, format!("contract: {line}")).print(json);
-        }
-        for finding in &verdict.findings {
-            Diagnostic::warning(DW_CONTRACT, finding.clone()).print(json);
-        }
-        for gate in &verdict.gates {
-            if !gate.passed() {
-                contract_failed = true;
-                Diagnostic::error(
-                    DW_CONTRACT,
-                    format!(
-                        "{} FAILED (examined {} object(s)): {}",
-                        gate.id, gate.bound, gate.detail
-                    ),
-                )
-                .print(json);
-            }
-        }
-    }
-
     // A tile-set manifest audits the whole zone. Handing this command one tile
     // of a set would audit a fragment and print `"verdict": "pass"` over it,
     // which is the failure mode this command exists to prevent one layer up.
-    let (rep, diags) = if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
-        match audit_zone(nbt, &allow) {
+    //
+    // Both packagings do the same two things in the same order: build the grid
+    // once, then open the spatial contract's second door on it (spec-0036 §1c)
+    // against the document that declares the contract. The door is bound to
+    // `audit` and not to a flag of its own — `audit` is what CI runs over the
+    // prefab library and what the admission procedure runs on every piece — and
+    // it is bound in EVERY arm, because the arm it was missing from is the one a
+    // composed zone arrives through.
+    let (mut rep, diags, door) = if nbt.extension().and_then(|s| s.to_str()) == Some("json") {
+        let (set, tiles) = match read_zone(nbt) {
             Ok(pair) => pair,
             Err(e) => return input_err(&e, json),
-        }
+        };
+        let asset = nbt.display().to_string();
+        let (rep, diags) = audit::audit_tile_set(&asset, set.size, &tiles, &allow);
+        // The contract a manifest declares is zone-relative — its boxes and its
+        // anchors are stated in the coordinates of the assembled building, not
+        // of any tile — so the checker's two arguments exist at zone scale
+        // exactly as they do for one template. Tiling is packaging.
+        let grid = settling::zone_grid(set.size, &tiles);
+        let door = Door::open(&grid, tiles.len(), nbt);
+        (rep, diags, door)
     } else {
         // ...and pointing it at ONE tile of a set is refused. The verdict would
         // be correct about that file and would be read as a verdict about the
@@ -151,6 +136,11 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
         ) {
             return code;
         }
+        // Read and parsed ONCE, for both the palette audit and the door. When
+        // the door had its own `if let Ok(bytes) = read(..)`, unreadable and
+        // unparseable bytes were two more ways for it to fall through in
+        // silence; sharing the bytes is what makes those two cases stop
+        // existing rather than stop mattering.
         let bytes = match std::fs::read(nbt) {
             Ok(b) => b,
             Err(e) => return input_err(&format!("cannot read {}: {e}", nbt.display()), json),
@@ -159,11 +149,22 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
             Ok(s) => s,
             Err(e) => return input_err(&format!("cannot parse {}: {e}", nbt.display()), json),
         };
-        audit(&nbt.display().to_string(), &structure, &allow)
+        let (rep, diags) = audit(&nbt.display().to_string(), &structure, &allow);
+        let door = Door::open(
+            &delvewright_admit::spatial::grid(&structure),
+            1,
+            &nbt.with_extension("json"),
+        );
+        (rep, diags, door)
     };
     for d in &diags {
         d.print(json);
     }
+    for d in &door.diagnostics() {
+        d.print(json);
+    }
+    let contract_failed = door.is_refusal();
+    rep.record_contract_door(&door);
     let out_json = rep.to_json();
     if let Some(p) = report {
         if let Err(e) = write_file(p, out_json.as_bytes()) {
@@ -177,20 +178,6 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
     } else {
         ExitCode::from(EXIT_FAIL)
     }
-}
-
-/// Audit every tile a manifest names, and return the zone's verdict.
-fn audit_zone(
-    manifest: &Path,
-    allow: &Allowlist,
-) -> Result<(audit::AuditReport, Vec<Diagnostic>), String> {
-    let (set, tiles) = read_zone(manifest)?;
-    Ok(audit::audit_tile_set(
-        &manifest.display().to_string(),
-        set.size,
-        &tiles,
-        allow,
-    ))
 }
 
 /// Read every tile a manifest names, in manifest order.
