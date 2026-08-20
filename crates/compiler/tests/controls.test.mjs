@@ -354,3 +354,26 @@ test("a piece that SAYS which anchor is the way in is believed before its names"
   assert.ok(guessed >= 0, "the stem guess has gone — this test now proves nothing");
   assert.ok(declared < guessed, "a guessed name stem is consulted before the declaration");
 });
+
+test("every place that asks whether an anchor is the way in asks the same way", () => {
+  // The page answers this question three times — the default preset, the
+  // marker colour, the label class — and they have to agree. When only the
+  // first two learned about the declared role, a role-declared entry was drawn
+  // in way-in blue and captioned as an ordinary anchor: one anchor described
+  // two ways, on exactly the grammar-exported pieces that can make no other
+  // statement about themselves.
+  const page = readFileSync(PAGE, "utf8");
+  assert.match(page, /function isWayIn\(/, "the shared question has gone");
+  const readers = page.split("\n").filter((l) => /WAY_IN\.indexOf/.test(l));
+  assert.equal(
+    readers.length,
+    1,
+    "the stem list is read at " + readers.length + " sites; only isWayIn may read it: "
+      + readers.map((l) => l.trim()).join(" | "),
+  );
+  assert.match(
+    readers[0],
+    /a\.role === "entry" \|\| WAY_IN\.indexOf/,
+    "the one reader consults the stems without first asking what the piece declared",
+  );
+});

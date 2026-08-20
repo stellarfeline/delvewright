@@ -385,6 +385,21 @@
     return last.replace(/-\d+$/, "");
   }
 
+  /**
+   * Is this anchor a way in — the piece's own declaration first, then the
+   * reading of its name.
+   *
+   * One function because the page answers this question in three places (the
+   * default preset, the marker colour, the label class) and they must agree:
+   * an anchor drawn in way-in blue whose label is styled as an ordinary anchor
+   * is the same anchor described two ways. The two spellings in `WAY_IN` are a
+   * fallback for pieces admitted before the role existed; a piece that declares
+   * the role is never reached by a name.
+   */
+  function isWayIn(a) {
+    return a.role === "entry" || WAY_IN.indexOf(stemOf(a.name)) >= 0;
+  }
+
   function anchorPresets(model) {
     const out = [];
     for (const a of model.anchors) {
@@ -600,8 +615,7 @@
     if (!model.anchors.length) return;
     const tri = [], col = [], lin = [], lcol = [];
     for (const a of model.anchors) {
-      const wayIn = a.role === "entry" || WAY_IN.indexOf(stemOf(a.name)) >= 0;
-      const c = a.socket ? [110, 220, 160] : wayIn ? [110, 168, 254] : [255, 180, 84];
+      const c = a.socket ? [110, 220, 160] : isWayIn(a) ? [110, 168, 254] : [255, 180, 84];
       if (a.pos) {
         const [x, y, z] = [a.pos[0] + 0.5, a.pos[1] + 0.5, a.pos[2] + 0.5];
         const s = 0.28;
@@ -658,7 +672,7 @@
       let el = labelEls.get(a.name);
       if (!el) {
         el = document.createElement("div");
-        el.className = "label" + (a.socket ? " socket" : (WAY_IN.indexOf(stemOf(a.name)) >= 0 ? " way-in" : ""));
+        el.className = "label" + (a.socket ? " socket" : (isWayIn(a) ? " way-in" : ""));
         el.textContent = a.name.replace(/^anchor\//, "");
         labelLayer.appendChild(el);
         labelEls.set(a.name, el);
