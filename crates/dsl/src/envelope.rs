@@ -82,7 +82,7 @@ pub const OPEN_WAY_SINCE: &str = "0.12.0";
 /// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
-    "0.12.0",
+    "0.12.0", "0.13.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -102,7 +102,17 @@ pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
 /// why `tools/check-version-ledger-uniqueness.py` requires every version a
 /// branch **adds** to carry a hand-written name — a reservation row here, or a
 /// `*_SINCE` constant when the surface lands.
-pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[];
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[
+    // spec-0026: the stage-1 horizon library. Its branch had claimed `0.12.0`
+    // and lost it to `open-way` when the two were adjudicated; the replacement
+    // was never allocated, so the number that surface will define sat free for
+    // any author to take — the precise state this list exists to make
+    // impossible. Reserved rather than skipped, because the append-only rule
+    // means a skipped number can never be filled afterwards. The implementing
+    // change defines `HORIZON_LIBRARY_SINCE` and deletes this row in the same
+    // edit.
+    ("0.13.0", "HORIZON_LIBRARY_SINCE"),
+];
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -162,6 +172,7 @@ fn ordinal(version: &str) -> u32 {
         "0.10.0" => 10,
         "0.11.0" => 11,
         "0.12.0" => 12,
+        "0.13.0" => 13,
         _ => 0,
     }
 }
