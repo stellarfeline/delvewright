@@ -42,3 +42,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0032](spec-0032-economy-and-recovery-stake.md) | Currency, trade, and the recovery stake | Draft |
 | [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |
 | [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Proposed |
+| [spec-0042](spec-0042-a-way-that-content-opens.md) | A way that content opens — contingent edges, both signs, and the effect that opens them | Proposed |
