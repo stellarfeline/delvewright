@@ -37,6 +37,7 @@ Rules of the queue:
 | strike-npc + vanilla-warden combat consequence | covered by nobodys-cave-island (round 11) | covered |
 | Bark pools + scene ledger (0020, landing) | **Market Day** — a town-square level dense with background NPCs; one real quest threads through a crowd of bark-pool characters; the cast ledger is the star | pending (blocked on 0020) |
 | Cutscene rehearsal/calibration (0019, landing) | tooling, not a level — its demo is a GENERATION.md walkthrough of calibrating one shot | pending (blocked on 0019) |
+| Review cameras stand in open air (`DW0724`, 0003 visual tier) | tooling, not a level — its demo is a pair of `delvec snapshot --camera` frames of one shot: the requested stand-off renders a single flat colour, the stood-up camera renders the room. The plan names both positions on the shot, so the pair is reproducible from the artifact | pending |
 | Grammar arguments — one rule called with different content (`bind`, 0033 §4.6) | generation-time, so its demo is a corpus program rather than a level: `delve-grammar expand --program idiom-arguments --region 15x7x15 --seed 1` builds four pointed-arch heads, two paints and two axes, out of one recursion | covered (`idiom-arguments`) |
 | i18n zh-cn sidecar | covered by both shipped campaigns | covered |
 | Map-editor terrain pass (0017) | covered by nobodys-cave-island (de-walling, beach seam) | covered |

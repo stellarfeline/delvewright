@@ -1,0 +1,145 @@
+"""The gallery can never be released or staged (spec-0039 §8.13).
+
+CLAUDE.md's forbidden zones say generated campaigns and worlds do not live in
+this repository. The gallery is the deliberate exception — engine-test source,
+licensed with the code — and an exception that relies on nobody typing the wrong
+id is not an exception, it is a hole. This is what keeps it honest.
+
+**The enumeration is the point.** An existence check that only looks where
+somebody pointed is how the UNRUN shape survives review, so every surface that
+could put a campaign in front of a player is named here: release-candidate
+discovery, the shipped-campaign build sweep, and the staging gate. When a fourth
+appears, it belongs in `SHIPPING_SURFACES` — and the last test in this file is
+what notices that the list stopped covering the tree.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+GALLERY_ID = "gallery"
+
+# Every file that decides what a player can be handed. Each is read as TEXT and
+# asserted not to name the gallery: these are workflows and scripts in three
+# languages, and a parser per language is a parser per language to keep correct.
+SHIPPING_SURFACES = [
+    ".github/workflows/release.yml",
+    ".github/workflows/engine-release.yml",
+    ".github/workflows/infra-images.yml",
+    "tools/build-every-campaign.py",
+    "tools/staging-gate.py",
+]
+
+# What makes a workflow a shipping surface is that it PUBLISHES — pushes an image
+# to a registry, or uploads a release asset. `ci.yml` builds a delve image on
+# every pull request and loads it on a local server; that image never leaves the
+# runner. Judging by "builds an image" instead would sweep the validation tier in
+# with the publish tier, and then the gallery's own CI job — which must name
+# `gallery/`, that being its entire purpose — would read as a release path.
+PUBLISH_MARKERS = ("docker/build-push-action", "push: true", "gh release upload")
+
+
+def _read(rel: str) -> str:
+    p = REPO / rel
+    assert p.is_file(), f"`{rel}` no longer exists — this gate is looking at nothing"
+    return p.read_text()
+
+
+def test_no_shipping_surface_names_the_gallery():
+    examined = 0
+    for rel in SHIPPING_SURFACES:
+        text = _read(rel)
+        for n, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            assert not re.search(r"\bgallery/", line), (
+                f"{rel}:{n} names the gallery: {stripped!r}. The gallery is engine-test "
+                "source and is never released or staged (spec-0039 §2)."
+            )
+        examined += 1
+    assert examined == len(SHIPPING_SURFACES), "this gate examined fewer files than it lists"
+
+
+def test_shipped_campaign_discovery_cannot_reach_the_gallery():
+    """`build-every-campaign.py` enumerates the CONTENT repo, never this tree.
+
+    The discovery rule is `<content>/campaigns/*/world.json`, and the gallery
+    lives at `<repo>/gallery/`. Those cannot coincide: the content root is a
+    separate checkout, and even pointed at this repo the gallery is not under a
+    `campaigns/` directory.
+    """
+    text = _read("tools/build-every-campaign.py")
+    assert 'args.content / "campaigns"' in text, (
+        "campaign discovery no longer reads `<content>/campaigns` — re-derive "
+        "whether the gallery can now be reached by it"
+    )
+    assert not (REPO / "campaigns" / "campaigns" / GALLERY_ID).exists(), (
+        "a directory named `gallery` appeared in the content repo's campaign set"
+    )
+
+
+def test_the_gallery_is_where_the_spec_puts_it():
+    """A gate that looks for the gallery must be able to find it."""
+    g = REPO / GALLERY_ID
+    assert (g / "world.json").is_file(), "the gallery has moved; every assertion above is now vacuous"
+    assert not (g / "world.json").read_text().count('"campaign_id": "hello-world"')
+
+
+def test_no_gallery_bytes_are_committed():
+    """Only source and the hash baseline are committed (§2) — never build output.
+
+    Asked of **git**, not of the filesystem. The gallery's piece and skins are
+    generated into the working tree on every build and gitignored; a walk of the
+    directory answers "is it present", and the question is "is it committed".
+    Same key/question mismatch this project has been bitten by before: the wrong
+    lookup returns an honest answer to a question nobody asked.
+    """
+    import subprocess
+
+    r = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "--", GALLERY_ID],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, "git ls-files failed — this gate examined nothing"
+    tracked = [line for line in r.stdout.splitlines() if line.strip()]
+    assert tracked, "git tracks no gallery files at all — the gate bound to nothing"
+    forbidden = sorted(
+        p for p in tracked if pathlib.Path(p).suffix in {".nbt", ".png", ".mcfunction"}
+    )
+    assert not forbidden, (
+        "the gallery carries generated bytes: " + ", ".join(forbidden) + ". Its piece "
+        "and its skins are generated at build time (§6); committing them puts a "
+        "second .nbt library in the engine repo and lets the two drift."
+    )
+
+
+def test_the_surface_list_still_covers_the_tree():
+    """A new workflow that ships something must join `SHIPPING_SURFACES`.
+
+    The enumeration above is only as good as its completeness, and completeness
+    is exactly what a hand-written list loses first. This is the tripwire: any
+    workflow that builds a delve image or pushes a release is a shipping surface,
+    and one this file does not name is a finding rather than a silent gap.
+    """
+    workflows = sorted((REPO / ".github" / "workflows").glob("*.yml"))
+    assert workflows, "no workflows found — this gate bound to nothing"
+    shipping = []
+    for wf in workflows:
+        text = wf.read_text()
+        if any(marker in text for marker in PUBLISH_MARKERS):
+            shipping.append(f".github/workflows/{wf.name}")
+    assert shipping, (
+        "no workflow matched any publish marker. Either publishing moved to "
+        "another mechanism or the markers went stale — and a tripwire that "
+        "matches nothing is vacuous, not a pass."
+    )
+    unlisted = [s for s in shipping if s not in SHIPPING_SURFACES]
+    assert not unlisted, (
+        "these workflows publish an artifact and are not in SHIPPING_SURFACES: "
+        + ", ".join(unlisted)
+        + ". Add them, and re-check that they cannot name the gallery."
+    )

@@ -1,0 +1,7 @@
+{
+  "code": "DW0455",
+  "units": [
+    "Locomotion::aquatic"
+  ],
+  "why": "Routing has one reachability model — standable ground — so a water-flooded cell is impassable for every body and an aquatic claim has nothing to feed. The value is refused at declaration time rather than accepted and ignored."
+}
