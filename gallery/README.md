@@ -25,6 +25,7 @@ order a player would:
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork |
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
+| `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
 | `baseline/` | the committed emission index and the expected-warnings ledger |
@@ -71,16 +72,25 @@ cargo build --release -p delvec --bin delvec
 target/release/delvec build gallery -o gallery-out --prefabs gallery-prefabs
 ```
 
-Then the two gates:
+Then the three gates:
 
 ```
 python3 tools/check-gallery-coverage.py --prefabs gallery-prefabs \
   --build-out gallery-out --index gallery-coverage.md
+python3 tools/check-gallery-render.py --prefabs gallery-prefabs \
+  --build-out gallery-out --frames gallery-frames
 python3 tools/gallery-baseline.py --prefabs gallery-prefabs
 ```
 
 `gallery-coverage.md` is the map from every declared surface to the place the
 gallery writes it — and, for anything written nowhere, the word **nowhere**.
+`gallery-frames/` is one picture per declared view, for eyes; no pixel is
+committed or compared, because a renderer's bytes are not the same across
+drivers and the manifests beside the frames are what a machine reads.
+
+The suite the gallery generates runs on a real server as part of the `tier 2`
+job — it is by far the largest any campaign here emits, because a template is
+emitted per surface that has one.
 
 ## Adding to it
 
