@@ -339,3 +339,18 @@ test("the walk is reachable from load — no preset defaults to orbit", () => {
   assert.ok(!/"exterior"/.test(body), "the default camera can still be an orbit");
   assert.match(page, /mode: "walk"/, "the page does not open on foot");
 });
+
+test("a piece that SAYS which anchor is the way in is believed before its names", () => {
+  // The stems are a reading of a name its author chose for other reasons; the
+  // role is the piece's own statement. A grammar-exported zone can only make the
+  // statement — every key it writes is `anchor/<stem>` — so a page that consults
+  // the stems first opens such a zone on whatever it happens to be called.
+  const page = readFileSync(PAGE, "utf8");
+  const decl = page.slice(page.indexOf("function defaultPreset"));
+  const body = decl.slice(0, decl.indexOf("\n  }"));
+  const declared = body.indexOf('a.role === "entry"');
+  const guessed = body.indexOf("for (const stem of WAY_IN)");
+  assert.ok(declared >= 0, "the page never asks what the piece declared");
+  assert.ok(guessed >= 0, "the stem guess has gone — this test now proves nothing");
+  assert.ok(declared < guessed, "a guessed name stem is consulted before the declaration");
+});

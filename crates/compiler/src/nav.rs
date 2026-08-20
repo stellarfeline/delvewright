@@ -6118,15 +6118,10 @@ pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(),
         return Ok(());
     }
     let required = world.required_path_cells(plan, moves);
-    let spawn_starts: Vec<[i32; 3]> = plan
-        .anchors
-        .iter()
-        .filter(|((_, name), _)| crate::plan::is_entry_anchor_name(name))
-        .filter_map(|(_, a)| match a {
-            ResolvedAnchor::Point { pos, .. } => Some(*pos),
-            ResolvedAnchor::Gate { .. } => None,
-        })
-        .collect();
+    // Every area's entry point, through the one resolver (`Plan::entry_points`).
+    // This used to sweep the anchor map for a literal name, which counted no
+    // island-tileset area at all — an honest question about the wrong key.
+    let spawn_starts: Vec<[i32; 3]> = plan.entry_points().collect();
     let legs = world.walked_legs_sealed(plan);
     verify_traps(world, &plan.traps, &required, &spawn_starts, &legs)
 }

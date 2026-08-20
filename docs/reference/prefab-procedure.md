@@ -603,12 +603,30 @@ use.
 | `waterline_y` | no | Local y of the piece's top authored water block. Checked against the ocean datum by `DW0344`; an ocean world where no placed piece declares one is reported by `DW0344` rather than passing on an empty check, and there is no exemption for a piece that "needs none". |
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 
-An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
-trigger_block?}` — one object class covering a point, a gate region and a trap's
-pre-wired hardware, each writing only the keys it means. `resolves_to` is which
-element of the piece's own contract the anchor lands in — `space:`, `no_body:`,
-`via:`, `bar:` or `way:` and the element's name — resolved by whoever wrote the
-document, never by the reader.
+An **anchor** is `{pos?, facing?, role?, region?, block?, resolves_to?,
+dispenser?, trigger_block?}` — one object class covering a point, a gate region
+and a trap's pre-wired hardware, each writing only the keys it means.
+`resolves_to` is which element of the piece's own contract the anchor lands in —
+`space:`, `no_body:`, `via:`, `bar:` or `way:` and the element's name — resolved
+by whoever wrote the document, never by the reader.
+
+`role` is **what the anchor is for**, from a closed vocabulary the compiler owns,
+and a term it does not know is refused by name (`DW0346`). There is one term:
+
+- `entry` — the cell a body arrives at when it enters the area this piece is
+  placed in. A campaign addresses every other anchor by name; this is the one the
+  compiler has to find, so the piece that owns the cell says so. **The piece a
+  party arrives in declares it**, one anchor per area (`DW0804` refuses a second),
+  and in a `prefab_pool` that is the piece the layout is seeded from. A world
+  where nothing declares it and nothing carries the fallback spelling is
+  `DW0345`.
+
+The fallback is the bare anchor names `spawn` and `entry`, which is how every
+piece admitted before the role says it. That path is kept so those pieces keep
+building unedited; it is not a second way to declare one, and a piece being
+written now uses the role. Do not rename an anchor to `spawn` to make it the
+entry — a generated zone cannot do it anyway (every key it exports is
+`anchor/<stem>`), which is the whole reason the role exists.
 
 The **spatial contract** is `{entry, spaces, no_body, edges, faces,
 no_body_majority_ack?}`, every box an inclusive `{from, to}` cell range in the

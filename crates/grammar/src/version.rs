@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.7.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.8.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -92,8 +92,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.7.0";
 /// * `1.7.0` — the contingent edge (spec-0042): `way` on a `walk`, `stair` or
 ///   `drop`, the field that says a traversal is severed as built and what
 ///   content does to open it.
+/// * `1.8.0` — what a mark is FOR (spec-0046): `role` on a `mark`, written
+///   through to the exported anchor's metadata, so a generated zone can declare
+///   the cell a body arrives at without spelling a name its keys cannot take.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
-    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0",
+    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -131,6 +134,10 @@ pub const INCLUDE_SINCE: &str = "1.5.0";
 /// The version at which a traversal edge may declare itself contingent — the
 /// `way` that content opens (spec-0042 §2.1).
 pub const WAY_SINCE: &str = "1.7.0";
+
+/// The version at which a mark may declare **what the anchor is for** — the
+/// role the compiler resolves it by (spec-0046 §3).
+pub const ANCHOR_ROLE_SINCE: &str = "1.8.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -176,6 +183,7 @@ pub fn minor_ordinal(version: &str) -> u32 {
         "1.5.0" => 5,
         "1.6.0" => 6,
         "1.7.0" => 7,
+        "1.8.0" => 8,
         _ => 0,
     }
 }
@@ -210,6 +218,11 @@ pub fn has_way(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(WAY_SINCE)
 }
 
+/// True if `version` may declare what a mark's anchor is for.
+pub fn has_anchor_role(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(ANCHOR_ROLE_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +240,7 @@ mod tests {
         ("LOCAL_FRAME_SINCE", LOCAL_FRAME_SINCE, has_local_frame),
         ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
         ("WAY_SINCE", WAY_SINCE, has_way),
+        ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
     ];
 
     #[test]

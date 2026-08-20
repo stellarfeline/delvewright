@@ -127,10 +127,10 @@ pub fn program_hash(program: &Program) -> String {
 // how `license.generated_by` — the ADR-0006 row this whole module exists to emit
 // — got dropped by the next documented step in the procedure.
 pub use delvewright_schem::prefab::{
-    Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
-    ContractSpace, ContractVolume, ContractWay, GeneratedBy, License as LicenseMetadata,
-    Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, Region as RegionMetadata,
-    SpatialContract, StructureMeta as StructureMetadata,
+    Anchor as AnchorMetadata, AnchorRole, Connector, ContractBar, ContractEdge, ContractFace,
+    ContractNoBody, ContractSpace, ContractVolume, ContractWay, GeneratedBy,
+    License as LicenseMetadata, Lighting as LightingMetadata, PrefabMeta as PrefabMetadata,
+    Region as RegionMetadata, SpatialContract, StructureMeta as StructureMetadata,
 };
 
 /// The manifest of a zone too big for one structure template is the SAME
@@ -659,6 +659,11 @@ fn anchor_metadata(expansion: &Expansion) -> BTreeMap<String, AnchorMetadata> {
         .iter()
         .map(|(name, anchor)| {
             let mut meta = AnchorMetadata::point(anchor.pos, anchor.facing.to_string());
+            // What the mark said the anchor is FOR (spec-0046). The KEY stays
+            // `anchor/<stem>`: a mark must not be able to name an anchor the DSL
+            // could not reference, and the role is what lets a generated zone
+            // declare an entry point without needing to.
+            meta.role = anchor.role;
             meta.resolves_to = contract
                 .as_ref()
                 .and_then(|c| crate::contract::resolves_to(c, anchor.pos));

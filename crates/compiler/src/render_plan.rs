@@ -137,9 +137,10 @@ fn region_centre(from: [i32; 3], to: [i32; 3]) -> [f64; 3] {
 }
 
 /// Resolve the campaign spawn as `(area, pos, facing)` — the first area to
-/// resolve an entry anchor, through the compiler's own alias list
-/// (`plan::ENTRY_ANCHOR_NAMES`) rather than a literal name. An island-tileset
-/// area spells that anchor `entry`, and framing it is the whole job here.
+/// resolve an entry anchor, through the compiler's own resolver
+/// (`Plan::entry_point_facing`) rather than a literal name. What an entry
+/// anchor is called is not this planner's question, and framing the cell the
+/// party arrives at is the whole job here.
 fn spawn_of(plan: &Plan) -> Option<(String, [i32; 3], Option<String>)> {
     for area in &plan.areas {
         if let Some((pos, facing)) = plan.entry_point_facing(&area.area_id) {

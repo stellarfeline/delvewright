@@ -1469,22 +1469,39 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   $(z)` off `dw:cp`, + actionbar message + soft sound). The region selector is
   compile-time-derived literals; nothing is authored.
 - **Entry point.** One cell per **area** — the cell a body arrives at when it
-  enters that area. It is the anchor resolved through an ordered alias list
-  (`plan::ENTRY_ANCHOR_NAMES` = `spawn`, then `entry`): one concept with two
-  spellings in the shipped tileset library (keep/cave/test say `spawn`, the
-  island tileset says `entry`), so the compiler owns the resolution rather than
-  leaving it to per-tileset folklore.
+  enters that area. It is the anchor whose prefab metadata declares
+  `"role": "entry"`. A campaign addresses every other anchor by name; this is the
+  one the compiler has to *find*, so the piece says what it is for rather than
+  being recognised by what it is called.
+  Where **no** anchor in an area declares the role, the compiler falls back to an
+  ordered name list (`plan::ENTRY_ANCHOR_NAMES` = `spawn`, then `entry`) — the
+  two spellings the shipped tileset library uses (keep/cave/test say `spawn`, the
+  island tileset says `entry`). That list is a **compatibility path for pieces
+  admitted before the role existed**, not a second authoring surface: a piece
+  written today declares the role, and an area that declares one is never
+  reached by a name at all, so a piece cannot acquire the campaign's start by
+  calling one of its anchors `entry` for its own reasons. Two anchors in one area
+  declaring the role is `DW0804`.
   The **campaign's** entry point is the first area that resolves one, and drives
   `setworldspawn`, the `class_apply_*` teleport, first-join placement, the
-  `dw:cp` seed and the gate-deadlock proof's start node. Resolving **none** of
-  the names in **any** area is `DW0345`.
-  Every consumer goes through one resolver — `Plan::entry_point` /
-  `plan::entry_anchor` for a lookup, `plan::is_entry_anchor_name` for the
-  membership question — and no consumer matches a name itself. Besides the
-  campaign-level uses above, the per-area entry point is what **inter-area
-  transport** carries the party to when consecutive critical objectives change
-  area, what the **POV shot planner** frames, and what the **trap-safety proof**
-  counts as a place a player can start from.
+  `dw:cp` seed and the gate-deadlock proof's start node. Resolving **nothing** in
+  **any** area is `DW0345`, and it is checked before any model is built — a world
+  with no start does not have a walking problem, and reporting it as one
+  (`DW0311` over a crossing nothing was meant to walk) sends a reader looking for
+  a wedged doorway.
+  Every consumer goes through one resolver — `AnchorTable::entry_anchor` /
+  `Plan::entry_point` / `Plan::entry_point_facing` for one area's,
+  `AnchorTable::entry_anchor_name` where the answer is needed as a name (the
+  gate-deadlock proof reads its start node out of prefab metadata),
+  `Plan::entry_points` for the whole start set — and no consumer matches a name
+  itself. Besides the campaign-level uses above, the per-area entry point is what
+  **inter-area transport** carries the party to when consecutive critical
+  objectives change area, what the **POV shot planner** frames, and what the
+  **trap-safety proof** counts as a place a player can start from.
+  The prefab **viewer** asks the same question for a different purpose — which
+  anchor a review page should open on — and prefers a declared role over its own
+  wider list of name stems (`spawn`, `entry`, `entrance`, `threshold`), which is
+  a guess about one piece and is consulted only when the piece does not say.
 - **The class trigger is ONE-SHOT per player, sealed in the pack.**
   `class_apply_<c>` ends in `teleport @s <entry point>`, so a
   `dw.class` trigger left armed after a class is a live warp back to the start of
@@ -4667,6 +4684,7 @@ the rule's domain is the more useful thing for the number to say.
 | `DW0800` | `delve-grammar` / `delve-admit` | **A body of fluid in a piece does not stay where it was written.** Water and lava are the only blocks an author places that move: they run down first and then sideways, on the server's own clock, before any player arrives — and nothing upstream of a server can see it, because the `.nbt`, the review render and the contact sheet the owner approves all draw still water. One rule with two ways to break it, under one code because they are one fact the reviewer needs (*this pond is not a pond*): **saturation** — every fluid cell must be a source, since a `level` other than 0 is a state vanilla derives from a cell's neighbours and re-derives on its own clock, and a piece cannot pin one (spec-0038's ruling; ADR-0006, since a world that heals no longer matches the bytes that built it); and **containment** — no source may have an open cell beside or below it. Open means AIR, and only air: a block written `waterlogged=false` is a wall, and a block written `waterlogged=true` is a still cell that spreads nothing. Both of those are measured on the pinned server rather than reasoned out (`tools/spike-block-settling/`, nine rigs including a grate and a stair in a wall, a stair with a source on each side, and a waterlogged block given a block update) — the plausible opposite, *a grate is a hole because iron bars are waterloggable*, is a claim about placing water in that cell and not about a body beside it. Fluid never runs upward, so an open top is not a leak. A run direction that leaves the piece's own outer face is **counted and never judged**: what is beyond a face is not in these bytes (a shoreline piece's water is the sea), and only the placement knows what is on the other side. **`DW0318` is where that is decided** — it takes the assembled world and refuses any fluid cell outside every placed piece under a void horizon, so "whatever this piece is placed against decides where that water goes" names something that does. Binding: fluid cells examined; a piece with none gets no gate at all and the count stands as a measurement. Emitted as a red `fluid-contained` gate (no `.nbt` is written), as an `audit` error, and — at the third emitter of structure bytes, which had nothing asking it — as `prefabs/invariants.rs::assert_fluid_is_contained`, run by every `prefabs/*-generator` before it writes, printing its binding per piece. |
 | `DW0801` | `delve-grammar` / `delve-admit` | **A stair claims a `shape` the game does not derive at its cell.** A stair's `shape` is not a stored fact: vanilla recomputes it from the stair's own neighbours on every horizontal block update at that cell, so an authored value is a *claim about the four cells around it* — and a wrong claim is corrected by the world the first time anything is placed, broken or flooded beside it. This is the one property that can be right in every tool this project owns and wrong in the game: the render draws what the bytes say, the reviewer approves the picture, the world draws something else. The live instance is a mitred kerb pointed across its run instead of along it, which survives every render and flattens to `straight` in play. The derivation — straight unless a stair of the same `half` sits across the facing axis in front (outer corner) or behind (inner corner), suppressed when the cell beyond the turn already carries a stair of this facing and half, and *any* stair block counts, not the same one — is **measured, not read**: a field of 758 random stairs was placed, settled and read back on the pinned 1.21.11 server (`tools/spike-block-settling/`) and `crates/schem/tests/stair_shape_measured.rs` replays every cell of it through `delvewright_schem::stairs::derive_shape`. A stair that writes no `shape` at all makes no claim here, so nothing can disagree with it. Binding: stairs examined; a piece with none gets no gate and the count stands as a measurement. Emitted as a red `stair-shape` gate (no `.nbt` is written) and as an `audit` error. |
 | `DW0803` | `compiler::emit` | **A placed structure template is not the size its prefab metadata says it is.** Two documents claim the same fact — the `.nbt`'s own `size` tag and the metadata's `structure.size` (or a tile's `structure_set.parts[].size`) — and *every pass but the placement itself reads the metadata's*: the forceload span, the piece AABB `DW0780` compares, massing's footprint, and the offset arithmetic that puts a tile in the world. When they disagree the world is built around a shape that is not the one whose blocks arrive, and no other check can see it because each half is internally consistent. Tiling is what makes it reachable: a manifest and its tiles are several files a `cp`, a partial re-export or a hand edit can leave at different ages, and a stale tile then lands at the offset the manifest gives it, sliding part of a building through the rest. A single-template prefab has the same exposure and had the same silence. Build tier (exit 3): the world would be wrong, so it is not built. Prescription is never “adjust the declared size” — the two sizes are one fact and the fix is to make them one export again. **Binding**: `TemplateExtentBinding { placed, checked }`, templates placed vs templates whose bytes decoded; a world where none decoded reports the zero binding as a `DW0803` warning rather than a clean pass over an empty comparison. **Bound at two entry points, deliberately**: `emit::build_with_warnings`, which protects the datapack, and `main::read_structures`, the one place every CLI consumer of prefab bytes passes through — `build`, `snapshot`, `viewer`, `blocking-chart`. The second is the one that matters: a review artifact drawn from a stale tile is a picture that lies, and it is what a reviewer checks the world against. The check is pure, so the build path runs it twice for the cost of a walk. |
+| `DW0804` | `compiler::plan` | **Two anchors in one area declare the entry role.** An area has one place the party arrives at, and two claims to it is a question the compiler cannot answer: picking first-wins would settle it by piece order, or by the `BTreeMap` order of two anchor names nobody chose for their sort, and a spawn that moved for that reason is a mystery nothing in the build output mentions. Build tier (exit 3), raised while the anchors are being resolved, so it precedes every check that would have been computed from the wrong start. The message names the area and **both** claimants. Only reachable through a declared `role`: two anchors merely *named* `spawn` and `entry` in one area are the pre-role compatibility case and stay ordered by `plan::ENTRY_ANCHOR_NAMES`, because that ordering is what every shipped piece was admitted under. Prescription is to drop the `role` key from the anchor that is not the arrival cell — the anchor itself stays and content still binds it by name — and, in a `prefab_pool`, to leave the role on the piece that seeds the layout. Never resolved by renaming an anchor to `spawn` or `entry`: the name list is the fallback for pieces that predate the role, and it is not consulted at all once an area declares one. |
 
 `delve-render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.

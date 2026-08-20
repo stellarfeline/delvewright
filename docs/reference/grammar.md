@@ -133,6 +133,7 @@ The ledger is every number the format has and the one surface each names
 | `1.5.0` | the document's own composition — the program-level `include` list | yes |
 | `1.6.0` | the contract's reach (spec-0041) — the `qualify` node, optional `rise` on `stair`/`drop` edges, `face` on exterior edges | reserved |
 | `1.7.0` | the contingent edge — `way` on a `walk`, `stair` or `drop`: the traversal is severed as built, and content opens it | yes |
+| `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -414,6 +415,7 @@ the declaration is all that is wanted.
 | `at` | which cell (flattened into the mark object, see below) |
 | `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived** as the direction of *decreasing local `Z`* — the way §5b's frame says travel runs. Which world direction that is depends on both halves of the frame: `north`/`south` when local `Z` names world `Z`, `west`/`east` when it names world `X`, the second of each pair when local `Z` is reflected. All four cardinals are reachable. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
 | `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
+| `role` | what the anchor is **for**, written through to the exported anchor's metadata. One term: `entry` — the cell a body arrives at when it enters the area this piece is placed in. The exported KEY is unaffected and stays `anchor/<stem>`; the role is what lets a program declare an entry point without needing to write a name it structurally cannot write. One anchor per area may carry it (`DW0804`), and a campaign still binds every other anchor by name. |
 
 `at` is one of:
 
@@ -1082,6 +1084,7 @@ Two mechanisms answer it, and both are enforced by
 | `ir::EdgeClass.way` | `1.7.0` | `WAY_SINCE` |
 | `ir::Mark.facing` | `1.0.0` | — |
 | `ir::Mark.index` | `1.0.0` | — |
+| `ir::Mark.role` | `1.8.0` | `ANCHOR_ROLE_SINCE` |
 | `ir::Include.rename_anchors` | `1.5.0` | `via ir::Program.include` |
 | `ir::Node.palette` | `1.3.0` | `BIND_SINCE` |
 | `ir::Node.params` | `1.3.0` | `BIND_SINCE` |

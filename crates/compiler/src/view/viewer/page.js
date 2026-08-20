@@ -417,6 +417,9 @@
    */
   function defaultPreset(model) {
     const usable = (a) => a && a.pos && !eyeIsBuried(model, a);
+    // What the piece SAYS it is, before any reading of what it is called.
+    const declared = model.anchors.find((a) => usable(a) && a.role === "entry");
+    if (declared) return "pov:" + declared.name;
     for (const stem of WAY_IN) {
       const hit = model.anchors.find((a) => usable(a) && stemOf(a.name) === stem);
       if (hit) return "pov:" + hit.name;
@@ -597,7 +600,7 @@
     if (!model.anchors.length) return;
     const tri = [], col = [], lin = [], lcol = [];
     for (const a of model.anchors) {
-      const wayIn = WAY_IN.indexOf(stemOf(a.name)) >= 0;
+      const wayIn = a.role === "entry" || WAY_IN.indexOf(stemOf(a.name)) >= 0;
       const c = a.socket ? [110, 220, 160] : wayIn ? [110, 168, 254] : [255, 180, 84];
       if (a.pos) {
         const [x, y, z] = [a.pos[0] + 0.5, a.pos[1] + 0.5, a.pos[2] + 0.5];

@@ -353,6 +353,44 @@ pub fn build_with_warnings(
     let ns = &plan.namespace;
     let mut out: BuildOutput = BTreeMap::new();
 
+    // Every campaign must resolve an ENTRY POINT (DW0345). Without one the world
+    // gets no `setworldspawn`, a class-picking player is never teleported, and a
+    // joining player is left to the vanilla spawn search — which a dedicated server
+    // resolves to the surface but the integrated (singleplayer) server resolves to
+    // the build floor, i.e. inside solid stone. This used to fail silently: an area
+    // whose tileset spells the anchor `entry` instead of `spawn` compiled clean and
+    // shipped a delve with no start.
+    //
+    // FIRST, before any model, any walk and any other check. A world with no
+    // start does not have a walking problem: with nothing to transport the party
+    // into, an inter-area crossing is left to the critical-path walk, which then
+    // reports `DW0311` — *the player cannot walk from [5, 65, 8] to
+    // [262, 66, 1]* — about a crossing that was never meant to be walked. That is
+    // the symptom reported as the fault, and it sent a reader to look for a
+    // wedged doorway in a world whose real defect was that nothing said where the
+    // party arrives.
+    if campaign_spawn(plan).is_none() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_NO_ENTRY_ANCHOR,
+            message: format!(
+                "the assembled world resolves no entry anchor — no area places a \
+                 piece whose prefab metadata declares an anchor with \
+                 `\"role\": \"{role}\"`, and none carries the fallback spelling \
+                 {names:?} either. The compiler then has no cell to call the \
+                 campaign's start: no `setworldspawn`, no class-apply teleport, no \
+                 first-join placement. Fix it where the anchors are declared: give \
+                 the piece the party arrives in an anchor at that cell and put \
+                 `\"role\": \"{role}\"` on it (in a pool, that is the prefab the \
+                 layout is seeded from), or bind the area to a prefab that already \
+                 has one. The two names are a compatibility path for pieces \
+                 admitted before the role existed — a piece written today declares \
+                 the role rather than being renamed to match a spelling.",
+                role = plan::AnchorRole::Entry,
+                names = plan::ENTRY_ANCHOR_NAMES,
+            ),
+        });
+    }
+
     // The templates are the size their metadata says they are (DW0803). Bound
     // here, before any model is built out of them, because every later pass —
     // the forceload span, the mating check, massing, the whole assembled world
@@ -1067,28 +1105,6 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
-
-    // Every campaign must resolve an ENTRY POINT (DW0345). Without one the world
-    // gets no `setworldspawn`, a class-picking player is never teleported, and a
-    // joining player is left to the vanilla spawn search — which a dedicated server
-    // resolves to the surface but the integrated (singleplayer) server resolves to
-    // the build floor, i.e. inside solid stone. This used to fail silently: an area
-    // whose tileset spells the anchor `entry` instead of `spawn` compiled clean and
-    // shipped a delve with no start.
-    if campaign_spawn(plan).is_none() {
-        return Err(BuildFailure::Diagnostic {
-            code: plan::DW_NO_ENTRY_ANCHOR,
-            message: format!(
-                "the assembled world resolves no entry anchor — no area places a \
-                 piece declaring any of {names:?} in its prefab metadata. The \
-                 compiler then has no cell to call the campaign's start: no \
-                 `setworldspawn`, no class-apply teleport, no first-join placement. \
-                 Give the pool's entry-role prefab an entry anchor (its metadata \
-                 `anchors`), or bind the area to a prefab that has one.",
-                names = plan::ENTRY_ANCHOR_NAMES,
-            ),
-        });
-    }
 
     // ---- datapack ----
     put_json(
@@ -10702,10 +10718,11 @@ fn trap_payload_fns(plan: &Plan) -> Vec<(String, String)> {
 }
 
 /// The campaign's **entry point**: the absolute position of the first area's
-/// entry anchor, resolved through [`plan::ENTRY_ANCHOR_NAMES`] (`spawn`, then
-/// `entry` — one concept, two spellings in the shipped tileset library). This one
-/// cell is `setworldspawn`, the class-apply teleport, the first-join placement,
-/// and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
+/// entry anchor, resolved through [`plan::AnchorTable::entry_anchor`] — the
+/// anchor that declares [`plan::AnchorRole::Entry`], or the first
+/// [`plan::ENTRY_ANCHOR_NAMES`] spelling an area that declares no role carries.
+/// This one cell is `setworldspawn`, the class-apply teleport, the first-join
+/// placement, and the `dw:cp` seed. `None` is a hard build error (`DW0345`).
 fn campaign_spawn(plan: &Plan) -> Option<[i32; 3]> {
     plan.areas
         .iter()
