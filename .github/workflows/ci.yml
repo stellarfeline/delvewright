@@ -532,6 +532,26 @@ jobs:
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - name: no spec or ADR number collides with origin/main after this merges
         run: python3 tools/check-numbered-doc-uniqueness.py
+      # The same two series, asked a different question: not "is this number
+      # unique" but "does the index TELL THE TRUTH about it". `docs/specs/
+      # README.md` and `docs/adr/README.md` carry a status column, and neither is
+      # the authority — each document's own `Status:` line is — so both tables
+      # are copies, and a copy nothing compares against its source drifts the
+      # moment either side is edited alone. Measured before this step existed:
+      # seven of thirty-seven spec rows disagreed with the file they point at,
+      # seven spec files had no row at all (including `spec-0039`, the gallery),
+      # and `ADR-0020` was missing from the ADR index — while the local link
+      # check, `check-doc-dupes` and the uniqueness gate above were all green,
+      # because each asks about the table's SHAPE and none asks whether what it
+      # SAYS is true. Correcting the tables by hand and stopping is the UNRUN
+      # shape: correct the day it lands, stale at the next merge, with nothing
+      # that could say so. A document with no readable status is REPORTED, never
+      # filled in — a status written into a document nobody ruled on forges the
+      # fact this gate protects. States its binding count per series; a series
+      # empty on either side exits 2. Deterministic, offline, stdlib-only
+      # python3, and no network I/O — it compares this tree against itself.
+      - name: every spec and ADR index row agrees with the document it points at
+        run: python3 tools/check-numbered-doc-index.py
       # The same defect one layer down, on a different kind of number. A version
       # ledger is picked exactly the way a spec number is — list what exists,
       # write the next one — so two branches take the same number for different
