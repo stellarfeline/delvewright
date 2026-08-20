@@ -526,10 +526,22 @@ construction for both block checks — the export refuses an unknown state and a
 under-specified shape alike — but a *hand-built* or ingested piece does not, so
 `audit` is where those classes are caught for everything else.
 
+`audit` also opens the spatial contract's **second door**, and says what it did
+with it. A piece whose document declares a contract is judged against its own
+bytes by the checker `delve-grammar expand` runs, and a disagreement is `DW0782`.
+A door that did not open is `DW0783` and never a silence: it names what it
+therefore did not examine, and it refuses (exit 1) rather than reporting a pass
+when the document does not parse, or when the document declares no contract while
+its own anchors still carry the `resolves_to` an exporter writes only out of one —
+a dropped declaration, not an absent one. The report says which case it was, as
+`contract.state`, with the door's binding counts beside it.
+
 A zone past the 48-per-axis cap hands its **manifest** to `audit` and `lighting`
 instead of an `.nbt`; both reassemble the tiles and answer about the whole
-building. Handing either one tile is `DW0739`, and so is handing it a tile that
-has been copied away from its manifest.
+building, and so does the second door — a manifest's contract and anchors are
+zone-relative, so a composed zone is judged as one building. Handing either one
+tile is `DW0739`, and so is handing it a tile that has been copied away from its
+manifest.
 
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
