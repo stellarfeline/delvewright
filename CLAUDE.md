@@ -415,6 +415,43 @@ validation/          # docker compose: headless server + bot, same image as CI &
   tool absent from docs and skills does not exist for future sessions. The
   inventory of the whole tool surface — every binary, script and flag, with its
   class — is `docs/reference/tools.md`.
+- **A released campaign is never the engine's test surface, and a campaign that
+  stops building on a new engine is a FENCE defect.** A shipped
+  campaign declares an old `dsl_version`; per-stage fences exist precisely so that
+  document keeps compiling unchanged. When it stops, the finding is in the fence,
+  not in the content, and a campaign already accepted is never edited to satisfy a
+  new engine. Engine surfaces are exercised against **the gallery** (spec-0039) —
+  which exists because a real campaign's content and its engine use cannot be
+  separated, and that entanglement is exactly what disqualifies it as a test
+  surface. The cost of learning this the other way: three diagnostics reddened an
+  accepted campaign and a day went into repairing the campaign, when every one of
+  them was a new obligation reaching a document declaring an older version.
+  **The complement is an obligation, not an exception: a campaign that has not
+  been released adopts.** Anything still in development on its own branch tracks
+  the current engine, so its red under a new obligation is an **adoption item on
+  the campaign** — scheduled by the version-adoption rule above — and is not a
+  fence finding. The fence exists so an *accepted* document keeps compiling
+  unchanged forever; it was never licence for live content to fall behind. So the
+  triage question is one fact about the artifact, asked before the diagnostic is
+  even read: **has this campaign been released or accepted?** Both halves of the
+  answer are load-bearing, and reading only the first is how every red starts
+  looking like a fence defect.
+- **Every engine surface owes a gallery element, in the same PR.** The
+  coverage gate enumerates its unit set from the compiler's own
+  `schema --stage all` export — the single authority, never a parser of the source
+  — so a new schema property or enum variant becomes an **unbound unit the moment
+  it lands**, and the gate reds naming it. A unit is either **bound** in the
+  gallery domain or **refusal-proven** by a committed probe the engine actually
+  rejects with a named code. **There is no third state and no prose exemption**:
+  the hatch demands a machine-produced refusal, which "nobody authored it" — the
+  defect the gate exists to catch — cannot supply. Distinct from the demo-level
+  rule and not a substitute for it: a demo teaches ONE mechanic to a human and is
+  queued rather than built, while a gallery element is coverage and lands with the
+  surface it covers. Vanilla registry values (block, sound, potion ids) are data,
+  never units — exhausting them would make the gallery a registry dump. The
+  gallery also owes **legibility**: a creator reading it sees what the engine
+  builds and which checks fire, so an element that satisfies the tool and cannot
+  be read has met half its obligation.
 - **Every new mechanic owes a demo level**: the PR that lands
   a mechanic adds its row to `docs/demo-levels.md` — the first-party showcase
   queue of small levels that verify one mechanic and document it by example. Not
