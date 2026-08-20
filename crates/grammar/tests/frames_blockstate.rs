@@ -414,7 +414,15 @@ fn claimed_pair(orient: Reorient) -> Program {
             Contract::new("head")
                 .space("head", Envelope::Open)
                 .space("tail", Envelope::Open)
-                .edge(EXTERIOR, "head", EdgeClass::Walk { rise: 0, via: None }),
+                .edge(
+                    EXTERIOR,
+                    "head",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
+                ),
         )
         .rule(
             "piece",
@@ -540,7 +548,11 @@ fn a_claim_neither_grants_nor_revokes_the_guards_licence() {
             .contract(Contract::new("head").space("head", Envelope::Open).edge(
                 EXTERIOR,
                 "head",
-                EdgeClass::Walk { rise: 0, via: None },
+                EdgeClass::Walk {
+                    rise: 0,
+                    via: None,
+                    way: None,
+                },
             ))
             .rule("piece", reflected(Axis::Z, Node::call("inner")))
             .rule_alts("inner", vec![alt])

@@ -28,8 +28,8 @@ use crate::eval::{Env, EvalError, Scope};
 use crate::explain::{self, GuardLeaf, axis_name, render_cond, render_expr};
 use crate::geom::{Axis, Box3, Orientation};
 use crate::ir::{
-    Alternative, AxisSpec, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Paint,
-    Program, ProgramError, Reorient, Side, Size, Split, States,
+    Alternative, AxisSpec, Bar, Cond, Envelope, Facing, Mark, MarkAt, Material, Node, Opens, Paint,
+    Program, ProgramError, Reorient, Side, Size, Split, States, Way,
 };
 use crate::model::{PaletteFull, VoxelModel};
 use crate::orient::{FrameSet, OrientError, reachable_frames, reorient};
@@ -192,6 +192,22 @@ pub struct ResolvedBar {
     pub block: BlockState,
 }
 
+/// A declared edge's way, resolved: the contingency, with its cells and the
+/// block state its role resolves to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedWay {
+    /// Which direction opening it moves in.
+    pub opens: Opens,
+    /// The region name — what content addresses.
+    pub region: String,
+    /// Where it is.
+    pub boxes: Vec<Box3>,
+    /// The palette role it is made of.
+    pub role: String,
+    /// The block state that role resolves to.
+    pub block: BlockState,
+}
+
 /// A declared edge, resolved: the class as declared, with every region name it
 /// used replaced by the boxes it resolved to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,6 +224,8 @@ pub struct ResolvedEdge {
     pub via: Option<ResolvedVolume>,
     /// The bar, on a `barred` edge.
     pub bar: Option<ResolvedBar>,
+    /// The contingency, on a traversal edge that declares one.
+    pub way: Option<ResolvedWay>,
 }
 
 /// The program's spatial contract, **as resolved for this expansion**.
@@ -896,16 +914,24 @@ fn resolve_contract(
         region: name.to_string(),
         boxes: boxes_of(name),
     };
+    // `validate` refuses a mix and an unbound role, so neither reaches here;
+    // air is the inert stand-in a panic would otherwise be.
+    let state_of = |role: &str| match program.palette.get(role).map(Paint::states) {
+        Some(States::One(state)) => state.clone(),
+        _ => BlockState::air(),
+    };
     let bar = |b: &Bar| ResolvedBar {
         region: b.region.clone(),
         boxes: boxes_of(&b.region),
         role: b.block.clone(),
-        block: match program.palette.get(&b.block).map(Paint::states) {
-            Some(States::One(state)) => state.clone(),
-            // `validate` refuses a mix and an unbound role, so neither reaches
-            // here; air is the inert stand-in a panic would otherwise be.
-            _ => BlockState::air(),
-        },
+        block: state_of(&b.block),
+    };
+    let way = |w: &Way| ResolvedWay {
+        opens: w.opens,
+        region: w.region.clone(),
+        boxes: boxes_of(&w.region),
+        role: w.block.clone(),
+        block: state_of(&w.block),
     };
     let edges = declared
         .edges
@@ -917,6 +943,7 @@ fn resolve_contract(
             rise: e.class.rise(),
             via: e.class.via().map(volume),
             bar: e.class.bar().map(bar),
+            way: e.class.way().map(way),
         })
         .collect();
     Some(ResolvedContract {

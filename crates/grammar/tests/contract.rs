@@ -26,9 +26,11 @@ use std::process::Command;
 
 use delvewright_grammar::export::{export_prefab, export_zone};
 use delvewright_grammar::ir::{
-    Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Node, Program, ProgramError,
+    Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Node, Opens, Program, ProgramError,
+    Way,
 };
 use delvewright_grammar::library::{self, spatial_contract::spatial_contract};
+use delvewright_grammar::version::{LATEST_PROGRAM_VERSION, WAY_SINCE};
 use delvewright_grammar::{Box3, ExpandOptions, Expansion, expand};
 
 const GRAMMAR: &str = env!("CARGO_BIN_EXE_delve-grammar");
@@ -536,6 +538,224 @@ fn the_new_surface_is_refused_at_the_older_version() {
     ));
 }
 
+/// **The `way` fence, both directions** (spec-0042 AC1).
+///
+/// `way` is `1.7.0`'s surface. A document declaring `1.5.0` and writing one is
+/// refused by the FENCE — not by serde, which is why this program is built in
+/// Rust and validated rather than parsed from JSON: a serde refusal would prove
+/// only that the field is unknown to some older engine, and the thing asserted
+/// here is that THIS engine refuses a document claiming a compatibility it does
+/// not have.
+///
+/// The other direction is the promise the fence exists to keep: the same
+/// program with no `way` on it compiles to identical blocks at `1.5.0` and at
+/// `1.7.0`, so raising the number is a deliberate act and never a side effect.
+#[test]
+fn a_way_is_refused_below_its_version_and_a_document_without_one_is_unchanged() {
+    let contingent = spatial_contract_with_a_laid_way();
+    assert!(contingent.validate().is_ok(), "{:?}", contingent.validate());
+    match contingent.at_version("1.5.0").validate() {
+        Err(ProgramError::FencedConstruct {
+            construct,
+            since,
+            declared,
+            written_by,
+        }) => {
+            assert!(construct.contains("way"), "{construct}");
+            assert_eq!(since, WAY_SINCE);
+            assert_eq!(since, "1.7.0");
+            assert_eq!(declared, "1.5.0");
+            assert!(written_by.contains("planks"), "{written_by}");
+        }
+        other => panic!("expected a fenced-construct refusal, got {other:?}"),
+    }
+
+    // The other direction: no `way`, and the version number changes nothing.
+    let at_latest = run(
+        &spatial_contract().at_version(LATEST_PROGRAM_VERSION),
+        PIECE,
+        1,
+    );
+    let at_old = run(&spatial_contract().at_version("1.5.0"), PIECE, 1);
+    assert_eq!(
+        at_latest.model.canonical_bytes(),
+        at_old.model.canonical_bytes(),
+        "a document that writes no way builds the same piece at either version"
+    );
+    assert!(
+        !at_latest.model.canonical_bytes().is_empty(),
+        "binding count 0: the two versions were compared over an empty building"
+    );
+}
+
+/// Two rooms and a level way between them whose deck is laid later.
+///
+/// Deliberately not a geometrically honest piece — nothing here expands it —
+/// because what is under test is the fence, and the fence runs at `validate`,
+/// which reads the document and never a block.
+fn spatial_contract_with_a_laid_way() -> Program {
+    let nest = |names: &[&str]| {
+        names
+            .iter()
+            .rev()
+            .fold(Node::Void, |body, region| Node::Claim {
+                region: (*region).to_string(),
+                body: Box::new(body),
+            })
+    };
+    Program::new("mended-span", "all")
+        .role(
+            "plank",
+            delvewright_grammar::BlockState::simple("oak_planks"),
+        )
+        .rule("all", nest(&["near", "far", "span", "planks"]))
+        .contract(
+            Contract::new("near")
+                .space("near", Envelope::Open)
+                .space("far", Envelope::Open)
+                .edge(
+                    EXTERIOR,
+                    "near",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
+                )
+                .edge(
+                    "near",
+                    "far",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: Some("span".to_string()),
+                        way: Some(Way {
+                            opens: Opens::Laid,
+                            region: "planks".to_string(),
+                            block: "plank".to_string(),
+                        }),
+                    },
+                ),
+        )
+}
+
+/// **`barred` + `way` is unwritable, not caught afterwards** (spec-0042 §2.2).
+///
+/// `barred` IS a walk carrying a cleared way over its bar's region, so an edge
+/// that declares both is declaring its contingency twice. `way` is a field of
+/// the three traversal classes and of no other, so the document form refuses it
+/// by name at parse — the same property that keeps a `bar` off a walk and a
+/// `rise` off a sightline.
+///
+/// The other door — a hand-built piece's resolved metadata, where `class` is a
+/// string and every field is present — has no such type, and refuses the pair
+/// at `contract-well-formed` instead (`tests/contract_check.rs`). Two doors,
+/// one rule.
+#[test]
+fn a_way_on_a_barred_or_vision_edge_is_not_a_document_this_engine_reads() {
+    let cases = [
+        (
+            "a way on a barred edge",
+            r#"{"version":"1.7.0","name":"x","start":"all","rules":{},
+                "contract":{"entry":"a","spaces":{"a":{"envelope":"open"}},
+                "edges":[{"a":"a","b":"a","class":"barred",
+                          "bar":{"region":"g","block":"r"},
+                          "way":{"opens":"cleared","region":"g","block":"r"}}]}}"#,
+        ),
+        (
+            "a way on a sightline",
+            r#"{"version":"1.7.0","name":"x","start":"all","rules":{},
+                "contract":{"entry":"a","spaces":{"a":{"envelope":"open"}},
+                "edges":[{"a":"a","b":"a","class":"vision","via":"v",
+                          "way":{"opens":"laid","region":"g","block":"r"}}]}}"#,
+        ),
+    ];
+    for (what, json) in cases {
+        let err = serde_json::from_str::<Program>(json)
+            .expect_err(&format!("{what} must be refused, not dropped"));
+        assert!(err.to_string().contains("unknown field"), "{what}: {err}");
+    }
+    // And the sign is a closed set: a third direction is not a thing to invent.
+    let err = serde_json::from_str::<Program>(
+        r#"{"version":"1.7.0","name":"x","start":"all","rules":{},
+            "contract":{"entry":"a","spaces":{"a":{"envelope":"open"}},
+            "edges":[{"a":"a","b":"a","class":"walk",
+                      "way":{"opens":"widened","region":"g","block":"r"}}]}}"#,
+    )
+    .expect_err("an invented sign must be refused");
+    assert!(err.to_string().contains("unknown variant"), "{err}");
+}
+
+/// **A way is one material, and so is a bar — one refusal for both.**
+///
+/// A region whose presence decides whether an edge is crossable cannot be
+/// "mostly" anything: half a laid deck is not a deck, and a gate that is mostly
+/// a bar is not a state anything can be in. The refusal names which of the two
+/// spellings the author wrote, and there is exactly one of it — a second
+/// bespoke refusal for the second spelling would be the defect rather than the
+/// fix.
+#[test]
+fn a_way_built_from_a_weighted_mix_is_refused_like_a_bar() {
+    let nest = |names: &[&str]| {
+        names
+            .iter()
+            .rev()
+            .fold(Node::Void, |body, region| Node::Claim {
+                region: (*region).to_string(),
+                body: Box::new(body),
+            })
+    };
+    let program = Program::new("mended-span", "all")
+        .role_mix(
+            "rubble",
+            vec![
+                delvewright_grammar::ir::WeightedBlock {
+                    weight: 1,
+                    block: delvewright_grammar::BlockState::simple("stone"),
+                },
+                delvewright_grammar::ir::WeightedBlock {
+                    weight: 1,
+                    block: delvewright_grammar::BlockState::simple("air"),
+                },
+            ],
+        )
+        .rule("all", nest(&["near", "far", "span", "planks"]))
+        .contract(
+            Contract::new("near")
+                .space("near", Envelope::Open)
+                .space("far", Envelope::Open)
+                .edge(
+                    EXTERIOR,
+                    "near",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
+                )
+                .edge(
+                    "near",
+                    "far",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: Some("span".to_string()),
+                        way: Some(Way {
+                            opens: Opens::Laid,
+                            region: "planks".to_string(),
+                            block: "rubble".to_string(),
+                        }),
+                    },
+                ),
+        );
+    match program.validate() {
+        Err(ProgramError::ContingentBlockIsAMix { what, role, region }) => {
+            assert_eq!(what, "way");
+            assert_eq!(role, "rubble");
+            assert_eq!(region, "planks");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 /// A version this engine does not know is refused outright, rather than parsed
 /// for the parts that look familiar.
 #[test]
@@ -606,7 +826,11 @@ fn an_edge_endpoint_that_is_not_a_space_is_refused() {
         Contract::new("room").space("room", Envelope::Open).edge(
             "room",
             "cellar",
-            EdgeClass::Walk { rise: 0, via: None },
+            EdgeClass::Walk {
+                rise: 0,
+                via: None,
+                way: None,
+            },
         ),
         Node::Claim {
             region: "room".to_string(),
@@ -622,7 +846,11 @@ fn an_edge_endpoint_that_is_not_a_space_is_refused() {
         Contract::new("room").space("room", Envelope::Open).edge(
             EXTERIOR,
             "room",
-            EdgeClass::Walk { rise: 0, via: None },
+            EdgeClass::Walk {
+                rise: 0,
+                via: None,
+                way: None,
+            },
         ),
         Node::Claim {
             region: "room".to_string(),
@@ -678,6 +906,7 @@ fn one_region_cannot_be_two_things() {
             EdgeClass::Stair {
                 rise: 3,
                 via: "room".to_string(),
+                way: None,
             },
         ),
         Node::Claim {
@@ -730,7 +959,8 @@ fn a_bar_names_a_bound_single_block_role() {
             },
         ));
     match mix.validate() {
-        Err(ProgramError::BarBlockIsAMix { role, region }) => {
+        Err(ProgramError::ContingentBlockIsAMix { what, role, region }) => {
+            assert_eq!(what, "bar");
             assert_eq!(role, "rubble");
             assert_eq!(region, "gate");
         }

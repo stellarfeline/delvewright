@@ -259,6 +259,36 @@ pub struct ContractEdge {
     /// The bar, on a `barred` edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bar: Option<ContractBar>,
+    /// **The contingency**, on a traversal edge that content opens: the region
+    /// the edge is severed by as built, and which direction opening it goes.
+    ///
+    /// Absent on every edge that is what it claims to be as shipped, which is
+    /// why a piece that declares none writes no key at all and its metadata is
+    /// byte-for-byte what it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way: Option<ContractWay>,
+}
+
+/// A contingent edge's way: the region that decides whether the edge is
+/// crossable, and which direction opening it moves in.
+///
+/// The dual of [`ContractBar`], and the reason `bar` is not extended in place:
+/// an existing piece's metadata says `bar` and keeps saying `bar`. The
+/// **checker** normalises the two into one prover; the document keeps both
+/// spellings, so nothing already written moves a byte.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContractWay {
+    /// `laid` — the region is empty as built and opening fills it with
+    /// [`block`](ContractWay::block); or `cleared` — the region stands in
+    /// `block` as built and opening voids it.
+    pub opens: String,
+    /// The region's name, which is what content addresses.
+    pub region: String,
+    /// The cells it covers.
+    pub boxes: Vec<Region>,
+    /// The block state the way is made of: what a `laid` way is filled with,
+    /// and what a `cleared` way stands in.
+    pub block: String,
 }
 
 /// An edge's own volume — an opening, a stair's treads, a fall column.

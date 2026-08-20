@@ -54,6 +54,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use delvewright_schem::prefab::{Region as MetaRegion, SpatialContract};
 
+use crate::block::BlockState;
 use crate::gates::{Gate, verdict};
 use crate::model::VoxelModel;
 use crate::nav;
@@ -182,10 +183,123 @@ fn is_traversal(class: &str) -> bool {
     matches!(class, "walk" | "stair" | "drop" | "barred")
 }
 
-/// A class whose `via` is a **transit volume** (its own cells, disjoint from
+/// An edge whose `via` is a **transit volume** (its own cells, disjoint from
 /// every space) rather than an opening on a shared boundary.
-fn is_transit(class: &str) -> bool {
-    matches!(class, "stair" | "drop")
+///
+/// A declared `way` makes any traversal edge one, because the cells the way
+/// lays or clears have to BELONG to the edge (spec-0042 §2.1) — a level walk
+/// whose deck is missing is a transit volume in exactly the way a stair's
+/// treads are, and letting it declare an opening on a shared boundary instead
+/// would put the laid cells inside a room.
+fn is_transit(edge: &delvewright_schem::prefab::ContractEdge) -> bool {
+    matches!(edge.class.as_str(), "stair" | "drop") || edge.way.is_some()
+}
+
+// ---------------------------------------------------------------------------
+// The contingency, with `barred` normalised into it
+// ---------------------------------------------------------------------------
+
+/// Which direction opening a contingent region moves in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sign {
+    /// The region is empty as built; opening fills it with the way's block.
+    Laid,
+    /// The region stands as built; opening voids it.
+    Cleared,
+}
+
+/// One edge's contingency, **after `barred` has been normalised into it**
+/// (spec-0042 §2.2).
+///
+/// `barred { bar }` means exactly `walk` + `way { cleared, bar.region,
+/// bar.block }`, so this is what both spellings become before anything proves
+/// anything. There is deliberately no second connectivity path for cleared
+/// ways: a private copy of a general mechanism is the defect this corpus keeps
+/// finding, and it is worst when the special case works, because then nothing
+/// ever looks at it again.
+#[derive(Debug, Clone)]
+struct Contingency {
+    /// The region name — what a verdict and, later, an effect both address.
+    name: String,
+    /// Which direction opening it moves in.
+    sign: Sign,
+    /// What a `laid` region is filled with. A `cleared` region is voided, so
+    /// this is what it is expected to stand in and nothing reads it.
+    block: BlockState,
+    /// Its cells.
+    cells: BTreeSet<[i32; 3]>,
+    /// True when the author wrote `barred`.
+    ///
+    /// The prover is one; the **wording** is not. A refusal names the surface
+    /// the author actually wrote, so a `barred` edge is still told about its
+    /// bar and never about a "way" it never spelled.
+    sugar: bool,
+}
+
+impl Contingency {
+    /// The verb a verdict uses for opening it.
+    fn verb(&self) -> &'static str {
+        match (self.sugar, self.sign) {
+            (true, _) => "opened",
+            (false, Sign::Laid) => "laid",
+            (false, Sign::Cleared) => "cleared",
+        }
+    }
+
+    /// A copy of `model` with this contingency opened: filled for `laid`,
+    /// voided for `cleared`.
+    fn opened(&self, model: &VoxelModel) -> VoxelModel {
+        let mut copy = model.clone();
+        self.apply(&mut copy);
+        copy
+    }
+
+    /// Apply the opening delta in place.
+    fn apply(&self, model: &mut VoxelModel) {
+        let block = match self.sign {
+            Sign::Laid => self.block.clone(),
+            Sign::Cleared => BlockState::air(),
+        };
+        for &cell in &self.cells {
+            if model.get(cell).is_some() {
+                let _ = model.set(cell, &block);
+            }
+        }
+    }
+}
+
+/// The contingency of one metadata edge, with `barred` normalised in.
+///
+/// A `laid` way whose block does not parse resolves to air, which cannot open
+/// anything; `well_formed` refuses the string before any of that matters, so
+/// this never has to decide what an unparseable block means.
+fn contingency_of(edge: &delvewright_schem::prefab::ContractEdge) -> Option<Contingency> {
+    if let Some(way) = &edge.way {
+        return Some(Contingency {
+            name: way.region.clone(),
+            sign: if way.opens == "laid" {
+                Sign::Laid
+            } else {
+                Sign::Cleared
+            },
+            block: way.block.parse().unwrap_or_else(|_| BlockState::air()),
+            cells: cells(&way.boxes),
+            sugar: false,
+        });
+    }
+    let bar = edge.bar.as_ref().filter(|_| edge.class == "barred")?;
+    Some(Contingency {
+        name: bar.region.clone(),
+        sign: Sign::Cleared,
+        block: bar.block.parse().unwrap_or_else(|_| BlockState::air()),
+        cells: cells(&bar.boxes),
+        sugar: true,
+    })
+}
+
+/// The class the prover uses: `barred` is a `walk` carrying a cleared way.
+fn proving_class(class: &str) -> &str {
+    if class == "barred" { "walk" } else { class }
 }
 
 /// One element of the reachability graph: a space, or a traversal edge's own
@@ -208,8 +322,9 @@ struct Index<'a> {
     no_body_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Edge index → its via's cells (empty when it declares none).
     via_cells: Vec<BTreeSet<[i32; 3]>>,
-    /// Edge index → its bar's cells (empty when it has none).
-    bar_cells: Vec<BTreeSet<[i32; 3]>>,
+    /// Edge index → its contingency, `barred` normalised in (`None` when the
+    /// edge is what it claims to be as shipped).
+    contingency: Vec<Option<Contingency>>,
     /// Every cell of every space, unioned.
     all_space_cells: BTreeSet<[i32; 3]>,
     /// Every cell of every out-of-walk region, unioned.
@@ -235,11 +350,8 @@ impl<'a> Index<'a> {
             .iter()
             .map(|e| e.via.as_ref().map(|v| cells(&v.boxes)).unwrap_or_default())
             .collect();
-        let bar_cells: Vec<BTreeSet<[i32; 3]>> = contract
-            .edges
-            .iter()
-            .map(|e| e.bar.as_ref().map(|b| cells(&b.boxes)).unwrap_or_default())
-            .collect();
+        let contingency: Vec<Option<Contingency>> =
+            contract.edges.iter().map(contingency_of).collect();
         let all_space_cells = space_cells.values().flatten().copied().collect();
         let all_no_body_cells = no_body_cells.values().flatten().copied().collect();
         Index {
@@ -247,7 +359,7 @@ impl<'a> Index<'a> {
             space_cells,
             no_body_cells,
             via_cells,
-            bar_cells,
+            contingency,
             all_space_cells,
             all_no_body_cells,
             standable: nav::standable_cells(model),
@@ -369,7 +481,7 @@ pub fn check(
     gates.push(well_formed(&ix, model));
     gates.push(coverage(&ix));
     gates.push(closure(&ix, model, &mut enumeration));
-    gates.push(edge_proof(&ix, model));
+    gates.push(edge_proof(&ix, model, &mut enumeration));
     let kinds = no_body_kinds(&ix, model, anchors, &mut enumeration);
     gates.push(no_body_gate(&ix, &kinds));
     gates.push(reachability(&ix, model, &mut enumeration));
@@ -557,12 +669,13 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                  sightline IS its opening"
             ));
         }
+        way_well_formed(ix, model, i, edge, &site, exterior, &mut bad);
 
         let via = &ix.via_cells[i];
         if via.is_empty() {
             continue;
         }
-        if is_transit(&edge.class) {
+        if is_transit(edge) {
             // A transit volume is its own place: disjoint from every space, and
             // touching both ends.
             for (name, space) in &ix.space_cells {
@@ -570,7 +683,8 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 if !overlap.is_empty() {
                     bad.push(format!(
                         "{site}: its transit volume overlaps space {name:?} on {} cell(s) ({}). A \
-                         stair's treads and a drop's column belong to the edge, not to either end",
+                         stair's treads, a drop's column and a way's laid cells belong to the \
+                         edge, not to either end",
                         overlap.len(),
                         describe_cells(&overlap)
                     ));
@@ -675,6 +789,165 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
         } else {
             bad.join(" · ")
         },
+    }
+}
+
+/// **A declared `way` is confined to its own edge's opening** (spec-0042 §2.1,
+/// AC5).
+///
+/// The way region is the one place in this surface where an author names cells
+/// that the shipped bytes do *not* have to agree with — a `laid` region is
+/// empty as built and full later. Unconstrained, that is a build-anything
+/// hatch: "content will put something here" over any cells at all. So every
+/// demand here is §0-shaped — the region must be somewhere the defect cannot
+/// put it — and the strongest is the last: **it lies inside the transit volume
+/// of the edge it belongs to**, which no cell of a room, of another edge, or of
+/// the world outside the piece can satisfy.
+fn way_well_formed(
+    ix: &Index,
+    model: &VoxelModel,
+    i: usize,
+    edge: &delvewright_schem::prefab::ContractEdge,
+    site: &str,
+    exterior: bool,
+    bad: &mut Vec<String>,
+) {
+    let Some(way) = &edge.way else {
+        return;
+    };
+    if !matches!(way.opens.as_str(), "laid" | "cleared") {
+        bad.push(format!(
+            "{site}: {:?} is not a way sign — a way is `laid` (empty as built, filled to open) or \
+             `cleared` (standing as built, voided to open)",
+            way.opens
+        ));
+    }
+    if edge.class == "vision" {
+        bad.push(format!(
+            "{site}: a sightline makes no traversal claim, so it has nothing to be contingent \
+             about — a way says a body cannot cross yet, and no body was ever going to cross this"
+        ));
+    }
+    if edge.class == "barred" {
+        bad.push(format!(
+            "{site}: this edge declares its contingency twice. `barred` IS a walk carrying a \
+             cleared way over its bar's region; write one or the other, never both"
+        ));
+    }
+    if exterior {
+        bad.push(format!(
+            "{site}: an edge with an `exterior` endpoint cannot carry a way — `exterior` has no \
+             cells, so there is no far end for an opening to reach. A way across an assembly seam \
+             is the face contract's business"
+        ));
+    }
+    match way.block.parse::<BlockState>() {
+        Ok(block) if block.is_air() => bad.push(format!(
+            "{site}: the way {:?} is made of air, which opens nothing in either direction",
+            way.region
+        )),
+        Ok(_) => {}
+        Err(e) => bad.push(format!(
+            "{site}: the way {:?} names the block {:?}, which is not a block state ({e})",
+            way.region, way.block
+        )),
+    }
+
+    let Some(cont) = &ix.contingency[i] else {
+        return;
+    };
+    if cont.cells.is_empty() {
+        bad.push(format!(
+            "{site}: the way {:?} resolved to no cells at all, so opening it would change nothing \
+             and the edge it claims to gate is gated by nothing",
+            way.region
+        ));
+        return;
+    }
+
+    // Its own edge declares a transit volume, and the way lies inside it. This
+    // is the demand stranding cannot supply: the cells have to belong to the
+    // edge, and a transit volume is disjoint from every space and abuts both
+    // ends (checked above, for every transit edge).
+    let via = &ix.via_cells[i];
+    if via.is_empty() {
+        bad.push(format!(
+            "{site}: an edge carrying a way declares a `via` — the cells a way lays or clears \
+             belong to the edge, and without a transit volume there is nothing for them to lie \
+             inside"
+        ));
+    } else {
+        let outside: BTreeSet<[i32; 3]> = cont.cells.difference(via).copied().collect();
+        if !outside.is_empty() {
+            bad.push(format!(
+                "{site}: {} of the way {:?}'s cell(s) lie outside this edge's own transit volume \
+                 ({}). A way opens the edge that declares it and nothing else; a region reaching \
+                 past it is a licence to build anywhere",
+                outside.len(),
+                way.region,
+                describe_cells(&outside)
+            ));
+        }
+    }
+
+    // Disjoint from every space, and from every OTHER edge's own volumes. Both
+    // follow from the containment above wherever that holds, and are stated
+    // anyway so the red names the thing that is actually wrong.
+    for (name, space) in &ix.space_cells {
+        let overlap: BTreeSet<[i32; 3]> = cont.cells.intersection(space).copied().collect();
+        if !overlap.is_empty() {
+            bad.push(format!(
+                "{site}: the way {:?} claims {} cell(s) of space {name:?} ({}). Opening a way \
+                 rewrites its cells, and a room is not a thing an edge may rewrite",
+                way.region,
+                overlap.len(),
+                describe_cells(&overlap)
+            ));
+        }
+    }
+    for (j, other) in ix.contract.edges.iter().enumerate() {
+        if j == i {
+            continue;
+        }
+        let mut theirs: BTreeSet<[i32; 3]> = ix.via_cells[j].clone();
+        if let Some(c) = &ix.contingency[j] {
+            theirs.extend(c.cells.iter().copied());
+        }
+        let overlap: BTreeSet<[i32; 3]> = cont.cells.intersection(&theirs).copied().collect();
+        if !overlap.is_empty() {
+            bad.push(format!(
+                "{site}: the way {:?} shares {} cell(s) with edge {}--{}--{} ({}). Way regions are \
+                 disjoint from every other edge's opening, bar and way — that disjointness is what \
+                 makes opening MONOTONE, so opening one can never disconnect another",
+                way.region,
+                overlap.len(),
+                other.a,
+                other.class,
+                other.b,
+                describe_cells(&overlap)
+            ));
+        }
+    }
+
+    // A `laid` region is empty as built. Otherwise the break is not a break:
+    // the treads are already there, the beat is decoration, and the closed
+    // proof would be asked to fail against blocks that already connect.
+    if cont.sign == Sign::Laid {
+        let solid: BTreeSet<[i32; 3]> = cont
+            .cells
+            .iter()
+            .filter(|c| nav::solid(model, **c))
+            .copied()
+            .collect();
+        if !solid.is_empty() {
+            bad.push(format!(
+                "{site}: the way {:?} is declared `laid`, so its cells are empty as built — but {} \
+                 of them hold this piece's own blocks ({}). A laid way is what is NOT there yet",
+                way.region,
+                solid.len(),
+                describe_cells(&solid)
+            ));
+        }
     }
 }
 
@@ -837,20 +1110,60 @@ fn closure(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gat
 
 // --- §2.4 edge proof -------------------------------------------------------
 
-/// A copy of the model with a region replaced by air — what a `barred` edge's
-/// second half is proved on.
-fn with_voided(model: &VoxelModel, region: &BTreeSet<[i32; 3]>) -> VoxelModel {
-    let mut copy = model.clone();
-    let air = crate::block::BlockState::air();
-    for &cell in region {
-        if copy.get(cell).is_some() {
-            let _ = copy.set(cell, &air);
+/// **The class's own connectivity proof**, over one model and one graph.
+///
+/// One function, called three times per contingent edge — as built, on the
+/// single-delta copy, and (through the reachability walk) with ways opened
+/// cumulatively — so a cleared way and a laid way and a bar are all decided by
+/// the same code. `Ok(())` means the class holds; `Err` carries the class's own
+/// red, in its own words.
+fn prove_class(
+    class: &str,
+    model: &VoxelModel,
+    graph: &BTreeSet<[i32; 3]>,
+    via: &BTreeSet<[i32; 3]>,
+    a: &BTreeSet<[i32; 3]>,
+    b: &BTreeSet<[i32; 3]>,
+    ends: (&str, &str),
+) -> Result<(), String> {
+    match class {
+        "walk" => {
+            if nav::connected(graph, a, b) && nav::connected(graph, b, a) {
+                Ok(())
+            } else {
+                Err("a walk connects both ways, and this one does not".to_string())
+            }
         }
+        "stair" => {
+            if via.is_empty() {
+                Err(
+                    "its transit volume holds no standable cell — a stair's treads are what a \
+                     body climbs"
+                        .to_string(),
+                )
+            } else if nav::connected(graph, a, b) && nav::connected(graph, b, a) {
+                Ok(())
+            } else {
+                Err("the climb does not connect its two ends through its own treads".to_string())
+            }
+        }
+        "drop" => {
+            if !nav::reachable_with_fall(model, graph, a, b) {
+                Err(format!("nothing falls from {} to {}", ends.0, ends.1))
+            } else if nav::connected(graph, b, a) {
+                Err(format!(
+                    "a drop is one-way, and a body can walk back up from {} to {}",
+                    ends.1, ends.0
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
     }
-    copy
 }
 
-fn edge_proof(ix: &Index, model: &VoxelModel) -> Gate {
+fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let mut proved = 0usize;
     let mut bad: Vec<String> = Vec::new();
 
@@ -869,23 +1182,25 @@ fn edge_proof(ix: &Index, model: &VoxelModel) -> Gate {
 
         let a = ix.standable_in(&edge.a);
         let b = ix.standable_in(&edge.b);
+        let cont = ix.contingency[i].as_ref();
+        // Every cell the edge could ever be walked through, whether or not it
+        // is standable today: the two ends, the transit volume, and the
+        // contingent region itself. A contingency's own cells belong to the
+        // walk it decides — leave them out and the two ends are severed by the
+        // graph rather than by the iron, and "the bar bars" passes over a
+        // doorway with nothing in it at all.
+        let mut span: BTreeSet<[i32; 3]> = ix.via_cells[i].clone();
+        if let Some(c) = cont {
+            span.extend(c.cells.iter().copied());
+        }
+        // The graph as built, over the cells a body can stand in today.
         let via: BTreeSet<[i32; 3]> = ix.via_cells[i]
             .iter()
             .filter(|c| ix.standable.contains(*c))
             .copied()
             .collect();
         let mut graph: BTreeSet<[i32; 3]> = a.union(&b).copied().collect();
-        graph.extend(via.iter().copied());
-        // A bar's own cells belong to the walk it is standing in the way of.
-        // Leave them out and the two ends are severed by the graph rather than
-        // by the iron, and "the bar bars" passes over a doorway with nothing in
-        // it at all.
-        graph.extend(
-            ix.bar_cells[i]
-                .iter()
-                .filter(|c| ix.standable.contains(*c))
-                .copied(),
-        );
+        graph.extend(span.iter().filter(|c| ix.standable.contains(*c)).copied());
 
         if a.is_empty() || b.is_empty() {
             bad.push(format!(
@@ -915,69 +1230,83 @@ fn edge_proof(ix: &Index, model: &VoxelModel) -> Gate {
             ));
         }
 
-        match edge.class.as_str() {
-            "walk" => {
-                if !nav::connected(&graph, &a, &b) || !nav::connected(&graph, &b, &a) {
-                    bad.push(format!(
-                        "{site}: a walk connects both ways, and this one does not"
-                    ));
-                }
+        let class = proving_class(&edge.class);
+        let ends = (edge.a.as_str(), edge.b.as_str());
+        let held = prove_class(class, model, &graph, &via, &a, &b, ends);
+
+        let Some(cont) = cont else {
+            // No contingency: the edge is what it claims to be as shipped, and
+            // the class's proof is the whole of it.
+            if let Err(red) = held {
+                bad.push(format!("{site}: {red}"));
             }
-            "stair" => {
-                if via.is_empty() {
-                    bad.push(format!(
-                        "{site}: its transit volume holds no standable cell — a stair's treads are \
-                         what a body climbs"
-                    ));
-                } else if !nav::connected(&graph, &a, &b) || !nav::connected(&graph, &b, &a) {
-                    bad.push(format!(
-                        "{site}: the climb does not connect its two ends through its own treads"
-                    ));
-                }
-            }
-            "drop" => {
-                if !nav::reachable_with_fall(model, &graph, &a, &b) {
-                    bad.push(format!(
-                        "{site}: nothing falls from {} to {}",
-                        edge.a, edge.b
-                    ));
-                }
-                if nav::connected(&graph, &b, &a) {
-                    bad.push(format!(
-                        "{site}: a drop is one-way, and a body can walk back up from {} to {}",
-                        edge.b, edge.a
-                    ));
-                }
-            }
-            "barred" => {
-                if nav::connected(&graph, &a, &b) {
-                    bad.push(format!(
-                        "{site}: the bar does not bar anything — the two ends connect while it \
-                         stands"
-                    ));
-                }
-                let opened = with_voided(model, &ix.bar_cells[i]);
-                let free = nav::standable_cells(&opened);
-                let mut open_graph: BTreeSet<[i32; 3]> = graph.clone();
-                open_graph.extend(
-                    ix.bar_cells[i]
-                        .iter()
-                        .filter(|c| free.contains(*c))
-                        .copied(),
-                );
-                let open_graph: BTreeSet<[i32; 3]> =
-                    open_graph.intersection(&free).copied().collect();
-                let oa: BTreeSet<[i32; 3]> = a.intersection(&free).copied().collect();
-                let ob: BTreeSet<[i32; 3]> = b.intersection(&free).copied().collect();
-                if !nav::connected(&open_graph, &oa, &ob) || !nav::connected(&open_graph, &ob, &oa)
-                {
-                    bad.push(format!(
-                        "{site}: with the bar region voided the two ends still do not connect \
-                         through it, so the bar is not what stands between them"
-                    ));
-                }
-            }
-            _ => {}
+            continue;
+        };
+
+        // **Part 1 — closed, on the bytes as shipped** (spec-0042 §2.1). The
+        // class's proof must FAIL here: a way that opens something a body can
+        // already cross is a beat that is not real, and the same demand as "the
+        // bar does not bar anything" in the other sign. Run on `model`, never
+        // on the copy below — a closed proof over the opened world passes
+        // everything and proves nothing.
+        if held.is_ok() {
+            bad.push(if cont.sugar {
+                format!(
+                    "{site}: the bar does not bar anything — the two ends connect while it stands"
+                )
+            } else {
+                format!(
+                    "{site}: the way {:?} does not open anything: the two ends already connect \
+                     without it",
+                    cont.name
+                )
+            });
+        }
+
+        // **Part 2 — open, on a copy with the single delta applied.** Laid: the
+        // region set to the way's block. Cleared: the region voided. The
+        // class's own proof then has to HOLD — `walk` both ways, `stair`
+        // through its treads, `drop` forward-only — over the cells a body can
+        // stand in *there*, which for a laid way are mostly cells that did not
+        // exist as built.
+        let opened = cont.opened(model);
+        let free = nav::standable_cells(&opened);
+        let open_via: BTreeSet<[i32; 3]> = ix.via_cells[i].intersection(&free).copied().collect();
+        let mut open_graph: BTreeSet<[i32; 3]> = a.union(&b).copied().collect();
+        open_graph.extend(span.iter().copied());
+        let open_graph: BTreeSet<[i32; 3]> = open_graph.intersection(&free).copied().collect();
+        let oa: BTreeSet<[i32; 3]> = a.intersection(&free).copied().collect();
+        let ob: BTreeSet<[i32; 3]> = b.intersection(&free).copied().collect();
+        // **The opt-out, enumerated per instance** (spec-0036 §2.9, spec-0042
+        // §4). A way is an opt-out from "reachable as built", so it is named —
+        // by region, sign and cell count — rather than folded into a count.
+        // This is also where the two block-level proof parts report what they
+        // bound to: a way with nothing under it says so here, in a line a
+        // reviewer disagrees with rather than a number a script satisfies.
+        if !cont.sugar {
+            enumeration.push(format!(
+                "way {:?}: {} over {} cell(s) on {site} — closed on the bytes as shipped, open on \
+                 the single-delta copy",
+                cont.name,
+                cont.verb(),
+                cont.cells.len()
+            ));
+        }
+
+        if let Err(red) = prove_class(class, &opened, &open_graph, &open_via, &oa, &ob, ends) {
+            bad.push(if cont.sugar {
+                format!(
+                    "{site}: with the bar region voided the two ends still do not connect through \
+                     it, so the bar is not what stands between them"
+                )
+            } else {
+                format!(
+                    "{site}: with the way {:?} {} the two ends still do not connect through it — \
+                     {red}",
+                    cont.name,
+                    cont.verb()
+                )
+            });
         }
     }
 
@@ -1244,11 +1573,34 @@ struct Confined {
     walk: BTreeSet<(usize, usize)>,
     /// Directed fall relations — a `drop` edge, and only forward.
     fall: BTreeSet<(usize, usize)>,
-    /// Barred edges: `(bar region name, the relations it gates)`.
-    bars: BTreeMap<String, Vec<(usize, usize)>>,
-    /// Bar region name → its cells, so opening one can void the blocks as well
-    /// as the relation.
-    bar_regions: BTreeMap<String, BTreeSet<[i32; 3]>>,
+    /// **Contingent edges, both signs**: region name → what it gates and what
+    /// opening it does to the blocks.
+    ///
+    /// One map, not one per sign: a bar and a laid way are the same object
+    /// here, a named region whose state decides whether a relation exists, and
+    /// the only difference is which block the delta writes.
+    ways: BTreeMap<String, WayGate>,
+    /// Cells no walk ever counts: the out-of-walk regions.
+    excluded: BTreeSet<[i32; 3]>,
+}
+
+/// One contingent region, as the reachability walk sees it.
+struct WayGate {
+    /// The step relations that exist only while it is open.
+    relations: Vec<(usize, usize)>,
+    /// The fall relations that exist only while it is open — a contingent
+    /// `drop`, and only forward. Empty for every other class, which is why a
+    /// bar reads exactly as it always did.
+    fall: Vec<(usize, usize)>,
+    /// The cells the delta rewrites.
+    cells: BTreeSet<[i32; 3]>,
+    /// Which direction opening moves in.
+    sign: Sign,
+    /// What a `laid` opening fills the cells with.
+    block: BlockState,
+    /// The verb a verdict uses — `opened` for a bar, `laid` / `cleared` for a
+    /// declared way. The prover is one; the wording names what was written.
+    verb: &'static str,
 }
 
 fn build_confined(ix: &Index) -> Confined {
@@ -1263,13 +1615,13 @@ fn build_confined(ix: &Index) -> Confined {
     }
     let mut walk: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut fall: BTreeSet<(usize, usize)> = BTreeSet::new();
-    let mut bars: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
-    let mut bar_regions: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
+    let mut ways: BTreeMap<String, WayGate> = BTreeMap::new();
 
     for (i, edge) in ix.contract.edges.iter().enumerate() {
         if !is_traversal(&edge.class) {
             continue;
         }
+        let cont = ix.contingency[i].as_ref();
         let a = (edge.a != EXTERIOR).then(|| by_space[edge.a.as_str()]);
         let b = (edge.b != EXTERIOR).then(|| by_space[edge.b.as_str()]);
         let via = (!ix.via_cells[i].is_empty()).then(|| {
@@ -1285,12 +1637,14 @@ fn build_confined(ix: &Index) -> Confined {
         });
         // A bar's own cells are a place too, once the bar is gone: a body walks
         // *through* the gateway, and a graph that hops the two rooms without it
-        // would call a room reachable that no route enters.
-        let bar = (!ix.bar_cells[i].is_empty()).then(|| {
+        // would call a room reachable that no route enters. A declared way
+        // needs no element of its own — §2.1 confines it inside this edge's
+        // transit volume, which is already one.
+        let bar = cont.filter(|c| c.sugar && !c.cells.is_empty()).map(|c| {
             let id = elements.len();
             elements.push(Element {
                 label: format!("bar region of edge {}--{}--{}", edge.a, edge.class, edge.b),
-                cells: ix.bar_cells[i].clone(),
+                cells: c.cells.clone(),
             });
             id
         });
@@ -1314,25 +1668,40 @@ fn build_confined(ix: &Index) -> Confined {
                 relations.push((to, from));
             }
         }
-        match edge.class.as_str() {
-            "barred" => {
-                let region = edge
-                    .bar
-                    .as_ref()
-                    .map(|b| b.region.clone())
-                    .unwrap_or_else(|| format!("edge#{i}"));
-                bars.entry(region.clone()).or_default().extend(relations);
-                bar_regions
-                    .entry(region)
-                    .or_default()
-                    .extend(ix.bar_cells[i].iter().copied());
+        // **What a contingency contributes here is its BLOCKS**: the delta the
+        // walk is re-run over, registered by name so a verdict can say which
+        // openings a space needed.
+        //
+        // A `barred` edge additionally gates its *relations*, and keeps doing
+        // so — that is the surface as it landed, and its bar region is an
+        // element the graph would otherwise hop straight over. A declared way
+        // does not, and must not: its cells lie inside a transit volume that is
+        // part of the edge's own walk, so gating the relation would strand the
+        // treads *below* a break as well as the ones a body cannot reach. The
+        // blocks are the whole mechanism there, which is what makes the walk a
+        // measurement of the building rather than of the declaration.
+        if let Some(c) = cont {
+            let gate = ways.entry(c.name.clone()).or_insert_with(|| WayGate {
+                relations: Vec::new(),
+                fall: Vec::new(),
+                cells: BTreeSet::new(),
+                sign: c.sign,
+                block: c.block.clone(),
+                verb: c.verb(),
+            });
+            gate.cells.extend(c.cells.iter().copied());
+            if c.sugar {
+                if directed {
+                    gate.fall.extend(relations.iter().copied());
+                }
+                gate.relations.extend(relations);
+                continue;
             }
-            "drop" => {
-                fall.extend(relations.iter().copied());
-                walk.extend(relations);
-            }
-            _ => walk.extend(relations),
         }
+        if directed {
+            fall.extend(relations.iter().copied());
+        }
+        walk.extend(relations);
     }
 
     let mut of_cell: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
@@ -1346,13 +1715,13 @@ fn build_confined(ix: &Index) -> Confined {
         of_cell,
         walk,
         fall,
-        bars,
-        bar_regions,
+        ways,
+        excluded: ix.all_no_body_cells.clone(),
     }
 }
 
 impl Confined {
-    fn allowed(&self, open_bars: &BTreeSet<&str>, from: usize, to: usize, falling: bool) -> bool {
+    fn allowed(&self, open: &BTreeSet<&str>, from: usize, to: usize, falling: bool) -> bool {
         if from == to {
             return true;
         }
@@ -1360,53 +1729,69 @@ impl Confined {
         if base.contains(&(from, to)) {
             return true;
         }
-        if falling {
-            return false;
-        }
-        self.bars
-            .iter()
-            .any(|(name, rel)| open_bars.contains(name.as_str()) && rel.contains(&(from, to)))
+        self.ways.iter().any(|(name, gate)| {
+            open.contains(name.as_str())
+                && if falling { &gate.fall } else { &gate.relations }.contains(&(from, to))
+        })
     }
 
-    fn hop(&self, open_bars: &BTreeSet<&str>, c: [i32; 3], d: [i32; 3], falling: bool) -> bool {
+    fn hop(&self, open: &BTreeSet<&str>, c: [i32; 3], d: [i32; 3], falling: bool) -> bool {
         let (Some(from), Some(to)) = (self.of_cell.get(&c), self.of_cell.get(&d)) else {
             return false;
         };
         from.iter()
-            .any(|&f| to.iter().any(|&t| self.allowed(open_bars, f, t, falling)))
+            .any(|&f| to.iter().any(|&t| self.allowed(open, f, t, falling)))
     }
 
-    /// The cells the walk reaches, starting from `start`, with `open_bars` open.
+    /// **The walk in one opening state**: the cells it counts, and the cells it
+    /// reaches, with the named ways open.
     ///
-    /// Opening a bar voids its **blocks** as well as its relation: a graph that
-    /// hopped the two rooms while the iron still stood would call a room
-    /// reachable that no route enters. So the walk runs over a model with the
-    /// opened regions turned to air, and the gateway's own cells join the
-    /// walkable set for as long as they are open.
+    /// Opening a way rewrites its **blocks** as well as its relation — voided
+    /// for a `cleared` way, filled for a `laid` one — because a graph that
+    /// hopped the two rooms while the iron still stood, or across a gap with
+    /// nothing under it, would call a room reachable that no route enters.
+    ///
+    /// The target set is therefore recomputed *in this state* rather than fixed
+    /// once as built: a laid way's whole point is that the cells a body stands
+    /// on did not exist before it was laid, so a fixed as-built target set
+    /// would leave every one of them out and make a laid way's reachability
+    /// claim inert.
     fn reach(
         &self,
         model: &VoxelModel,
-        targets: &BTreeSet<[i32; 3]>,
         start: &BTreeSet<[i32; 3]>,
-        open_bars: &BTreeSet<&str>,
-    ) -> BTreeSet<[i32; 3]> {
-        let mut opened: BTreeSet<[i32; 3]> = BTreeSet::new();
-        for name in open_bars {
-            if let Some(cells) = self.bar_regions.get(*name) {
-                opened.extend(cells.iter().copied());
+        open: &BTreeSet<&str>,
+    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) {
+        let mut delta = model.clone();
+        for name in open {
+            if let Some(gate) = self.ways.get(*name) {
+                let block = match gate.sign {
+                    Sign::Laid => gate.block.clone(),
+                    Sign::Cleared => BlockState::air(),
+                };
+                for &cell in &gate.cells {
+                    if delta.get(cell).is_some() {
+                        let _ = delta.set(cell, &block);
+                    }
+                }
             }
         }
-        let model = &if opened.is_empty() {
-            model.clone()
-        } else {
-            with_voided(model, &opened)
-        };
-        let mut targets = targets.clone();
-        if !opened.is_empty() {
-            let free = nav::standable_cells(model);
-            targets.extend(opened.iter().filter(|c| free.contains(*c)).copied());
+        let model = &delta;
+        // Every standable cell of every element, minus the out-of-walk regions
+        // nested in them — judged over the blocks as they are in THIS state.
+        let free = nav::standable_cells(model);
+        let mut targets: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for element in &self.elements {
+            targets.extend(
+                element
+                    .cells
+                    .iter()
+                    .filter(|c| free.contains(*c) && !self.excluded.contains(*c))
+                    .copied(),
+            );
         }
         let targets = &targets;
+        let open_bars = open;
         let mut seen: BTreeSet<[i32; 3]> = start
             .iter()
             .filter(|c| targets.contains(*c))
@@ -1452,78 +1837,77 @@ impl Confined {
                 }
             }
         }
-        seen
+        (targets.clone(), seen)
     }
 }
 
 fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> Gate {
     let confined = build_confined(ix);
 
-    // Every standable cell of every space, minus the out-of-walk regions nested
-    // in it — plus every standable cell of a transit volume, or an unreached
-    // space could be deleted and its cells re-hung on a stair edge as 1x1x1
-    // vias.
-    let mut targets: BTreeSet<[i32; 3]> = BTreeSet::new();
-    for element in &confined.elements {
-        targets.extend(
-            element
-                .cells
-                .iter()
-                .filter(|c| ix.standable.contains(*c) && !ix.all_no_body_cells.contains(*c))
-                .copied(),
-        );
-    }
     let start = ix.standable_in(&ix.contract.entry);
 
+    // **Ways shut**: the walk over the bytes as shipped. Its target set is
+    // every standable cell of every element (spaces, minus nested out-of-walk
+    // cells, plus transit volumes — or an unreached space could be deleted and
+    // its cells re-hung on a stair edge as 1x1x1 vias).
     let none: BTreeSet<&str> = BTreeSet::new();
-    let reached = confined.reach(model, &targets, &start, &none);
-    let mut unreached: BTreeSet<[i32; 3]> = targets.difference(&reached).copied().collect();
+    let (mut targets, mut reached) = confined.reach(model, &start, &none);
 
-    // A space behind a bar is not unreachable; it is reachable once the bar is
-    // opened, and the verdict says which bars that took.
-    let mut required: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    if !unreached.is_empty() && !confined.bars.is_empty() {
-        let all: BTreeSet<&str> = confined.bars.keys().map(String::as_str).collect();
-        let with_all = confined.reach(model, &targets, &start, &all);
-        // Which bars each space actually needed: open them one at a time, in
-        // name order, keeping the ones that let the walk somewhere new. Named
-        // per space, because "unreachable behind a shortcut you have not opened
-        // yet" and "unreachable" are different findings and only one of them is
-        // a defect.
+    // **Then opened cumulatively, by name** (spec-0042 §2.1/§3). A space behind
+    // a way is not unreachable; it is reachable once the way is opened, and the
+    // verdict says which openings that took.
+    //
+    // The union is what is proved, over the states along the chain: a cell is
+    // red only when NO opening state reaches it. Taking the all-open state
+    // alone would be wrong in the laid direction, where a cell standable as
+    // built can stop being standable once the floor beside it is laid, and
+    // where the interesting cells do not exist until something is.
+    //
+    // Combinations are not enumerated, and do not need to be: §2.1 makes way
+    // regions disjoint from every other opening, which is exactly what makes
+    // opening MONOTONE — opening more can never disconnect a proved edge.
+    let mut required: BTreeMap<String, BTreeMap<&'static str, BTreeSet<String>>> = BTreeMap::new();
+    if targets.difference(&reached).next().is_some() && !confined.ways.is_empty() {
+        let all: BTreeSet<&str> = confined.ways.keys().map(String::as_str).collect();
         let mut opened: BTreeSet<&str> = BTreeSet::new();
-        let mut running: BTreeSet<[i32; 3]> = reached.intersection(&targets).copied().collect();
         for name in &all {
             let mut trial = opened.clone();
             trial.insert(name);
-            let got: BTreeSet<[i32; 3]> = confined
-                .reach(model, &targets, &start, &trial)
-                .intersection(&targets)
-                .copied()
-                .collect();
-            let newly: BTreeSet<[i32; 3]> = got.difference(&running).copied().collect();
+            let (got_targets, got) = confined.reach(model, &start, &trial);
+            let newly: BTreeSet<[i32; 3]> = got.difference(&reached).copied().collect();
+            targets.extend(got_targets.iter().copied());
+            reached.extend(got.iter().copied());
             if newly.is_empty() {
                 continue;
             }
+            let verb = confined.ways[*name].verb;
             for element in &confined.elements {
                 if element.cells.iter().any(|c| newly.contains(c)) {
                     required
                         .entry(element.label.clone())
                         .or_default()
+                        .entry(verb)
+                        .or_default()
                         .insert((*name).to_string());
                 }
             }
             opened = trial;
-            running = got;
         }
-        unreached = targets.difference(&with_all).copied().collect();
-        for (element, bars) in &required {
-            let names: Vec<&str> = bars.iter().map(String::as_str).collect();
-            enumeration.push(format!(
-                "opened bars: {element} is reached only once {} is opened",
-                names.join(" + ")
-            ));
+        let (all_targets, all_reached) = confined.reach(model, &start, &all);
+        targets.extend(all_targets);
+        reached.extend(all_reached);
+        for (element, by_verb) in &required {
+            for (verb, names) in by_verb {
+                let names: Vec<&str> = names.iter().map(String::as_str).collect();
+                enumeration.push(format!(
+                    "opened {}: {element} is reached only once {} is {verb}",
+                    if *verb == "opened" { "bars" } else { "ways" },
+                    names.join(" + ")
+                ));
+            }
         }
     }
+    let unreached: BTreeSet<[i32; 3]> = targets.difference(&reached).copied().collect();
 
     let mut per_element: Vec<String> = Vec::new();
     for element in &confined.elements {
@@ -1568,13 +1952,30 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
                     String::new()
                 } else {
                     format!(
-                        ", {} of them only once a bar is opened ({})",
+                        ", {} of them only once a {} is opened ({})",
                         required.len(),
+                        // Named for what the author wrote: a piece whose only
+                        // contingencies are bars is told about bars.
+                        if required
+                            .values()
+                            .all(|by_verb| by_verb.keys().all(|v| *v == "opened"))
+                        {
+                            "bar"
+                        } else {
+                            "way"
+                        },
                         required
                             .iter()
-                            .map(|(e, b)| format!(
-                                "{e}: {}",
-                                b.iter().cloned().collect::<Vec<_>>().join(" + ")
+                            .map(|(element, by_verb)| format!(
+                                "{element}: {}",
+                                by_verb
+                                    .iter()
+                                    .map(|(verb, names)| format!(
+                                        "{} {verb}",
+                                        names.iter().cloned().collect::<Vec<_>>().join(" + ")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
                             ))
                             .collect::<Vec<_>>()
                             .join("; ")
@@ -1604,6 +2005,13 @@ pub fn resolves_to(contract: &SpatialContract, pos: [i32; 3]) -> Option<String> 
             && hit(&bar.boxes)
         {
             return Some(format!("bar:{}", bar.region));
+        }
+        // Before `via`, because a way lies inside its edge's transit volume:
+        // the narrower element is the one that names the place.
+        if let Some(way) = &edge.way
+            && hit(&way.boxes)
+        {
+            return Some(format!("way:{}", way.region));
         }
         if let Some(via) = &edge.via
             && hit(&via.boxes)
