@@ -1,0 +1,6 @@
+{
+  "binds": [
+    "WorldDifficulty::hard"
+  ],
+  "note": "`difficulty` takes one value per world, and the derivation it overrides is what keeps older campaigns byte-identical — so each setting needs its own parameter point."
+}

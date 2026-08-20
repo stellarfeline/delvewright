@@ -29,7 +29,7 @@ Two renderers, one 1.21.11 **fidelity gate**:
   `versions.toml [render]`.
 - **Chunky** (GPL-3.0, out-of-process, path tracer) — the **official renderer**
   for whole-scene review frames, storybook scene illustrations and the per-release
-  whole-map panorama (owner decision, 2026-08-06). **Not bundled**;
+  whole-map panorama. **Not bundled**;
   `delvec scene` / `panorama` emit Chunky scene JSON and `ChunkyLauncher.jar`
   renders them as a separate program (see "Chunky scenes" and
   [`docs/reference/tools.md` §4a](../../docs/reference/tools.md)).
@@ -96,7 +96,8 @@ the same jar when it renders them, and it is never redistributed.
 | `DW0792` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
-except `DW0724`, which the compiler's visual tier holds — plus `DW079x` for the
+except `DW0724`, which the compiler's visual tier holds (every render-plan
+camera's eye cell, not just the player-POV ones) — plus `DW079x` for the
 review page's resource findings. Take the next unused number from
 `docs/reference/compiler.md`, not from the highest constant here.)
 
@@ -165,15 +166,19 @@ optional `fov`) and a machine-generated `expect` checklist derived from the DSL.
 (one file per shot, `chunkList` covering the layout AABB).
 
 **Player-POV shots are the Chunky path, by design.** The `pov` shots
-(spec-0003 #18) are first-person cameras at eye height (1.62) standing on each
+(spec-0003) are first-person cameras at eye height (1.62) standing on each
 critical-path waypoint, looking along the walk — a **free camera at a fixed point
 inside the room**. Nucleation cannot render these: it is an orbit/turntable
 renderer that fits the camera to the model bounds (it always backs out to frame the
 whole model — there is no free-eye placement in `CameraConfig`). Chunky's scene
 camera is a true free camera (`position` + `orientation` + `fov`), so POV shots
 render through `scene` exactly as authored, carrying the first-person `fov` (~70°).
-The compiler already proves every POV eye cell is clear over the assembled world
-(`DW0724`), so a camera never looks out from inside a wall.
+The compiler proves every camera's eye cell clear over the assembled world
+(`DW0724`) — POV and every other kind — and stands a stand-off camera up in open
+air when its own cell holds a block, so a camera in this plan never looks out
+from inside a wall. A camera that had to move says so on its own shot
+(`camera.requested_pos`), and the plan states how many were examined and how many
+moved (`camera_eye_proof`).
 
 **Declared-dark shots get the night-vision REVIEW POLICY.** A shot stamped
 `lighting: {"profile": "dark", "mitigation": "night-vision"}` by the compiler
@@ -255,7 +260,7 @@ slopes facing the viewer are lit but the relief still casts shadows.
 `<campaign>_panorama_<bearing>.json`, so several bearings coexist in one scene
 directory.
 
-Every content release ships one of these (owner decision, 2026-08-06). It is a
+Every content release ships one of these. It is a
 separate command rather than an extra shot in `scene` because `scene` keeps a
 one-scene-per-plan-shot correspondence that `index` pairs with `expect` lines —
 the panorama is a release artifact with no review pair, its own light and sample

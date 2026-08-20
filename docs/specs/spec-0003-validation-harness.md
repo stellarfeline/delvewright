@@ -204,19 +204,50 @@ tags) without human eyes.
 - Runs after the bot tier in the ladder (local + CI release tier); the owner's
   play remains the final gate for *fun*, not for *correctness or looks*.
 
-- [x] Compose profiles reproduce CI locally: `--profile validate` (bot) and
-      `--profile packtest` both exit 0 on the hello-world delve (verified locally).
-- [x] The bot runs the hello-world critical path green against the shipped delve
-      image (class → talk → gate opens → reach exit → `dw.campaign=1`). Wired in CI
-      tier 3 (release.yml).
-- [x] PackTest failures fail via exit code (`= failed tests`), with test names in the
-      log; the generated suite passes ("All required tests passed"). CI tier 2.
-- [x] No mod artifacts in the shipped delve image: `Dockerfile.delve` bakes only the
-      datapack + config; PackTest/Fabric live solely in the `packtest` service.
-- [ ] A deliberately broken campaign fixture (door never opens) makes the bot tier
-      fail with a diagnostic naming the failed objective. *(Harness names the failed
-      step — `StepExecutionError` — and diagnostics are in place; a dedicated broken
-      fixture + CI case is deferred to M2.)*
+## Acceptance criteria
+
+Each criterion is machine-checkable and names the reading that would make it
+vacuous — a harness criterion that can only ever be seen green is not a
+criterion.
+
+1. **Both compose profiles reproduce CI locally**: `--profile validate` and
+   `--profile packtest` exit 0 on the hello-world delve on a developer machine
+   *(built, verified locally)*. *Vacuous if* a profile's exit code is anything
+   but the validator's own — `--exit-code-from` names the `bot` / `packtest`
+   service, so a green that is really the server's clean shutdown cannot pass.
+2. **The bot proves completion, not survival**: the critical path runs green
+   (class → talk → gate opens → reach exit), and the run is green only when the
+   completion marker for the campaign objective is observed with its declared
+   value (`dw.campaign=1` on hello-world). Wired in CI tier 3 (release.yml)
+   *(built)*. *Vacuous if* exit 0 without the marker match — a bot idling to
+   timeout on an empty world must fail red, and a hung bot hits the wall-clock
+   timeout red.
+3. **PackTest failures reach CI as the exit code**: the generated suite passes
+   ("All required tests passed"), and the exit code equals the failed-test
+   count, with test names in the log. CI tier 2 *(built)*. *Vacuous if* the
+   compiler generated zero tests for the campaign — the run states its test
+   count, and an empty suite is a finding, not a pass.
+4. **No mod artifacts in the shipped delve image**: the delve image carries
+   only the datapack + config; PackTest/Fabric live solely in the `packtest`
+   service *(built)*. *Vacuous if* asserted by reading `Dockerfile.delve`
+   instead of what the built image contains — the Dockerfile is the intent,
+   the image is the artifact.
+5. **The bot tier can fail, demonstrated**: a deliberately broken campaign
+   fixture (a door that never opens) makes the bot tier red with a diagnostic
+   naming the failed step. This is the falsifiability proof for criteria 1–2,
+   which otherwise only ever measure green. *(Open: the harness names the
+   failed step — `StepExecutionError` — and diagnostics are in place; the
+   committed broken fixture + CI case is still owed, deferred to M2.)*
+6. **The render fidelity gate refuses what it cannot draw**: `delve-render
+   fidelity-gate` exits 4 on an unknown-block magenta placeholder against the
+   newest-block fixture *(built)*. *Vacuous if* run against a fixture with no
+   current-version block — the fixture must contain blocks the renderer could
+   plausibly not know.
+
+Not machine-assertable, said plainly: whether the delve is *fun* is the
+owner's play. The harness's claim ends at "provably completable, and looks
+right shot-by-shot"; the vision tier's per-shot verdicts are an agent's
+judgement recorded as findings, not an assertion CI can replay.
 
 ## Open
 

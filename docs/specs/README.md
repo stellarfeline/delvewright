@@ -1,8 +1,11 @@
 # Specs
 
 One spec per feature, owner-approved before implementation (ADR-0008: no spec, no
-feature). Status: **Skeleton** (structure agreed, details unwritten) → **Draft** →
-**Approved** → **Implemented**.
+feature). The status column below is a **copy**: a spec's own `Status:` line is the
+authority for its status, and `tools/check-numbered-doc-index.py` refuses a row
+that disagrees with the file it points at, a spec with no row, and a status word
+outside the recognised set — **Proposed**, **Draft**, **Accepted**, **Approved**,
+**Implemented**, **Superseded**.
 
 Every spec must contain an **Acceptance criteria** section phrased as
 machine-checkable assertions — each criterion maps to a CI check.
@@ -18,12 +21,12 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0007](spec-0007-asset-pipeline.md) | External asset pipeline (two-track) | Approved |
 | [spec-0008](spec-0008-dsl-v0.4.md) | DSL v0.4 — expressiveness (dialogue state, props, narration, live threats, presentation) | Approved |
 | [spec-0009](spec-0009-npc-skins.md) | NPC skin pipeline — creation-first, resource-pack delivery | Approved |
-| [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared time & weather | Implemented |
+| [spec-0010](spec-0010-assembled-relight.md) | Assembled-world lighting, deterministic relight, declared time & weather | Approved |
 | [spec-0011](spec-0011-traps.md) | Traps — lethal & non-lethal environmental hazards | Approved |
 | [spec-0012](spec-0012-checkpoints.md) | Checkpoints (respawn anchors) | Proposed |
-| [spec-0013](spec-0013-playable-region.md) | Playable region & ocean horizon (pseudo-open-world) | Approved |
-| [spec-0014](spec-0014-actors-staging.md) | Scripted actors & staging verbs (v0.6) | Approved |
-| [spec-0015](spec-0015-visual-authoring-loop.md) | The visual authoring loop (agentic viewport) | Approved |
+| [spec-0013](spec-0013-playable-region.md) | Playable region & ocean horizon (pseudo-open-world) | Draft |
+| [spec-0014](spec-0014-actors-staging.md) | Scripted actors & staging verbs (v0.6) | Draft |
+| [spec-0015](spec-0015-visual-authoring-loop.md) | The visual authoring loop (agentic viewport) | Draft |
 | [spec-0016](spec-0016-souls-mode.md) | Souls-mode mechanics (M4) | Draft |
 | [spec-0017](spec-0017-map-editor.md) | The map editor (LLM world editing, layers 2+3) | Draft |
 | [spec-0018](spec-0018-party-progression.md) | Party-shared progression (co-op division of labor) | Draft |
@@ -40,8 +43,17 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0029](spec-0029-i18n-v2-client-selected-language.md) | i18n v2 — the client picks the language | Implemented |
 | [spec-0031](spec-0031-runtime-state-and-interactive-verbs.md) | Runtime state, and the verbs that need it | Draft |
 | [spec-0032](spec-0032-economy-and-recovery-stake.md) | Currency, trade, and the recovery stake | Draft |
+| [spec-0033](spec-0033-grammar-corpus.md) | The grammar's idioms are what an author is missing | Proposed |
+| [spec-0034](spec-0034-declared-body-traversal.md) | Declared body traversal | Accepted |
+| [spec-0035](spec-0035-block-palette-selection.md) | Block palette selection — a screened shelf with a visual leaf | Proposed |
+| [spec-0036](spec-0036-spatial-contract.md) | The spatial contract — spaces, edges, levels, closure, and coverage | Proposed |
+| [spec-0037](spec-0037-named-partitions.md) | Named partitions — what the citadel concept asks of the grammar | Proposed |
 | [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |
-| [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Proposed |
-| [spec-0042](spec-0042-a-way-that-content-opens.md) | A way that content opens — contingent edges, both signs, and the effect that opens them | Proposed |
+| [spec-0039](spec-0039-gallery-campaign.md) | The gallery campaign — every declared DSL surface, bound in one artifact | Accepted |
+| [spec-0040](spec-0040-map-composition.md) | Map composition — how a whole map gets its appearance | Accepted |
+| [spec-0041](spec-0041-instanced-claims-and-exterior-transit.md) | Instanced claims, and the climb that leaves the piece | Proposed |
+| [spec-0042](spec-0042-a-way-that-content-opens.md) | A way that content opens — contingent edges, both signs, and the effect that opens them | Accepted |
 | [spec-0043](spec-0043-an-open-space-carries-its-shadow.md) | An open space carries its shadow — the sky demand re-bound to the computed partition | Proposed |
-| [spec-0044](spec-0044-a-respawn-that-resets-the-scene.md) | A respawn that resets the scene — the safe-zone proof measures the world the reset leaves | Proposed |
+| [spec-0044](spec-0044-a-respawn-that-resets-the-scene.md) | A respawn that resets the scene — the safe-zone proof measures the world the reset leaves | Accepted |
+| [spec-0046](spec-0046-an-entry-is-a-role-not-a-spelling.md) | An entry is a role, not a spelling — the entry point moves from the anchor's name to a declared role | Accepted |
+| [spec-0047](spec-0047-the-kind-belongs-to-the-cell.md) | The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition | Accepted |

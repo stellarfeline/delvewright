@@ -69,6 +69,70 @@ use delvewright_dsl::{CameraShot, CameraSubject, ShotStyle};
 use crate::nav::{ActorMovePlan, MovePlan};
 use crate::plan::Plan;
 
+/// Sampling step, in blocks, for the [`stand_in_open_air`] walk.
+const STAND_STEP: f64 = 0.5;
+
+/// The farthest point on the segment `subject → eye` that stands in open air
+/// with an unobstructed line back to `subject`, sampled every [`STAND_STEP`]
+/// blocks. `None` when even the subject's own cell is occupied, so there is no
+/// vantage on this sight line at all.
+///
+/// **A camera's stand-off is a preference, not a position.** Every review camera
+/// the toolchain derives — a snapshot `--at` orbit, a seam or gate or NPC or
+/// interact shot in the render plan — is placed at a fixed offset from the thing
+/// it frames, and a fixed offset into authored geometry lands inside a block
+/// about a quarter of the time (measured over every campaign and fixture that
+/// builds: 204 of 752 render-plan cameras). A camera inside a block renders the inside of
+/// that block, which is a picture indistinguishable from a picture of a
+/// featureless room — so the requested distance is honoured only as far as the
+/// rock allows, and the camera then sits in the room with its subject.
+///
+/// `occupied` is the caller's own notion of what stops a camera: the nav world's
+/// `is_clear` for anything proven against the assembled model, a bare block grid
+/// for a draft raster. The walk itself is one mechanism with one home, because
+/// standing a camera up in open air is a property of **a camera** and not of the
+/// one verb that first needed it.
+pub fn stand_in_open_air(
+    occupied: impl Fn([i32; 3]) -> bool,
+    subject: [f64; 3],
+    eye: [f64; 3],
+) -> Option<[f64; 3]> {
+    let d = [
+        eye[0] - subject[0],
+        eye[1] - subject[1],
+        eye[2] - subject[2],
+    ];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if len < 1e-6 {
+        return (!occupied(cell_of(eye))).then_some(eye);
+    }
+    let dir = [d[0] / len, d[1] / len, d[2] / len];
+    let mut best = None;
+    let mut t = 0.0;
+    while t <= len + 1e-9 {
+        let p = [
+            subject[0] + dir[0] * t,
+            subject[1] + dir[1] * t,
+            subject[2] + dir[2] * t,
+        ];
+        if occupied(cell_of(p)) {
+            break; // the rock starts here; keep the last open sample
+        }
+        best = Some(p);
+        t += STAND_STEP;
+    }
+    best
+}
+
+/// The integer block a point sits in.
+fn cell_of(p: [f64; 3]) -> [i32; 3] {
+    [
+        p[0].floor() as i32,
+        p[1].floor() as i32,
+        p[2].floor() as i32,
+    ]
+}
+
 /// Max *perpendicular* distance (blocks) the client-rendered chord between two
 /// keyframes may cut inside the exact eased dolly path — the corner-cutting /
 /// corridor bound ("N bounded by path curvature", camera dossier §1). Matches
@@ -1207,5 +1271,41 @@ mod tests {
         assert!((s[2] - 1.0).abs() < 1e-12 && s[0].abs() < 1e-12);
         let w = bearing_dir(90.0);
         assert!((w[0] + 1.0).abs() < 1e-12 && w[2].abs() < 1e-12);
+    }
+
+    /// The mechanism the render plan and `--at` share. A camera asked to stand
+    /// where the rock is does not stand there; it stands at the furthest point on
+    /// its own sight line that is still open, so it keeps a clear view of the
+    /// thing it frames instead of a view of the inside of a wall.
+    #[test]
+    fn a_camera_stands_at_the_furthest_open_point_on_its_sight_line() {
+        // A wall plane at x = 4. Subject at x = 0, requested eye at x = 8 — deep
+        // inside the rock beyond the wall.
+        let occupied = |c: [i32; 3]| c[0] >= 4;
+        let stood = stand_in_open_air(occupied, [0.5, 65.0, 0.5], [8.5, 65.0, 0.5])
+            .expect("the subject's own cell is open, so a vantage exists");
+        assert!(
+            stood[0] < 4.0,
+            "the camera must stop on the near side of the wall: {stood:?}"
+        );
+        assert!(
+            stood[0] >= 3.5,
+            "and it must keep as much of the requested stand-off as the rock allows: {stood:?}"
+        );
+        // An unobstructed request is honoured exactly.
+        let clear = stand_in_open_air(|_| false, [0.5, 65.0, 0.5], [8.5, 65.0, 0.5]);
+        assert_eq!(clear, Some([8.5, 65.0, 0.5]));
+    }
+
+    /// The one case with no answer: the subject itself is buried, so every point
+    /// on the sight line is inside a block. Reported as `None` rather than as a
+    /// silently kept camera — the caller decides whether that is a fallback
+    /// (`--at`, which frames the embedded marker as such) or a `DW0724` refusal.
+    #[test]
+    fn a_buried_subject_has_no_vantage_at_all() {
+        assert_eq!(
+            stand_in_open_air(|_| true, [0.5, 65.0, 0.5], [8.5, 65.0, 0.5]),
+            None
+        );
     }
 }

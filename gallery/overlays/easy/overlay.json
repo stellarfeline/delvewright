@@ -1,0 +1,6 @@
+{
+  "binds": [
+    "WorldDifficulty::easy"
+  ],
+  "note": "The other end of the same scalar."
+}

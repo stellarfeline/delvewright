@@ -666,9 +666,59 @@ fn check_happenings(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 }
             }
         }
+        // An ambush declares its beat ON THE AMBUSH, and the `spawn-actor` /
+        // `unleash-actor` pairs it desugars into are that one beat lowered. The
+        // author never wrote them and has no surface to reach them, so demanding
+        // a `happening` from each is an obligation nobody can discharge — which
+        // is what made `ambushes[]` uncompilable at 0.8.0 and above for as long
+        // as the surface had existed. The declaration is checked here, once, on
+        // the object that owns it.
+        for (i, a) in c.quests.content.ambushes.iter().enumerate() {
+            if a.happening.is_none() {
+                d.push(missing(
+                    "quests",
+                    format!("/content/ambushes/{i}/happening"),
+                    format!("ambush `{}`", a.id.as_str()),
+                ));
+            }
+        }
+        // Which generated beats those are. Keyed by (derived trigger id, actor)
+        // rather than by position: an index into the desugared effect list would
+        // have to track how many telegraph effects came first, and a telegraph
+        // is authored and still owes its own declarations. A `spawn`/`unleash`
+        // naming one of the ambush's own actors, inside the trigger that ambush
+        // expands to, is exactly the generated set and nothing else.
+        let derived: std::collections::HashSet<(String, String)> = c
+            .quests
+            .content
+            .ambushes
+            .iter()
+            .flat_map(|a| {
+                let tid = a.to_trigger().id.as_str().to_string();
+                a.actors
+                    .iter()
+                    .map(move |act| (tid.clone(), act.as_str().to_string()))
+            })
+            .collect();
+        let generated_by_an_ambush = |site: &delvewright_dsl::EffectSite, eff: &QuestEffect| {
+            let delvewright_dsl::EffectSite::Trigger { trigger } = site else {
+                return false;
+            };
+            let actor = match eff {
+                QuestEffect::SpawnActor { actor, .. } | QuestEffect::UnleashActor { actor, .. } => {
+                    actor.as_str()
+                }
+                _ => return false,
+            };
+            derived.contains(&(trigger.clone(), actor.to_string()))
+        };
+
         let mut sites: Vec<(String, String)> = Vec::new();
-        for_each_campaign_effect(c, &mut |path, _site, eff| {
-            if is_story_node(eff) && delvewright_dsl_happening(eff).is_none() {
+        for_each_campaign_effect(c, &mut |path, site, eff| {
+            if is_story_node(eff)
+                && delvewright_dsl_happening(eff).is_none()
+                && !generated_by_an_ambush(site, eff)
+            {
                 sites.push((format!("{path}/happening"), eff.verb().to_string()));
             }
         });
