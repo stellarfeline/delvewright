@@ -706,9 +706,19 @@ def test_every_live_ledger_names_a_surface_for_every_number(checker):
         numbers += len(side.versions) - 1
         if not side.reserved:
             unheld.append(name)
+        # Which of rule 6's two forms of a hand-written name this ledger's newest
+        # entry carries, and so which one the demonstration below drives on it.
+        # Decided by the ledger, never chosen: a ledger topped by a landed
+        # surface names its newest number with a constant, one topped by a
+        # reservation names it with a row. Stated rather than demanded — both
+        # ledgers topping out the same way is a legitimate state, and a test that
+        # refused it would be gating the roadmap again.
+        newest = side.versions[-1]
+        form = "a reservation row" if newest in side.reserved else "a `*_SINCE` constant"
         bindings.append(
             f"{name}: {len(side.versions)} versions, {len(side.versions) - 1} claimed, "
-            f"{len(side.anchors)} anchors, {len(side.reserved)} reserved"
+            f"{len(side.anchors)} anchors, {len(side.reserved)} reserved, newest {newest} "
+            f"named by {form}"
         )
 
     assert numbers > 0, f"every live ledger examined zero numbers: {bindings}"
@@ -730,10 +740,10 @@ def one_version_younger(checker, ledger, source: str) -> tuple[str, str]:
 
     A coherent prior state, cut with the gate's own patterns rather than a
     hand-written slice: the number leaves the list, and so does everything that
-    claimed it — its hand-written name, and on the campaign ledger the `ordinal`
-    arm and the `is_vNN` predicate that name is computed from. Leave any behind
-    and the base still claims the number under a DIFFERENT anchor, which is rule
-    1's finding rather than rule 6's.
+    claimed it — either form of its hand-written name, and on the campaign ledger
+    the `ordinal` arm and the `is_vNN` predicate a derived anchor is computed
+    from. Leave any behind and the base still claims the number, which is rule
+    1's or rule 2's finding rather than rule 6's.
     """
     versions = checker.versions_of(ledger, source)
     newest = versions[-1]
@@ -746,7 +756,7 @@ def one_version_younger(checker, ledger, source: str) -> tuple[str, str]:
         + f"pub const {ledger['list_const']}: &[&str] = &[{kept}];"
         + source[block.end() :]
     )
-    prior = without_the_name_of(checker, newest, prior)
+    prior = without_the_name_of(checker, ledger, newest, prior)
     arms = checker.DSL_ORDINAL_ARM_RE.findall(prior)
     by_ordinal = {int(n): pred for pred, n in checker.DSL_PREDICATE_RE.findall(prior)}
     for version, n in arms:
@@ -763,12 +773,48 @@ def one_version_younger(checker, ledger, source: str) -> tuple[str, str]:
     return newest, prior
 
 
-def without_the_name_of(checker, version: str, source: str) -> str:
-    """The same source with every `*_SINCE` constant defined at `version` gone."""
+def without_the_reservation_of(checker, ledger, version: str, source: str) -> str:
+    """The same source with `version`'s reservation row gone, every other kept.
+
+    Rebuilt from the gate's own row grammar rather than sliced by hand, and it
+    returns the source untouched when the version holds no row — so the other
+    ledger's live reservation survives being asked about a number it does not
+    hold.
+    """
+    pattern = checker.RESERVED_LIST_RE_TEMPLATE.format(const=ledger["reserved_const"])
+    block = re.search(pattern, source, re.DOTALL)
+    if not block:
+        return source
+    rows = checker.RESERVED_ROW_RE.findall(block.group(1))
+    kept = [(v, anchor) for v, anchor in rows if v != version]
+    if len(kept) == len(rows):
+        return source
+    body = ", ".join(f'("{v}", "{anchor}")' for v, anchor in kept)
+    return (
+        source[: block.start()]
+        + f"pub const {ledger['reserved_const']}: &[(&str, &str)] = &[{body}];"
+        + source[block.end() :]
+    )
+
+
+def without_the_name_of(checker, ledger, version: str, source: str) -> str:
+    """The same source with every HAND-WRITTEN name of `version` gone.
+
+    Rule 6 accepts TWO, and they are alternatives rather than stages: a
+    `*_SINCE` constant when the surface lands in the same change, and a
+    reservation row when a sibling change will land it. A helper that knew only
+    the constant read a version named by a row as UNNAMED — the shape of a hook
+    written onto one variant of a sum type and not its sibling, and it fired the
+    first time a ledger's newest entry was a reservation, which is a state the
+    reservation mechanism creates by design.
+
+    What is deliberately LEFT is the derived `is_vNN`, because that is precisely
+    the claim rule 6 refuses from a number a branch has just added.
+    """
     for name, at in checker.SINCE_CONST_RE.findall(source):
         if at == version:
             source = re.sub(rf'pub const {name}: &str = "{re.escape(at)}";\n', "", source)
-    return source
+    return without_the_reservation_of(checker, ledger, version, source)
 
 
 @pytest.mark.parametrize("name", LEDGER_NAMES)
@@ -787,6 +833,13 @@ def test_rule_six_reads_the_real_ledger_shape(checker, tmp_path, capsys, monkeyp
     and it has moved before: `rustfmt` broke the version list after the `=` the
     first time it outgrew one line. Here the real file IS the checkout, so a
     drift in it is a red rather than a fixture agreeing with a copy of itself.
+
+    Rule 6 accepts two forms of a hand-written name, and which one a ledger
+    exercises here is decided by its own newest entry rather than chosen: a
+    ledger topped by a landed surface drives the `*_SINCE` constant, one topped
+    by a reservation drives the row. Which form each carries is stated by the
+    binding line of the test above — not printed here, where `capsys` would eat
+    it.
     """
     ledger = next(row for row in checker.LEDGERS if row["name"] == name)
     real = {row["path"]: live_source(row) for row in checker.LEDGERS}
@@ -803,13 +856,15 @@ def test_rule_six_reads_the_real_ledger_shape(checker, tmp_path, capsys, monkeyp
 
     # A green half alone is one-directional: it cannot separate a rule that
     # fires from a rule that is absent. So the same pair runs again with the
-    # number's NAME taken away. It is still in the ledger and still claimed — on
-    # the campaign ledger by the `is_vNN` computed from it — which is exactly the
-    # claim rule 6 refuses from a version a branch has just added.
-    stripped = without_the_name_of(checker, newest, here)
+    # number's hand-written NAME taken away, in whichever of rule 6's two forms
+    # this ledger's newest entry carries it. The number stays in the list, and
+    # whatever derived anchor it has stays with it — which is exactly the claim
+    # rule 6 refuses from a version a branch has just added.
+    stripped = without_the_name_of(checker, ledger, newest, here)
     assert stripped != here, (
-        f"{name}: nothing NAMES {newest} in the real ledger, so this half of the "
-        f"demonstration would pass by accident"
+        f"{name}: {newest} is the newest entry and nothing hand-written NAMES it — not a "
+        f"`*_SINCE` constant and not a {ledger['reserved_const']} row — so stripping its "
+        f"name is a no-op and this half of the demonstration would pass by accident"
     )
     scenario(tmp_path, {**real, ledger["path"]: prior}, {**real, ledger["path"]: stripped})
     assert go(checker, tmp_path, monkeypatch) == 1
