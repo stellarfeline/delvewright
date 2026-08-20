@@ -460,10 +460,48 @@ pub fn build_with_warnings(
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
+    //
+    // It is built for EVERY campaign, not only the ones `assembles_world` says
+    // need nav: the visual tier's clear-eye proof (`DW0724`) is owed by every
+    // campaign that emits a render plan, and a render plan is emitted
+    // unconditionally. Keying the model to the nav predicate would have left a
+    // campaign with no walked leg deriving seven kinds of camera against no world
+    // at all — a zero binding wearing a pass's clothes, which is precisely the
+    // shape that let a camera stand inside a ceiling lantern for as long as it did.
+    let world = match &edit_replay {
+        Some(er) => {
+            let mut occ = crate::assembled::occupancy_of(
+                er.assembled.blocks.clone(),
+                &er.assembled.open_gates,
+            );
+            occ.solid.extend(relight.extra_solid.iter().copied());
+            // The ambient is the world-generator PREMISE (spec-0013), not
+            // geometry, and `from_occupancy` defaults it to `Void`. The
+            // sibling arm gets it for free through `from_plan`; this arm
+            // has to say it, or an `ocean` campaign's proofs would run
+            // against a void world that does not exist. Harmless while
+            // nothing here read it — `verify_boundary_safety` below now
+            // does.
+            // The world-load gate seals travel with this arm too, and
+            // they are the prefab's measurement, not the edit script's:
+            // a batch that writes INTO a gate region already appears as
+            // ordinary solid blocks above (and is `DW0353`'s advisory).
+            // Missing this line is how an edit-carrying campaign — the
+            // island is one — would have got a vacuous green out of the
+            // completability model while every fixture went red.
+            crate::nav::World::from_occupancy(occ)
+                .with_ambient(
+                    crate::nav::Ambient::of_plan(plan),
+                    crate::nav::built_volume(plan),
+                )
+                .with_world_load_seals(plan, er.assembled.gate_seals.clone())
+        }
+        None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
+    };
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
-    // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
-    // empty for a campaign with no walked leg, so its render plan stays byte-identical.
+    // the routes); empty for a campaign with no walked leg, so its render plan
+    // stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
     // spec-0025 per-branch waypoint artifacts: one
     // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
@@ -579,39 +617,6 @@ pub fn build_with_warnings(
                 Some(er) => er.assembled.blocks.clone(),
                 None => crate::assembled::assembled_blocks(plan, structures),
             };
-            let world = match &edit_replay {
-                Some(er) => {
-                    let mut occ = crate::assembled::occupancy_of(
-                        er.assembled.blocks.clone(),
-                        &er.assembled.open_gates,
-                    );
-                    occ.solid.extend(relight.extra_solid.iter().copied());
-                    // The ambient is the world-generator PREMISE (spec-0013), not
-                    // geometry, and `from_occupancy` defaults it to `Void`. The
-                    // sibling arm gets it for free through `from_plan`; this arm
-                    // has to say it, or an `ocean` campaign's proofs would run
-                    // against a void world that does not exist. Harmless while
-                    // nothing here read it — `verify_boundary_safety` below now
-                    // does.
-                    // The world-load gate seals travel with this arm too, and
-                    // they are the prefab's measurement, not the edit script's:
-                    // a batch that writes INTO a gate region already appears as
-                    // ordinary solid blocks above (and is `DW0353`'s advisory).
-                    // Missing this line is how an edit-carrying campaign — the
-                    // island is one — would have got a vacuous green out of the
-                    // completability model while every fixture went red.
-                    crate::nav::World::from_occupancy(occ)
-                        .with_ambient(
-                            crate::nav::Ambient::of_plan(plan),
-                            crate::nav::built_volume(plan),
-                        )
-                        .with_world_load_seals(plan, er.assembled.gate_seals.clone())
-                }
-                None => {
-                    crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
-                }
-            };
-
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -847,16 +852,12 @@ pub fn build_with_warnings(
                     );
                 }
                 // Visual-tier POV cameras (spec-0003): one first-person shot per
-                // corner-thinned waypoint. Self-check every eye cell is clear in
-                // the FINAL assembled world (DW0724) — makes a camera looking out
-                // from inside a wall a build error, the owner's exact visual-review
-                // failure mode, caught at its source (the derivation).
+                // corner-thinned waypoint. Their eye cells are proven clear in the
+                // FINAL assembled world with every other kind's, at the one place
+                // a render plan can be built (`PlannedShots::into_document`) —
+                // this used to be a POV-only check here, which is exactly why the
+                // identical defect on a seam camera was invisible.
                 pov_shots = crate::render_plan::pov_shots(plan, &routes);
-                let eyes: Vec<(String, [i32; 3])> = pov_shots
-                    .iter()
-                    .map(|s| (s.id.clone(), s.eye_cell()))
-                    .collect();
-                crate::nav::verify_pov_cameras(&world, &eyes)?;
                 // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run
@@ -1259,11 +1260,16 @@ pub fn build_with_warnings(
     // Deterministic camera + expect-checklist shot list for the visual tier;
     // consumed by `delve-render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
-    put_json(
-        &mut out,
-        "render-plan.json",
-        &crate::render_plan::render_plan(plan, prefabs, &pov_shots),
-    );
+    //
+    // `render_plan` is the only way to a render-plan value, and it takes the
+    // assembled world because every camera in it owes the `DW0724` clear-eye
+    // proof — every kind, not the one that needed it first. It also states the
+    // proof's binding count in the artifact and hands back a warning when that
+    // count is zero.
+    let (render_plan_doc, camera_warnings) =
+        crate::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
+    warnings.extend(camera_warnings);
+    put_json(&mut out, "render-plan.json", &render_plan_doc);
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
