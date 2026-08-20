@@ -33,9 +33,13 @@ neither stale-older nor prematurely-newer:
 - `dsl <Y>`     == `crates/dsl/src/envelope.rs` `SUPPORTED_DSL_VERSION`
 - `mc <Z>`      == `versions.toml` `[minecraft] version`
 - the bold supported-`dsl_version` list == `crates/dsl/src/envelope.rs`
-  `SUPPORTED_DSL_VERSIONS`, as an ORDERED sequence
-- the `DW0102` catalog row's `{…}` set == the same `SUPPORTED_DSL_VERSIONS`,
-  because `DW0102` fires on exactly `!is_supported_version(version)`
+  `SUPPORTED_DSL_VERSIONS` **minus** `RESERVED_DSL_VERSIONS`, as an ORDERED
+  sequence. A reserved version is in the ledger and refused: the number is held
+  so a second change cannot take it, and `is_supported_version` says no. Binding
+  the page to the whole ledger would make this gate DEMAND a doc promise the
+  build refuses.
+- the `DW0102` catalog row's `{…}` set == the same accepted list, because
+  `DW0102` fires on exactly `!is_supported_version(version)`
   (`crates/dsl/src/validate.rs`) and its row restates that set by hand
 
 That last one is a second instance of the same defect, found while fixing the
@@ -133,6 +137,21 @@ RS_SUPPORTED_ALL_RE = re.compile(
     r"pub\s+const\s+SUPPORTED_DSL_VERSIONS\s*:\s*&\[&str\]\s*=\s*&\[(.*?)\]\s*;",
     re.DOTALL,
 )
+
+# `pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[("0.12.0", "OPEN_WAY_SINCE")];`
+#
+# A reserved version is IN the ledger and NOT accepted: it is held so a second
+# change cannot take the number, and `is_supported_version` refuses it. So every
+# claim this gate binds — the header list, the `DW0102` row, the crate pages'
+# `<first>` through `<last>` — is bound to the ledger MINUS its reservations. Bind
+# them to the whole ledger instead and this gate would force the doc to promise a
+# version the build refuses, which is the stale-claim defect it exists to stop,
+# arriving through the gate itself.
+RS_RESERVED_RE = re.compile(
+    r"pub\s+const\s+RESERVED_DSL_VERSIONS\s*:\s*&\[\(&str,\s*&str\)\]\s*=\s*&\[(.*?)\]\s*;",
+    re.DOTALL,
+)
+RESERVED_ROW_RE = re.compile(r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
 
 # `[minecraft]` ... `version = "1.21.11"`
 MC_VERSION_RE = re.compile(r'(?ms)^\[minecraft\]\s*$.*?^version\s*=\s*"([^"]+)"')
@@ -270,7 +289,8 @@ def check_published_pages(
                 f"  {rel}: `dsl_version {m.group(1)} through {m.group(2)}` != "
                 f"`{want_lo} through {want_hi}` in the build\n"
                 "      source of truth: crates/dsl/src/envelope.rs "
-                "SUPPORTED_DSL_VERSIONS (first and last)"
+                "SUPPORTED_DSL_VERSIONS minus RESERVED_DSL_VERSIONS "
+                "(first and last)"
             )
 
         m = README_RUST_RE.search(text)
@@ -381,7 +401,20 @@ def main() -> int:
     if m is None:
         return fail_shape("`pub const SUPPORTED_DSL_VERSIONS`", ENVELOPE_RS,
                           "RS_SUPPORTED_ALL_RE")
-    real_supported = QUOTED_RE.findall(m.group(1))
+    ledger = QUOTED_RE.findall(m.group(1))
+
+    # The ledger minus its reservations — what the build actually accepts, and
+    # therefore what every claim below is bound to. A ledger with no reservation
+    # list is the ordinary case and leaves this a no-op.
+    m = RS_RESERVED_RE.search(rs_text)
+    reserved = dict(RESERVED_ROW_RE.findall(m.group(1))) if m else {}
+    real_supported = [v for v in ledger if v not in reserved]
+    if not real_supported:
+        return fail_shape(
+            "at least one ACCEPTED `dsl_version` (the ledger is entirely reserved)",
+            ENVELOPE_RS,
+            "RS_RESERVED_RE",
+        )
 
     m = MC_VERSION_RE.search(VERSIONS_TOML.read_text(encoding="utf-8"))
     if m is None:
@@ -411,11 +444,20 @@ def main() -> int:
             detail.append(f"accepted by the build but NOT listed: {', '.join(missing)}")
         if phantom:
             detail.append(f"listed but NOT accepted by the build: {', '.join(phantom)}")
+        held = [v for v in phantom if v in reserved]
+        if held:
+            detail.append(
+                "of those, RESERVED and therefore refused: "
+                + ", ".join(f"{v} (held for {reserved[v]})" for v in held)
+                + " -- a reserved number is in the ledger to stop a second change "
+                "taking it, not to be offered to an author"
+            )
         if not detail:
             detail.append("same members, different ORDER (the list is read in order)")
         problems.append(
             "  the supported `dsl_version` list disagrees with "
-            "crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS\n"
+            "crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS minus "
+            "RESERVED_DSL_VERSIONS\n"
             f"      doc:   {', '.join(doc_supported)}\n"
             f"      build: {', '.join(real_supported)}\n"
             + "".join(f"\n      {d}" for d in detail)
@@ -431,8 +473,9 @@ def main() -> int:
         problems.append(
             "  the `DW0102` catalog row restates the supported set and it "
             "disagrees with\n"
-            "      crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS (DW0102 "
-            "fires on exactly\n"
+            "      crates/dsl/src/envelope.rs SUPPORTED_DSL_VERSIONS minus "
+            "RESERVED_DSL_VERSIONS (DW0102\n"
+            "      fires on exactly\n"
             "      `!is_supported_version(version)` — crates/dsl/src/validate.rs)\n"
             f"      row:   {{{','.join(doc_dw0102)}}}\n"
             f"      build: {{{','.join(real_supported)}}}"

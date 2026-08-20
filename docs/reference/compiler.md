@@ -15,8 +15,21 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
   `0.7.0`, `0.8.0`, `0.9.0`, `0.10.0`, `0.11.0`** (additive supersets; `0.2.0` output stays
   byte-identical across the later versions). This line is not prose: it is bound
   by equality to `crates/compiler/Cargo.toml`, `crates/dsl/src/envelope.rs`
-  (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS`) and `versions.toml` by
+  (`SUPPORTED_DSL_VERSION` + `SUPPORTED_DSL_VERSIONS` minus
+  `RESERVED_DSL_VERSIONS`) and `versions.toml` by
   `tools/check-reference-versions.py`, in both directions.
+- A `dsl_version` may be **reserved**: in the ledger, held for a surface a
+  sibling change will land, and refused — `is_supported_version` says no and a
+  stage document declaring it is `DW0102`, naming the versions the build
+  accepts. Reserving is how a number an approved spec has allocated stops being
+  free, since a skipped number cannot be filled afterwards (the ledger is
+  append-only) and an unheld number is one a second change takes. `0.12.0` is
+  reserved for spec-0042's `open-way` as `("0.12.0", "OPEN_WAY_SINCE")`; the
+  change that lands the surface defines that constant and deletes the row in the
+  same edit. Held against every branch by
+  `tools/check-version-ledger-uniqueness.py`, which also refuses a number a
+  branch adds without a hand-written name — `is_v12` is computed from `0.12.0`
+  and so cannot disagree with a second branch's claim on it.
 - v0.6 amends spec-0010's mitigation hierarchy: the night-vision mitigation is now
   the stage-1 `areas[].mitigation` **declaration** (emitting a real clocked
   `effect give`), not a class-kit display-name heuristic.

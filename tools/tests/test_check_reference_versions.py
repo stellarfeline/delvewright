@@ -53,6 +53,12 @@ pub const SUPPORTED_DSL_VERSION: &str = "{latest}";
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     {list}
 ];
+{reserved}"""
+
+# A held-but-refused number. It is IN the ledger — that is what stops a second
+# change taking it — and `is_supported_version` says no, so no page may offer it.
+RESERVED_TEMPLATE = """\
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[{rows}];
 """
 
 VERSIONS_TOML_TEMPLATE = """\
@@ -128,6 +134,7 @@ def run(
     real_dsl="0.9.0",
     real_mc="1.21.11",
     real_supported=("0.8.0", "0.9.0"),
+    real_reserved=(),
     page_mc=None,
     page_prose_mc=None,
     page_lo=None,
@@ -173,9 +180,18 @@ def run(
     gate.COMPILER_CARGO_TOML.write_text(
         CARGO_TEMPLATE.format(version=real_delvec), encoding="utf-8"
     )
+    ledger = list(real_supported) + [v for v, _ in real_reserved]
     gate.ENVELOPE_RS.write_text(
         ENVELOPE_TEMPLATE.format(
-            latest=real_dsl, list=", ".join(f'"{v}"' for v in real_supported)
+            latest=real_dsl,
+            list=", ".join(f'"{v}"' for v in ledger),
+            reserved=(
+                RESERVED_TEMPLATE.format(
+                    rows=", ".join(f'("{v}", "{a}")' for v, a in real_reserved)
+                )
+                if real_reserved
+                else ""
+            ),
         ),
         encoding="utf-8",
     )
@@ -423,3 +439,73 @@ def test_a_stale_allowlist_entry_is_red(gate):
         assert run(gate) == 1
     finally:
         gate.UNBOUND_VERSION_LITERALS.clear()
+
+
+# --- a reserved number is in the ledger and is not a supported version ------
+#
+# The ledger gained a way to HOLD a number whose surface a sibling change will
+# land (`RESERVED_DSL_VERSIONS`). Held is not accepted: `is_supported_version`
+# refuses it and `DW0102` fires on it. Bound to the raw ledger, this gate would
+# have demanded the doc list a version the build rejects — the stale-claim defect
+# it exists to stop, arriving through the gate.
+
+
+def test_a_reserved_version_is_not_owed_by_the_doc(gate):
+    """The green case, and the one that would have gone red: the ledger holds
+    `0.10.0`, the doc lists only what the build accepts."""
+    assert (
+        run(
+            gate,
+            doc_supported=("0.8.0", "0.9.0"),
+            real_supported=("0.8.0", "0.9.0"),
+            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
+        )
+        == 0
+    )
+
+
+def test_a_doc_offering_a_reserved_version_is_red(gate, capsys):
+    """The direction that matters: the page tells an authoring session to write
+    a `dsl_version` the compiler refuses."""
+    assert (
+        run(
+            gate,
+            doc_supported=("0.8.0", "0.9.0", "0.10.0"),
+            real_supported=("0.8.0", "0.9.0"),
+            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
+        )
+        == 1
+    )
+    err = capsys.readouterr().err
+    assert "listed but NOT accepted by the build: 0.10.0" in err
+    assert "RESERVED and therefore refused: 0.10.0 (held for OPEN_WAY_SINCE)" in err
+
+
+def test_the_dw0102_row_owes_the_accepted_set_not_the_ledger(gate, capsys):
+    """The row restates `!is_supported_version`, so a reserved number belongs on
+    the firing side of it, never inside the braces."""
+    assert (
+        run(
+            gate,
+            doc_supported=("0.8.0", "0.9.0"),
+            doc_dw0102=("0.8.0", "0.9.0", "0.10.0"),
+            real_supported=("0.8.0", "0.9.0"),
+            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
+        )
+        == 1
+    )
+    assert "the `DW0102` catalog row restates the supported set" in capsys.readouterr().err
+
+
+def test_a_crate_page_window_stops_at_the_last_accepted_version(gate, capsys):
+    """A stranger's compatibility line may not promise the held number either."""
+    assert (
+        run(
+            gate,
+            real_supported=("0.8.0", "0.9.0"),
+            real_reserved=(("0.10.0", "OPEN_WAY_SINCE"),),
+            page_hi="0.10.0",
+        )
+        == 1
+    )
+    assert "0.8.0 through 0.10.0" in capsys.readouterr().err
