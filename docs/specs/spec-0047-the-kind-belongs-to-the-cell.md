@@ -1,4 +1,4 @@
-# spec-0045: The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition
+# spec-0047: The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition
 
 - **Status**: Proposed
 - **Question**: a zone program in the bell campaign (bell-r2, Z3 drowned ward)
