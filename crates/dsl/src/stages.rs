@@ -2060,6 +2060,31 @@ pub struct Ambush {
     /// fully legal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub telegraph: Vec<QuestEffect>,
+    /// What the spring does to the story (DSL v0.8, spec-0025; required at
+    /// 0.8.0, `DW0481`).
+    ///
+    /// **The declaration lives here because this is the object the author
+    /// wrote.** An ambush desugars into a `spawn-actor` plus an `unleash-actor`
+    /// per listed actor, and every one of those is a story node `DW0481` demands
+    /// a `happening` from — on effects the author never wrote and cannot reach.
+    /// So for as long as this field did not exist, an `ambushes[]` entry could
+    /// not compile at 0.8.0 or above at all: declared in the schema, accepted by
+    /// the schema check, and refused at validation with a prescription naming a
+    /// field that was not there. Nothing caught it because no campaign and no
+    /// fixture had ever written an ambush at a version where the obligation was
+    /// live — which is the case spec-0039 exists to make impossible.
+    ///
+    /// An ambush is **one** beat, not `2N` of them: the ambushers appearing and
+    /// coming at you is a single dramatic moment, so one declaration covers the
+    /// whole spring. [`Self::to_trigger`] stamps it onto the first generated
+    /// `spawn-actor` so the chronicle carries the line at the right position,
+    /// and `branch::check_happenings` reads the obligation off the ambush rather
+    /// than off the beats derived from it. Repeating it on all `2N` is the
+    /// obvious alternative and it is wrong twice over: the chronicle would gain
+    /// `N` duplicate lines, and `DW0485` would see one subject act repeatedly
+    /// and be right to call it a contradiction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub happening: Option<Happening>,
 }
 
 impl Ambush {
@@ -2074,10 +2099,14 @@ impl Ambush {
     /// debuggable as the trigger an author would otherwise type.
     pub fn to_trigger(&self) -> EnvTrigger {
         let mut effects = self.telegraph.clone();
-        for a in &self.actors {
+        for (i, a) in self.actors.iter().enumerate() {
             effects.push(QuestEffect::SpawnActor {
                 actor: a.clone(),
-                happening: None,
+                // The ambush declaration, on the beat where the spring becomes
+                // real. Only the FIRST, for the reason the field documents: one
+                // ambush is one beat, and stamping the line on every generated
+                // effect would pad the chronicle and trip `DW0485`.
+                happening: if i == 0 { self.happening.clone() } else { None },
             });
         }
         for a in &self.actors {

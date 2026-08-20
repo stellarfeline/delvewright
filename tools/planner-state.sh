@@ -279,6 +279,56 @@ section "open PRs — engine"
 section "open PRs — content"
 [ -n "$CONTENT" ] && (cd "$CONTENT" && open_prs "$CONTENT") || echo '  (no content checkout)'
 
+section "required contexts: the repo list against LIVE branch protection"
+# A promotion is TWO edits - the repo file plus the protection setting - and only
+# the first is a diff. `check-required-contexts.py` holds the file in lockstep
+# with `ci.yml`, so a job that is named in both and MISSING from protection is
+# green everywhere: the check runs on every pull request and gates nothing, which
+# is the advisory-job defect promotion exists to end. It has happened: a merge
+# landed and the protection call was refused, leaving the file naming thirteen
+# contexts and the branch requiring twelve, with no check in either repository
+# able to see it.
+#
+# CI cannot close this - reading protection needs a token CI does not carry - so
+# it is computed here, on the two events this page already runs on. Reported in
+# BOTH directions: a context required but unlisted is drift too, and it is the
+# one that blocks every pull request forever when its job is renamed away.
+required_contexts_drift() {
+  local repo=$1 file="$2/.github/required-status-checks.txt"
+  if [ ! -f "$file" ]; then
+    echo "  $repo: no .github/required-status-checks.txt — nothing to compare"
+    return
+  fi
+  local listed live
+  listed=$(grep -v '^[[:space:]]*#' "$file" | sed '/^[[:space:]]*$/d' | sort)
+  if ! live=$(gh api "repos/$repo/branches/main/protection" \
+                --jq '.required_status_checks.contexts[]' 2>/dev/null | sort); then
+    echo "  $repo: protection unreadable (no permission, or offline) — NOT a pass,"
+    echo "         the comparison did not run"
+    return
+  fi
+  local n_listed n_live only_file only_live
+  n_listed=$(printf '%s\n' "$listed" | sed '/^$/d' | wc -l | tr -d ' ')
+  n_live=$(printf '%s\n' "$live" | sed '/^$/d' | wc -l | tr -d ' ')
+  only_file=$(comm -23 <(printf '%s\n' "$listed") <(printf '%s\n' "$live"))
+  only_live=$(comm -13 <(printf '%s\n' "$listed") <(printf '%s\n' "$live"))
+  if [ -z "$only_file" ] && [ -z "$only_live" ]; then
+    echo "  $repo: $n_listed listed, $n_live live, in agreement"
+    return
+  fi
+  echo "  $repo: $n_listed listed, $n_live live — THEY DISAGREE"
+  [ -n "$only_file" ] && printf '%s\n' "$only_file" |
+    sed 's/^/    listed but NOT REQUIRED (runs, gates nothing): /'
+  [ -n "$only_live" ] && printf '%s\n' "$only_live" |
+    sed 's/^/    required but NOT LISTED (a rename here blocks every PR): /'
+}
+required_contexts_drift stellarfeline/delvewright "$ROOT"
+if [ -n "$CONTENT" ]; then
+  required_contexts_drift stellarfeline/delvewright-campaigns "$CONTENT"
+else
+  echo '  content: no checkout resolved — the comparison did not run there'
+fi
+
 section "ideas not yet graduated (docs/ideas.md — an idea leaves only by graduating or an owner 'declined')"
 if [ -f "$ROOT/docs/ideas.md" ]; then
   awk -F'|' '/^\| IDEA-/ {

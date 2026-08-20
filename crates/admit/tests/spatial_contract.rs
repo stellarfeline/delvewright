@@ -347,3 +347,171 @@ fn the_second_door_judges_a_laid_way_on_bytes_that_do_not_hold_it_yet() {
         "{stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// spec-0047 — a mixed-kind region, through the same two doors
+// ---------------------------------------------------------------------------
+
+/// The pier of spec-0047 §1, as a cell list: solid cells of a hall with a
+/// doorway, and free-standing masonry east of it holding one walled void.
+///
+/// Built from the geometry rather than from an expansion, because the point of
+/// this door is a piece **nobody generated**: its boxes are literal from the
+/// start, which is exactly the input a hand-built or ingested piece arrives as.
+fn pier_cells() -> Vec<[i32; 3]> {
+    let mut solid: std::collections::BTreeSet<[i32; 3]> = std::collections::BTreeSet::new();
+    let mut fill = |from: [i32; 3], to: [i32; 3], on: bool| {
+        for x in from[0]..=to[0] {
+            for y in from[1]..=to[1] {
+                for z in from[2]..=to[2] {
+                    if on {
+                        solid.insert([x, y, z]);
+                    } else {
+                        solid.remove(&[x, y, z]);
+                    }
+                }
+            }
+        }
+    };
+    // The hall: a solid box hollowed out, with a doorway cut through its west
+    // wall. Roofed at the top of the model so nothing stands on its leads.
+    fill([0, 0, 0], [10, 7, 8], true);
+    fill([1, 1, 1], [9, 6, 7], false);
+    fill([0, 1, 4], [0, 2, 4], false);
+    // The masonry, and the void its own blocks close on every side.
+    fill([14, 0, 2], [24, 4, 6], true);
+    fill([19, 2, 4], [19, 3, 4], false);
+    solid.into_iter().collect()
+}
+
+/// The pier's contract: one out-of-walk region over a deck standing in exterior
+/// air and a void standing inside the masonry.
+fn pier_contract() -> serde_json::Value {
+    serde_json::json!({
+        "entry": "hall",
+        "spaces": {
+            "hall": { "envelope": "enclosed",
+                      "boxes": [{ "from": [1, 1, 1], "to": [9, 6, 7] }] }
+        },
+        "no_body": {
+            "arcade": {
+                "reason": "the ruined west arcade: its deck stands in the weather and its \
+                           masonry closes one void, and both are the same piece of scenery",
+                "boxes": [{ "from": [14, 5, 2], "to": [24, 5, 6] },
+                          { "from": [19, 2, 4], "to": [19, 3, 4] }]
+            }
+        },
+        "edges": [{
+            "a": "hall", "b": "exterior", "class": "walk",
+            "via": { "region": "door", "boxes": [{ "from": [0, 1, 4], "to": [0, 2, 4] }] }
+        }]
+    })
+}
+
+/// Write the pier to disk as the pair the second door reads: a `.nbt` and its
+/// sibling declaration document.
+fn pier_on_disk(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("dw-admit-pier-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let cells: Vec<([i32; 3], PaletteEntry, Option<delvewright_schem::nbt::Nbt>)> = pier_cells()
+        .into_iter()
+        .map(|c| (c, PaletteEntry::simple("minecraft:stone_bricks"), None))
+        .collect();
+    let structure = delvewright_admit::structure::synth([25, 8, 9], &cells);
+    std::fs::write(dir.join("pier.nbt"), structure.write()).unwrap();
+
+    // The document, built off a real exported one so every block this test is
+    // not about — provenance, licence, lighting — is what an exporter writes.
+    let source = library("pier-template");
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(source.join("twin-room.json")).unwrap())
+            .unwrap();
+    doc["prefab_id"] = serde_json::json!("prefab/pier");
+    doc["structure"]["file"] = serde_json::json!("pier.nbt");
+    doc["structure"]["id"] = serde_json::json!("pier");
+    doc["structure"]["size"] = serde_json::json!([25, 8, 9]);
+    doc["anchors"] = serde_json::json!({});
+    doc["spatial_contract"] = pier_contract();
+    std::fs::write(
+        dir.join("pier.json"),
+        serde_json::to_string_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+    dir
+}
+
+/// **One checker, two doors, over a region that is two kinds at once**
+/// (spec-0047 §7 AC7).
+///
+/// The same bytes and the same resolved contract, reached two ways that share
+/// nothing but the checker: the grid built straight out of the geometry in this
+/// process, and the grid `delve-admit audit` rebuilds from an `.nbt` it read off
+/// disk. Same verdict, and the same per-region breakdown printed for a reviewer.
+#[test]
+fn the_second_door_agrees_on_a_region_that_is_part_facade_and_part_sealed() {
+    let dir = pier_on_disk("mixed");
+
+    // Door one: the model an expansion would have had in memory, built here from
+    // the cell list rather than from the file the other door reads.
+    let mut model =
+        delvewright_grammar::model::VoxelModel::new(delvewright_grammar::geom::Box3::at_origin([
+            25, 8, 9,
+        ]));
+    let brick = delvewright_grammar::block::BlockState::simple("minecraft:stone_bricks");
+    for cell in pier_cells() {
+        model.set(cell, &brick).unwrap();
+    }
+    let contract: delvewright_schem::prefab::SpatialContract =
+        serde_json::from_value(pier_contract()).unwrap();
+    let first = delvewright_grammar::contract::check(&model, &contract, &Default::default());
+    assert!(first.is_pass(), "{:#?}", first.gates);
+
+    let mixed = first
+        .enumeration
+        .iter()
+        .find(|e| e.starts_with("no_body \"arcade\""))
+        .unwrap_or_else(|| panic!("{:#?}", first.enumeration));
+    assert!(
+        mixed.contains("mixed") && mixed.contains("sealed") && mixed.contains("facade"),
+        "the fixture must carry a MIXED region, or this test compares two \
+         kind-uniform doors: {mixed}"
+    );
+
+    // Door two: the same piece as bytes on disk.
+    let out = Command::new(ADMIT)
+        .args(["audit", dir.join("pier.nbt").to_str().unwrap()])
+        .output()
+        .expect("delve-admit runs");
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(out.status.success(), "{stderr}");
+    for line in &first.enumeration {
+        assert!(
+            stderr.contains(line.as_str()),
+            "the two doors printed different enumerations.\n  first door: {line}\n  second \
+             door:\n{stderr}"
+        );
+    }
+
+    // **Determinism over the mixed region, in two processes** (ADR-0006,
+    // spec-0047 AC6). The per-cell partition never reaches the written bytes —
+    // the contract block is carried whole and no kind is serialised — so the
+    // report is the only artifact it can move in, and the report is what is
+    // compared. In a second process rather than twice in one, because the drift
+    // this guards against is an address- or hash-order dependency that one
+    // warmed process hides.
+    let again = Command::new(ADMIT)
+        .args(["audit", dir.join("pier.nbt").to_str().unwrap()])
+        .output()
+        .expect("delve-admit runs");
+    assert_eq!(
+        stderr,
+        String::from_utf8_lossy(&again.stderr),
+        "the verdict moved between processes"
+    );
+    assert_eq!(
+        out.stdout, again.stdout,
+        "the report moved between processes"
+    );
+}

@@ -72,7 +72,11 @@ the shared gate, `teleport`, `lethal_volumes[]`, and spec-0030's compile-time
    already recorded twice by spec-0031 §9; the answer is the existing
    language's binding widened, never a fourth mechanism.
 
-## 2. The surfaces (DSL v0.11.0; `DW0141` below it at every site)
+## 2. The surfaces (one new `dsl_version`; `DW0141` below it at every site)
+
+The version number is allocated when this work is scheduled, not named here:
+a spec's prose is not a reservation, and a number a machine never reads is a
+claim nothing defends.
 
 ### 2.1 A region write knows what it leaves (model fix, every version)
 

@@ -1303,7 +1303,11 @@ document rather than the formatter. Never hand-sort a file, and never "fix" a
 9. Visual review (spec-0003 visual tier) — **you** (the authoring agent, not a
    subagent; visual judgment is the point). The build output already contains
    `render-plan.json` (deterministic shots + per-shot `expect` checklists derived
-   from the DSL). Render the per-prefab sets with Nucleation and read them against
+   from the DSL). Every camera in it is proven to stand in open air (`DW0724`);
+   read `camera_eye_proof` for how many were examined and how many had to be
+   pulled in off a stand-off that was inside geometry, and treat a shot carrying
+   `camera.requested_pos` as a hint about the build — the room is tighter than
+   the shot wanted, which is worth a look while you are reviewing it anyway. Render the per-prefab sets with Nucleation and read them against
    each shot's `expect`:
    - `cargo run -q --manifest-path crates/render/Cargo.toml --bin delve-render -- batch campaigns/prefabs -o <workspace>/renders`
      (`--manifest-path`, not `-p`: the GPU arms are their own cargo workspace).
