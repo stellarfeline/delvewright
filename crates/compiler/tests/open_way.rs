@@ -933,6 +933,41 @@ fn an_open_way_naming_no_staged_way_is_dw0547() {
     assert!(err.message.contains("broken-flight"), "{}", err.message);
 }
 
+/// **The reference is checked even when the world stages no way at all** — the
+/// case a guard on the staged ways alone would skip in silence.
+///
+/// An `open-way` against the stock prefab library, where no placed piece declares
+/// a contract of any kind: the effect would emit nothing, the disposition
+/// enumeration would have nothing to enumerate, and the campaign would ship a
+/// beat that does nothing. It is refused instead, and the refusal says the world
+/// stages none.
+#[test]
+fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
+    let dir = common::prefabs_dir();
+    let plain = r#"{
+  "dsl_version": "0.2.0",
+  "campaign_id": "hello-world",
+  "stage": "world",
+  "content": {
+    "title": "The Keeper's Door",
+    "theme": "A lonely keep at the edge of the moor.",
+    "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
+    "seed": 20260729,
+    "target_minutes": 5,
+    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+  }
+}"#;
+    let c = campaign_with(plain.to_string(), quests_doc(Opening::Before, false), false);
+    let err = plan_err(&c, &dir, "a way no piece stages cannot be opened");
+    assert_eq!(err.code.id(), "DW0547");
+    assert!(
+        err.message
+            .contains("no placed piece stages any way at all"),
+        "{}",
+        err.message
+    );
+}
+
 /// A piece placed twice stages two ways, and one reference names neither of them
 /// rather than both.
 #[test]

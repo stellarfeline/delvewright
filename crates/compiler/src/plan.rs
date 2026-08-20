@@ -2064,9 +2064,16 @@ impl<'a> Plan<'a> {
         // re-derived — a second reading of "has this fired yet" is a second
         // instrument, and the whole point of the verdict is that it agrees with
         // the route proof.
+        //
+        // **Run on either side of the pair, never on the intersection.** A world
+        // that stages a way owes a disposition for it; a campaign that writes an
+        // `open-way` owes a resolvable reference — and the case where a campaign
+        // opens a way NO placed piece stages is exactly the one a guard on the
+        // staged ways alone would skip in silence, which is how an effect comes to
+        // emit nothing and be reported by nobody (the class `DW0360` exists for).
         let mut way_gate = None;
-        if !ways.ways.is_empty() {
-            let openings = collect_way_openings(campaign, &objective_steps);
+        let openings = collect_way_openings(campaign, &objective_steps);
+        if !ways.ways.is_empty() || !openings.is_empty() {
             let elements = collect_required_elements(campaign, &anchors, &objective_steps);
             let precedes = |g: usize, s: usize| {
                 g == 0
@@ -2079,7 +2086,12 @@ impl<'a> Plan<'a> {
             if let Some(finding) = crate::ways::unbound_finding(&gate) {
                 warnings.push(finding);
             }
-            way_gate = Some(gate);
+            // The artifact belongs to a world that stages a way. A ledger of zero
+            // ways is not a measurement of anything — and a campaign that reaches
+            // here with none has already been refused above.
+            if !ways.ways.is_empty() {
+                way_gate = Some(gate);
+            }
         }
 
         Ok(Self {
