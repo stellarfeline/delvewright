@@ -33,6 +33,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use delvewright_admit::allowlist::Allowlist;
+use delvewright_admit::spatial::{self, Door};
 use delvewright_admit::structure::Structure;
 use delvewright_schem::blocks::{BlockRegistry, StateJudgement};
 use delvewright_schem::convert::DATA_VERSION as PINNED_DATA_VERSION;
@@ -259,5 +260,96 @@ fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
         bad.len(),
         library.len(),
         bad.join("\n  ")
+    );
+}
+
+/// **The spatial contract's second door, opened on every shipped prefab.**
+///
+/// `delve-admit audit` opens it at the moment a piece enters the library, which
+/// is one moment per piece, forever — so a document that loses its contract
+/// afterwards, to a hand edit or to a tool that models fewer fields than the
+/// document has, is never asked again. This sweep asks, on every `cargo test`.
+///
+/// It states three numbers, and the third is the one to read: how many pieces
+/// were examined, how many the door **refused**, and how many actually declare a
+/// contract. That last is the door's own binding count, and it is currently
+/// ZERO over the whole library — every shipped piece predates the contract, so
+/// the second door is judging nothing here yet, and the compiler's `DW0781`
+/// says the same thing about the same corpus from the placement side. Printed
+/// rather than asserted, because requiring a contract of every prefab is a
+/// version-adoption decision and not this gate's to make; asserted the moment a
+/// piece has one, which is what the adoption round will turn this into.
+#[test]
+fn the_second_door_is_opened_on_every_shipped_prefab() {
+    let dir = prefabs_dir();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|_| {
+            panic!(
+                "the prefab library is not at {} — the `campaigns/` content checkout is missing, \
+                 so this sweep would examine nothing and pass",
+                dir.display()
+            )
+        })
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("nbt"))
+        .collect();
+    paths.sort();
+
+    let (mut judged, mut undeclared, mut no_document) = (0usize, 0usize, 0usize);
+    let mut refused: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    let mut objects = 0usize;
+
+    for path in &paths {
+        let s = Structure::read(&std::fs::read(path).expect("the library file is readable"))
+            .unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let door = Door::open(&spatial::grid(&s), 1, &path.with_extension("json"));
+        objects += door.binding().objects;
+        match &door {
+            Door::Judged { report, .. } => {
+                judged += 1;
+                for gate in report.gates.iter().filter(|g| !g.passed()) {
+                    failed.push(format!("{name}: {} — {}", gate.id, gate.detail));
+                }
+            }
+            Door::Undeclared { .. } => undeclared += 1,
+            Door::NoDocument { .. } => no_document += 1,
+            Door::Refused { reason, .. } => refused.push(format!("{name}: {reason}")),
+        }
+    }
+
+    assert!(
+        !paths.is_empty(),
+        "binding count is zero: no prefab was examined at all"
+    );
+    println!(
+        "second-door sweep: {} prefab(s) examined; {judged} declare a contract and were judged \
+         ({objects} object(s) examined by their obligations), {undeclared} declare none, \
+         {no_document} carry no document, {} refused",
+        paths.len(),
+        refused.len()
+    );
+    if judged == 0 {
+        println!(
+            "  FINDING: the second door's binding over this library is ZERO — no shipped prefab \
+             declares a spatial contract yet, so nothing here is being judged by it. The \
+             adoption round that gives the library contracts is what turns this into a number."
+        );
+    }
+    assert!(
+        refused.is_empty(),
+        "{} shipped prefab(s) cannot be judged by the second door at all — a declaration \
+         document that does not parse, or one that declares no contract while its own anchors \
+         resolve into contract elements (which means the declaration was dropped):\n  {}",
+        refused.len(),
+        refused.join("\n  ")
+    );
+    assert!(
+        failed.is_empty(),
+        "{} shipped prefab(s) declare a spatial contract their own blocks do not honour:\n  {}",
+        failed.len(),
+        failed.join("\n  ")
     );
 }

@@ -1564,7 +1564,10 @@ impl WaterlineBinding {
                  metadata. Nothing here proves that anything in this world meets the sea where \
                  the sea is, while every downstream proof — nav, boundary, POV, PackTest — \
                  derives from the placement none of them checked. A check that examined nothing \
-                 has proved nothing, so this refuses rather than noting itself: the invariant is \
+                 has proved nothing, so this is stated rather than passed over. It is a \
+                 warning and not yet a refusal only because the demand is not yet authorable — \
+                 no lever lifts a piece clear of the sea — and a fixture reds the day one \
+                 exists. The invariant is \
                  keyed off an optional field, which makes a declaration that was DELETED look \
                  exactly like one that was never needed, and those two need opposite answers. \
                  Declare `waterline_y` on the piece(s) that meet the sea — the local y of the \
