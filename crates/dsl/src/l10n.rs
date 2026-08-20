@@ -95,9 +95,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Binds, Diagnostic, codes};
-use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, minor_ordinal,
-};
+use crate::envelope::{Campaign, Stage, is_supported_version, minor_ordinal};
 use crate::ids::CampaignId;
 use crate::stages::{NarrateStyle, QuestEffect};
 
@@ -1477,8 +1475,9 @@ pub fn validate_l10n(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<
                 format!("l10n/{lang}.json"),
                 format!(
                     "sidecar has unsupported dsl_version `{}` — set it to a supported version \
-                     matching the stage docs (one of {SUPPORTED_DSL_VERSIONS:?})",
-                    doc.dsl_version
+                     matching the stage docs (one of {:?})",
+                    doc.dsl_version,
+                    crate::accepted_versions().collect::<Vec<_>>()
                 ),
             ));
         }
