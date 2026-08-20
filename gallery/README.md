@@ -137,3 +137,39 @@ route, so they are reported unaccounted rather than papered over.
 
 None of the three was found by reading code. Each was found by trying to write the
 surface down.
+
+## The open question, for the design lane
+
+`spec-0039` §3 asserts that **"any legal combination is expressible by some
+overlay"**. That assertion is what licenses the gate to treat an unbound unit as
+a missing element rather than as a possibly-unreachable one. Six units say
+otherwise, and they are the only ones left that a field line cannot discharge.
+
+`DW0454` refuses a `traversal.locomotion` that restates what the body's entity id
+already implies, on the ground that a declaration is a claim the build must pay
+for. The rule is right and its diagnostic explains itself. Its consequence is
+that `Locomotion::ground` cannot be written on a ground mob, `Locomotion::flier`
+cannot be written on a bat, and so on: the only way to bind one is a body whose
+DERIVED class differs from the declared one, *and* a route that needs the
+declared class to be legal. That is not a field line. It is a world — a climb, a
+wall to go over — and a campaign without that geometry cannot express the
+combination at all.
+
+The six: `Locomotion::ground`, `Locomotion::climber`, `Locomotion::flier`,
+`BodyTraversal.locomotion`, `Npc.traversal`, `Actor.traversal`.
+`Locomotion::aquatic` is *not* among them — it is refused outright by `DW0455`
+and is refusal-proven under `probes/aquatic-locomotion`, which is the correct
+second state and shows the difference: a fence has a probe, a geometry
+requirement has nothing to point at.
+
+What would have to be true for the assertion to hold: either the gallery grows a
+second area whose route genuinely requires each declared class — real geometry,
+and a decision about whether the gallery is allowed to become that kind of
+artifact — or the spec says what verdict a unit earns when binding it needs a
+world rather than a declaration.
+
+**Not resolved here, deliberately.** It contradicts a premise of an Accepted
+spec, so it belongs to whoever owns the spec; an implementation that quietly
+picked an answer would be settling it by default. The gate reports all six as
+unaccounted meanwhile, which is the honest verdict, and it is part of why the job
+is not yet a required status check.

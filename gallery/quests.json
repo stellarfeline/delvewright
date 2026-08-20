@@ -34,6 +34,21 @@
           {
             "item": "minecraft:iron_ingot",
             "name": "Muster Token"
+          },
+          {
+            "slot": "head"
+          },
+          {
+            "slot": "chest"
+          },
+          {
+            "slot": "legs"
+          },
+          {
+            "slot": "feet"
+          },
+          {
+            "slot": "off_hand"
           }
         ],
         "entity": "minecraft:zombie",
@@ -158,6 +173,7 @@
         "forbids_flags": [
           "flag/hall-sealed"
         ],
+        "requires_flags": [],
         "requires_state": [
           {
             "op": "at-most",
@@ -182,6 +198,21 @@
         "style": "actionbar",
         "text": "The hall puts you back at the hearth.",
         "type": "narrate"
+      },
+      {
+        "forbids_flags": [
+          "flag/hall-sealed"
+        ],
+        "stake": "stake/relics",
+        "type": "drop-stake"
+      },
+      {
+        "stake": "stake/toll",
+        "type": "drop-stake"
+      },
+      {
+        "stake": "stake/keepsake",
+        "type": "drop-stake"
       }
     ],
     "quests": [
@@ -202,9 +233,26 @@
             },
             "doing": "minding the counter"
           },
-          "npc/marshal": {
-            "at": "offstage"
-          },
+          "npc/marshal": [
+            {
+              "at": "offstage",
+              "forbids_flags": [
+                "flag/hall-open"
+              ]
+            },
+            {
+              "at": "anchor/muster",
+              "dialogue": {
+                "barks": [
+                  "Form up."
+                ]
+              },
+              "doing": "calling the muster, once the party has passed the lectern",
+              "requires_flags": [
+                "flag/hall-open"
+              ]
+            }
+          ],
           "npc/warden": {
             "at": "anchor/warden",
             "dialogue": "none",
@@ -219,6 +267,7 @@
         "id": "quest/near-hall",
         "objectives": [
           {
+            "after": [],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -230,6 +279,15 @@
             "hint": "The Curator stands at the lectern.",
             "id": "obj/hear-the-curator",
             "npc": "npc/curator",
+            "requires_flags": [],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
             "title": "Hear the Curator",
             "type": "talk-to"
           },
@@ -252,7 +310,16 @@
             "prop": {
               "block": "minecraft:stone_button"
             },
+            "requires_flags": [],
             "requires_item": "minecraft:iron_pickaxe",
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
             "title": "Open the case",
             "type": "interact"
           },
@@ -276,6 +343,15 @@
             "id": "obj/take-the-emeralds",
             "item": "minecraft:emerald",
             "item_name": "Hall Emerald",
+            "requires_flags": [],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
             "title": "Take the emeralds",
             "type": "collect"
           },
@@ -292,8 +368,17 @@
               "text": "They reach the counter.",
               "verb": "arrives"
             },
+            "hint": "The Factor keeps the counter on the east side of the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
+            "requires_flags": [],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
             "stealth": false,
             "title": "Reach the counter",
             "type": "reach-anchor"
@@ -409,6 +494,13 @@
               "verb": "departs"
             },
             "npc": "npc/warden",
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
             "type": "despawn-npc"
           }
         ],
@@ -437,6 +529,7 @@
               ],
               "item": "minecraft:torch",
               "name": "Hall Torch",
+              "requires_flags": [],
               "requires_state": [
                 {
                   "op": "at-most",
@@ -560,6 +653,13 @@
                   "style": "chat",
                   "text": "\"Read the far side too,\" she says.",
                   "type": "narrate"
+                }
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
                 }
               ],
               "speed": 1.0,
@@ -710,22 +810,42 @@
             "dialogue": "unchanged",
             "doing": "shutting the counter for the day"
           },
-          "npc/marshal": {
-            "at": "anchor/muster",
-            "dialogue": {
-              "barks": [
-                "Form up."
+          "npc/marshal": [
+            {
+              "at": "anchor/muster",
+              "dialogue": {
+                "barks": [
+                  "Form up."
+                ]
+              },
+              "doing": "calling the muster to a party that read the label",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/read-the-label"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/labels-read",
+                  "value": 0
+                }
               ]
             },
-            "doing": "calling the muster",
-            "requires_state": [
-              {
-                "op": "at-least",
-                "state": "state/labels-read",
-                "value": 0
-              }
-            ]
-          },
+            {
+              "at": "anchor/muster",
+              "dialogue": {
+                "barks": [
+                  "You did not read it. Form up anyway."
+                ]
+              },
+              "doing": "calling the muster to a party that walked straight past",
+              "requires_flags": [
+                "flag/skipped-the-label"
+              ]
+            }
+          ],
           "npc/warden": {
             "at": "dead"
           }
@@ -738,6 +858,7 @@
         "id": "quest/far-hall",
         "objectives": [
           {
+            "after": [],
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -748,9 +869,50 @@
             },
             "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
+            "requires_flags": [],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
             "title": "Clear the muster",
             "type": "kill",
             "wave": "wave/muster"
+          },
+          {
+            "after": [
+              "obj/clear-the-muster"
+            ],
+            "anchor": "anchor/muster",
+            "count": 1,
+            "dropped_by": "wave/muster",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/muster",
+              "text": "They pick the muster's bone up off the flagstones.",
+              "verb": "gains"
+            },
+            "hint": "It is where the muster fell.",
+            "id": "obj/take-the-bone",
+            "item": "minecraft:bone",
+            "requires_flags": [
+              "flag/muster-cleared"
+            ],
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
+            "title": "Take the muster's bone",
+            "type": "collect"
           },
           {
             "after": [
@@ -774,6 +936,7 @@
                 "value": 1
               }
             ],
+            "stealth": false,
             "title": "Reach the end of the hall",
             "type": "reach-anchor"
           }
@@ -795,6 +958,17 @@
               }
             ],
             "type": "set-flag"
+          },
+          {
+            "anchor": "anchor/lectern",
+            "on_respawn": [
+              {
+                "style": "actionbar",
+                "text": "You come back at the lectern, where the reading started.",
+                "type": "narrate"
+              }
+            ],
+            "type": "set-checkpoint"
           },
           {
             "ending": "The hall is read end to end.",
@@ -1004,10 +1178,17 @@
             {
               "happening": {
                 "subject": "npc/factor",
-                "text": "The Factor shuts the counter.",
-                "verb": "departs"
+                "text": "The Factor gives up the counter and the hall loses its trade.",
+                "verb": "loses"
               },
               "npc": "npc/factor",
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
               "type": "despawn-npc"
             },
             {
@@ -1255,7 +1436,12 @@
                   "seconds": 2,
                   "shot_style": "insert",
                   "subject": {
-                    "anchor": "anchor/muster"
+                    "npc": "npc/curator",
+                    "offset": [
+                      0,
+                      1,
+                      0
+                    ]
                   }
                 },
                 {
@@ -1264,7 +1450,12 @@
                   "seconds": 2,
                   "shot_style": "locked-off",
                   "subject": {
-                    "anchor": "anchor/muster"
+                    "anchor": "anchor/muster",
+                    "offset": [
+                      0,
+                      1,
+                      0
+                    ]
                   }
                 },
                 {
@@ -1300,7 +1491,12 @@
                   "seconds": 2,
                   "shot_style": "push-in",
                   "subject": {
-                    "anchor": "anchor/muster"
+                    "actor": "actor/sergeant",
+                    "offset": [
+                      0,
+                      1,
+                      0
+                    ]
                   }
                 },
                 {
@@ -1314,6 +1510,288 @@
                 }
               ],
               "type": "cutscene"
+            },
+            {
+              "amount": 1,
+              "damage_type": "drown",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "in": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  2
+                ]
+              },
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "damage-players"
+            },
+            {
+              "amount": 1,
+              "damage_type": "fire",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "in": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  2
+                ]
+              },
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "damage-players"
+            },
+            {
+              "amount": 1,
+              "damage_type": "freeze",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "in": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  2
+                ]
+              },
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "damage-players"
+            },
+            {
+              "amount": 1,
+              "damage_type": "generic",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "in": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  2
+                ]
+              },
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "damage-players"
+            },
+            {
+              "amount": 1,
+              "damage_type": "lightning-bolt",
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "in": {
+                "anchor": "anchor/march",
+                "extent": [
+                  2,
+                  2,
+                  2
+                ]
+              },
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "damage-players"
+            },
+            {
+              "actor": "actor/rafter-spider",
+              "happening": {
+                "subject": "actor/rafter-spider",
+                "text": "The spider is put down where it landed.",
+                "verb": "dies"
+              },
+              "style": "kill",
+              "type": "despawn-actor"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "time": "dawn",
+              "type": "set-time"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "time": "night",
+              "type": "set-time"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "time": "midnight",
+              "type": "set-time"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "type": "set-weather",
+              "weather": "thunder"
+            },
+            {
+              "at": {
+                "at": "players"
+              },
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "sound": "minecraft:entity.wither.spawn",
+              "type": "play-sound"
+            },
+            {
+              "amount": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "state": "state/relics",
+              "type": "add-state"
+            },
+            {
+              "amount": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "state": "state/toll",
+              "type": "add-state"
+            },
+            {
+              "amount": 1,
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/labels-read",
+                  "value": 9
+                }
+              ],
+              "state": "state/keepsake",
+              "type": "add-state"
             }
           ]
         },
@@ -1385,6 +1863,21 @@
                 "op": "at-least",
                 "state": "state/tokens",
                 "value": 0
+              },
+              {
+                "op": "at-least",
+                "state": "state/relics",
+                "value": 0
+              },
+              {
+                "op": "at-least",
+                "state": "state/toll",
+                "value": 0
+              },
+              {
+                "op": "at-least",
+                "state": "state/keepsake",
+                "value": 0
               }
             ]
           }
@@ -1432,6 +1925,37 @@
         "max_live": 2,
         "on_full": "keep",
         "state": "state/tokens"
+      },
+      {
+        "collect_by": "owner",
+        "collected_message": "Only you can lift your own relics.",
+        "forfeit": {
+          "kind": "all"
+        },
+        "id": "stake/relics",
+        "marker_item": "minecraft:lantern",
+        "max_live": 1,
+        "on_full": "replace",
+        "state": "state/relics"
+      },
+      {
+        "collect_by": "anyone",
+        "collected_message": "You take back the toll.",
+        "forfeit": {
+          "amount": 2,
+          "kind": "fixed"
+        },
+        "id": "stake/toll",
+        "state": "state/toll"
+      },
+      {
+        "collect_by": "anyone",
+        "collected_message": "You take back the keepsake.",
+        "forfeit": {
+          "kind": "none"
+        },
+        "id": "stake/keepsake",
+        "state": "state/keepsake"
       }
     ],
     "state": [
@@ -1447,6 +1971,27 @@
         "initial": 0,
         "name": "Tokens",
         "note": "The wager a stake carries. Player-scoped, because a stake is dropped by the body that died.",
+        "scope": "player"
+      },
+      {
+        "id": "state/relics",
+        "initial": 0,
+        "name": "Relics",
+        "note": "The second wager, so the gallery can show a forfeit that takes everything beside one that takes a share.",
+        "scope": "player"
+      },
+      {
+        "id": "state/toll",
+        "initial": 0,
+        "name": "Toll",
+        "note": "A flat toll: the same two whatever you were carrying.",
+        "scope": "player"
+      },
+      {
+        "id": "state/keepsake",
+        "initial": 0,
+        "name": "Keepsake",
+        "note": "A wager a death does not touch, which is what makes the other three legible.",
         "scope": "player"
       }
     ],
@@ -1589,6 +2134,9 @@
             "type": "narrate"
           }
         ],
+        "forbids_flags": [
+          "flag/hall-sealed"
+        ],
         "id": "trigger/read-the-label",
         "on": {
           "on": "use"
@@ -1617,6 +2165,9 @@
             "sound": "minecraft:block.campfire.crackle",
             "type": "play-sound"
           }
+        ],
+        "forbids_flags": [
+          "flag/hall-sealed"
         ],
         "id": "trigger/strike-the-hearth",
         "on": {
@@ -1648,6 +2199,9 @@
             "type": "narrate"
           }
         ],
+        "forbids_flags": [
+          "flag/hall-sealed"
+        ],
         "id": "trigger/skip-the-label",
         "on": {
           "npc": "npc/warden",
@@ -1672,6 +2226,9 @@
             "text": "From here the whole hall is one picture.",
             "type": "narrate"
           }
+        ],
+        "forbids_flags": [
+          "flag/hall-sealed"
         ],
         "id": "trigger/reach-the-vantage",
         "on": {
@@ -1701,6 +2258,9 @@
             "text": "The side door is barred from the other side.",
             "type": "narrate"
           }
+        ],
+        "forbids_flags": [
+          "flag/hall-sealed"
         ],
         "id": "trigger/shortcut-door-barred",
         "on": {

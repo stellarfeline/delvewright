@@ -59,6 +59,10 @@
                   {
                     "type": "set-weather",
                     "weather": "clear"
+                  },
+                  {
+                    "npc": "npc/marshal",
+                    "type": "spawn-npc"
                   }
                 ],
                 "happening": {
@@ -117,6 +121,10 @@
                   {
                     "type": "set-weather",
                     "weather": "clear"
+                  },
+                  {
+                    "npc": "npc/marshal",
+                    "type": "spawn-npc"
                   }
                 ],
                 "happening": {

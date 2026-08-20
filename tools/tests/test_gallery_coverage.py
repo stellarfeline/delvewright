@@ -136,6 +136,38 @@ def test_untagged_union_still_binds():
     assert "Placement.doing" in b.bound
 
 
+def test_untagged_record_union_picks_the_branch_that_fits():
+    """`MobDrop` is `SlotDrop{slot}` or `ItemDrop{item, name}` — two records.
+
+    The JSON type discriminates nothing here, so picking the first record branch
+    bound `SlotDrop.slot` for every drop in the campaign and left the whole
+    `ItemDrop` surface reading as unbound — on a gallery that writes both.
+    Silent, and wrong in the direction that hides work.
+    """
+    schema = _schema({"drops": {"type": "array", "items": {"$ref": "#/$defs/Drop"}}})
+    defs = schema["world"]["$defs"]
+    defs["Drop"] = {"anyOf": [{"$ref": "#/$defs/SlotDrop"}, {"$ref": "#/$defs/ItemDrop"}]}
+    defs["SlotDrop"] = {
+        "type": "object",
+        "properties": {"slot": {"type": "string"}},
+        "required": ["slot"],
+    }
+    defs["ItemDrop"] = {
+        "type": "object",
+        "properties": {"item": {"type": "string"}, "name": {"type": "string"}},
+        "required": ["item"],
+    }
+    e = Enumerator(schema)
+    units = e.run()
+    b = Binder(e)
+    doc = _doc({"drops": [{"slot": "head"}, {"item": "minecraft:bone", "name": "A Bone"}]})
+    b.walk(schema["world"], doc, "t")
+    assert "SlotDrop.slot" in b.bound
+    assert "ItemDrop.item" in b.bound, "the second record branch must be reachable"
+    assert "ItemDrop.name" in b.bound
+    assert not (set(b.bound) - set(units)), "every recorded id must be a real unit"
+
+
 def test_option_wrapped_union_keeps_the_declaring_type_name():
     """`Option<Horizon>` names the variant after Horizon, never after the site.
 

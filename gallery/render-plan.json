@@ -173,17 +173,22 @@
     },
     {
       "area": "area/hall",
-      "id": "pov/leg4/wp1",
+      "id": "pov/leg5/wp0",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg4/wp2",
+      "id": "pov/leg5/wp1",
       "kind": "pov"
     },
     {
       "area": "area/hall",
-      "id": "pov/leg4/wp3",
+      "id": "pov/leg5/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp3",
       "kind": "pov"
     },
     {

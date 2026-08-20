@@ -236,6 +236,12 @@ class Binder:
         self.bound.setdefault(uid, []).append(pointer)
         self._hits += 1
 
+    @staticmethod
+    def _branches(schema: dict) -> list[dict]:
+        out = list(schema.get("oneOf") or [])
+        out += [b for b in (schema.get("anyOf") or []) if not _null_branch(b)]
+        return out
+
     def _resolve(self, node: dict) -> tuple[dict, str | None]:
         """Follow one `$ref`, returning the target and its type name."""
         ref = node.get("$ref")
@@ -261,14 +267,27 @@ class Binder:
             if isinstance(item, dict):
                 for i, v in enumerate(value):
                     self._value(item, owner, v, f"{ptr}/{i}")
+                return
+            # A list against a union with an ARRAY branch. `CastEntry` is "one
+            # placement, or a list of them", so a quest that writes the
+            # per-branch form — which `DW0462` positively requires the moment an
+            # NPC's position depends on a branch — hands this walk a list where
+            # the schema itself has no `items`. Without this the whole
+            # `CastPlacement` surface reads as unbound on exactly the campaigns
+            # that took the diagnostic's advice.
+            if hops < 8:
+                for branch in self._branches(schema):
+                    b, _ = self._resolve(branch)
+                    if isinstance(b.get("items"), dict):
+                        self._value(branch, owner, value, ptr, hops + 1)
+                        return
             return
         if not isinstance(value, dict):
             return
         # A union: pick the branch this value actually satisfies, and bind that
         # branch's variant unit. A value matching no branch is not this walk's
         # problem — `delvec validate` owns that verdict and has already run.
-        branches = [b for b in (schema.get("oneOf") or [])]
-        branches += [b for b in (schema.get("anyOf") or []) if not _null_branch(b)]
+        branches = self._branches(schema)
         if branches:
             for branch in branches:
                 b, _ = self._resolve(branch)
@@ -292,20 +311,47 @@ class Binder:
             if len(branches) == 1 and hops < 8:
                 self._value(branches[0], owner, value, ptr, hops + 1)
                 return
-            # An UNTAGGED union — `CastEntry` is "one placement, or a list of
-            # them", and neither branch carries a discriminator. Nothing above
-            # can match it, so without this the whole `CastPlacement` surface
-            # reads as unbound on a campaign whose every quest writes a cast.
-            # The value's own JSON type is the discriminator vanilla serde uses
-            # here, and it is the one this walk uses too.
+            # An UNTAGGED union. Two shapes of it, and they need different
+            # discriminators:
+            #
+            #   `CastEntry`  — one placement, or a LIST of them. The value's own
+            #                  JSON type separates them, which is what serde uses.
+            #   `MobDrop`    — `SlotDrop{slot}` or `ItemDrop{item, name}`: two
+            #                  RECORDS, so the JSON type says nothing. Picking
+            #                  the first record branch bound `SlotDrop.slot` for
+            #                  every drop in the campaign and left the whole
+            #                  `ItemDrop` surface reading as unbound — on a
+            #                  gallery that writes both. Silent, and wrong in the
+            #                  direction that hides work.
+            #
+            # So a record branch is chosen by FIT: every one of its required
+            # properties present, and no key in the value that the branch does
+            # not declare (these types are `deny_unknown_fields`, which is
+            # exactly what makes fit decisive). Ties are impossible for that
+            # reason; if one ever arises, no branch is chosen rather than a
+            # coin-flipped one.
             if hops < 8:
+                candidates = []
                 for branch in branches:
                     b, _ = self._resolve(branch)
-                    if b.get("properties") or isinstance(
-                        b.get("additionalProperties"), dict
-                    ):
-                        self._value(branch, owner, value, ptr, hops + 1)
-                        return
+                    props = b.get("properties")
+                    if not props:
+                        if isinstance(b.get("additionalProperties"), dict):
+                            candidates.append((branch, 0))
+                        continue
+                    required = set(b.get("required") or [])
+                    keys = set(value)
+                    if required - keys:
+                        continue
+                    if keys - set(props):
+                        continue
+                    candidates.append((branch, len(keys & set(props))))
+                if len(candidates) == 1 or (
+                    len(candidates) > 1
+                    and candidates[0][1] != candidates[1][1]
+                ):
+                    candidates.sort(key=lambda c: -c[1])
+                    self._value(candidates[0][0], owner, value, ptr, hops + 1)
             return
         self._object(schema, owner, value, ptr)
 
