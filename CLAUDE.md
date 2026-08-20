@@ -222,6 +222,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   easily: **a `grep` for a phrase the file wraps across a line break returns
   zero**, and zero reads as absent. Ask what the pattern could match before
   believing what it did not.
+  And the form that hides best, because the wrong number is printed beside the
+  thing that produced it: **a count equal to its own fetch limit is not a
+  measurement — it is the limit.** A ledger audit ran `--limit 200` and applied
+  the date filter afterwards, so once the window held more than 200 rows the
+  oldest were never fetched; it printed `200 merged, 200 logged, 0 MISSING` for
+  weeks, and `200` was the cap. The window actually held 239. The repair is not a
+  bigger number — that is a fix with an expiry date — but a **refusal when the
+  page comes back full**, since that is the one condition under which the answer
+  cannot be trusted. Same family as UNTRAVERSED: truncation fakes coverage, and it
+  fakes it in the direction that reads as a clean pass.
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
@@ -237,6 +247,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
   command* but ***what does this share with the first one***, and the strongest
   second method is the one whose failure mode is unrelated: a different
   instrument, a different tree, or an observer outside the machine entirely.
+  The mirror image is just as costly and is easier to walk into while obeying the
+  rule: **a second method must differ where the suspicion is and agree everywhere
+  else.** Re-checking that audit meant varying the fetch limit — instead the
+  re-check also re-implemented the ledger reader, missed a legacy row shape the
+  shipped reader accepts, and reported twelve missing entries that did not exist.
+  It disagreed with the first method for a reason that had nothing to do with the
+  question. Isolate the one variable; re-deriving the rest is not extra rigour, it
+  is a second measurement to get wrong.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red.
   **Every CI job is a required status check**: an advisory
   job is a job that does not gate — at three of ten required, `tier 2` (datapack
