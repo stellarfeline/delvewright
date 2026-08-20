@@ -1341,6 +1341,20 @@ pub fn build_with_warnings(
         message: e.message,
     })?;
 
+    // ---- PackTest batch-state ownership (DW0807) ----
+    // The generated suite runs as ONE batch on ONE shared server, so a template
+    // that runs the real `tick` and asserts on a gated outcome must OWN every
+    // `#party` term that gate reads — otherwise its verdict is decided by
+    // whichever sibling ran last, and the campaign-playthrough template holds the
+    // whole party ledger across ticks (see `crate::batchstate`). Feature-blind and
+    // read off the shipped bytes, so it guards templates not yet written.
+    let batch_binding =
+        crate::batchstate::check_tree(ns, &out).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    warnings.extend(batch_binding.finding());
+
     // ---- score-seeding integrity (DW0495) ----
     // Every `if score` / `unless score` / `scores={…}` the compiler just wrote
     // must read an entry the pack itself creates, or be written so a missing entry
@@ -16709,6 +16723,12 @@ fn emit_v04_packtests(plan: &Plan, out: &mut BuildOutput, moves: &[crate::nav::M
             "execute store result score #route_stnp dw.sys if entity @e[type=minecraft:interaction,tag={npc_tag},tag=dw_trig_{id}]"
         ));
         b.push("assert score #route_stnp dw.sys matches 1".to_string());
+        // Own the dispatch gate. This template runs the REAL `tick` and asserts
+        // the trigger fired, so it depends on every `#party` term the trigger's
+        // arming gate reads — and those are batch-global, written by siblings and
+        // held across ticks by the campaign-playthrough template. Leaving them to
+        // whatever ran last is what made this test's verdict a race.
+        b.extend(packtest_gate_drive(plan, trigger.gate(), true));
         if trigger.once {
             b.push(format!("scoreboard players set #trig_{id} dw.sys 0"));
         }
@@ -17174,9 +17194,13 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
         }
     }
     // `open` writes the assignment that opens `t`: every required flag set, every
-    // other named flag cleared.
+    // other named flag cleared — and then the rest of `t`'s gate, which the flag
+    // pass cannot express. The union above is what makes the SIBLING's flags
+    // explicit (the point of this template is that the other trigger is shut), so
+    // it stays; `packtest_gate_drive` then owns `t`'s own terms, including the
+    // v0.10 numeric axis this site used to drop on the floor.
     let open = |t: &delvewright_dsl::EnvTrigger| -> Vec<String> {
-        flags
+        let mut v: Vec<String> = flags
             .iter()
             .map(|f| {
                 let want = usize::from(t.requires_flags.iter().any(|r| r.as_str() == *f));
@@ -17186,7 +17210,9 @@ fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
                     plan::flag_score(f)
                 )
             })
-            .collect()
+            .collect();
+        v.extend(state_drive_lines(plan, t.requires_state.as_slice(), true));
+        v
     };
 
     let mut t = packtest_header(&format!(
@@ -17329,17 +17355,71 @@ fn pin_dummy(tag: &str) -> (String, String) {
     )
 }
 
+/// **The one way a generated PackTest establishes a gate.** Takes a whole
+/// [`Gate`] and drives every term it reads to the value that opens (`satisfy`)
+/// or shuts it, across all three axes at once.
+///
+/// It takes the gate as ONE value on purpose. `Gate` exists because a proof that
+/// reasons about gating must be written against the gate rather than against two
+/// of its three fields (`crates/dsl/src/gate.rs`), and three templates had each
+/// hand-rolled their own partial copy of this — `v04_strike_npc` drove none of
+/// the three axes, `collect_preheld` one, `v06_shared_hitbox` two. Each worked
+/// perfectly on the campaign it was written for and was a coin toss on any
+/// campaign that used an axis its author had not needed.
+///
+/// **Why a template must do this at all**: the suite runs as ONE batch on one
+/// shared server, and a gate's terms are `#party` state — batch-global. Siblings
+/// write them, and the campaign-playthrough template holds them ACROSS ticks, so
+/// a template that pins some terms and leaves the rest to whatever ran last is a
+/// coin toss dressed as a proof. That is not hypothetical: `trigger/skip-the-label`
+/// forbids `flag/hall-sealed`, the campaign template's phase-0 run completes
+/// `q_far_hall` (which SETS that flag) and never clears it, and `v04_strike_npc`
+/// then failed or passed purely on whether it ran before or after that — the same
+/// bytes producing both verdicts. `DW0807` is the standing check.
+fn packtest_gate_drive(plan: &Plan, gate: Gate<'_>, satisfy: bool) -> Vec<String> {
+    let party = plan::PARTY;
+    let mut p: Vec<String> = Vec::new();
+    for f in gate.requires_flags {
+        p.push(format!(
+            "scoreboard players set {party} {} {}",
+            plan::flag_score(f.as_str()),
+            if satisfy { 1 } else { 0 }
+        ));
+    }
+    // The v0.6 negative axis: actively CLEAR every forbidden flag rather than
+    // trusting it to be unset. `unless … matches 1` is unset-safe at read time,
+    // but a sibling that set it is not, and on a shared batch server one did.
+    //
+    // Cleared in BOTH directions, deliberately. With `satisfy: false` the caller
+    // wants the gate shut, and shutting it through the positive axis alone keeps
+    // the template varying exactly one thing — a red then names its own cause
+    // instead of leaving two candidate reasons the gate was closed.
+    for f in gate.forbids_flags {
+        p.push(format!(
+            "scoreboard players set {party} {} 0",
+            plan::flag_score(f.as_str())
+        ));
+    }
+    // The v0.10 numeric axis (spec-0031): the datum is DRIVEN to a value that
+    // opens or shuts the gate, for the same reason the flags are.
+    p.extend(state_drive_lines(plan, gate.requires_state, satisfy));
+    p
+}
+
 /// The guard half of [`packtest_preamble`]: every progression term an
 /// objective's activation gate READS, pinned to the value that opens (or, with
-/// `with_flags: false`, withholds) it — quest active, `after` prerequisites,
-/// `requires_flags`, and `forbids_flags` actively cleared.
+/// `with_flags: false`, withholds) it — quest active, `after` prerequisites, and
+/// the objective's whole [`Gate`] via [`packtest_gate_drive`].
 ///
 /// Split out because a template that must prove something about **how the item
 /// reaches the player** (the v0.8 named-stack collect) cannot use the preamble's
 /// own `give`: handing the plain item over first completes the objective and
-/// makes the named stack's assertion vacuous. Everything about which flags are
-/// pinned stays in one place, so no template can be written that opens a gate by
-/// hand and forgets one — template flag hygiene lives here.
+/// makes the named stack's assertion vacuous.
+///
+/// The gate half is delegated rather than written here, because an objective is
+/// not the only thing a template opens a gate on — a trigger's dispatch gate is
+/// the same question about a different object class, and a copy of this loop
+/// living beside each caller is what shipped the `v04_strike_npc` flake.
 fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool) -> Vec<String> {
     let party = plan::PARTY;
     let mut p = vec![format!(
@@ -17352,29 +17432,7 @@ fn packtest_guards(plan: &Plan, quest_id: &str, o: &Objective, with_flags: bool)
             obj_score(a.as_str())
         ));
     }
-    for f in o.requires_flags() {
-        p.push(format!(
-            "scoreboard players set {party} {} {}",
-            plan::flag_score(f.as_str()),
-            if with_flags { 1 } else { 0 }
-        ));
-    }
-    // v0.6 negative gate: actively clear every forbidden flag so the objective
-    // is not suppressed by a sibling template's leftover state (same batch-server
-    // reasoning as the `with_flags: false` clearing above).
-    for f in o.forbids_flags() {
-        p.push(format!(
-            "scoreboard players set {party} {} 0",
-            plan::flag_score(f.as_str())
-        ));
-    }
-    // v0.10 numeric gate (spec-0031): the datum is DRIVEN to a value that opens
-    // the gate, or — with `with_flags: false` — to one that shuts it, for the
-    // same batch-server reason the flags are actively cleared rather than merely
-    // left alone. A template that pinned the flags and left the numbers to
-    // whatever a sibling template last wrote would be a coin toss dressed as a
-    // proof.
-    p.extend(state_drive_lines(plan, o.requires_state(), with_flags));
+    p.extend(packtest_gate_drive(plan, o.gate(), with_flags));
     p
 }
 
@@ -17945,25 +18003,14 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         // Take the item while the objective is INACTIVE (the pre-activation pickup).
         b.push(format!("give {sel} {item} {count}"));
-        // Activate WITHOUT re-giving (packtest_preamble would re-give the item, which
-        // would mask the bug by producing a fresh inventory_changed): set the quest
-        // active + every `after` prerequisite + every required flag by hand.
-        b.push(format!(
-            "scoreboard players set {party} {} 1",
-            quest_active_score(qid)
-        ));
-        for a in o.after() {
-            b.push(format!(
-                "scoreboard players set {party} {} 1",
-                obj_score(a.as_str())
-            ));
-        }
-        for f in o.requires_flags() {
-            b.push(format!(
-                "scoreboard players set {party} {} 1",
-                plan::flag_score(f.as_str())
-            ));
-        }
+        // Activate WITHOUT re-giving: `packtest_preamble` would re-give the item,
+        // masking the bug by producing a fresh `inventory_changed`. Only the GIVE
+        // is unwanted, so take the guard half whole (`packtest_guards`) rather
+        // than re-deriving it — this site used to hand-roll quest-active, `after`
+        // and `requires_flags` and stopped there, silently omitting the v0.6
+        // negative axis and the v0.10 numeric one, both of which this objective's
+        // own tick line reads.
+        b.extend(packtest_guards(plan, qid, o, true));
         // One tick's held check completes it — no inventory_changed event occurs.
         b.push(format!("function {ns}:tick"));
         b.push(format!(
