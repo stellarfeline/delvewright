@@ -1,15 +1,6 @@
 {
   "added": [],
-  "changed": [
-    "easy.en:render-plan.json",
-    "hard.en:render-plan.json",
-    "ocean-horizon.en:render-plan.json",
-    "primary.en:render-plan.json",
-    "primary.zh-cn:render-plan.json",
-    "void-horizon.en:render-plan.json"
-  ],
-  "classes": {
-    "other": 6
-  },
+  "changed": [],
+  "classes": {},
   "removed": []
 }
