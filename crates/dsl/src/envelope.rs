@@ -11,7 +11,19 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.12.0";
+
+/// The `dsl_version` that introduces the **`open-way`** effect (spec-0042 §2.4):
+/// a campaign opening a placed piece's contingent way, with the geometry, the
+/// block and the sign read from the piece's own exported metadata.
+///
+/// The hand-written name the ledger's uniqueness rules read
+/// (`tools/check-version-ledger-uniqueness.py`, rule 6). It replaces the
+/// [`RESERVED_DSL_VERSIONS`] row that held this number while the surface was in
+/// flight: the reservation and the constant are the same claim at two stages of
+/// its life, never two claims, so the row is deleted by the change that defines
+/// this constant.
+pub const OPEN_WAY_SINCE: &str = "0.12.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -38,7 +50,10 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// (spec-0034) the per-body `traversal` declaration, what a body can do when it
 /// moves, on the stage-2 NPC and the stage-5 actor; the **press-answer lift**, a
 /// `narrate` `actionbar` style and a trigger `audience: presser`; and with the
-/// lift the one obligation of the version, `DW0429`.
+/// lift the one obligation of the version, `DW0429`; v0.12 (spec-0042) adds the
+/// **`open-way`** effect — a campaign opening a placed piece's contingent way,
+/// whose geometry, block and sign are read from that piece's exported metadata
+/// and are unauthorable on the effect.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 ///
@@ -87,13 +102,7 @@ pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
 /// why `tools/check-version-ledger-uniqueness.py` requires every version a
 /// branch **adds** to carry a hand-written name — a reservation row here, or a
 /// `*_SINCE` constant when the surface lands.
-pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[
-    // spec-0042: the `open-way` effect — a campaign opening a contract's
-    // contingent way, geometry and block read from the piece's metadata. The
-    // implementing change defines `OPEN_WAY_SINCE` and deletes this row in the
-    // same edit.
-    ("0.12.0", "OPEN_WAY_SINCE"),
-];
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[];
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -332,6 +341,29 @@ pub fn is_v11(version: &str) -> bool {
     ordinal(version) >= 11
 }
 
+/// True if `version` enables the DSL v0.12 surface (spec-0042,
+/// [`OPEN_WAY_SINCE`]): the **`open-way`** effect.
+///
+/// One verb, and the whole of the version. It names a placed piece and one of
+/// the ways that piece's spatial contract exports, and it carries **no region,
+/// no block and no sign** — all three are read from the piece's own metadata,
+/// because two authorities that can disagree is the defect the shape avoids
+/// rather than a variant of the fix (spec-0042 AC8). What the effect fills or
+/// clears is therefore decided by the building, and the campaign decides only
+/// *when*.
+///
+/// Purely additive: nothing obliges a campaign to open a way, a campaign that
+/// declares no `open-way` emits exactly what it emitted before (no fill, no
+/// region event, no `validation/ways.json`), and declaring one below 0.12.0 is
+/// `DW0141`. The **requirement** half of the surface belongs to the piece, not
+/// to the version: a required element standing beyond a way no forced opening
+/// precedes is `DW0548` at every version, because a campaign below 0.12.0 has no
+/// way to reach that state — it cannot stage an `open-way` at all, and a piece
+/// carrying a way it never opens is content (spec-0042 §2.5).
+pub fn is_v12(version: &str) -> bool {
+    ordinal(version) >= 12
+}
+
 /// Which stage a document belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -563,14 +595,33 @@ mod version_ledger_tests {
         assert_eq!(accepted_versions().last(), Some(SUPPORTED_DSL_VERSION));
         assert!(reserved_for(SUPPORTED_DSL_VERSION).is_none());
 
-        // Binding count: this is the property's whole population, and it is
-        // stated so an empty reservation list cannot read as a pass.
-        assert!(
-            !RESERVED_DSL_VERSIONS.is_empty(),
-            "binding count 0: nothing is reserved, so every assertion below \
-             examined no version. If that is genuinely the state, this test is \
-             what has to say so out loud."
-        );
+        // Binding count: this is the property's whole population. An empty
+        // reservation list is the ordinary state of a ledger whose every number
+        // has landed — and it is exactly the state in which the loops below
+        // examine nothing, so it is asserted rather than skipped. What holds
+        // instead, over the WHOLE ledger, is the complement of what a
+        // reservation asserts: every number in the list is one this crate
+        // builds, and the newest of them is the latest implemented version.
+        // There is no number in flight, which is a claim with a population of
+        // `SUPPORTED_DSL_VERSIONS.len()` rather than of zero.
+        if RESERVED_DSL_VERSIONS.is_empty() {
+            for v in SUPPORTED_DSL_VERSIONS {
+                assert!(
+                    is_supported_version(v),
+                    "{v} is in the ledger, nothing reserves it, and this crate refuses it — a \
+                     number that names no surface is a number a second change can take"
+                );
+                assert!(
+                    minor_ordinal(v) <= minor_ordinal(SUPPORTED_DSL_VERSION),
+                    "{v} is newer than the latest implemented version {SUPPORTED_DSL_VERSION} \
+                     and is not reserved"
+                );
+            }
+            assert!(
+                !SUPPORTED_DSL_VERSIONS.is_empty(),
+                "binding count 0: the ledger itself is empty"
+            );
+        }
         for (version, anchor) in RESERVED_DSL_VERSIONS {
             assert!(
                 SUPPORTED_DSL_VERSIONS.contains(version),

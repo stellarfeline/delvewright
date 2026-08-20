@@ -97,6 +97,7 @@ pub mod timeline;
 pub mod traversal;
 pub mod view;
 pub mod waypoints;
+pub mod ways;
 pub mod wrongside;
 
 /// This compiler's version (reported by `--version`, stamped in `manifest.json`).
