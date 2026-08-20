@@ -25,8 +25,8 @@ use crate::block::BlockState;
 use crate::geom::{Axis, Mirror, Orientation};
 use crate::version::{
     BIND_SINCE, CONTRACT_SINCE, INCLUDE_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE,
-    MIRROR_SINCE, has_bind, has_contract, has_include, has_local_frame, has_mirror,
-    is_supported_version,
+    MIRROR_SINCE, WAY_SINCE, has_bind, has_contract, has_include, has_local_frame, has_mirror,
+    has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -902,11 +902,55 @@ pub struct Bar {
     pub block: String,
 }
 
+/// Which direction opening a [`Way`] moves in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Opens {
+    /// The region is empty as built; opening fills it with the way's block.
+    Laid,
+    /// The region stands in the way's block as built; opening voids it.
+    Cleared,
+}
+
+impl Opens {
+    /// The metadata keyword.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Opens::Laid => "laid",
+            Opens::Cleared => "cleared",
+        }
+    }
+}
+
+/// **A contingent edge's way**: the traversal is severed as built, and content
+/// opens it.
+///
+/// The dual of [`Bar`] and the generalisation of it. A `barred` edge is exactly
+/// a `walk` carrying a `cleared` way over the bar's region (spec-0042 §2.2), so
+/// the checker normalises the one into the other rather than proving each with
+/// its own connectivity walk — a second prover for the same claim is the private
+/// copy this corpus keeps finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Way {
+    /// Which direction opening it moves in.
+    pub opens: Opens,
+    /// A region name some rule claims.
+    pub region: String,
+    /// The palette role the way is made of — what a `laid` way is filled with,
+    /// what a `cleared` way stands in. A role bound to a mix is refused, as a
+    /// bar's is: a way is one material.
+    pub block: String,
+}
+
 /// How a body moves across an edge.
 ///
 /// Each class carries exactly the fields it means, so a `bar` on a walk or a
 /// `rise` on a sightline is not a thing an author can write and a check has to
-/// catch afterwards.
+/// catch afterwards. The same holds for `way`: it is a field of the three
+/// traversal classes, so a way on a sightline (which claims no traversal to be
+/// contingent about) and a way on a `barred` edge (which already declares one,
+/// spelled `bar`) are both unwritable rather than caught afterwards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "class", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EdgeClass {
@@ -918,6 +962,9 @@ pub enum EdgeClass {
         /// The opening, as a region name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         via: Option<String>,
+        /// The contingency, when this passage is severed as built.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        way: Option<Way>,
     },
     /// A climb, over a transit volume of its own.
     Stair {
@@ -926,6 +973,9 @@ pub enum EdgeClass {
         /// The transit volume — the treads belong to the edge, not to either
         /// end, which is why it is not optional here.
         via: String,
+        /// The contingency, when this climb is severed as built.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        way: Option<Way>,
     },
     /// A one-way fall, `a` to `b`.
     Drop {
@@ -934,6 +984,9 @@ pub enum EdgeClass {
         /// The fall column, when the author names one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         via: Option<String>,
+        /// The contingency, when this fall is severed as built.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        way: Option<Way>,
     },
     /// A passage something stands in.
     Barred {
@@ -992,6 +1045,22 @@ impl EdgeClass {
         match self {
             EdgeClass::Barred { bar, .. } => Some(bar),
             _ => None,
+        }
+    }
+
+    /// The declared contingency, on the three classes that can carry one.
+    ///
+    /// `barred`'s bar is deliberately NOT reported here: it is the same
+    /// mechanism, but it is a different *declaration*, and the place the two
+    /// become one is the checker (spec-0042 §2.2). Folding them together here
+    /// would make an author's `bar` read back as a `way` in every diagnostic
+    /// they see.
+    pub fn way(&self) -> Option<&Way> {
+        match self {
+            EdgeClass::Walk { way, .. }
+            | EdgeClass::Stair { way, .. }
+            | EdgeClass::Drop { way, .. } => way.as_ref(),
+            EdgeClass::Barred { .. } | EdgeClass::Vision { .. } => None,
         }
     }
 }
@@ -1091,7 +1160,10 @@ impl Contract {
                 out.entry(via.to_string()).or_insert_with(|| site.clone());
             }
             if let Some(bar) = edge.class.bar() {
-                out.entry(bar.region.clone()).or_insert(site);
+                out.entry(bar.region.clone()).or_insert(site.clone());
+            }
+            if let Some(way) = edge.class.way() {
+                out.entry(way.region.clone()).or_insert(site);
             }
         }
         out
@@ -1548,12 +1620,21 @@ pub enum ProgramError {
         /// How many includes are outstanding.
         count: usize,
     },
-    /// A bar names a palette role bound to a weighted mix. A bar is one
-    /// material: "mostly a bar" is not a state a gate can be in.
-    BarBlockIsAMix {
+    /// A **contingent region** — a bar, or a way — names a palette role bound
+    /// to a weighted mix.
+    ///
+    /// One refusal for both spellings, because it is one object class: a region
+    /// whose presence or absence decides whether an edge is crossable. Such a
+    /// region is one material — "mostly a bar" is not a state a gate can be in,
+    /// and "mostly laid" is not a state a floor can be in — and a second
+    /// bespoke refusal for the second spelling would be the defect rather than
+    /// the fix.
+    ContingentBlockIsAMix {
+        /// What names it: `"bar"` or `"way"`, in the author's own vocabulary.
+        what: &'static str,
         /// The role.
         role: String,
-        /// The bar's region.
+        /// The region.
         region: String,
     },
 }
@@ -1723,11 +1804,11 @@ impl fmt::Display for ProgramError {
                  `delve-grammar --file` does) rather than deserialising it straight into an \
                  expansion"
             ),
-            ProgramError::BarBlockIsAMix { role, region } => write!(
+            ProgramError::ContingentBlockIsAMix { what, role, region } => write!(
                 f,
-                "the bar over region {region:?} is built from the palette role {role:?}, which is \
-                 bound to a weighted mix; a bar is one material, and a gate that is mostly a bar \
-                 is not a state anything can be in"
+                "the {what} over region {region:?} is built from the palette role {role:?}, which \
+                 is bound to a weighted mix; a {what} is one material, and a gate that is mostly \
+                 a bar — or a floor that is mostly laid — is not a state anything can be in"
             ),
         }
     }
@@ -1996,6 +2077,29 @@ impl Program {
             return Ok(());
         };
 
+        // **The `way` fence** (spec-0042 §5). `way` is `1.7.0`'s surface, and it
+        // is a `#[serde(default)]` field: an engine that predates it reads the
+        // document, drops the field, proves the edge as an ordinary walk or
+        // climb against bytes that do not connect, and reds — or worse, proves a
+        // `cleared` way's edge green while the block is still standing. So a
+        // document declaring anything earlier is refused where the field is
+        // written, rather than built with the contingency dropped.
+        let written = contract
+            .edges
+            .iter()
+            .find_map(|e| e.class.way().map(|w| (e, w)));
+        if let Some((edge, way)) = written.filter(|_| !has_way(&self.version)) {
+            return Err(ProgramError::FencedConstruct {
+                construct: "a `way` on a contract edge",
+                since: WAY_SINCE,
+                declared: self.version.clone(),
+                written_by: format!(
+                    "the contract's edge {:?}->{:?} (way region {:?})",
+                    edge.a, edge.b, way.region
+                ),
+            });
+        }
+
         // One name, one thing — checked before anything else reads the maps, so
         // a doubly-classified region cannot resolve under whichever reading
         // happens to be consulted first.
@@ -2034,22 +2138,38 @@ impl Program {
             if let Some(via) = edge.class.via() {
                 own.push(via.to_string());
             }
-            if let Some(bar) = edge.class.bar() {
-                own.push(bar.region.clone());
-                match self.palette.get(&bar.block) {
+            // A bar and a way are the same object class — a region whose
+            // presence decides whether the edge is crossable — so they answer
+            // the same two demands here, through one loop rather than two
+            // copies of it.
+            let contingent: Vec<(&'static str, &str, &str)> = edge
+                .class
+                .bar()
+                .map(|b| ("bar", b.region.as_str(), b.block.as_str()))
+                .into_iter()
+                .chain(
+                    edge.class
+                        .way()
+                        .map(|w| ("way", w.region.as_str(), w.block.as_str())),
+                )
+                .collect();
+            for (what, region, role) in contingent {
+                own.push(region.to_string());
+                match self.palette.get(role) {
                     None => {
                         return Err(ProgramError::UnknownRole {
-                            role: bar.block.clone(),
+                            role: role.to_string(),
                             referenced_by: site.clone(),
                         });
                     }
-                    // A bar is ONE state, in either frame: the local frame is
+                    // It is ONE state, in either frame: the local frame is
                     // resolved at fill time and leaves the role single-valued,
                     // so it is a mix — not a frame — that this refuses.
                     Some(p) if matches!(p.states(), States::Mix(_)) => {
-                        return Err(ProgramError::BarBlockIsAMix {
-                            role: bar.block.clone(),
-                            region: bar.region.clone(),
+                        return Err(ProgramError::ContingentBlockIsAMix {
+                            what,
+                            role: role.to_string(),
+                            region: region.to_string(),
                         });
                     }
                     Some(_) => {}

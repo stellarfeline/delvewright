@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.5.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.7.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -89,8 +89,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.5.0";
 ///   arrives under.
 /// * `1.6.0` — the contract's reach (spec-0041, reserved): the `qualify` node,
 ///   optional `rise` on `stair`/`drop` edges, and `face` on exterior edges.
+/// * `1.7.0` — the contingent edge (spec-0042): `way` on a `walk`, `stair` or
+///   `drop`, the field that says a traversal is severed as built and what
+///   content does to open it.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
-    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0",
+    "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -124,6 +127,10 @@ pub const LOCAL_FRAME_SINCE: &str = "1.4.0";
 
 /// The version at which a document may compose another program **document**.
 pub const INCLUDE_SINCE: &str = "1.5.0";
+
+/// The version at which a traversal edge may declare itself contingent — the
+/// `way` that content opens (spec-0042 §2.1).
+pub const WAY_SINCE: &str = "1.7.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -168,6 +175,7 @@ pub fn minor_ordinal(version: &str) -> u32 {
         "1.4.0" => 4,
         "1.5.0" => 5,
         "1.6.0" => 6,
+        "1.7.0" => 7,
         _ => 0,
     }
 }
@@ -197,9 +205,29 @@ pub fn has_include(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(INCLUDE_SINCE)
 }
 
+/// True if `version` may declare a traversal edge contingent on a `way`.
+pub fn has_way(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(WAY_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One fence: the constant's name, the version it opens at, and its predicate.
+    type Fence = (&'static str, &'static str, fn(&str) -> bool);
+
+    /// **Every fence constant this crate defines.** Shared by both tests below,
+    /// because it is the machine-readable answer to "which surfaces has this
+    /// engine actually landed" — the question a reservation is checked against.
+    const FENCES: &[Fence] = &[
+        ("MIRROR_SINCE", MIRROR_SINCE, has_mirror as fn(&str) -> bool),
+        ("CONTRACT_SINCE", CONTRACT_SINCE, has_contract),
+        ("BIND_SINCE", BIND_SINCE, has_bind),
+        ("LOCAL_FRAME_SINCE", LOCAL_FRAME_SINCE, has_local_frame),
+        ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
+        ("WAY_SINCE", WAY_SINCE, has_way),
+    ];
 
     #[test]
     fn the_latest_version_is_supported_and_is_the_newest_entry() {
@@ -217,16 +245,32 @@ mod tests {
             }
         }
         // A reservation names a surface this crate does not implement, so it
-        // must be refused, and it must be newer than every implemented one —
-        // a reservation below the latest would shadow a landed surface.
+        // must be refused, and it must be a ledger entry — a number outside the
+        // ledger is a free number.
+        //
+        // **And its anchor must not be a fence this crate defines.** That is the
+        // hazard, stated directly: a reservation whose surface has landed is
+        // refusing a version the engine can honour, which is
+        // `check-version-ledger-uniqueness.py`'s rule 5, held here as well so a
+        // library consumer that never runs the script still gets it.
+        //
+        // It is deliberately NOT "the reservation sits above
+        // `LATEST_PROGRAM_VERSION`". Ledger order is the order surfaces were
+        // NUMBERED, not the order they land, and the two came apart the first
+        // time an implementation shipped for a number above a still-reserved one
+        // — `WAY_SINCE` at `1.7.0` over spec-0041's reserved `1.6.0`. The
+        // ordinal comparison was a proxy for the anchor rule and could only ever
+        // hold while surfaces landed in numbering order; the anchor rule is what
+        // it was standing in for, and it binds in both orders.
         for (v, anchor) in RESERVED_VERSIONS {
             assert!(
                 !is_supported_version(v),
                 "reserved {v} ({anchor}) is accepted"
             );
             assert!(
-                minor_ordinal(v) > minor_ordinal(LATEST_PROGRAM_VERSION),
-                "reserved {v} ({anchor}) is not newer than {LATEST_PROGRAM_VERSION}"
+                !FENCES.iter().any(|(name, _, _)| name == anchor),
+                "reserved {v} names {anchor}, which this crate defines — the surface has \
+                 landed, so the reservation refuses a version this engine can honour"
             );
             assert!(
                 SUPPORTED_PROGRAM_VERSIONS.contains(v),
@@ -256,18 +300,9 @@ mod tests {
     /// not any one surface's: a fence opens at its own number and at nothing
     /// earlier, and an unknown version opens nothing at all. A new fence
     /// constant with no row here is the omission this shape makes visible.
-    /// One fence: the constant's name, the version it opens at, and its predicate.
-    type Fence = (&'static str, &'static str, fn(&str) -> bool);
-
     #[test]
     fn every_fence_opens_exactly_at_its_own_version() {
-        let fences: &[Fence] = &[
-            ("MIRROR_SINCE", MIRROR_SINCE, has_mirror as fn(&str) -> bool),
-            ("CONTRACT_SINCE", CONTRACT_SINCE, has_contract),
-            ("BIND_SINCE", BIND_SINCE, has_bind),
-            ("LOCAL_FRAME_SINCE", LOCAL_FRAME_SINCE, has_local_frame),
-            ("INCLUDE_SINCE", INCLUDE_SINCE, has_include),
-        ];
+        let fences: &[Fence] = FENCES;
         assert_eq!(
             fences.len(),
             SUPPORTED_PROGRAM_VERSIONS.len() - 1 - RESERVED_VERSIONS.len(),
