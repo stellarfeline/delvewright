@@ -1757,6 +1757,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   this number exposes). **Emitted only for a campaign that declares a
   teleport**, so a file that exists and reports zero is a finding rather than an
   absence.
+- Every `snapshot` manifest carries a **`frame`** block: `targets_in_frame`,
+  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour count
+  when the frame shows no scene at all). The binding rule applied to a picture —
+  a render that succeeds, writes a file and is a rectangle of flat background is
+  indistinguishable from one more shot taken to a directory listing, to a contact
+  sheet and to a reviewer skimming, and the only thing that separates a camera
+  aimed at the room from one aimed at a wall is the count. Judged by the arm that
+  DREW the frame (`view::detect::is_featureless`), so a consumer never computes a
+  second verdict on the same question. `tools/check-gallery-render.py` reads these
+  back rather than re-deriving them.
+
 - `<out>/validation/effect-roots.json`: the **effect-root walk's own binding
   ledger** (`dsl::RootBinding`, written by `emit::build_with_warnings`).
   `roots_enumerated` / `roots_total`, the total `bundles` and `effects`, a

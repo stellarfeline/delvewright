@@ -929,6 +929,7 @@ fn run_snapshot(
             inside: &inside,
             outside: &outside,
         },
+        &frame.canvas,
     );
     let manifest_path = manifest_path_for(args.out);
     let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
@@ -1840,6 +1841,7 @@ fn run_edit(
                 inside: &inside,
                 outside: &outside,
             },
+            &frame.canvas,
         );
         let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
             Ok(b) => b,

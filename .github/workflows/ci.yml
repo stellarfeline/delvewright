@@ -864,6 +864,19 @@ jobs:
             --build-out gallery-out-en \
             --report gallery-coverage.json \
             --index gallery-coverage.md
+      # spec-0039 §7. CI rendered nothing until this ran. The CPU arms only —
+      # they need no GPU, no client jar and no `nucleation`, so the whole step
+      # runs on an ordinary runner. Whether the GPU arms can be driven here
+      # through a software adapter is a separate question and moves only where
+      # frames come from, never what the engine can do.
+      - name: every declared view is produced, and shows something
+        run: |
+          python3 tools/check-gallery-render.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --build-out gallery-out-en \
+            --frames gallery-frames
+
       - name: emission baseline + expected-warnings ledger
         run: |
           python3 tools/gallery-baseline.py \
@@ -886,6 +899,7 @@ jobs:
           path: |
             gallery-coverage.json
             gallery-coverage.md
+            gallery-frames/
 
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
@@ -1067,6 +1081,31 @@ jobs:
       # fixture carrying `interact` + `requires_item` (plus kill/collect/flag-gate,
       # which come along free). Same cost profile: one extra toolserver boot, no new
       # pull, no new compile.
+      # spec-0039 — the gallery's own generated suite. It is by far the largest
+      # any campaign in this repository emits (the next biggest is hello-world at
+      # six), because the gallery writes nearly every surface and a template is
+      # emitted per surface that has one. Every one of those templates was being
+      # generated and thrown away: the templates existed, were counted, and
+      # nothing ran them, which is a suite that cannot fail.
+      #
+      # No content checkout: the piece and the skins are generated here by the
+      # engine's own generator, so this pass runs from this repository alone.
+      # Same cost profile as the six passes around it — one toolserver boot; the
+      # image is pulled and the compiler is built already.
+      - name: build the gallery delve output (spec-0039)
+        run: |
+          set -euo pipefail
+          mkdir -p gallery-prefabs
+          cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
+            -- gallery-prefabs --skins gallery/skins
+          target/debug/delvec build gallery \
+            -o validation/delve-output-gallery --prefabs gallery-prefabs
+
+      - name: PackTest suite — gallery (every template the engine emits)
+        run: |
+          bash validation/packtest-run.sh --project dw-ci-gallery \
+            --output ./delve-output-gallery
+
       - name: build the keep-trial delve output (held-item interact)
         run: |
           target/debug/delvec \

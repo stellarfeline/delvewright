@@ -134,17 +134,20 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/stall",
-        pos: [25, 1, 9],
+        pos: [23, 1, 9],
         facing: Some("west"),
         trigger_block: None,
         role: "the shop counter: offers, stakes, forfeits",
     },
     Anchor {
         name: "anchor/counter",
-        pos: [25, 1, 12],
+        pos: [26, 1, 9],
         facing: Some("west"),
         trigger_block: None,
-        role: "the shop's own affordance, kept clear of the vendor's body (DW0359)",
+        role: "the shop affordance. Three blocks EAST of the stall: clear of \
+               the vendor body (DW0359), and standing where the critical path \
+               already looks, so the POV shot that ends at the counter frames \
+               something the campaign declares instead of empty floor",
     },
     Anchor {
         name: "anchor/muster",
@@ -218,9 +221,12 @@ const ANCHORS: &[Anchor] = &[
         trigger_block: None,
         role: "where a camera stands to look back down the hall",
     },
+    // Kept clear of the outer wall on purpose: a POV camera stands on an anchor
+    // and looks along the leg it is walking, so an anchor one or two blocks from
+    // a wall renders the wall — a flat frame, or one framing nothing declared.
     Anchor {
         name: "anchor/exit",
-        pos: [15, 1, 29],
+        pos: [11, 1, 25],
         facing: Some("south"),
         trigger_block: None,
         role: "the finale: the last thing a player reaches",
