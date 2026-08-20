@@ -128,7 +128,7 @@ pub fn program_hash(program: &Program) -> String {
 // — got dropped by the next documented step in the procedure.
 pub use delvewright_schem::prefab::{
     Anchor as AnchorMetadata, Connector, ContractBar, ContractEdge, ContractFace, ContractNoBody,
-    ContractSpace, ContractVolume, GeneratedBy, License as LicenseMetadata,
+    ContractSpace, ContractVolume, ContractWay, GeneratedBy, License as LicenseMetadata,
     Lighting as LightingMetadata, PrefabMeta as PrefabMetadata, Region as RegionMetadata,
     SpatialContract, StructureMeta as StructureMetadata,
 };
@@ -755,6 +755,16 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     region: b.region.clone(),
                     boxes: ranges(&b.boxes),
                     block: b.block.to_string(),
+                }),
+                // A `barred` edge keeps writing `bar` and writes no `way`: the
+                // normalisation of the two is the checker's, and a piece that
+                // was exported before ways existed re-exports byte for byte
+                // (spec-0042 §2.3).
+                way: edge.way.as_ref().map(|w| ContractWay {
+                    opens: w.opens.as_str().to_string(),
+                    region: w.region.clone(),
+                    boxes: ranges(&w.boxes),
+                    block: w.block.to_string(),
                 }),
             })
             .collect(),
