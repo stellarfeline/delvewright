@@ -595,7 +595,12 @@ def main() -> int:
         if args.root
         else pathlib.Path(__file__).resolve().parent.parent
     )
-    registry = load_registry(root / args.registry)
+    # Absolute is honoured so a test can hold a doctored registry against the
+    # real tree without writing into it; relative resolves against the root.
+    registry_path = pathlib.Path(args.registry)
+    if not registry_path.is_absolute():
+        registry_path = root / registry_path
+    registry = load_registry(registry_path)
 
     checkouts: dict[str, pathlib.Path] = {}
     for spec in args.checkout:

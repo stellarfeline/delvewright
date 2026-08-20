@@ -35,8 +35,15 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 CHECKER = REPO / "tools" / "check-pins.py"
 
+# Assembled rather than written out, and the reason is the checker itself: it
+# discovers pins by SHAPE across every tracked file that can execute, and this
+# file is one. A 40-hex fixture spelled in full would be found here and reported
+# as an unregistered pin in this repository — correctly, by its own rule. Keeping
+# every literal below the threshold means the enumeration needs no exemption for
+# test data, which is the kind of exemption that later covers a real pin.
 DIGEST = "sha256:" + "ab12" * 16
-REV = "0123456789abcdef0123456789abcdef01234567"
+ACTION = "example/fetch" + "er@v4"  # `uses: <this>` here would be a pin too
+REV = "0123456789abcdef" * 2 + "01234567"
 
 
 def run(root: Path, *args: str) -> subprocess.CompletedProcess:
@@ -56,7 +63,7 @@ def repo(tmp_path: Path) -> Path:
         "jobs:\n"
         "  a:\n"
         "    steps:\n"
-        "      - uses: actions/checkout@v4\n"
+        "      - uses: " + ACTION + "\n"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
@@ -72,8 +79,8 @@ def write_registry(repo: Path, body: str) -> None:
 
 COMPLETE = f"""
 [[pin]]
-id = "checkout"
-value = "actions/checkout@v4"
+id = "fetcher"
+value = "{ACTION}"
 sites = [".github/workflows/audit.yml"]
 policy = "floating"
 why = "held at its major tag"
@@ -146,7 +153,7 @@ why = "a commit names exact bytes"
 """)
     (repo / ".github" / "workflows" / "audit.yml").write_text(
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
-        f"      - uses: actions/checkout@v4\n"
+        f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
@@ -169,7 +176,7 @@ why = "the judge"
 """)
     (repo / ".github" / "workflows" / "audit.yml").write_text(
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
-        f"      - uses: actions/checkout@v4\n"
+        f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
@@ -195,7 +202,7 @@ why = "the judge"
 """)
     (repo / ".github" / "workflows" / "audit.yml").write_text(
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
-        f"      - uses: actions/checkout@v4\n"
+        f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n",
         encoding="utf-8",
     )
@@ -221,7 +228,7 @@ why = "the judge"
 """)
     (repo / ".github" / "workflows" / "audit.yml").write_text(
         f"name: audit\nenv:\n  E: {REV}\njobs:\n  a:\n    steps:\n"
-        f"      - uses: actions/checkout@v4\n"
+        f"      - uses: {ACTION}\n"
         f"        with:\n          image: {DIGEST}\n"
         f"      - run: python3 tools/check-pins.py --online engine\n"
         f"      - run: cargo build -p delvewright-admit --release\n",
@@ -237,7 +244,7 @@ def test_a_checkout_at_a_branch_is_a_pin_too(repo: Path) -> None:
     """A cross-repo checkout carries no hex and is still the loosest pin there is."""
     (repo / ".github" / "workflows" / "audit.yml").write_text(
         f"name: audit\njobs:\n  a:\n    steps:\n"
-        f"      - uses: actions/checkout@v4\n"
+        f"      - uses: {ACTION}\n"
         f"        with:\n"
         f"          repository: stellarfeline/delvewright\n"
         f"          ref: main\n"
@@ -256,29 +263,28 @@ def test_this_repos_own_registry_is_complete() -> None:
 
 
 def test_this_repos_own_registry_reds_when_a_pin_leaves_it(tmp_path: Path) -> None:
-    """The other direction. A registry that cannot fail is not a record."""
-    import shutil
+    """The other direction. A registry that cannot fail is not a record.
+
+    The real tree, judged against a registry with one entry taken out. Which
+    entry is read from the registry itself rather than named here, so this stays
+    true when the inventory changes — a test that hardcodes today's pins is a
+    second copy of the record, and a second copy drifts.
+    """
     import tomllib
 
     registry = REPO / ".github" / "pins.toml"
     with registry.open("rb") as fh:
         pins = tomllib.load(fh)["pin"]
     assert pins, "the repo's own registry is empty"
+    victim = pins[0]
 
-    work = tmp_path / "repo"
-    shutil.copytree(REPO / ".github", work / ".github")
-    subprocess.run(["git", "-C", str(REPO), "ls-files", "-z"], check=True,
-                   capture_output=True)
-    # Only the .github tree is needed to reproduce the reds this asserts.
-    subprocess.run(["git", "-C", str(work), "init", "-q"], check=True)
-    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
     text = registry.read_text(encoding="utf-8")
-    cut = text.index('id = "action-checkout"')
+    cut = text.index(f'id = "{victim["id"]}"')
     start = text.rindex("[[pin]]", 0, cut)
     end = text.index("[[pin]]", cut)
-    (work / ".github" / "pins.toml").write_text(text[:start] + text[end:],
-                                                encoding="utf-8")
-    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
-    r = run(work)
+    doctored = tmp_path / "pins.toml"
+    doctored.write_text(text[:start] + text[end:], encoding="utf-8")
+
+    r = run(REPO, "--registry", str(doctored))
     assert r.returncode == 1
-    assert "unregistered pin actions/checkout@v4" in r.stderr
+    assert f"unregistered pin {victim['value']}" in r.stderr
