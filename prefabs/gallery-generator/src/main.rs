@@ -914,10 +914,7 @@ fn spatial_contract() -> serde_json::Value {
         }),
     );
 
-    let bar: Vec<Value> = GATE_ANCHORS
-        .iter()
-        .map(|g| region(g.from, g.to))
-        .collect();
+    let bar: Vec<Value> = GATE_ANCHORS.iter().map(|g| region(g.from, g.to)).collect();
     let (vx0, vx1, vy0, vy1, vz0, vz1) = FLIGHT_VIA;
     let treads: Vec<Value> = TREADS
         .iter()
