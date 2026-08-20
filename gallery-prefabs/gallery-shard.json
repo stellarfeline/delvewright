@@ -1,0 +1,27 @@
+{
+  "anchors": {},
+  "license": {
+    "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+    "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006).",
+    "source": "original",
+    "spdx": "GPL-3.0-or-later"
+  },
+  "lighting": {
+    "measured": "2026-08-20",
+    "measured_min_light": 8,
+    "method": "derived: a lantern on a solid 3-cube; never entered, only stamped",
+    "profile": "lit"
+  },
+  "prefab_id": "prefab/gallery-shard",
+  "structure": {
+    "data_version": 4671,
+    "file": "gallery-shard.nbt",
+    "generator": "prefabs/gallery-generator (gallery-prefab-gen)",
+    "id": "gallery-shard",
+    "size": [
+      3,
+      3,
+      3
+    ]
+  }
+}

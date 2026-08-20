@@ -1,0 +1,28 @@
+{
+  "pools": {
+    "pool/gallery-annex": {
+      "members": [
+        {
+          "prefab": "prefab/gallery-annex-entry",
+          "role": "entry",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/gallery-annex-cell",
+          "role": "connector",
+          "weight": 2
+        },
+        {
+          "prefab": "prefab/gallery-annex-cell-b",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/gallery-annex-end",
+          "role": "terminal",
+          "weight": 1
+        }
+      ]
+    }
+  }
+}
