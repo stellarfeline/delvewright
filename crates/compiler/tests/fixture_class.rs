@@ -347,7 +347,9 @@ fn the_effect_root_ledger_is_machine_readable() {
         gate["roots_total"].as_u64().unwrap(),
         "every root is named in `sites`, present or empty: {gate}"
     );
-    let unbound = gate["unbound_roots"].as_array().expect("unbound_roots is a list");
+    let unbound = gate["unbound_roots"]
+        .as_array()
+        .expect("unbound_roots is a list");
     assert_eq!(
         unbound.len(),
         sites.values().filter(|v| v.as_u64() == Some(0)).count(),

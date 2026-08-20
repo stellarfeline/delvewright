@@ -243,6 +243,7 @@ jobs:
           workspaces: |
             prefabs/generator
             prefabs/cave-generator
+            prefabs/gallery-generator
             prefabs/hello-room-generator
             prefabs/island-generator
             prefabs/island-terrain-generator
@@ -255,8 +256,8 @@ jobs:
       - name: cargo fmt --check each generator workspace
         run: |
           set -euo pipefail
-          for g in generator cave-generator hello-room-generator island-generator \
-                   island-terrain-generator tidal-keep-generator; do
+          for g in generator cave-generator gallery-generator hello-room-generator \
+                   island-generator island-terrain-generator tidal-keep-generator; do
             cargo fmt --manifest-path "prefabs/$g/Cargo.toml" --all -- --check
           done
       # `prefabs/invariants.rs` is source-included by every generator, so one
@@ -270,8 +271,8 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in generator cave-generator hello-room-generator island-generator \
-                   island-terrain-generator tidal-keep-generator; do
+          for g in generator cave-generator gallery-generator hello-room-generator \
+                   island-generator island-terrain-generator tidal-keep-generator; do
             echo "::group::$g"
             rm -rf "/tmp/$g-a" "/tmp/$g-b"
             mkdir -p "/tmp/$g-a" "/tmp/$g-b"

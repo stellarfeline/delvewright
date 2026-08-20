@@ -154,7 +154,12 @@ def header(delvec: Path, prefabs: Path) -> dict:
     return {
         "delvec_version": v["delvec"],
         "dsl_version": v["dsl"],
-        "gallery_source_sha256": tree_hash(GALLERY, {"baseline"}),
+        # `baseline/` is this file's own output, and `README.md` is prose that
+        # cannot reach a byte of emission — hashing either would make an ordinary
+        # documentation edit demand a baseline regeneration, and a gate that
+        # fires on changes it cannot possibly be about is a gate people learn to
+        # discharge without reading.
+        "gallery_source_sha256": tree_hash(GALLERY, {"baseline", "README.md"}),
         "generator_input_sha256": tree_hash(prefabs, set()),
     }
 
@@ -212,6 +217,11 @@ def main() -> int:
 
     if args.write:
         old = json.loads((BASELINE / "manifests.json").read_text()) if (BASELINE / "manifests.json").is_file() else {}
+        old_hdr = (
+            json.loads((BASELINE / "header.json").read_text())
+            if (BASELINE / "header.json").is_file()
+            else {}
+        )
         BASELINE.mkdir(parents=True, exist_ok=True)
         (BASELINE / "header.json").write_text(json.dumps(hdr, indent=2, sort_keys=True) + "\n")
         (BASELINE / "manifests.json").write_text(
@@ -222,11 +232,20 @@ def main() -> int:
         )
         delta = compute_delta(old, manifests)
         (BASELINE / "delta.json").write_text(json.dumps(delta, indent=2, sort_keys=True) + "\n")
-        if old and not any(delta[k] for k in ("added", "removed", "changed")):
+        # The noise-commit guard, and the qualifier matters. An empty delta means
+        # emission did not move; that is only a noise commit if the HEADER did not
+        # move either. A change to what the header covers — a new delvec, a
+        # regenerated piece, a narrowed source-hash scope — legitimately rewrites
+        # the baseline while emitting the same bytes, and refusing it would leave
+        # the tree with a header nothing could ever bring back into agreement.
+        if old and old_hdr == hdr and not any(
+            delta[k] for k in ("added", "removed", "changed")
+        ):
             die(
-                "the baseline was rewritten with an EMPTY delta — nothing about "
-                "emission moved, so this is a noise commit. A baseline update is "
-                "never split from the change that caused it (§5)."
+                "the baseline was rewritten with an EMPTY delta and an UNCHANGED "
+                "header — neither emission nor inputs moved, so this is a noise "
+                "commit. A baseline update is never split from the change that "
+                "caused it (§5)."
             )
         print(
             f"wrote {BASELINE}: {len(delta['added'])} added, "
