@@ -6121,7 +6121,7 @@ pub fn check_traps(plan: &Plan, world: &World, moves: &[MovePlan]) -> Result<(),
     let spawn_starts: Vec<[i32; 3]> = plan
         .anchors
         .iter()
-        .filter(|((_, name), _)| name == "spawn")
+        .filter(|((_, name), _)| crate::plan::is_entry_anchor_name(name))
         .filter_map(|(_, a)| match a {
             ResolvedAnchor::Point { pos, .. } => Some(*pos),
             ResolvedAnchor::Gate { .. } => None,
