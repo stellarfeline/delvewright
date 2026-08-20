@@ -51,6 +51,7 @@ pub mod affordance;
 pub mod analyze;
 pub mod assembled;
 pub mod atmos;
+pub mod batchstate;
 pub mod blocking;
 pub mod branch;
 pub mod calibrate;
