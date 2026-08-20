@@ -391,6 +391,113 @@ def check_effect_bundles(root):
     return len(found), len(found), fails
 
 
+# ---------------------------------------------------------------- check F --
+# Every production construction of a story-node `QuestEffect`, and whether the
+# `happening` it carries can come from an author.
+#
+# The shape, and it cost the `ambushes[]` surface its whole existence: a
+# DESUGARER builds effects on the author's behalf, an obligation applies to
+# every effect, and the object the author actually wrote has no field through
+# which to discharge it. `Ambush::to_trigger` emitted `spawn-actor` and
+# `unleash-actor` with `happening: None`; `DW0481` has demanded a `happening`
+# from every story node since 0.8.0; `Ambush` carried no such field. So an
+# ambush was declared in the schema, accepted by the schema check, and refused
+# at validation with a prescription naming a field that did not exist — at
+# every version from 0.8.0 on, for as long as the surface had existed.
+#
+# Nothing was ever red, because no campaign and no fixture had written an
+# ambush at a version where the obligation was live. That is the gap spec-0039
+# closes from the other side; this is the source-side half, so a SECOND
+# desugarer cannot repeat it.
+#
+# A compiler diagnostic would be the stronger form and is not available: there
+# is exactly one production desugarer, so a runtime check over "generated
+# effects lacking a declaration" would bind to nothing and be vacuous by
+# CLAUDE.md's own rule. The fact being guarded is a fact about the SOURCE — a
+# construction site exists that no author can reach — so the source is where it
+# is checked.
+STORY_NODE_CTORS = (
+    "SpawnActor",
+    "UnleashActor",
+    "DespawnActor",
+    "MoveActor",
+    "SpawnNpc",
+    "DespawnNpc",
+    "MoveNpc",
+    "SpawnWave",
+    "OpenGate",
+    "CloseGate",
+    "CampaignComplete",
+)
+
+# Sites allowed to build a story node with no `happening` — file -> (how many,
+# why). The COUNT is the load-bearing half. A bare per-file allowlist would hide
+# the next desugarer added to a file that already has one justified site, which
+# is precisely how this class survives: the exemption is written for one
+# construction and silently covers every later one beside it.
+HAPPENING_NONE_ALLOWED = {
+    "crates/dsl/src/stages.rs": (
+        1,
+        "`Ambush::to_trigger`, the CONTINUATION beat. An ambush is one story "
+        "node, so its single declaration is stamped on the first generated "
+        "`spawn-actor` and the matching `unleash-actor` deliberately carries "
+        "none: repeating it would pad the chronicle and trip `DW0485`. One is "
+        "the whole quota — a second site here is a second desugarer, and it owes "
+        "its own author-facing field.",
+    ),
+}
+
+HAPPENING_NONE = re.compile(r"^\s*happening:\s*None\s*,\s*$")
+
+
+def check_generated_obligations(root):
+    """Every story-node construction supplies a `happening` an author can set."""
+    examined, matched, fails = 0, 0, []
+    for path in rust_sources(root):
+        rel = path.relative_to(root).as_posix()
+        if "/tests/" in rel or rel.startswith("tools/"):
+            continue
+        lines = path.read_text(encoding="utf-8").split("\n")
+        in_test = False
+        budget = HAPPENING_NONE_ALLOWED.get(rel, (0, ""))[0]
+        for i, line in enumerate(lines):
+            if line.strip().startswith("#[cfg(test)]"):
+                in_test = True
+            if any(f"QuestEffect::{c} {{" in line for c in STORY_NODE_CTORS):
+                examined += 1
+            if not HAPPENING_NONE.match(line):
+                continue
+            matched += 1
+            if in_test:
+                continue
+            if budget > 0:
+                budget -= 1
+                continue
+            fails.append(
+                f"FAIL: {rel}:{i + 1} — a story node is constructed with "
+                f"`happening: None` outside a test.\n"
+                f"      If this is a DESUGARER, the object the author wrote owes "
+                f"the declaration and must carry a field for it — the way "
+                f"`Ambush.happening` does, stamped onto the first generated beat. "
+                f"An obligation an author has no surface to discharge is not a "
+                f"forcing function, it is a surface that cannot compile."
+            )
+    for rel, (n, _why) in sorted(HAPPENING_NONE_ALLOWED.items()):
+        path = root / rel
+        seen = (
+            sum(1 for line in path.read_text(encoding="utf-8").split("\n") if HAPPENING_NONE.match(line))
+            if path.exists()
+            else 0
+        )
+        if seen < n:
+            fails.append(
+                f"FAIL: {rel} is allowed {n} story node(s) with no `happening` and "
+                f"has {seen}. Drop or shrink the entry — a stale exemption is a "
+                f"budget the next desugarer spends without anyone deciding to."
+            )
+    return examined, matched, fails
+
+
 def repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent
 
@@ -613,6 +720,13 @@ def main() -> int:
     )
     results.append(
         ("E effect bundles", "Vec<QuestEffect> fields", *check_effect_bundles(root))
+    )
+    results.append(
+        (
+            "F generated obligations",
+            "story-node constructions",
+            *check_generated_obligations(root),
+        )
     )
 
     failed = False

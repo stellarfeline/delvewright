@@ -14,7 +14,7 @@
 //! corpus example goes through the other door end to end in `tests/contract.rs`
 //! and through the CLI in `tests/cli.rs`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_grammar::block::BlockState;
 use delvewright_grammar::contract::{check, exterior_faces};
@@ -642,6 +642,292 @@ fn a_wall_head_is_facade_and_the_same_declaration_inside_the_hall_is_not() {
 }
 
 // ---------------------------------------------------------------------------
+// spec-0047 — the kind belongs to the cell
+// ---------------------------------------------------------------------------
+
+/// **The pier**: a hall with a doorway, and free-standing ruined masonry east
+/// of it.
+///
+/// The deck stands in exterior air; one cell stands inside a void the pier's
+/// own blocks close on every side. The two facts are true of the same piece of
+/// scenery, and no rule can carve a box around the second, so the region an
+/// author writes holds both.
+fn pier() -> Build {
+    let mut b = Build::new([25, 8, 9]);
+    // The hall, roofed at the very top of the model so nothing stands on its
+    // leads — the piece under test is the pier, not a second facade.
+    b.room([0, 0, 0], [10, 7, 8]);
+    b.air([0, 1, 4], [0, 2, 4]);
+    // The masonry: standing free, its deck two courses under the model's roof.
+    b.stone([14, 0, 2], [24, 4, 6]);
+    // The void the weighted ruin mix sealed. Two cells of air; the lower one is
+    // standable, and the pier's own blocks are on all six sides of both.
+    b.air([19, 2, 4], [19, 3, 4]);
+    b
+}
+
+/// The pier's deck: 55 cells standable in exterior air.
+fn deck() -> Region {
+    region([14, 5, 2], [24, 5, 6])
+}
+
+/// The void inside the masonry: two cells, the lower one standable.
+fn void() -> Region {
+    region([19, 2, 4], [19, 3, 4])
+}
+
+/// The hall's half of the contract, which never changes across the pair.
+fn pier_hall() -> SpatialContract {
+    let mut c = contract("hall");
+    c.spaces.insert(
+        "hall".to_string(),
+        space("enclosed", vec![region([1, 1, 1], [9, 6, 7])]),
+    );
+    c.edges.push(with_via(
+        edge("hall", "exterior", "walk"),
+        "door",
+        vec![region([0, 1, 4], [0, 2, 4])],
+    ));
+    c
+}
+
+/// Every gate's id and verdict, in order — what "the same verdict" means when
+/// two contracts are compared.
+fn states(report: &delvewright_grammar::ContractReport) -> Vec<(&'static str, bool)> {
+    report.gates.iter().map(|g| (g.id, g.passed())).collect()
+}
+
+/// **The kind is a fact about the blocks, so it is decided at the cell.**
+///
+/// One region over the whole pier. The deck is exterior dressing and the void
+/// is walled masonry, and both are true at once — which under a region-keyed
+/// verdict meant the region qualified for NOTHING and the piece could not
+/// declare its contract at all. Nothing about the demands changed to make this
+/// green: each is asked of the cell it was always a fact about.
+#[test]
+fn one_region_over_a_deck_and_a_walled_void_earns_both_kinds_cell_by_cell() {
+    let b = pier();
+    let mut c = pier_hall();
+    c.no_body.insert(
+        "arcade".to_string(),
+        no_body("the ruined west arcade", vec![deck(), void()]),
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    assert!(report.is_pass(), "{:#?}", report.gates);
+
+    let g = gate(&report, "contract-no-body");
+    assert_eq!(
+        g.bound, 1,
+        "one region declared, and the region is still the unit"
+    );
+    assert!(
+        g.detail.ends_with("55 cell(s) facade, 1 cell(s) sealed"),
+        "{}",
+        g.detail
+    );
+    assert!(
+        report.enumeration.iter().any(|e| e
+            == "no_body \"arcade\": mixed — 1 standable cell(s) sealed, 55 standable \
+                          cell(s) facade, the kind computed per cell"),
+        "the breakdown a reviewer reads is per region and by cell count: {:?}",
+        report.enumeration
+    );
+
+    // Neither kind bound to nothing, which is what would make the pair vacuous:
+    // a void with no standable cell, or a deck with none, and one of the two
+    // demands would never have been asked.
+    let majority = gate(&report, "contract-no-body-majority");
+    assert!(
+        majority.detail.contains("56 of 120 standable cell(s)"),
+        "{}",
+        majority.detail
+    );
+}
+
+/// **Box-drawing is dead as a lever, in both directions.**
+///
+/// The identical bytes under the one region an author can write and under the
+/// split no rule can author: same gate states, same per-kind cell counts, same
+/// covered population. A split buys nothing and a merge hides nothing.
+#[test]
+fn the_same_cells_earn_the_same_kinds_split_or_merged() {
+    let b = pier();
+
+    let mut merged = pier_hall();
+    merged.no_body.insert(
+        "arcade".to_string(),
+        no_body("the ruined west arcade", vec![deck(), void()]),
+    );
+
+    let mut split = pier_hall();
+    split.no_body.insert(
+        "arcade-deck".to_string(),
+        no_body("the arcade's deck", vec![deck()]),
+    );
+    split.no_body.insert(
+        "arcade-void".to_string(),
+        no_body("the void inside the arcade's masonry", vec![void()]),
+    );
+
+    let one = check(&b.model, &merged, &no_anchors());
+    let two = check(&b.model, &split, &no_anchors());
+    assert_eq!(
+        states(&one),
+        states(&two),
+        "the verdict moved with the boxes"
+    );
+    assert!(one.is_pass() && two.is_pass(), "{:#?}", states(&one));
+
+    let tail = "55 cell(s) facade, 1 cell(s) sealed";
+    assert!(gate(&one, "contract-no-body").detail.ends_with(tail));
+    assert!(gate(&two, "contract-no-body").detail.ends_with(tail));
+
+    // The invariance is only an invariance if the two contracts cover the same
+    // cells; two populations compared would say nothing about box-drawing.
+    assert_eq!(
+        gate(&one, "contract-no-body-majority").detail,
+        gate(&two, "contract-no-body-majority").detail,
+        "the two contracts cover different standable cells"
+    );
+}
+
+/// **`sealed` is bought with the piece's own blocks, never with the edge of the
+/// world** (spec-0047 §1.4, AC4).
+///
+/// The mislabelling hatch the re-binding retires: a blanket region declared out
+/// to the model's outer layer — sky included — had its "closure" supplied by the
+/// end of the model, so 55 flood-reached deck cells classified `sealed` and
+/// escaped the `facade` cell-share a reviewer reads. Per cell they cannot: a
+/// component holding an outer-layer cell is closed by nothing this piece built.
+/// The gate stays green, which is the point — this is a strengthening of what
+/// the reviewer is shown, not of what passes.
+#[test]
+fn a_blanket_out_to_the_models_edge_classifies_facade_and_not_sealed() {
+    let b = pier();
+    let mut c = pier_hall();
+    c.no_body.insert(
+        "surround".to_string(),
+        no_body(
+            "everything east of the hall, out to the edge of the model",
+            vec![region([11, 0, 0], [24, 7, 8])],
+        ),
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    assert!(report.is_pass(), "{:#?}", report.gates);
+
+    // The clause under test fires: the blanket really does reach the outer
+    // layer. Without that this fixture would witness an ordinary walled void.
+    let blanket = cells_of(&region([11, 0, 0], [24, 7, 8]));
+    assert!(
+        blanket
+            .iter()
+            .any(|c| c[0] == 24 || c[1] == 0 || c[1] == 7 || c[2] == 0 || c[2] == 8),
+        "the blanket must touch the model's outer layer"
+    );
+    assert_eq!(blanket.len(), 1008, "the blanket's size, stated");
+
+    let g = gate(&report, "contract-no-body");
+    assert!(
+        g.detail.ends_with("55 cell(s) facade, 1 cell(s) sealed"),
+        "the 55 flood-reached cells are `facade`, and only the walled void is \
+         `sealed`: {}",
+        g.detail
+    );
+    assert!(
+        report
+            .enumeration
+            .iter()
+            .any(|e| e.contains("no_body \"surround\": mixed")
+                && e.contains("55 standable cell(s) facade")),
+        "the facade cell share is complete — no flood-reached cell hides under \
+         `sealed`: {:?}",
+        report.enumeration
+    );
+}
+
+/// Every cell an inclusive range covers — the test's own arithmetic, so a size
+/// claim in an assertion is measured rather than asserted.
+fn cells_of(r: &Region) -> BTreeSet<[i32; 3]> {
+    let mut out = BTreeSet::new();
+    for x in r.from[0]..=r.to[0] {
+        for y in r.from[1]..=r.to[1] {
+            for z in r.from[2]..=r.to[2] {
+                out.insert([x, y, z]);
+            }
+        }
+    }
+    out
+}
+
+/// **Stranding cannot buy `sealed` at cell granularity either** (AC3).
+///
+/// The gallery's cells are unreachable, which is the fact that made them a
+/// finding — and `sealed` asks for a different one: that the air the cell stands
+/// in is closed by this piece's blocks and lies wholly inside the declared
+/// out-of-walk cells. The gallery's air runs up into five more courses nobody
+/// declared, so every cell of it is refused, and the red says so per cell rather
+/// than per region.
+#[test]
+fn the_stranded_gallery_is_refused_cell_by_cell_and_the_red_names_them() {
+    let (b, mut c) = hall_with_recess_and_gallery();
+    c.no_body.insert(
+        "gallery".to_string(),
+        no_body("nobody goes up there", vec![region([1, 6, 1], [9, 6, 7])]),
+    );
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-no-body");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail
+            .contains("qualifies for NOTHING on 63 of its 63 standable cell(s)"),
+        "the red counts the cells, not the regions: {}",
+        g.detail
+    );
+    assert!(
+        g.detail.contains(
+            "the air it stands in runs on into cells the contract does not declare out of walk"
+        ),
+        "the `sealed` clause names the component that escapes: {}",
+        g.detail
+    );
+    assert!(
+        g.detail.contains("the region declares no anchor at all"),
+        "{}",
+        g.detail
+    );
+    assert!(
+        g.detail
+            .contains("the air outside the piece does not reach it"),
+        "{}",
+        g.detail
+    );
+    assert!(
+        g.detail.contains("[1,6,1]"),
+        "the red sends someone to a place: {}",
+        g.detail
+    );
+
+    // The component holding the gallery's air is NOT wholly inside the declared
+    // cells — which is what makes this a stranding rather than a walled void,
+    // and what would make the test vacuous if it were.
+    let mut walled = c.clone();
+    walled.no_body.insert(
+        "gallery".to_string(),
+        no_body(
+            "the whole upper hollow",
+            vec![region([1, 6, 1], [9, 10, 7])],
+        ),
+    );
+    let report = check(&b.model, &walled, &no_anchors());
+    assert!(
+        gate(&report, "contract-no-body").passed(),
+        "declaring the WHOLE component is what `sealed` asks for, and a stranding \
+         is exactly the case that cannot: {}",
+        gate(&report, "contract-no-body").detail
+    );
+}
+
+// ---------------------------------------------------------------------------
 // §2.4 — the other three classes
 // ---------------------------------------------------------------------------
 
@@ -924,11 +1210,32 @@ fn an_acknowledgement_silences_a_facade_majority_and_never_a_posted_one() {
 }
 
 /// **The verdict is a function of the two inputs and nothing else** (ADR-0006).
+///
+/// Over the pier as well as the hall, because the pier's region is MIXED and the
+/// per-cell partition is the part of the verdict that could carry an iteration
+/// order: a hall with no out-of-walk floor at all would compare a partition that
+/// was never computed.
 #[test]
 fn the_same_grid_and_contract_give_the_same_verdict_every_time() {
     let (b, c) = hall();
     let a = check(&b.model, &c, &no_anchors());
     let d = check(&b.model, &c, &no_anchors());
+    assert_eq!(a, d);
+    assert_eq!(a.enumeration, d.enumeration);
+
+    let b = pier();
+    let mut c = pier_hall();
+    c.no_body.insert(
+        "arcade".to_string(),
+        no_body("the ruined west arcade", vec![deck(), void()]),
+    );
+    let a = check(&b.model, &c, &no_anchors());
+    let d = check(&b.model, &c, &no_anchors());
+    assert!(
+        a.enumeration.iter().any(|e| e.contains("mixed")),
+        "the pair must carry a mixed region: {:?}",
+        a.enumeration
+    );
     assert_eq!(a, d);
     assert_eq!(a.enumeration, d.enumeration);
 }

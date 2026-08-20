@@ -849,12 +849,17 @@ many rules claim boxes for it:
 }
 ```
 
-**An out-of-walk region carries no kind.** Which exemption a region qualifies
-for — walled off, anchored, exterior dressing — is a fact about the blocks, so it
-is read off them rather than chosen here. An author who could pick would be
-picking which demand has to be met, and a choice between demands is only ever as
-strong as the weakest one on offer. What the author supplies is the `reason`,
-because no measurement recovers that.
+**An out-of-walk region carries no kind, and the kind belongs to the cell.**
+Which exemption applies — walled off, anchored, exterior dressing — is a fact
+about the blocks, so it is read off them rather than chosen here, and it is
+decided **per standable cell** rather than per region. An author who could pick
+would be picking which demand has to be met, and a choice between demands is only
+ever as strong as the weakest one on offer; an author who drew the boxes would be
+picking too, because one region over a deck standing in the weather and a void the
+masonry closes qualifies for nothing while a kind is a property of a region, and
+the same cells split in two pass. The region stays the unit of **declaration** —
+its name, its `reason`, its coverage and its own line in the enumeration. What the
+author supplies is the `reason`, because no measurement recovers that.
 
 Splitting the two halves is what lets **one** declaration node serve a space, a
 stair's transit volume and a bar region. Building a second kind of node per use is how
@@ -977,7 +982,7 @@ contract; there is no flag.
 | `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume | standable cells |
 | `contract-closure` | every boundary cell of an `enclosed` space (and the side faces of `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region; and an `open`/`open_top` claim is refused over a cell with this piece's own blocks overhead | boundary cells examined |
 | `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `drop` falls forward and does not walk back. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
-| `contract-no-body` | every out-of-walk region earns a **computed** kind — `sealed` (the union of sealed regions is itself closed), `posted` (an anchor inside it, and every standable cell within Chebyshev 2 of one), `facade` (not nested in a space, and every standable cell touched by the air outside the piece). A region earning none is red, and so is one holding no standable cell | regions |
+| `contract-no-body` | every standable cell of every out-of-walk region earns a **computed** kind, strongest first — `sealed` (the cell's whole passable component lies inside the declared out-of-walk cells and touches no cell of the model's outer layer, so what closes it is this piece's blocks and never the edge of the world), `posted` (within Chebyshev 2 of an anchor declared inside the cell's own region), `facade` (the air outside the piece reaches the cell, and the cell lies inside no declared space). A cell earning none reds its region, naming the cells and the clause each demand refused them with; a region holding no standable cell is red too. The enumeration reports the per-region breakdown by cell count | regions |
 | `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — ways shut, drops forward only. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
 | `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
 | `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face | exterior edges |
@@ -1002,7 +1007,8 @@ a green line over an empty population is never printed, because it reads exactly
 like a green line over a full one.
 
 The verdict also **enumerates every opt-out instance**: each open envelope, each
-sightline, each out-of-walk region with its computed kind and its anchors, each
+sightline, each out-of-walk region with its computed kinds by cell count and its
+anchors, each
 way with its sign and cell count, each way or bar the walk had to open, each
 exterior face. A count is a thing a script can
 satisfy; a list is a thing a reviewer disagrees with.
