@@ -21,7 +21,7 @@ use delvewright_grammar::contract::{check, exterior_faces};
 use delvewright_grammar::geom::Box3;
 use delvewright_grammar::model::VoxelModel;
 use delvewright_schem::prefab::{
-    ContractBar, ContractEdge, ContractNoBody, ContractSpace, ContractVolume, Region,
+    ContractBar, ContractEdge, ContractNoBody, ContractSpace, ContractVolume, ContractWay, Region,
     SpatialContract,
 };
 
@@ -97,7 +97,26 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         rise: if class == "vision" { None } else { Some(0) },
         via: None,
         bar: None,
+        way: None,
     }
+}
+
+/// Declare an edge contingent: the region, its sign and the block it is made
+/// of (spec-0042 §2.1).
+fn with_way(
+    mut e: ContractEdge,
+    name: &str,
+    opens: &str,
+    boxes: Vec<Region>,
+    block: &str,
+) -> ContractEdge {
+    e.way = Some(ContractWay {
+        opens: opens.to_string(),
+        region: name.to_string(),
+        boxes,
+        block: block.to_string(),
+    });
+    e
 }
 
 fn with_via(mut e: ContractEdge, name: &str, boxes: Vec<Region>) -> ContractEdge {
@@ -1007,4 +1026,406 @@ fn the_same_empty_declaration_reds_when_floor_is_left_unaccounted_for() {
         "{:#?}",
         report.findings
     );
+}
+
+// ---------------------------------------------------------------------------
+// spec-0042 — a way that content opens
+// ---------------------------------------------------------------------------
+
+/// The block a laid tread is made of, and the block the treads of
+/// [`stair_piece`] are actually built from.
+const TREAD: &str = "minecraft:stone_bricks";
+
+/// The tread cells of [`stair_piece`]'s flight: the two courses of stone the
+/// climb is standing on, and nothing else.
+fn tread_cells() -> Vec<Region> {
+    vec![region([1, 1, 6], [5, 1, 6]), region([1, 1, 7], [5, 2, 7])]
+}
+
+/// **The broken flight**: [`stair_piece`] with its treads taken out and nothing
+/// else changed.
+///
+/// The contract is the repaired twin's, byte for byte — the claim did not move;
+/// the blocks did. That is what makes the pair decidable in both directions.
+fn broken_flight() -> (Build, SpatialContract) {
+    let (mut b, c) = stair_piece();
+    for r in tread_cells() {
+        b.air(r.from, r.to);
+    }
+    (b, c)
+}
+
+/// Declare the broken flight's `stair` edge contingent on a laid way over
+/// exactly the cells that are missing.
+fn with_laid_flight(mut c: SpatialContract) -> SpatialContract {
+    for e in &mut c.edges {
+        if e.class == "stair" {
+            *e = with_way(e.clone(), "broken-flight", "laid", tread_cells(), TREAD);
+        }
+    }
+    c
+}
+
+/// **AC2, the twins.** The same declaration over two buildings one delta apart:
+/// treads missing reds, treads missing *plus a declared way* is green, and the
+/// green verdict NAMES the seam.
+///
+/// A bare green would not be worth having here — it cannot tell *reachable*
+/// from *reachable eventually*, which is the whole ambiguity the surface exists
+/// to remove — so the seam line is asserted, and so is a non-zero binding on
+/// each of the three proof parts: well-formed (the confinement), edge proof
+/// (closed on the bytes, open on the copy) and reachability (the union walk).
+#[test]
+fn a_broken_flight_reds_undeclared_and_greens_as_a_laid_way_with_the_seam_named() {
+    // Red half: the current behaviour, kept as the red fixture.
+    let (b, c) = broken_flight();
+    let red = check(&b.model, &c, &no_anchors());
+    let g = gate(&red, "contract-edge-proof");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("does not connect its two ends"),
+        "{}",
+        g.detail
+    );
+    let g = gate(&red, "contract-reachability");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("space head"), "{}", g.detail);
+
+    // Green half: the identical bytes, with the break declared.
+    let declared = with_laid_flight(c);
+    let green = check(&b.model, &declared, &no_anchors());
+    assert!(green.is_pass(), "{:#?}", green.gates);
+
+    // The seam, named. This is the assertion the AC turns on.
+    assert!(
+        green.enumeration.iter().any(|e| {
+            e.contains("space head") && e.contains("reached only once") && e.contains("is laid")
+        }),
+        "the storeys above the break are named with what opens them: {:#?}",
+        green.enumeration
+    );
+    // …and the way itself is enumerated, with what it binds to.
+    assert!(
+        green
+            .enumeration
+            .iter()
+            .any(|e| e.contains("way \"broken-flight\": laid over 15 cell(s)")),
+        "{:#?}",
+        green.enumeration
+    );
+
+    // Non-zero binding on all three proof parts.
+    for id in [
+        "contract-well-formed",
+        "contract-edge-proof",
+        "contract-reachability",
+    ] {
+        let g = gate(&green, id);
+        assert!(g.passed(), "{}: {}", id, g.detail);
+        assert!(g.bound > 0, "{id} bound {} — a green over nothing", g.bound);
+    }
+    // The union walk counts BOTH the cells that exist only once the way is laid
+    // and the ones that stop existing then, so its binding is strictly larger
+    // than the as-built walk's. Stated as a number: a silent change to either
+    // end of the union shows up here rather than being absorbed.
+    let shut = gate(&red, "contract-reachability").bound;
+    let union = gate(&green, "contract-reachability").bound;
+    assert_eq!(shut, 56, "the as-built walk's targets");
+    assert_eq!(
+        union, 66,
+        "the union over the opening chain: the ten cells a body stands on only \
+         once the flight is laid, on top of the fifty-six that are floor as built"
+    );
+}
+
+/// **AC3, the closed direction has teeth.** The *repaired* twin's bytes with the
+/// same laid way declared over them is red: the two ends already connect, so the
+/// way opens nothing and the beat it claims is not real.
+///
+/// This is the assertion that would be vacuous if the closed proof ran on the
+/// opened copy — there it passes over every building there is.
+#[test]
+fn a_way_over_treads_that_are_already_there_is_red() {
+    let (b, c) = stair_piece();
+    let declared = with_laid_flight(c);
+    let report = check(&b.model, &declared, &no_anchors());
+    let g = gate(&report, "contract-edge-proof");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("edge foot--stair--head")
+            && g.detail.contains("does not open anything")
+            && g.detail.contains("\"broken-flight\""),
+        "the red names the edge and the way: {}",
+        g.detail
+    );
+    // The same bytes also fail the `laid` confinement, and for its own reason.
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("is what is NOT there yet"),
+        "{}",
+        g.detail
+    );
+}
+
+/// **AC4, the open direction has teeth, both halves.**
+///
+/// First: a delta that is applied and still does not connect — half the treads
+/// laid — is the mirror of `barred`'s second half, and reds.
+///
+/// Second: `rise` one course off reds naming both numbers, on a way-carrying
+/// edge. The measurement is over the two ends' resolved boxes, which is a fact
+/// about the declaration rather than about either model, so it cannot be the
+/// vacuous reading the AC warns about — on the as-built model a laid stair has
+/// no climb to measure at all, and this number is 3 either way.
+#[test]
+fn a_way_whose_delta_still_does_not_connect_is_red_and_so_is_a_rise_one_course_off() {
+    // Half the break laid: the upper course is still missing.
+    let (b, c) = broken_flight();
+    let mut half = c.clone();
+    for e in &mut half.edges {
+        if e.class == "stair" {
+            *e = with_way(
+                e.clone(),
+                "broken-flight",
+                "laid",
+                vec![region([1, 1, 6], [5, 1, 6])],
+                TREAD,
+            );
+        }
+    }
+    let report = check(&b.model, &half, &no_anchors());
+    let g = gate(&report, "contract-edge-proof");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail
+            .contains("with the way \"broken-flight\" laid the two ends still do not connect"),
+        "{}",
+        g.detail
+    );
+
+    // The whole break laid, and the declared rise one course off.
+    let mut off = with_laid_flight(c);
+    for e in &mut off.edges {
+        if e.class == "stair" {
+            e.rise = Some(2);
+        }
+    }
+    let report = check(&b.model, &off, &no_anchors());
+    let g = gate(&report, "contract-edge-proof");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("declares rise 2"), "{}", g.detail);
+    assert!(g.detail.contains("measure 3"), "{}", g.detail);
+}
+
+/// **AC5, confinement.** A way region is refused wherever the defect could put
+/// it: inside a room, on another edge's opening, or reaching outside its own
+/// edge's transit volume. An unconfined delta is "content will build something
+/// here" over any cells at all, which is the oldest shape §0 refuses.
+#[test]
+fn a_way_region_outside_its_own_edges_volume_is_refused_three_ways() {
+    let (b, c) = broken_flight();
+
+    // Into the room below.
+    let mut in_space = c.clone();
+    for e in &mut in_space.edges {
+        if e.class == "stair" {
+            *e = with_way(
+                e.clone(),
+                "broken-flight",
+                "laid",
+                vec![region([1, 1, 3], [5, 1, 3])],
+                TREAD,
+            );
+        }
+    }
+    let report = check(&b.model, &in_space, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("claims 5 cell(s) of space \"foot\""),
+        "{}",
+        g.detail
+    );
+
+    // Onto another edge's opening — the front door.
+    let mut on_via = c.clone();
+    for e in &mut on_via.edges {
+        if e.class == "stair" {
+            *e = with_way(
+                e.clone(),
+                "broken-flight",
+                "laid",
+                vec![region([0, 1, 2], [0, 2, 2])],
+                TREAD,
+            );
+        }
+    }
+    let report = check(&b.model, &on_via, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail
+            .contains("shares 2 cell(s) with edge foot--walk--exterior"),
+        "{}",
+        g.detail
+    );
+
+    // Outside the flight altogether, in air the piece does not claim.
+    let mut adrift = c.clone();
+    for e in &mut adrift.edges {
+        if e.class == "stair" {
+            *e = with_way(
+                e.clone(),
+                "broken-flight",
+                "laid",
+                vec![region([1, 1, 6], [5, 1, 8])],
+                TREAD,
+            );
+        }
+    }
+    let report = check(&b.model, &adrift, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail
+            .contains("lie outside this edge's own transit volume"),
+        "{}",
+        g.detail
+    );
+}
+
+/// **AC6, one prover — the statement the old surface could not make.** A
+/// portcullis across a climb: a `stair` carrying a **cleared** way. `barred`'s
+/// walk shape can express a grate in a doorway and nothing else; the same
+/// mechanism keyed to the object rather than to the verb states this, and the
+/// SAME connectivity prover decides it.
+#[test]
+fn a_portcullis_over_a_climb_is_a_cleared_way_on_a_stair() {
+    let (mut b, c) = stair_piece();
+    // The grate: the air above the first tread, filled with iron.
+    b.paint([1, 2, 6], [5, 5, 6], "minecraft:iron_bars");
+
+    let mut declared = c.clone();
+    for e in &mut declared.edges {
+        if e.class == "stair" {
+            *e = with_way(
+                e.clone(),
+                "portcullis",
+                "cleared",
+                vec![region([1, 2, 6], [5, 5, 6])],
+                "minecraft:iron_bars",
+            );
+        }
+    }
+    let report = check(&b.model, &declared, &no_anchors());
+    assert!(report.is_pass(), "{:#?}", report.gates);
+    assert!(
+        report.enumeration.iter().any(|e| {
+            e.contains("space head") && e.contains("reached only once") && e.contains("is cleared")
+        }),
+        "{:#?}",
+        report.enumeration
+    );
+
+    // Undeclared, the same iron is simply a climb that does not climb.
+    let bare = check(&b.model, &c, &no_anchors());
+    let g = gate(&bare, "contract-edge-proof");
+    assert!(!g.passed(), "{}", g.detail);
+}
+
+/// **AC6, the other half: one edge, one contingency.** `barred` IS a walk
+/// carrying a cleared way, so declaring both on one edge is a double
+/// declaration and is refused by name.
+#[test]
+fn a_barred_edge_that_also_declares_a_way_is_refused() {
+    let (b, mut c) = hall();
+    c.spaces.insert(
+        "cell".to_string(),
+        space("enclosed", vec![region([1, 1, 1], [3, 4, 7])]),
+    );
+    let mut both = with_bar(
+        edge("hall", "cell", "barred"),
+        "gate",
+        vec![region([4, 1, 4], [4, 2, 4])],
+        "minecraft:iron_bars",
+    );
+    both = with_way(
+        both,
+        "second-thoughts",
+        "cleared",
+        vec![region([4, 1, 4], [4, 2, 4])],
+        "minecraft:iron_bars",
+    );
+    c.edges.push(both);
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("declares its contingency twice"),
+        "{}",
+        g.detail
+    );
+}
+
+/// **A sightline and an exterior edge cannot be contingent.** A `vision` edge
+/// claims no traversal, so it has nothing to be contingent about; an
+/// `exterior` endpoint has no cells, so there is no far end for an opening to
+/// reach and a seam-crossing way is the face contract's business.
+#[test]
+fn a_way_on_a_sightline_or_an_exterior_edge_is_refused() {
+    let (b, c) = broken_flight();
+
+    let mut outward = c.clone();
+    for e in &mut outward.edges {
+        if e.b == "exterior" {
+            *e = with_way(
+                e.clone(),
+                "drawbridge",
+                "laid",
+                vec![region([0, 1, 2], [0, 2, 2])],
+                TREAD,
+            );
+        }
+    }
+    let report = check(&b.model, &outward, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("cannot carry a way"), "{}", g.detail);
+
+    let mut seen = c.clone();
+    seen.edges.push(with_way(
+        with_via(
+            edge("foot", "head", "vision"),
+            "squint",
+            vec![region([1, 4, 7], [1, 4, 7])],
+        ),
+        "shutter",
+        "cleared",
+        vec![region([1, 4, 7], [1, 4, 7])],
+        TREAD,
+    ));
+    let report = check(&b.model, &seen, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(
+        g.detail.contains("nothing to be contingent about"),
+        "{}",
+        g.detail
+    );
+}
+
+/// **An anchor inside a way region names the way**, exactly as one inside a bar
+/// region names the bar — so a campaign can bind content to the place the way
+/// opens rather than to the volume that contains it.
+#[test]
+fn an_anchor_in_a_way_region_resolves_to_the_way() {
+    let (b, c) = broken_flight();
+    let declared = with_laid_flight(c);
+    let mut anchors = BTreeMap::new();
+    anchors.insert("anchor/planks".to_string(), [3, 1, 6]);
+    let report = check(&b.model, &declared, &anchors);
+    let g = gate(&report, "contract-anchors");
+    assert!(g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("1 in a way"), "{}", g.detail);
 }

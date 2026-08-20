@@ -132,6 +132,7 @@ The ledger is every number the format has and the one surface each names
 | `1.4.0` | the state's own frame — a `local` paint, on a palette role or inline on a `fill` | yes |
 | `1.5.0` | the document's own composition — the program-level `include` list | yes |
 | `1.6.0` | the contract's reach (spec-0041) — the `qualify` node, optional `rise` on `stair`/`drop` edges, `face` on exterior edges | reserved |
+| `1.7.0` | the contingent edge — `way` on a `walk`, `stair` or `drop`: the traversal is severed as built, and content opens it | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -145,6 +146,14 @@ a free number is one two changes can take. A document declaring a reserved
 version is refused, and the refusal names the surface that owns the number —
 building it would mean deserialising that surface into nothing. The reservation
 is deleted by the change that lands the surface, in the same edit.
+
+**The ledger's order is the order numbers were claimed, not the order surfaces
+land**, so a reserved number can sit below an accepted one. That is the number
+still meaning exactly what it names: a document declaring it is refused, and
+every fence reads as shut at it. What must never happen is a reservation whose
+surface this engine has — it would refuse a version the engine can honour — and
+that is what is checked, in the crate and in
+`tools/check-version-ledger-uniqueness.py`, rather than the ordering.
 
 **`split`** cuts one local axis into pieces: `absolute` pieces take a fixed block
 count, `relative` pieces share what is left. `rounding` (`truncate` — the
@@ -863,16 +872,56 @@ on a sightline is not writable in the first place:
 
 | `class` | Fields |
 |---|---|
-| `walk` | `rise` (default 0), optional `via` |
-| `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end |
-| `drop` | `rise`, optional `via`; directed `a` → `b` |
+| `walk` | `rise` (default 0), optional `via`, optional `way` |
+| `stair` | `rise`, **required** `via` — the treads belong to the edge, not to either end — optional `way` |
+| `drop` | `rise`, optional `via`, optional `way`; directed `a` → `b` |
 | `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
 | `vision` | **required** `via`; no traversal claim, so no rise |
 
-`via` and `bar.region` name regions some rule claims, exactly as `spaces` and
-`no_body` do. `bar.block` is a palette role, and a role bound to a weighted mix
-is refused: a bar is one material, and a gate that is mostly a bar is not a state
-anything can be in.
+`via`, `bar.region` and `way.region` name regions some rule claims, exactly as
+`spaces` and `no_body` do. `bar.block` and `way.block` are palette roles, and a
+role bound to a weighted mix is refused under one diagnostic for both: a bar and
+a way are each one material, and a gate that is mostly a bar — or a floor that
+is mostly laid — is not a state anything can be in.
+
+### `way` — the edge content opens
+
+A traversal edge may declare itself **severed as built**, and name what opens
+it. `way` is `1.7.0` surface:
+
+```json
+{ "a": "ringing-floor", "b": "stair-foot", "class": "stair", "rise": 4,
+  "via": "first-flight",
+  "way": { "opens": "laid", "region": "broken-flight", "block": "tread" } }
+```
+
+`opens` is `laid` — the region is empty as built, and opening fills it with
+`block` — or `cleared`, where the region stands in `block` as built and opening
+voids it. Every one-way shortcut opened from the far side, every lowered bridge,
+every placed ladder and every collapsed stair a player repairs is one of the
+two.
+
+`barred { rise, bar, via }` **means** `walk { rise, via }` plus
+`way { "opens": "cleared", "region": bar.region, "block": bar.block }`, and the
+checker normalises it to that before proving anything, so one connectivity
+prover covers both spellings. Both spellings stay writable; an edge that
+declares both is declaring its contingency twice and is refused. The
+generalisation's free reach is its own evidence: a portcullis over a climb —
+`stair` plus a cleared way — is now writable, which `barred`'s walk shape could
+never state.
+
+A way is refused on a `vision` edge (no traversal claim, so nothing to be
+contingent about) and on any edge with an `exterior` endpoint (`exterior` has no
+cells; a way across an assembly seam is the face contract's business, §6).
+
+**The region is confined**, and each demand is one the defect cannot supply. Its
+edge declares a `via`, which is then a **transit volume** — disjoint from every
+space, abutting both ends — exactly as a `stair`'s is, because the cells a way
+lays or clears belong to the edge. The region lies inside that volume, is
+disjoint from every other edge's opening, bar and way, and a `laid` region holds
+no block of the piece as built. Without those, "content will build something
+here" would be a licence to name any cells at all; the disjointness is also what
+makes opening **monotone**, so opening one way can never disconnect another.
 
 **Several claims of one name union.** A room whose cross-section is not a box is
 described by the boxes it is actually built from, rather than by a shape
@@ -925,9 +974,9 @@ contract; there is no flag.
 | `contract-well-formed` | entry carries an exterior traversal edge; no two spaces overlap; each space is one floor (standable span ≤ 2 levels, out-of-walk cells excluded); each out-of-walk region nests wholly in one space or none; each opening lies on the boundary its endpoints share; each transit volume is disjoint from every space and touches both ends; `rise` present, absent and signed per class | spaces + regions + edges |
 | `contract-coverage` | every standable cell lies in a declared space, an out-of-walk region, or a traversal edge's transit volume | standable cells |
 | `contract-closure` | every boundary cell of an `enclosed` space (and the side faces of `open_top`) is non-passable, except a declared opening, an abutting space, or an abutting out-of-walk region; and an `open`/`open_top` claim is refused over a cell with this piece's own blocks overhead | boundary cells examined |
-| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `drop` falls forward and does not walk back; `barred` does not connect while its bar stands and does connect with the bar voided; and in every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
+| `contract-edge-proof` | per class: `walk` connects both ways; `stair` connects through its own treads; `drop` falls forward and does not walk back. On a contingent edge — a declared `way`, or a `barred` edge normalised into one — the class's proof must **fail on the bytes as shipped** (a way that opens nothing is a beat that is not real) and **hold on a copy with its single delta applied** (laid: the region filled with its block; cleared: the region voided). In every class the declared `rise` equals `min_y(b) − min_y(a)` over the resolved boxes | interior edges |
 | `contract-no-body` | every out-of-walk region earns a **computed** kind — `sealed` (the union of sealed regions is itself closed), `posted` (an anchor inside it, and every standable cell within Chebyshev 2 of one), `facade` (not nested in a space, and every standable cell touched by the air outside the piece). A region earning none is red, and so is one holding no standable cell | regions |
-| `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — bars standing, drops forward only. A space behind a bar is re-walked with bars opened and the required set is named | target cells |
+| `contract-reachability` | every standable cell of every space, minus nested out-of-walk cells, plus every standable cell of a transit volume, is reached from the entry space by a walk **confined to declared spaces and crossing only through declared edges** — ways shut, drops forward only. The walk then re-runs with the ways opened **cumulatively by name**, and what is proved is the **union** over those states: a cell is red only when no opening state reaches it. Each state's target set is recomputed over its own blocks, because a laid way's whole point is that the cells a body stands on did not exist before it was laid. Every space reached only under an opening is named with what opens it — *reached only once `<way>` is laid* | target cells |
 | `contract-anchors` | every declared anchor lands in a contract element, and the element is written into the metadata as the anchor's `resolves_to` | anchors |
 | `contract-exterior-faces` | every `exterior` edge exports a face with cells on it — a claim nothing can mate with is not a face | exterior edges |
 | `contract-no-body-majority` | a piece mostly out of walk says so | standable cells |
@@ -952,7 +1001,8 @@ like a green line over a full one.
 
 The verdict also **enumerates every opt-out instance**: each open envelope, each
 sightline, each out-of-walk region with its computed kind and its anchors, each
-bar the walk had to open, each exterior face. A count is a thing a script can
+way with its sign and cell count, each way or bar the walk had to open, each
+exterior face. A count is a thing a script can
 satisfy; a list is a thing a reviewer disagrees with.
 
 ### An opening is claimed, never discovered
@@ -1029,6 +1079,7 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Contract.spaces` | `1.2.0` | `via ir::Program.contract` |
 | `ir::EdgeClass.rise` | `1.2.0` | `via ir::Program.contract` |
 | `ir::EdgeClass.via` | `1.2.0` | `via ir::Program.contract` |
+| `ir::EdgeClass.way` | `1.7.0` | `WAY_SINCE` |
 | `ir::Mark.facing` | `1.0.0` | — |
 | `ir::Mark.index` | `1.0.0` | — |
 | `ir::Include.rename_anchors` | `1.5.0` | `via ir::Program.include` |
