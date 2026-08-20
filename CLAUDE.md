@@ -95,6 +95,9 @@ docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / grammar / orchestrator /
                      #   admit / schem / render
+gallery/             # the ENGINE's own campaign: one instance of every surface
+                     #   the DSL declares, built on every PR, never released or
+                     #   staged. Its piece is generated, never committed.
 prefabs/             # tileset GENERATORS + shared invariants. The .nbt library and
                      #   its metadata live in the CONTENT repo, reached through the
                      #   `campaigns/` dev symlink — see prefabs/README.md

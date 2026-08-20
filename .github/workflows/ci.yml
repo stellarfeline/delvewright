@@ -807,6 +807,85 @@ jobs:
             audit --library --campaign-root campaigns \
             --exclusions .github/zone-audit-exclusions.json
 
+  # ----------------------------------------------------------------- gallery --
+  # spec-0039: the engine's OWN campaign. The `campaign builds` job above proves
+  # that SHIPPED content still compiles under this change — real, and structurally
+  # unable to cover a surface this change just added, because the content pin lags
+  # the engine and those campaigns are approved artifacts no engine change may
+  # edit. The gallery is engine-owned and same-repo, so the element lands in the
+  # same pull request as the surface.
+  #
+  # Needs no content checkout, deliberately (§6): its one piece and its two skins
+  # are generated here by the engine's own generator, so the whole job runs from
+  # this repository alone — which is the creator-machine floor CLAUDE.md requires,
+  # not a convenience.
+  gallery:
+    name: gallery (coverage + build + baseline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `gallery-baseline.py` classifies a manifest mismatch as an emission
+          # change or a determinism finding by what the diff touches, and that
+          # needs the merge base rather than a shallow head.
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+        with: { key: gallery }
+      - name: build the engine under test
+        run: cargo build --locked -p delvec --bin delvec
+      # The piece and the skins, generated — never committed (§6). Doing this
+      # before anything else means a generator that stopped producing a piece
+      # fails in a step named for the generator, not inside one named for a gate.
+      - name: generate the gallery's piece and skins
+        run: |
+          mkdir -p gallery-prefabs
+          cargo run --locked --release \
+            --manifest-path prefabs/gallery-generator/Cargo.toml \
+            -- gallery-prefabs --skins gallery/skins
+      # `analyze` is the reachability half of the ladder (spec-0039 §4.2) and
+      # `build --lang en` is the tree the coverage gate reads its binding ledgers
+      # from. Every OTHER language, and every overlay, is built by the baseline
+      # step below — which walks the whole domain by construction, so this job
+      # never carries a hand-written list of languages to go stale.
+      - name: the gallery analyzes green and builds
+        run: |
+          set -euo pipefail
+          target/debug/delvec analyze gallery --prefabs gallery-prefabs
+          target/debug/delvec build gallery -o gallery-out-en --prefabs gallery-prefabs
+      # The coverage gate. Reds when the schema export gains a unit the gallery
+      # does not write — i.e. precisely on the changes that grow authoring
+      # surface, and on no others.
+      - name: every declared surface is written or proven refused
+        run: |
+          python3 tools/check-gallery-coverage.py \
+            --delvec target/debug/delvec \
+            --prefabs gallery-prefabs \
+            --build-out gallery-out-en \
+            --report gallery-coverage.json \
+            --index gallery-coverage.md
+      - name: emission baseline + expected-warnings ledger
+        run: |
+          python3 tools/gallery-baseline.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs
+      # §6: the numbers are reported from day one, and no wall-clock value gates
+      # — a timing red on a shared runner is an intermittent red, and the debug
+      # doctrine forbids re-running those.
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo "## Gallery"
+            echo
+            sed -n '1,12p' gallery-coverage.md 2>/dev/null || echo "(coverage report not produced)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-coverage
+          path: |
+            gallery-coverage.json
+            gallery-coverage.md
+
   # ------------------------------------------------------------------ tier 2 --
   # spec-0004 tier 2 (every PR): build the delve, prove it loads with zero errors
   # on the pinned vanilla server, and run the generated PackTest suite headless.

@@ -1,0 +1,390 @@
+{
+  "easy.en": [
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/1/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/11/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/12/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/13/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/14/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/17/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/18/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
+    },
+    {
+      "code": "DW0330",
+      "pointer": "/content/triggers/3/effects/0/text",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/2",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/5",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/waves/1/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/0/tier",
+      "stage": "quests"
+    }
+  ],
+  "hard.en": [
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/1/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/11/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/12/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/13/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/14/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/17/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/18/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
+    },
+    {
+      "code": "DW0330",
+      "pointer": "/content/triggers/3/effects/0/text",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/2",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/5",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/waves/1/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/0/tier",
+      "stage": "quests"
+    }
+  ],
+  "primary.en": [
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/1/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/11/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/12/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/13/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/14/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/17/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/18/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
+    },
+    {
+      "code": "DW0330",
+      "pointer": "/content/triggers/3/effects/0/text",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/2",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/5",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/waves/1/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/0/tier",
+      "stage": "quests"
+    }
+  ],
+  "primary.zh-cn": [
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/1/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/0/on_objective_complete/obj/hear-the-curator/2/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/11/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/12/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/13/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/14/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/17/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/18/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-hall.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0188",
+      "pointer": "l10n/zh-cn.json",
+      "stage": "l10n"
+    },
+    {
+      "code": "DW0330",
+      "pointer": "/content/triggers/3/effects/0/text",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/2",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0351",
+      "pointer": "/content/quests/0/on_complete/5",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0467",
+      "pointer": "/content/quests/0/cast/npc/curator",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/waves/1/tier",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0477",
+      "pointer": "/content/actors/0/tier",
+      "stage": "quests"
+    }
+  ]
+}

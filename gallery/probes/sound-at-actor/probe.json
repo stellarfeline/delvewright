@@ -1,0 +1,8 @@
+{
+  "code": "DW0335",
+  "units": [
+    "SoundAt::actor",
+    "SoundAt::actor.actor"
+  ],
+  "why": "The schema accepts an actor-positioned sound and the compiler does not yet resolve one. Refused rather than played at the wrong place — the alternative is a sound a reviewer hears somewhere the campaign never put it."
+}

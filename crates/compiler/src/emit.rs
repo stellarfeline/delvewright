@@ -1308,6 +1308,20 @@ pub fn build_with_warnings(
         &fixture_gate.to_json(),
     );
 
+    // ---- the effect-root walk's own binding ledger ----
+    // Every other proof in this compiler publishes its binding as a
+    // `validation/*.json`; the walk that underpins most of them published a
+    // stderr STRING, so nothing downstream could assert it bound to anything.
+    // A build whose effect walk reaches zero bundles is a build where every
+    // effect-shaped proof is vacuous, and until this file existed that was not
+    // a fact any gate could read (spec-0039 criterion 6).
+    let root_binding = crate::plan::for_each_effect_root(plan.campaign, &mut |_site, _effs| {});
+    put_json(
+        &mut out,
+        "validation/effect-roots.json",
+        &root_binding.to_json(),
+    );
+
     // ---- call-graph integrity (DW0497) ----
     // Every `function <ns>:<name>` the compiler just wrote must point at a
     // function the compiler wrote. Vanilla resolves an unknown function to

@@ -1,0 +1,62 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "branch_points": [
+      {
+        "branches": [
+          {
+            "flags": [
+              "flag/read-the-label"
+            ],
+            "id": "branch/read",
+            "leads_to": "quest/far-hall"
+          },
+          {
+            "flags": [
+              "flag/skipped-the-label"
+            ],
+            "id": "branch/skipped",
+            "leads_to": "quest/far-hall"
+          }
+        ],
+        "forks_on": [
+          "flag/read-the-label",
+          "flag/skipped-the-label"
+        ],
+        "id": "branch-point/label",
+        "opens_at": "quest/near-hall"
+      }
+    ],
+    "finale": "quest/far-hall",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/hall",
+        "depends_on": [],
+        "goal": "Read the near hall: the speaking parts, the pressed thing, the counter.",
+        "id": "quest/near-hall",
+        "mandatory": true,
+        "npcs": [
+          "npc/curator",
+          "npc/factor"
+        ]
+      },
+      {
+        "act": 2,
+        "area": "area/hall",
+        "depends_on": [
+          "quest/near-hall"
+        ],
+        "goal": "Cross the barred wall and clear what is mustered beyond it.",
+        "id": "quest/far-hall",
+        "mandatory": true,
+        "npcs": [
+          "npc/warden",
+          "npc/marshal"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.11.0",
+  "stage": "quest-plan"
+}
