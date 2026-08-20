@@ -20,6 +20,10 @@
 //! | `DW0753` | `--write` cannot establish provenance: there is no prefab metadata to edit. |
 //! | `DW0760` | gallery emission / curation failure. |
 //!
+//! plus the spatial contract's second door, in the `DW078x` block spec-0036
+//! owns: `DW0782` (the contract disagrees with the blocks) and `DW0783` (the
+//! door did not judge this piece, and what it therefore did not examine).
+//!
 //! Diagnostics go to **stderr** so stdout stays reserved for machine-readable
 //! reports (audit report, curation report, palette dumps).
 
@@ -41,6 +45,21 @@ pub const DW_GALLERY: &str = "DW0760";
 /// (spec-0036 §2). The second door onto the one checker; the first is
 /// `delve-grammar expand`.
 pub const DW_CONTRACT: &str = "DW0782";
+/// **The second door did not judge these bytes**, with what it did not examine.
+///
+/// One rule — *this audit reports no contract verdict over this piece* — at two
+/// severities, because the same fact is a statement or a refusal depending on
+/// whether the door was entitled to stay shut. A warning where the declaration
+/// document legitimately declares no contract (or does not exist yet); an error
+/// where the door COULD NOT judge: the document does not parse, or it declares
+/// no contract while its own anchors carry the `resolves_to` only a contract can
+/// have produced.
+///
+/// Split from `DW0782` on purpose. That code means "the contract and the blocks
+/// disagree", which is a fact about a piece that HAS a contract; a piece nothing
+/// was asked about is a different rule and needs a different name, or the
+/// silence keeps reading as the pass.
+pub const DW_UNJUDGED: &str = "DW0783";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

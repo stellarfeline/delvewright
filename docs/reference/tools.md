@@ -307,7 +307,9 @@ delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # 
     # spaces is judged against its own bytes by the same checker `delve-grammar
     # expand` uses, and a disagreement is DW0782 (exit 1). An edge declared
     # contingent is judged here too: severed on the bytes on disk, crossable on
-    # the copy its way opens, with the way enumerated by name, sign and cells
+    # the copy its way opens, with the way enumerated by name, sign and cells.
+    # A door that did NOT open says so as DW0783, with the count of what it did
+    # not examine
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]
@@ -350,9 +352,26 @@ would otherwise pass by having nothing to measure. `--write` refuses (`DW0753`)
 when there is no metadata to write into, rather than manufacturing a skeleton
 that claims `spdx: UNKNOWN` about an asset whose licence it has not established.
 
+`audit` states what its **second door** did, on every run and in every case,
+and the report carries it as `contract.state` beside the door's binding counts:
+`judged` (the declared contract was checked against these blocks — over how many
+files, how many cells, how many declared spaces, regions, edges and anchors, and
+how many objects the obligations examined), `undeclared`, `no-document`, or
+`refused`. A door that stays shut is a `DW0783` line rather than a silence, and
+the two shut cases it refuses (exit 1) are a declaration document that does not
+parse, and one that declares no contract while its own anchors carry a
+`resolves_to` — which only an exporter writes, and only out of a contract, so the
+declaration was dropped rather than never made. That corroboration is what stops
+"this piece declares none" from being an opt-out the defect can itself supply,
+and it states its own binding count too. A report produced by the library
+function rather than by the command says `unopened`, which is again not the same
+artifact as a pass.
+
 `audit` and `lighting` both take a **tile-set manifest** and treat the zone as
 one thing: the tiles are reassembled, and light crosses a packaging plane like
-any other cell. Handing any command **one tile** is `DW0739`, and the refusal
+any other cell. The second door reads the assembled zone too — a manifest's
+contract and anchors are zone-relative, so a composed building is judged as the
+building it is. Handing any command **one tile** is `DW0739`, and the refusal
 holds after the tile has been copied away from its manifest — a tile is
 recognised by the name `<base>.x<i>y<j>z<k>.nbt` it carries, not by what happens
 to sit in the directory beside it.

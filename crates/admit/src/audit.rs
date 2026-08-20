@@ -108,6 +108,16 @@ pub struct AuditReport {
     /// decide nothing. Counted, never judged.
     pub fluid_at_edge: usize,
     pub findings: Vec<Finding>,
+    /// **What the spatial contract's second door did** — always present, in
+    /// every arm, including the arms where it judged nothing.
+    ///
+    /// A report that simply omitted a contract verdict said the same thing for a
+    /// piece that passed the contract, a piece that declares none, a piece whose
+    /// metadata does not parse, and a tile-set manifest the door skipped
+    /// outright. Four different facts, one silence, and the silence read as the
+    /// first. `state` is which one; the counts beside it are what was examined
+    /// (see [`crate::spatial::DoorBinding`]).
+    pub contract: crate::spatial::DoorBinding,
     /// For a zone that ships as a tile set: what was audited, tile by tile.
     ///
     /// Absent — and omitted from the JSON entirely — for a single structure
@@ -140,6 +150,22 @@ pub struct TileAudit {
 impl AuditReport {
     pub fn is_pass(&self) -> bool {
         self.verdict == "pass"
+    }
+
+    /// **Record what the second door did**, in the report and in the verdict.
+    ///
+    /// The verdict moves because the report is the artifact a reviewer keeps and
+    /// a script reads, and a saved report that says `"pass"` about a piece the
+    /// tool refused is the artifact disagreeing with the exit code — which is
+    /// the "response nobody reads" shape one layer out. The door's own lines
+    /// join `findings` for the same reason.
+    pub fn record_contract_door(&mut self, door: &crate::spatial::Door) {
+        self.contract = door.binding().clone();
+        let diags = door.diagnostics();
+        self.findings.extend(diags.iter().map(to_finding));
+        if diags.iter().any(Diagnostic::is_error) || door.is_refusal() {
+            self.verdict = "fail";
+        }
     }
 
     /// Canonical pretty JSON + trailing newline (the machine-readable report).
@@ -411,6 +437,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         fluid_held_cells: 0,
         fluid_at_edge: 0,
         findings: diags.iter().map(to_finding).collect(),
+        contract: crate::spatial::DoorBinding::default(),
         tiles: None,
     };
     (report, diags)
@@ -495,6 +522,7 @@ pub fn audit_tile_set(
         fluid_held_cells: settling.fluid_held_cells,
         fluid_at_edge: settling.fluid_at_edge,
         findings: all_diags.iter().map(to_finding).collect(),
+        contract: crate::spatial::DoorBinding::default(),
         tiles: Some(audits),
     };
     (report, all_diags)
