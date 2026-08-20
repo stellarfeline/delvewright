@@ -51,6 +51,13 @@ log's refusal entries for Z0, Z3 and Z7.
    edge the piece never has alone), which `include` then discards. A
    validation obligation whose satisfying document is known-false is not a
    proof; it is paperwork the mechanism forces.
+   Held against the real Z3 program rather than the fixture, "separable" does
+   not reproduce as a cure at all: the zone declares `1.4.0` and `include` is
+   fenced at `1.5.0`, and composition composes program **files** (spec-0040) —
+   the file set is what the map's `include` list names and what its audit
+   accounts, so splitting a chain out of a zone changes the composed artifact
+   itself. For a zone in production the cure is a restructure plus a version
+   move, never a declaration added to the zone; §2.1 is what makes it one.
 3. **A climb with an exterior endpoint has no true spelling, and the one
    spelling the surface accepts is a lie that proves nothing.** With a rise, a
    `stair` edge touching `exterior` is refused (no resolved box to measure
