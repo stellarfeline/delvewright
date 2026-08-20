@@ -245,6 +245,7 @@ sites = [
     ".github/actions/checkout-content/action.yml",
     ".github/workflows/ci.yml",
     ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
     ".github/workflows/infra-images.yml",
     ".github/workflows/release.yml",
 ]
@@ -257,6 +258,7 @@ value = "Swatinem/rust-cache@v2"
 sites = [
     ".github/workflows/ci.yml",
     ".github/workflows/engine-release.yml",
+    ".github/workflows/gpu-probe.yml",
     ".github/workflows/release.yml",
 ]
 policy = "floating"
