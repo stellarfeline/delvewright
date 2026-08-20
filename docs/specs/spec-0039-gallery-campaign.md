@@ -112,6 +112,32 @@ that is prose is not an exemption here. Anything legal-but-unbound is a red,
 and the fix is an element, because any legal combination is expressible by
 some overlay.
 
+> **Amended — what "an element" includes, measured on the traversal surface.**
+> The clause above, "any legal combination is expressible by some overlay",
+> was read during the first gallery build as promising that every unit is
+> dischargeable by a *field line*, and six units are not: `Locomotion::ground`
+> / `::climber` / `::flier`, `BodyTraversal.locomotion`, `Npc.traversal`,
+> `Actor.traversal`. `DW0454` refuses a `traversal` declaration the build
+> cannot hold the body to, so writing one legally needs a body whose derived
+> class differs from the declared one *and* a walked route that crosses a
+> barrier line — a world, not a field. Measured against the engine rather
+> than the doc comment (spec-0034's own fixtures, plus a standalone `delvec
+> build` of each remaining shape), every one of the six binds green in a
+> build whose world pays for the claim: `climber` or `flier` declared on a
+> ground-derived body over a barrier crossing waives the `DW0453` advisory;
+> `ground` declared on a climber-derived body over the same crossing raises
+> it, as one pinned expected-warnings row. The crossing itself is ordinary
+> element material — one `world-edits` fill of a wall line, no generator or
+> engine change. So the premise stands, restated precisely: **any legal unit
+> is writable by some element of the domain, and an element includes the
+> world that pays for its claims.** A unit legal in *no* build is a fence and
+> owes a probe (`DW0455`'s `aquatic` is the worked case). No third coverage
+> state exists or is added: "bound" already means written in the domain and
+> built green, and for a claim-shaped unit the compiler's own exercised proof
+> (`DW0454`) is what holds the binding — a demand a merely-unwritten unit
+> cannot meet. The required-check expiry condition is therefore reachable as
+> written; the six discharge as one ordinary element, not as a gate change.
+
 **Why this fires at the right rate.** The gate reds exactly when the schema
 export gains a unit the gallery does not write — i.e. precisely on the changes
 that grow authoring surface, and on no others. The nearest measured proxy in
