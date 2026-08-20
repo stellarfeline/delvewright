@@ -1,6 +1,6 @@
 # spec-0047: The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: a zone program in the bell campaign (bell-r2, Z3 drowned ward)
   cannot declare its spatial contract because one out-of-walk region — the
   ruined west arcade, 160 standable cells — qualifies for **no** computed kind:
