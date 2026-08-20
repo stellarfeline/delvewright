@@ -423,6 +423,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   surface. The cost of learning this the other way: three diagnostics reddened an
   accepted campaign and a day went into repairing the campaign, when every one of
   them was a new obligation reaching a document declaring an older version.
+  **The complement is an obligation, not an exception: a campaign that has not
+  been released adopts.** Anything still in development on its own branch tracks
+  the current engine, so its red under a new obligation is an **adoption item on
+  the campaign** — scheduled by the version-adoption rule above — and is not a
+  fence finding. The fence exists so an *accepted* document keeps compiling
+  unchanged forever; it was never licence for live content to fall behind. So the
+  triage question is one fact about the artifact, asked before the diagnostic is
+  even read: **has this campaign been released or accepted?** Both halves of the
+  answer are load-bearing, and reading only the first is how every red starts
+  looking like a fence defect.
 - **Every engine surface owes a gallery element, in the same PR.** The
   coverage gate enumerates its unit set from the compiler's own
   `schema --stage all` export — the single authority, never a parser of the source
