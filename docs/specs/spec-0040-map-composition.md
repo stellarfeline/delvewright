@@ -31,16 +31,16 @@ running it or reading the shipped behaviour record, not recalled:
    one thing no included piece can know: the mass around them — margin strips,
    plinths, the gulf (`grammar.md` §5c). Eight zones are built this way, with
    composition-level gates that catch what no piece-level gate can.
-2. **One program can call another with a region and parameters — inside one
-   document.** `compose::include` copies rules, params and palette roles under
-   a prefix, rewriting every reference; `bind` passes arguments through any
-   call depth; an anchor rename is explicit per stem. The seam promise is
-   pinned by test: an included program expanded over the same box is
-   byte-identical to the program alone (item 4 bounds what that covers inside
-   a larger derivation). What does **not** exist is a document
-   or CLI surface for include: it is a Rust API, so composition today happens
-   only in engine source. A creator authoring JSON cannot compose two program
-   files (§6.2).
+2. **One program document composes another.** The `include` list (fenced at
+   document version `1.5.0`) copies rules, params and palette roles under a
+   prefix, rewriting every reference; `bind` passes arguments — and a paint in
+   either frame — through any call depth, per call site; an anchor rename is
+   explicit per stem. The seam promise is pinned by test: an included program
+   expanded over the same box is byte-identical to the program alone (item 4
+   bounds what that covers inside a larger derivation). Both entry points
+   that read a program file go through one loader — `--file` on every
+   command, and each program `audit` collects — so a composed document is
+   judged inside its composition on both paths (`grammar.md` §5c).
 3. **Cost is not a constraint.** Measured on this tree: a 256×48×256 region —
    3.1 M cells, 2.8 M filled, per-cell weighted draws (the worst case), full
    gates, always-on reachability, 36-tile export — expands in 3.6 s.
@@ -53,16 +53,52 @@ running it or reading the shipped behaviour record, not recalled:
    bytes inside the same called piece. Geometry from mutually exclusive guards
    is unaffected (a single candidate never draws); weighted mixes re-texture.
    Consequence in §5 and §8.
-5. **The compiler cannot yet place a composed map.** A whole map exceeds the
-   48-per-axis template cap on any axis, so it exports as a tile set — and
-   `delvec` refuses tile-set metadata by design (`DW0346` names the queued
-   work). Confirmed in `compiler::registry` as well as in the diagnostic text.
-   Every model in §2 is behind this one capability (§6.1).
+5. **The compiler places a composed map.** A whole map exceeds the
+   48-per-axis template cap on any axis, so it exports as a tile set; a
+   tile-set manifest loads, is indexed under its own prefab id, and is placed
+   as one piece at one extent, with anchors, contract and `waterline_y`
+   staying zone-relative. `DW0346` keeps only what it always meant about any
+   document — that this one is malformed: tiles that do not cover the zone
+   exactly, a tile past `part_max`, an empty parts list, or a document
+   declaring neither structure block or both.
 6. **Areas do not touch.** An area's origin is `[i·256, base_y, 0]`
    (`compiler.md` stage 1), and a grammar prefab enters an area by direct
    placement only (no connectors). A contiguous whole is therefore one area
    binding one prefab; there is no path today by which separately placed zone
    prefabs become one silhouette.
+7. **The one declaration class include does not carry is the contract.**
+   `compose::include` copies rules, params, palette roles and claims (claim
+   region names are prefixed; the destination must classify them or
+   `validate` refuses) — and drops the composed document's own `contract`
+   block without a refusal (`crates/grammar/src/compose.rs`). Its spaces,
+   envelopes, out-of-walk reasons and edges — its `exterior` edges first —
+   reach the composition only as hand restatements in the destination's
+   contract. §4's obligations assumed the part's contract serves the whole;
+   as carried, it serves only the part's standalone review.
+8. **Composed at eight-zone scale, the method held and the assumption in
+   item 7 was what failed** (`docs/trials/trial-0003-halgrave.md`). Six
+   contract gates red, every red cashing to composed parts that declare no
+   contract; of ten seams, zero aligned by construction; and the probe that
+   tried to opt the contractless volumes out of the walk passed four gates
+   because a buried box supplies `sealed` and an open box supplies `facade`
+   for free — the defect supplying the opt-out's own evidence. The composed
+   render read as one place: the decision of §2 is not what failed.
+9. **Extent already flows down; nothing stops it flowing up.** The
+   whole-constrains-part half of allocation is built: `split` partitions, an
+   absolute split too big for its scope refuses naming both numbers, a write
+   outside the model region never ships, and a part handed too little refuses
+   for itself, loudly (`grammar.md` §4a, §5c). A part cannot overrun its box,
+   and never did. What is unconstrained is the reverse: the map's own region
+   is a free manifest value, and the first map composed at scale set it to
+   the arithmetic sum of the parts' pre-existing depths — verified on the
+   manifest itself: seven Z bands, each equal to one zone row's declared
+   depth, summing to exactly the map row's 436 — yielding a 1 : 5.5 site
+   against a brief asking a compact stepped mass, the crown subtending 6.7°
+   from the arrival point against a derived 27°, computable from `zones.json`
+   alone before any composition ran (trial-0003, R1 and the compactness
+   attribution). The parts predate the site plan, so by the time anything
+   composed them their total was a fact: §3's ordering sentence bound
+   nothing — the UNRUN shape, inside this spec.
 
 ## 2. The decision: the map is a program
 
@@ -109,10 +145,10 @@ relitigated: the map program sits **upstream** of assembly and produces one
 prefab; ADR-0004 continues to govern what assembly does with prefabs.
 
 Per ADR-0015 this stays composition-first: §6 adds no new geometry construct,
-only the two surfaces that make the already-proven composition reachable from
-the artifact of record.
+only the surfaces that make the already-proven composition — and what a part
+already declares about itself — reachable from the artifact of record.
 
-## 3. The artifact of record: the map program and the composition manifest
+## 3. The artifact of record: the map program and its manifest row
 
 Two files, both campaign content, both in the campaign's `design/`:
 
@@ -120,18 +156,25 @@ Two files, both campaign content, both in the campaign's `design/`:
   the site plan; its `params` are the whole-map datums; its palette is the
   material table; its `contract` carries the map-level spaces and the seam
   edges; its own rules are the massif, connective and dressing work.
-- **A `composition` block in `zones.json`** — the manifest entry that makes
-  the map expandable and auditable without a person reading a design page:
-  the map program file, its region and seed, the gates it claims, and the
-  list of zone ids it composes. A zone it does not compose is marked
-  `detached` in the manifest with a reason — a genuinely detached zone is
-  legal; an unaccounted one is an audit red.
+- **An ordinary `zones.json` entry naming the map program** — the same
+  manifest row every zone has: id, program file, region, seed, claimed
+  gates. There is no separate composition manifest, deliberately: which
+  zones the map composes is its own `include` list, and a manifest field
+  restating that list would be a copy nothing checks, written to be
+  believed. What the audit accounts against is instead the **loader's own
+  record** of the files each entry's document composed — a record a file
+  nothing composes cannot produce. A program file no entry names and no
+  document composes is an audit red by name; a genuinely detached zone is
+  simply its own manifest row, judged standalone, so detachment needs no
+  marking and an unaccounted program cannot look like it.
 
 The map program is authored **before the zones are final, as the site plan**:
 its first version allocates boxes, datums and seam edges with the zone entry
 rules as stubs, and zones are then authored into the boxes it hands them. (A
-campaign whose zones predate it — the adoption case — authors the map program
-around the existing zone programs instead; the obligations are identical.)
+campaign whose zones predate it — the adoption case — is the transitional
+class of §3c: the site plan is still derived from the whole's brief, never
+from the parts' extents, and every pre-existing part confronts its allocation
+at the map's first expansion.)
 The whitebox step **is** the map program's first green expansion: every zone
 placed, every seam edge proven, contract obligations green over the whole,
 route and datum identities holding. Appearance work follows, under §5.
@@ -143,13 +186,27 @@ is judged from elevations and no planned camera provides one — reviewed
 beside the campaign's reference imagery under the campaign's own design-gate
 rules. Silhouette complexity stays a measurement, never a gate.
 
-**What makes it impossible to skip.** Bound to events, not to a checklist:
+**What makes it impossible to skip.** Bound to events, not to a checklist,
+and the guarded event's entry points are enumerated, not the one someone
+pointed at. *The map is judged*: `delve-grammar audit --campaign-root` (run
+by both repos' CI on every PR and push) expands every manifest entry, and
+both paths that read a program file — `--file` on every command, and the
+audit's manifest sweep — go through the one loader, so a composed document
+cannot be read unjudged on either. *A zone escapes both judgement and
+composition*: the orphan red above. *A dead manifest surface is written*:
+`zones.json` refuses a key the tool does not read, naming it — so a
+manifest field that binds nothing cannot be written in the belief that it
+binds, which is the exact shape a `composition` block would have had.
+*A composed zone is staged alone*: the export-metadata refusal below.
+*A part is authored before the whole has allocated its box*: the §3c
+allocation identity, whose entry points are enumerated there — a
+pre-existing part is a red with a named debtor, never a fact the site
+plan inherits.
 
-- `delve-grammar audit --campaign-root` (already run by both repos' CI on
-  every PR and push) expands the map program at the manifest's region and
-  seed and judges it like any zone; a `composition` block naming a missing
-  zone, a zone program neither composed nor marked `detached`, or a red
-  obligation is an audit red.
+- Every command that reads a document prints what it composed, prefix by
+  prefix, with its `include` binding count; `audit --campaign-root` totals
+  the count over the campaign corpus and states a zero by name rather than
+  omitting the line.
 - Exporting the map writes the composed zone prefab ids into the map
   prefab's own metadata, so the fact of composition reaches the layer
   `delvec` reads. `delvec` refuses to build a campaign that binds, as its
@@ -211,6 +268,95 @@ Stated as obligations, so they are checked rather than remembered:
    many were examined. A map reporting zero has either no designed ground or a
    binding failure, and those two must not look alike.
 
+## 3c. The allocation cascade: extent flows down, never up
+
+Between a whole and its parts, "how big" has exactly one authority, and it is
+the whole's design of record. §1.9 is the measured failure of the other
+direction: a site plan whose totals were inherited from the parts. The rule:
+**extent flows from brief to region to boxes to parts. A part that does not
+fit is cut down or redesigned; the container is never grown to what the parts
+happen to sum to.** Each link, with its check and its status:
+
+1. **Brief → region and plan.** The whole's geometric facts — extent,
+   proportions, standoffs, whatever the campaign's written design fixes — are
+   declared as map params and guarded as identities over the map's own region
+   and top-level splits. `cmp` guards over integers state all of them today;
+   this link adds no surface. A site plan violating its own brief facts
+   refuses at expansion naming both numbers. What the machine cannot check,
+   stated plainly: that the transcribed numbers are faithful to the written
+   brief, and the brief to the confirmed reference — that is the design
+   gate's reading, fact by fact against the text, the trial-0003 R2 shape.
+   The reference image stays rank-only (spec-0028): guards bind to the
+   written design of record, never to a picture.
+2. **Region → boxes.** Built: `split` partitions, so allocations cannot sum
+   past the region; an oversized split refuses naming both numbers.
+3. **Box → part.** Built (§1.9): a part cannot write outside its box, and a
+   part handed too little refuses for itself. Overrunning an allocation is
+   already a refusal by name; no new machinery is owed here.
+4. **The part's own row names the same box.** New, and the ordering lives in
+   it: for every composed prefix that also has its own manifest row, `audit`
+   compares the row's region **extents** (not origins — standalone
+   development sits wherever it likes) to the box the composition allocates
+   that prefix, up to the include site's declared reorientation. A mismatch
+   is a refusal naming the prefix and both extent triples. The box a part is
+   reviewed in is the box the composition places it in, or the review
+   certifies a different object.
+
+**Why link 4 is the ordering, bound to events.** The entry points by which a
+part can exist, enumerated:
+
+- *A part with its own manifest row*: the link-4 identity, red at `audit`,
+  which both repos' CI runs on every push and pull request.
+- *A composed-only part* (no row): the allocated box is the only box it is
+  ever judged at; the ordering is structural.
+- *A draft* (`--file`, ad-hoc region): drafting, upstream of record. Every
+  artifact-of-record event — audit judgement, the review set, export, the
+  release freeze — reads the manifest or the composition, so a draft becomes
+  a part only through one of the two cases above.
+- *A part that predates the site plan*: the transitional class, below.
+
+Authoring a part first therefore remains typable — nothing can forbid a
+file — and stays outside the record: the moment it enters, it confronts an
+allocation the brief governs, and a disagreement is a red naming its debtor,
+never a fact the plan inherits.
+
+**Revising an allocation, distinct from overrunning one.** The site plan is a
+first draft, not an oracle; a part negotiates by refusing its box, and the
+plan is then deliberately revised. A revision is a geometry-class change (§5)
+to the map program: the splits move, the recorded signature hash moves with
+them as one visible diff line, the design review reopens — and the link-1
+identities re-run, so a revision can redistribute extent within the brief's
+facts but cannot grow past them unless the brief params move in the same
+diff. A change to the brief params is a change to the whole's design of
+record: it goes through the campaign's design gate as a reference-set
+decision, never inside a part-fit round. Sixth-vacuity test, applied: the
+permission demands that the whole's own identities still hold over the
+revised plan and that the whole's review reopens — a part wanting more room
+can supply neither; all it can force is a visible trade against the other
+allocations. There is deliberately no per-part surface: no exemption flag, no
+oversize acknowledgement, no site-side waiver. The only two authorable moves
+are revising the part and revising the plan, and each is proved where it
+lands.
+
+**The transitional class: parts that predate their site plan.** A campaign
+adopted into composition holds parts whose extents were chosen when no
+allocation existed — the state the first composed campaign is in. Handling,
+named rather than exempted:
+
+- The site plan is derived from the campaign's written brief exactly as the
+  fresh case is — never from the parts' extents. A map region set to the sum
+  of part depths is the refused direction whatever the campaign's age.
+- Every pre-existing part confronts its allocation at the map's first
+  expansion. A part in debt — guards refusing the box, or the link-4
+  mismatch — stays red, attributed per prefix, the same debtor-naming
+  consequence a contractless part carries (§4); the remedy is that part's own
+  revision under its own zone review.
+- The whole's brief and reference are not re-derived from the parts, and a
+  transitional path that amounts to cutting the whole down to what the parts
+  sum to is refused. A brief fact the campaign genuinely wants changed is a
+  design-gate decision about the whole, taken before the plan is re-derived,
+  never a consequence of part arithmetic.
+
 ## 4. Mutual consistency: what a part owes, what the whole owes, what is checked
 
 **A part owes the whole:**
@@ -234,7 +380,9 @@ Stated as obligations, so they are checked rather than remembered:
 **The whole owes a part:**
 
 1. **A box that satisfies its guards** — and takes the refusal as the answer
-   when it does not.
+   when it does not. The answer is the part revised, or the plan deliberately
+   revised under §3c's proofs — never a box grown in place to what the part
+   demands: the plan's totals answer to the brief, not to the parts.
 2. **The datums, bound once.** Every whole-map fact a part obeys locally is
    one map-level `param` pushed down by `bind`, stated in exactly one place.
    The worked example is the single water plane: one `water_y`, bound into
@@ -256,7 +404,85 @@ Stated as obligations, so they are checked rather than remembered:
    included zone's structural roles from one material table, so "the same
    stone" is one binding read eight times, not eight measurements that happen
    to agree. A zone's deliberate divergence is a binding the map declines to
-   override, visible at the include site.
+   override, visible at the include site. This reaches framed roles too: a
+   `bind` value is a paint in either frame (`1.4.0`), so a role a zone
+   states in its scopes' own axes is rebound with a `local` paint and
+   resolves through each scope's frame — while a world literal pushed over
+   it into a turned scope is the `oriented-fills` red, never a silent strip.
+
+### The contract under composition
+
+§1.7 is the gap: as carried today, every obligation above that routes
+through the part's contract is met by hand restatement at the include
+site, which is the refused shell's defect one level down. Two surfaces
+were asked for by the first composition at scale; one is specified, one is
+refused by name.
+
+**Specified: the contract rides the include.** The contract is a
+declaration class of the document, and include carries every other
+declaration class it has; carrying this one is widening the existing
+mechanism's reach, not a new mechanism. Fenced at the next `Program`
+version (ADR-0018 §7). Under the include's prefix: the part's spaces and
+envelopes, its out-of-walk regions (the author's `reason` rides; kinds
+stay computed off the composed blocks), and its interior edges with their
+class, rise, bars and transit volumes. The declaration is carried, never
+the proof: the same checker re-proves every carried edge and envelope
+against the composed expansion, in the composed frame. An included `entry`
+designates nothing at the composed level — the composition names its own.
+Below the fence a composed contract still does not ride, and the
+per-document composition report says so by name; a drop is stated, never
+silent.
+
+**The part's `exterior` edges become the seam surface.** `exterior` is the
+one endpoint a prefix cannot qualify — it names the world, and inside a
+composition the world is the composing program. Each included `exterior`
+edge therefore arrives as an open seam obligation, and the composing
+document adopts each one, by edge and prefix, as exactly one of:
+
+1. **an interior seam** — the edge re-ends on a declared space of the
+   composition (a map space, or another part's space; two included
+   exterior edges whose openings coincide adopt as one seam, proven
+   once). The adopting site states the class and rise it now proves —
+   the rise between two composed floors is a fact only the site knows —
+   and the part's opening cells and any declared bar ride with the edge,
+   so a barred way cannot be adopted as an open one: the standing bar
+   fails the walk proof.
+2. **re-export** — the edge remains `exterior` on the composition's own
+   contract, and `contract-exterior-faces` binds it there: the face
+   survives to assembly.
+
+An included exterior edge left unadopted is a refusal at `validate`,
+naming the edge and its prefix. There is deliberately no third kind. The
+adoption is a choice among proofs the seam must then pass, never among
+exemptions — in particular a site cannot declare a part's way buried,
+because burial supplies unreachability for free, and an opt-out secured by
+what the defect supplies is no gate (§1.8 measured exactly this). A part
+whose way may legitimately be shut offers that itself — a `barred` edge, a
+parameterised alternative — because the capability belongs to the part,
+whose door it is.
+
+**Refused: a composing-site claim over a contractless part's volume.** No
+surface will let the map declare spaces, exemptions or coverage over cells
+an included document fills but does not itself classify. Three reasons,
+each sufficient:
+
+1. The spatial contract belongs to the part — the object whose cells they
+   are; spec-0036 is the primitive and it exists. A site-level claim keys
+   the capability to the composing verb, and leaves the part contractless
+   everywhere else it is reviewed or reused.
+2. Any evidence such a claim could offer is supplied by the defect it
+   papers over: a buried volume earns `sealed` and an open one `facade`
+   from the burial and the openness themselves (§1.8). No demand statable
+   at the site separates a designed void from a stranding.
+3. A part's interior restated from outside is the shell of §2 one level
+   down: hand-computed constants nothing checks.
+
+The consequence is accepted and made legible instead: a composed
+contractless part stays red at map expansion, and the red names its
+debtor — contract obligations attribute their red cells and counts **per
+included prefix**, so "which part owes a contract" is a printed line, not
+arithmetic over standalone counts. The remedy is the part's own contract,
+landed under the part's own review.
 
 **What the machine checks, and where:**
 
@@ -295,7 +521,7 @@ class is **verified, not declared**:
   contract. These reopen route proofs and the design review, and are never
   folded into an appearance round.
 
-The class is enforced as data, not discipline: the composition manifest
+The class is enforced as data, not discipline: the map's `zones.json` entry
 records the map expansion's **geometry signature hash** (canonical bytes over
 standable set + anchors + resolved contract). `audit` recomputes it on every
 run; a mismatch is a red naming the moved element. A geometry change
@@ -313,33 +539,40 @@ of this spec — and §8 records the alternative.
 
 ## 6. Capabilities required, in order
 
-1. **Tile-set placement in `delvec`** (the already-queued chunked-export
-   phase 2 that `DW0346` names). Required by every composition model,
-   including doing nothing (three zones already exceed the cap alone). The
-   compiler places a manifest's tiles at their zone-relative offsets as one
-   piece; anchors, contract and `waterline_y` remain zone-relative; the
-   assembled world double-builds byte-identically. `DW0346`'s tile-set case
-   retires when this lands.
-2. **Document-level include.** The `compose::include` / `include_renaming`
-   semantics, reachable from the artifact of record: a manifest-driven
-   compose step (CLI) or an include block in the `Program` document, fenced
-   at the next `Program` version (ADR-0018 §7). Same refusals, same
-   anchor-rename rule, same seam byte-identity promise, extended to `splits`
-   when spec-0037 lands (its AC4 already anticipates this). Without it the
-   map program is only writable in engine Rust, which breaks both "the IR is
-   the artifact of record" and the rule that everything authoring needs runs
-   on the creator's own machine.
+1. **Tile-set placement in `delvec`** — built (§1.5): the compiler places a
+   manifest's tiles at their zone-relative offsets as one piece, anchors,
+   contract and `waterline_y` stay zone-relative, and the assembled world
+   double-builds byte-identically. Every composition model needs it,
+   including doing nothing: three zones exceed the cap alone.
+2. **Document-level include** — built (§1.2): the `include` list, fenced at
+   `1.5.0`, with the `compose::include_renaming` semantics, refusals and
+   seam byte-identity promise; extended to `splits` when spec-0037 lands
+   (its AC4 already anticipates this).
+3. **Contract adoption under include** (§4), fenced at the next `Program`
+   version. Until it lands, a composed map is judged only by the contract
+   its own document states by hand, and every carried-contract obligation
+   of §4 binds zero — which is a stated fact in the composition report,
+   never a silent one.
+4. **The allocation identity in `audit`** (§3c link 4): per composed prefix
+   with its own manifest row, extents compared up to the declared
+   reorientation, refusal naming the prefix and both triples; the
+   composition report states the compared-row count, a zero by name. Until
+   it lands, the ordering rests on links 1–3 alone and the report says so.
+   The rest of §3c's cascade is built (splits partition, oversize refuses,
+   guards exist) and adds no authoring surface.
 
 Nothing else is required. Named partitions (spec-0037) reduce the map
 program's restated-plan cost and are wanted, not prerequisite.
 
 ## 7. Acceptance criteria
 
-1. A campaign whose `zones.json` carries a `composition` block has its map
-   program expanded and judged by `delve-grammar audit` at the declared
-   region and seed, every spec-0036 obligation reporting a non-zero binding;
-   a block naming a missing zone, an unaccounted zone program, or a red
-   obligation is an audit red (asserted by fixture).
+1. A campaign whose `zones.json` names a map program in an ordinary entry
+   has it expanded and judged by `delve-grammar audit` at the entry's region
+   and seed, every composed document judged inside it; a program file no
+   entry names and no document composes is an audit red naming the file;
+   an unknown key in `zones.json` is a refusal naming the key. Asserted by
+   fixture, and the fixture asserts a non-zero `include` count — a map that
+   composes nothing makes the first two assertions vacuous.
 2. `delvec` refuses (validation tier, by code) a campaign binding as an area
    a prefab that another registry prefab's metadata declares it composes;
    the map export is what writes that declaration.
@@ -348,7 +581,10 @@ program's restated-plan cost and are wanted, not prerequisite.
    zones alone stay green on every gate; restoring the course is the green.
 4. Datum red demo: perturbing one composed zone's floor param against the
    map-bound water plane refuses at expansion naming both numbers; the
-   unperturbed fixture builds.
+   unperturbed fixture builds. The perturbed param is one the **part**
+   declares (§4 part obligation 3), and the fixture asserts the guard reads
+   one number from each side — an identity over two map-owned numbers
+   demonstrates nothing about the part obligation.
 5. Geometry signature: (a) a palette-only rebind of the map fixture leaves
    the recorded signature hash unchanged and the emission differing only in
    palette member blocks (script-asserted, the spec-0026 AC6 shape); (b) an
@@ -362,8 +598,26 @@ program's restated-plan cost and are wanted, not prerequisite.
 7. Document-level include reproduces the Rust-composed bytes for the three
    programs the existing seam test pins, from JSON alone; a loader below the
    fenced `Program` version refuses the surface by name.
-8. `delve-grammar coverage` counts the include surface with a binding count
-   and a corpus program demonstrates it.
+8. The include surface's binding count is printed where the surface can
+   exist: every command that reads a document states what it composed,
+   prefix by prefix, with the count, and `audit --campaign-root` totals it
+   over the campaign corpus, stating a zero by name rather than omitting
+   the line; a fixture campaign with a composing program asserts a non-zero
+   total. Not `delve-grammar coverage`: its corpus is the Rust-built
+   library, where a document include structurally cannot occur, and
+   counting campaign programs there would turn a gap into a green.
+8b. Contract adoption red demos, each half required: (a) an included
+   contract's `exterior` edge left unadopted refuses at `validate`, naming
+   the edge and prefix; (b) adopted as an interior seam, the checker proves
+   the site-stated rise against the composed blocks — red with the rise off
+   by one, green at the true value; (c) a document below the fenced version
+   refuses the adoption surface by name. The fixture asserts the carried
+   contract's binding count (spaces plus edges under the prefix) is
+   non-zero — a part with an empty contract makes all three vacuous.
+8c. Per-prefix attribution: a fixture composing one contractless part reds
+   coverage with the uncovered count attributed to that part's prefix in
+   the printed detail. The fixture asserts the part carries no `contract`
+   key — attribution demonstrated on a covered part proves nothing.
 9. The composed render set for a map fixture includes at least one named
    square-on elevation per declared identity face, and the run's shot
    manifest records it.
@@ -372,6 +626,17 @@ program's restated-plan cost and are wanted, not prerequisite.
     fixture.
 11. `docs/reference/` (grammar, tools, prefab-procedure, compiler DW rows)
     updated in the same PRs that land each piece, per the tooling-sync rule.
+12. Allocation identity red demo: a fixture map composing a part that has its
+    own manifest row is green with extents agreeing; the same fixture with
+    the row grown one block on one axis is an audit red naming the prefix and
+    both extent triples; a reoriented include agrees under its declared
+    frame. The fixture asserts the compared-row count is non-zero — a
+    composed-only corpus makes the identity vacuous.
+13. Brief identity red demo: a map fixture guarding one proportion fact over
+    its own region and top splits is green as written and red when one
+    allocation grows past the plan, naming both numbers. The fixture asserts
+    the guard reads the region extent — an identity over two program
+    constants the plan cannot move demonstrates nothing (the AC4 shape).
 
 ## 8. Open, stated as open
 
@@ -390,3 +655,10 @@ program's restated-plan cost and are wanted, not prerequisite.
 - **Per-zone review artifacts after map review exists**: whether zone-level
   render acceptance remains a gate for composed zones or becomes advisory
   once the composed review is the appearance authority.
+- **Two included ways that cannot mate by their declared faces** (one part's
+  way out and its neighbour's way in on unmatable axes). Two candidate
+  resolutions exist — a face-adaptation construct, or a part obligation
+  that declared ways in and out be co-axial with the route — and choosing
+  is a design ruling, not an evidence question, so neither is specified
+  here. Until one lands, a map-built corridor joining such ways is a
+  transit volume (`via`) on the seam edge, never a mating.
