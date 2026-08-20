@@ -80,20 +80,34 @@ const DIRS: [[i32; 3]; 6] = [
     [0, 0, -1],
 ];
 
-/// What one out-of-walk region turned out to be.
+/// What one out-of-walk **cell** turned out to be (spec-0047 §2).
 ///
 /// **Computed, never declared** (spec-0036 §0's corollary): an author who could
 /// pick the kind would be picking which demand has to be met, and a choice among
 /// demands is only ever as strong as the weakest on offer.
+///
+/// The region stays the unit of declaration — its name, its `reason`, its
+/// coverage and its own reporting all key to it — and the kind is a fact about
+/// blocks, so it is decided where the blocks are: at the cell. Keyed to the
+/// region, the verdict moved with where an author drew boxes. A free-standing
+/// pier whose deck stands in exterior air and whose masonry encloses one void
+/// qualified for NOTHING as one region and passed as two, on the identical
+/// bytes; the split that buys the pass is unauthorable where it matters,
+/// because no rule owns a box around the cells a weighted mix seals per seed.
+///
+/// The variants are ordered strongest-first, and `Ord` is what picks between
+/// them: the strongest applicable kind is the one a cell earns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NoBodyKind {
-    /// Walled off: the union of every sealed region is itself closed.
+    /// Walled off: the whole passable component this cell's air belongs to lies
+    /// inside the declared out-of-walk cells and touches no cell of the model's
+    /// outer layer.
     Sealed,
-    /// Anchored: every standable cell is within Chebyshev 2 of an anchor the
-    /// region contains.
+    /// Anchored: within Chebyshev 2 of an anchor declared inside the cell's own
+    /// region.
     Posted,
-    /// Exterior dressing: every standable cell is touched by the air outside the
-    /// piece, and the region is not nested inside any space.
+    /// Exterior dressing: the air outside the piece reaches the cell, and the
+    /// cell lies inside no declared space.
     Facade,
 }
 
@@ -1359,149 +1373,303 @@ fn edge_proof(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -> 
     }
 }
 
-// --- §2.6 the out-of-walk obligation ---------------------------------------
+// --- §2.6 the out-of-walk obligation, per cell -----------------------------
 
-/// Classify every out-of-walk region: strongest applicable, computed here and
-/// never picked by the author.
+/// Is this cell on the model's **outer layer** — the plane the piece stops at?
+///
+/// The clause that keeps `sealed` a statement about the piece's own masonry.
+/// The model's region is the artifact's bounding box, so a cell there is closed
+/// on that side by nothing but the end of the world, and a blanket declared out
+/// to it would otherwise buy `sealed` for the whole sky (spec-0047 §1.4).
+fn on_outer_layer(model: &VoxelModel, cell: [i32; 3]) -> bool {
+    let region = model.region();
+    let min = region.origin;
+    let max = region.maximum();
+    (0..3).any(|a| cell[a] == min[a] || cell[a] == max[a] - 1)
+}
+
+/// The **maximal passable component** containing `seed`: every passable cell
+/// the air at `seed` is continuous with, however far it runs.
+///
+/// This is the object `sealed` quantifies over, and the reason stranding cannot
+/// buy the kind. A stranded cell is stranded *with respect to something that
+/// reaches its air* — the sky, the exterior, or play air through the breach —
+/// and each of those is a cell in this set that no `no_body` declaration covers.
+fn passable_component(model: &VoxelModel, seed: [i32; 3]) -> BTreeSet<[i32; 3]> {
+    let mut seen: BTreeSet<[i32; 3]> = BTreeSet::new();
+    if !nav::passable(model, seed) {
+        return seen;
+    }
+    seen.insert(seed);
+    let mut queue: VecDeque<[i32; 3]> = VecDeque::from([seed]);
+    while let Some(pos) = queue.pop_front() {
+        for d in DIRS {
+            let n = [pos[0] + d[0], pos[1] + d[1], pos[2] + d[2]];
+            if nav::passable(model, n) && seen.insert(n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    seen
+}
+
+/// Why one cell earned no kind: the clause each demand refused it with, so a
+/// red says which demand refused which cells rather than reciting all three.
+///
+/// A key rather than a sentence, because cells that were refused the same way
+/// are one line in the verdict and cells refused differently are not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Refused {
+    sealed: &'static str,
+    posted: &'static str,
+    facade: &'static str,
+}
+
+/// The computed out-of-walk partition: **a kind per standable cell**
+/// (spec-0047 §2), grouped by the region that declared it.
+///
+/// Per region as well as per cell because `posted` is the one demand that reads
+/// the declaration — an anchor posts the cells of the region it stands in — so a
+/// cell two regions declare can be posted in one and not the other, and each
+/// region answers for its own cells. The other two demands are facts about
+/// blocks and give the same answer wherever they are asked from.
+struct CellKinds {
+    /// Region name → its standable cells, each with the kind it earned there or
+    /// the clauses that refused it.
+    by_region: BTreeMap<String, BTreeMap<[i32; 3], Result<NoBodyKind, Refused>>>,
+}
+
+impl CellKinds {
+    /// Every standable out-of-walk cell with the **strongest** kind it earned in
+    /// any region declaring it — the piece-level view the majority gate counts
+    /// and the summary reports.
+    fn strongest(&self) -> BTreeMap<[i32; 3], Option<NoBodyKind>> {
+        let mut out: BTreeMap<[i32; 3], Option<NoBodyKind>> = BTreeMap::new();
+        for cells in self.by_region.values() {
+            for (cell, kind) in cells {
+                let slot = out.entry(*cell).or_insert(None);
+                if let Ok(k) = kind
+                    && slot.is_none_or(|had| k < &had)
+                {
+                    *slot = Some(*k);
+                }
+            }
+        }
+        out
+    }
+
+    /// Does this anchor stand among `posted` cells of the region it sits in?
+    ///
+    /// §2.7's expectation, re-keyed to the cell: the question is no longer "is
+    /// this whole region `posted`" — a region can be part exterior dressing and
+    /// part perch — but "did placing something here actually post anything".
+    fn posts_anything(&self, region: &str, pos: [i32; 3]) -> bool {
+        self.by_region.get(region).is_some_and(|cells| {
+            cells.iter().any(|(c, kind)| {
+                kind == &Ok(NoBodyKind::Posted)
+                    && (0..3).all(|axis| (c[axis] - pos[axis]).abs() <= POSTED_RADIUS)
+            })
+        })
+    }
+}
+
+/// Classify every standable out-of-walk cell: strongest applicable, computed
+/// here and never picked by the author.
 fn no_body_kinds(
     ix: &Index,
     model: &VoxelModel,
     anchors: &BTreeMap<String, [i32; 3]>,
     enumeration: &mut Vec<String>,
-) -> BTreeMap<String, Option<NoBodyKind>> {
-    // `sealed` is a property of the union, so it is computed as one: start with
-    // every region a candidate, and drop whichever region owns a cell whose
-    // boundary is open, until the survivors' union is closed. A stranded gallery
-    // opens onto the nave air and is dropped; a walled recess is not.
-    let mut candidates: BTreeSet<&str> = ix.no_body_cells.keys().copied().collect();
-    loop {
-        let union: BTreeSet<[i32; 3]> = candidates
-            .iter()
-            .flat_map(|n| ix.no_body_cells[n].iter().copied())
+) -> CellKinds {
+    let outside = exterior_air(model);
+    // `sealed`'s two facts, computed once per component and shared by every cell
+    // of it: the component escapes the declared out-of-walk cells, and the
+    // component reaches the edge of the world. Memoised on the cell rather than
+    // on a component id because the map is what every later lookup wants.
+    let mut sealed_ok: BTreeMap<[i32; 3], bool> = BTreeMap::new();
+
+    let mut by_region: BTreeMap<String, BTreeMap<[i32; 3], Result<NoBodyKind, Refused>>> =
+        BTreeMap::new();
+    for (name, cells) in &ix.no_body_cells {
+        // The anchors this region declares. `posted` reads the declaration, so
+        // it reads THIS region's — an anchor in the region next door posts
+        // nothing here, which is what stops one decoy covering a piece.
+        let inside: Vec<[i32; 3]> = anchors
+            .values()
+            .copied()
+            .filter(|p| cells.contains(p))
             .collect();
-        let mut guilty: BTreeSet<&str> = BTreeSet::new();
-        for cell in &union {
-            for d in DIRS {
-                let n = [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]];
-                if union.contains(&n) || !nav::passable(model, n) {
-                    continue;
-                }
-                for (name, set) in &ix.no_body_cells {
-                    if candidates.contains(name) && set.contains(cell) {
-                        guilty.insert(name);
+
+        let mut per_cell: BTreeMap<[i32; 3], Result<NoBodyKind, Refused>> = BTreeMap::new();
+        for &cell in cells.iter().filter(|c| ix.standable.contains(*c)) {
+            // **`sealed`** — the cell's whole passable component lies inside the
+            // declared out-of-walk cells AND touches no outer-layer cell. Both
+            // halves are demands the defect cannot supply: a stranding always
+            // leaves the component holding air nobody declared, and a blanket
+            // out to the model's edge is closed by the world rather than by this
+            // piece's blocks.
+            let sealed = match sealed_ok.get(&cell) {
+                Some(known) => *known,
+                None => {
+                    let component = passable_component(model, cell);
+                    let escapes = component.iter().any(|c| !ix.all_no_body_cells.contains(c));
+                    let open_to_edge = component.iter().any(|c| on_outer_layer(model, *c));
+                    let sealed = !escapes && !open_to_edge;
+                    // The answer is a property of the COMPONENT, so it is
+                    // recorded for every cell of it. Recording it only for the
+                    // cell that seeded the flood makes a deck of 615 cells
+                    // standing in one body of exterior air flood the whole
+                    // exterior 615 times — measured at 33.6s where the same zone
+                    // took 0.33s, on a fact that was already known after the
+                    // first cell.
+                    for c in component {
+                        sealed_ok.insert(c, sealed);
                     }
+                    sealed
                 }
+            };
+            if sealed {
+                per_cell.insert(cell, Ok(NoBodyKind::Sealed));
+                continue;
             }
+
+            // **`posted`** — verbatim, and already per cell: within Chebyshev 2
+            // of an anchor declared inside the cell's own region.
+            let posted = inside
+                .iter()
+                .any(|a| (0..3).all(|axis| (cell[axis] - a[axis]).abs() <= POSTED_RADIUS));
+            if posted {
+                per_cell.insert(cell, Ok(NoBodyKind::Posted));
+                continue;
+            }
+
+            // **`facade`** — verbatim: the exterior flood reaches the cell, and
+            // the cell lies inside no declared space.
+            let reached = outside.contains(&cell);
+            let in_space = ix.all_space_cells.contains(&cell);
+            if reached && !in_space {
+                per_cell.insert(cell, Ok(NoBodyKind::Facade));
+                continue;
+            }
+
+            per_cell.insert(
+                cell,
+                Err(Refused {
+                    // Recomputed rather than carried out of the memo above: the
+                    // first cell of a component fills the memo and the rest read
+                    // it, so the clause has to be derivable from the cell alone.
+                    sealed: if reached || on_outer_layer(model, cell) {
+                        "its own boundary is not closed around it — the air it stands in reaches \
+                         the edge of the world, which is not one of this piece's blocks"
+                    } else {
+                        "its own boundary is not closed around it — the air it stands in runs on \
+                         into cells the contract does not declare out of walk"
+                    },
+                    posted: if inside.is_empty() {
+                        "the region declares no anchor at all"
+                    } else {
+                        "no anchor the region declares stands within 2 cells of it"
+                    },
+                    facade: if in_space {
+                        "it lies inside a declared space"
+                    } else {
+                        "the air outside the piece does not reach it"
+                    },
+                }),
+            );
         }
-        if guilty.is_empty() {
-            break;
-        }
-        for name in guilty {
-            candidates.remove(name);
-        }
-        if candidates.is_empty() {
-            break;
-        }
+        by_region.insert((*name).to_string(), per_cell);
     }
 
-    let outside = exterior_air(model);
-    let mut out: BTreeMap<String, Option<NoBodyKind>> = BTreeMap::new();
-    for (name, cells) in &ix.no_body_cells {
-        let standable: BTreeSet<[i32; 3]> = cells
+    let kinds = CellKinds { by_region };
+    for (name, per_cell) in &kinds.by_region {
+        let mut counts: BTreeMap<NoBodyKind, usize> = BTreeMap::new();
+        for kind in per_cell.values().flatten() {
+            *counts.entry(*kind).or_insert(0) += 1;
+        }
+        // The per-region breakdown by cell count (spec-0047 §2). A region that
+        // came out one kind still says so first, because that is what a reviewer
+        // greps for; a mixed one says what the mixture is, and the `facade`
+        // share is complete — cells the flood reaches can no longer be counted
+        // under `sealed`.
+        let breakdown: Vec<String> = counts
             .iter()
-            .filter(|c| ix.standable.contains(*c))
-            .copied()
+            .map(|(k, n)| format!("{n} standable cell(s) {}", k.as_str()))
             .collect();
-        let nested = ix.space_cells.values().any(|s| !s.is_disjoint(cells));
-
-        let kind = if candidates.contains(name) {
-            Some(NoBodyKind::Sealed)
-        } else {
-            // `posted`: an anchor inside the region, and every standable cell
-            // within Chebyshev 2 of one. Per cell deliberately — one decoy
-            // anchor over a thousand stranded cells is the blanket this refuses.
-            let inside: Vec<[i32; 3]> = anchors
-                .values()
-                .copied()
-                .filter(|p| cells.contains(p))
-                .collect();
-            let posted = !inside.is_empty()
-                && standable.iter().all(|c| {
-                    inside
-                        .iter()
-                        .any(|a| (0..3).all(|axis| (c[axis] - a[axis]).abs() <= POSTED_RADIUS))
-                });
-            if posted {
-                Some(NoBodyKind::Posted)
-            } else if !nested
-                && standable.iter().all(|c| outside.contains(c))
-                && !standable.is_empty()
-            {
-                Some(NoBodyKind::Facade)
-            } else {
-                None
-            }
-        };
-
-        match kind {
-            Some(NoBodyKind::Sealed) => enumeration.push(format!(
-                "no_body {name:?}: sealed — {} cell(s), the sealed union's own boundary is closed",
-                cells.len()
+        match counts.iter().collect::<Vec<_>>().as_slice() {
+            [(NoBodyKind::Sealed, n)] => enumeration.push(format!(
+                "no_body {name:?}: sealed — {n} standable cell(s), the air each stands in is \
+                 closed by this piece's own blocks and lies wholly inside the declared \
+                 out-of-walk cells"
             )),
-            Some(NoBodyKind::Posted) => {
+            [(NoBodyKind::Posted, n)] => {
                 let named: Vec<&str> = anchors
                     .iter()
-                    .filter(|(_, p)| cells.contains(*p))
+                    .filter(|(_, p)| ix.no_body_cells[name.as_str()].contains(*p))
                     .map(|(n, _)| n.as_str())
                     .collect();
                 enumeration.push(format!(
-                    "no_body {name:?}: posted — {} standable cell(s), anchors {}",
-                    standable.len(),
+                    "no_body {name:?}: posted — {n} standable cell(s), anchors {}",
                     named.join(", ")
                 ));
             }
-            Some(NoBodyKind::Facade) => enumeration.push(format!(
-                "no_body {name:?}: facade — {} standable cell(s), every one reached by the air \
-                 outside the piece",
-                standable.len()
+            [(NoBodyKind::Facade, n)] => enumeration.push(format!(
+                "no_body {name:?}: facade — {n} standable cell(s), every one reached by the air \
+                 outside the piece"
             )),
-            None => {}
+            [] => {}
+            _ => enumeration.push(format!(
+                "no_body {name:?}: mixed — {}, the kind computed per cell",
+                breakdown.join(", ")
+            )),
         }
-        out.insert((*name).to_string(), kind);
     }
-    out
+    kinds
 }
 
-fn no_body_gate(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) -> Gate {
+fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
     let mut bad: Vec<String> = Vec::new();
-    let mut per_kind: BTreeMap<&str, usize> = BTreeMap::new();
-    for (name, kind) in kinds {
+    for (name, per_cell) in &kinds.by_region {
         let cells = ix.no_body_cells[name.as_str()].len();
-        match kind {
-            // Its kind would be decided over an empty set. `no_body` means
-            // "standable cells deliberately outside the walk", so a region with
-            // none of them proved nothing about anything — the same vacuity a
-            // zero-bound gate has, one object down.
-            _ if ix.no_body_cells[name.as_str()]
-                .iter()
-                .all(|c| !ix.standable.contains(c)) =>
-            {
-                bad.push(format!(
-                    "out-of-walk region {name:?} holds no standable cell at all, so its kind was \
-                     decided over an empty set. A `no_body` region names floor a body could stand \
-                     on and does not; this one names {cells} cell(s) nobody could stand on either \
-                     way"
-                ));
-            }
-            Some(k) => *per_kind.entry(k.as_str()).or_insert(0) += cells,
-            None => bad.push(format!(
-                "out-of-walk region {name:?} ({}) qualifies for NOTHING: its own boundary is not \
-                 closed (not `sealed`), it holds no anchor covering its cells (not `posted`), and \
-                 the air outside the piece does not reach it or it nests inside a space (not \
-                 `facade`). The author's reason was {:?}",
-                cells, ix.contract.no_body[name].reason
-            )),
+        // Its kind would be decided over an empty set. `no_body` means
+        // "standable cells deliberately outside the walk", so a region with
+        // none of them proved nothing about anything — the same vacuity a
+        // zero-bound gate has, one object down.
+        if per_cell.is_empty() {
+            bad.push(format!(
+                "out-of-walk region {name:?} holds no standable cell at all, so its kind was \
+                 decided over an empty set. A `no_body` region names floor a body could stand on \
+                 and does not; this one names {cells} cell(s) nobody could stand on either way"
+            ));
+            continue;
         }
+        // A red names the kindless CELLS and which demand refused each, grouped
+        // by the refusal so one line is one reason and not a recital.
+        let mut refused: BTreeMap<Refused, BTreeSet<[i32; 3]>> = BTreeMap::new();
+        for (cell, kind) in per_cell {
+            if let Err(why) = kind {
+                refused.entry(*why).or_default().insert(*cell);
+            }
+        }
+        for (why, cells) in &refused {
+            bad.push(format!(
+                "out-of-walk region {name:?} qualifies for NOTHING on {} of its {} standable \
+                 cell(s): {} (not `sealed`), {} (not `posted`), and {} (not `facade`). The \
+                 author's reason was {:?} — {}",
+                cells.len(),
+                per_cell.len(),
+                why.sealed,
+                why.posted,
+                why.facade,
+                ix.contract.no_body[name].reason,
+                describe_cells(cells)
+            ));
+        }
+    }
+    let strongest = kinds.strongest();
+    let mut per_kind: BTreeMap<&str, usize> = BTreeMap::new();
+    for kind in strongest.values().flatten() {
+        *per_kind.entry(kind.as_str()).or_insert(0) += 1;
     }
     let summary: Vec<String> = per_kind
         .iter()
@@ -1525,25 +1693,28 @@ fn no_body_gate(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) -> Gat
     // any `no_body` kind asks for, which is the test — an escape hatch that
     // costs more than the thing it escapes is not an escape hatch.
     let unaccounted = uncovered_standable(ix);
-    let empty_ok =
-        (kinds.is_empty() && !ix.standable.is_empty() && unaccounted.is_empty()).then(|| {
-            format!(
-                "the contract declares no out-of-walk region, and it does not need one: all {} \
-                 standable cell(s) lie in a declared space or a traversal edge's transit volume, \
-                 so every piece of floor here is play space and §2.5 must walk a body to it",
-                ix.standable.len()
-            )
-        });
+    let empty_ok = (kinds.by_region.is_empty()
+        && !ix.standable.is_empty()
+        && unaccounted.is_empty())
+    .then(|| {
+        format!(
+            "the contract declares no out-of-walk region, and it does not need one: all {} \
+             standable cell(s) lie in a declared space or a traversal edge's transit volume, so \
+             every piece of floor here is play space and §2.5 must walk a body to it",
+            ix.standable.len()
+        )
+    });
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
         undecided: 0,
         empty_ok,
-        bound: kinds.len(),
+        bound: kinds.by_region.len(),
         detail: if bad.is_empty() {
             format!(
-                "{} out-of-walk region(s), every one earning a computed kind: {}",
-                kinds.len(),
+                "{} out-of-walk region(s), every standable cell of every one earning a computed \
+                 kind: {}",
+                kinds.by_region.len(),
                 if summary.is_empty() {
                     "none declared".to_string()
                 } else {
@@ -2030,7 +2201,7 @@ pub fn resolves_to(contract: &SpatialContract, pos: [i32; 3]) -> Option<String> 
 fn anchors_gate(
     ix: &Index,
     anchors: &BTreeMap<String, [i32; 3]>,
-    kinds: &BTreeMap<String, Option<NoBodyKind>>,
+    kinds: &CellKinds,
     enumeration: &mut Vec<String>,
 ) -> Gate {
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
@@ -2040,12 +2211,17 @@ fn anchors_gate(
             Some(element) => {
                 let head = element.split(':').next().unwrap_or("").to_string();
                 *by_kind.entry(head).or_insert(0) += 1;
+                // **The expectation, re-keyed to the cell** (spec-0047 §2): a
+                // region can be part exterior dressing and part perch, so the
+                // question is not "is this whole region `posted`" but "did
+                // placing something here post anything at all".
                 if let Some(region) = element.strip_prefix("no_body:")
-                    && kinds.get(region).copied().flatten() != Some(NoBodyKind::Posted)
+                    && !kinds.posts_anything(region, pos)
                 {
                     enumeration.push(format!(
-                        "anchor {name:?} sits in out-of-walk region {region:?}, which is not \
-                         `posted` — the expected kind for a region something is placed in"
+                        "anchor {name:?} sits in out-of-walk region {region:?} and posts none of \
+                         its cells — `posted` is the expected kind for the floor a thing is placed \
+                         on"
                     ));
                 }
             }
@@ -2269,7 +2445,7 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
 
 // --- §2.9 the out-of-walk majority -----------------------------------------
 
-fn no_body_majority(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) -> Gate {
+fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
     let out_of_walk: BTreeSet<[i32; 3]> = ix
         .all_no_body_cells
         .iter()
@@ -2284,16 +2460,17 @@ fn no_body_majority(ix: &Index, kinds: &BTreeMap<String, Option<NoBodyKind>>) ->
     // It cannot silence a `posted` majority: `posted` is the one kind an author
     // secures by placing something, so a string plus a scattering of anchors
     // would be an author writing their own exemption.
-    let posted_cells: usize = kinds
-        .iter()
-        .filter(|(_, k)| **k == Some(NoBodyKind::Posted))
-        .map(|(n, _)| {
-            ix.no_body_cells[n.as_str()]
-                .iter()
-                .filter(|c| ix.standable.contains(*c))
-                .count()
-        })
-        .sum();
+    //
+    // Counted over CELLS as classified (spec-0047 §2), which is what the kinds
+    // are now facts about: a region that is half perch and half exterior
+    // dressing contributes exactly its perches, where the region-keyed count
+    // contributed all of it or none of it depending on which kind the region as
+    // a whole came out.
+    let posted_cells = kinds
+        .strongest()
+        .values()
+        .filter(|k| **k == Some(NoBodyKind::Posted))
+        .count();
     let posted_majority = posted_cells * 2 > out_of_walk.len().max(1);
     let acknowledged = ix.contract.no_body_majority_ack.is_some();
     let excused = acknowledged && !posted_majority;
