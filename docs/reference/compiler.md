@@ -1468,14 +1468,23 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   every `@a` outside the region via `boundary_return` (a macro `$tp @s $(x) $(y)
   $(z)` off `dw:cp`, + actionbar message + soft sound). The region selector is
   compile-time-derived literals; nothing is authored.
-- **Entry point.** One cell per campaign — `setworldspawn`, the `class_apply_*`
-  teleport, first-join placement, the `dw:cp` seed and the gate-deadlock proof's
-  start node all use it. It is the first area's entry anchor, resolved by the
-  compiler through an ordered alias list (`plan::ENTRY_ANCHOR_NAMES` = `spawn`,
-  then `entry`): one concept with two spellings in the shipped tileset library
-  (keep/cave/test say `spawn`, the island tileset says `entry`), so the compiler
-  owns the resolution rather than leaving it to per-tileset folklore. Resolving
-  **none** of them is `DW0345`.
+- **Entry point.** One cell per **area** — the cell a body arrives at when it
+  enters that area. It is the anchor resolved through an ordered alias list
+  (`plan::ENTRY_ANCHOR_NAMES` = `spawn`, then `entry`): one concept with two
+  spellings in the shipped tileset library (keep/cave/test say `spawn`, the
+  island tileset says `entry`), so the compiler owns the resolution rather than
+  leaving it to per-tileset folklore.
+  The **campaign's** entry point is the first area that resolves one, and drives
+  `setworldspawn`, the `class_apply_*` teleport, first-join placement, the
+  `dw:cp` seed and the gate-deadlock proof's start node. Resolving **none** of
+  the names in **any** area is `DW0345`.
+  Every consumer goes through one resolver — `Plan::entry_point` /
+  `plan::entry_anchor` for a lookup, `plan::is_entry_anchor_name` for the
+  membership question — and no consumer matches a name itself. Besides the
+  campaign-level uses above, the per-area entry point is what **inter-area
+  transport** carries the party to when consecutive critical objectives change
+  area, what the **POV shot planner** frames, and what the **trap-safety proof**
+  counts as a place a player can start from.
 - **The class trigger is ONE-SHOT per player, sealed in the pack.**
   `class_apply_<c>` ends in `teleport @s <entry point>`, so a
   `dw.class` trigger left armed after a class is a live warp back to the start of
