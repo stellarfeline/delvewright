@@ -547,10 +547,16 @@ jobs:
       # shape: correct the day it lands, stale at the next merge, with nothing
       # that could say so. A document with no readable status is REPORTED, never
       # filled in — a status written into a document nobody ruled on forges the
-      # fact this gate protects. States its binding count per series; a series
-      # empty on either side exits 2. Deterministic, offline, stdlib-only
-      # python3, and no network I/O — it compares this tree against itself.
-      - name: every spec and ADR index row agrees with the document it points at
+      # fact this gate protects. The same step also holds the spec corpus to
+      # docs/specs/README.md's own preamble: every spec carries an Acceptance
+      # criteria section — an obligation that was previously a doc line, which
+      # is not an invocation, and was false in fact for four specs while the
+      # sentence asserting it stayed true by declaration. States its binding
+      # count per series (documents, rows, statuses compared, sections found);
+      # a series empty on either side exits 2. Deterministic, offline,
+      # stdlib-only python3, and no network I/O — it compares this tree
+      # against itself.
+      - name: every index row agrees with its document, and every spec carries its acceptance criteria
         run: python3 tools/check-numbered-doc-index.py
       # The same defect one layer down, on a different kind of number. A version
       # ledger is picked exactly the way a spec number is — list what exists,
