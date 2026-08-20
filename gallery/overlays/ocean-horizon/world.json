@@ -15,6 +15,15 @@
           "min": 1
         },
         "prefab": "prefab/gallery-hall"
+      },
+      {
+        "id": "area/annex",
+        "name": "The Annex",
+        "pieces": {
+          "max": 3,
+          "min": 3
+        },
+        "prefab_pool": "pool/gallery-annex"
       }
     ],
     "boundary": {

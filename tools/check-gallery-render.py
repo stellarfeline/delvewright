@@ -195,18 +195,21 @@ def main() -> int:
             "ZERO frames were produced, so every per-frame assertion above examined "
             "nothing. A gate that judged no pictures is vacuous, not a pass."
         )
+    # Everything that is wrong, before anything exits. A gate that stops at its
+    # first finding reports one finding and hides the rest — which does not fake
+    # a pass, it fakes coverage of the failures, and this tool had that defect
+    # while its own CI job was being fixed for it.
+    if findings:
+        print("\nfindings:", file=sys.stderr)
+        for f in findings:
+            print(f"  {f}", file=sys.stderr)
     if refused:
         die(
             f"{len(refused)} declared view(s) could not be produced. A view is produced "
             "or refused LOUDLY, and a refusal in CI is the loud part arriving — fix the "
             "shot or remove it from the declared set in the same change."
         )
-    if findings:
-        print("\nfindings:", file=sys.stderr)
-        for f in findings:
-            print(f"  {f}", file=sys.stderr)
-        return 1
-    return 0
+    return 1 if findings else 0
 
 
 if __name__ == "__main__":

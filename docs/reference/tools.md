@@ -1068,7 +1068,7 @@ cargo run --release --manifest-path prefabs/<gen>/Cargo.toml -- <out_dir>
 | `island-terrain-generator` | `island-terrain-gen` | `island-*` terrain | `prefabs/island-tileset.md` |
 | `tidal-keep-generator` | `tidal-keep-gen` | `tk-*` (souls set) | `prefabs/tidal-keep-tileset.md` |
 | `hello-room-generator` | `hello-room-gen` | `hello-room` (the M1 piece) | — |
-| `gallery-generator` | `gallery-prefab-gen` | `gallery-hall` (the gallery's one piece) | `gallery/README.md` |
+| `gallery-generator` | `gallery-prefab-gen` | `gallery-hall`, the `gallery-annex-*` tileset + its pool, and `gallery-shard` | `gallery/README.md` |
 
 `gallery-prefab-gen` differs from its siblings in three ways, each deliberate.
 It writes into a **build directory**, not the content library — spec-0039 §6

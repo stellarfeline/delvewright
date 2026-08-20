@@ -766,6 +766,336 @@ fn write_skins(out: &Path) {
     }
 }
 
+// ---------------------------------------------------------------- the annex --
+//
+// A second, TILED piece set, so the gallery can bind the surfaces that only
+// exist once a world is assembled from a pool: `prefab_pool`, the piece verbs
+// (`insert-piece`, `swap-piece`, `remove-piece`, `reseed-piece`), the socket
+// verbs (`rewire-socket`) and `fragment`. Nothing in this repository — no
+// campaign and no fixture — had ever written any of them, which is exactly the
+// class spec-0039 exists to reach.
+//
+// Deliberately plain: three 7 x 6 x 7 stone boxes with 3 x 3 openings on the
+// faces that carry a socket. The point is the ASSEMBLY, not the architecture,
+// and a tileset with interesting rooms would make the placement harder to read
+// without binding one more unit.
+
+/// The annex tile extent.
+const ANNEX_SIZE: [i32; 3] = [7, 6, 7];
+
+/// Which faces of an annex tile carry a `gallery:socket`.
+struct AnnexTile {
+    id: &'static str,
+    /// `true` for a socket on the north (z = 0) face.
+    north: bool,
+    /// `true` for a socket on the south (z = size - 1) face.
+    south: bool,
+    role: &'static str,
+    weight: u32,
+}
+
+const ANNEX_TILES: &[AnnexTile] = &[
+    AnnexTile {
+        id: "gallery-annex-entry",
+        north: false,
+        south: true,
+        role: "entry",
+        weight: 1,
+    },
+    AnnexTile {
+        id: "gallery-annex-cell",
+        north: true,
+        south: true,
+        role: "connector",
+        weight: 2,
+    },
+    // A SECOND two-socket variant, and the reason is `reseed-piece`: it re-rolls
+    // a placed piece against the pool and refuses when no OTHER member can
+    // re-mate that piece\u0027s sockets. With one connector shape in the pool the
+    // verb is unwritable — a pool of one variant is a pool that cannot be
+    // reseeded.
+    AnnexTile {
+        id: "gallery-annex-cell-b",
+        north: true,
+        south: true,
+        role: "connector",
+        weight: 1,
+    },
+    AnnexTile {
+        id: "gallery-annex-end",
+        north: true,
+        south: false,
+        role: "terminal",
+        weight: 1,
+    },
+];
+
+/// The opening a socket sits in: 3 wide, 3 tall, centred on the face.
+fn annex_opening(x: i32, y: i32) -> bool {
+    (2..=4).contains(&x) && (1..=3).contains(&y)
+}
+
+fn annex_block_at(t: &AnnexTile, x: i32, y: i32, z: i32) -> &'static str {
+    let (w, h, d) = (ANNEX_SIZE[0], ANNEX_SIZE[1], ANNEX_SIZE[2]);
+    if y == 0 || y == h - 1 {
+        return "minecraft:stone";
+    }
+    if z == 0 && t.north && annex_opening(x, y) {
+        return "minecraft:air";
+    }
+    if z == d - 1 && t.south && annex_opening(x, y) {
+        return "minecraft:air";
+    }
+    if x == 0 || x == w - 1 || z == 0 || z == d - 1 {
+        return "minecraft:stone";
+    }
+    // One ceiling-hung lantern per tile, so a placed annex is lit like the hall.
+    if [x, y, z] == [3, h - 2, 3] {
+        return "minecraft:lantern";
+    }
+    "minecraft:air"
+}
+
+fn build_annex(t: &AnnexTile) -> Structure {
+    let mut palette = Palette::new();
+    for (name, props) in [
+        ("minecraft:air", None),
+        ("minecraft:stone", None),
+        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+    ] {
+        palette.idx(name, props);
+    }
+    let mut blocks = Vec::new();
+    for x in 0..ANNEX_SIZE[0] {
+        for y in 0..ANNEX_SIZE[1] {
+            for z in 0..ANNEX_SIZE[2] {
+                let name = annex_block_at(t, x, y, z);
+                let props: Option<&[(&str, &str)]> = if name == "minecraft:lantern" {
+                    Some(&[("hanging", "true")])
+                } else {
+                    None
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, props),
+                });
+            }
+        }
+    }
+    for (i, e) in palette.entries.iter().enumerate() {
+        assert!(
+            blocks.iter().any(|b| b.state == i as i32),
+            "{}: palette entry {i} ({}) is referenced by no cell",
+            t.id,
+            e.name
+        );
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: ANNEX_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+/// The metadata for one annex tile, including its connectors.
+fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
+    use serde_json::{json, Value};
+    let mut connectors: Vec<Value> = Vec::new();
+    if t.north {
+        connectors.push(json!({
+            "name": "gallery:socket",
+            "target": "gallery:socket",
+            "local_pos": [3, 1, 0],
+            "facing": "north",
+            "opening": [3, 3],
+            "joint": "aligned"
+        }));
+    }
+    if t.south {
+        connectors.push(json!({
+            "name": "gallery:socket",
+            "target": "gallery:socket",
+            "local_pos": [3, 1, ANNEX_SIZE[2] - 1],
+            "facing": "south",
+            "opening": [3, 3],
+            "joint": "aligned"
+        }));
+    }
+    assert!(
+        !connectors.is_empty(),
+        "{}: an annex tile with no socket can never be placed by a pool",
+        t.id
+    );
+    json!({
+        "prefab_id": format!("prefab/{}", t.id),
+        "structure": {
+            "file": format!("{}.nbt", t.id),
+            "id": t.id,
+            "size": ANNEX_SIZE,
+            "data_version": DATA_VERSION,
+            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+        },
+        // NO anchor, and that is a FINDING rather than an omission. Giving the
+        // tiles one makes the annex floor reachable, and a reachable area with a
+        // spare socket is a void border (`DW0322`): the 3 x 3 opening a socket
+        // carves leads nowhere until something mates to it. But `insert-piece`
+        // REQUIRES a spare socket to hang a tile off. So the verb is writable
+        // only in an area the player cannot reach — and an area the player
+        // cannot reach is one whose every view binds zero targets, which the
+        // render arm reports, correctly, as a camera aimed at nothing. Two
+        // correct rules meeting; written up in `gallery/README.md`.
+        "anchors": {},
+        "connectors": connectors,
+        "lighting": {
+            "profile": "lit",
+            "measured_min_light": 8,
+            "measured": "2026-08-20",
+            "method": "derived: one ceiling-hung lantern in a 5 x 4 x 5 interior, \
+                       the same mounting as the hall's grid"
+        },
+        "license": {
+            "source": "original",
+            "spdx": "GPL-3.0-or-later",
+            "note": "Original Delvewright project asset (pipeline-code license per \
+                     prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
+            "provenance": "Generated deterministically by prefabs/gallery-generator \
+                           (ADR-0006); regenerating yields byte-identical NBT and metadata."
+        }
+    })
+}
+
+/// The pool the annex area draws from.
+///
+/// Written here rather than printed for a human to paste, unlike the tileset
+/// generators: the gallery's prefab directory is a BUILD directory this program
+/// owns end to end, so there is no shared library for a stray file to be
+/// mis-parsed in (`DW0346`).
+fn annex_pool() -> serde_json::Value {
+    use serde_json::{json, Value};
+    let members: Vec<Value> = ANNEX_TILES
+        .iter()
+        .map(
+            |t| json!({ "prefab": format!("prefab/{}", t.id), "weight": t.weight, "role": t.role }),
+        )
+        .collect();
+    json!({ "pools": { "pool/gallery-annex": { "members": members } } })
+}
+
+fn write_annex(out: &Path) {
+    for t in ANNEX_TILES {
+        let mut s = build_annex(t);
+        resolve_connections(t.id, &mut s);
+        let cells = invariant_cells(&s);
+        invariants::assert_distress_never_stacks(t.id, &cells);
+        invariants::assert_blocks_are_real(t.id, &cells);
+        connections::assert_shape_is_stated(t.id, &cells);
+        connections::assert_attachments_are_supported(t.id, &cells);
+        invariants::assert_fluid_is_contained(t.id, s.size, &cells);
+
+        let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+        let mut gz = GzBuilder::new()
+            .mtime(0)
+            .write(Vec::new(), Compression::new(6));
+        gz.write_all(&nbt).expect("gzip write");
+        let framed = gz.finish().expect("gzip finish");
+        std::fs::write(out.join(format!("{}.nbt", t.id)), &framed)
+            .unwrap_or_else(|e| panic!("write {}.nbt: {e}", t.id));
+
+        let mut meta =
+            serde_json::to_string_pretty(&annex_metadata(t)).expect("metadata serializes");
+        meta.push('\n');
+        std::fs::write(out.join(format!("{}.json", t.id)), meta.as_bytes())
+            .unwrap_or_else(|e| panic!("write {}.json: {e}", t.id));
+    }
+    let mut pool = serde_json::to_string_pretty(&annex_pool()).expect("pool serializes");
+    pool.push('\n');
+    std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
+    println!(
+        "{ID}: annex tileset written — {} tile(s) and one pool",
+        ANNEX_TILES.len()
+    );
+}
+
+/// A 3 x 3 x 3 marker block, the gallery\u0027s fragment source.
+///
+/// `fragment` writes a prefab\u0027s blocks into an already-placed piece at a point,
+/// and `FragmentRotation` has four members — so binding them means four
+/// placements, and the hall has no four 7-cube holes left in it. A piece this
+/// size fits where the tiles cannot. It carries NO connector on purpose: it is
+/// never a pool member, only something to stamp.
+const SHARD_ID: &str = "gallery-shard";
+const SHARD_SIZE: [i32; 3] = [3, 3, 3];
+
+fn build_shard() -> Structure {
+    let mut palette = Palette::new();
+    for (name, props) in [
+        ("minecraft:polished_blackstone", None),
+        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+    ] {
+        palette.idx(name, props);
+    }
+    let mut blocks = Vec::new();
+    for x in 0..SHARD_SIZE[0] {
+        for y in 0..SHARD_SIZE[1] {
+            for z in 0..SHARD_SIZE[2] {
+                // A hanging lantern at the top centre, so the stamp is visible
+                // and asymmetric — a rotation nobody can see is a rotation
+                // nobody can check.
+                let lantern = [x, y, z] == [0, SHARD_SIZE[1] - 1, 0];
+                let (name, props): (&str, Option<&[(&str, &str)]>) = if lantern {
+                    ("minecraft:lantern", Some(&[("hanging", "true")]))
+                } else {
+                    ("minecraft:polished_blackstone", None)
+                };
+                blocks.push(BlockEntry {
+                    pos: [x, y, z],
+                    state: palette.idx(name, props),
+                });
+            }
+        }
+    }
+    Structure {
+        data_version: DATA_VERSION,
+        size: SHARD_SIZE,
+        palette: palette.entries,
+        blocks,
+        entities: Vec::new(),
+    }
+}
+
+fn write_shard(out: &Path) {
+    let mut s = build_shard();
+    resolve_connections(SHARD_ID, &mut s);
+    let cells = invariant_cells(&s);
+    invariants::assert_blocks_are_real(SHARD_ID, &cells);
+    connections::assert_shape_is_stated(SHARD_ID, &cells);
+    invariants::assert_fluid_is_contained(SHARD_ID, s.size, &cells);
+    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
+    let mut gz = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::new(6));
+    gz.write_all(&nbt).expect("gzip write");
+    let framed = gz.finish().expect("gzip finish");
+    std::fs::write(out.join(format!("{SHARD_ID}.nbt")), &framed).expect("write shard nbt");
+    let meta = serde_json::json!({
+        "prefab_id": format!("prefab/{SHARD_ID}"),
+        "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "prefabs/gallery-generator (gallery-prefab-gen)" },
+        "anchors": {},
+        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-20", "method": "derived: a lantern on a solid 3-cube; never entered, only stamped" },
+        "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)." }
+    });
+    let mut t = serde_json::to_string_pretty(&meta).expect("metadata serializes");
+    t.push(chr_nl());
+    std::fs::write(out.join(format!("{SHARD_ID}.json")), t.as_bytes()).expect("write shard json");
+    println!("{SHARD_ID}: fragment source written");
+}
+
+fn chr_nl() -> char {
+    10 as u8 as char
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(out) = args.next() else {
@@ -798,6 +1128,8 @@ fn main() {
         std::process::exit(2);
     }
     write_piece(out);
+    write_annex(out);
+    write_shard(out);
     // The skins destination IS created: unlike the prefab directory it is not an
     // existing library the operator might mistype, it is a fixed subdirectory of
     // the campaign the caller just named, and it is gitignored build output.

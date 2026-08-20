@@ -13,7 +13,9 @@ The gallery binds **245 units nothing else in this repository has ever written**
 Four of those turned out not to work the first time anything reached them: an
 ambush and a named mob drop could not compile at all, a generated flag-gate test
 could not pass, and a one-waypoint lane emitted a march test asserting an index
-it had no way to reach.
+it had no way to reach. A fifth is open: the build's render plan and the one
+`delvec snapshot` derives disagree whenever a world-edit blocks the route, because
+one is computed after the edits and the other before them.
 
 ## Reading it
 
@@ -31,12 +33,17 @@ order a player would:
 | `world-edits.json` | four batches that dress the floor, lay the hearth, thin the vault and rough the lane |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
+| `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
 | `baseline/` | the committed emission index and the expected-warnings ledger |
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
-a barred wall, with three doors in it. Its anchors are named for their role —
+a barred wall, with three doors in it. Beside it the generator emits a small
+**annex tileset** — three 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
+that exists only to be stamped by `fragment`. The annex is deliberately plain:
+its job is the ASSEMBLY, and a tileset with interesting rooms would make the
+placement harder to read without binding one more unit. Its anchors are named for their role —
 `anchor/hearth` is where you come back to life, `anchor/muster` is where a wave
 forms up — and the generator prints that role into the piece's metadata, so the
 piece explains itself without the campaign in hand.
@@ -152,6 +159,35 @@ route, so they are reported unaccounted rather than papered over.
 
 None of the three was found by reading code. Each was found by trying to write the
 surface down.
+
+## A second open question: the annex frames nothing, and cannot be fixed by itself
+
+`area/annex` is a three-tile chain assembled from `pool/gallery-annex`. It is
+what binds the piece verbs — `insert-piece`, `swap-piece`, `remove-piece`,
+`reseed-piece`, `rewire-socket` and `fragment` — none of which any campaign or
+fixture in this repository had ever written.
+
+Its tiles declare **no anchors**, and the render arm reports the consequence
+honestly: seven views of the annex bind zero targets, and one is featureless. A
+camera aimed at a room with nothing declared in it checks nothing by having been
+taken.
+
+The obvious fix does not work, and the reason is worth writing down because it is
+two correct rules meeting rather than a bug in either:
+
+- give the tiles an anchor and the annex floor becomes **reachable**;
+- a reachable area with a spare socket is a **void border** (`DW0322`) — the
+  3 x 3 opening a socket carves leads nowhere until something mates to it;
+- but `insert-piece` **requires** a spare socket to hang a tile off.
+
+So the verb is writable only in an area the player cannot reach, and an area the
+player cannot reach is one whose every view binds zero targets. Capping the chain
+with the terminal tile closes the hole and removes the socket the verb needs.
+
+What would resolve it: a tile whose socket opening is carved **when it mates**
+rather than unconditionally, so an unmated socket is a wall. That is a change to
+what a tileset generator emits, not to this campaign — and it is why the render
+arm currently reds on the annex while the coverage gate is green about it.
 
 ## The open question, for the design lane
 

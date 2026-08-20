@@ -3,6 +3,152 @@
   "content": {
     "batches": [
       {
+        "area": "area/annex",
+        "edits": [
+          {
+            "at_piece": 2,
+            "insert": "prefab/gallery-annex-cell",
+            "prefab": "prefab/gallery-annex-cell-b",
+            "socket": 1,
+            "verb": "insert-piece"
+          }
+        ],
+        "id": "batch/annex-hang-a-tile",
+        "note": "A fourth tile is hung off the tail's spare socket. The `prefab` on the verb is a DRIFT GUARD: it names what the solve must have put at that index, so a re-solve that moves a tile reds instead of editing the wrong one."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 3,
+            "prefab": "prefab/gallery-annex-cell",
+            "verb": "swap-piece",
+            "with": "prefab/gallery-annex-end"
+          }
+        ],
+        "id": "batch/annex-cap-the-tail",
+        "note": "The new tail becomes the terminal tile. A swap needs a replacement that can present a connector at every socket the old piece had mated, which is why it is the TAIL that can change and not a middle tile."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 3,
+            "prefab": "prefab/gallery-annex-end",
+            "verb": "remove-piece"
+          }
+        ],
+        "id": "batch/annex-take-it-off",
+        "note": "And it comes off again. Removals come BEFORE rewires in an area's script — removing shifts the indices every later rewire is written against."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 2,
+            "prefab": "prefab/gallery-annex-cell-b",
+            "socket": 1,
+            "state": "open",
+            "verb": "rewire-socket"
+          }
+        ],
+        "id": "batch/annex-open-a-way",
+        "note": "The tail's spare socket is opened."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 1,
+            "prefab": "prefab/gallery-annex-cell",
+            "verb": "reseed-piece"
+          }
+        ],
+        "id": "batch/annex-reroll-the-middle",
+        "note": "The middle tile is re-rolled against the pool. Last, so it cannot move a tile out from under an earlier verb's index."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 0,
+            "prefab": "prefab/gallery-annex-entry",
+            "socket": 0,
+            "state": "sealed",
+            "verb": "rewire-socket"
+          }
+        ],
+        "id": "batch/annex-seal-a-way",
+        "note": "A mated socket is sealed shut — the other half of the socket vocabulary."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "at": [
+              26,
+              1,
+              2
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "none",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              26,
+              1,
+              6
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "clockwise90",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              26,
+              1,
+              10
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "clockwise180",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              1,
+              1,
+              2
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "counterclockwise90",
+            "verb": "fragment"
+          }
+        ],
+        "id": "batch/stamp-the-shards",
+        "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and blocking the route makes the build's render plan longer than the one `snapshot` derives, which is a divergence this campaign is the first thing to have provoked (see README)."
+      },
+      {
         "area": "area/hall",
         "edits": [
           {

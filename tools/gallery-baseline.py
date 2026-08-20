@@ -149,9 +149,80 @@ def build_id(overlay: str | None, lang: str) -> str:
     return f"{overlay or 'primary'}.{lang}"
 
 
+def coverage_counts(delvec: Path) -> dict:
+    """Units total / bound / refusal-proven / unaccounted, for the header.
+
+    spec-0039 §6 asks for the deterministic counts in the baseline header so
+    growth is a diffable number rather than a complaint. It also makes the
+    unaccounted count a **committed fact**, which is what lets
+    `check-required-contexts.py` EVALUATE the gallery job's advisory entry
+    rather than recite its expiry condition — a hatch whose end state only a
+    comment describes is a hatch that never ends.
+
+    Derived from the same enumeration the coverage gate uses, never a second one.
+    """
+    sys.path.insert(0, str(REPO / "tools"))
+    from gallery_units import Binder, Enumerator
+
+    r = subprocess.run(
+        [str(delvec), "schema", "--stage", "all"], capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        die(f"`delvec schema --stage all` exited {r.returncode}")
+    export = json.loads(r.stdout)
+    e = Enumerator(export)
+    units = e.run()
+    if not units:
+        die("the schema export enumerated ZERO units; the header would record a lie")
+
+    stage_files = {
+        "world": "world.json",
+        "npcs": "npcs.json",
+        "classes": "classes.json",
+        "quest-plan": "quest-plan.json",
+        "quests": "quests.json",
+        "dialogue": "dialogue.json",
+        "world-edits": "world-edits.json",
+    }
+
+    def bind_dir(root: Path, label: str, into: set) -> None:
+        b = Binder(e)
+        for stage, fn in stage_files.items():
+            f = root / fn
+            if f.is_file():
+                b.walk(export[stage], json.loads(f.read_text()), label)
+        into |= set(b.bound) & set(units)
+
+    bound: set = set()
+    bind_dir(GALLERY, "primary", bound)
+    work = Path(tempfile.mkdtemp(prefix="gallery-header-"))
+    try:
+        for name in overlays():
+            dest = work / name
+            materialise(name, dest)
+            bind_dir(dest, f"overlay:{name}", bound)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    proven: set = set()
+    pdir = GALLERY / "probes"
+    if pdir.is_dir():
+        for d in sorted(x for x in pdir.iterdir() if x.is_dir()):
+            m = json.loads((d / "probe.json").read_text())
+            proven |= {u for u in (m.get("units") or []) if u in units}
+
+    return {
+        "units_total": len(units),
+        "units_bound": len(bound),
+        "units_refusal_proven": len(proven - bound),
+        "units_unaccounted": len(set(units) - bound - proven),
+    }
+
+
 def header(delvec: Path, prefabs: Path) -> dict:
     v = delvec_versions(delvec)
     return {
+        "coverage": coverage_counts(delvec),
         "delvec_version": v["delvec"],
         "dsl_version": v["dsl"],
         # `baseline/` is this file's own output, and `README.md` is prose that

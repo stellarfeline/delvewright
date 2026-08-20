@@ -37,6 +37,21 @@
       "kind": "interact"
     },
     {
+      "area": "area/annex",
+      "id": "interior/annex/0",
+      "kind": "interior"
+    },
+    {
+      "area": "area/annex",
+      "id": "interior/annex/1",
+      "kind": "interior"
+    },
+    {
+      "area": "area/annex",
+      "id": "interior/annex/2",
+      "kind": "interior"
+    },
+    {
       "area": "area/hall",
       "id": "interior/hall/0",
       "kind": "interior"
@@ -190,6 +205,21 @@
       "area": "area/hall",
       "id": "pov/leg5/wp3",
       "kind": "pov"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/2",
+      "kind": "seam"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/3",
+      "kind": "seam"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/4",
+      "kind": "seam"
     },
     {
       "area": "area/hall",

@@ -33,6 +33,8 @@ Exit 0 clean, 1 with one finding per line.
 
 from __future__ import annotations
 
+import json
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -74,6 +76,30 @@ ADVISORY_JOBS: dict[str, str] = {
         "required before it is green would deadlock branch protection"
     ),
 }
+
+# **How many advisory jobs this repository is allowed to hold.**
+#
+# The previous version of this file said "nothing else may be added here on this
+# precedent" in a comment, which is a doc line — and this project's own rule is
+# that a doc line is not an invocation. A second entry would have slipped in
+# beside the first and left the checker green, which is precisely how `tier 2`
+# sat unenforced while everyone believed it was blocking: the exact failure the
+# entry above cites.
+#
+# So the list is BUDGETED, the same shape as check F in
+# `check-capability-ownership.py`. Exceeding it is a hard red naming the budget.
+# Raising the number is still possible — but it is a one-line diff to a constant
+# whose name says what it is, which a reviewer sees, instead of one more key in a
+# dict of keys, which nobody counts.
+MAX_ADVISORY_JOBS = 1
+
+# The gallery entry's expiry, as something this checker can EVALUATE rather than
+# recite. `gallery/baseline/header.json` records the coverage counts (spec-0039
+# §6), so "it becomes required in the change that takes the unaccounted count to
+# zero" is a committed number, not a promise. When it reaches zero the entry has
+# outlived its reason and this file says so.
+GALLERY_JOB = "gallery (coverage + build + baseline)"
+GALLERY_HEADER = pathlib.Path(__file__).resolve().parent.parent / "gallery/baseline/header.json"
 
 # A job's display name: `    name: <value>` nested under a job key. Quotes are
 # optional in YAML and both forms appear in the wild, so strip them.
@@ -147,6 +173,50 @@ def main() -> int:
                 f"protection's required_status_checks.contexts, or record it in "
                 f"this checker's ADVISORY_JOBS with the reason it may fail without "
                 f"consequence."
+            )
+
+    # The budget. A gate nothing enforces is the shape this whole file exists to
+    # prevent, and an unbounded exemption list is one.
+    if len(ADVISORY_JOBS) > MAX_ADVISORY_JOBS:
+        findings.append(
+            f"{len(ADVISORY_JOBS)} advisory job(s) are declared and the budget is "
+            f"{MAX_ADVISORY_JOBS}: {', '.join(sorted(ADVISORY_JOBS))}.\n"
+            f"    An advisory gate is one nobody has to obey. Make the new job "
+            f"required — add it to {MANIFEST.name} AND to branch protection — or, "
+            f"if it genuinely cannot gate yet, raise MAX_ADVISORY_JOBS in this "
+            f"file and say in the same diff why this repository now needs two."
+        )
+    # A stale exemption is a budget the next one spends without anyone deciding to.
+    for job in sorted(ADVISORY_JOBS):
+        if job not in jobs:
+            findings.append(
+                f"advisory job {job!r} is not a job in ci.yml. Drop the entry — it "
+                f"is holding a budget slot for a gate that no longer exists."
+            )
+
+    # The gallery entry's expiry, evaluated.
+    if GALLERY_JOB in ADVISORY_JOBS and GALLERY_HEADER.is_file():
+        try:
+            counts = json.loads(GALLERY_HEADER.read_text(encoding="utf-8")).get(
+                "coverage", {}
+            )
+        except json.JSONDecodeError:
+            counts = {}
+        left = counts.get("units_unaccounted")
+        if left == 0:
+            findings.append(
+                f"{GALLERY_JOB!r} is still advisory and its own baseline header "
+                f"records ZERO unaccounted units — the condition the entry was "
+                f"granted under has been met.\n"
+                f"    Make it required: add the name to {MANIFEST.name} and to "
+                f"branch protection, and delete its ADVISORY_JOBS entry."
+            )
+        elif left is None:
+            findings.append(
+                f"{GALLERY_JOB!r} is advisory and "
+                f"`gallery/baseline/header.json` records no coverage counts, so "
+                f"nothing here can tell whether the entry has outlived its reason. "
+                f"Regenerate the baseline (`tools/gallery-baseline.py --write`)."
             )
 
     dupes = {n for n in required if required.count(n) > 1}
