@@ -1,28 +1,15 @@
 {
   "added": [],
   "changed": [
-    "easy.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "easy.en:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "easy.en:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction",
-    "hard.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "hard.en:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction",
-    "ocean-horizon.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "ocean-horizon.en:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction",
-    "primary.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "primary.en:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction",
-    "primary.zh-cn:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "primary.zh-cn:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction",
-    "void-horizon.en:datapack/data/gallery/function/lane_tick_lane.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/souls_td_lane_march.mcfunction",
-    "void-horizon.en:packtest-datapack/data/gallery/test/souls_td_lane_reseat.mcfunction"
+    "easy.en:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/verb_flag_gate.mcfunction"
   ],
   "classes": {
-    "PackTest": 12,
-    "datapack function": 6
+    "PackTest": 6
   },
   "removed": []
 }

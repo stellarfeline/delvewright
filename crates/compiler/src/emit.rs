@@ -17771,6 +17771,16 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id)
         ));
         b.extend(packtest_preamble(plan, qid, o, false, &sel)); // flags withheld (cleared)
+        // `with_flags: false` shuts EVERY gate the objective has, the numeric one
+        // included — which is right for a preamble and wrong for this test. This
+        // template's subject is `requires_flags`, so the flag must be the only
+        // variable: with the numeric gate also shut, the withheld assert passes
+        // because TWO gates are closed (it would pass with the flag logic
+        // deleted), and the released phase — which reopens only the flags — can
+        // never pass at all. An objective carrying both gates therefore emitted a
+        // test that could not go green, and nothing had ever written both on one
+        // objective until the gallery did.
+        b.extend(state_drive_lines(plan, o.requires_state(), true));
         driver(&mut b);
         b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
