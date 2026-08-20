@@ -5,10 +5,15 @@ Delvewright DSL declares. It is built on every pull request, and it is never
 played, released or staged.
 
 It exists so that a new authoring surface meets something built to receive it. A
-surface no campaign exercises is a surface nothing has ever compiled end to end —
-and on the tree this campaign landed on, that described **276 of the DSL's 800
-declared surface units**, none of which any campaign or fixture had ever written.
-Two of them turned out not to compile at all the first time anybody tried.
+surface no campaign exercises is a surface nothing has ever compiled end to end,
+and that is not a hypothetical: of the DSL's **801 declared surface units**, the
+whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
+The gallery binds **245 units nothing else in this repository has ever written**.
+
+Four of those turned out not to work the first time anything reached them: an
+ambush and a named mob drop could not compile at all, a generated flag-gate test
+could not pass, and a one-waypoint lane emitted a march test asserting an index
+it had no way to reach.
 
 ## Reading it
 
