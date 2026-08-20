@@ -95,6 +95,9 @@ docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / grammar / orchestrator /
                      #   admit / schem / render
+gallery/             # the ENGINE's own campaign: one instance of every surface
+                     #   the DSL declares, built on every PR, never released or
+                     #   staged. Its piece is generated, never committed.
 prefabs/             # tileset GENERATORS + shared invariants. The .nbt library and
                      #   its metadata live in the CONTENT repo, reached through the
                      #   `campaigns/` dev symlink — see prefabs/README.md
@@ -222,6 +225,35 @@ validation/          # docker compose: headless server + bot, same image as CI &
   easily: **a `grep` for a phrase the file wraps across a line break returns
   zero**, and zero reads as absent. Ask what the pattern could match before
   believing what it did not.
+  And the form that hides best, because the wrong number is printed beside the
+  thing that produced it: **a count equal to its own fetch limit is not a
+  measurement — it is the limit.** A ledger audit ran `--limit 200` and applied
+  the date filter afterwards, so once the window held more than 200 rows the
+  oldest were never fetched; it printed `200 merged, 200 logged, 0 MISSING` for
+  weeks, and `200` was the cap. The window actually held 239. The repair is not a
+  bigger number — that is a fix with an expiry date — but a **refusal when the
+  page comes back full**, since that is the one condition under which the answer
+  cannot be trusted. Same family as UNTRAVERSED: truncation fakes coverage, and it
+  fakes it in the direction that reads as a clean pass.
+  The editing counterpart, and it is the cheapest of the family to commit: **a
+  scripted string replacement that matches nothing is a silent no-op** — it
+  returns the file unchanged and reports success, so a version that was supposed
+  to join a ledger simply is not in it. Nothing errors, the diff looks small
+  because it IS small, and review reads the intent rather than the absence. The
+  live instance was caught only because an unrelated gate **states its binding
+  count** and printed eight where nine was due, which is the argument for stated
+  bindings in one line. So an edit script asserts its match count before it
+  writes; a replace whose count is not exactly what was intended is a failure, not
+  a no-op.
+  The same family reaches the act of demonstrating, which is when a tree is most
+  often perturbed and restored: **`git checkout -- <file>` cannot tell "revert my
+  perturbation" from "discard my work".** A round reverting a perturbation that
+  way destroyed its own uncommitted edits, and every demonstration that ran
+  afterwards passed — against the committed version, which was a different
+  instrument. Nothing errored and the output was plausible; it was caught only by
+  reading `git diff` before committing. So: **commit before demonstrating**, and
+  where the work cannot be committed yet, restore the perturbation from a scratch
+  copy rather than from git.
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
@@ -237,6 +269,14 @@ validation/          # docker compose: headless server + bot, same image as CI &
   command* but ***what does this share with the first one***, and the strongest
   second method is the one whose failure mode is unrelated: a different
   instrument, a different tree, or an observer outside the machine entirely.
+  The mirror image is just as costly and is easier to walk into while obeying the
+  rule: **a second method must differ where the suspicion is and agree everywhere
+  else.** Re-checking that audit meant varying the fetch limit — instead the
+  re-check also re-implemented the ledger reader, missed a legacy row shape the
+  shipped reader accepts, and reported twelve missing entries that did not exist.
+  It disagreed with the first method for a reason that had nothing to do with the
+  question. Isolate the one variable; re-deriving the rest is not extra rigour, it
+  is a second measurement to get wrong.
 - **CI is the sole arbiter** (ADR-0008). Nothing merges red.
   **Every CI job is a required status check**: an advisory
   job is a job that does not gate — at three of ten required, `tier 2` (datapack
@@ -350,6 +390,21 @@ validation/          # docker compose: headless server + bot, same image as CI &
   among several kinds, the effective obligation is their **disjunction** and is
   only as strong as the weakest, so the kind must be determined by the object
   rather than picked by the author.
+- **When one gate's prescription is another gate's refusal, the defect belongs to
+  the PAIR.** Each half can be correct, bound, non-vacuous and falsifiable, and
+  the union still be unsatisfiable — so the review question is never only *is this
+  check right* but ***what does its remedy oblige, and does anything refuse
+  that***. The worked example: a baseline tool's verify path refused a tree whose
+  warning ledger had moved and prescribed regenerating it; its own write path then
+  refused the regeneration as a noise commit, because that guard asked whether
+  emission and inputs had moved and not whether the warning ledger had. **No
+  green state existed**, and it was reachable by an ordinary merge — a pass that
+  stops emitting a duplicated advisory moves the warning ledger and nothing else.
+  The tell is in the guard's own comment: it carefully qualified two of the three
+  things the artifact holds, which is what a rule looks like when it was written
+  against the cases its author had met. So a gate that names a remedy owes a check
+  that the remedy is **reachable**, and where two gates guard one artifact, they
+  are read together or not at all.
 - **A command whose response nobody reads cannot fail.** A site that
   issues a command to a server and discards the reply is asserting an effect it
   has not established, and it stays green forever: `delve-admit`'s gallery

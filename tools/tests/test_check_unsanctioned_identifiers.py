@@ -155,6 +155,56 @@ def test_a_colour_literal_is_not_a_citation(tree, capsys):
     assert tree.checker().main([]) == 0
 
 
+def test_a_shorthand_colour_is_not_a_citation_either(tree, capsys):
+    """`border: 1px solid #0006` was budgeted as pull request 6 by a permanent
+    FLOOR entry — a false positive the gate paid to hide, which kept its own
+    count green while one of the five things it counted was not a finding. The
+    repair of a false positive is the exemption, never the floor."""
+    tree.commit({"page.css": ".swatch { border: 1px solid #0006; outline: #f0f0; }\n"})
+    assert tree.checker().main([]) == 0
+    assert "OK" in capsys.readouterr().out
+
+
+# The exemption above is the direction a checker gets routed around, so each of
+# the four ways a citation could hide behind it is asserted to STILL be a
+# finding. A rule keyed only to "a digit run of a colour's length" would have
+# gone quiet on every one of them.
+
+def test_the_colour_exemption_does_not_reach_a_stylesheet_comment(tree, capsys):
+    """A pull-request reference written into a stylesheet HAS to sit in a
+    comment or a string — CSS code has no syntax for prose. That is the property
+    the defect cannot supply, and it is what makes this exemption safe."""
+    tree.commit({"page.css": "/* the ground colour, fixed in #510 */\nbody { color: #313745; }\n"})
+    assert tree.checker().main([]) == 1
+    out = capsys.readouterr().out
+    assert "page.css:1" in out
+    assert "#510" in out
+
+
+def test_the_colour_exemption_does_not_reach_a_stylesheet_string(tree, capsys):
+    tree.commit({"page.css": '.note::after { content: "see #510"; color: #0006; }\n'})
+    assert tree.checker().main([]) == 1
+    assert "#510" in capsys.readouterr().out
+
+
+def test_the_colour_exemption_does_not_leave_the_stylesheet(tree, capsys):
+    """`#510` in prose is pull request 510, and `#313745` in prose is a citation
+    too — neither file is a stylesheet, so neither is a colour."""
+    tree.commit({"docs/a.md": "Fixed in #510.\n", "docs/b.md": "The panel is #313745.\n"})
+    assert tree.checker().main([]) == 1
+    out = capsys.readouterr().out
+    assert "docs/a.md:1" in out
+    assert "docs/b.md:1" in out
+
+
+def test_a_digit_run_that_is_not_a_colours_length_stays_a_finding(tree, capsys):
+    """`#18` is two digits. CSS hex colours are three, four, six or eight, so
+    even in stylesheet code this is a citation."""
+    tree.commit({"page.css": ".a { border-color: #18; }\n"})
+    assert tree.checker().main([]) == 1
+    assert "#18" in capsys.readouterr().out
+
+
 def test_a_single_digit_reference_is_left_alone(tree, capsys):
     """Row numbers, list indices and numbered sections inside the document that
     writes them resolve for the reader; this repository has never numbered a

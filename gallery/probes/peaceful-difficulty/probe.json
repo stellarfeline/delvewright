@@ -1,0 +1,7 @@
+{
+  "code": "DW0468",
+  "units": [
+    "WorldDifficulty::peaceful"
+  ],
+  "why": "`peaceful` is in the vanilla vocabulary and is refused as a delve setting: it disarms the hostile forces a delve's fights are built from."
+}

@@ -201,9 +201,9 @@ same PR (CLAUDE.md Methodology; CI enforces the DW-code subset — see
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, fluid containment against the horizon, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0318`/`DW0322`/`DW0323`/`DW0352`/`DW0354` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 10 | Nav checks (**boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; waypoint self-check (critical path + per branch); POV camera clear-eye self-check; v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0318`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0724` (exit 3; `DW0342` → exit 2) |
+| 10 | Nav checks (**boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; waypoint self-check (critical path + per branch); v0.6 checkpoint no-stranding/placement + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0318`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make and no body's `traversal` declaration goes unexercised (`DW0452`/`DW0453`/`DW0454`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky under a pinned daytime hour (`DW0496`, `compiler::daylight`, measured off the seated wave cells) | `compiler::emit` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
-| 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack) | `compiler::emit` | `DW0300`+ (exit 3) |
+| 12 | Emit (datapack incl. the `world_edits` function, packtest, server, critical-path, resourcepack, and the visual tier's `render-plan.json` — whose every camera is stood up in open air and then proven clear-eyed against the assembled world, `DW0724`) | `compiler::emit`, `compiler::render_plan` | `DW0300`+/`DW0724` (exit 3) |
 | 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0545`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) | `compiler::affordance` + `compiler::integrity` + `compiler::seeding` | `DW0420`/`DW0421`/`DW0495`/`DW0497`/`DW0545` (exit 3) |
 
 - `build` ⟹ `validate` + `analyze`; `analyze` ⟹ `validate`. A validation failure
@@ -1766,6 +1766,30 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   this number exposes). **Emitted only for a campaign that declares a
   teleport**, so a file that exists and reports zero is a finding rather than an
   absence.
+- Every `snapshot` manifest carries a **`frame`** block: `targets_in_frame`,
+  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour count
+  when the frame shows no scene at all). The binding rule applied to a picture —
+  a render that succeeds, writes a file and is a rectangle of flat background is
+  indistinguishable from one more shot taken to a directory listing, to a contact
+  sheet and to a reviewer skimming, and the only thing that separates a camera
+  aimed at the room from one aimed at a wall is the count. Judged by the arm that
+  DREW the frame (`view::detect::is_featureless`), so a consumer never computes a
+  second verdict on the same question. `tools/check-gallery-render.py` reads these
+  back rather than re-deriving them.
+
+- `<out>/validation/effect-roots.json`: the **effect-root walk's own binding
+  ledger** (`dsl::RootBinding`, written by `emit::build_with_warnings`).
+  `roots_enumerated` / `roots_total`, the total `bundles` and `effects`, a
+  per-root `sites` count, and `unbound_roots` — the roots this campaign has no
+  bundles at, listed rather than left to be derived. Most effect-shaped proofs in
+  this compiler are only as good as the roots this walk reaches, and until this
+  file existed the number was a **string on stderr**: nothing downstream could
+  assert that a build's effect walk bound to anything. Emitted for every campaign,
+  because the walk runs for every campaign; a zero at a root is not a failure (a
+  campaign with no traps has no trap payloads) but it is the reason any proof over
+  that root is unbound, which is what a reader needs and cannot infer. For scale:
+  the gallery binds all eight roots, where the largest shipped campaign binds
+  three.
 - `<out>/validation/fixture-gate.json`: the fixture-class proof's **binding
   ledger** (`compiler::affordance`, `DW0545`, playtest-methodology.md rule 1).
   `fixtures_declared` and `borne_declared` (every engine-summoned hitbox, mark
@@ -1998,6 +2022,20 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   cannot reveal a sealed cave — no light, only amplified noise — while real
   emitters render), so the stamp tells `delve-render` exactly which shots need its
   night-vision review emulation (below) and guarantees it touches no others.
+- **Every camera's eye cell is proven clear** (`DW0724`,
+  `crate::nav::verify_camera_eyes`). A camera whose eye cell holds a block
+  renders the inside of that block, which is a picture indistinguishable from a
+  picture of a featureless room. `render_plan::render_plan` is the only
+  constructor of a plan document and it takes the assembled world, so there is no
+  render plan that skipped the proof; every kind enters the shot list through one
+  `push` that records the eye from the same position it writes into the camera.
+  Six of the seven kinds place their camera at a fixed stand-off from a subject,
+  and such a camera whose own cell is occupied stands instead at the furthest
+  clear point on its own sight line (`crate::camera::stand_in_open_air`), stating
+  `camera.requested_pos` and `camera.standoff` on that shot. `pov` is never
+  moved — that eye IS the player's — so a `pov` violation stays a build error
+  against the derivation. The plan carries the proof's binding counts:
+  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`.
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
   ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around
@@ -4630,7 +4668,7 @@ the rule's domain is the more useful thing for the number to say.
 | `DW0721` | `delve-render` | Input (`.nbt`/metadata/`render-plan.json`) unreadable, or a `--view` that cannot be rendered as asked (exit 2). A declared view is refused **before any frame**: a malformed spec, a bearing given twice or not at all, a subject the piece does not declare (the message lists the anchors it does), or a name a planned shot already holds — which would overwrite that shot's image and quietly regress a review set. A view is never dropped or silently re-aimed: a set missing the one camera the reviewer asked for still looks complete in a directory listing. |
 | `DW0722` | `delve-render` | Output file could not be written (exit 3). |
 | `DW0723` | `delve-render` | GPU renderer failed / textures absent (exit 5). |
-| `DW0724` | `delvec` (visual tier) | A player-POV camera eye cell is occupied (solid/water) in the FINAL assembled world — the frame would render the inside of a block, not the player's view. The self-check behind the visual tier (`compiler::nav::verify_pov_cameras`), mirroring the DW0314 waypoint self-check: every POV camera stands at the eye-height (1.62) of a DW0314-proven-standable waypoint, so this can only fire if the eye-height/standing-cell derivation changes to place the eye in a ceiling/wall (or a later pass mutates the cell). Numbered in the `DW072x` visual/render range; emitted by the compiler's nav pass (exit 3). Fix the camera derivation — never nudge the waypoint or the geometry. |
+| `DW0724` | `delvec` (visual tier) | **A render-plan camera's eye cell is occupied** (solid/water) in the FINAL assembled world — the frame would render the inside of a block, and a picture of the inside of a block is indistinguishable from a picture of a featureless room. `compiler::nav::verify_camera_eyes`, over **every** shot the plan holds: `spawn`, `interior`, `seam`, `npc`, `interact`, `gate` and `pov`. It is bound at the derivation, not at a call site — `render_plan::render_plan` is the only constructor of a plan document and it takes the world, and every kind enters the shot list through one `push` that records the eye from the same position it writes into the camera, so a kind added later is covered without anyone remembering. (It was bound to `pov` alone, which is the kind that happened to need it first; the identical defect on a seam camera standing inside a hung ceiling lantern was invisible to every build in the repository.) Two verdicts, decided by the object rather than by the author. **`pov`** is the player's own eye, 1.62 above a DW0314-proven-standable waypoint, so it is clear by construction and is never moved: a violation there is the derivation changing (or a later pass mutating the cell) and fails the build (exit 3) — fix the derivation, never the waypoint or the geometry. **Every other kind** states a fixed stand-off from a subject it frames, which is a preference and not a position: a camera whose own cell holds a block stands instead at the furthest clear point on its own sight line (`compiler::camera::stand_in_open_air`) and records `camera.requested_pos` + `camera.standoff` on its shot, because a displaced camera is invisible in its own frame. It yields to that one fact and nothing else — an interior shot's dollhouse eye is deliberately above the piece and is not pulled through the roof it looks past. The error survives for those kinds too: it fires when even the subject's own cell is buried, so there is no vantage on the sight line at all. Every plan states the proof's binding counts (`camera_eye_proof`: `cameras` examined, `pulled_in`), and a plan holding zero cameras is a warning under the same code rather than a silent pass. Numbered in the `DW072x` visual/render range. Scale, measured over every campaign and fixture that builds before this binding existed: **204 of 752 cameras stood inside a block** — 144 seam, 38 gate, 16 NPC, 6 interact, 0 POV — and every one of the 27 campaigns had at least one. |
 | `DW0725` | `delve-render` | **Contact-sheet ordering is not a total order over the candidates** — indices dropped, duplicated or out of range (exit 10). The score RANKS the sheet and NEVER gates it (owner ruling, spec-0028 §3): cross-domain calibration between a painterly reference image and a voxel render is unproven, so a similarity number may decide where a candidate sits on the page and never whether it is on the page. `sheet::build_sheet` puts whatever its ordering function returns through `sheet::verify_total_order` before drawing a pixel, so every way rank-only can erode — a threshold shortening the order, a "best of" repeating an index, an off-by-one losing the last cell — lands here as one refusal instead of a silently shorter page. Promoting the score to a threshold requires its own owner-approved amendment backed by accumulated batch data; do not add one to satisfy this diagnostic. |
 | `DW0726` | `delve-render` | A contact sheet's score set bound to fewer candidates than the sheet holds. **Zero binding is an error** (exit 2) — nothing was ranked, and a score file that matched no candidate must not read as a successful ranking run (CLAUDE.md: a green gate that binds to nothing is vacuous, not a pass). A partial binding is a **warning** naming the counts; the unscored candidates stay on the page, last, labelled unscored — a missing measurement is not a bad one. Score rows matching no candidate warn under the same code (usually an id typo or a stale run). |
 | `DW0727` | `delve-render` | **An anchor's eye-level camera is not standing on the anchor's own cell**, or could not be stood up at all (warning; `piece`/`batch` still write every other shot). The per-prefab eye shots are the only cameras inside a piece, and a prefab is mostly solid — the motivating ward was 81% rock with an anchor inside a bank of iron bars — so an eye point taken from an anchor position alone lands inside a block often enough that assuming it would put a picture of the inside of a block in a review set, indistinguishable from a picture of a room. Three tiers, one code, because they are one fact the reviewer needs (*where is the body in this frame*): the camera **stepped back** along the facing to a cell where a body fits, naming the block that displaced it and the offset; **no body cell** was found within 3 blocks with the anchor still in front of it, so that anchor gets no eye shot at all; or the frame rendered **empty** — nothing but flat background, meaning the camera is aimed at nothing (measured on the pixels, `detect::is_featureless`, not inferred from geometry). The empty-frame tier is a property of a rendered frame, not of one camera kind, so it covers every shot in the set and says which one it is talking to: an anchor aimed at nothing or out of the piece, an author-declared `--view` whose zoom or cutaway left the model out of frame (the message repeats the spec, bearing and zoom that produced it), or a fitted planned shot with nothing to fit. Every case also rides `<stem>-shots.json`, since a displaced camera is invisible in its own frame. Fix the anchor's facing or the piece's geometry; never move the camera to make the picture nicer. Zero eye shots over one or more eye-eligible anchors is reported under the same code — a review set with no interior view cannot judge the scene, which is the whole job of `prefab-procedure.md` §5. |
@@ -4922,12 +4960,18 @@ layout. Details:
   `14`), with the eye raised `0.45 × dist`. **The eye is then pulled along its own
   sight line until it stands in open air**, so `--at` frames an interior (a
   cavern fire pit, an alcove) instead of rendering the inside of the mountain.
+  The walk is `compiler::camera::stand_in_open_air`, shared with the render
+  plan's own cameras: standing a camera up in open air is a property of a
+  camera, so there is one of it.
 - **`--shot <id>`** — reuses a `render-plan.json` camera by id (`interior/…`,
   `npc/…`, `interact/…`, `gate/…`, `seam/…`, `pov/leg{L}/wp{W}`). The render plan
   states cameras in its own Chunky yaw convention, so the bridge reads only its
   `pos`/`look_at` world points and re-derives Minecraft yaw/pitch. `pov/…` ids
   additionally compute the DW0311 critical-path routes; other ids do not.
-  An unknown id lists the available ones.
+  An unknown id lists the available ones. The plan is derived against the same
+  edited assembled world this command rasterises, so a camera the plan stands up
+  out of the rock is stood up identically here — `--shot` frames what the built
+  plan states, never a second opinion about it.
 
 **Pipeline stages required** — parse → `Plan::build` (placement) → read the
 placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav

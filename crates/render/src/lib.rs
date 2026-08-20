@@ -40,7 +40,12 @@
 //! `delvewright_compiler::view::…` at its use site, so that a reader can always
 //! tell which side of the shelf split a thing is on.
 
-pub mod detect;
+/// The frame detectors — **defined in `delvec`**, named here.
+///
+/// ADR-0021 §1: the shared render surface is one definition and this crate
+/// names it. `is_featureless` and `is_magenta` are pure pixel math with no GPU
+/// in them, and the CPU arms produce frames that need the same verdicts.
+pub use delvewright_compiler::view::detect;
 pub mod fidelity;
 pub mod occupancy;
 pub mod render;

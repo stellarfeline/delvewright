@@ -1,0 +1,766 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "batches": [
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "at_piece": 2,
+            "insert": "prefab/gallery-annex-cell",
+            "prefab": "prefab/gallery-annex-cell-b",
+            "socket": 1,
+            "verb": "insert-piece"
+          }
+        ],
+        "id": "batch/annex-hang-a-tile",
+        "note": "A fourth tile is hung off the tail's spare socket. The `prefab` on the verb is a DRIFT GUARD: it names what the solve must have put at that index, so a re-solve that moves a tile reds instead of editing the wrong one."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 3,
+            "prefab": "prefab/gallery-annex-cell",
+            "verb": "swap-piece",
+            "with": "prefab/gallery-annex-end"
+          }
+        ],
+        "id": "batch/annex-cap-the-tail",
+        "note": "The new tail becomes the terminal tile. A swap needs a replacement that can present a connector at every socket the old piece had mated, which is why it is the TAIL that can change and not a middle tile."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 3,
+            "prefab": "prefab/gallery-annex-end",
+            "verb": "remove-piece"
+          }
+        ],
+        "id": "batch/annex-take-it-off",
+        "note": "And it comes off again. Removals come BEFORE rewires in an area's script — removing shifts the indices every later rewire is written against."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 1,
+            "prefab": "prefab/gallery-annex-cell",
+            "verb": "reseed-piece"
+          }
+        ],
+        "id": "batch/annex-reroll-the-middle",
+        "note": "The middle tile is re-rolled against the pool. After the removal, so it cannot move a tile out from under an earlier verb's index, and before the two rewires, which act on the join it re-mates."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 0,
+            "prefab": "prefab/gallery-annex-entry",
+            "socket": 0,
+            "state": "sealed",
+            "verb": "rewire-socket"
+          }
+        ],
+        "id": "batch/annex-seal-a-way",
+        "note": "A mated socket is sealed shut — the other half of the socket vocabulary."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 0,
+            "prefab": "prefab/gallery-annex-entry",
+            "socket": 0,
+            "state": "open",
+            "verb": "rewire-socket"
+          }
+        ],
+        "id": "batch/annex-open-a-way",
+        "note": "And the entry's own side of that join is opened again. `rewire-socket open` clears an UNMATED socket's seal, so it can only ever be written on a socket with nothing mated to it — and the cell one step past such an opening lies outside every placed tile. In a world with nothing outside, that is a bottomless column, and `DW0322` refuses the doorway: a way out onto nothing is a fall nobody survives. The one unmated socket that does NOT face the void is the one the batch above just severed, because the partner's own plane is still walled. So this opens the near side of a bricked-up doorway and leaves the far side brick — which is what the verb draws, and it is laid last because the socket is mated until then."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "at": [
+              26,
+              1,
+              2
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "none",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              26,
+              1,
+              6
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "clockwise90",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              26,
+              1,
+              10
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "clockwise180",
+            "verb": "fragment"
+          },
+          {
+            "at": [
+              1,
+              1,
+              2
+            ],
+            "frame": {
+              "kind": "piece-local",
+              "piece": 0,
+              "prefab": "prefab/gallery-hall"
+            },
+            "prefab": "prefab/gallery-shard",
+            "rotation": "counterclockwise90",
+            "verb": "fragment"
+          }
+        ],
+        "id": "batch/stamp-the-shards",
+        "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and blocking the route makes the build's render plan longer than the one `snapshot` derives, which is a divergence this campaign is the first thing to have provoked (see README)."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/near-floor",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                29,
+                0,
+                14
+              ],
+              "min": [
+                1,
+                0,
+                1
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/far-floor",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                29,
+                0,
+                29
+              ],
+              "min": [
+                1,
+                0,
+                16
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/whole-floor",
+            "shape": {
+              "kind": "union",
+              "of": [
+                "region/near-floor",
+                "region/far-floor"
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/floor-stone",
+            "shape": {
+              "blocks": [
+                "minecraft:stone"
+              ],
+              "kind": "palette-match",
+              "within": "region/whole-floor"
+            },
+            "verb": "select"
+          },
+          {
+            "matching": [
+              "minecraft:stone"
+            ],
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 3.0
+                },
+                {
+                  "block": "minecraft:cobblestone",
+                  "weight": 1.5
+                },
+                {
+                  "block": "minecraft:mossy_cobblestone",
+                  "weight": 0.5
+                }
+              ],
+              "scale": 0.35
+            },
+            "region": "region/floor-stone",
+            "verb": "replace"
+          }
+        ],
+        "id": "batch/dress-the-floor",
+        "note": "Break the uniform stone floor into weathered variation. Exercises `select` over `box`, `union` and `palette-match`, and `replace` with a weighted recipe."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/hearth-bay",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/hearth",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                0,
+                2
+              ],
+              "min": [
+                -2,
+                -1,
+                -2
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/hearth-seat",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/hearth",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                0,
+                0,
+                0
+              ],
+              "min": [
+                0,
+                -1,
+                0
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/hearth-surround",
+            "shape": {
+              "base": "region/hearth-bay",
+              "kind": "subtract",
+              "remove": [
+                "region/hearth-seat"
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/floor-stone",
+            "shape": {
+              "blocks": [
+                "minecraft:stone"
+              ],
+              "kind": "palette-match",
+              "within": "region/hearth-bay"
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/hearth-stone",
+            "shape": {
+              "kind": "intersect",
+              "of": [
+                "region/hearth-surround",
+                "region/floor-stone"
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:polished_blackstone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/hearth-stone",
+            "verb": "fill"
+          },
+          {
+            "fixture": "shroomlight",
+            "min_light": 8,
+            "region": "region/hearth-bay",
+            "verb": "relight"
+          }
+        ],
+        "id": "batch/lay-the-hearth",
+        "note": "Give the respawn point a floor of its own. Exercises `anchor-relative` framing, `subtract` and `intersect`, `fill`, and `relight` with an explicit fixture."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/canopy-lip",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                23,
+                5,
+                25
+              ],
+              "min": [
+                22,
+                5,
+                19
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "region": "region/canopy-lip",
+            "verb": "carve"
+          },
+          {
+            "name": "region/canopy-body",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                28,
+                5,
+                25
+              ],
+              "min": [
+                26,
+                5,
+                19
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "op": {
+              "by": 1,
+              "kind": "lower"
+            },
+            "region": "region/canopy-body",
+            "verb": "morph"
+          },
+          {
+            "name": "region/canopy-crest",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                25,
+                5,
+                22
+              ],
+              "min": [
+                24,
+                5,
+                21
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "op": {
+              "by": 1,
+              "kind": "raise",
+              "recipe": {
+                "blocks": [
+                  {
+                    "block": "minecraft:stone",
+                    "weight": 1.0
+                  }
+                ]
+              }
+            },
+            "region": "region/canopy-crest",
+            "verb": "morph"
+          }
+        ],
+        "id": "batch/open-the-vault",
+        "note": "The stone canopy over the east bay is thinned before it is brought down. Exercises `carve` and `morph`/`lower` — on the CANOPY rather than the floor, because carving walkable ground opens a void drop and `DW0322` refuses the world it leaves."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/far-floor",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                29,
+                0,
+                29
+              ],
+              "min": [
+                1,
+                0,
+                16
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/hearth-bay",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/hearth",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                0,
+                2
+              ],
+              "min": [
+                -2,
+                -1,
+                -2
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/keep-clear",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/reliquary",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                1,
+                1,
+                1
+              ],
+              "min": [
+                -1,
+                -1,
+                -1
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "name": "region/lane-strip",
+            "shape": {
+              "from": 0,
+              "kind": "surface-band",
+              "over": "region/far-floor",
+              "to": 0
+            },
+            "verb": "select"
+          },
+          {
+            "op": {
+              "kind": "smooth",
+              "passes": 1,
+              "recipe": {
+                "blocks": [
+                  {
+                    "block": "minecraft:stone",
+                    "weight": 1.0
+                  }
+                ]
+              }
+            },
+            "region": "region/lane-strip",
+            "verb": "morph"
+          },
+          {
+            "avoid": [
+              "region/hearth-bay",
+              "region/keep-clear"
+            ],
+            "density": 0.02,
+            "items": [
+              {
+                "block": "minecraft:cobblestone",
+                "weight": 1.0
+              },
+              {
+                "block": "minecraft:gravel",
+                "weight": 0.5
+              }
+            ],
+            "limit": 24,
+            "region": "region/lane-strip",
+            "spacing": 3,
+            "verb": "scatter"
+          },
+          {
+            "name": "region/march-bay",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/march",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                3,
+                1,
+                3
+              ],
+              "min": [
+                -3,
+                -1,
+                -3
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "fixture": "torch",
+            "min_light": 4,
+            "region": "region/march-bay",
+            "verb": "relight"
+          },
+          {
+            "name": "region/vantage-bay",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/vantage",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                2,
+                1,
+                2
+              ],
+              "min": [
+                -2,
+                -1,
+                -2
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "fixture": "campfire",
+            "min_light": 3,
+            "region": "region/vantage-bay",
+            "verb": "relight"
+          },
+          {
+            "name": "region/east-corner",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                28,
+                1,
+                28
+              ],
+              "min": [
+                26,
+                1,
+                26
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "avoid": [
+              "region/keep-clear"
+            ],
+            "count": 1,
+            "region": "region/east-corner",
+            "spacing": 2,
+            "tree": "oak",
+            "verb": "plant"
+          }
+        ],
+        "id": "batch/rough-the-lane",
+        "note": "The patrol lane gets a surface worth marching over. Exercises `surface-band`, `morph`/`smooth`, and `scatter` with an avoid set, a spacing and a limit. The avoid set keeps the scatter off the reliquary chest: a surface band one block above the floor reaches the cells that furniture stands in, and a scattered cobble overwrites the container `loot` fills."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/pocket-west",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                23,
+                4,
+                5
+              ],
+              "min": [
+                23,
+                1,
+                1
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pocket-west",
+            "verb": "fill"
+          },
+          {
+            "name": "region/barrier-line",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                29,
+                1,
+                6
+              ],
+              "min": [
+                23,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:cobblestone_wall",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/barrier-line",
+            "verb": "fill"
+          },
+          {
+            "name": "region/barrier-course",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                27,
+                1,
+                6
+              ],
+              "min": [
+                25,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/barrier-course",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/lay-the-barrier",
+        "note": "A pocket in the north-east corner whose only way in is a full-cube course in a wall line. Three declared bodies walk here and each has to make the move its species does or does not allow, which is what makes their `traversal` declarations paid for rather than decorative."
+      }
+    ]
+  },
+  "dsl_version": "0.11.0",
+  "stage": "world-edits"
+}
