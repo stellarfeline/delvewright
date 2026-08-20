@@ -16,12 +16,15 @@ the checkout with `Path.read_text()`, never through git, so nothing needs to be
 committed). The fixture ledgers are synthetic but are written in the exact source
 shape the real ones have, because the shape IS what the gate reads.
 
-The last test is the odd one: it asserts a documented BLIND SPOT rather than a
-catch. `dsl_version`'s anchors are self-naming (`0.11.0` forces `is_v11`), so
-rule 1 cannot separate two branches that take `0.11.0` for different surfaces.
-That limit is stated in the script's docstring; pinning it here makes it a fact
-under test instead of a claim, so a future change that closes it fails loudly
-rather than leaving the docstring lying.
+The last group is the second incident, one ledger over. `dsl_version`'s
+IMPLEMENTED anchors are self-naming (`0.12.0` forces `is_v12`), so rule 1 could
+not separate two branches that took `0.12.0` for different surfaces — and two
+did: `open-way` (spec-0042) and the horizon library, each checked, each found the
+number free. Rule 6 is the repair: a version a branch ADDS must carry a
+hand-written name, so the two branches disagree visibly and rule 1 — which has
+always been able to read two names — sees them. These tests drive both halves,
+plus the reservation lifecycle that lets a spec hold a number before its surface
+exists.
 """
 
 from __future__ import annotations
@@ -130,16 +133,30 @@ def grammar_ledger(versions: list[str], sinces: dict[str, str], reserved: dict[s
     return "\n".join(body) + "\n"
 
 
-def dsl_ledger(versions: list[str], predicates: dict[str, int]) -> str:
-    """`versions` in order; `predicates` maps `is_vNN` -> its ordinal threshold."""
+def dsl_ledger(
+    versions: list[str],
+    predicates: dict[str, int],
+    sinces: dict[str, str] | None = None,
+    reserved: dict[str, str] | None = None,
+) -> str:
+    """`versions` in order; `predicates` maps `is_vNN` -> its ordinal threshold.
+
+    `sinces` and `reserved` are the ledger's HAND-WRITTEN names — the same two
+    shapes the grammar ledger carries, because the repair was to give this ledger
+    the sibling's mechanism rather than a second one of its own.
+    """
     body = [
         "//! fixture ledger",
         "pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[\n    "
         + ", ".join(f'"{v}"' for v in versions)
         + ",\n];",
-        "fn ordinal(version: &str) -> u32 {",
-        "    match version {",
     ]
+    if reserved:
+        rows = ", ".join(f'("{v}", "{anchor}")' for v, anchor in reserved.items())
+        body.append(f"pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[{rows}];")
+    for name, version in (sinces or {}).items():
+        body.append(f'pub const {name}: &str = "{version}";')
+    body += ["fn ordinal(version: &str) -> u32 {", "    match version {"]
     for i, v in enumerate(versions):
         body.append(f'        "{v}" => {i + 2},')
     body += ["        _ => 0,", "    }", "}"]
@@ -292,8 +309,12 @@ def test_a_version_nothing_claims_is_red(checker, tmp_path, capsys, monkeypatch)
     err = capsys.readouterr().err
     assert "dsl-campaign: version 0.6.0 is in the ledger and no fence anchor claims it" in err
     assert "a number a second change can take" in err
-    # The grammar half of the same tree is clean, so exactly one finding.
-    assert "1 finding(s)" in err
+    # Two findings on the one number, and they say different things: rule 3 says
+    # NOTHING claims it, rule 6 says nothing NAMES it. Adding `is_v06` silences
+    # the first and leaves the second standing, which is the whole point of
+    # having both. The grammar half of the same tree is clean.
+    assert "version 0.6.0 is added by this branch and nothing NAMES it" in err
+    assert "2 finding(s)" in err
 
 
 def test_a_ledger_that_is_not_append_only_is_red(checker, tmp_path, capsys, monkeypatch):
@@ -427,25 +448,174 @@ def test_a_clean_tree_is_green_and_prints_both_bindings(checker, tmp_path, capsy
     assert "dsl-campaign: 4 versions here (4 at origin/main), 3 anchors here" in out
 
 
-# --- the documented blind spot, pinned ---------------------------------------
+# --- the second incident: one dsl number, two allocations -------------------
+#
+# The blind spot that used to be pinned here. `0.6.0` forces the anchor name
+# `is_v06` in every branch that adds it, so two branches taking `0.6.0` for
+# different surfaces produced the SAME anchor and rule 1 read one claim. Rule 6
+# closes it by refusing an added number that rests on that derived anchor; rule 1
+# then does the catching, because both branches carry a name.
 
 
-def test_dsl_same_number_collision_is_the_documented_blind_spot(
-    checker, tmp_path, capsys, monkeypatch
-):
-    """Rule 1 cannot bind on `dsl_version`, and the docstring says so.
-
-    `0.6.0` forces the anchor name `is_v06` in every branch that adds it, so two
-    branches taking `0.6.0` for different surfaces produce the SAME anchor and
-    rule 1 sees one claim. This test pins that limit: if a future change gives
-    the ledger a surface label rule 1 can compare, this test reds and the
-    docstring's limitation section is what needs rewriting.
-    """
-    both = dsl_ledger(DSL_VERSIONS + ["0.6.0"], {**DSL_PREDICATES, "is_v06": 6})
+def test_a_dsl_number_added_without_a_name_is_red(checker, tmp_path, capsys, monkeypatch):
+    """Rule 6, and the shape the real branch had: `0.6.0` appended with `is_v06`
+    and nothing else. Green under the old gate; a finding now, because the anchor
+    it rests on is computed from the number and cannot disagree with a second
+    branch's."""
     scenario(
         tmp_path,
-        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: both},
-        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: both},
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(DSL_VERSIONS + ["0.6.0"], {**DSL_PREDICATES, "is_v06": 6}),
+        },
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "dsl-campaign: version 0.6.0 is added by this branch and nothing NAMES it" in err
+    assert "Its only claim is ['is_v06'], which is computed from the number itself" in err
+    assert "RESERVED_DSL_VERSIONS row" in err
+    # Rule 3 is satisfied — `is_v06` DOES claim it — so this is rule 6 alone.
+    assert "1 finding(s)" in err
+
+
+def test_two_dsl_surfaces_on_one_number_are_red(checker, tmp_path, capsys, monkeypatch):
+    """The incident itself, once rule 6 has forced both sides to name what they
+    took: `open-way` and the horizon library each allocated `0.6.0`."""
+    scenario(
+        tmp_path,
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"],
+                {**DSL_PREDICATES, "is_v06": 6},
+                sinces={"HORIZON_LIBRARY_SINCE": "0.6.0"},
+            ),
+        },
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"],
+                {**DSL_PREDICATES, "is_v06": 6},
+                sinces={"OPEN_WAY_SINCE": "0.6.0"},
+            ),
+        },
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "dsl-campaign: version 0.6.0 is claimed by 2 different surfaces" in err
+    assert "OPEN_WAY_SINCE  (this branch)" in err
+    assert "HORIZON_LIBRARY_SINCE  (origin/main)" in err
+
+
+def test_a_dsl_reservation_holds_a_number_for_a_surface_not_yet_written(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """What the ledger could not say at all before: a spec has taken `0.6.0` and
+    nothing implements it. Held, named, and green."""
+    scenario(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"], DSL_PREDICATES, reserved={"0.6.0": "OPEN_WAY_SINCE"}
+            ),
+        },
     )
     assert go(checker, tmp_path, monkeypatch) == 0
-    assert "0 collision(s)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "OK" in out
+    # Binding counts: five entries here against four at base, four anchors (the
+    # three predicates plus the reserved name), one reservation, and the one
+    # added version rule 6 examined.
+    assert (
+        "dsl-campaign: 5 versions here (4 at origin/main), 4 anchors here "
+        "(3 at origin/main), 1 reserved, 0 collision(s), 1 added version(s) "
+        "examined for a name" in out
+    )
+
+
+def test_the_landed_surface_supersedes_its_own_reservation(
+    checker, tmp_path, capsys, monkeypatch
+):
+    """The other end of the lifecycle. `0.6.0` is reserved for `OPEN_WAY_SINCE`
+    at base; this branch defines the constant, adds `is_v06` and deletes the row.
+    The number is spelled twice in one tree and that is ONE surface — a union
+    would red on the change the reservation existed to admit."""
+    scenario(
+        tmp_path,
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"], DSL_PREDICATES, reserved={"0.6.0": "OPEN_WAY_SINCE"}
+            ),
+        },
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"],
+                {**DSL_PREDICATES, "is_v06": 6},
+                sinces={"OPEN_WAY_SINCE": "0.6.0"},
+            ),
+        },
+    )
+    assert go(checker, tmp_path, monkeypatch) == 0
+    out = capsys.readouterr().out
+    assert "0 collision(s)" in out
+    # `0.6.0` is at base too, so rule 6 has nothing to examine — and says so.
+    assert "0 added version(s) examined for a name" in out
+
+
+def test_a_dsl_reservation_whose_surface_landed_is_red(checker, tmp_path, capsys, monkeypatch):
+    """Rule 5 on the second ledger, naming the second ledger's own constant. The
+    same rule, not a copy of it: one implementation reads both."""
+    scenario(
+        tmp_path,
+        {GRAMMAR: GRAMMAR_AFTER_MIRROR, DSL: DSL_OK},
+        {
+            GRAMMAR: GRAMMAR_AFTER_MIRROR,
+            DSL: dsl_ledger(
+                DSL_VERSIONS + ["0.6.0"],
+                {**DSL_PREDICATES, "is_v06": 6},
+                sinces={"OPEN_WAY_SINCE": "0.6.0"},
+                reserved={"0.6.0": "OPEN_WAY_SINCE"},
+            ),
+        },
+    )
+    assert go(checker, tmp_path, monkeypatch) == 1
+    err = capsys.readouterr().err
+    assert "reserved for OPEN_WAY_SINCE, and OPEN_WAY_SINCE is defined in this same tree" in err
+    assert "delete the RESERVED_DSL_VERSIONS row" in err
+
+
+def test_the_live_dsl_ledger_reserves_what_a_spec_has_taken(checker, tmp_path, monkeypatch):
+    """Not a fixture: the real `crates/dsl/src/envelope.rs` on this branch.
+
+    The gate is only worth its rules if the ledger it guards actually uses them,
+    and a reservation list that is empty in the tree while every test drives a
+    synthetic one is the UNRUN shape wearing a fixture's clothes.
+    """
+    import re
+
+    source = (REPO / DSL).read_text(encoding="utf-8")
+    rows = re.findall(
+        r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)',
+        re.search(
+            r"pub const RESERVED_DSL_VERSIONS: &\[\(&str, &str\)\] = &\[(.*?)\];",
+            source,
+            re.DOTALL,
+        ).group(1),
+    )
+    assert rows, "the live dsl ledger reserves nothing — rule 5 and rule 6 bind to nothing here"
+    versions = re.findall(
+        r'"([^"]+)"',
+        re.search(
+            r"pub const SUPPORTED_DSL_VERSIONS: &\[&str\] =\s*&\[(.*?)\];", source, re.DOTALL
+        ).group(1),
+    )
+    for version, anchor in rows:
+        assert version in versions, (
+            f"{version} is reserved for {anchor} and is not in the ledger — a number "
+            f"outside the ledger is a number the next author finds free"
+        )

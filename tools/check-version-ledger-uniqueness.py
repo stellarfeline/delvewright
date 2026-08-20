@@ -32,19 +32,30 @@ name exactly one surface after this branch merges into `--base`"**
 A version's **surface** has to be named by something a machine can compare across
 two trees. The name used here is the ledger's own **fence anchor** — the
 identifier that resolves to that version — because it is code, not prose, and
-therefore does not drift with wording:
+therefore does not drift with wording. Anchors come in two kinds, and the
+difference between them is the whole of rule 6:
 
-- `grammar-program`: the `*_SINCE` constants in `crates/grammar/src/version.rs`,
-  plus each row of `RESERVED_VERSIONS`, which names the anchor a sibling change
-  will define. A reservation is the forward declaration made checkable: reserve
-  `1.1.0` for `MIRROR_SINCE`, and the day that change merges the union for
-  `1.1.0` is `{MIRROR_SINCE}` and stays green — while a reservation for a
-  DIFFERENT anchor
-  than the one that landed is a union of two and reds.
-- `dsl-campaign`: the `is_vNN` predicates in `crates/dsl/src/envelope.rs`,
-  resolved through `ordinal()`'s match arms.
+- **Named** anchors are written by hand and are not derivable from the number:
+  the `*_SINCE` constants in `crates/grammar/src/version.rs` and in
+  `crates/dsl/src/envelope.rs`, plus each row of a ledger's reservation list
+  (`RESERVED_VERSIONS`, `RESERVED_DSL_VERSIONS`), which names the anchor a
+  sibling change will define. A reservation is the forward declaration made
+  checkable: reserve `1.1.0` for `MIRROR_SINCE`, and the day that change merges
+  the union for `1.1.0` is `{MIRROR_SINCE}` and stays green — while a
+  reservation for a DIFFERENT anchor than the one that landed is a union of two
+  and reds.
+- **Derived** anchors are computed from the number itself: `dsl-campaign`'s
+  `is_vNN` predicates in `crates/dsl/src/envelope.rs`, resolved through
+  `ordinal()`'s match arms. `0.11.0` forces the name `is_v11` in every branch
+  that adds it, so a derived anchor can never distinguish two branches — it is a
+  claim that the number is *used*, never a name for what it means.
 
-Five rules, run over the union of the checkout and `--base`:
+A version's claim is its **named** anchors when it has any, and its derived ones
+otherwise. Precedence rather than union, because the two coexist for one version
+the moment a reserved surface lands (`OPEN_WAY_SINCE` and `is_v12` at `0.12.0`),
+and that is one surface with two spellings, not two surfaces.
+
+Six rules, run over the union of the checkout and `--base`:
 
 1. **One number, one surface.** More than one distinct anchor claiming a version,
    across the two trees, is the collision above.
@@ -60,6 +71,15 @@ Five rules, run over the union of the checkout and `--base`:
 5. **A reservation is deleted by the change that lands its surface.** A reserved
    version whose anchor is also DEFINED in the same tree is refusing a version
    that engine can now honour.
+6. **A number this branch ADDS carries a hand-written name.** A version present
+   in the checkout and absent at `--base` whose only claim is a derived anchor
+   has not been named at all: a second branch adding the same number computes
+   the same anchor, and rule 1 reads one claim where there are two. Satisfied by
+   a `*_SINCE` constant when the surface lands in this same change, or by a
+   reservation row when a sibling change will land it. This is the rule that
+   makes rule 1 bind on a ledger whose implemented anchors are self-naming; it
+   examines only added versions, because a number already at `--base` is not
+   being allocated and re-naming one is the rename rule 2 refuses.
 
 ## Ledgers covered, and why
 
@@ -70,7 +90,7 @@ defect one layer out. Adding a third ledger is one row here, not a new script.
 
 ## What this CANNOT catch — read this before trusting a green run
 
-Two limits, and the second is specific to one ledger.
+Two limits. Neither is ledger-specific: rule 6 closed the one that was.
 
 - **Two open PRs colliding with each other but not with `--base`.** This gate
   diffs the checkout against `--base` AS OF THE MOMENT IT RUNS, and has no
@@ -88,22 +108,28 @@ Two limits, and the second is specific to one ledger.
   because a stale green can still merge unless branch protection requires a
   branch be up to date first (a GitHub setting this script cannot read for the
   same reason it cannot call the API).
-- **`dsl-campaign`'s anchors are self-naming, so rule 1 is structurally blind
-  there.** `0.11.0` forces the anchor name `is_v11` in any branch that adds it,
-  so two branches adding `0.11.0` for different surfaces produce the SAME anchor
-  and rule 1 sees one claim, correctly, and says nothing. Rules 2, 3, 4 and 5 all
-  bind on that ledger and are real; rule 1 is not. Closing it needs the ledger to
-  carry a per-version surface LABEL that is not derivable from the number — a
-  change to `crates/dsl/src/envelope.rs`, deliberately not made here, and the
-  reason this limitation is written down rather than left to be rediscovered.
-  `crates/grammar/src/version.rs` does not have the problem: `MIRROR_SINCE` and
-  `CONTRACT_SINCE` are different names for the same number, which is what rule 1
-  reads.
+- **A branch that hangs a NEW surface off an EXISTING version's fence.** Nothing
+  in a version ledger says what a surface *is*, so a change that adds a field
+  behind `is_v09` — or behind `CONTRACT_SINCE` — allocates no number and this
+  gate sees nothing. That is the same on both ledgers and is out of reach from
+  the ledger file alone; what catches it is the version-adoption discipline that
+  says a new surface takes a new number. Rule 6 makes the number it takes
+  nameable; it cannot make an author take one.
+
+  The blind spot this replaces was narrower and real: `dsl-campaign`'s
+  implemented anchors are self-naming, so two branches adding `0.12.0` for
+  different surfaces produced the SAME anchor `is_v12` and rule 1 read one claim.
+  It was measured, not theorised — an `open-way` `0.12.0` in the checkout against
+  a horizon-library `0.12.0` at base ran green with `0 collision(s)`. Rule 6 is
+  what closes it: both branches must now hand-name the number they add, and two
+  hand-written names for one number are what rule 1 has always been able to see.
 
 ## Binding count
 
 Every run prints, per ledger: versions in the checkout and at `--base`, distinct
-anchors on each side, reservations, and findings. A ledger with **zero anchors on
+anchors on each side, reservations, collisions, and how many ADDED versions rule
+6 examined — zero added is the ordinary state of a branch that touches no ledger,
+and it is printed rather than left to be assumed. A ledger with **zero anchors on
 BOTH sides** is a FAIL — the file moved, was renamed, or the extraction pattern no
 longer matches (CLAUDE.md: a green gate that binds to nothing is VACUOUS). A
 ledger file that parses to zero versions, or to zero anchors while naming two or
@@ -144,9 +170,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # any other shape, and a genuine drift still raises `ShapeDrift`.
 LIST_RE_TEMPLATE = r"pub const {const}: &\[&str\] =\s*&\[(.*?)\];"
 # `pub const RESERVED_VERSIONS: &[(&str, &str)] = &[("1.1.0", "MIRROR_SINCE")];`
-RESERVED_LIST_RE = re.compile(
-    r"pub const RESERVED_VERSIONS: &\[\(&str, &str\)\] = &\[(.*?)\];", re.DOTALL
-)
+# The constant's NAME is per-ledger (`RESERVED_VERSIONS`, `RESERVED_DSL_VERSIONS`)
+# and the shape is not, which is why the name is the parameter and the row
+# grammar is shared.
+RESERVED_LIST_RE_TEMPLATE = r"pub const {const}: &\[\(&str, &str\)\] = &\[(.*?)\];"
 RESERVED_ROW_RE = re.compile(r'\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
 QUOTED_RE = re.compile(r'"([^"]+)"')
 
@@ -164,63 +191,94 @@ class ShapeDrift(Exception):
     """A ledger file no longer matches the pattern this gate reads it with."""
 
 
-def reservations(source: str) -> dict[str, str]:
+def reservations_of(const: str, source: str) -> dict[str, str]:
     """version -> the anchor name a sibling change will define for it."""
-    block = RESERVED_LIST_RE.search(source)
+    block = re.search(RESERVED_LIST_RE_TEMPLATE.format(const=const), source, re.DOTALL)
     if not block:
         return {}
     return dict(RESERVED_ROW_RE.findall(block.group(1)))
 
 
-def grammar_claims(source: str) -> dict[str, set[str]]:
-    """version -> anchors claiming it, for `crates/grammar/src/version.rs`.
+def since_constants(source: str) -> dict[str, set[str]]:
+    """version -> the hand-written `*_SINCE` constants defined at it.
 
-    A reservation claims its version under the name of the constant that will
-    carry it, so a forward declaration and the change that fulfils it agree
-    rather than collide.
+    The same extraction on both ledgers: a fence constant is a name an author
+    chose, so two authors choosing one number disagree visibly. `dsl-campaign`
+    has none today and gains one each time a reserved surface lands.
     """
-    claims: dict[str, set[str]] = defaultdict(set)
+    named: dict[str, set[str]] = defaultdict(set)
     for name, version in SINCE_CONST_RE.findall(source):
-        claims[version].add(name)
-    for version, anchor in reservations(source).items():
-        claims[version].add(anchor)
-    return claims
+        named[version].add(name)
+    return named
 
 
-def dsl_claims(source: str) -> dict[str, set[str]]:
-    """version -> anchors claiming it, for `crates/dsl/src/envelope.rs`.
+def no_derived_anchors(_source: str) -> dict[str, set[str]]:
+    """`grammar-program` has no anchor computable from a version number."""
+    return {}
+
+
+def dsl_predicates(source: str) -> dict[str, set[str]]:
+    """version -> the `is_vNN` predicate open at it, for the campaign ledger.
 
     Two hops, because the predicate names an ordinal rather than a version:
     `ordinal()`'s arms give version -> N, the predicates give N -> `is_vNN`.
+
+    These are DERIVED anchors: the name follows from the number, so they prove a
+    number is in use and can never say what it means. Rule 6 is what keeps a
+    newly allocated number from resting on one.
     """
     ordinals = {v: int(n) for v, n in DSL_ORDINAL_ARM_RE.findall(source)}
     by_ordinal = {int(n): name for name, n in DSL_PREDICATE_RE.findall(source)}
-    claims: dict[str, set[str]] = defaultdict(set)
+    derived: dict[str, set[str]] = defaultdict(set)
     for version, n in ordinals.items():
         if n in by_ordinal:
-            claims[version].add(by_ordinal[n])
-    return claims
+            derived[version].add(by_ordinal[n])
+    return derived
 
 
-# One row per version ledger in the repo. `claims` names, per version, the
-# identifier(s) that resolve to it — the machine-comparable stand-in for "the
-# surface this number means".
+def claims_of(
+    named: dict[str, set[str]],
+    derived: dict[str, set[str]],
+    reserved: dict[str, str],
+) -> dict[str, set[str]]:
+    """version -> the anchors that stand for its surface.
+
+    Named anchors win outright where a version has any: a landed surface spells
+    its version twice (`OPEN_WAY_SINCE` and `is_v12`) and that is one surface,
+    not two. Where a version has no name, its derived anchor is all there is —
+    enough for rule 3 to see the number is used, never enough for rule 1.
+    """
+    claims: dict[str, set[str]] = defaultdict(set)
+    for version in set(named) | set(derived) | set(reserved):
+        here = set(named.get(version, set()))
+        if version in reserved:
+            here.add(reserved[version])
+        claims[version] = here or set(derived.get(version, set()))
+    return {v: s for v, s in claims.items() if s}
+
+
+# One row per version ledger in the repo. `named` and `derived` name, per
+# version, the identifier(s) that resolve to it — the machine-comparable
+# stand-in for "the surface this number means" — split by whether the identifier
+# was chosen by an author or computed from the number.
 LEDGERS = [
     {
         "name": "grammar-program",
         "path": "crates/grammar/src/version.rs",
         "list_const": "SUPPORTED_PROGRAM_VERSIONS",
-        "claims": grammar_claims,
+        "reserved_const": "RESERVED_VERSIONS",
+        "named": since_constants,
+        "derived": no_derived_anchors,
         "claim_pattern": SINCE_CONST_RE.pattern,
-        "reservations": reservations,
     },
     {
         "name": "dsl-campaign",
         "path": "crates/dsl/src/envelope.rs",
         "list_const": "SUPPORTED_DSL_VERSIONS",
-        "claims": dsl_claims,
-        "claim_pattern": DSL_PREDICATE_RE.pattern,
-        "reservations": lambda _source: {},
+        "reserved_const": "RESERVED_DSL_VERSIONS",
+        "named": since_constants,
+        "derived": dsl_predicates,
+        "claim_pattern": f"{SINCE_CONST_RE.pattern} / {DSL_PREDICATE_RE.pattern}",
     },
 ]
 
@@ -237,7 +295,38 @@ def versions_of(ledger: dict, source: str) -> list[str]:
     return QUOTED_RE.findall(block.group(1))
 
 
-def read_ledger(ledger: dict, source: str, where: str) -> tuple[list[str], dict[str, set[str]]]:
+class LedgerSide:
+    """One tree's reading of one ledger: its list, and its anchors by kind."""
+
+    def __init__(
+        self,
+        versions: list[str],
+        named: dict[str, set[str]],
+        derived: dict[str, set[str]],
+        reserved: dict[str, str],
+    ) -> None:
+        self.versions = versions
+        self.named = named
+        self.derived = derived
+        self.reserved = reserved
+        self.claims = claims_of(named, derived, reserved)
+
+    @property
+    def anchors(self) -> set[str]:
+        return {a for s in self.claims.values() for a in s}
+
+    @property
+    def defined_anchor_names(self) -> set[str]:
+        """Hand-written anchors whose surface is IMPLEMENTED in this tree —
+        reservations excluded, since a reservation is the promise, not the
+        surface. Rule 5 reads exactly this."""
+        return {a for s in self.named.values() for a in s}
+
+
+EMPTY_SIDE = LedgerSide([], {}, {}, {})
+
+
+def read_ledger(ledger: dict, source: str, where: str) -> LedgerSide:
     versions = versions_of(ledger, source)
     if not versions:
         raise ShapeDrift(
@@ -245,15 +334,20 @@ def read_ledger(ledger: dict, source: str, where: str) -> tuple[list[str], dict[
             f"ZERO versions at {where}. A ledger with no versions is a parse failure, "
             f"not a ledger."
         )
-    claims = ledger["claims"](source)
-    if len(versions) >= 2 and not claims:
+    side = LedgerSide(
+        versions,
+        ledger["named"](source),
+        ledger["derived"](source),
+        reservations_of(ledger["reserved_const"], source),
+    )
+    if len(versions) >= 2 and not side.claims:
         raise ShapeDrift(
             f"{ledger['name']}: {ledger['path']} at {where} names {len(versions)} "
             f"versions and ZERO of them could be traced to a fence anchor via "
             f"{ledger['claim_pattern']!r}. The extraction has drifted; every version "
             f"would then read as unclaimed. Fix the pattern — never loosen the check."
         )
-    return versions, claims
+    return side
 
 
 def base_source(base: str, path: str) -> str | None:
@@ -293,13 +387,12 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
             f"{name}: deleted in this checkout",
         )
 
-    local_versions, local_claims = read_ledger(ledger, local_source, "this checkout")
-    if base_src is None:
-        base_versions, base_claims = [], {}
-    else:
-        base_versions, base_claims = read_ledger(ledger, base_src, base)
+    local = read_ledger(ledger, local_source, "this checkout")
+    base_side = EMPTY_SIDE if base_src is None else read_ledger(ledger, base_src, base)
 
-    local_reserved = ledger["reservations"](local_source)
+    local_versions, local_claims = local.versions, local.claims
+    base_versions, base_claims = base_side.versions, base_side.claims
+    local_reserved = local.reserved
 
     # Rule 1 — one number, one surface, across the union of the two trees.
     collisions = 0
@@ -366,18 +459,43 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
         )
 
     # Rule 5 — a reservation is deleted by the change that lands its surface.
-    defined_here = {n for n, _ in SINCE_CONST_RE.findall(local_source)}
+    defined_here = local.defined_anchor_names
     for version, anchor in sorted(local_reserved.items()):
         if anchor in defined_here:
             findings.append(
                 f"{name}: version {version} is reserved for {anchor}, and {anchor} is "
                 f"defined in this same tree. The surface has landed, so the "
                 f"reservation now refuses a version this engine can honour — delete "
-                f"the RESERVED_VERSIONS row."
+                f"the {ledger['reserved_const']} row."
             )
 
-    n_local_anchors = len({a for s in local_claims.values() for a in s})
-    n_base_anchors = len({a for s in base_claims.values() for a in s})
+    # Rule 6 — a number this branch ADDS carries a hand-written name.
+    #
+    # Only added versions, and only when there is a base ledger to have added
+    # them against: a number already at `--base` is not being allocated, and
+    # re-naming one is the rename rule 2 refuses. A version whose sole claim is
+    # a derived anchor (`is_v12`) is unnamed — the next branch to take that
+    # number computes the same anchor and rule 1 reads one claim where there
+    # are two.
+    added = [] if base_src is None else [v for v in local_versions if v not in set(base_versions)]
+    for version in added:
+        if local.named.get(version) or version in local_reserved:
+            continue
+        derived_here = sorted(local.derived.get(version, set()))
+        findings.append(
+            f"{name}: version {version} is added by this branch and nothing NAMES it. "
+            f"Its only claim is {derived_here or ['(nothing)']}, which is computed from "
+            f"the number itself — a second branch adding {version} for a different "
+            f"surface computes the same anchor, and rule 1 reads one claim where there "
+            f"are two. That is not hypothetical: it is how one number came to be "
+            f"allocated twice.\n"
+            f"    Fix: name it. A `<SURFACE>_SINCE = \"{version}\"` constant if this "
+            f"change lands the surface, or a {ledger['reserved_const']} row naming the "
+            f"constant a sibling change will define if it does not."
+        )
+
+    n_local_anchors = len(local.anchors)
+    n_base_anchors = len(base_side.anchors)
     if n_local_anchors == 0 and n_base_anchors == 0:
         findings.append(
             f"{name}: zero fence anchors on BOTH this checkout and {base} — this "
@@ -389,7 +507,8 @@ def check_ledger(ledger: dict, base: str) -> tuple[list[str], str]:
         summary = (
             f"{name}: {len(local_versions)} versions here ({len(base_versions)} at "
             f"{base}), {n_local_anchors} anchors here ({n_base_anchors} at {base}), "
-            f"{len(local_reserved)} reserved, {collisions} collision(s)"
+            f"{len(local_reserved)} reserved, {collisions} collision(s), "
+            f"{len(added)} added version(s) examined for a name"
         )
     return findings, summary
 

@@ -244,16 +244,18 @@ second hatch is added to the gate it relaxes.
 
 ## 5. Version fences and adoption
 
-- Grammar document **`1.7.0`** — `1.6.0` is settled: spec-0041 landed, and
-  `crates/grammar/src/version.rs` holds it in the ledger and in
-  `RESERVED_VERSIONS` as `("1.6.0", "QUALIFY_SINCE")`. `1.7.0` is claimed by
-  nothing; this spec's implementation adds its reservation alongside, and
-  `tools/check-version-ledger-uniqueness.py` holds both ledgers against
-  `origin/main`. Fenced per the `version.rs` pattern: a `WAY_SINCE`
-  constant, refusal naming construct and both versions.
-- Campaign dsl **`0.12.0`** for `open-way`, per-stage fence and `DW0141`
-  reservation pattern. No open branch claims either number (checked against
-  every open branch and against the open pull-request list, two observers).
+- Grammar document **`1.7.0`** — landed with §6 step 1: `WAY_SINCE = "1.7.0"`
+  in `crates/grammar/src/version.rs`, `1.6.0` still reserved beside it as
+  `("1.6.0", "QUALIFY_SINCE")`.
+- Campaign dsl **`0.12.0`** for `open-way`, per-stage fence and `DW0141`. The
+  number is **held by the ledger**, not measured free: `crates/dsl/src/envelope.rs`
+  carries it in `SUPPORTED_DSL_VERSIONS` and in `RESERVED_DSL_VERSIONS` as
+  `("0.12.0", "OPEN_WAY_SINCE")`, and §6 step 3 defines that constant and deletes
+  the reservation row in the same edit. A number is held rather than checked
+  because checking is what failed here: a branch outside the open-pull-request
+  list had taken `0.12.0`, and two observers that both read only what was
+  proposed agreed with each other. `tools/check-version-ledger-uniqueness.py`
+  now reds a second claimant on either ledger.
 - The route-verifier alignment is not fenced: it brings one instrument to its
   router's calibration, and the divergence cases are enumerated as tests.
 - The surface is opt-in; no existing program or campaign gains an obligation.
@@ -267,7 +269,9 @@ second hatch is added to the gate it relaxes.
    reachability generalisation, fence — fixtures are §1.2's twins, distilled.
 2. Export + `delve-admit` halves (`edge` grows `way`; audit agrees with
    `expand` through both doors).
-3. Compiler: `open-way` (dsl `0.12.0`), metadata-fed region events through
+3. Compiler: `open-way` (dsl `0.12.0`, reserved in the ledger for
+   `OPEN_WAY_SINCE`; this step defines the constant and deletes the
+   reservation row), metadata-fed region events through
    the named constructors, disposition enumeration and its reds. Forced-only
    footing and the self-check alignment are both landed; this step consumes
    both rather than building either.

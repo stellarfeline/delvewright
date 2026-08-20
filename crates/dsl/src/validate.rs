@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
-    Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09, is_v10, is_v11,
+    Campaign, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06, is_v07, is_v08, is_v09,
+    is_v10, is_v11,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -567,7 +567,11 @@ fn envelope(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 expected.name(),
                 "/dsl_version",
                 format!(
-                    "unsupported dsl_version `{version}`, expected one of {SUPPORTED_DSL_VERSIONS:?}"
+                    "unsupported dsl_version `{version}`, expected one of {:?}",
+                    // The ledger minus its reservations: a reserved number is IN
+                    // the ledger and refused, so listing it here would answer a
+                    // refusal with advice to try something refused again.
+                    crate::accepted_versions().collect::<Vec<_>>()
                 ),
             ));
         }
