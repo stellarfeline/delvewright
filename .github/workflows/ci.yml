@@ -870,6 +870,7 @@ jobs:
       # through a software adapter is a separate question and moves only where
       # frames come from, never what the engine can do.
       - name: every declared view is produced, and shows something
+        if: '!cancelled()'
         run: |
           python3 tools/check-gallery-render.py \
             --delvec target/debug/delvec \
@@ -878,6 +879,7 @@ jobs:
             --frames gallery-frames
 
       - name: emission baseline + expected-warnings ledger
+        if: '!cancelled()'
         run: |
           python3 tools/gallery-baseline.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs

@@ -2313,7 +2313,8 @@
         "lane": {
           "aggro_radius": 8,
           "waypoints": [
-            "anchor/lane-east"
+            "anchor/lane-east",
+            "anchor/lane-west"
           ]
         },
         "mobs": [
