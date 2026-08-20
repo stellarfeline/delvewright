@@ -1,6 +1,6 @@
 # spec-0042: A way that content opens
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: a zone whose design breaks a stair the campaign later repairs
   cannot declare a spatial contract. `contract-reachability`'s one escape is a
   `barred` edge, proved by **voiding** a region — an obstruction taken away.
