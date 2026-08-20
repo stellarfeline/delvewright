@@ -41,13 +41,83 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// lift the one obligation of the version, `DW0429`.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
+///
+/// # One number, one surface — and a number a spec has taken is not free
+///
+/// This is the **ledger of the campaign document format**, not an inventory of
+/// what this crate happens to have built. A number in it names exactly one
+/// surface, and names the same surface in every engine that knows the number.
+/// Two changes that each take *the next free number* for a different surface
+/// produce two engines that both answer to that number and disagree about what
+/// a document declaring it may contain — and then an engine accepts a document
+/// declaring a version it "knows" and silently drops the half it does not
+/// implement. That is the exact failure the per-stage fence exists to prevent,
+/// reintroduced by the fence's own numbering.
+///
+/// So a number whose surface a **sibling** change introduces is
+/// [`RESERVED_DSL_VERSIONS`] here rather than skipped: a skipped number is a
+/// free number, and the append-only rule means a skipped number can never be
+/// filled afterwards. A reservation is **in the ledger and not accepted** —
+/// [`is_supported_version`] refuses it, which is the only loud answer this crate
+/// has for a surface it does not implement — and it is deleted by the change
+/// that defines the constant it names, in the same edit.
+///
+/// The shape is `crates/grammar/src/version.rs`'s, transplanted rather than
+/// invented, and `tools/check-version-ledger-uniqueness.py` reads both ledgers
+/// through one set of rules.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
+    "0.12.0",
 ];
 
-/// True if `version` is a `dsl_version` this crate accepts.
+/// Ledger entries whose surface a **sibling** change introduces: the version,
+/// and the name of the fence constant that change defines for it.
+///
+/// A reservation is what keeps a number from being taken twice while the change
+/// that owns it is still in flight, and it is the ledger's only way to say so —
+/// prose in a spec is not a claim a machine can read, which is how one number
+/// came to be allocated twice by two authors who each checked and each found it
+/// free.
+///
+/// The name is load-bearing in a second way: a campaign `dsl_version`'s
+/// implemented anchors are the self-naming `is_vNN` predicates, so two branches
+/// adding the same number produce the *same* anchor and the uniqueness gate
+/// reads one claim where there are two. A hand-written name is not derivable
+/// from the number, so two branches naming one number disagree visibly. That is
+/// why `tools/check-version-ledger-uniqueness.py` requires every version a
+/// branch **adds** to carry a hand-written name — a reservation row here, or a
+/// `*_SINCE` constant when the surface lands.
+pub const RESERVED_DSL_VERSIONS: &[(&str, &str)] = &[
+    // spec-0042: the `open-way` effect — a campaign opening a contract's
+    // contingent way, geometry and block read from the piece's metadata. The
+    // implementing change defines `OPEN_WAY_SINCE` and deletes this row in the
+    // same edit.
+    ("0.12.0", "OPEN_WAY_SINCE"),
+];
+
+/// The fence constant that introduces `version`'s surface, when `version` is a
+/// ledger entry this crate does not implement; `None` otherwise.
+pub fn reserved_for(version: &str) -> Option<&'static str> {
+    RESERVED_DSL_VERSIONS
+        .iter()
+        .find(|(v, _)| *v == version)
+        .map(|(_, anchor)| *anchor)
+}
+
+/// Every `dsl_version` this crate will build — the ledger minus its
+/// reservations. What a refusal names, because naming the whole ledger would
+/// list versions the refusal was issued *for*.
+pub fn accepted_versions() -> impl Iterator<Item = &'static str> {
+    SUPPORTED_DSL_VERSIONS
+        .iter()
+        .copied()
+        .filter(|v| reserved_for(v).is_none())
+}
+
+/// True if `version` is a `dsl_version` this crate accepts: in the ledger, and
+/// not reserved for a surface this crate does not implement.
 pub fn is_supported_version(version: &str) -> bool {
-    SUPPORTED_DSL_VERSIONS.contains(&version)
+    SUPPORTED_DSL_VERSIONS.contains(&version) && reserved_for(version).is_none()
 }
 
 /// The minor-version ordinal of a supported `dsl_version` (`0.4.0` → 4); `0` for
@@ -62,6 +132,14 @@ pub fn is_supported_version(version: &str) -> bool {
 /// Public as [`minor_ordinal`]: the obligation fence ([`crate::fence`]) compares
 /// a rule's [`Binds::Since`](crate::Binds::Since) against exactly this number, so
 /// "version 0.8.0" means the same thing to a fence as it does to `is_v08`.
+///
+/// A **reserved** version keeps its own ordinal, so the ledger stays a
+/// contiguous sequence — the surface it names sits at that ordinal whether or
+/// not this crate implements it. The predicates below are therefore open at a
+/// reserved version, and that is not load-bearing: [`is_supported_version`]
+/// refuses it, `DW0102` is an error, and an error means no datapack is written
+/// at all. There is no path on which a reserved version's document reaches
+/// emission with a surface honoured or dropped.
 fn ordinal(version: &str) -> u32 {
     match version {
         "0.2.0" => 2,
@@ -74,6 +152,7 @@ fn ordinal(version: &str) -> u32 {
         "0.9.0" => 9,
         "0.10.0" => 10,
         "0.11.0" => 11,
+        "0.12.0" => 12,
         _ => 0,
     }
 }
@@ -467,5 +546,92 @@ pub fn check_campaign(raw: &RawCampaign) -> Vec<Diagnostic> {
                 .to_vec()
         }
         Err(diags) => crate::fence::Fenced::structural(diags).reported().to_vec(),
+    }
+}
+
+#[cfg(test)]
+mod version_ledger_tests {
+    use super::*;
+
+    /// A reservation is **in the ledger and not accepted**, and it sits above
+    /// everything implemented. Below the latest it would shadow a landed
+    /// surface; outside the ledger it would not be held at all, because a
+    /// number outside the ledger is a number the next author finds free.
+    #[test]
+    fn a_reservation_is_in_the_ledger_held_and_refused() {
+        assert!(is_supported_version(SUPPORTED_DSL_VERSION));
+        assert_eq!(accepted_versions().last(), Some(SUPPORTED_DSL_VERSION));
+        assert!(reserved_for(SUPPORTED_DSL_VERSION).is_none());
+
+        // Binding count: this is the property's whole population, and it is
+        // stated so an empty reservation list cannot read as a pass.
+        assert!(
+            !RESERVED_DSL_VERSIONS.is_empty(),
+            "binding count 0: nothing is reserved, so every assertion below \
+             examined no version. If that is genuinely the state, this test is \
+             what has to say so out loud."
+        );
+        for (version, anchor) in RESERVED_DSL_VERSIONS {
+            assert!(
+                SUPPORTED_DSL_VERSIONS.contains(version),
+                "{version} is reserved for {anchor} but is not in the ledger — a \
+                 number outside the ledger is a free number"
+            );
+            assert!(
+                !is_supported_version(version),
+                "{version} is reserved for {anchor} yet this crate accepts it; a \
+                 campaign declaring it would be built with that surface dropped"
+            );
+            assert!(
+                minor_ordinal(version) > minor_ordinal(SUPPORTED_DSL_VERSION),
+                "reserved {version} ({anchor}) is not newer than {SUPPORTED_DSL_VERSION}"
+            );
+        }
+
+        // Every ledger entry above the latest implemented one is a reservation
+        // and nothing else — a version in the list that neither this crate
+        // builds nor holds for a sibling names nothing.
+        for v in SUPPORTED_DSL_VERSIONS {
+            if minor_ordinal(v) > minor_ordinal(SUPPORTED_DSL_VERSION) {
+                assert!(
+                    reserved_for(v).is_some(),
+                    "{v} is newer than the latest implemented version and not reserved"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn accepted_versions_is_the_ledger_minus_its_reservations() {
+        let accepted: Vec<&str> = accepted_versions().collect();
+        assert!(accepted.iter().all(|v| is_supported_version(v)));
+        assert!(
+            accepted.iter().all(|v| reserved_for(v).is_none()),
+            "a reserved version reached the accepted list"
+        );
+        assert_eq!(
+            accepted.len() + RESERVED_DSL_VERSIONS.len(),
+            SUPPORTED_DSL_VERSIONS.len()
+        );
+    }
+
+    /// A version added to the list but not to `ordinal` would silently share
+    /// `0.2.0`'s fence and open every surface below it.
+    #[test]
+    fn every_ledger_version_has_its_own_ascending_ordinal() {
+        let mut seen: Vec<u32> = Vec::new();
+        for v in SUPPORTED_DSL_VERSIONS {
+            let n = minor_ordinal(v);
+            assert!(n > 0, "{v} is in the ledger with no `ordinal` arm");
+            assert!(
+                !seen.contains(&n),
+                "{v} shares an ordinal with an earlier version"
+            );
+            seen.push(n);
+        }
+        assert!(
+            seen.windows(2).all(|w| w[0] < w[1]),
+            "the ledger is read in order, oldest first"
+        );
     }
 }
