@@ -232,6 +232,16 @@ validation/          # docker compose: headless server + bot, same image as CI &
   page comes back full**, since that is the one condition under which the answer
   cannot be trusted. Same family as UNTRAVERSED: truncation fakes coverage, and it
   fakes it in the direction that reads as a clean pass.
+  The editing counterpart, and it is the cheapest of the family to commit: **a
+  scripted string replacement that matches nothing is a silent no-op** — it
+  returns the file unchanged and reports success, so a version that was supposed
+  to join a ledger simply is not in it. Nothing errors, the diff looks small
+  because it IS small, and review reads the intent rather than the absence. The
+  live instance was caught only because an unrelated gate **states its binding
+  count** and printed eight where nine was due, which is the argument for stated
+  bindings in one line. So an edit script asserts its match count before it
+  writes; a replace whose count is not exactly what was intended is a failure, not
+  a no-op.
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
