@@ -1,6 +1,6 @@
 # spec-0044: A respawn that resets the scene
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: `DW0478` (spec-0016 §1) asks *"does any hostile's declared
   perception radius cover the respawn cell?"* — and never the question that
   separates a soft-lock from an ordinary retry: **is the respawn cell worse
