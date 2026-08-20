@@ -242,6 +242,15 @@ validation/          # docker compose: headless server + bot, same image as CI &
   bindings in one line. So an edit script asserts its match count before it
   writes; a replace whose count is not exactly what was intended is a failure, not
   a no-op.
+  The same family reaches the act of demonstrating, which is when a tree is most
+  often perturbed and restored: **`git checkout -- <file>` cannot tell "revert my
+  perturbation" from "discard my work".** A round reverting a perturbation that
+  way destroyed its own uncommitted edits, and every demonstration that ran
+  afterwards passed — against the committed version, which was a different
+  instrument. Nothing errored and the output was plausible; it was caught only by
+  reading `git diff` before committing. So: **commit before demonstrating**, and
+  where the work cannot be committed yet, restore the perturbation from a scratch
+  copy rather than from git.
   Hence the obligation, stated where it can bind: **when a measurement is the
   deliverable, cross-check the number by a second method before reporting it.**
   Three of the six were caught only after being reported.
