@@ -1,4 +1,4 @@
-# spec-0045: An entry is a role, not a spelling
+# spec-0046: An entry is a role, not a spelling
 
 - **Status**: Proposed
 - **Question**: a piece's **entry point** — the cell a body arrives at when it
