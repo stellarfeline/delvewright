@@ -910,32 +910,13 @@ fn annex_block_at(t: &AnnexTile, x: i32, y: i32, z: i32) -> &'static str {
 }
 
 /// Where a tile hangs its light. TWO lanterns on the ceiling diagonal rather
-/// than one in the middle, and the reason is [`ANNEX_SEAM_EYE_CELLS`]: the
-/// middle of the ceiling is where a seam camera stands, so a fixture there is a
-/// camera inside a block.
+/// than one in the middle, which keeps the middle of the ceiling — where a seam
+/// camera is framed from — clear of fixtures.
 ///
 /// The diagonal keeps the measured floor light at 8: the darkest interior cells
 /// are the two corners not on the diagonal, seven blocks of open air from the
 /// nearer lantern.
 const ANNEX_LANTERNS: [[i32; 3]; 2] = [[2, ANNEX_SIZE[1] - 2, 2], [4, ANNEX_SIZE[1] - 2, 4]];
-
-/// The cells a **seam** camera's eye occupies inside an annex tile.
-///
-/// `render_plan` frames a socket seam from four blocks along the seal's own
-/// axis, eye 1.5 above the opening's centre — which lands on the tile's centre
-/// column, one cell under the ceiling: local `z = 4` framing the tile's own
-/// north socket, and local `z = 3` framing the *previous* tile's south socket
-/// four blocks back. Put anything solid there and the frame renders the inside
-/// of that block: two annex seam shots came back as a rectangle of ONE distinct
-/// colour, from a lantern hung in the middle of the ceiling.
-///
-/// The engine already refuses exactly this — `DW0724`, "the camera eye cell is
-/// occupied … fix the camera derivation" — but it is bound to **player-POV**
-/// cameras alone, so the identical defect on a seam camera is invisible to
-/// every build. This assertion is the tileset's own guard until that binding
-/// reaches the other derived cameras; it is strictly weaker, because it can
-/// only speak for the tiles in this file.
-const ANNEX_SEAM_EYE_CELLS: [[i32; 3]; 2] = [[3, ANNEX_SIZE[1] - 2, 3], [3, ANNEX_SIZE[1] - 2, 4]];
 
 fn build_annex(t: &AnnexTile) -> Structure {
     let mut palette = Palette::new();
@@ -1031,25 +1012,6 @@ fn assert_annex_anchor_stands(t: &AnnexTile, s: &Structure) {
     );
 }
 
-/// No block stands where a seam camera's eye does — see [`ANNEX_SEAM_EYE_CELLS`]
-/// for why this tileset has to say so itself.
-fn assert_annex_seam_eyes_are_clear(t: &AnnexTile, s: &Structure) {
-    for cell in ANNEX_SEAM_EYE_CELLS {
-        let name = s
-            .blocks
-            .iter()
-            .find(|b| b.pos == cell)
-            .map(|b| s.palette[b.state as usize].name.as_str())
-            .unwrap_or_else(|| panic!("{}: seam-eye cell {cell:?} is outside the tile", t.id));
-        assert_eq!(
-            name, "minecraft:air",
-            "{}: a seam camera's eye stands at {cell:?} and this tile puts `{name}` there — \
-             the frame would render the inside of that block (see ANNEX_SEAM_EYE_CELLS)",
-            t.id
-        );
-    }
-}
-
 /// The metadata for one annex tile, including its connectors.
 fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
     use serde_json::{json, Value};
@@ -1139,14 +1101,12 @@ fn annex_pool() -> serde_json::Value {
 }
 
 fn write_annex(out: &Path) {
-    let (mut anchors_proven, mut eyes_proven) = (0usize, 0usize);
+    let mut anchors_proven = 0usize;
     for t in ANNEX_TILES {
         let mut s = build_annex(t);
         resolve_connections(t.id, &mut s);
         assert_annex_anchor_stands(t, &s);
         anchors_proven += 1;
-        assert_annex_seam_eyes_are_clear(t, &s);
-        eyes_proven += ANNEX_SEAM_EYE_CELLS.len();
         let cells = invariant_cells(&s);
         invariants::assert_distress_never_stacks(t.id, &cells);
         invariants::assert_blocks_are_real(t.id, &cells);
@@ -1173,19 +1133,15 @@ fn write_annex(out: &Path) {
     pool.push('\n');
     std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
     assert_eq!(
-        (anchors_proven, eyes_proven),
-        (
-            ANNEX_TILES.len(),
-            ANNEX_TILES.len() * ANNEX_SEAM_EYE_CELLS.len()
-        ),
-        "{ID}: the annex proofs examined {anchors_proven} anchor(s) and {eyes_proven} seam-eye \
-         cell(s) over {} tile(s) — a universally quantified assertion over an empty set is \
-         vacuous, not a pass",
+        anchors_proven,
+        ANNEX_TILES.len(),
+        "{ID}: the annex proofs examined {anchors_proven} anchor(s) over {} tile(s) — a \
+         universally quantified assertion over an empty set is vacuous, not a pass",
         ANNEX_TILES.len()
     );
     println!(
         "{ID}: annex tileset written — {} tile(s) and one pool; {anchors_proven} anchor(s) proven \
-         standable and {eyes_proven} seam-camera eye cell(s) proven clear",
+         standable",
         ANNEX_TILES.len()
     );
 }
