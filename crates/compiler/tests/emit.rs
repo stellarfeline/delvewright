@@ -289,6 +289,62 @@ fn render_plan_shape_and_expect_vocabulary() {
     );
 }
 
+/// The plan states what the clear-eye proof (`DW0724`) examined, and what it had
+/// to move.
+///
+/// A proof whose only output is a successful build is one nobody can tell apart
+/// from a proof that ran over nothing, so `camera_eye_proof` is emitted whether
+/// the verdict is a pass or not, and it counts *every* camera the plan holds —
+/// not the one kind the proof used to be bound to.
+#[test]
+fn the_render_plan_states_what_the_clear_eye_proof_examined() {
+    let out = build_hello_world();
+    let rp: serde_json::Value =
+        serde_json::from_slice(out.get("render-plan.json").unwrap()).unwrap();
+    let shots = rp["shots"].as_array().unwrap();
+    let proof = &rp["camera_eye_proof"];
+    assert_eq!(
+        proof["cameras"].as_u64().unwrap() as usize,
+        shots.len(),
+        "the proof binds to every shot in the plan, not to a subset: {proof}"
+    );
+    let pulled = proof["pulled_in"].as_u64().unwrap() as usize;
+    // hello-world is a small room, so its NPC and gate stand-offs are inside the
+    // wall: the count is a real reading, not a structural zero.
+    assert_eq!(
+        pulled, 2,
+        "hello-world's two buried stand-offs are pulled in: {proof}"
+    );
+    let moved: Vec<&serde_json::Value> = shots
+        .iter()
+        .filter(|s| !s["camera"]["requested_pos"].is_null())
+        .collect();
+    assert_eq!(
+        moved.len(),
+        pulled,
+        "every pulled-in camera says so on its own shot"
+    );
+    for s in &moved {
+        let cam = &s["camera"];
+        assert_ne!(
+            cam["pos"], cam["requested_pos"],
+            "a camera that records a requested position actually moved off it"
+        );
+        assert!(
+            cam["standoff"].as_str().unwrap().contains("pulled-in"),
+            "the shot says why the stand-off was not honoured: {cam}"
+        );
+    }
+    // A camera that stands where it asked to says nothing extra, so the plans of
+    // campaigns with no buried stand-off do not grow keys.
+    for s in shots
+        .iter()
+        .filter(|s| s["camera"]["requested_pos"].is_null())
+    {
+        assert!(s["camera"]["standoff"].is_null(), "quiet when unmoved: {s}");
+    }
+}
+
 #[test]
 fn critical_path_shape_and_commands() {
     let out = build_hello_world();

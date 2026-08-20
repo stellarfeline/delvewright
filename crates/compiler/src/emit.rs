@@ -460,10 +460,48 @@ pub fn build_with_warnings(
     // either needs it. Includes any colliding relight fixtures (campfire / floor
     // lantern) so a fixture can never wedge a required path shut *nor* be stood on
     // by a spawned mob (spec-0010: verification re-runs after placement).
+    //
+    // It is built for EVERY campaign, not only the ones `assembles_world` says
+    // need nav: the visual tier's clear-eye proof (`DW0724`) is owed by every
+    // campaign that emits a render plan, and a render plan is emitted
+    // unconditionally. Keying the model to the nav predicate would have left a
+    // campaign with no walked leg deriving seven kinds of camera against no world
+    // at all — a zero binding wearing a pass's clothes, which is precisely the
+    // shape that let a camera stand inside a ceiling lantern for as long as it did.
+    let world = match &edit_replay {
+        Some(er) => {
+            let mut occ = crate::assembled::occupancy_of(
+                er.assembled.blocks.clone(),
+                &er.assembled.open_gates,
+            );
+            occ.solid.extend(relight.extra_solid.iter().copied());
+            // The ambient is the world-generator PREMISE (spec-0013), not
+            // geometry, and `from_occupancy` defaults it to `Void`. The
+            // sibling arm gets it for free through `from_plan`; this arm
+            // has to say it, or an `ocean` campaign's proofs would run
+            // against a void world that does not exist. Harmless while
+            // nothing here read it — `verify_boundary_safety` below now
+            // does.
+            // The world-load gate seals travel with this arm too, and
+            // they are the prefab's measurement, not the edit script's:
+            // a batch that writes INTO a gate region already appears as
+            // ordinary solid blocks above (and is `DW0353`'s advisory).
+            // Missing this line is how an edit-carrying campaign — the
+            // island is one — would have got a vacuous green out of the
+            // completability model while every fixture went red.
+            crate::nav::World::from_occupancy(occ)
+                .with_ambient(
+                    crate::nav::Ambient::of_plan(plan),
+                    crate::nav::built_volume(plan),
+                )
+                .with_world_load_seals(plan, er.assembled.gate_seals.clone())
+        }
+        None => crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid),
+    };
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
-    // the routes + the assembled occupancy for the DW0724 clear-eye self-check);
-    // empty for a campaign with no walked leg, so its render plan stays byte-identical.
+    // the routes); empty for a campaign with no walked leg, so its render plan
+    // stays byte-identical.
     let mut pov_shots: Vec<crate::render_plan::PovShot> = Vec::new();
     // spec-0025 per-branch waypoint artifacts: one
     // `validation/branch-waypoints-<branch>.json` per reachable branch, filled
@@ -579,39 +617,6 @@ pub fn build_with_warnings(
                 Some(er) => er.assembled.blocks.clone(),
                 None => crate::assembled::assembled_blocks(plan, structures),
             };
-            let world = match &edit_replay {
-                Some(er) => {
-                    let mut occ = crate::assembled::occupancy_of(
-                        er.assembled.blocks.clone(),
-                        &er.assembled.open_gates,
-                    );
-                    occ.solid.extend(relight.extra_solid.iter().copied());
-                    // The ambient is the world-generator PREMISE (spec-0013), not
-                    // geometry, and `from_occupancy` defaults it to `Void`. The
-                    // sibling arm gets it for free through `from_plan`; this arm
-                    // has to say it, or an `ocean` campaign's proofs would run
-                    // against a void world that does not exist. Harmless while
-                    // nothing here read it — `verify_boundary_safety` below now
-                    // does.
-                    // The world-load gate seals travel with this arm too, and
-                    // they are the prefab's measurement, not the edit script's:
-                    // a batch that writes INTO a gate region already appears as
-                    // ordinary solid blocks above (and is `DW0353`'s advisory).
-                    // Missing this line is how an edit-carrying campaign — the
-                    // island is one — would have got a vacuous green out of the
-                    // completability model while every fixture went red.
-                    crate::nav::World::from_occupancy(occ)
-                        .with_ambient(
-                            crate::nav::Ambient::of_plan(plan),
-                            crate::nav::built_volume(plan),
-                        )
-                        .with_world_load_seals(plan, er.assembled.gate_seals.clone())
-                }
-                None => {
-                    crate::nav::World::from_plan_with_extra(plan, structures, &relight.extra_solid)
-                }
-            };
-
             if world.has_gate_anchors() {
                 gate_seal_ledger = Some(world.gate_seal_ledger());
             }
@@ -847,16 +852,12 @@ pub fn build_with_warnings(
                     );
                 }
                 // Visual-tier POV cameras (spec-0003): one first-person shot per
-                // corner-thinned waypoint. Self-check every eye cell is clear in
-                // the FINAL assembled world (DW0724) — makes a camera looking out
-                // from inside a wall a build error, the owner's exact visual-review
-                // failure mode, caught at its source (the derivation).
+                // corner-thinned waypoint. Their eye cells are proven clear in the
+                // FINAL assembled world with every other kind's, at the one place
+                // a render plan can be built (`PlannedShots::into_document`) —
+                // this used to be a POV-only check here, which is exactly why the
+                // identical defect on a seam camera was invisible.
                 pov_shots = crate::render_plan::pov_shots(plan, &routes);
-                let eyes: Vec<(String, [i32; 3])> = pov_shots
-                    .iter()
-                    .map(|s| (s.id.clone(), s.eye_cell()))
-                    .collect();
-                crate::nav::verify_pov_cameras(&world, &eyes)?;
                 // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run
@@ -1259,11 +1260,16 @@ pub fn build_with_warnings(
     // Deterministic camera + expect-checklist shot list for the visual tier;
     // consumed by `delve-render`. Emitted before the manifest so its hash is
     // recorded there like every other output.
-    put_json(
-        &mut out,
-        "render-plan.json",
-        &crate::render_plan::render_plan(plan, prefabs, &pov_shots),
-    );
+    //
+    // `render_plan` is the only way to a render-plan value, and it takes the
+    // assembled world because every camera in it owes the `DW0724` clear-eye
+    // proof — every kind, not the one that needed it first. It also states the
+    // proof's binding count in the artifact and hands back a warning when that
+    // count is zero.
+    let (render_plan_doc, camera_warnings) =
+        crate::render_plan::render_plan(plan, prefabs, &pov_shots, &world)?;
+    warnings.extend(camera_warnings);
+    put_json(&mut out, "render-plan.json", &render_plan_doc);
 
     // ---- validate every emitted vanilla mcfunction ----
     let mut errors = Vec::new();
@@ -1306,6 +1312,20 @@ pub fn build_with_warnings(
         &mut out,
         "validation/fixture-gate.json",
         &fixture_gate.to_json(),
+    );
+
+    // ---- the effect-root walk's own binding ledger ----
+    // Every other proof in this compiler publishes its binding as a
+    // `validation/*.json`; the walk that underpins most of them published a
+    // stderr STRING, so nothing downstream could assert it bound to anything.
+    // A build whose effect walk reaches zero bundles is a build where every
+    // effect-shaped proof is vacuous, and until this file existed that was not
+    // a fact any gate could read (spec-0039 criterion 6).
+    let root_binding = crate::plan::for_each_effect_root(plan.campaign, &mut |_site, _effs| {});
+    put_json(
+        &mut out,
+        "validation/effect-roots.json",
+        &root_binding.to_json(),
     );
 
     // ---- call-graph integrity (DW0497) ----
@@ -12019,7 +12039,15 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
                     entry["functions"] = json!([{
                         "function": "minecraft:set_name",
                         "target": "custom_name",
-                        "name": { "text": name },
+                        // `tr`, not a bare `{"text": …}`. An authored display
+                        // name arrives here still carrying its l10n marker, and
+                        // a raw text component ships the marker verbatim — which
+                        // `DW0185` refuses, so a drop that named itself did not
+                        // build AT ALL, at any version. The diagnostic was right
+                        // and nothing had ever reached it: no campaign and no
+                        // fixture had named a drop, which is the coverage gap
+                        // spec-0039 exists to close rather than a missing rule.
+                        "name": tr(name),
                     }]);
                 }
                 Some(entry)
@@ -17742,6 +17770,16 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id)
         ));
         b.extend(packtest_preamble(plan, qid, o, false, &sel)); // flags withheld (cleared)
+        // `with_flags: false` shuts EVERY gate the objective has, the numeric one
+        // included — which is right for a preamble and wrong for this test. This
+        // template's subject is `requires_flags`, so the flag must be the only
+        // variable: with the numeric gate also shut, the withheld assert passes
+        // because TWO gates are closed (it would pass with the flag logic
+        // deleted), and the released phase — which reopens only the flags — can
+        // never pass at all. An objective carrying both gates therefore emitted a
+        // test that could not go green, and nothing had ever written both on one
+        // objective until the gallery did.
+        b.extend(state_drive_lines(plan, o.requires_state(), true));
         driver(&mut b);
         b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
@@ -18960,6 +18998,33 @@ mod loot_emit_tests {
             out[0].contains(r#"custom_name={"italic":false,"text":"Tide Ledger"}"#),
             "{}",
             out[0]
+        );
+    }
+
+    /// A drop that names itself lowers through [`tr`], never a raw literal.
+    ///
+    /// The regression this pins: `set_name` used to build `{"text": name}`
+    /// directly, and an authored name arrives still carrying its l10n marker —
+    /// so a named drop shipped the marker verbatim and `DW0185` refused the
+    /// build. Every version, unconditionally, for as long as the surface had
+    /// existed; nothing was red because nothing had ever named a drop.
+    #[test]
+    fn a_named_drop_lowers_through_tr_not_a_raw_literal() {
+        let tagged = delvewright_dsl::l10n::tag("wave.muster.mob.0.drop.0.name", "Muster Bone");
+        let component = tr(&tagged);
+        assert_eq!(
+            component["translate"], "wave.muster.mob.0.drop.0.name",
+            "a marked string must lower to a translate key: {component}"
+        );
+        assert_eq!(component["fallback"], "Muster Bone", "{component}");
+        assert!(
+            component.get("text").is_none(),
+            "a marked string must NOT keep a literal body — that body is what \
+             carries the marker into the emitted tree: {component}"
+        );
+        assert!(
+            !component.to_string().contains(&tagged),
+            "the marker itself must not survive into the component: {component}"
         );
     }
 

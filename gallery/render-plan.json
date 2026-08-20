@@ -1,0 +1,231 @@
+{
+  "findings": 0,
+  "note": "The view set the gallery declares. Committed so that a shot VANISHING is a red naming it rather than a shorter directory listing. Cameras are not committed: they are derived from the campaign and belong to the build, and duplicating them here would be a second authority on where a camera stands.",
+  "views": [
+    {
+      "area": "area/hall",
+      "id": "gate/hall/gate_main/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/gate_main/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/shortcut_door/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/shortcut_door/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door/a",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "gate/hall/timed_door/b",
+      "kind": "gate"
+    },
+    {
+      "area": "area/hall",
+      "id": "interact/press_the_case",
+      "kind": "interact"
+    },
+    {
+      "area": "area/annex",
+      "id": "interior/annex/0",
+      "kind": "interior"
+    },
+    {
+      "area": "area/annex",
+      "id": "interior/annex/1",
+      "kind": "interior"
+    },
+    {
+      "area": "area/annex",
+      "id": "interior/annex/2",
+      "kind": "interior"
+    },
+    {
+      "area": "area/hall",
+      "id": "interior/hall/0",
+      "kind": "interior"
+    },
+    {
+      "area": "area/hall",
+      "id": "npc/curator",
+      "kind": "npc"
+    },
+    {
+      "area": "area/hall",
+      "id": "npc/factor",
+      "kind": "npc"
+    },
+    {
+      "area": "area/hall",
+      "id": "npc/marshal",
+      "kind": "npc"
+    },
+    {
+      "area": "area/hall",
+      "id": "npc/warden",
+      "kind": "npc"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg0/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg0/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg0/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg0/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg1/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg2/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp4",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp5",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp6",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp7",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg3/wp8",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg4/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp0",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp1",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp2",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg5/wp3",
+      "kind": "pov"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/0",
+      "kind": "seam"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/2",
+      "kind": "seam"
+    },
+    {
+      "area": "area/annex",
+      "id": "seam/annex/3",
+      "kind": "seam"
+    },
+    {
+      "area": "area/hall",
+      "id": "spawn",
+      "kind": "spawn"
+    }
+  ]
+}
