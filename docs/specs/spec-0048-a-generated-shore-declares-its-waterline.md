@@ -1,6 +1,6 @@
 # spec-0048: A generated shore declares its waterline
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Question**: a placed piece that declares `waterline_y` — the local y of its
   top authored water block — is held by `DW0344` to land that plane at the
   ocean horizon's sea level, so a shore's water meets the sea it depicts. Two
