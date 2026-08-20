@@ -593,7 +593,29 @@ use.
 
 An **anchor** is `{pos?, facing?, region?, block?, resolves_to?, dispenser?,
 trigger_block?}` — one object class covering a point, a gate region and a trap's
-pre-wired hardware, each writing only the keys it means.
+pre-wired hardware, each writing only the keys it means. `resolves_to` is which
+element of the piece's own contract the anchor lands in — `space:`, `no_body:`,
+`via:`, `bar:` or `way:` and the element's name — resolved by whoever wrote the
+document, never by the reader.
+
+The **spatial contract** is `{entry, spaces, no_body, edges, faces,
+no_body_majority_ack?}`, every box an inclusive local `{from, to}` cell range of
+these exact bytes. An `edges` entry is `{a, b, class, rise?, via?, bar?, way?}`,
+and the two optional regions on it are what content addresses:
+
+- `bar` — `{region, boxes, block}` — what stands in a `barred` edge.
+- `way` — `{opens, region, boxes, role?, block}` — a traversal edge that is
+  **severed as built and opened by content**. `opens` is `laid` (the cells are
+  empty in the `.nbt` and opening fills them with `block`) or `cleared` (they
+  stand in `block` and opening voids them). `block` is a full block state,
+  properties included, and is the one authority for what an opening writes;
+  `role` is the producer's own name for it and is omitted by a producer with no
+  palette. A `laid` way is the one case where the metadata names cells the bytes
+  deliberately do not hold.
+
+A piece declares one or the other on an edge, never both: `barred` and
+`walk` + `way {cleared}` are two spellings of one claim, and a document that
+writes both is refused.
 
 `lighting.profile` is one of `unmeasured` | `lit` | `dim` | `dark`. The three
 measured profiles must carry both `measured_min_light` and `measured`;
