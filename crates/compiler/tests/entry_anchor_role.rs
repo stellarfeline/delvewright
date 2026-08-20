@@ -333,14 +333,19 @@ fn no_source_file_outside_the_resolver_matches_an_entry_anchor_name() {
              consulted only when the piece declares no role; it has no area and \
              no plan to ask",
         ),
+        // Both needles are the RUST spelling of the field, because that is what
+        // the sweep reads. Written in the JSON spelling (`"id": "spawn",`) they
+        // matched nothing, which is not a silence: an exemption that matches
+        // nothing exempts nothing, so the two lines below reported as findings
+        // and the sweep failed against the very source it was written for.
         (
             "render_plan.rs",
-            "\"id\": \"spawn\",",
+            "id: \"spawn\".to_string(),",
             "a review SHOT's id, not an anchor name",
         ),
         (
             "render_plan.rs",
-            "\"kind\": \"spawn\",",
+            "kind: \"spawn\",",
             "a review shot's kind, not an anchor name",
         ),
         (
