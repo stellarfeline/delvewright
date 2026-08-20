@@ -26,12 +26,12 @@ use std::process::Command;
 
 use delvewright_grammar::export::{export_prefab, export_zone};
 use delvewright_grammar::ir::{
-    Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Node, Opens, Program, ProgramError,
-    Way,
+    Alternative, Bar, Contract, EXTERIOR, EdgeClass, Envelope, Mark, MarkAt, Node, Opens, Program,
+    ProgramError, Reorient, Rounding, Size, Split, Way,
 };
 use delvewright_grammar::library::{self, spatial_contract::spatial_contract};
 use delvewright_grammar::version::{LATEST_PROGRAM_VERSION, WAY_SINCE};
-use delvewright_grammar::{Box3, ExpandOptions, Expansion, expand};
+use delvewright_grammar::{Axis, Box3, ExpandOptions, Expansion, expand};
 
 const GRAMMAR: &str = env!("CARGO_BIN_EXE_delve-grammar");
 
@@ -1134,4 +1134,419 @@ fn including_a_claiming_piece_qualifies_its_regions_and_says_so() {
     owned.validate().unwrap();
     let out = run(&owned, Box3::at_origin([4, 4, 4]), 1);
     assert_eq!(out.contract.unwrap().spaces["west/room"].region.cells(), 64);
+}
+
+// ---------------------------------------------------------------------------
+// 8. Export, over a contract that carries a way (spec-0042 §2.3, AC6/AC7)
+// ---------------------------------------------------------------------------
+
+/// **The corpus piece, with its barred door respelled as what it means.**
+///
+/// `barred { rise, bar, via }` IS `walk { rise, via } + way { cleared,
+/// bar.region, bar.block }` (spec-0042 §2.2), so this is the same building
+/// declared the other way round: same rules, same roles, same blocks, one edge
+/// spelled differently. That is what makes it usable as the export fixture —
+/// every assertion below about a way is made against a piece whose block bytes
+/// are known to be the barred piece's, so nothing that moves can be blamed on
+/// the geometry.
+///
+/// It also carries an anchor **inside the way region**, which the barred
+/// original does not: the doorway scope's local `(1, 2, 0)` is world `[5, 2, 7]`
+/// and the gate resolves to `[4,1,7]..[6,3,7]`. A mark writes no block
+/// (`tests/contract.rs` §1), so it costs the byte comparison nothing.
+fn spatial_contract_as_a_cleared_way() -> Program {
+    let mut program = spatial_contract();
+    let contract = program.contract.as_mut().expect("the corpus declares one");
+    for edge in &mut contract.edges {
+        if let EdgeClass::Barred { rise, bar, .. } = &edge.class {
+            edge.class = EdgeClass::Walk {
+                rise: *rise,
+                // The bar's own region is the transit volume: the cells that
+                // decide the crossing belong to the edge, which is exactly what
+                // `barred` always meant and never had to say.
+                via: Some(bar.region.clone()),
+                way: Some(Way {
+                    opens: Opens::Cleared,
+                    region: bar.region.clone(),
+                    block: bar.block.clone(),
+                }),
+            };
+        }
+    }
+    for alt in program
+        .rules
+        .get_mut("doorway")
+        .expect("the corpus builds its doorway in a rule of that name")
+    {
+        let body = std::mem::replace(&mut alt.body, Node::Void);
+        alt.body = Node::Mark {
+            mark: Mark::new("gate-watch", MarkAt::offset(1, 2, 0)),
+            body: Box::new(body),
+        };
+    }
+    program
+}
+
+/// **The exported way carries name, sign, role, resolved block and cells, and an
+/// anchor inside it resolves to `way:<name>`** (spec-0042 §2.3, AC7).
+///
+/// The five things a reader needs and the compiler later emits from, asserted on
+/// the metadata document rather than on the resolved contract: the document is
+/// what crosses into `delvec` and into `delve-admit`, and a field that resolves
+/// correctly and is dropped on the way out is the defect this exists to catch.
+#[test]
+fn the_exported_metadata_carries_the_way_and_the_anchor_inside_it_names_it() {
+    let export = export_prefab(
+        &spatial_contract_as_a_cleared_way(),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .expect("the respelled piece exports green");
+    let contract = export.metadata.spatial_contract.as_ref().unwrap();
+
+    let walk = contract
+        .edges
+        .iter()
+        .find(|e| e.a == "near" && e.b == "far")
+        .expect("the door edge");
+    assert_eq!(walk.class, "walk", "the door is a walk now, not a `barred`");
+    assert!(
+        walk.bar.is_none(),
+        "a walk carries no bar — the two spellings are alternatives, not layers"
+    );
+    let way = walk.way.as_ref().expect("and it carries its way");
+    assert_eq!(way.region, "gate", "name");
+    assert_eq!(way.opens, "cleared", "sign");
+    assert_eq!(
+        way.role.as_deref(),
+        Some("bar"),
+        "the palette role, in the author's words"
+    );
+    // The FULL state, properties included — the same demand the bar's block
+    // carries: a grille whose connections were dropped on the way into the
+    // metadata describes a row of posts, and an `open-way` emitting it would
+    // build one.
+    assert_eq!(
+        way.block,
+        "minecraft:iron_bars[east=true,north=false,south=false,waterlogged=false,west=true]"
+    );
+    assert_eq!(way.boxes.len(), 1, "cells");
+    assert_eq!(way.boxes[0].from, [4, 1, 7]);
+    assert_eq!(way.boxes[0].to, [6, 3, 7]);
+    // The same cells the barred spelling resolved its bar to — the respelling
+    // moved a name, not a box.
+    let barred = export_prefab(
+        &spatial_contract(),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .unwrap()
+    .metadata
+    .spatial_contract
+    .unwrap();
+    let bar = barred
+        .edges
+        .iter()
+        .find(|e| e.class == "barred")
+        .and_then(|e| e.bar.as_ref())
+        .expect("the original bar");
+    assert_eq!(way.boxes, bar.boxes);
+    assert_eq!(way.block, bar.block);
+
+    // An anchor inside a way region names the way, as one inside a bar region
+    // names the bar — read off the metadata document a campaign binds against.
+    let anchor = export
+        .metadata
+        .anchors
+        .get("anchor/gate-watch")
+        .expect("the mark reached the metadata");
+    assert_eq!(anchor.pos, Some([5, 2, 7]));
+    assert_eq!(anchor.resolves_to.as_deref(), Some("way:gate"));
+}
+
+/// **Declaring a way moves no block bytes** (spec-0042 AC7).
+///
+/// The transparency claim `claim` itself owes, one construct over: a contract is
+/// a statement about a building and never a part of it, so respelling an edge as
+/// a way — and marking a cell inside it — has to leave the model bit for bit
+/// where it was, at every seed.
+#[test]
+fn declaring_a_way_moves_no_block() {
+    for seed in [0u64, 1, 7] {
+        let plain = run(&spatial_contract(), PIECE, seed);
+        let contingent = run(&spatial_contract_as_a_cleared_way(), PIECE, seed);
+        assert_eq!(
+            plain.model.canonical_bytes(),
+            contingent.model.canonical_bytes(),
+            "seed {seed}: declaring a way moved a block"
+        );
+        assert!(
+            !plain.model.canonical_bytes().is_empty(),
+            "seed {seed}: the two models were compared over an empty building"
+        );
+        // …and the way is really declared, so the comparison above is between a
+        // contract that carries one and a contract that does not.
+        let way = contingent
+            .contract
+            .as_ref()
+            .unwrap()
+            .edges
+            .iter()
+            .find_map(|e| e.way.as_ref())
+            .expect("the respelled edge resolved a way");
+        assert!(way.boxes.iter().map(|b| b.volume()).sum::<u64>() > 0);
+    }
+}
+
+/// **A piece that declares no way exports the bytes it always did** (spec-0042
+/// §2.3, AC6).
+///
+/// `way` is an optional key that is written only when an edge carries one, and
+/// `barred` keeps writing `bar`: the normalisation into one prover is the
+/// checker's business and stops at the checker. Swept over the WHOLE corpus
+/// rather than over the one program somebody remembered, because a key that was
+/// absent in the place it was looked at is the failure this rules out — and the
+/// population is asserted non-empty, because the corpus declares exactly one
+/// contract today and a sweep that found none would pass identically.
+///
+/// The absence is only worth something beside the presence, so the last half
+/// exports a way-carrying piece through the same serialiser: the key appears
+/// exactly when an edge declares one, rather than never appearing at all.
+#[test]
+fn no_corpus_piece_writes_a_way_and_every_bar_still_writes_bar() {
+    let mut pieces = 0usize;
+    let mut bars = 0usize;
+    for (id, size) in CORPUS {
+        let program = library::by_id(id).unwrap_or_else(|| panic!("{id} is not in the library"));
+        let expansion = run(&program, Box3::at_origin(*size), 1);
+        let Some(contract) = delvewright_grammar::export::contract_metadata(&expansion) else {
+            continue;
+        };
+        pieces += 1;
+        for edge in &contract.edges {
+            assert!(
+                edge.way.is_none(),
+                "{id}: an edge that declares no way exported one"
+            );
+            if edge.bar.is_some() {
+                assert_eq!(edge.class, "barred", "{id}");
+                bars += 1;
+            }
+        }
+        let json = serde_json::to_string(&contract).unwrap();
+        assert!(
+            !json.contains("\"way\""),
+            "{id}: the serialised contract carries a `way` key: {json}"
+        );
+    }
+    assert!(
+        pieces > 0,
+        "no corpus program declares a contract, so this examined nothing"
+    );
+    assert!(
+        bars > 0,
+        "no corpus program declares a bar, so `bar stays bar` was proved over zero bars"
+    );
+
+    // The other half: the same serialiser writes the key when there is one to
+    // write, so the sweep above is an absence and not a blind spot.
+    let contingent = serde_json::to_string(
+        &export_prefab(
+            &spatial_contract_as_a_cleared_way(),
+            PIECE,
+            &ExpandOptions::seeded(1),
+            "piece",
+        )
+        .unwrap()
+        .metadata
+        .spatial_contract
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(contingent.contains("\"way\""), "{contingent}");
+    // Structurally, not by substring: this corpus's palette role is itself
+    // called `bar`, so a way's own `role` puts the word in the document. What
+    // must be absent is the KEY on the edge.
+    let value: serde_json::Value = serde_json::from_str(&contingent).unwrap();
+    for edge in value["edges"].as_array().unwrap() {
+        assert!(
+            edge.get("bar").is_none(),
+            "a walk carrying a way writes no bar: {edge}"
+        );
+    }
+}
+
+/// **Two processes, the same bytes — over a contract that carries a way.**
+///
+/// The double-expand suite's own vacuity clause (spec-0042 AC7): determinism
+/// asserted only over contracts *without* ways proves nothing about the surface
+/// this spec adds. Same shape as the sibling above — two processes, not two
+/// runs in one — and the metadata is asserted to actually carry the way before
+/// the comparison is believed.
+#[test]
+fn two_processes_write_the_same_contract_when_it_carries_a_way() {
+    let dir = scratch("determinism-way");
+    let file = dir.join("piece.json");
+    std::fs::write(
+        &file,
+        serde_json::to_vec_pretty(&spatial_contract_as_a_cleared_way()).unwrap(),
+    )
+    .unwrap();
+
+    let a = dir.join("a");
+    let b = dir.join("b");
+    cli_expand(&file, &a);
+    cli_expand(&file, &b);
+
+    let nbt_a = std::fs::read(a.join("piece.nbt")).unwrap();
+    let nbt_b = std::fs::read(b.join("piece.nbt")).unwrap();
+    assert_eq!(nbt_a, nbt_b, "the structure bytes moved between processes");
+
+    let json_a = std::fs::read_to_string(a.join("piece.json")).unwrap();
+    let json_b = std::fs::read_to_string(b.join("piece.json")).unwrap();
+    assert_eq!(json_a, json_b, "the metadata bytes moved between processes");
+
+    let value: serde_json::Value = serde_json::from_str(&json_a).unwrap();
+    let way = &value["spatial_contract"]["edges"][1]["way"];
+    assert!(
+        way.is_object(),
+        "the metadata carried no way, so the comparison above proved nothing about ways:\n{json_a}"
+    );
+    assert_eq!(way["region"], serde_json::json!("gate"));
+    assert_eq!(way["opens"], serde_json::json!("cleared"));
+    assert_eq!(
+        value["anchors"]["anchor/gate-watch"]["resolves_to"],
+        serde_json::json!("way:gate")
+    );
+}
+
+/// **The other sign, on the same building**: the doorway's threshold is missing
+/// and content lays it.
+///
+/// The corpus piece with its partition's floor course claimed as `deck` and
+/// left empty, the passage over it open, and the door declared a `walk` whose
+/// way is `laid`. As built the two rooms are severed — a body cannot stand on
+/// a threshold that is not there — and laying the deck in the `floor` role
+/// connects them.
+///
+/// It exists because the export writes the sign it was handed, and a corpus in
+/// which every exported way is `cleared` would let an export that wrote the
+/// word "cleared" pass every assertion here.
+fn spatial_contract_as_a_laid_deck() -> Program {
+    broken_threshold(true)
+}
+
+/// The same broken threshold with nothing declared about it: the deck cells are
+/// air in both, and only this one has no `way` and no `deck` claim.
+///
+/// The red twin of the fixture above, kept beside it so the pair is one delta
+/// apart in the DECLARATION and zero deltas apart in the blocks.
+fn broken_threshold_undeclared() -> Program {
+    broken_threshold(false)
+}
+
+fn broken_threshold(declared: bool) -> Program {
+    let mut program = spatial_contract();
+    let contract = program.contract.as_mut().expect("the corpus declares one");
+    for edge in &mut contract.edges {
+        if let EdgeClass::Barred { rise, .. } = &edge.class {
+            edge.class = EdgeClass::Walk {
+                rise: *rise,
+                // The whole doorway column is the transit volume; the threshold
+                // course inside it is what opening lays.
+                via: Some("gate".to_string()),
+                way: declared.then(|| Way {
+                    opens: Opens::Laid,
+                    region: "deck".to_string(),
+                    block: "floor".to_string(),
+                }),
+            };
+        }
+    }
+    let threshold = if declared {
+        Node::Claim {
+            region: "deck".to_string(),
+            body: Box::new(Node::Void),
+        }
+    } else {
+        Node::Void
+    };
+    program.rule(
+        "doorway",
+        Node::Claim {
+            region: "gate".to_string(),
+            body: Box::new(Node::Split(Split {
+                axis: Axis::Y,
+                sizes: vec![Size::abs(1), Size::abs(3), Size::rel(1)],
+                rounding: Rounding::Truncate,
+                repeat: false,
+                orient: Reorient::KEEP,
+                children: vec![threshold, Node::Void, Node::fill("shell")],
+            })),
+        },
+    )
+}
+
+/// **A `laid` way exports its own sign, role, block and cells** (spec-0042
+/// §2.3, AC7).
+///
+/// The sibling of the `cleared` assertion above, and the reason it is not
+/// enough on its own: an export that hardcoded either word would satisfy one of
+/// the two and neither would notice.
+#[test]
+fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
+    let export = export_prefab(
+        &spatial_contract_as_a_laid_deck(),
+        PIECE,
+        &ExpandOptions::seeded(1),
+        "piece",
+    )
+    .expect("the broken threshold exports green with its way declared");
+    let contract = export.metadata.spatial_contract.as_ref().unwrap();
+    let way = contract
+        .edges
+        .iter()
+        .find_map(|e| e.way.as_ref())
+        .expect("the door carries a way");
+    assert_eq!(way.opens, "laid");
+    assert_eq!(way.region, "deck");
+    assert_eq!(way.role.as_deref(), Some("floor"));
+    // What the cells BECOME when it is opened, resolved from the role — the
+    // one authority an `open-way` reads.
+    assert_eq!(way.block, "minecraft:stone");
+    assert_eq!(way.boxes.len(), 1);
+    assert_eq!(way.boxes[0].from, [4, 0, 7]);
+    assert_eq!(way.boxes[0].to, [6, 0, 7]);
+
+    // The bytes are severed as shipped: the cells the way will lay are air, and
+    // that is what makes the closed half of the proof above a real one. Asserted
+    // on the exported model rather than trusted from the declaration.
+    let expansion = run(&spatial_contract_as_a_laid_deck(), PIECE, 1);
+    for x in 4..=6 {
+        assert!(
+            expansion.model.get([x, 0, 7]).map(|b| b.is_air()) == Some(true),
+            "the threshold at [{x},0,7] is not empty as built"
+        );
+    }
+
+    // **And the way is load-bearing.** Take the declaration off the same bytes
+    // and the piece is refused: the far room is unreachable and the walk does
+    // not connect. A green over a piece that would have been green anyway says
+    // nothing about the surface being exported.
+    let undeclared = broken_threshold_undeclared();
+    assert_eq!(
+        run(&undeclared, PIECE, 1).model.canonical_bytes(),
+        expansion.model.canonical_bytes(),
+        "the two twins must be one DECLARATION apart and zero blocks apart"
+    );
+    match export_prefab(&undeclared, PIECE, &ExpandOptions::seeded(1), "piece") {
+        Err(delvewright_grammar::ExportError::Contract { gates }) => {
+            let joined = gates.join(" · ");
+            assert!(joined.contains("contract-edge-proof"), "{joined}");
+            assert!(joined.contains("contract-reachability"), "{joined}");
+        }
+        other => panic!("the undeclared twin must be refused, got {other:?}"),
+    }
 }
