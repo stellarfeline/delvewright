@@ -45,3 +45,4 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0042](spec-0042-a-way-that-content-opens.md) | A way that content opens — contingent edges, both signs, and the effect that opens them | Proposed |
 | [spec-0043](spec-0043-an-open-space-carries-its-shadow.md) | An open space carries its shadow — the sky demand re-bound to the computed partition | Proposed |
 | [spec-0044](spec-0044-a-respawn-that-resets-the-scene.md) | A respawn that resets the scene — the safe-zone proof measures the world the reset leaves | Proposed |
+| [spec-0045](spec-0045-the-kind-belongs-to-the-cell.md) | The kind belongs to the cell — the out-of-walk classification re-bound to the blocks' own partition | Proposed |
