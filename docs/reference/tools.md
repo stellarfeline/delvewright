@@ -183,7 +183,8 @@ computed out-of-walk kinds, anchors, exterior faces — run inside `expand`, eac
 with its binding count, and a red writes no `.nbt`. `--traversable` then reads
 its claim off the declared `exterior` edges, so its binding count is doors.
 Every opt-out the contract used is printed by name: which shelf is `posted` on
-which anchors, which bar the walk had to open, which envelope claims sky.
+which anchors, which bar the walk had to open, which way it had to have laid or
+cleared and over how many cells, which envelope claims sky.
 `delve-admit audit` is the same checker's second door, for a piece nobody
 generated.
 
@@ -304,8 +305,11 @@ Admission order for an imported piece (**`resolve-jigsaw` runs before `socket`**
 delve-admit audit <nbt|manifest.json> [--allowlist <json>] [-o report.json]   # CI gate
     # also: the spatial contract's second door — a piece whose metadata declares
     # spaces is judged against its own bytes by the same checker `delve-grammar
-    # expand` uses, and a disagreement is DW0782 (exit 1). A door that did NOT
-    # open says so as DW0783, with the count of what it did not examine
+    # expand` uses, and a disagreement is DW0782 (exit 1). An edge declared
+    # contingent is judged here too: severed on the bytes on disk, crossable on
+    # the copy its way opens, with the way enumerated by name, sign and cells.
+    # A door that did NOT open says so as DW0783, with the count of what it did
+    # not examine
 delve-admit resolve-jigsaw <nbt>                                # neutralize foreign worldgen markers
 delve-admit socket <nbt> --pos x,y,z --facing north|south|east|west
                          [--opening 3,3] [--name keep:socket]

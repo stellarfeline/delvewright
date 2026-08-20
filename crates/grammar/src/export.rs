@@ -764,6 +764,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     opens: w.opens.as_str().to_string(),
                     region: w.region.clone(),
                     boxes: ranges(&w.boxes),
+                    role: Some(w.role.clone()),
                     block: w.block.to_string(),
                 }),
             })
