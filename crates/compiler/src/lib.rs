@@ -86,6 +86,7 @@ pub mod registry;
 pub mod rehearsal;
 pub mod render_plan;
 pub mod resourcepack;
+pub mod respawn;
 pub mod seeding;
 pub mod snapshot;
 pub mod solver;

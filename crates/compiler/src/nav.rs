@@ -3372,6 +3372,57 @@ pub fn check_critical_path(plan: &Plan, world: &World) -> Result<(), NavError> {
     )
 }
 
+/// **Every cell the party's own forced walk crosses**, attributed to the
+/// critical-path step it is walking to (spec-0044 §6).
+///
+/// This is [`check_critical_path`]'s route, kept rather than discarded: the same
+/// legs, over the same per-leg region state, snapped the same way. A step's entry
+/// holds the routed leg INTO it plus its own visited cell, so "the party must
+/// stand here by step `s`" is a fact about the same walk `DW0311` proved.
+///
+/// A leg the player rides rather than walks contributes only its destination
+/// cell, and an unroutable leg contributes only its endpoints — `DW0311` owns
+/// that failure, and a proof that invented cells for it would be reading a walk
+/// the party cannot make.
+pub(crate) fn critical_route_cells(plan: &Plan, world: &World) -> Vec<(usize, Vec<[i32; 3]>)> {
+    let positions = critical_positions(plan);
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut out: Vec<(usize, Vec<[i32; 3]>)> = Vec::new();
+    if let Some(first) = positions.first() {
+        out.push((first.src_step, vec![first.pos]));
+    }
+    for pair in positions.windows(2) {
+        let mut cells = vec![pair[1].pos];
+        if !pair[1].transport_before {
+            let st = world.walked_leg_region_state(
+                &plan.region_events,
+                &ancestor,
+                pair[0].pos,
+                pair[0].src_step,
+                pair[1].src_step,
+            );
+            let leg_owned;
+            let leg: &World = if st.is_empty() {
+                world
+            } else {
+                leg_owned = world.with_region_state(&st);
+                &leg_owned
+            };
+            if let (Some(a), Some(b)) = (
+                leg.snap_endpoint(pair[0].pos, pair[0].talk_to),
+                leg.snap_endpoint(pair[1].pos, pair[1].talk_to),
+            ) && let Some(path) = leg.find_path(a, b)
+            {
+                cells.extend(path);
+            }
+        }
+        cells.sort_unstable();
+        cells.dedup();
+        out.push((pair[1].src_step, cells));
+    }
+    out
+}
+
 /// What every runtime-written region has become, as of one point in the quest DAG:
 /// the cells a write has made solid, and the cells a write has cleared.
 ///
@@ -5099,19 +5150,29 @@ pub fn check_respawn_safe_zone(
         .iter()
         .zip(&reign_ends)
         .map(|(c, end)| RestPoint {
+            index: c.index,
             anchor: c.anchor.clone(),
             kind: if c.rest { "bonfire" } else { "set-checkpoint" },
             pos: c.pos,
+            fire_step: c.fire_step,
             reign_end: *end,
         })
         .collect();
-    let onsets = plan.hostile_onsets();
     let sources = aggro_sources(plan, world, placements, lanes);
-    let ledger = RespawnSafetyLedger::new(&rest_points, &sources, &onsets);
+    let evidence = crate::respawn::Evidence::build(plan, world);
+    let table = respawn_evidence_table(plan, &evidence, &rest_points, &sources);
+    let onsets: BTreeMap<String, usize> = sources
+        .iter()
+        .map(|s| (s.id.clone(), evidence.onset(&s.id).step))
+        .collect();
+    let ledger = RespawnSafetyLedger::new(&rest_points, &sources, &onsets, &table);
     if ledger.pairs == 0 {
         return Ok(ledger);
     }
-    verify_respawn_safe_zone(&rest_points, &sources, &onsets)?;
+    let violations = respawn_violations(&rest_points, &sources, &onsets, &table);
+    if let Some(err) = respawn_error(&violations) {
+        return Err(err);
+    }
     Ok(ledger)
 }
 
@@ -5119,7 +5180,8 @@ pub fn check_respawn_safe_zone(
 /// governs where a dead player lands.
 ///
 /// Both halves are the campaign's own declarations: the force's onset is the
-/// earliest beat that stages it ([`Plan::hostile_onsets`]), and the respawn
+/// earliest beat that stages it, bounded by its gates and its bearer
+/// ([`crate::respawn::Evidence::onset`]), and the respawn
 /// point's reign ends when a later `set-checkpoint` replaces it
 /// ([`Plan::respawn_reign_ends`]). A bonfire never stops reigning, so every
 /// bonfire is compared against every force exactly as before.
@@ -5136,6 +5198,10 @@ fn contemporaneous(rest: &RestPoint, hostile_onset: usize) -> bool {
 /// One cell a dead player can materialise on, as the `DW0478` proof sees it.
 #[derive(Clone, Debug)]
 pub struct RestPoint {
+    /// The [`crate::plan::CheckpointPlan::index`] this stands for — the key every
+    /// evidence route is asked against, so a credit names the same object the
+    /// ledger row does.
+    pub index: usize,
     /// The checkpoint anchor name.
     pub anchor: String,
     /// `"bonfire"` or `"set-checkpoint"` — recorded so a reader can see WHICH
@@ -5144,9 +5210,48 @@ pub struct RestPoint {
     pub kind: &'static str,
     /// The resolved absolute respawn cell.
     pub pos: [i32; 3],
+    /// The step at which this respawn point STARTS governing — for a bonfire, the
+    /// beat that arms it. The dominance credit's window opens here: a close
+    /// encounter in a different reign proves nothing about this retry
+    /// (spec-0044 §6).
+    pub fire_step: usize,
     /// The step at which this respawn point stops governing, `None` = never
     /// ([`crate::plan::Plan::respawn_reign_ends`]).
     pub reign_end: Option<usize>,
+}
+
+/// **The evidence routes, as one table** (spec-0044 §5): per force its perception
+/// onset, per pair the bound that skipped it or the credit that answered it.
+///
+/// It exists so [`RespawnSafetyLedger`] stays `Plan`-free — the binding count and
+/// the zero reasons are what that type is for, and they must stay assertable on
+/// synthetic inputs. `Default` is the pre-amendment engine exactly: plain staging
+/// onsets, no bound, no credit.
+#[derive(Clone, Debug, Default)]
+struct RespawnEvidenceTable {
+    /// Per force: which bound produced its onset, and the sentence for it.
+    onsets: BTreeMap<String, crate::respawn::Onset>,
+    /// Per `(respawn point index, force)`: the bound that removed it from the
+    /// comparison set.
+    skips: BTreeMap<(usize, String), crate::respawn::Skip>,
+    /// Per `(respawn point index, force)`: the evidence that answers an
+    /// overlapping geometry.
+    credits: BTreeMap<(usize, String), crate::respawn::Credit>,
+}
+
+impl RespawnEvidenceTable {
+    /// The kind and sentence for a force's onset — the pre-amendment wording when
+    /// no bound moved it, so a campaign whose forces are simply staged late reads
+    /// exactly as it always did.
+    fn onset_reason(&self, force: &str, step: usize) -> (&'static str, String) {
+        match self.onsets.get(force) {
+            Some(o) => (o.kind, o.reason.clone()),
+            None => (
+                "onset",
+                format!("`{force}` is first staged at critical-path step {step}"),
+            ),
+        }
+    }
 }
 
 /// What the `DW0478` proof quantified over on this build.
@@ -5166,17 +5271,33 @@ pub struct RespawnSafetyLedger {
     pub hostiles: Vec<String>,
     /// Per respawn point, in the same order: the ids it was compared against.
     pub compared: Vec<Vec<String>>,
-    /// Per respawn point, in the same order: `(id, why it was not compared)`.
-    pub skipped: Vec<Vec<(String, String)>>,
+    /// Per respawn point, in the same order: every force it was NOT compared
+    /// against, with the bound that excluded it.
+    pub skipped: Vec<Vec<(String, crate::respawn::Skip)>>,
+    /// Per respawn point, in the same order: every compared force whose geometry
+    /// overlaps and which the campaign nonetheless supplies evidence for
+    /// (spec-0044 §5). A credit is as auditable as a skip, and its `kind` is
+    /// computed from the object rather than selected by the author.
+    pub credited: BTreeMap<(usize, String), crate::respawn::Credit>,
+    /// Per force, the perception onset the comparison window was cut at.
+    pub onsets: BTreeMap<String, usize>,
     /// The comparisons actually made — the proof's binding count.
     pub pairs: usize,
 }
 
 impl RespawnSafetyLedger {
+    /// The ledger, over a **precomputed evidence table** (spec-0044 §5).
+    ///
+    /// `Plan`-free on purpose: the binding count and the zero reasons are what
+    /// this type exists for, and they must stay assertable on synthetic inputs.
+    /// An empty table is the pre-amendment behaviour exactly — every force's
+    /// onset is its plain staging beat, no pair is credited, and the comparison
+    /// window is the reign window and nothing else.
     fn new(
         rest_points: &[RestPoint],
         sources: &[AggroSource],
         onsets: &BTreeMap<String, usize>,
+        table: &RespawnEvidenceTable,
     ) -> Self {
         let mut compared = Vec::new();
         let mut skipped = Vec::new();
@@ -5186,22 +5307,29 @@ impl RespawnSafetyLedger {
             let mut no = Vec::new();
             for s in sources {
                 let onset = onsets.get(&s.id).copied().unwrap_or(0);
-                if contemporaneous(r, onset) {
-                    yes.push(s.id.clone());
-                    pairs += 1;
-                } else {
+                if !contemporaneous(r, onset) {
+                    let (kind, why) = table.onset_reason(&s.id, onset);
                     no.push((
                         s.id.clone(),
-                        format!(
-                            "`{}` is first staged at critical-path step {onset}, and this \
-                             `set-checkpoint` stops governing at step {} — a later \
-                             `set-checkpoint` has replaced it before the body exists, so no \
-                             death can ever deliver the party here while it is in the world",
-                            s.id,
-                            r.reign_end.unwrap_or(usize::MAX)
-                        ),
+                        crate::respawn::Skip {
+                            kind,
+                            reason: format!(
+                                "{why}, and this `set-checkpoint` stops governing at step {} — a \
+                                 later `set-checkpoint` has replaced it before the force can \
+                                 reach the reign, so no death can ever deliver the party here \
+                                 while it is in the world",
+                                r.reign_end.unwrap_or(usize::MAX)
+                            ),
+                        },
                     ));
+                    continue;
                 }
+                if let Some(skip) = table.skips.get(&(r.index, s.id.clone())) {
+                    no.push((s.id.clone(), skip.clone()));
+                    continue;
+                }
+                yes.push(s.id.clone());
+                pairs += 1;
             }
             compared.push(yes);
             skipped.push(no);
@@ -5211,6 +5339,8 @@ impl RespawnSafetyLedger {
             hostiles: sources.iter().map(|s| s.id.clone()).collect(),
             compared,
             skipped,
+            credited: table.credits.clone(),
+            onsets: onsets.clone(),
             pairs,
         }
     }
@@ -5270,21 +5400,142 @@ impl RespawnSafetyLedger {
                     "anchor": r.anchor,
                     "kind": r.kind,
                     "pos": r.pos,
+                    "fire_step": r.fire_step,
                     "reign_end": r.reign_end,
                     "compared_against": yes,
                     "not_compared": no
                         .iter()
-                        .map(|(id, why)| serde_json::json!({"id": id, "reason": why}))
+                        .map(|(id, skip)| serde_json::json!({
+                            "id": id,
+                            "kind": skip.kind,
+                            "reason": skip.reason,
+                        }))
+                        .collect::<Vec<_>>(),
+                    "credited": self
+                        .credited
+                        .iter()
+                        .filter(|((i, _), _)| *i == r.index)
+                        .map(|((_, id), c)| serde_json::json!({
+                            "id": id,
+                            "kind": c.kind,
+                            "reason": c.reason,
+                            "post_reset_state": c.state,
+                        }))
                         .collect::<Vec<_>>(),
                 }))
                 .collect::<Vec<_>>(),
             "examined": self.rest_points.len(),
             "hostiles": self.hostiles,
             "pairs": self.pairs,
+            "credits": self.credited.len(),
             "unbound": self.unbound(),
             "reason": self.reason(),
         })
     }
+}
+
+/// Ask every evidence route, once per pair (spec-0044 §3/§4/§6).
+///
+/// Order is the spec's own: the comparison window first (a bound narrows what is
+/// compared, never what is demanded of a compared pair), then — for a pair whose
+/// geometry actually overlaps — the reset the respawn point performs and the
+/// dominance the campaign's forced path already delivers.
+///
+/// A credit is recorded only where it MATTERS: on a pair that would otherwise be
+/// red. A credit on a pair that already clears would be noise in a ledger whose
+/// whole job is to be auditable.
+fn respawn_evidence_table(
+    plan: &Plan,
+    evidence: &crate::respawn::Evidence,
+    rest_points: &[RestPoint],
+    sources: &[AggroSource],
+) -> RespawnEvidenceTable {
+    let mut table = RespawnEvidenceTable::default();
+    for s in sources {
+        table.onsets.insert(s.id.clone(), evidence.onset(&s.id));
+    }
+    for r in rest_points {
+        let Some(cp) = plan.checkpoints.iter().find(|c| c.index == r.index) else {
+            continue;
+        };
+        for s in sources {
+            if !contemporaneous(r, evidence.onset(&s.id).step) {
+                continue;
+            }
+            if let Some(skip) = evidence.bearer_bound(cp, &s.id) {
+                table.skips.insert((r.index, s.id.clone()), skip);
+                continue;
+            }
+            if nearest_offending(r, s).is_none() {
+                continue;
+            }
+            if let Some(c) = credit_for(evidence, cp, r, s) {
+                table.credits.insert((r.index, s.id.clone()), c);
+            }
+        }
+    }
+    table
+}
+
+/// The evidence a compared pair supplies, in the order spec-0044 §7 states it:
+/// the reset the respawn point's own bundle performs, then the dominance the
+/// campaign's own forced path already delivers. `None` is the conservative
+/// answer, and it leaves the pair red.
+fn credit_for(
+    evidence: &crate::respawn::Evidence,
+    cp: &crate::plan::CheckpointPlan,
+    rest: &RestPoint,
+    src: &AggroSource,
+) -> Option<crate::respawn::Credit> {
+    use crate::respawn::ResetState;
+    let state = evidence.reset_state(cp, &src.id);
+    if let ResetState::Removed(why) = &state {
+        return Some(crate::respawn::Credit {
+            kind: "reset",
+            reason: why.clone(),
+            state: format!("`{}` has no cells in the world the reset leaves", src.id),
+        });
+    }
+    // Dominance measures against STATIONARY cells only: a lane wave's smeared
+    // march corridor is every cell the squad sweeps over time, and the path
+    // crossing it is not a proven meeting. A pair whose violation is on a lane
+    // cell therefore has no dominance route at all (spec-0044 §6).
+    let stationary: Vec<[i32; 3]> = src
+        .cells
+        .iter()
+        .filter(|(_, _, drift)| *drift == 0.0)
+        .map(|(_, cell, _)| *cell)
+        .collect();
+    let (_, _, offending, drift) = nearest_offending(rest, src)?;
+    if drift > 0.0 {
+        return None;
+    }
+    let mut credit = evidence.dominance(cp, rest.reign_end, &src.id, &stationary, offending)?;
+    if let ResetState::ReStaged(why) = &state {
+        credit.state = why.clone();
+    }
+    Some(credit)
+}
+
+/// The nearest cell of `src` that the geometry rule condemns against `rest`, if
+/// any — `(what it is, where, how far, the extra reach margin it carries)`.
+///
+/// Nearest first, then by cell, so the message is deterministic. This IS the
+/// clearance rule (spec-0016 §1, verbatim): the distance must EXCEED
+/// `follow_range`, plus the measured marching drift for a lane path cell.
+fn nearest_offending(
+    rest: &RestPoint,
+    src: &AggroSource,
+) -> Option<(&'static str, [i32; 3], f64, f64)> {
+    src.cells
+        .iter()
+        .map(|(what, cell, drift)| (*what, *cell, cell_distance(rest.pos, *cell), *drift))
+        .filter(|(_, _, d, drift)| *d <= src.radius + drift)
+        .min_by(|a, b| {
+            a.2.partial_cmp(&b.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        })
 }
 
 /// Every hostile force in the campaign, in deterministic content order (waves
@@ -5417,32 +5668,46 @@ fn lane_march_cells(
     out
 }
 
-/// The pure core of [`check_respawn_safe_zone`] (unit-testable without a
-/// [`Plan`]). Reports the FIRST violation in content order, naming the closest
-/// offending cell and the exact clearance the geometry is short by.
-fn verify_respawn_safe_zone(
+/// One pair the geometry rule condemns and no evidence route credits.
+struct RespawnViolation {
+    anchor: String,
+    pos: [i32; 3],
+    force: String,
+    what: &'static str,
+    cell: [i32; 3],
+    dist: f64,
+    reach: String,
+}
+
+/// **Every** violating pair, in content order (spec-0044 §5).
+///
+/// The diagnostic used to return at the first pair, so enumerating a campaign's
+/// violations at all required a patched binary — which is how six false verdicts
+/// stayed invisible behind one. One build now states them all.
+///
+/// The clearance demanded of a compared, uncredited pair is spec-0016 §1
+/// verbatim: the distance must EXCEED `follow_range`, plus the measured marching
+/// drift for a lane path cell. Nothing about the demand moves.
+fn respawn_violations(
     rest_points: &[RestPoint],
     sources: &[AggroSource],
     onsets: &BTreeMap<String, usize>,
-) -> Result<(), NavError> {
+    table: &RespawnEvidenceTable,
+) -> Vec<RespawnViolation> {
+    let mut out = Vec::new();
     for rest in rest_points {
-        let (anchor, pos) = (&rest.anchor, &rest.pos);
         for src in sources {
             if !contemporaneous(rest, onsets.get(&src.id).copied().unwrap_or(0)) {
                 continue;
             }
-            let Some((what, cell, dist, drift)) = src
-                .cells
-                .iter()
-                .map(|(what, cell, drift)| (*what, *cell, cell_distance(*pos, *cell), *drift))
-                .filter(|(_, _, d, drift)| *d <= src.radius + drift)
-                // Nearest first, then by cell, so the message is deterministic.
-                .min_by(|a, b| {
-                    a.2.partial_cmp(&b.2)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| a.1.cmp(&b.1))
-                })
-            else {
+            // The SAME table the ledger reports from: a pair the ledger says
+            // was never compared, or was answered, must not be condemned here.
+            // Two readings of one question is how a ledger starts lying.
+            let key = (rest.index, src.id.clone());
+            if table.skips.contains_key(&key) || table.credits.contains_key(&key) {
+                continue;
+            }
+            let Some((what, cell, dist, drift)) = nearest_offending(rest, src) else {
                 continue;
             };
             let reach = if drift > 0.0 {
@@ -5462,28 +5727,97 @@ fn verify_respawn_safe_zone(
                     radius_source = src.radius_source,
                 )
             };
-            return Err(NavError {
-                code: DW_RESPAWN_IN_AGGRO,
-                message: format!(
-                    "respawn point `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: \
-                     its {what} {cell:?} is {dist:.1} blocks away, within {reach}. A respawn \
-                     point is where the party comes back after a death — and, for a bonfire, \
-                     where every `respawns_on_rest` wave is put back on its feet. With a hostile \
-                     already perceiving that cell, dying delivers the party into contact on the \
-                     tick they arrive, and the retry loop becomes a soft-lock \
-                     (spec-0016 §1). The rule is the same for a plain `set-checkpoint` \
-                     and for a `bonfire`: vanilla returns a dead player to either by the \
-                     identical `spawnpoint` mechanism, so the hazard is a property of the CELL, \
-                     never of the verb that named it. Move the respawn point out of the danger — \
-                     into a side room, behind the threshold, past the end of the lane — or move \
-                     the force's anchor / lane. Do NOT shrink `follow_range` to buy the \
-                     clearance: that retunes the fight to hide a placement bug.",
-                    id = src.id,
-                ),
+            out.push(RespawnViolation {
+                anchor: rest.anchor.clone(),
+                pos: rest.pos,
+                force: src.id.clone(),
+                what,
+                cell,
+                dist,
+                reach,
             });
         }
     }
-    Ok(())
+    out
+}
+
+/// The `DW0478` diagnostic for a whole build: the first pair in the shape it has
+/// always had, then every other pair the same build condemns.
+///
+/// What a red claims is what declarations can carry (spec-0044 §2): **nothing the
+/// campaign declares separates this respawn from a soft-lock**. So the message
+/// prescribes the three evidence routes before it prescribes moving anything, and
+/// still never offers shrinking `follow_range`.
+fn respawn_error(violations: &[RespawnViolation]) -> Option<NavError> {
+    let first = violations.first()?;
+    let others: Vec<String> = violations
+        .iter()
+        .skip(1)
+        .map(|v| {
+            format!(
+                "`{}` ({:?}) x `{}`: its {} {:?} at {:.1} blocks, within {}",
+                v.anchor, v.pos, v.force, v.what, v.cell, v.dist, v.reach
+            )
+        })
+        .collect();
+    let also = if others.is_empty() {
+        "This build condemns no other pair.".to_string()
+    } else {
+        format!(
+            "This build condemns {} pairs in total; the others are: {}.",
+            violations.len(),
+            others.join("; ")
+        )
+    };
+    Some(NavError {
+        code: DW_RESPAWN_IN_AGGRO,
+        message: format!(
+            "respawn point `{anchor}` ({pos:?}) sits INSIDE the aggro range of `{id}`: its \
+             {what} {cell:?} is {dist:.1} blocks away, within {reach}. A respawn point is \
+             where the party comes back after a death — and, for a bonfire, where every \
+             `respawns_on_rest` wave is put back on its feet. What this red claims is what \
+             declarations can carry: NOTHING THIS CAMPAIGN DECLARES SEPARATES THIS RETRY \
+             FROM A SOFT-LOCK (spec-0044 §2) — whether the loop is winnable is a combat \
+             question this compiler refuses to simulate. Three kinds of evidence answer it, \
+             and each is checked before this fires: (1) the respawn point's own \
+             `on_respawn` / `on_rest` bundle UNCONDITIONALLY removes or re-places the force, \
+             so the world the reset leaves does not hold it where it was; (2) the force's \
+             staging cannot meet this reign at all — its gate flags cannot be set in time, \
+             the `strike-npc` trigger's bearer is gone, or the body is a `NoAI` puppet for \
+             every instant compared; (3) the campaign's own FORCED critical path already \
+             walks the party into that same force inside this same reign, no farther away \
+             and against no fresher a body. Supply one of those, or move the respawn point \
+             out of the danger — into a side room, behind the threshold, past the end of the \
+             lane — or move the force's anchor / lane. The rule is the same for a plain \
+             `set-checkpoint` and for a `bonfire`: vanilla returns a dead player to either \
+             by the identical `spawnpoint` mechanism, so the hazard is a property of the \
+             CELL, never of the verb that named it. Do NOT shrink `follow_range` to buy the \
+             clearance: that retunes the fight to hide a placement bug. {also}",
+            anchor = first.anchor,
+            pos = first.pos,
+            id = first.force,
+            what = first.what,
+            cell = first.cell,
+            dist = first.dist,
+            reach = first.reach,
+        ),
+    })
+}
+
+/// The pure geometry core of [`check_respawn_safe_zone`] (unit-testable without a
+/// [`Plan`]), with **no evidence route credited** — exactly the demand a compared,
+/// uncredited pair faces, unchanged to the block.
+#[cfg(test)]
+fn verify_respawn_safe_zone(
+    rest_points: &[RestPoint],
+    sources: &[AggroSource],
+    onsets: &BTreeMap<String, usize>,
+) -> Result<(), NavError> {
+    let none = RespawnEvidenceTable::default();
+    match respawn_error(&respawn_violations(rest_points, sources, onsets, &none)) {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
 }
 
 /// Euclidean distance between two cells, in blocks.
@@ -7988,9 +8322,11 @@ mod tests {
     /// about plain checkpoints.
     fn fire(anchor: &str, pos: [i32; 3]) -> RestPoint {
         RestPoint {
+            index: 0,
             anchor: anchor.to_string(),
             kind: "bonfire",
             pos,
+            fire_step: 0,
             reign_end: None,
         }
     }
@@ -7998,9 +8334,11 @@ mod tests {
     /// A plain `set-checkpoint` that stops governing at `reign_end`.
     fn checkpoint(anchor: &str, pos: [i32; 3], reign_end: usize) -> RestPoint {
         RestPoint {
+            index: 0,
             anchor: anchor.to_string(),
             kind: "set-checkpoint",
             pos,
+            fire_step: 0,
             reign_end: Some(reign_end),
         }
     }
@@ -8221,19 +8559,25 @@ mod tests {
             ],
             &sources,
             &from_the_start(),
+            &Default::default(),
         );
         assert_eq!(bound.pairs, 2, "two rest points x one force");
         assert!(!bound.unbound() && bound.reason().is_none());
 
-        let no_rest = RespawnSafetyLedger::new(&[], &sources, &from_the_start());
+        let no_rest =
+            RespawnSafetyLedger::new(&[], &sources, &from_the_start(), &Default::default());
         assert!(no_rest.unbound());
         assert!(
             no_rest.reason().unwrap().contains("no `set-checkpoint`"),
             "a zero must name which half of the proof was missing"
         );
 
-        let no_hostiles =
-            RespawnSafetyLedger::new(&[fire("anchor/a", [0, 64, 0])], &[], &from_the_start());
+        let no_hostiles = RespawnSafetyLedger::new(
+            &[fire("anchor/a", [0, 64, 0])],
+            &[],
+            &from_the_start(),
+            &Default::default(),
+        );
         assert!(no_hostiles.unbound());
         assert!(
             no_hostiles
@@ -8248,6 +8592,7 @@ mod tests {
             &[checkpoint("anchor/b", [0, 64, 0], 3)],
             &sources,
             &[("wave/x".to_string(), 9)].into(),
+            &Default::default(),
         );
         assert!(never_meet.unbound());
         assert!(
@@ -8256,6 +8601,45 @@ mod tests {
              is named rather than reported as a pass: {:?}",
             never_meet.reason()
         );
+    }
+
+    /// **The ledger and the red list read ONE table.** A pair the ledger reports
+    /// as never compared must not be condemned by the same build: two readings of
+    /// one question is how a ledger starts lying, and this proof had exactly that
+    /// defect for the length of one afternoon — the skip was recorded and the pair
+    /// was still red.
+    #[test]
+    fn a_skipped_pair_is_never_condemned_and_a_credited_one_is_never_either() {
+        let rest = vec![checkpoint("anchor/chapel", [34, 71, -113], 99)];
+        let sources = vec![src(
+            "wave/gate-assault",
+            16.0,
+            &[("seated spawn cell", [34, 71, -103])],
+        )];
+        // With no evidence at all the geometry condemns it.
+        assert_eq!(
+            respawn_violations(&rest, &sources, &from_the_start(), &Default::default()).len(),
+            1
+        );
+        let mut skipped = RespawnEvidenceTable::default();
+        skipped.skips.insert(
+            (0, "wave/gate-assault".to_string()),
+            crate::respawn::Skip {
+                kind: "bearer-bound",
+                reason: "for the test".into(),
+            },
+        );
+        assert!(respawn_violations(&rest, &sources, &from_the_start(), &skipped).is_empty());
+        let mut credited = RespawnEvidenceTable::default();
+        credited.credits.insert(
+            (0, "wave/gate-assault".to_string()),
+            crate::respawn::Credit {
+                kind: "dominated",
+                reason: "for the test".into(),
+                state: String::new(),
+            },
+        );
+        assert!(respawn_violations(&rest, &sources, &from_the_start(), &credited).is_empty());
     }
 
     /// A sentinel parked in the only doorway between two beats: with its aggro
