@@ -263,6 +263,126 @@ fn a_corpus_with_no_compared_row_states_the_zero_by_name() {
         text.contains("include") && text.contains("bound 1"),
         "{text}"
     );
+    // The honest zero is the one case the reassurance is TRUE, so it must not
+    // carry the shortfall diagnostic. Without this the repair below could be
+    // written as "always red at zero", which trades a false reassurance for a
+    // false finding and is no more readable.
+    assert!(!text.contains("DW0809"), "{text}");
+}
+
+// ---------------------------------------------------------------------------
+// The zero that is not an honest zero
+// ---------------------------------------------------------------------------
+
+/// A part that cannot expand in ANY box: its `split` asks for 99 blocks along
+/// x, so every allocation and its own row alike refuse. This is the shape of the
+/// transitional corpus §3c is adopted into — parts authored before any site plan
+/// existed, in debt to the boxes a site plan now gives them.
+const PART_REFUSES: &str = r#"{
+  "version": "1.0.0",
+  "name": "part",
+  "start": "all",
+  "rules": { "all": [ { "weight": 1, "body": {
+    "op": "split", "axis": "x",
+    "sizes": [ {"size":"absolute","blocks":{"expr":"int","value":99}},
+               {"size":"relative","weight":{"expr":"int","value":1}} ],
+    "children": [ {"op":"fill","material":"minecraft:stone"}, {"op":"void"} ] } } ] }
+}"#;
+
+/// **A row that was offered and never compared is a FINDING, not a zero.**
+///
+/// The defect this pins is not the arithmetic — the count genuinely is zero, and
+/// making it non-zero would be redefining what counts. It is that the zero was
+/// **interpreted** by the branch that assumes an empty corpus, while the corpus
+/// plainly composes a part with a row of its own: the composing program refused
+/// to expand, so `compare_allocations` never ran, so nothing was compared, so
+/// the count is zero, so the sentence "nothing in this corpus composes a part
+/// that also has its own row" printed one line under an error naming the very
+/// program that composes one.
+///
+/// The guard existed on the day the defect shipped and was ordered *behind* the
+/// zero test, which made it unreachable at the only value that reaches it. That
+/// is why the repair is a type that owns the ordering ([`Binding`]) rather than
+/// a swapped pair of branches: a swap is correct today and silent the next time
+/// a binding line is added.
+#[test]
+fn rows_offered_and_never_compared_are_a_finding_not_a_reassuring_zero() {
+    let dir = scratch("offered-uncompared");
+    let programs = dir.join("campaigns/demo/design/programs");
+    fs::create_dir_all(&programs).unwrap();
+    fs::write(programs.join("part.json"), PART_REFUSES).unwrap();
+    fs::write(programs.join("map.json"), MAP).unwrap();
+    fs::write(
+        programs.join("zones.json"),
+        r#"{ "zones": [
+  { "id": "map",  "program": "map.json",  "region": [10, 4, 5], "seed": 1 },
+  { "id": "part", "program": "part.json", "region": [6, 4, 5], "seed": 2 }
+] }"#,
+    )
+    .unwrap();
+    let out = audit(&dir);
+    let text = combined(&out);
+    assert!(!out.status.success(), "{text}");
+    // The count is still honestly zero: the repair never touches what counts.
+    assert!(text.contains("part-allocation  bound 0"), "{text}");
+    // And the zero is read as the shortfall it is.
+    assert!(text.contains("DW0809"), "{text}");
+    assert!(
+        text.contains("1 row(s) were set up for examination and 0 examined"),
+        "the shortfall is not stated with both numbers: {text}"
+    );
+    // The reassurance must be GONE, not merely accompanied. A report that says
+    // both things has told the reader nothing.
+    assert!(
+        !text.contains("nothing in this corpus composes a part that also has its own row"),
+        "the false reassurance still prints beside its own refutation: {text}"
+    );
+}
+
+/// **The same accounting one level up.** `local-frame` and every per-gate total
+/// are summed over the programs that expanded, so a corpus where none expands
+/// reports them all as zero — a number about what stopped, printed in the shape
+/// of a number about what exists. The corpus-level binding is what qualifies
+/// every count below it, and it is stated before them.
+#[test]
+fn a_summary_over_programs_that_did_not_expand_says_how_many_were_offered() {
+    let dir = scratch("programs-uncompared");
+    let programs = dir.join("campaigns/demo/design/programs");
+    fs::create_dir_all(&programs).unwrap();
+    fs::write(programs.join("part.json"), PART_REFUSES).unwrap();
+    fs::write(programs.join("map.json"), MAP).unwrap();
+    fs::write(
+        programs.join("zones.json"),
+        r#"{ "zones": [
+  { "id": "map",  "program": "map.json",  "region": [10, 4, 5], "seed": 1 },
+  { "id": "part", "program": "part.json", "region": [6, 4, 5], "seed": 2 }
+] }"#,
+    )
+    .unwrap();
+    let out = audit(&dir);
+    let text = combined(&out);
+    assert!(!out.status.success(), "{text}");
+    assert!(
+        text.contains("2 program(s) were set up for examination and 0 examined"),
+        "{text}"
+    );
+}
+
+/// **A corpus that fully expands carries no shortfall note at either level.**
+///
+/// The other half of the demonstration, and the half that keeps the repair from
+/// being a check that always fires: the same two programs, with the part able to
+/// expand in the box the map allocates it, report their counts and pass.
+#[test]
+fn a_corpus_that_expands_reports_its_counts_and_carries_no_shortfall() {
+    let dir = scratch("no-shortfall");
+    let out = audit(&root(&dir, MAP, "[6, 4, 5]"));
+    let text = combined(&out);
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("part-allocation  bound 1"), "{text}");
+    assert!(text.contains("audited 2 program(s)"), "{text}");
+    assert!(!text.contains("DW0809"), "{text}");
+    assert!(!text.contains("set up for examination"), "{text}");
 }
 
 /// **The composed prefix is the one that is compared, not the include's local

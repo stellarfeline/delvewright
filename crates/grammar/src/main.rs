@@ -940,6 +940,81 @@ fn read_exclusions(path: &Path) -> Result<Vec<Exclusion>, String> {
 /// The diagnostic a §3c link-4 disagreement carries.
 const DW_ALLOCATION_IDENTITY: &str = "DW0806";
 
+/// The diagnostic a binding count carries when it was taken over fewer objects
+/// than were offered to it.
+const DW_BINDING_UNDER_OFFER: &str = "DW0809";
+
+/// A binding count that carries what was **offered** beside what was
+/// **examined**, and which owns the reading of its own zero.
+///
+/// `CLAUDE.md` names the vacuity a binding count exists to end: a green over
+/// nothing. What it does not name is the mode one step further in — **the
+/// count's own zero-case message**. A line that reads `bound 0 — nothing here
+/// to examine` is not reporting a number, it is making a claim about the
+/// CORPUS, and that claim is true only when nothing was offered. Let something
+/// upstream refuse, and the identical zero arrives carrying the identical
+/// sentence; the count is now a fact about what stopped, described as a fact
+/// about what exists. It fails in the reassuring direction, which is the one
+/// direction a reader does not re-check.
+///
+/// The live instance: `part-allocation` printed `bound 0 — nothing in this
+/// corpus composes a part that also has its own row` over a corpus whose very
+/// next line up was an expansion error naming the composing program. Eight rows
+/// were offered and none was compared. **The guard for it existed** — the
+/// offered-versus-examined mismatch — and was ordered behind the zero test, so
+/// it was unreachable at the single value it had been written for. Correct
+/// code, in the wrong order, is indistinguishable in review from correct code.
+///
+/// So the ordering stops being a call site's to get right. A call site hands
+/// over both numbers and the sentences it would say; which of the three answers
+/// is true is decided here, once, with the **mismatch tested first**. A binding
+/// line that goes through this type cannot reassure over a partial examination,
+/// and a binding line added later gets the ordering by construction instead of
+/// by whoever reviews it.
+#[derive(Clone, Copy, Default)]
+struct Binding {
+    /// Objects the sweep set up for examination.
+    offered: usize,
+    /// Objects it actually examined. Never more than `offered` — less means
+    /// something refused upstream, and the difference was examined by nothing.
+    examined: usize,
+}
+
+impl Binding {
+    /// The note this count's line carries, and whether that note is a finding.
+    ///
+    /// `subject` names what is being counted, in the plural. `nothing_offered`
+    /// is the call site's own reading of an HONEST zero — what it means, for
+    /// this surface, that the corpus held nothing to look at — and is reached
+    /// only when nothing was in fact offered. `shortfall_means` is what a
+    /// shortfall means here, since the general rule cannot know which upstream
+    /// refusal is the one that swallowed the difference.
+    fn note(self, subject: &str, nothing_offered: &str, shortfall_means: &str) -> (String, bool) {
+        // FIRST, and the order is the entire point of the type. A count that
+        // fell short of its offer is a finding whatever value it holds — and
+        // the value it holds in the transitional case, where the objects in
+        // debt are exactly the ones that refuse, is zero. Test the zero first
+        // and this branch is dead at the only value that reaches it.
+        if self.examined != self.offered {
+            return (
+                format!(
+                    " — FINDING ({DW_BINDING_UNDER_OFFER}): {} {subject} were set up for \
+                     examination and {} examined. A count taken over fewer objects than were \
+                     offered to it is not a fact about this corpus, it is a fact about what \
+                     stopped: {shortfall_means}. Read the refusals above — this number becomes \
+                     readable once they are repaired, and not before",
+                    self.offered, self.examined,
+                ),
+                true,
+            );
+        }
+        if self.offered == 0 {
+            return (format!(" — {nothing_offered}"), false);
+        }
+        (String::new(), false)
+    }
+}
+
 fn audit_one(
     label: String,
     program: &Program,
@@ -1323,6 +1398,14 @@ fn run_audit(
     // shrinks when something upstream broke is a binding count nobody can read.
     let mut rows_offered = 0usize;
     let mut rows_examined = 0usize;
+    // The same accounting one level up, and the level where it reaches every
+    // other count in this summary: `local-frame` and every per-gate total below
+    // are summed over `audited`, which holds the programs that EXPANDED. A
+    // program that refused contributes nothing to any of them, so a surface it
+    // alone would have bound is absent from the table rather than reported as
+    // zero — and `local-frame` says "no program writes a state in its own axis
+    // frame" when what happened is that no program was examined at all.
+    let programs_offered = work.len();
     for item in work {
         document_includes += item.includes;
         composing_programs += usize::from(item.includes > 0);
@@ -1502,9 +1585,25 @@ fn run_audit(
         }
     }
 
+    // The corpus-level binding, stated ahead of everything it qualifies. An
+    // honest zero is unreachable here — a corpus of nothing already exited
+    // above — so the only note this can carry is the shortfall, which is the
+    // one thing every count below it depends on.
+    let programs = Binding {
+        offered: programs_offered,
+        examined: audited.len(),
+    };
+    let (note, finding) = programs.note(
+        "program(s)",
+        "the corpus is empty, which a check above already refused",
+        "a program that did not expand is judged by nothing below, so every count in this \
+         summary is over the programs that DID expand and a surface only a refused program \
+         would have bound is missing from the table rather than zero in it",
+    );
+    failed |= finding;
     println!(
         "\naudited {} program(s), {held_red} of them held known-red, {undecided_programs} of them \
-         UNDECIDED at their declared region:",
+         UNDECIDED at their declared region:{note}",
         audited.len()
     );
     // The local frame's own binding count, beside the gate whose population it
@@ -1566,26 +1665,31 @@ fn run_audit(
     // compose only parts that have no row of their own, and §3c says such a part
     // is judged at its allocation and nowhere else, so the ordering is
     // structural for it. What a zero is, is a fact a reader has to be given.
+    //
+    // Which zero it is, is decided by [`Binding`] and not here. This line used
+    // to test `rows_examined == 0` first and the offered-versus-examined
+    // mismatch second, so the FINDING was unreachable at the one value it
+    // existed for: parts in debt to their allocation refuse for themselves, so
+    // nothing expands, so nothing is compared, so the count is zero — and the
+    // sentence that printed said the corpus composes no such part, one line
+    // below the error naming the program that composes eight.
     if !campaign_roots.is_empty() {
-        println!(
-            "  {:<16} bound {:<8} composed part(s) with a manifest row of their own{}",
-            "part-allocation",
-            rows_examined,
-            if rows_examined == 0 {
-                " — nothing in this corpus composes a part that also has its own row, so \
-                 spec-0040 §3c's ordering rests here on links 1-3 alone"
-                    .to_string()
-            } else if rows_offered != rows_examined {
-                failed = true;
-                format!(
-                    " — FINDING: {rows_offered} row(s) were set up for comparison and \
-                     {rows_examined} were compared; the difference is a program that did not \
-                     expand, and its rows were checked against nothing"
-                )
-            } else {
-                String::new()
-            }
+        let rows = Binding {
+            offered: rows_offered,
+            examined: rows_examined,
+        };
+        let (note, finding) = rows.note(
+            "row(s)",
+            "nothing in this corpus composes a part that also has its own row, so spec-0040 \
+             §3c's ordering rests here on links 1-3 alone",
+            "a program that did not expand allocates no box, so its rows were compared against \
+             nothing and the identity bound none of them",
         );
+        println!(
+            "  {:<16} bound {:<8} composed part(s) with a manifest row of their own{note}",
+            "part-allocation", rows_examined,
+        );
+        failed |= finding;
     }
     for id in &order {
         let t = &bound[id];

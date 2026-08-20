@@ -2595,6 +2595,15 @@ composition allocates that prefix** (`DW0806`).
   only parts that have no row of their own, and such a part is judged at its
   allocation and nowhere else, so the ordering is structural for it. The number
   is how a reader learns which of those two states the corpus is in.
+- **A zero is only read as an empty corpus when the corpus was empty.** Rows
+  offered and rows compared are counted apart, and a shortfall between them is
+  `DW0809` rather than a zero: a part in debt to its allocation refuses for
+  itself, so its map does not expand, so nothing is compared, and the count
+  reaches zero by the very failure the identity exists to catch. The same
+  accounting covers the summary as a whole — programs offered against programs
+  expanded — because `local-frame` and every per-gate total are summed over the
+  programs that expanded, so a surface only a refused program would have bound
+  is missing from the table rather than zero in it.
 
 A part composed into two documents confronts an allocation in each, and nothing
 picks one of them. There is no per-part exemption: the two authorable moves are
