@@ -1310,11 +1310,12 @@ pub const DW_GATE_DEADLOCK: DwCode = DwCode::every_version("DW0306");
 
 /// `DW0344`: an ocean-horizon world places a piece whose declared waterline does not
 /// land at sea level — the piece floats above the sea or is drowned by it.
+///
+/// It is also the code this invariant's **zero binding** refuses under: a gate
+/// that examined nothing has proved nothing, and the gate that examined nothing
+/// is this one, so it answers under its own name rather than under a second
+/// code. See [`WaterlineBinding::seal`].
 pub const DW_OCEAN_WATERLINE: DwCode = DwCode::every_version("DW0344");
-
-/// `DW0364` (advisory): an ocean-horizon world in which **no placed piece
-/// declares a waterline**, so [`DW_OCEAN_WATERLINE`] examined nothing.
-pub const DW_OCEAN_WATERLINE_UNBOUND: DwCode = DwCode::every_version("DW0364");
 
 /// `DW0345`: the assembled world resolves **no entry anchor** — the compiler has
 /// no cell to call the campaign's start, so it cannot `setworldspawn`, cannot place
@@ -1362,9 +1363,17 @@ pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 /// examining zero pieces and nothing would have said so.
 ///
 /// So the check returns how many placed pieces it examined, and an ocean world
-/// where that count is zero gets [`DW_OCEAN_WATERLINE_UNBOUND`]. A world with no
-/// sea-authoring pieces at all is a legitimate reason for the zero, which is why
-/// it is advisory — but it is stated rather than assumed.
+/// where that count is zero is sealed by [`WaterlineBinding::seal`] rather than
+/// passed.
+///
+/// A world with no sea-authoring pieces at all really is a legitimate reason for
+/// the zero. That does not make the zero advisory: it makes the honesty of the
+/// emptiness a thing to **compute**. Lowering the severity instead would be an
+/// opt-out secured by exactly the property in question — a piece that lost its
+/// `waterline_y` and a piece that never had one are indistinguishable by the
+/// declaration, because the declaration is what went missing. The discharge is
+/// therefore taken from geometry, which the defect cannot edit: see
+/// [`WaterlineBinding::reaching_sea`].
 fn check_ocean_waterline(
     campaign: &Campaign,
     areas: &[AreaPlacement],
@@ -1380,10 +1389,18 @@ fn check_ocean_waterline(
         ocean: true,
         placed: 0,
         checked: 0,
+        reaching_sea: 0,
     };
     for area in areas {
         for piece in &area.pieces {
             binding.placed += 1;
+            // The computed discharge, taken before any metadata is consulted:
+            // does this piece's box reach the sea plane at all? Geometry, not
+            // declaration — the defect deletes declarations and cannot move a
+            // box.
+            if piece.bbox().0[1] <= SEA_LEVEL {
+                binding.reaching_sea += 1;
+            }
             let Some(meta) = prefabs.get(&piece.prefab_id) else {
                 continue; // missing metadata is already DW0300 upstream
             };
@@ -1436,6 +1453,23 @@ pub struct WaterlineBinding {
     pub placed: usize,
     /// Placed pieces that declare a `waterline_y` — the binding count.
     pub checked: usize,
+    /// Placed pieces whose box reaches the sea plane (`lo.y <= SEA_LEVEL`).
+    ///
+    /// Reported, never used as an excuse. It is the number that decides
+    /// whether a zero binding could ever be honest, and under the single
+    /// global ocean datum ([`OCEAN_BASE_Y`] = 60, sea at [`SEA_LEVEL`] = 62)
+    /// it is equal to [`Self::placed`] for every ocean world that exists: an
+    /// area origin is the same y for every piece, and that y is under the sea.
+    /// So there is at present **no** ocean world whose pieces stand clear of
+    /// the water, which is why [`Self::seal`] offers no discharge and refuses
+    /// outright.
+    ///
+    /// It is computed rather than assumed because the fact is a property of
+    /// the datum, not a law: spec-0026 replaces the global datum with a
+    /// per-area one, at which point pieces genuinely can sit clear of the sea
+    /// and this count stops tracking `placed`. Reading it off geometry now
+    /// means the day that happens the number is already right.
+    pub reaching_sea: usize,
 }
 
 impl WaterlineBinding {
@@ -1445,32 +1479,121 @@ impl WaterlineBinding {
         ocean: false,
         placed: 0,
         checked: 0,
+        reaching_sea: 0,
     };
 
-    /// The advisory a zero binding owes its reader, or `None`.
-    pub fn finding(&self) -> Option<Diagnostic> {
+    /// **Seal the binding**: what a binding of zero means for this invariant.
+    ///
+    /// A check that examined nothing has proved nothing, so the verdict a zero
+    /// binding *earns* here is a refusal — the answer
+    /// `grammar::gates::seal_zero_bindings` reaches at the other door, and the
+    /// two doors are not allowed to disagree about what a zero means. No
+    /// discharge is available to soften it, and both candidates fail the two
+    /// rules that mechanism sets for an honest empty:
+    ///
+    /// - The only thing an author could offer is "this piece needs no
+    ///   waterline" — the deleted declaration wearing a different name. The
+    ///   defect produces it perfectly, so it is an opt-out secured by exactly
+    ///   the property in question.
+    /// - The only geometric candidate is "no piece reaches the sea"
+    ///   ([`Self::reaching_sea`] = 0), and under the single global ocean datum
+    ///   no such world can be built: every ocean area origin is
+    ///   [`OCEAN_BASE_Y`] (60) and the sea is at [`SEA_LEVEL`] (62), so every
+    ///   piece stands in the water. A discharge no world can satisfy is a dead
+    ///   escape hatch that reads like a live one.
+    ///
+    /// # Why this reports rather than refuses, and what changes that
+    ///
+    /// A refusal is only landable when what it demands is authorable, and here
+    /// it is not. The same global datum that makes the geometric discharge
+    /// unsatisfiable also leaves an author no lever: a piece's walk plane lands
+    /// where its own geometry puts it above y=60, and nothing in the DSL can
+    /// raise it clear of the sea. So the only move that would green a refusal
+    /// is declaring a `waterline_y` for water the piece does not author — the
+    /// gate would be demanding a fiction, which is the same vacuity arriving
+    /// from the other side.
+    ///
+    /// The capability that makes the demand satisfiable is spec-0026's
+    /// per-area datum, and it arrives together with the gate that supplies the
+    /// honest discharge: an empirical flood proof that reads assembled blocks
+    /// rather than declarations, and therefore cannot be emptied by editing
+    /// metadata. The refusal belongs in that change, not ahead of it.
+    ///
+    /// That deferral is **bound, not remembered**: the fixture in
+    /// `tests/cli.rs` asserts that every placed piece of an ocean world stands
+    /// at or below the sea plane. The day a per-area datum makes that false,
+    /// the assertion reds and the severity question is reopened by the test
+    /// rather than by anyone recalling this paragraph.
+    pub fn seal(&self) -> Option<Diagnostic> {
         if !self.ocean || self.checked > 0 || self.placed == 0 {
             return None;
         }
         Some(Diagnostic::warning(
-            DW_OCEAN_WATERLINE_UNBOUND,
+            DW_OCEAN_WATERLINE,
             "world",
             "/content/horizon",
             format!(
-                "the ocean-datum check examined ZERO pieces: this world declares `horizon: ocean` \
-                 and places {} piece(s), none of which declares a `waterline_y` in its prefab \
-                 metadata. Nothing here proves that anything in this world meets the sea at sea \
-                 level (y={SEA_LEVEL}) — a piece that declares no waterline authors no sea and is \
-                 not checked, so a world of only such pieces passes this invariant by having \
-                 nothing to say. Two readings, and they need different answers: if no piece here \
-                 is meant to author sea, the horizon is decoration and this is expected; if a \
-                 shore, beach or moored hull IS built into one of these pieces, its \
-                 `waterline_y` is missing from the metadata and the placement is unproven — \
-                 declare it (the local y of the piece's top water block) rather than leaving the \
-                 datum to the layout",
-                self.placed
+                "the ocean-datum check examined ZERO of {placed} placed piece(s): this world \
+                 declares `horizon: ocean` and {reaching} of those piece(s) stand at or below the \
+                 sea plane (y={SEA_LEVEL}), but not one declares a `waterline_y` in its prefab \
+                 metadata. Nothing here proves that anything in this world meets the sea where \
+                 the sea is, while every downstream proof — nav, boundary, POV, PackTest — \
+                 derives from the placement none of them checked. A check that examined nothing \
+                 has proved nothing, so this refuses rather than noting itself: the invariant is \
+                 keyed off an optional field, which makes a declaration that was DELETED look \
+                 exactly like one that was never needed, and those two need opposite answers. \
+                 Declare `waterline_y` on the piece(s) that meet the sea — the local y of the \
+                 top authored water block, {ISLAND_WATERLINE_Y} by the island convention \
+                 (`prefabs/island-tileset.md`) — or, if this world really authors no shore, it \
+                 is still standing in the water at y={OCEAN_BASE_Y} and wants a horizon that is \
+                 not `ocean`",
+                placed = self.placed,
+                reaching = self.reaching_sea,
             ),
         ))
+    }
+}
+
+#[cfg(test)]
+mod waterline_binding_tests {
+    use super::*;
+
+    /// The three states, and the one that is not a pass.
+    ///
+    /// `NOT_AN_OCEAN` and "examined something" are silent for different
+    /// reasons, and a world that placed nothing has no population at all —
+    /// none of the three is the case this exists for.
+    #[test]
+    fn only_an_ocean_that_placed_pieces_and_examined_none_reports() {
+        assert!(WaterlineBinding::NOT_AN_OCEAN.seal().is_none());
+        let bound = WaterlineBinding {
+            ocean: true,
+            placed: 3,
+            checked: 3,
+            reaching_sea: 3,
+        };
+        assert!(bound.seal().is_none(), "a bound check says nothing");
+        let empty = WaterlineBinding {
+            ocean: true,
+            placed: 0,
+            checked: 0,
+            reaching_sea: 0,
+        };
+        assert!(empty.seal().is_none(), "no pieces is not a zero binding");
+
+        let unbound = WaterlineBinding {
+            ocean: true,
+            placed: 2,
+            checked: 0,
+            reaching_sea: 2,
+        };
+        let d = unbound.seal().expect("a zero binding is never silent");
+        assert_eq!(d.code, "DW0344", "it answers under its own code");
+        assert!(
+            d.message.contains("examined ZERO of 2 placed piece(s)"),
+            "the binding count is stated: {}",
+            d.message
+        );
     }
 }
 
@@ -1736,14 +1859,15 @@ impl<'a> Plan<'a> {
             )?;
         }
 
-        // ---- ocean waterline invariant (DW0344/DW0364) ----
+        // ---- ocean waterline invariant (DW0344) ----
         //
         // Bound here and nowhere else, on the same reasoning as the mating check
         // below: every campaign build goes through `Plan::build`. The binding
         // count comes back with the verdict, because a check keyed off an
         // optional metadata field goes quiet rather than red when the field
-        // disappears.
-        if let Some(finding) = check_ocean_waterline(campaign, &areas, prefabs)?.finding() {
+        // disappears — and `seal` is what stops that quiet from reading as a
+        // pass.
+        if let Some(finding) = check_ocean_waterline(campaign, &areas, prefabs)?.seal() {
             warnings.push(finding);
         }
 
