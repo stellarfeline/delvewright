@@ -286,6 +286,25 @@ pub struct ContractWay {
     pub region: String,
     /// The cells it covers.
     pub boxes: Vec<Region>,
+    /// The palette role the way is made of, in the author's own vocabulary.
+    ///
+    /// Provenance for a reader, and never a second authority: what an opening
+    /// writes is [`block`](ContractWay::block), because a role name means
+    /// nothing outside the program that bound it. Recorded because a reviewer
+    /// reading this document otherwise has no way back to the declaration —
+    /// `minecraft:oak_planks` says what the cells become and `"tread"` says
+    /// what the author called it.
+    ///
+    /// Optional for the reason [`License::generated_by`] is: a role is a
+    /// *program's* vocabulary, so an expansion always has one and a hand-built
+    /// or ingested piece — which names its blocks directly — has none at all.
+    /// Writing an invented role there would be a fact about nothing.
+    ///
+    /// [`ContractBar`] carries no such field, and deliberately: adding one
+    /// would move the exported bytes of every piece that already declares a
+    /// bar, which spec-0042 §2.3 forbids. The checker reads neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
     /// The block state the way is made of: what a `laid` way is filled with,
     /// and what a `cleared` way stands in.
     pub block: String,

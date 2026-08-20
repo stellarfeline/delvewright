@@ -114,6 +114,9 @@ fn with_way(
         opens: opens.to_string(),
         region: name.to_string(),
         boxes,
+        // A hand-built piece has no palette to have named a role in, and the
+        // checker reads the block either way.
+        role: None,
         block: block.to_string(),
     });
     e
