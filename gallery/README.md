@@ -8,7 +8,8 @@ It exists so that a new authoring surface meets something built to receive it. A
 surface no campaign exercises is a surface nothing has ever compiled end to end,
 and that is not a hypothetical: of the DSL's **801 declared surface units**, the
 whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
-The gallery binds **245 units nothing else in this repository has ever written**.
+The gallery binds **every one of them**: 795 written, 6 proven refused by a
+probe the engine really rejects, and none left over.
 
 Four of those turned out not to work the first time anything reached them: an
 ambush and a named mob drop could not compile at all, a generated flag-gate test
@@ -189,38 +190,64 @@ rather than unconditionally, so an unmated socket is a wall. That is a change to
 what a tileset generator emits, not to this campaign — and it is why the render
 arm currently reds on the annex while the coverage gate is green about it.
 
-## The open question, for the design lane
+## The barrier pocket
 
-`spec-0039` §3 asserts that **"any legal combination is expressible by some
-overlay"**. That assertion is what licenses the gate to treat an unbound unit as
-a missing element rather than as a possibly-unreachable one. Six units say
-otherwise, and they are the only ones left that a field line cannot discharge.
+In the near hall's north-east corner is a pocket whose only way in is a
+**full-cube course** set into a 1.5-tall wall line. A body walking there steps up
+onto the course and down the far side — crossing a line the same line refuses to
+let it walk through, which is exactly what `DW0453` names.
 
-`DW0454` refuses a `traversal.locomotion` that restates what the body's entity id
-already implies, on the ground that a declaration is a claim the build must pay
-for. The rule is right and its diagnostic explains itself. Its consequence is
-that `Locomotion::ground` cannot be written on a ground mob, `Locomotion::flier`
-cannot be written on a bat, and so on: the only way to bind one is a body whose
-DERIVED class differs from the declared one, *and* a route that needs the
-declared class to be legal. That is not a field line. It is a world — a climb, a
-wall to go over — and a campaign without that geometry cannot express the
-combination at all.
+Three bodies walk it, and each declaration is *paid for* because it changes a
+verdict rather than restating one:
 
-The six: `Locomotion::ground`, `Locomotion::climber`, `Locomotion::flier`,
-`BodyTraversal.locomotion`, `Npc.traversal`, `Actor.traversal`.
-`Locomotion::aquatic` is *not* among them — it is refused outright by `DW0455`
-and is refusal-proven under `probes/aquatic-locomotion`, which is the correct
-second state and shows the difference: a fence has a probe, a geometry
-requirement has nothing to point at.
+| Body | Derived | Declared | What the declaration does |
+| --- | --- | --- | --- |
+| `npc/warden` | ground | `flier` | waives the advisory the crossing earns |
+| `npc/marshal` | ground | `climber` | waives it likewise |
+| `actor/rafter-spider` | **climber** | `ground` | **tightens** — binds a body back to the surmount rule its species would have been excused from |
 
-What would have to be true for the assertion to hold: either the gallery grows a
-second area whose route genuinely requires each declared class — real geometry,
-and a decision about whether the gallery is allowed to become that kind of
-artifact — or the spec says what verdict a unit earns when binding it needs a
-world rather than a declaration.
+The spider is the one worth reading twice. A declaration that restates the
+species is refused (`DW0454`), so `ground` cannot be written on a ground mob —
+but on a derived climber it is not a restatement, it is a claim the build holds
+the body to. None of them carries a skin, because a skinned body is a mannequin
+and a mannequin is derived ground.
 
-**Not resolved here, deliberately.** It contradicts a premise of an Accepted
-spec, so it belongs to whoever owns the spec; an implementation that quietly
-picked an answer would be settling it by default. The gate reports all six as
-unaccounted meanwhile, which is the honest verdict, and it is part of why the job
-is not yet a required status check.
+The build publishes the ledger: three bodies, **three exercised**, two advisories
+waived, one of each class.
+
+**The control, and it is the half that makes the greens mean anything.** Change
+the course from stone to air and it becomes an ordinary doorway: the crossing
+earns no advisory, all three declarations change no verdict, and `DW0454` refuses
+them by name. Reproduce it in one edit —
+`gallery/world-edits.json` → `batch/lay-the-barrier` → `region/barrier-course`.
+
+The pocket sits off the critical path on purpose. Blocking geometry on the route
+makes the build's render plan and the one `delvec snapshot` derives disagree —
+see below.
+
+## Two findings still open
+
+**The annex frames nothing, and cannot be fixed by itself.** Its tiles declare no
+anchors, so seven views of it bind zero targets and the render arm says so. The
+obvious fix does not work, and the reason is two correct rules meeting: an anchor
+makes the floor reachable; a reachable area with a spare socket is a void border
+(`DW0322`), because the 3 × 3 opening a socket carves leads nowhere until
+something mates to it; and `insert-piece` REQUIRES a spare socket to hang a tile
+off. So the verb is writable only in an area the player cannot reach, and such an
+area is one whose every view binds zero. What resolves it is a tile whose socket
+opening is carved **when it mates** rather than unconditionally — a change to
+what a tileset generator emits, not to this campaign.
+
+**The build's render plan and `snapshot`'s disagree when an edit blocks the
+route.** One is computed after world-edits and the other before them, so solid
+geometry on the critical path makes the build's legs longer than the ones
+`snapshot` can resolve, and declared views become unproducible by name. Seen
+twice: first with four shards stamped across the far hall, then with a
+full-width barrier line. Both times the instance fix was to move the geometry off
+the route; the divergence itself is untouched.
+
+These two are why the gallery job is still advisory. It becomes required in the
+change that takes both the unaccounted count and the render findings to zero —
+and `tools/check-required-contexts.py` reads both numbers out of
+`gallery/baseline/header.json` and `gallery/render-plan.json` rather than
+reciting the condition, so it will say so on its own.

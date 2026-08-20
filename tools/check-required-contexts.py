@@ -99,7 +99,14 @@ MAX_ADVISORY_JOBS = 1
 # zero" is a committed number, not a promise. When it reaches zero the entry has
 # outlived its reason and this file says so.
 GALLERY_JOB = "gallery (coverage + build + baseline)"
-GALLERY_HEADER = pathlib.Path(__file__).resolve().parent.parent / "gallery/baseline/header.json"
+_REPO = pathlib.Path(__file__).resolve().parent.parent
+# The job is THREE gates, so the expiry reads all of them. Keying it off the
+# coverage count alone would have demanded the job be made required the moment
+# coverage reached zero, while the render arm was still red — which is the
+# deadlock this file exists to prevent, arriving through the mechanism built to
+# prevent it. Both numbers are committed by the tools that measure them.
+GALLERY_HEADER = _REPO / "gallery/baseline/header.json"
+GALLERY_RENDER = _REPO / "gallery/render-plan.json"
 
 # A job's display name: `    name: <value>` nested under a job key. Quotes are
 # optional in YAML and both forms appear in the wild, so strip them.
@@ -203,20 +210,27 @@ def main() -> int:
         except json.JSONDecodeError:
             counts = {}
         left = counts.get("units_unaccounted")
-        if left == 0:
+        try:
+            render_left = json.loads(GALLERY_RENDER.read_text(encoding="utf-8")).get(
+                "findings"
+            )
+        except (OSError, json.JSONDecodeError):
+            render_left = None
+        if left == 0 and render_left == 0:
             findings.append(
-                f"{GALLERY_JOB!r} is still advisory and its own baseline header "
-                f"records ZERO unaccounted units — the condition the entry was "
-                f"granted under has been met.\n"
+                f"{GALLERY_JOB!r} is still advisory and every gate it runs is clean "
+                f"— ZERO unaccounted units and ZERO render findings. The condition "
+                f"the entry was granted under has been met.\n"
                 f"    Make it required: add the name to {MANIFEST.name} and to "
                 f"branch protection, and delete its ADVISORY_JOBS entry."
             )
-        elif left is None:
+        elif left is None or render_left is None:
             findings.append(
-                f"{GALLERY_JOB!r} is advisory and "
-                f"`gallery/baseline/header.json` records no coverage counts, so "
+                f"{GALLERY_JOB!r} is advisory and its own artifacts record no "
+                f"counts (unaccounted={left!r}, render findings={render_left!r}), so "
                 f"nothing here can tell whether the entry has outlived its reason. "
-                f"Regenerate the baseline (`tools/gallery-baseline.py --write`)."
+                f"Regenerate them: `tools/gallery-baseline.py --write` and "
+                f"`tools/check-gallery-render.py --write`."
             )
 
     dupes = {n for n in required if required.count(n) > 1}

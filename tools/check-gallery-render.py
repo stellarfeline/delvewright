@@ -106,7 +106,34 @@ def main() -> int:
             )
             + "\n"
         )
-        print(f"wrote {PLAN}: {len(declared)} declared view(s)")
+        # The findings this view set earns right now, asked of the check path
+        # itself so there is one judging and not two. Committed because the
+        # advisory-jobs expiry has to know whether THIS gate is clean: a job
+        # becomes required when the JOB can be required, and keying that off the
+        # coverage count alone would demand it while the render arm was still
+        # red — the deadlock the checker exists to prevent, arriving through the
+        # mechanism built to prevent it.
+        probe = subprocess.run(
+            [sys.executable, __file__, "--delvec", str(delvec), "--prefabs", args.prefabs,
+             "--build-out", str(out), "--frames", str(frames)],
+            capture_output=True, text=True,
+        )
+        n = None
+        for line in probe.stdout.splitlines():
+            if "finding(s)" in line:
+                n = int(line.rsplit(",", 1)[1].strip().split()[0]) + int(
+                    line.split(" produced, ")[1].split(" refused")[0]
+                )
+        if n is None:
+            die(
+                "the self-check produced no countable verdict, so the committed plan "
+                "would record a findings count nobody measured. A number that did not "
+                "come from a run is worse than no number."
+            )
+        doc = json.loads(PLAN.read_text())
+        doc["findings"] = n
+        PLAN.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+        print(f"wrote {PLAN}: {len(declared)} declared view(s), {n} finding(s)")
         return 0
 
     if not PLAN.is_file():

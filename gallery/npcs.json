@@ -39,7 +39,10 @@
           "motivation": "Keep the barred wall shut until the near hall has been read end to end.",
           "speech_style": "Terse. Answers only what was asked."
         },
-        "role": "flavor"
+        "role": "flavor",
+        "traversal": {
+          "locomotion": "flier"
+        }
       },
       {
         "anchor": "anchor/stall",
@@ -66,7 +69,10 @@
           "motivation": "Call the muster and stand aside.",
           "speech_style": "Parade-ground clipped."
         },
-        "role": "quest-giver"
+        "role": "quest-giver",
+        "traversal": {
+          "locomotion": "climber"
+        }
       }
     ]
   },

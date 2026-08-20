@@ -1,4 +1,5 @@
 {
+  "findings": 7,
   "note": "The view set the gallery declares. Committed so that a shot VANISHING is a red naming it rather than a shorter directory listing. Cameras are not committed: they are derived from the campaign and belong to the build, and duplicating them here would be a second authority on where a camera stands.",
   "views": [
     {

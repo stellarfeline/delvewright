@@ -72,11 +72,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -108,6 +103,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -149,6 +149,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",
@@ -234,11 +239,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -270,6 +270,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -311,6 +316,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",
@@ -396,11 +406,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -432,6 +437,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -478,6 +488,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",
@@ -563,11 +578,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -599,6 +609,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -640,6 +655,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",
@@ -725,11 +745,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -761,6 +776,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -802,6 +822,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",
@@ -887,11 +912,6 @@
     },
     {
       "code": "DW0527",
-      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/25/requires_state",
-      "stage": "quests"
-    },
-    {
-      "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/26/requires_state",
       "stage": "quests"
     },
@@ -923,6 +943,11 @@
     {
       "code": "DW0527",
       "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/32/requires_state",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0527",
+      "pointer": "/content/quests/1/on_objective_complete/obj/clear-the-muster/33/requires_state",
       "stage": "quests"
     },
     {
@@ -964,6 +989,11 @@
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
+    },
+    {
+      "code": "DW0453",
+      "pointer": "/content/actors/1",
+      "stage": "quests"
     },
     {
       "code": "DW0477",

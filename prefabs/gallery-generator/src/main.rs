@@ -178,6 +178,18 @@ const ANCHORS: &[Anchor] = &[
         role: "the second volume, so a pair of region verbs never share a box",
     },
     Anchor {
+        name: "anchor/pocket",
+        pos: [26, 1, 3],
+        facing: Some("west"),
+        trigger_block: None,
+        role: "inside the barrier pocket. Its only way in is the full-cube course \
+               in the wall line, so a body that walks here has crossed a line its \
+               species is not allowed through — which is the whole of what a \
+               `traversal` declaration answers. Off the critical path on purpose: \
+               blocking geometry on the route makes the build's render plan and \
+               the one `snapshot` derives disagree",
+    },
+    Anchor {
         name: "anchor/rafters",
         pos: [21, 1, 27],
         facing: Some("west"),

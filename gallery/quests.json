@@ -17,6 +17,9 @@
         "facing": "east",
         "id": "actor/rafter-spider",
         "name": "The Rafter Spider",
+        "traversal": {
+          "locomotion": "ground"
+        },
         "vulnerable": true
       },
       {
@@ -717,6 +720,17 @@
               ],
               "state": "state/tokens",
               "type": "add-state"
+            },
+            {
+              "happening": {
+                "subject": "npc/warden",
+                "text": "The Warden goes over the wall line rather than round it.",
+                "verb": "arrives"
+              },
+              "npc": "npc/warden",
+              "speed": 1.0,
+              "to_anchor": "anchor/pocket",
+              "type": "move-npc"
             }
           ],
           "obj/take-the-emeralds": [
@@ -1645,6 +1659,17 @@
               "actor": "actor/rafter-spider",
               "happening": {
                 "subject": "actor/rafter-spider",
+                "text": "The spider takes the yard the long way, on its feet.",
+                "verb": "arrives"
+              },
+              "speed": 1.0,
+              "to_anchor": "anchor/pocket",
+              "type": "move-actor"
+            },
+            {
+              "actor": "actor/rafter-spider",
+              "happening": {
+                "subject": "actor/rafter-spider",
                 "text": "The spider is put down where it landed.",
                 "verb": "dies"
               },
@@ -1792,6 +1817,38 @@
               ],
               "state": "state/keepsake",
               "type": "add-state"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "happening": {
+                "subject": "npc/marshal",
+                "text": "The Marshal climbs the course and drops into the yard.",
+                "verb": "arrives"
+              },
+              "npc": "npc/marshal",
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "speed": 1.0,
+              "to_anchor": "anchor/pocket",
+              "type": "move-npc"
+            },
+            {
+              "forbids_flags": [
+                "flag/hall-sealed"
+              ],
+              "happening": {
+                "subject": "npc/marshal",
+                "text": "The Marshal leaves the yard once the muster is answered for.",
+                "verb": "departs"
+              },
+              "npc": "npc/marshal",
+              "requires_flags": [
+                "flag/hall-open"
+              ],
+              "type": "despawn-npc"
             }
           ]
         },

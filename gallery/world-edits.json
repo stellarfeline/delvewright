@@ -649,6 +649,115 @@
         ],
         "id": "batch/rough-the-lane",
         "note": "The patrol lane gets a surface worth marching over. Exercises `surface-band`, `morph`/`smooth`, and `scatter` with an avoid set, a spacing and a limit. The avoid set keeps the scatter off the reliquary chest: a surface band one block above the floor reaches the cells that furniture stands in, and a scattered cobble overwrites the container `loot` fills."
+      },
+      {
+        "area": "area/hall",
+        "edits": [
+          {
+            "name": "region/pocket-west",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                23,
+                4,
+                5
+              ],
+              "min": [
+                23,
+                1,
+                1
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/pocket-west",
+            "verb": "fill"
+          },
+          {
+            "name": "region/barrier-line",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                29,
+                1,
+                6
+              ],
+              "min": [
+                23,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:cobblestone_wall",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/barrier-line",
+            "verb": "fill"
+          },
+          {
+            "name": "region/barrier-course",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                27,
+                1,
+                6
+              ],
+              "min": [
+                25,
+                1,
+                6
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/barrier-course",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/lay-the-barrier",
+        "note": "A pocket in the north-east corner whose only way in is a full-cube course in a wall line. Three declared bodies walk here and each has to make the move its species does or does not allow, which is what makes their `traversal` declarations paid for rather than decorative."
       }
     ]
   },
