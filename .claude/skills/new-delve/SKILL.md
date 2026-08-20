@@ -812,6 +812,13 @@ Symptom → tool:
 - **Terrain/visual fixes beyond swapping prefabs**: `delvec edit` — the
   spec-0017 map editor loop (edit script batch → replay → snapshot). Never
   hand-patch `.nbt` or invent block edits outside it.
+- **Ground the campaign means to sit at the waterline** (an ocean `horizon`
+  shoreline that wades, a bank rolled down past sea level): the stage-7 `flood`
+  verb (spec-0030, world-edits `dsl_version` 0.12.0) — declare the envelope the
+  ambient sea is admitted into and the compiler computes and builds the reach.
+  It is a claim, not a switch: `DW0364` still refuses every cell the sea does
+  not reach, an envelope the water never enters is `DW0394`, and water that
+  runs on past it is `DW0395`. Never author water by hand to clear a `DW0364`.
 - **Handing a build to a playtester**: mention the playtest note flow
   (spec-0006: `/trigger dw.note` in-game, then `delve-harvest` →
   `playtest-report.json`) — one line, human-optional.

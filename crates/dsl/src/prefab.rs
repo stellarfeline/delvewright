@@ -153,6 +153,25 @@ pub struct PrefabMeta {
     /// level. Absent for pieces that author no sea, which are then not checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waterline_y: Option<i32>,
+    /// The tileset **walk-plane convention** this piece is authored against
+    /// (spec-0026 §2): the local y a player's feet occupy on the piece's
+    /// reference floor — the floor its lowest socket opens onto, or for a
+    /// socketless piece its authored ground plane (island tileset 3, keep 1,
+    /// cave 2).
+    ///
+    /// This is the term the **per-area placement datum** is computed from:
+    /// an area's base y is `walk_ref_y − walk_y`, where the datum piece is the
+    /// area's bound prefab or its pool's entry member. Declaring it is what
+    /// lets a piece say where its own floor is instead of inheriting one global
+    /// guess, and every piece placed in a non-void horizon must declare it
+    /// (`DW0367`).
+    ///
+    /// Optional at the document level so a library that places only into `void`
+    /// still loads, and so an older engine reading a library that declares it
+    /// carries the key rather than refusing the piece. A shore piece's
+    /// [`Self::waterline_y`] is `walk_y − 1` by construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_y: Option<i32>,
     /// The piece's spatial contract, when it declares one.
     ///
     /// Absent means legacy metadata — the piece makes no spatial claim — exactly
@@ -652,6 +671,7 @@ impl PrefabMeta {
             }),
             license: Some(license),
             waterline_y: None,
+            walk_y: None,
             spatial_contract: None,
             extra: BTreeMap::new(),
         }

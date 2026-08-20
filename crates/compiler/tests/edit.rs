@@ -313,12 +313,27 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
 
 /// The ocean horizon's *replacement* invariant (`DW0322`): the same wall breach
 /// that is a void drop under `horizon: void` is a **stranding** hazard under
-/// `horizon: ocean` — the room's floor sits below sea level, so a player who
-/// walks out of the breach is in open water with no shoreline at the waterline
-/// to climb back onto. The code is the same, the premise and the prescription
-/// are the horizon's.
+/// `horizon: ocean` — when the walk plane sits high enough over the sea that a
+/// swimmer cannot climb back in through the breach.
+///
+/// Fixture note (spec-0026): before the per-area datum, hello-room's walk
+/// plane landed BELOW sea level (base 60, walk 61 — the flooded-interior flooded-interior
+/// class, now `DW0364`), which incidentally made any breach a stranding. On
+/// the corrected datum (walk_y 1 → base 62, walk 63) a breach is a canonical
+/// beach — escapable, correctly green. The stranding hazard this test guards
+/// needs a genuinely lipped tileset: a private prefabs copy declaring
+/// `walk_y: 0` places the room one block higher (walk 64, two over the sea),
+/// and the breach lip is then a wall to a swimmer.
 #[test]
 fn edit_ocean_breach_strands_the_player_dw0322() {
+    let prefabs = tmp("edits-ocean-breach-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &prefabs);
+    let meta_path = prefabs.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&meta_path).unwrap()).unwrap();
+    meta["walk_y"] = serde_json::json!(0);
+    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
     let dir = edits_copy("edits-ocean-breach");
     set_ocean_horizon(&dir);
     set_batches(
@@ -343,7 +358,7 @@ fn edit_ocean_breach_strands_the_player_dw0322() {
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
-        &prefabs_arg(),
+        prefabs.to_str().unwrap(),
     ]);
     assert_eq!(r.status.code(), Some(3), "build-tier failure");
     let stdout = format!(

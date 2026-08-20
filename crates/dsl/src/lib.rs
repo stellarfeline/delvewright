@@ -76,7 +76,8 @@ pub use stages::{
     CastDialogue, CastDialogueKeyword, CastEntry, CastPlace, CastPlacement, Class, ClassesContent,
     CollectBy, CompareOp, DamageKind, DespawnStyle, DialogueContent, DialogueEffect, DialogueNode,
     DialogueOption, EffectSite, EnchantedItem, EncounterTier, EnvTrigger, EquipItem, EquipSlot,
-    Facing, Fixture, Forfeit, Happening, HappeningVerb, Horizon, ItemDrop, KitItem, LethalVolume,
+    Facing, Fixture, Forfeit, Happening, HappeningVerb, Horizon, HorizonBase, HorizonFall,
+    HorizonFlora, HorizonName, HorizonPalette, HorizonSpec, ItemDrop, KitItem, LethalVolume,
     Lethality, Locomotion, Loot, LootItem, MAX_POTION_AMPLIFIER, MAX_POTION_DURATION_TICKS,
     MobAttributes, MobDrop, MobEffect, MobEquipment, NarrateStyle, Npc, NpcDialogue, NpcSkin,
     NpcsContent, Objective, OnFull, Persona, Pieces, PlannedQuest, PotionContents, PotionEffect,
@@ -91,4 +92,5 @@ pub use stages::{
     EditBatch, EditFrame, FragmentRotation, MorphOp, PaletteBlock, PaletteRecipe, RegionShape,
     SocketState, TreeKind, WorldEdit, WorldEditsContent,
 };
+pub use stages::{ResolvedHorizon, horizon_base, horizon_defaults, resolved_horizon};
 pub use validate::{validate_campaign, validate_campaign_with};

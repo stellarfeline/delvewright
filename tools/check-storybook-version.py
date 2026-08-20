@@ -146,7 +146,7 @@ MARKER_WITHIN_LINES = 10
 # printed on every run (see module docstring). Keep empty when possible.
 ALLOWLIST: dict[str, str] = {
     "hollow-vigil": (
-        "an open content round (dsl 0.9.0 adoption + cherry-valley horizon) is "
+        "an open content round (dsl 0.12.0 adoption + cherry-valley horizon) is "
         "rewriting every stage document of this campaign, so a marker written "
         "against main's 0.3.0 would be stale on merge — the marker lands in that "
         "round. REMOVE this entry when that round merges."

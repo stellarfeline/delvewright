@@ -505,6 +505,12 @@ pub fn export_prefab(
         lighting: Some(LightingMetadata::unmeasured()),
         license: Some(license_metadata(program, &hash, options.seed, size, None)),
         waterline_y: None,
+        // The exporter derives no tileset walk plane: a program declares the
+        // blocks it places, not the convention a hand-authored tileset is built
+        // to. A piece exported without one cannot be placed in a non-void
+        // horizon (`DW0367`), exactly as one without a `waterline_y` is not
+        // checked by `DW0344`.
+        walk_y: None,
         spatial_contract: contract_metadata(&expansion),
         extra: BTreeMap::new(),
     };
@@ -625,6 +631,12 @@ pub fn export_zone(
             Some((plan.grid, tiles.len())),
         )),
         waterline_y: None,
+        // The exporter derives no tileset walk plane: a program declares the
+        // blocks it places, not the convention a hand-authored tileset is built
+        // to. A piece exported without one cannot be placed in a non-void
+        // horizon (`DW0367`), exactly as one without a `waterline_y` is not
+        // checked by `DW0344`.
+        walk_y: None,
         spatial_contract: contract_metadata(&expansion),
         // A freshly exported manifest models every key it writes; the map is
         // what a LATER engine's key survives in on the way back out.

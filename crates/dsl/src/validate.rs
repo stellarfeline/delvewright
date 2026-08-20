@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::diagnostic::{Diagnostic, codes};
 use crate::envelope::{
     Campaign, SUPPORTED_DSL_VERSIONS, Stage, is_supported_version, is_v03, is_v04, is_v05, is_v06,
-    is_v07, is_v08, is_v09, is_v10, is_v11,
+    is_v07, is_v08, is_v09, is_v10, is_v11, is_v12,
 };
 use crate::ids::is_kebab;
 use crate::registry::{
@@ -2576,14 +2576,214 @@ fn reserved_v06_effect_flags(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
+/// Stage-1 `horizon` rules (spec-0026, DSL v0.9; generalizing spec-0013).
+/// Runs only for a world stage at 0.6.0+ (the pre-0.6 gate rejects the field
+/// wholesale in [`reserved_v06_world`]).
+///
+/// 1. **v0.9 fence**: the object form and every base/shorthand beyond
+///    `"void"`/`"ocean"` are `DW0141` below 0.9.0.
+/// 2. **Not-yet-landed bases**: `valley`/`summit`/`sky` (and the
+///    `cherry-valley` shorthand) parse at 0.9.0 but their surround generators
+///    have not landed in this delvec slice — `DW0141`, per the reserved-value
+///    precedent (npc `vendor`/`boss`), so the surface is reserved rather than
+///    silently mis-emitted. The follow-up slices delete these arms.
+/// 3. **`DW0366`**: params foreign to the declared base, and params out of
+///    their spec-0026 range.
+/// 4. **`DW0320` generalized** (spec-0026 §5): every non-void base has an
+///    enterable ambient or a lateral fall hazard, so every one requires a
+///    `boundary`.
+fn horizon_rules(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    use crate::stages::{Horizon, HorizonBase, horizon_defaults};
+
+    let Some(h) = &c.world.content.horizon else {
+        return;
+    };
+    let path = "/content/horizon".to_string();
+    if h.needs_v12() && !is_v12(c.world.dsl_version.as_str()) {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "world",
+            path,
+            "this `horizon` form requires dsl_version 0.12.0 (spec-0026): below it, `horizon` \
+             accepts only the strings `\"void\"` and `\"ocean\"`. Raise the world stage's \
+             `dsl_version` to 0.12.0, or use one of those strings"
+                .to_string(),
+        ));
+        return;
+    }
+    let r = h.resolved();
+
+    // Bases whose surround generator has not landed in this engine slice.
+    if matches!(
+        r.base,
+        HorizonBase::Sky | HorizonBase::Valley | HorizonBase::Summit
+    ) {
+        d.push(Diagnostic::error(
+            codes::RESERVED,
+            "world",
+            path.clone(),
+            format!(
+                "horizon base `{}` is reserved and not implemented in this delvec yet — the \
+                 spec-0026 foundation ships `void`, `ocean` and `flatland`; the \
+                 `valley`/`cherry-valley`, `summit` and `sky` surround generators land in \
+                 following slices. Use a landed base, or hold this campaign until the engine \
+                 ships the base (raising `dsl_version` further will not enable it)",
+                r.base.token()
+            ),
+        ));
+    }
+
+    // DW0366: params foreign to the declared base (object form only — the
+    // shorthands cannot carry params).
+    if let Horizon::Spec(s) = h {
+        let foreign: &[(&str, bool, HorizonBase)] = &[
+            ("float_y", s.float_y.is_some(), HorizonBase::Sky),
+            ("fall", s.fall.is_some(), HorizonBase::Sky),
+            (
+                "blend_width",
+                s.blend_width.is_some(),
+                HorizonBase::Flatland,
+            ),
+            ("ratio", s.ratio.is_some(), HorizonBase::Valley),
+            ("rim_height", s.rim_height.is_some(), HorizonBase::Valley),
+            ("flora", s.flora.is_some(), HorizonBase::Valley),
+            ("palette", s.palette.is_some(), HorizonBase::Valley),
+            ("plateau_y", s.plateau_y.is_some(), HorizonBase::Summit),
+            (
+                "vista_radius",
+                s.vista_radius.is_some(),
+                HorizonBase::Summit,
+            ),
+            ("min_drop", s.min_drop.is_some(), HorizonBase::Summit),
+        ];
+        for (name, present, owner) in foreign {
+            if *present && *owner != s.base {
+                d.push(Diagnostic::error(
+                    codes::HORIZON_PARAM,
+                    "world",
+                    format!("/content/horizon/{name}"),
+                    format!(
+                        "horizon param `{name}` belongs to base `{}`, not `{}` — remove it, or \
+                         change the base it was meant for",
+                        owner.token(),
+                        s.base.token()
+                    ),
+                ));
+            }
+        }
+    }
+
+    // DW0366: spec-0026 param ranges (only the params of the declared base —
+    // a foreign param already got its own diagnostic above).
+    let mut range = |name: &str, msg: String| {
+        d.push(Diagnostic::error(
+            codes::HORIZON_PARAM,
+            "world",
+            format!("/content/horizon/{name}"),
+            msg,
+        ));
+    };
+    match r.base {
+        HorizonBase::Valley => {
+            if !(2.0..=3.0).contains(&r.ratio) {
+                range(
+                    "ratio",
+                    format!(
+                        "`ratio` = {} is out of range — the valley surround footprint is \
+                         `2..=3`× the scene's (default {})",
+                        r.ratio,
+                        horizon_defaults::RATIO
+                    ),
+                );
+            }
+            if r.rim_height < 1 {
+                range(
+                    "rim_height",
+                    format!(
+                        "`rim_height` = {} is not a rim — declare a positive crest height \
+                         (default {})",
+                        r.rim_height,
+                        horizon_defaults::RIM_HEIGHT
+                    ),
+                );
+            }
+        }
+        HorizonBase::Summit => {
+            if r.min_drop < 100 {
+                range(
+                    "min_drop",
+                    format!(
+                        "`min_drop` = {} is below the spec-0026 floor — a summit gorge drop is \
+                         ≥ 100 blocks (default {})",
+                        r.min_drop,
+                        horizon_defaults::MIN_DROP
+                    ),
+                );
+            }
+            if r.plateau_y > 319 || r.plateau_y - r.min_drop < -64 {
+                range(
+                    "plateau_y",
+                    format!(
+                        "`plateau_y` = {} overflows the −64..320 build range once the ≥ {} gorge \
+                         drop is carved under it — everything a summit generates must fit in \
+                         −64..320 (default plateau {})",
+                        r.plateau_y,
+                        r.min_drop,
+                        horizon_defaults::PLATEAU_Y
+                    ),
+                );
+            }
+        }
+        HorizonBase::Sky => {
+            if !(-63..=319).contains(&r.float_y) {
+                range(
+                    "float_y",
+                    format!(
+                        "`float_y` = {} is outside the −64..320 build range — the archipelago \
+                         walk plane must be a buildable y (default {})",
+                        r.float_y,
+                        horizon_defaults::FLOAT_Y
+                    ),
+                );
+            }
+        }
+        HorizonBase::Void | HorizonBase::Ocean | HorizonBase::Flatland => {}
+    }
+
+    // DW0320 generalized (spec-0026 §5): any horizon whose ambient is
+    // enterable (ocean, flatland, valley, summit) requires `boundary`; `sky`
+    // requires it too (the lateral clock is also the fall catch).
+    if r.base != HorizonBase::Void && c.world.content.boundary.is_none() {
+        let hazard = match r.base {
+            HorizonBase::Ocean => "an infinite swimmable sea with no return rule",
+            HorizonBase::Flatland => "an infinite walkable plain with no return rule",
+            HorizonBase::Valley => "a walkable gap floor ringing the scene with no return rule",
+            HorizonBase::Summit => "a walkable plateau rim with no return rule",
+            HorizonBase::Sky => {
+                "a fall past the islands with no catch (the boundary clock IS the fall consequence)"
+            }
+            HorizonBase::Void => unreachable!(),
+        };
+        d.push(Diagnostic::error(
+            codes::OCEAN_NO_BOUNDARY,
+            "world",
+            path,
+            format!(
+                "`horizon` base `{}` needs a `boundary` — {hazard} lets players leave the map. \
+                 Add a `boundary` (a bare `{{}}` uses the default margin), or set `horizon` to \
+                 `void`",
+                r.base.token()
+            ),
+        ));
+    }
+}
+
 /// Stage-1 `horizon`/`boundary` gating + validation (spec-0013), plus the
 /// stage-5 v0.6 gating of `actors` and the effect verbs (spec-0012/0014:
 /// `set-checkpoint`, `begin-stealth`/`end-stealth`, `play-sound`, `narrate art`,
 /// and the actor staging verbs; gated on the quests stage). The per-effect
 /// `requires_flags` gate is handled separately in [`reserved_v06_effect_flags`].
 fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    use crate::stages::Horizon;
-
     // --- Stage 1: horizon / boundary (spec-0013), gated on the world stage ---
     if !is_v06(c.world.dsl_version.as_str()) {
         if c.world.content.horizon.is_some() {
@@ -2676,20 +2876,10 @@ fn reserved_v06_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     .to_string(),
             ));
         }
-        // `horizon: "ocean"` without a return rule strands wanderers in an infinite sea.
-        if matches!(c.world.content.horizon, Some(Horizon::Ocean))
-            && c.world.content.boundary.is_none()
-        {
-            d.push(Diagnostic::error(
-                codes::OCEAN_NO_BOUNDARY,
-                "world",
-                "/content/horizon".to_string(),
-                "`horizon: \"ocean\"` needs a `boundary` — an infinite swimmable sea with no \
-                 return rule lets players wander off the map. Add a `boundary` (a bare `{}` uses \
-                 the default margin), or set `horizon` to `void`"
-                    .to_string(),
-            ));
-        }
+        // The horizon library surface (spec-0026): v0.9 fence, per-base param
+        // validation (DW0366), the not-yet-landed-base rejections, and the
+        // generalized DW0320 boundary requirement.
+        horizon_rules(c, d);
         // `margin` range check (0..=64).
         if let Some(b) = &c.world.content.boundary
             && !(0..=64).contains(&b.margin)
@@ -6543,6 +6733,24 @@ fn world_edits_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mut Vec<Diag
                 }
                 WorldEdit::Carve { region } => {
                     check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                }
+                WorldEdit::Flood { region } => {
+                    check_region_ref(d, stage, &regions, format!("{epath}/region"), region);
+                    // v0.12 surface (spec-0030). Declaring it below 0.12.0 is
+                    // `DW0141`, the same asymmetry every version ledger uses:
+                    // a script that never floods emits byte-for-byte what
+                    // pre-0.12 emission wrote.
+                    if !is_v12(env.dsl_version.as_str()) {
+                        d.push(Diagnostic::error(
+                            codes::RESERVED,
+                            stage,
+                            epath.clone(),
+                            "the `flood` verb (admit the horizon's ambient water into a declared \
+                             envelope — spec-0030) requires dsl_version 0.12.0 — raise this \
+                             stage's `dsl_version` to 0.12.0, or remove the verb"
+                                .to_string(),
+                        ));
+                    }
                 }
                 WorldEdit::Morph { region, op } => {
                     check_region_ref(d, stage, &regions, format!("{epath}/region"), region);

@@ -511,6 +511,19 @@ pub mod codes {
     /// (v0.6) `boundary.margin` outside the `0..=64` range (spec-0013):
     /// validation-tier (exit 1).
     pub const BOUNDARY_MARGIN: DwCode = DwCode::every_version("DW0321");
+    /// (v0.12, spec-0026) A horizon param is out of range for its declared base
+    /// (`valley.ratio` outside `2..=3`, `summit.min_drop` < 100, a world-y
+    /// param outside the −64..320 build range), or a param is declared on a
+    /// base it does not belong to (`blend_width` on `ocean`). Validation-tier
+    /// (exit 1). Grouped in the DW036x horizon family beside the build-tier
+    /// placement codes (`DW0364`/`DW0367`).
+    ///
+    /// [`Binds::EveryVersion`]: the rule judges what the document SAYS — a
+    /// param outside its base's range, or a param on a base that has no such
+    /// param — so its verdict is a function of the campaign alone. The surface
+    /// it judges does not exist below 0.12.0 (`DW0141` refuses it there), so
+    /// there is nothing for a fence to grandfather.
+    pub const HORIZON_PARAM: DwCode = DwCode::every_version("DW0366");
     /// (v0.6) A `sequence` effect is nested inside another `sequence` (directly, or
     /// reachable via a nested `move-actor` `on_arrive`) — timelines do not recurse
     /// (spec-0014). Flatten the inner steps into the outer timeline.

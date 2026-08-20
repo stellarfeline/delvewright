@@ -234,6 +234,29 @@ repo = "stellarfeline/delvewright-campaigns"
 # 390, and the count moved because writing a connection splits one omitted entry
 # into the several fully-specified ones the piece actually places.
 sha = "f28f15394eef6813a88122137e3050b1da28c6f9"
+#
+# **This pin cannot yet satisfy this branch, and that is a finding rather than a
+# resolution.** The engine half on this branch requires `walk_y` on every prefab
+# placed in a non-void horizon (`DW0367`, spec-0026 §2). Content `main` at this
+# sha carries `walk_y` on ZERO of its 37 prefab documents, so
+# `nobodys-cave-island` — an ocean-horizon campaign — cannot build against this
+# engine at this pin.
+#
+# The pin is nonetheless content `main`, deliberately, and NOT the paired content
+# branch. That branch (`content/island-tideline`, which contains the walk_y
+# backfill) is not a descendant of this sha: pinning it would roll back the
+# connection-state re-export described above, which is what makes the
+# admitted-library sweep green. Trading a red in one gate for a red in another is
+# not a resolution, and silently rolling back another change's fix is exactly the
+# clean-auto-merge hazard this repo names by name.
+#
+# What unblocks it is the content pair being re-synced onto content `main` and
+# merged, after which this pin moves to the new content `main` tip per the RE-PIN
+# CONVENTION above. The ordering argument that once made this atomic — that a
+# `walk_y` key on content `main` would be REJECTED by every older delvec, so
+# content could not go first — no longer holds: prefab metadata is no longer
+# `deny_unknown_fields`. An unmodelled key is carried verbatim in `extra` and
+# reported as `DW0543`, a warning, and the piece loads. Content may land first.
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

@@ -236,6 +236,16 @@ pub fn is_fence_gate(name: &str) -> bool {
     strip_ns(name).ends_with("_fence_gate")
 }
 
+/// Whether a cell's block **is** water — a free water source or flowing water,
+/// ignoring its level and any other state. Distinct from [`is_waterlogged`],
+/// which asks whether a *host* block's cell also holds water.
+///
+/// Consumed by the `flood` verb's tideline invariant (spec-0030): "did the sea
+/// reach this cell" is a question about the cell's own block.
+pub fn is_water(name: &str) -> bool {
+    base_id(name) == "minecraft:water"
+}
+
 /// Whether a block carries `waterlogged=true` — **the cell contains a water
 /// source** alongside the host block (MC 1.13+ waterlogging).
 ///

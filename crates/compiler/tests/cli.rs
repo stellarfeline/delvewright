@@ -46,8 +46,12 @@ fn version_line() {
     // presser` (dispatch as the player who right-clicked), which together make
     // "a pressable thing answers the presser" an ordinary trigger and retire
     // `close-gate`'s private copy of it. The obligation is `DW0429`: at 0.11.0 a
-    // sealed body nothing answers is an error.
-    assert!(s.contains("dsl 0.11.0"), "{s}");
+    // sealed body nothing answers is an error. 0.12.0 carries the two halves of
+    // one change, on two stages: spec-0026's stage-1 horizon library (the
+    // `horizon` object form `{base, …params}` and the base names beside
+    // `void`/`ocean`), and spec-0030's stage-7 `flood` verb, which admits the
+    // horizon's own ambient water into a declared envelope.
+    assert!(s.contains("dsl 0.12.0"), "{s}");
     assert!(s.contains("mc 1.21.11"), "{s}");
 }
 
@@ -1472,11 +1476,16 @@ fn v06_actor_datapack_emits_the_mechanics() {
     );
 }
 
-/// spec-0013 sea-level datum: an `ocean` world places its areas at
-/// `sea_level - island waterline` (y=60) so the island tileset's authored
-/// waterline (local y=2) meets the world ocean (y=62) and its walk plane (local
-/// y=3) is the vanilla-normal one block above the sea. A `void` world is
+/// spec-0026 per-area datum (superseding spec-0013's global y=60): an `ocean`
+/// world places each area at `walk_ref_y (63) − walk_y`, the tileset's declared
+/// walk-plane convention. `hello-room` declares `walk_y: 1` (interior floor at
+/// local 0, feet at 1), so its base is y=62 and its walk plane lands at 63 —
+/// one block above the sea, DRY. Under the old island-constant datum (y=60) the
+/// same piece's walk plane sat at 61, one block UNDER sea level: the flooded-interior
+/// flooded-interior class, live in this very fixture. A `void` world is
 /// unchanged at y=64 — the byte-identity guarantee for every existing campaign.
+/// (The island tileset's own `walk_y: 3` → base 60, byte-identical to the old
+/// datum — asserted in `spec0026_horizon.rs`.)
 #[test]
 fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
     let pf = common::prefabs_dir();
@@ -1514,8 +1523,8 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
 
     let ocean = place_line(Some("ocean"), "datum-ocean");
     assert!(
-        ocean.contains("place template hello-world:hello-room 0 60 0"),
-        "ocean areas must sit at sea_level-2 (y=60):\n{ocean}"
+        ocean.contains("place template hello-world:hello-room 0 62 0"),
+        "ocean areas must sit on the per-area datum (walk_ref 63 − walk_y 1 = 62):\n{ocean}"
     );
     let void = place_line(None, "datum-void");
     assert!(
@@ -1691,9 +1700,10 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     let stdout = String::from_utf8_lossy(&b.stdout);
     assert!(stdout.contains("DW0344"), "expected DW0344:\n{stdout}");
 
-    // The same piece declaring the island convention (local y=2) lands its
-    // waterline exactly at sea level and builds clean.
-    meta["waterline_y"] = serde_json::json!(2);
+    // The same piece declaring the waterline consistent with its own datum
+    // (spec-0026: `waterline_y = walk_y − 1`; hello-room declares walk_y 1, so
+    // waterline 0 → base 62 + 0 = sea level) builds clean.
+    meta["waterline_y"] = serde_json::json!(0);
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     let out_ok = tmp("dw0344-out-ok");
     let ok = delvec(&[
@@ -1748,18 +1758,24 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
 ///
 /// There is deliberately no discharge: the only one an author could offer
 /// ("this piece needs no waterline") is the deleted declaration under another
-/// name, and the only geometric one ("no piece reaches the sea") is
-/// unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60 under a sea
-/// at 62.
+/// name.
 ///
-/// **The tripwire.** That last fact is asserted here rather than assumed. A
-/// binding of zero earns a refusal, and the only reason this reports instead is
-/// that the same global datum leaves an author no lever to satisfy one — the
-/// piece really is in the water and nothing in the DSL can lift it out, so a
-/// refusal would be demanding a fiction. The day a per-area datum makes a dry
-/// ocean piece authorable, the sea-plane assertion below reds and the severity
-/// question is reopened by this test rather than by anyone remembering a
-/// comment.
+/// **The tripwire, and what has changed under it.** The geometric discharge
+/// ("no piece reaches the sea") was unsatisfiable under the single global ocean
+/// datum, which sat every area at 60 under a sea at 62; that is what made a
+/// refusal undemandable rather than merely unchosen, and this test asserted the
+/// fact rather than assuming it. **The per-area datum (spec-0026 §2) is that
+/// lever, and it has now landed**: an area's base is `walk_ref_y − walk_y`, so
+/// raising a piece's declared `walk_y` lifts it clear of the sea, and `DW0364`
+/// proves empirically whether it is clear. So the severity question this
+/// tripwire existed to reopen is **open**, and it is a decision rather than a
+/// consequence — raising the zero binding to a refusal is not made here.
+///
+/// The assertion below is kept exactly as it was, and it is still true, because
+/// this fixture's piece is authored to a convention that stands it in the sea.
+/// Note what pins that: the bound half requires the declared waterline to land
+/// on the sea plane, which forces base 60, which forces `walk_y` 3. The value is
+/// determined by the assertion above it, not chosen to keep this one green.
 ///
 /// Both directions, because a one-directional gate proves nothing: with the
 /// declaration present the build says nothing, with it gone the build names
@@ -1811,9 +1827,27 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
         )
     };
 
+    // Both datum numbers are declared HERE rather than inherited from the pinned
+    // library, because they only mean anything as a PAIR: `waterline_y` is
+    // `walk_y − 1` by construction, which is the relationship `DW0344`'s own
+    // message states. A fixture that declares one and borrows the other is
+    // asserting a combination nobody authored, and it silently changes what it
+    // tests the day the library's convention moves.
+    //
+    // `hello-room` walks at local y=1, so the pair is `walk_y` 1 / `waterline_y`
+    // 0. Under the per-area datum (spec-0026 §2) that places the area at
+    // `walk_ref_y (63) − walk_y (1)` = 62: the declared waterline lands exactly
+    // on the sea plane at 62, and the walk plane sits at 63, one block clear of
+    // it — so `DW0364` proves the piece dry at the same time as `DW0344` proves
+    // its waterline bound. Writing the ISLAND pair (3 / 2) onto this piece
+    // instead is not a harmless relabelling: it puts the interior floor a block
+    // under the sea and `DW0364` reports 74 drowned cells, which is precisely
+    // the flooded-interior class both checks exist to catch.
+    meta["walk_y"] = serde_json::json!(1);
+
     // Bound: the placed piece declares the convention waterline, so the datum is
     // really checked, the binding count is 1 of 1, and the build is green.
-    meta["waterline_y"] = serde_json::json!(2);
+    meta["waterline_y"] = serde_json::json!(0);
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     let (bound_code, bound) = build("dw0344-bound-out", &ocean_camp);
     assert_eq!(
@@ -1844,12 +1878,13 @@ fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
         unbound.contains("the ocean-datum check examined ZERO of 1 placed piece(s)"),
         "it must state what it examined and out of how many:\n{unbound}"
     );
-    // The tripwire. This is the fact that makes a refusal undemandable rather
-    // than merely unchosen: the piece really is in the water, and under the
-    // single global ocean datum an author has no lever to lift it out. When a
-    // per-area datum lands and a dry ocean piece becomes authorable, this
-    // assertion reds — which is the point. Do not relax it; take it as the
-    // signal to raise this zero binding to a refusal.
+    // The tripwire. This piece really is in the water — the bound half above
+    // forces `walk_y` 3, hence base 60, under a sea at 62. What has changed is
+    // that a lever now exists: the per-area datum makes a dry ocean piece
+    // authorable, so the refusal this zero binding earns is no longer
+    // undemandable. Do not relax this assertion; the open question it now
+    // guards is whether the zero binding becomes a refusal, and that is a
+    // decision, not a consequence.
     assert!(
         unbound.contains("1 of those piece(s) stand at or below the sea plane"),
         "it must state how many pieces stand in the sea:\n{unbound}"

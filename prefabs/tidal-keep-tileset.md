@@ -30,6 +30,15 @@ piece placed at the y=60 datum, so its waterline lands at sea level (`DW0344`).
 Every other piece omits `waterline_y` on purpose: they stand on the plinth, above
 the tide, and a declared waterline would demand they sit at sea level.
 
+**Walk-plane datum (spec-0026 §2)**: each piece declares its `walk_y` — the
+feet-y of its **lowest** socket floor: shore pieces 3 (`tk-barrow-field`,
+`tk-gatehouse`), plinth pieces 11 (everything else); generator-derived from the
+piece's door list. The area datum reads the entry piece (`tk-barrow-field`,
+walk_y 3 → base `63 − 3 = 60`, byte-identical to the retired global ocean
+datum); the plinth pieces' values are declaration honesty for the empirical
+flood proof (`DW0364`), which verifies every piece's standable cells sit above
+sea level regardless of what anything declares.
+
 **All vertical gain is authored inside a piece.** The solver has no vertical
 socket (`Facing::parse` accepts cardinals only), so a piece's rise is exactly the
 difference between its two sockets' local y — the `keep-stair` rule, applied at

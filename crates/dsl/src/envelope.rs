@@ -11,7 +11,7 @@ use crate::stages::{
 };
 
 /// The latest `dsl_version` this crate implements (identity / tooling default).
-pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
+pub const SUPPORTED_DSL_VERSION: &str = "0.12.0";
 
 /// Every `dsl_version` this crate accepts. Each version is an **additive
 /// superset** of the previous: v0.3 added the stage-5 verbs/waves/flags; v0.4
@@ -38,11 +38,14 @@ pub const SUPPORTED_DSL_VERSION: &str = "0.11.0";
 /// (spec-0034) the per-body `traversal` declaration, what a body can do when it
 /// moves, on the stage-2 NPC and the stage-5 actor; the **press-answer lift**, a
 /// `narrate` `actionbar` style and a trigger `audience: presser`; and with the
-/// lift the one obligation of the version, `DW0429`.
+/// lift the one obligation of the version, `DW0429`; v0.12 (spec-0026) adds the
+/// stage-1 **horizon library** — the `horizon` object form `{base, …params}`
+/// and the base/shorthand names beside `void`/`ocean`.
 /// Older campaigns remain valid and compile byte-identically. A construct
 /// introduced in a later version is rejected with `DW0141` in an earlier one.
 pub const SUPPORTED_DSL_VERSIONS: &[&str] = &[
     "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0",
+    "0.12.0",
 ];
 
 /// True if `version` is a `dsl_version` this crate accepts.
@@ -74,6 +77,7 @@ fn ordinal(version: &str) -> u32 {
         "0.9.0" => 9,
         "0.10.0" => 10,
         "0.11.0" => 11,
+        "0.12.0" => 12,
         _ => 0,
     }
 }
@@ -251,6 +255,68 @@ pub fn is_v10(version: &str) -> bool {
 /// job (`versions.toml` + OCI), not eternal byte-stable emission.
 pub fn is_v11(version: &str) -> bool {
     ordinal(version) >= 11
+}
+
+/// True if `version` enables the DSL v0.12 surface. **Two surfaces land in this
+/// version**, on two different stages, and one predicate answers for both —
+/// they are the two halves of one change: a world that declares what lies past
+/// the playable region, and the author's way of saying which of it the sea
+/// actually reaches.
+///
+/// # Stage 1 — the horizon library (spec-0026)
+///
+/// `horizon` stops being a closed pair of backdrop words and becomes a declared
+/// world beyond the playable region: the **object form** `{base, …params}`
+/// beside the two v0.6 strings, and the base names the library carries
+/// (`flatland`, and the `sky` / `valley` / `summit` / `cherry-valley` names the
+/// surround slices fill in). A base carries its own typed parameters — `ratio`,
+/// `min_drop`, `plateau_y`, `float_y`, `flora`, `palette` — validated against
+/// the base that declares them (`DW0366`).
+///
+/// Additive over v0.11: `"void"` and `"ocean"` keep meaning exactly what they
+/// meant at 0.6.0 and emit byte-identically, `{base: "ocean"}` emits the same
+/// bytes as `"ocean"`, and any use of the object form or of a new base name
+/// below 0.12.0 is `DW0141`. The fence is per stage, so a campaign raises its
+/// `world` document to 0.12.0 to reach the library without touching the five
+/// other stages.
+///
+/// # Stage 7 — the `flood` world-edit verb (spec-0030)
+///
+/// `{ "verb": "flood", "region": "region/<name>" }` names an **envelope** the
+/// horizon's ambient sea is allowed to reach, and the compiler computes the
+/// reach rather than taking the author's word for it: water is seeded from
+/// ambient water bordering the envelope, propagated sideways and downward
+/// through waterable cells at or below the flood level, and materialized as
+/// `minecraft:water` in the model and in the emitted edit. It admits water; it
+/// never suppresses a check. Everything the sea does not reach stays dry and
+/// stays under `DW0364`.
+///
+/// Additive over v0.11: a script that declares no `flood` emits byte-for-byte
+/// what pre-0.12 emission wrote, and the verb below 0.12.0 is `DW0141`.
+///
+/// # Why the two share a number
+///
+/// The same reason v0.10 carries runtime state, `on_death` and lethal volumes,
+/// and v0.11 carries traversal and the press-answer lift: a version number
+/// names the surface **one change introduces**, and these two land together
+/// because neither is usable without the other. The flood verb needs a horizon
+/// that has an ambient sea and a per-area datum that can lift a piece out of
+/// it; the horizon library needs the verb to let an author declare the banks
+/// the sea is meant to reach. Two numbers here would mean a 0.12.0 world
+/// document whose 0.13.0 edit script is the only thing that can make it green.
+///
+/// **The version is 0.12.0, not 0.9.0.** The surface was first written against
+/// 0.9.0 while that number was still unclaimed on both sides; 0.9.0 has since
+/// shipped naming the stage-5 `drops[]` surface, and a number names exactly one
+/// surface in every engine that knows it (`tools/check-version-ledger-uniqueness.py`).
+/// Two engines that both answer to 0.9.0 and disagree about what a 0.9.0 world
+/// document may contain is the failure the fence exists to prevent. That gate
+/// cannot see this particular collision — the dsl ledger's anchors are
+/// self-naming, so all three surfaces resolve to `is_v09` and rule 1 reads one
+/// claim — which is why the number is corrected here by reading rather than by
+/// waiting for a red.
+pub fn is_v12(version: &str) -> bool {
+    ordinal(version) >= 12
 }
 
 /// Which stage a document belongs to.

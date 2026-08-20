@@ -1,7 +1,7 @@
 """The harness/compiler `dsl_version` sync gate (`tools/check-harness-dsl-version.py`).
 
 The defect this pins, from the field: the compiler's
-`SUPPORTED_DSL_VERSION` moved to `0.9.0` (spec-0026) while
+`SUPPORTED_DSL_VERSION` moved to `0.12.0` (spec-0026) while
 `harness/src/critical-path.ts`'s `SUPPORTED_DSL_VERSIONS` allowlist still ended
 at `0.8.0`. Every other CI job was green — nothing else in the repo relates the
 two files — and the bot tier refused every 0.9.0 campaign at the version gate,

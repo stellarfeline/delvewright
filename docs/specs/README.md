@@ -38,6 +38,7 @@ machine-checkable assertions — each criterion maps to a CI check.
 | [spec-0027](spec-0027-grammar-prefab-backend.md) | Box-split grammar prefab back end | Proposed |
 | [spec-0028](spec-0028-ref-image-intent-alignment.md) | Reference-image intent alignment (optional prefab-chain step) | Proposed |
 | [spec-0029](spec-0029-i18n-v2-client-selected-language.md) | i18n v2 — the client picks the language | Implemented |
+| [spec-0030](spec-0030-deliberate-shorelines.md) | Deliberate shorelines — the `flood` verb and the tideline invariant | Proposed |
 | [spec-0031](spec-0031-runtime-state-and-interactive-verbs.md) | Runtime state, and the verbs that need it | Draft |
 | [spec-0032](spec-0032-economy-and-recovery-stake.md) | Currency, trade, and the recovery stake | Draft |
 | [spec-0038](spec-0038-standing-fluid.md) | Standing fluid — declared bodies, and the flood level as runtime state | Proposed |

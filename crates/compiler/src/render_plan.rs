@@ -65,7 +65,7 @@
 //! amplified noise), so `delvec scene` uses the stamp to apply its
 //! documented night-vision review emulation to exactly those shots and no others.
 
-use delvewright_dsl::{AreaMitigation, Campaign, Horizon, LightingProfile, Objective};
+use delvewright_dsl::{AreaMitigation, Campaign, HorizonBase, LightingProfile, Objective};
 use serde_json::{Value, json};
 
 use crate::nav::LegRoute;
@@ -708,13 +708,35 @@ pub fn render_plan(plan: &Plan, prefabs: &PrefabRegistry, pov: &[PovShot]) -> Va
 ///
 /// A void horizon emits **no key at all** (not `null`), so every campaign that
 /// declares nothing keeps a byte-identical `render-plan.json`.
+///
+/// `flatland` (spec-0026) deliberately emits no key **yet**. Its ambient does
+/// change what a renderer must draw (a grass plane, not nothing), but
+/// `render-plan.json`'s `horizon` is an externally-tagged enum on the consumer
+/// side (`delvewright_render::scene::Horizon`, which knows only `ocean`), so a
+/// `{"kind": "flatland", …}` this PR made up would be an unparseable plan on
+/// the render side rather than a better picture. The wire shape belongs to
+/// spec-0026 §6's render work (the per-horizon establishing vista shot), which
+/// lands with the surround slices; inventing it here is exactly the downstream
+/// folklore the no-hack doctrine forbids. Until then a flatland delve renders
+/// as it did before the horizon library existed.
+///
+/// The match is exhaustive on [`HorizonBase`] on purpose: a base added later
+/// must decide this question explicitly instead of falling through to "no
+/// ambient".
 fn horizon_fact(c: &Campaign) -> Option<Value> {
-    match c.world.content.horizon {
-        Some(Horizon::Ocean) => Some(json!({
+    match crate::horizon::base_of(c) {
+        HorizonBase::Ocean => Some(json!({
             "kind": "ocean",
             "sea_level": crate::plan::SEA_LEVEL,
         })),
-        Some(Horizon::Void) | None => None,
+        // No render-side wire shape defined (see above). `valley`/`summit`/
+        // `sky` are additionally refused at validation in this slice, so those
+        // arms are unreachable from a build that gets this far.
+        HorizonBase::Void
+        | HorizonBase::Flatland
+        | HorizonBase::Valley
+        | HorizonBase::Summit
+        | HorizonBase::Sky => None,
     }
 }
 

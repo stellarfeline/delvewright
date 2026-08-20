@@ -14,9 +14,13 @@ contiguous walkable island (design brief §1, §5).
 ## Island convention (shared — greenfield/mountain align to this)
 
 The world horizon is `ocean` (spec-0013): a superflat with **sea level y=62**.
-The compiler places every area of an ocean world with its base at **y=60**
-(`sea_level - 2`), the datum this convention assumes — so the piece's walk plane
-(local y=3) lands at world y=63, one block above the sea, exactly like a vanilla
+The compiler places an island area at **y=60** via the per-area datum
+(spec-0026 §2: `walk_ref_y (63) − walk_y (3)` — every island piece declares
+`walk_y: 3` in its metadata, generator-emitted; `DW0367` without it). The old
+global `sea_level − 2` constant this convention used to assume is retired: the
+island's placement is unchanged, but other tilesets now land on their own
+declared walk planes instead of the island's. The piece's walk plane (local
+y=3) lands at world y=63, one block above the sea, exactly like a vanilla
 beach. Every island piece authors its own local geometry against these fixed
 local heights:
 
