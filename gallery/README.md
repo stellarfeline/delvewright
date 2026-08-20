@@ -6,9 +6,9 @@ played, released or staged.
 
 It exists so that a new authoring surface meets something built to receive it. A
 surface no campaign exercises is a surface nothing has ever compiled end to end,
-and that is not a hypothetical: of the DSL's **801 declared surface units**, the
+and that is not a hypothetical: of the DSL's **807 declared surface units**, the
 whole authored corpus — four campaigns and twenty-eight fixtures — writes 527.
-The gallery binds **every one of them**: 795 written, 6 proven refused by a
+The gallery binds **every one of them**: 801 written, 6 proven refused by a
 probe the engine really rejects, and none left over.
 
 Four of those turned out not to work the first time anything reached them: an
@@ -222,9 +222,8 @@ diagnostic would be, because it can only speak for these four tiles.
 
 ## The broken flight, and what a way costs to declare
 
-The far half of the hall carries a **mezzanine**: a solid dais four courses of
-floor above the flagstones, with a stair up to it whose two tread courses are
-not there. It is the only floor in the piece a body cannot walk onto, and a
+The far half of the hall carries a **mezzanine**: a solid dais three courses
+tall, with a stair up to it whose two tread courses are not there. It is the only floor in the piece a body cannot walk onto, and a
 campaign puts the treads back:
 
 ```json
@@ -262,7 +261,7 @@ emitted command:
 ```
 execute if score #party dw.f_muster_cleared matches 1
         unless score #party dw.f_hall_sealed matches 1
-        if score #party dw.s_labels_read matches 0.. run fill 3 65 22 4 65 22 minecraft:stone_bricks
+        if score #party dw.s_labels_read matches 0.. run fill 19 65 22 20 65 22 minecraft:stone_bricks
 ```
 
 Each is a condition that holds wherever this beat can fire — the flag the
