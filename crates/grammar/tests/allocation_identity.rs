@@ -158,8 +158,14 @@ fn a_row_one_block_wider_than_its_allocation_is_an_audit_red() {
     assert!(text.contains("\"p\""), "{text}");
     assert!(text.contains("\"part\""), "{text}");
     // …and both triples, so neither number has to be looked up.
-    assert!(text.contains("6x4x5"), "the allocated box is not named: {text}");
-    assert!(text.contains("7x4x5"), "the row's extents are not named: {text}");
+    assert!(
+        text.contains("6x4x5"),
+        "the allocated box is not named: {text}"
+    );
+    assert!(
+        text.contains("7x4x5"),
+        "the row's extents are not named: {text}"
+    );
 }
 
 /// **A row grown one block is red on EVERY axis, not just the first.** A
@@ -253,7 +259,10 @@ fn a_corpus_with_no_compared_row_states_the_zero_by_name() {
     );
     // And the include surface still bound, so the zero is about the ROW and not
     // about a corpus that composes nothing.
-    assert!(text.contains("include") && text.contains("bound 1"), "{text}");
+    assert!(
+        text.contains("include") && text.contains("bound 1"),
+        "{text}"
+    );
 }
 
 /// **The composed prefix is the one that is compared, not the include's local
@@ -325,5 +334,8 @@ fn a_nested_composition_is_compared_at_its_full_prefix_path() {
     let out = audit(&dir);
     let text = combined(&out);
     assert!(!out.status.success(), "{text}");
-    assert!(text.contains("DW0806") && text.contains("\"z/p\""), "{text}");
+    assert!(
+        text.contains("DW0806") && text.contains("\"z/p\""),
+        "{text}"
+    );
 }

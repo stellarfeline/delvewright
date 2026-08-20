@@ -1346,17 +1346,6 @@ fn run_audit(
         }
     }
 
-    // §3c link 4, printed with the verdicts rather than folded into a gate: the
-    // identity is between a manifest row and a composition, and neither of those
-    // is a thing `judge` can see from an expansion's blocks.
-    for a in &audited {
-        for red in &a.allocation_reds {
-            failed = true;
-            println!("  {:<44} FAIL", a.label);
-            println!("      {:<16} FAIL  {red}", "part-allocation");
-        }
-    }
-
     // Per-gate totals across the corpus, in first-seen order: the binding count
     // is the point of the report, and a gate that examined zero objects across
     // the whole corpus is the vacuous green this project has shipped five times.
@@ -1406,6 +1395,31 @@ fn run_audit(
             .iter()
             .filter(|g| g.state == gates::GateState::Undecided)
             .collect();
+        // §3c link 4, ahead of everything else this loop decides, and outside
+        // the known-red record deliberately. The identity is between a manifest
+        // row and a composition, and neither of those is a thing `judge` can see
+        // from an expansion's blocks — so `DW0806` is not among the gate codes an
+        // exclusion enumerates, and a record that held here would swallow it.
+        // An exclusion is a capability-gap record; a part in debt to its
+        // allocation is not a missing capability.
+        if !a.allocation_reds.is_empty() {
+            failed = true;
+            println!("  {:<44} FAIL", a.label);
+            for red in &a.allocation_reds {
+                println!("      {:<16} FAIL  {red}", "part-allocation");
+            }
+            for g in &bad {
+                println!("      {:<16} FAIL  bound {:<6} {}", g.id, g.bound, g.detail);
+            }
+            for g in &unsure {
+                println!(
+                    "      {:<16} undecided {:<4} of bound {:<6} {}",
+                    g.id, g.undecided, g.bound, g.detail
+                );
+            }
+            continue;
+        }
+
         let recorded_here = recorded.iter().find(|e| e.id == a.label);
 
         if let Some(entry) = recorded_here {
