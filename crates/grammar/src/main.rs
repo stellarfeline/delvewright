@@ -37,7 +37,7 @@
 //! Exit codes (mirroring `delve-schem` and `delve-render`): `0` ok · `2`
 //! input/usage · `3` output · `4` a machine gate went red.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -48,7 +48,7 @@ use delvewright_grammar::coverage;
 use delvewright_grammar::document::{self, Loaded};
 use delvewright_grammar::gates;
 use delvewright_grammar::ir::{Paint, Program};
-use delvewright_grammar::{Axis, Box3, ExpandOptions, expand, export, library};
+use delvewright_grammar::{Axis, Box3, ExpandOptions, Expansion, expand, export, library};
 
 const EXIT_INPUT: u8 = 2;
 const EXIT_OUTPUT: u8 = 3;
@@ -812,9 +812,39 @@ struct ZoneEntry {
 const ZONE_MANIFEST: &str = "zones.json";
 
 /// One thing to audit: what to call it, what to expand, where, at which seed,
-/// which optional gates it claims, and how many program documents it composed
-/// to become the program that is expanded.
-type AuditItem = (String, Program, [u32; 3], u64, gates::Options, usize);
+/// which optional gates it claims, how many program documents it composed to
+/// become the program that is expanded, and which of those composed documents
+/// carry a manifest row of their own.
+struct AuditItem {
+    label: String,
+    program: Program,
+    region: [u32; 3],
+    seed: u64,
+    gates: gates::Options,
+    /// The include surface's binding count for this item.
+    includes: usize,
+    /// spec-0040 §3c link 4: every composed part that ALSO has its own row.
+    allocations: Vec<AllocationClaim>,
+}
+
+/// **A part that is composed here and has a manifest row of its own** — the one
+/// population §3c link 4 is about.
+///
+/// The row states the extent the part is developed, reviewed and judged at
+/// standalone; the composition states the extent the whole's site plan hands it.
+/// Two documents, one fact. When they disagree, the part was reviewed in a box
+/// that is not the box it is built in, and the review certified a different
+/// object — which is how a citadel came out of its parts at 1 : 5.5 against a
+/// brief asking for a compact stepped mass (spec-0040 §1.9).
+struct AllocationClaim {
+    /// The prefix path the composed vocabulary carries in the resolved program.
+    prefix: String,
+    /// The composed document's own manifest id.
+    row_id: String,
+    /// The extents that row declares — the part's own frame, since a standalone
+    /// expansion runs at the identity orientation.
+    row_region: [u32; 3],
+}
 
 /// What one gate id totalled to across the corpus.
 #[derive(Default)]
@@ -836,6 +866,11 @@ struct GateTotals {
 struct Audited {
     label: String,
     report: gates::Report,
+    /// How many [`AllocationClaim`]s this program's expansion was compared
+    /// against — the compared-row count, per program.
+    compared_rows: usize,
+    /// Every §3c link-4 disagreement, one line each.
+    allocation_reds: Vec<String>,
 }
 
 /// Programs that are KNOWN red, and the exact codes each must fail with.
@@ -902,12 +937,16 @@ fn read_exclusions(path: &Path) -> Result<Vec<Exclusion>, String> {
     Ok(parsed.exclusion)
 }
 
+/// The diagnostic a §3c link-4 disagreement carries.
+const DW_ALLOCATION_IDENTITY: &str = "DW0806";
+
 fn audit_one(
     label: String,
     program: &Program,
     region: [u32; 3],
     seed: u64,
     opts: gates::Options,
+    claims: &[AllocationClaim],
 ) -> Result<Audited, String> {
     let expansion = expand(
         program,
@@ -920,10 +959,78 @@ fn audit_one(
             region[0], region[1], region[2]
         )
     })?;
+    let allocation_reds = compare_allocations(&label, &expansion, claims);
     Ok(Audited {
         label,
         report: gates::judge(&expansion, opts),
+        compared_rows: claims.len(),
+        allocation_reds,
     })
+}
+
+/// **spec-0040 §3c link 4**: the part's own row names the same box.
+///
+/// Compares EXTENTS and never origins — a part developed standalone sits
+/// wherever it likes, and where it was parked says nothing about how big it is —
+/// and compares them in the **part's own frame**
+/// ([`grammar::Allocation::local`]), which is what "up to the include site's
+/// declared reorientation" means: a composition that turns a part a quarter-turn
+/// about the vertical hands it a world box with X and Z swapped, and the part
+/// still reads exactly the extents it was built at. Comparing world extents
+/// would red a correct composition for having rotated something.
+///
+/// Every distinct box the prefix was entered at is compared, not one of them: a
+/// part the composition places twice at two sizes has two allocations and at
+/// most one of them can be the box its row names.
+fn compare_allocations(
+    label: &str,
+    expansion: &Expansion,
+    claims: &[AllocationClaim],
+) -> Vec<String> {
+    let mut reds = Vec::new();
+    for claim in claims {
+        let [rx, ry, rz] = claim.row_region;
+        let sites = expansion.allocations.get(&claim.prefix);
+        // No box at all is the strongest disagreement, not a skip: the row was
+        // compared against nothing, which is the vacuous green this identity
+        // exists to end. It happens when the rule that would place the part sits
+        // under a guard this seed does not take — a composed part nothing places.
+        let Some(sites) = sites.filter(|s| !s.is_empty()) else {
+            reds.push(format!(
+                "{DW_ALLOCATION_IDENTITY}: {label} composes {:?} under the prefix {:?} and no \
+                 rule of that prefix is ever entered, so the composition allocates it NO box and \
+                 the row's declared {rx}x{ry}x{rz} was compared against nothing. A composed part \
+                 that is never placed is not a part of this map",
+                claim.row_id, claim.prefix
+            ));
+            continue;
+        };
+        for site in sites {
+            let [ax, ay, az] = site.local;
+            if site.local == claim.row_region {
+                continue;
+            }
+            reds.push(format!(
+                "{DW_ALLOCATION_IDENTITY}: {label} allocates the prefix {:?} a box of \
+                 {ax}x{ay}x{az} in the part's own frame (world box corner {},{},{} size \
+                 {}x{}x{}), and zones.json declares {:?} at {rx}x{ry}x{rz}. Extent flows from \
+                 the whole's brief down to the part (spec-0040 §3c), so the box the composition \
+                 allocates IS the box the part is reviewed in — a row naming a different one \
+                 certifies a different object. Repair the part to its allocation, or revise the \
+                 site plan deliberately (the whole's own identities re-run over the revision); \
+                 never grow the container to what the parts sum to",
+                claim.prefix,
+                site.origin[0],
+                site.origin[1],
+                site.origin[2],
+                site.size[0],
+                site.size[1],
+                site.size[2],
+                claim.row_id,
+            ));
+        }
+    }
+    reds
 }
 
 /// Collect every campaign zone program under a content-repo root, with the
@@ -999,6 +1106,18 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
             }
         };
 
+        // What each manifest row declares, by the program file it names — the
+        // other half of §3c link 4's identity. Built before the sweep, because
+        // a composition and the row of the document it composes are two entries
+        // of one file and either may be written first.
+        let mut rows_by_file: BTreeMap<PathBuf, Vec<(&str, [u32; 3])>> = BTreeMap::new();
+        for zone in &manifest.zones {
+            rows_by_file
+                .entry(document::normalised_path(&programs.join(&zone.program)))
+                .or_default()
+                .push((zone.id.as_str(), zone.region));
+        }
+
         let mut named: BTreeSet<PathBuf> = BTreeSet::new();
         // Every program file some manifest-named zone actually COMPOSED. A
         // composed part is judged inside its composition, so it is not itself a
@@ -1027,8 +1146,20 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
                 }
             };
             let composed_here = loaded.includes();
+            let mut allocations: Vec<AllocationClaim> = Vec::new();
             for c in &loaded.compositions {
-                composed_files.insert(document::normalised_path(&c.source));
+                let key = document::normalised_path(&c.source);
+                // The same normalisation the loader answered with. Two different
+                // normalisations is how "is this the file that document
+                // composed?" comes out `no` for a file that plainly is.
+                for (row_id, row_region) in rows_by_file.get(&key).into_iter().flatten() {
+                    allocations.push(AllocationClaim {
+                        prefix: c.path.clone(),
+                        row_id: (*row_id).to_string(),
+                        row_region: *row_region,
+                    });
+                }
+                composed_files.insert(key);
             }
             let program = loaded.program;
             let symmetric = match zone.symmetric.as_deref().map(parse_axis).transpose() {
@@ -1042,19 +1173,20 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
                     continue;
                 }
             };
-            out.push((
-                format!("{name}/{}", zone.id),
+            out.push(AuditItem {
+                label: format!("{name}/{}", zone.id),
                 program,
-                zone.region,
-                zone.seed,
-                gates::Options {
+                region: zone.region,
+                seed: zone.seed,
+                gates: gates::Options {
                     traversable: zone.traversable,
                     allow_falls: zone.allow_falls,
                     symmetric,
                     reachable_floor: zone.reachable_floor,
                 },
-                composed_here,
-            ));
+                includes: composed_here,
+                allocations,
+            });
         }
         for file in &files {
             let key = document::normalised_path(file);
@@ -1096,18 +1228,20 @@ fn run_audit(
     let mut work: Vec<AuditItem> = Vec::new();
     if library_flag {
         for lib in library::PROGRAMS {
-            work.push((
-                format!("library/{}", lib.id),
-                (lib.build)(),
-                lib.region,
-                lib.seed,
-                lib.gates,
+            work.push(AuditItem {
+                label: format!("library/{}", lib.id),
+                program: (lib.build)(),
+                region: lib.region,
+                seed: lib.seed,
+                gates: lib.gates,
                 // A library program is Rust, so it composes with
                 // `compose::include` and never with a document include. Zero
                 // here is a fact about the corpus, not a gap in the sweep, and
                 // the summary line below says which corpus the total came from.
-                0,
-            ));
+                includes: 0,
+                // And it has no manifest at all, so no row of it can name a box.
+                allocations: Vec::new(),
+            });
         }
     }
     // The two corpora are counted apart, because they have different owners and
@@ -1183,15 +1317,43 @@ fn run_audit(
     let mut failed = false;
     let mut document_includes = 0usize;
     let mut composing_programs = 0usize;
-    for (label, program, region, seed, opts, includes) in work {
-        document_includes += includes;
-        composing_programs += usize::from(includes > 0);
-        match audit_one(label, &program, region, seed, opts) {
-            Ok(a) => audited.push(a),
+    // The compared-row count, offered and examined. Two numbers rather than one
+    // because they can only differ one way — a program whose claims were built
+    // and whose expansion then failed — and a binding count that silently
+    // shrinks when something upstream broke is a binding count nobody can read.
+    let mut rows_offered = 0usize;
+    let mut rows_examined = 0usize;
+    for item in work {
+        document_includes += item.includes;
+        composing_programs += usize::from(item.includes > 0);
+        rows_offered += item.allocations.len();
+        match audit_one(
+            item.label,
+            &item.program,
+            item.region,
+            item.seed,
+            item.gates,
+            &item.allocations,
+        ) {
+            Ok(a) => {
+                rows_examined += a.compared_rows;
+                audited.push(a);
+            }
             Err(e) => {
                 eprintln!("error: {e}");
                 failed = true;
             }
+        }
+    }
+
+    // §3c link 4, printed with the verdicts rather than folded into a gate: the
+    // identity is between a manifest row and a composition, and neither of those
+    // is a thing `judge` can see from an expansion's blocks.
+    for a in &audited {
+        for red in &a.allocation_reds {
+            failed = true;
+            println!("  {:<44} FAIL", a.label);
+            println!("      {:<16} FAIL  {red}", "part-allocation");
         }
     }
 
@@ -1376,6 +1538,38 @@ fn run_audit(
                 " — nothing in this corpus composes another program document"
             } else {
                 ""
+            }
+        );
+    }
+    // The compared-row count of §3c link 4's identity, over the corpus where a
+    // manifest exists at all.
+    //
+    // Stated whether it is zero or not, and a zero is stated BY NAME: until this
+    // line existed, the ordering that keeps a part from deciding the whole's
+    // extent rested on links 1-3 alone (a brief guarded over the region, a split
+    // that partitions, a part that refuses a box too small) and nothing in the
+    // output said which. A zero here is not a red — a campaign is entitled to
+    // compose only parts that have no row of their own, and §3c says such a part
+    // is judged at its allocation and nowhere else, so the ordering is
+    // structural for it. What a zero is, is a fact a reader has to be given.
+    if !campaign_roots.is_empty() {
+        println!(
+            "  {:<16} bound {:<8} composed part(s) with a manifest row of their own{}",
+            "part-allocation",
+            rows_examined,
+            if rows_examined == 0 {
+                " — nothing in this corpus composes a part that also has its own row, so \
+                 spec-0040 §3c's ordering rests here on links 1-3 alone"
+                    .to_string()
+            } else if rows_offered != rows_examined {
+                failed = true;
+                format!(
+                    " — FINDING: {rows_offered} row(s) were set up for comparison and \
+                     {rows_examined} were compared; the difference is a program that did not \
+                     expand, and its rows were checked against nothing"
+                )
+            } else {
+                String::new()
             }
         );
     }

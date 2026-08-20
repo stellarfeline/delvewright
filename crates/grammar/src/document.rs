@@ -237,8 +237,19 @@ pub struct Composition {
     pub source: PathBuf,
     /// The `name` that document declares.
     pub name: String,
-    /// The prefix its vocabulary took.
+    /// The prefix its vocabulary took, as the include site wrote it.
     pub prefix: String,
+    /// **The full prefix path that vocabulary carries in the resolved program**
+    /// — [`Self::prefix`] for an include the loaded document wrote itself, and
+    /// the chain `outer/inner` for one written by a document that was itself
+    /// composed.
+    ///
+    /// It is the name a symbol of that vocabulary actually begins with, and
+    /// therefore the key [`crate::expand::Expansion::allocations`] records the
+    /// composition's box under. [`Self::prefix`] alone cannot be that key: two
+    /// composed documents may each include a piece under the prefix `door`, and
+    /// the two are different vocabularies at different boxes.
+    pub path: String,
     /// How deep in the include tree this composition sits; `0` is an include
     /// written by the document that was loaded.
     pub depth: usize,
@@ -275,7 +286,14 @@ impl Loaded {
 pub fn load(path: &Path) -> Result<Loaded, DocumentError> {
     let mut stack = Vec::new();
     let mut compositions = Vec::new();
-    let program = resolve_file(path, "the command line", &mut stack, &mut compositions, 0)?;
+    let program = resolve_file(
+        path,
+        "the command line",
+        "",
+        &mut stack,
+        &mut compositions,
+        0,
+    )?;
     Ok(Loaded {
         program,
         compositions,
@@ -289,7 +307,7 @@ pub fn load(path: &Path) -> Result<Loaded, DocumentError> {
 pub fn resolve(program: Program, base: &Path, label: &Path) -> Result<Loaded, DocumentError> {
     let mut stack = vec![label.to_path_buf()];
     let mut compositions = Vec::new();
-    let program = resolve_program(program, label, base, &mut stack, &mut compositions, 0)?;
+    let program = resolve_program(program, label, base, "", &mut stack, &mut compositions, 0)?;
     Ok(Loaded {
         program,
         compositions,
@@ -299,6 +317,7 @@ pub fn resolve(program: Program, base: &Path, label: &Path) -> Result<Loaded, Do
 fn resolve_file(
     path: &Path,
     asked_by: &str,
+    under: &str,
     stack: &mut Vec<PathBuf>,
     compositions: &mut Vec<Composition>,
     depth: usize,
@@ -320,7 +339,7 @@ fn resolve_file(
     })?;
     let base = path.parent().unwrap_or(Path::new("")).to_path_buf();
     stack.push(key);
-    let resolved = resolve_program(program, path, &base, stack, compositions, depth)?;
+    let resolved = resolve_program(program, path, &base, under, stack, compositions, depth)?;
     stack.pop();
     Ok(resolved)
 }
@@ -329,6 +348,7 @@ fn resolve_program(
     mut program: Program,
     label: &Path,
     base: &Path,
+    under: &str,
     stack: &mut Vec<PathBuf>,
     compositions: &mut Vec<Composition>,
     depth: usize,
@@ -361,7 +381,23 @@ fn resolve_program(
     for include in &includes {
         let source_path = base.join(check_path(label, include)?);
         let asked_by = format!("{} (prefix {:?})", label.display(), include.prefix);
-        let source = resolve_file(&source_path, &asked_by, stack, compositions, depth + 1)?;
+        // The path the composed vocabulary will carry in the FINAL program: the
+        // chain of every prefix above it, not this include's own. Computed on
+        // the way DOWN, because the composed document's own includes take their
+        // paths under this one.
+        let path = if under.is_empty() {
+            include.prefix.clone()
+        } else {
+            format!("{under}{}{}", compose::SEPARATOR, include.prefix)
+        };
+        let source = resolve_file(
+            &source_path,
+            &asked_by,
+            &path,
+            stack,
+            compositions,
+            depth + 1,
+        )?;
 
         // The composed document is a program in its own right and is judged as
         // one, against the version IT declares, before any of it is copied. A
@@ -391,6 +427,7 @@ fn resolve_program(
             source: source_path,
             name,
             prefix: include.prefix.clone(),
+            path,
             depth,
         });
     }

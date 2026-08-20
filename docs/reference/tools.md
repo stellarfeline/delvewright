@@ -169,6 +169,13 @@ and no zone program composes is still a red. The surface is fenced at program
 document version `1.5.0`, and a document below it is refused by name rather than
 built with its includes dropped.
 
+**A composed part whose document also has a `zones.json` row of its own is
+checked against the box the composition allocates it** (`DW0806`, grammar.md
+§5c). Extents, not origins, and read in the part's own frame, so a rotated
+include compares rotated extents. `audit` states the compared-row count as
+`part-allocation bound N` whether or not it is zero — a zero is the corpus fact
+that nothing here composes a part with a row of its own, not a pass.
+
 **There is no maximum region.** A vanilla structure template holds 48 blocks per
 axis; an expansion past that is written as a set of `≤48` tiles plus one
 manifest, cut deterministically from the region alone. The cap is an internal
@@ -204,7 +211,8 @@ each entry's region and seed; `--campaign-root <content repo>` walks every
 `campaigns/<campaign>/design/programs/` there, driven by that campaign's own
 `zones.json` manifest. It reds on a failed gate, on a gate that examined zero
 objects, on a programs directory with no manifest, on a program file the manifest
-does not name, and on a corpus that turned out empty. `--exclusions` takes the
+does not name, on a composed part whose row disagrees with its allocated box, and
+on a corpus that turned out empty. `--exclusions` takes the
 record of programs that are known red with the exact codes each must fail with;
 it inverts those assertions and never removes them, so a recorded program that
 starts passing is a finding too. Ids are audit labels, so the record reaches both

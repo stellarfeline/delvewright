@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::block::BlockState;
+use crate::compose::SEPARATOR;
 use crate::eval::{Env, EvalError, Scope};
 use crate::explain::{self, GuardLeaf, axis_name, render_cond, render_expr};
 use crate::geom::{Axis, Box3, Orientation};
@@ -347,6 +348,33 @@ pub struct OrientedFillAudit {
     pub undecided: Vec<UndecidedFinding>,
 }
 
+/// **One box a composition handed a composed prefix**, recorded where the
+/// derivation crossed into that prefix's vocabulary.
+///
+/// A composed part does not choose its own extent: the destination calls the
+/// part's rule inside whatever scope its own plan has narrowed to, and that
+/// scope IS the allocation. spec-0040 §3c is the rule this record exists to
+/// make checkable — extent flows from brief to region to boxes to parts, never
+/// up from what the parts happen to sum to — and link 4 of its cascade compares
+/// this box against the part's own manifest row.
+///
+/// [`Self::local`] is the triple that comparison reads, and it is not
+/// [`Self::size`]: a part is developed standalone in its own frame, and the
+/// composition may hand it a turned one. The world box of a part rotated a
+/// quarter-turn about the vertical has its X and Z extents swapped, while the
+/// part reads exactly the extents it was built at. Comparing world extents
+/// would red a correct composition for having rotated something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Allocation {
+    /// Extents **as the composed part reads them**, through the frame in force
+    /// at the entry — the part's own local `dim:x` / `dim:y` / `dim:z`.
+    pub local: [u32; 3],
+    /// The world box's minimum corner, at the first entry of this shape.
+    pub origin: [i32; 3],
+    /// The world box's extents, in world-axis order.
+    pub size: [u32; 3],
+}
+
 /// The result of expanding a program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expansion {
@@ -375,6 +403,53 @@ pub struct Expansion {
     pub stats: Stats,
     /// The orientation-sensitive fills seen, and which were unguarded.
     pub oriented: OrientedFillAudit,
+    /// **The box every composed prefix was handed**, by prefix path — the
+    /// allocation record spec-0040 §3c link 4 compares a part's own manifest row
+    /// against.
+    ///
+    /// Keyed by the full prefix path a composition carries in the resolved
+    /// program (`ward`, `ward/door`), so a nested include is reachable by the
+    /// same name [`crate::document::Composition::path`] records. The value is
+    /// every DISTINCT shape the prefix was entered at, sorted: a vocabulary
+    /// piece placed at forty sites collapses to the handful of sizes it was
+    /// placed at, and a part placed twice at two sizes says so rather than
+    /// having one of them win.
+    ///
+    /// **Empty is a real answer, not a missing measurement.** A prefix that is
+    /// composed and never called has no entry here at all, and that is the state
+    /// a composed part which nothing places is in — a reader must refuse it
+    /// rather than read the absence as agreement.
+    pub allocations: BTreeMap<String, Vec<Allocation>>,
+}
+
+/// The prefix path a symbol carries: everything before its last separator, and
+/// `""` for a rule the document wrote itself.
+///
+/// A composed rule's name is `prefix/name` and a nested one's is
+/// `outer/inner/name` ([`crate::compose::include_renaming`]), so the last
+/// separator is the boundary between the composition path and the name the
+/// composed document wrote.
+///
+/// Nothing forbids a document from writing that shape by hand — a rule may be
+/// called `ward/x` in a program that composes nothing — so this reading is
+/// structural rather than authoritative, and the direction it can be wrong in is
+/// the safe one. A hand-written name under a composed prefix can only ADD a box
+/// to that prefix's record; every recorded box is compared, so an extra one can
+/// raise a refusal and can never withdraw the one the composition really made.
+fn prefix_path(symbol: &str) -> &str {
+    match symbol.rfind(SEPARATOR) {
+        Some(cut) => &symbol[..cut],
+        None => "",
+    }
+}
+
+/// Whether a derivation standing at prefix path `inside` is already within
+/// `path` — the same prefix, or one composed underneath it.
+fn stands_within(inside: &str, path: &str) -> bool {
+    inside == path
+        || (inside.len() > path.len()
+            && inside.as_bytes()[path.len()] == SEPARATOR as u8
+            && inside.starts_with(path))
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -831,22 +906,24 @@ pub fn expand(
         oriented_resolved: 0,
         oriented_unguarded: std::collections::BTreeSet::new(),
         oriented_undecided: std::collections::BTreeSet::new(),
+        allocations: BTreeMap::new(),
     };
     // The root binding frame is the program's own declarations, which are its
     // defaults; every `bind` pushes a frame over this one.
     let root = Env::root(&program.params, &program.palette);
-    expander.run_rule(
-        &program.start,
-        &ScopeState {
-            region,
-            orient: options.orientation,
-            env: root,
-            pinned: None,
-            reachable: FrameSet::just(options.orientation),
-            reframed: None,
-        },
-        0,
-    )?;
+    let start_state = ScopeState {
+        region,
+        orient: options.orientation,
+        env: root,
+        pinned: None,
+        reachable: FrameSet::just(options.orientation),
+        reframed: None,
+    };
+    // A document whose `start` is itself a composed rule hands that prefix the
+    // whole region. Rare, and recorded for the same reason every other crossing
+    // is: an allocation nobody wrote down is an allocation nothing can check.
+    expander.note_entry("", &program.start, &start_state);
+    expander.run_rule(&program.start, &start_state, 0)?;
     expander.canonicalise_regions();
     let contract = resolve_contract(program, &mut expander.regions);
     Ok(Expansion {
@@ -861,6 +938,11 @@ pub fn expand(
             unguarded: expander.oriented_unguarded.into_iter().collect(),
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
+        allocations: expander
+            .allocations
+            .into_iter()
+            .map(|(prefix, sites)| (prefix.to_string(), sites.into_values().collect()))
+            .collect(),
     })
 }
 
@@ -1149,9 +1231,68 @@ struct Expander<'a> {
     oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
     /// `DW0742` records, deduplicated for the same reason.
     oriented_undecided: std::collections::BTreeSet<UndecidedFinding>,
+    /// Distinct boxes each composed prefix was entered at, keyed by prefix path
+    /// then by the local extent triple — the inner map is what deduplicates a
+    /// piece placed forty times down to the sizes it was placed at, and it keeps
+    /// the FIRST world box seen at each shape, which is deterministic because
+    /// the derivation order is (ADR-0006).
+    allocations: BTreeMap<&'a str, BTreeMap<[u32; 3], Allocation>>,
 }
 
 impl<'a> Expander<'a> {
+    /// Record the box a derivation crossing from `from` into `to` hands the
+    /// composed vocabulary `to` belongs to.
+    ///
+    /// The crossing, not every call: once inside `ward`, a `ward` rule calling
+    /// another `ward` rule is the part subdividing the box it was given, and the
+    /// allocation was made further out. What is recorded is the scope at the
+    /// moment the destination reached in — which is the destination's own plan
+    /// after every `split` and `reorient` it wrote, and therefore exactly the
+    /// box its site plan allocated.
+    ///
+    /// Every level crossed is recorded, not only the innermost: a document that
+    /// calls `a/b/x` straight from its own plan has allocated one box to `a` and
+    /// the same box to `a/b`, and a manifest row may name either.
+    fn note_entry(&mut self, from: &'a str, to: &'a str, state: &ScopeState<'_>) {
+        let target = prefix_path(to);
+        if target.is_empty() {
+            return;
+        }
+        let caller = prefix_path(from);
+        if stands_within(caller, target) {
+            return;
+        }
+        let local = [
+            state.region.extent(state.orient.x),
+            state.region.extent(state.orient.y),
+            state.region.extent(state.orient.z),
+        ];
+        let site = Allocation {
+            local,
+            origin: state.region.origin,
+            size: state.region.size,
+        };
+        let mut at = 0usize;
+        loop {
+            let end = match target[at..].find(SEPARATOR) {
+                Some(i) => at + i,
+                None => target.len(),
+            };
+            let level = &target[..end];
+            if !stands_within(caller, level) {
+                self.allocations
+                    .entry(level)
+                    .or_default()
+                    .entry(local)
+                    .or_insert(site);
+            }
+            if end == target.len() {
+                break;
+            }
+            at = end + 1;
+        }
+    }
+
     fn enter(&mut self, depth: u32) -> Result<(), ExpandError> {
         if depth > self.limits.max_depth {
             return Err(ExpandError::DepthLimit {
@@ -1347,7 +1488,10 @@ impl<'a> Expander<'a> {
                 }
                 Ok(())
             }
-            Node::Call { symbol: target } => self.run_rule(target, state, depth + 1),
+            Node::Call { symbol: target } => {
+                self.note_entry(symbol, target, state);
+                self.run_rule(target, state, depth + 1)
+            }
             Node::Reorient {
                 orient: request,
                 body,

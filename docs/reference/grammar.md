@@ -2566,6 +2566,41 @@ prefix, with its binding count; `audit --campaign-root` totals it over the
 campaign corpus and states a zero rather than omitting the line. A zero there is
 not a red: a campaign is entitled to one program per zone.
 
+### A composed part's own row names the same box
+
+Between a whole and its parts, *how big* has one authority and it is the whole's
+design of record: extent flows from the brief to the map's region, from the
+region to the boxes its `split` allocates, and from a box to the part in it. A
+container is never grown to what its parts happen to sum to.
+
+Three of those steps need no machinery of their own — a brief fact is a `cmp`
+guard over the map's own region, a `split` partitions so allocations cannot sum
+past it, and a part that overruns its box or is handed too little refuses for
+itself. The fourth is the identity that makes them an *ordering*, and it is what
+`audit` checks: **for every composed prefix whose document also has a `zones.json`
+row of its own, the row's region extents are the extents of the box the
+composition allocates that prefix** (`DW0806`).
+
+- **Extents, never origins.** A part developed standalone sits wherever it likes.
+- **In the part's own frame.** A `reorient` at the include site turns the part,
+  so the world box of a part given a quarter-turn has X and Z swapped while the
+  part reads exactly the extents it was built at. The row states what the part
+  reads.
+- **Every box, not one.** A prefix entered at two different shapes has two
+  allocations and at most one of them can be the box its row names. A prefix that
+  is composed and never entered has none, and the row was therefore compared
+  against nothing — the same red, with the strongest detail.
+- **The count is stated.** `part-allocation bound N` in the audit summary,
+  printed whether or not `N` is zero. Zero is not a red: a campaign may compose
+  only parts that have no row of their own, and such a part is judged at its
+  allocation and nowhere else, so the ordering is structural for it. The number
+  is how a reader learns which of those two states the corpus is in.
+
+A part composed into two documents confronts an allocation in each, and nothing
+picks one of them. There is no per-part exemption: the two authorable moves are
+revising the part and revising the site plan, and a revision moves the plan's
+`split`s under the whole's own guards, which re-run over it.
+
 ### The frame constrains composition
 
 Every §5b rule opens with `z(Largest)`, so it turns its length onto the longer

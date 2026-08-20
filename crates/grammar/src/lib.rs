@@ -126,9 +126,9 @@ pub use compose::{AnchorRenames, ComposeError, entry, include, include_renaming}
 pub use contract::{ContractReport, ExteriorFace, NoBodyKind, exterior_faces};
 pub use document::{Composition, DocumentError, Loaded};
 pub use expand::{
-    Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative, ResolvedBar,
-    ResolvedContract, ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace, ResolvedVolume,
-    ResolvedWay, ScopeAt, Stats, expand,
+    Allocation, Anchor, ExpandError, ExpandOptions, Expansion, Limits, RejectedAlternative,
+    ResolvedBar, ResolvedContract, ResolvedEdge, ResolvedNoBody, ResolvedRegion, ResolvedSpace,
+    ResolvedVolume, ResolvedWay, ScopeAt, Stats, expand,
 };
 pub use explain::GuardLeaf;
 pub use export::{
