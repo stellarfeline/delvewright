@@ -45,27 +45,13 @@
         "area": "area/annex",
         "edits": [
           {
-            "piece": 2,
-            "prefab": "prefab/gallery-annex-cell-b",
-            "socket": 1,
-            "state": "open",
-            "verb": "rewire-socket"
-          }
-        ],
-        "id": "batch/annex-open-a-way",
-        "note": "The tail's spare socket is opened."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
             "piece": 1,
             "prefab": "prefab/gallery-annex-cell",
             "verb": "reseed-piece"
           }
         ],
         "id": "batch/annex-reroll-the-middle",
-        "note": "The middle tile is re-rolled against the pool. Last, so it cannot move a tile out from under an earlier verb's index."
+        "note": "The middle tile is re-rolled against the pool. After the removal, so it cannot move a tile out from under an earlier verb's index, and before the two rewires, which act on the join it re-mates."
       },
       {
         "area": "area/annex",
@@ -80,6 +66,20 @@
         ],
         "id": "batch/annex-seal-a-way",
         "note": "A mated socket is sealed shut — the other half of the socket vocabulary."
+      },
+      {
+        "area": "area/annex",
+        "edits": [
+          {
+            "piece": 0,
+            "prefab": "prefab/gallery-annex-entry",
+            "socket": 0,
+            "state": "open",
+            "verb": "rewire-socket"
+          }
+        ],
+        "id": "batch/annex-open-a-way",
+        "note": "And the entry's own side of that join is opened again. `rewire-socket open` clears an UNMATED socket's seal, so it can only ever be written on a socket with nothing mated to it — and the cell one step past such an opening lies outside every placed tile. In a world with nothing outside, that is a bottomless column, and `DW0322` refuses the doorway: a way out onto nothing is a fall nobody survives. The one unmated socket that does NOT face the void is the one the batch above just severed, because the partner's own plane is still walled. So this opens the near side of a bricked-up doorway and leaves the far side brick — which is what the verb draws, and it is laid last because the socket is mated until then."
       },
       {
         "area": "area/hall",

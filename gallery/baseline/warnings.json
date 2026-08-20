@@ -112,6 +112,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -134,6 +154,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0781",
@@ -279,6 +304,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -301,6 +346,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0781",
@@ -446,6 +496,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -468,6 +538,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0344",
@@ -618,6 +693,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -640,6 +735,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0781",
@@ -785,6 +885,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -807,6 +927,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0781",
@@ -952,6 +1077,26 @@
     },
     {
       "code": "DW0543",
+      "pointer": "gallery-annex-cell-b.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-cell.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-end.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
+      "pointer": "gallery-annex-entry.json",
+      "stage": "prefabs"
+    },
+    {
+      "code": "DW0543",
       "pointer": "gallery-hall.json",
       "stage": "prefabs"
     },
@@ -974,6 +1119,11 @@
       "code": "DW0467",
       "pointer": "/content/quests/0/cast/npc/curator",
       "stage": "quests"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0781",

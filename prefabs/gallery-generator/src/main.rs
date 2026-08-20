@@ -804,7 +804,21 @@ struct AnnexTile {
     south: bool,
     role: &'static str,
     weight: u32,
+    /// The one anchor this tile declares: the standing cell at the middle of
+    /// its floor. A tile with no anchor names no place, so every view of it
+    /// binds zero targets and the camera checks nothing by having been aimed —
+    /// see [`ANNEX_ANCHOR_POS`].
+    anchor: &'static str,
+    /// What that anchor is FOR, printed into the metadata beside it (the same
+    /// `role` key the hall's anchors carry) so a piece explains itself without
+    /// the campaign in hand.
+    anchor_role: &'static str,
 }
+
+/// The cell every annex tile's anchor stands in: the middle of the floor, one
+/// above it. Proven standable on every run by [`assert_annex_anchor_stands`]
+/// rather than kept in step with the carving by hand.
+const ANNEX_ANCHOR_POS: [i32; 3] = [3, 1, 3];
 
 const ANNEX_TILES: &[AnnexTile] = &[
     AnnexTile {
@@ -813,6 +827,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         south: true,
         role: "entry",
         weight: 1,
+        anchor: "anchor/annex-threshold",
+        anchor_role: "where the annex is entered — the entry tile's floor centre",
     },
     AnnexTile {
         id: "gallery-annex-cell",
@@ -820,6 +836,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         south: true,
         role: "connector",
         weight: 2,
+        anchor: "anchor/annex-first-bay",
+        anchor_role: "the floor centre of the first bay the chain threads through",
     },
     // A SECOND two-socket variant, and the reason is `reseed-piece`: it re-rolls
     // a placed piece against the pool and refuses when no OTHER member can
@@ -832,6 +850,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         south: true,
         role: "connector",
         weight: 1,
+        anchor: "anchor/annex-second-bay",
+        anchor_role: "the floor centre of the second bay the chain threads through",
     },
     AnnexTile {
         id: "gallery-annex-end",
@@ -839,6 +859,8 @@ const ANNEX_TILES: &[AnnexTile] = &[
         south: false,
         role: "terminal",
         weight: 1,
+        anchor: "anchor/annex-cap",
+        anchor_role: "the floor centre of the tile that caps the chain",
     },
 ];
 
@@ -847,32 +869,80 @@ fn annex_opening(x: i32, y: i32) -> bool {
     (2..=4).contains(&x) && (1..=3).contains(&y)
 }
 
+/// The brick panel a socket face wears around its opening: the full width of the
+/// face between the corners, floor to lintel.
+///
+/// **It is not decoration.** A tile carved from one material renders as one
+/// material: `seam/annex/2` looked down a three-tile corridor of nothing but
+/// `minecraft:stone` and came back a rectangle of ONE distinct colour, which the
+/// render arm reports — correctly — as a frame that shows no scene at all. The
+/// panel is the second material, and it is put HERE, framing the doorway,
+/// because that is what a seam camera is aimed at. It also earns its keep twice:
+/// the seal an unmated socket gets is `minecraft:stone_bricks`, so a socket with
+/// nothing on the other side reads in the picture as a bricked-up doorway in a
+/// brick surround rather than as a patch of the wrong wall.
+fn annex_panel(x: i32, y: i32) -> bool {
+    (1..=ANNEX_SIZE[0] - 2).contains(&x) && (1..=ANNEX_SIZE[1] - 2).contains(&y)
+}
+
 fn annex_block_at(t: &AnnexTile, x: i32, y: i32, z: i32) -> &'static str {
     let (w, h, d) = (ANNEX_SIZE[0], ANNEX_SIZE[1], ANNEX_SIZE[2]);
-    if y == 0 || y == h - 1 {
+    if y == 0 {
+        return "minecraft:stone_bricks";
+    }
+    if y == h - 1 {
         return "minecraft:stone";
     }
-    if z == 0 && t.north && annex_opening(x, y) {
+    let socket_face = (z == 0 && t.north) || (z == d - 1 && t.south);
+    if socket_face && annex_opening(x, y) {
         return "minecraft:air";
     }
-    if z == d - 1 && t.south && annex_opening(x, y) {
-        return "minecraft:air";
+    if socket_face && annex_panel(x, y) {
+        return "minecraft:stone_bricks";
     }
     if x == 0 || x == w - 1 || z == 0 || z == d - 1 {
         return "minecraft:stone";
     }
-    // One ceiling-hung lantern per tile, so a placed annex is lit like the hall.
-    if [x, y, z] == [3, h - 2, 3] {
+    if ANNEX_LANTERNS.contains(&[x, y, z]) {
         return "minecraft:lantern";
     }
     "minecraft:air"
 }
+
+/// Where a tile hangs its light. TWO lanterns on the ceiling diagonal rather
+/// than one in the middle, and the reason is [`ANNEX_SEAM_EYE_CELLS`]: the
+/// middle of the ceiling is where a seam camera stands, so a fixture there is a
+/// camera inside a block.
+///
+/// The diagonal keeps the measured floor light at 8: the darkest interior cells
+/// are the two corners not on the diagonal, seven blocks of open air from the
+/// nearer lantern.
+const ANNEX_LANTERNS: [[i32; 3]; 2] = [[2, ANNEX_SIZE[1] - 2, 2], [4, ANNEX_SIZE[1] - 2, 4]];
+
+/// The cells a **seam** camera's eye occupies inside an annex tile.
+///
+/// `render_plan` frames a socket seam from four blocks along the seal's own
+/// axis, eye 1.5 above the opening's centre — which lands on the tile's centre
+/// column, one cell under the ceiling: local `z = 4` framing the tile's own
+/// north socket, and local `z = 3` framing the *previous* tile's south socket
+/// four blocks back. Put anything solid there and the frame renders the inside
+/// of that block: two annex seam shots came back as a rectangle of ONE distinct
+/// colour, from a lantern hung in the middle of the ceiling.
+///
+/// The engine already refuses exactly this — `DW0724`, "the camera eye cell is
+/// occupied … fix the camera derivation" — but it is bound to **player-POV**
+/// cameras alone, so the identical defect on a seam camera is invisible to
+/// every build. This assertion is the tileset's own guard until that binding
+/// reaches the other derived cameras; it is strictly weaker, because it can
+/// only speak for the tiles in this file.
+const ANNEX_SEAM_EYE_CELLS: [[i32; 3]; 2] = [[3, ANNEX_SIZE[1] - 2, 3], [3, ANNEX_SIZE[1] - 2, 4]];
 
 fn build_annex(t: &AnnexTile) -> Structure {
     let mut palette = Palette::new();
     for (name, props) in [
         ("minecraft:air", None),
         ("minecraft:stone", None),
+        ("minecraft:stone_bricks", None),
         ("minecraft:lantern", Some(&[("hanging", "true")][..])),
     ] {
         palette.idx(name, props);
@@ -908,6 +978,75 @@ fn build_annex(t: &AnnexTile) -> Structure {
         palette: palette.entries,
         blocks,
         entities: Vec::new(),
+    }
+}
+
+/// The tile's anchor inventory — one entry, printed from the same table the
+/// carving is checked against.
+fn annex_anchors(t: &AnnexTile) -> serde_json::Value {
+    use serde_json::{json, Map, Value};
+    let mut m = Map::new();
+    m.insert("pos".into(), json!(ANNEX_ANCHOR_POS));
+    m.insert("role".into(), json!(t.anchor_role));
+    let mut anchors = Map::new();
+    anchors.insert(t.anchor.into(), Value::Object(m));
+    Value::Object(anchors)
+}
+
+/// The annex counterpart of [`assert_anchors_are_standable`]: the cell the
+/// metadata calls a standing place really is one in the blocks beside it.
+/// Proven on every run rather than kept in step by hand — an anchor that names
+/// solid stone resolves to a place no body can occupy, and nothing downstream
+/// re-checks it.
+fn assert_annex_anchor_stands(t: &AnnexTile, s: &Structure) {
+    let at = |p: [i32; 3]| -> &str {
+        let cell = s
+            .blocks
+            .iter()
+            .find(|b| b.pos == p)
+            .unwrap_or_else(|| panic!("{}: anchor cell {p:?} is outside the tile", t.id));
+        s.palette[cell.state as usize].name.as_str()
+    };
+    let [x, y, z] = ANNEX_ANCHOR_POS;
+    assert_eq!(
+        at([x, y, z]),
+        "minecraft:air",
+        "{}: anchor `{}` stands in a solid cell",
+        t.id,
+        t.anchor
+    );
+    assert_eq!(
+        at([x, y + 1, z]),
+        "minecraft:air",
+        "{}: anchor `{}` has no headroom",
+        t.id,
+        t.anchor
+    );
+    assert_ne!(
+        at([x, y - 1, z]),
+        "minecraft:air",
+        "{}: anchor `{}` has no floor under it",
+        t.id,
+        t.anchor
+    );
+}
+
+/// No block stands where a seam camera's eye does — see [`ANNEX_SEAM_EYE_CELLS`]
+/// for why this tileset has to say so itself.
+fn assert_annex_seam_eyes_are_clear(t: &AnnexTile, s: &Structure) {
+    for cell in ANNEX_SEAM_EYE_CELLS {
+        let name = s
+            .blocks
+            .iter()
+            .find(|b| b.pos == cell)
+            .map(|b| s.palette[b.state as usize].name.as_str())
+            .unwrap_or_else(|| panic!("{}: seam-eye cell {cell:?} is outside the tile", t.id));
+        assert_eq!(
+            name, "minecraft:air",
+            "{}: a seam camera's eye stands at {cell:?} and this tile puts `{name}` there — \
+             the frame would render the inside of that block (see ANNEX_SEAM_EYE_CELLS)",
+            t.id
+        );
     }
 }
 
@@ -949,23 +1088,27 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
             "data_version": DATA_VERSION,
             "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
         },
-        // NO anchor, and that is a FINDING rather than an omission. Giving the
-        // tiles one makes the annex floor reachable, and a reachable area with a
-        // spare socket is a void border (`DW0322`): the 3 x 3 opening a socket
-        // carves leads nowhere until something mates to it. But `insert-piece`
-        // REQUIRES a spare socket to hang a tile off. So the verb is writable
-        // only in an area the player cannot reach — and an area the player
-        // cannot reach is one whose every view binds zero targets, which the
-        // render arm reports, correctly, as a camera aimed at nothing. Two
-        // correct rules meeting; written up in `gallery/README.md`.
-        "anchors": {},
+        // One anchor per tile: the standing cell at the middle of its floor.
+        //
+        // A tile that declares no anchor names no place, so nothing the campaign
+        // can address is ever inside it and every view of it binds zero targets
+        // — a camera aimed at nothing, which the render arm reports.
+        //
+        // An UNMATED socket is not a hole. `solver::seal_layout` fills every
+        // unmated connector's opening with `minecraft:stone_bricks` and clears
+        // it to air only when the socket mates, so the opening carved below
+        // exists in the world exactly when something is on the other side of it.
+        // That is why a tile can carry both an anchor and a spare socket:
+        // reachable floor beside a sealed socket borders a wall, not the void.
+        "anchors": annex_anchors(t),
         "connectors": connectors,
         "lighting": {
             "profile": "lit",
             "measured_min_light": 8,
             "measured": "2026-08-20",
-            "method": "derived: one ceiling-hung lantern in a 5 x 4 x 5 interior, \
-                       the same mounting as the hall's grid"
+            "method": "derived: two ceiling-hung lanterns on the diagonal of a 5 x 4 x 5 \
+                       interior, the same mounting as the hall's grid — the darkest floor \
+                       cell is seven blocks of open air from the nearer of them"
         },
         "license": {
             "source": "original",
@@ -996,9 +1139,14 @@ fn annex_pool() -> serde_json::Value {
 }
 
 fn write_annex(out: &Path) {
+    let (mut anchors_proven, mut eyes_proven) = (0usize, 0usize);
     for t in ANNEX_TILES {
         let mut s = build_annex(t);
         resolve_connections(t.id, &mut s);
+        assert_annex_anchor_stands(t, &s);
+        anchors_proven += 1;
+        assert_annex_seam_eyes_are_clear(t, &s);
+        eyes_proven += ANNEX_SEAM_EYE_CELLS.len();
         let cells = invariant_cells(&s);
         invariants::assert_distress_never_stacks(t.id, &cells);
         invariants::assert_blocks_are_real(t.id, &cells);
@@ -1024,8 +1172,20 @@ fn write_annex(out: &Path) {
     let mut pool = serde_json::to_string_pretty(&annex_pool()).expect("pool serializes");
     pool.push('\n');
     std::fs::write(out.join("pools.json"), pool.as_bytes()).expect("write pools.json");
+    assert_eq!(
+        (anchors_proven, eyes_proven),
+        (
+            ANNEX_TILES.len(),
+            ANNEX_TILES.len() * ANNEX_SEAM_EYE_CELLS.len()
+        ),
+        "{ID}: the annex proofs examined {anchors_proven} anchor(s) and {eyes_proven} seam-eye \
+         cell(s) over {} tile(s) — a universally quantified assertion over an empty set is \
+         vacuous, not a pass",
+        ANNEX_TILES.len()
+    );
     println!(
-        "{ID}: annex tileset written — {} tile(s) and one pool",
+        "{ID}: annex tileset written — {} tile(s) and one pool; {anchors_proven} anchor(s) proven \
+         standable and {eyes_proven} seam-camera eye cell(s) proven clear",
         ANNEX_TILES.len()
     );
 }

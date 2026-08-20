@@ -41,10 +41,12 @@ order a player would:
 
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
 a barred wall, with three doors in it. Beside it the generator emits a small
-**annex tileset** — three 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
+**annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
 that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the
-placement harder to read without binding one more unit. Its anchors are named for their role —
+placement harder to read without binding one more unit. Each tile carries one
+anchor at the middle of its floor, which is what gives a camera pointed into the
+annex something the campaign declares to frame. Its anchors are named for their role —
 `anchor/hearth` is where you come back to life, `anchor/muster` is where a wave
 forms up — and the generator prints that role into the piece's metadata, so the
 piece explains itself without the campaign in hand.
@@ -161,34 +163,60 @@ route, so they are reported unaccounted rather than papered over.
 None of the three was found by reading code. Each was found by trying to write the
 surface down.
 
-## A second open question: the annex frames nothing, and cannot be fixed by itself
+## The annex, and what a socket is worth looking at
 
 `area/annex` is a three-tile chain assembled from `pool/gallery-annex`. It is
 what binds the piece verbs — `insert-piece`, `swap-piece`, `remove-piece`,
 `reseed-piece`, `rewire-socket` and `fragment` — none of which any campaign or
 fixture in this repository had ever written.
 
-Its tiles declare **no anchors**, and the render arm reports the consequence
-honestly: seven views of the annex bind zero targets, and one is featureless. A
-camera aimed at a room with nothing declared in it checks nothing by having been
-taken.
+Three facts about it are worth stating, because each was a place a camera came
+back with nothing:
 
-The obvious fix does not work, and the reason is worth writing down because it is
-two correct rules meeting rather than a bug in either:
+**An unmated socket is a wall, not a hole.** `solver::seal_layout` fills every
+unmated connector's opening with `minecraft:stone_bricks` and clears it to air
+only when the socket mates, so the 3 × 3 opening a tile carves exists in the
+world exactly when something is on the other side of it. A tile can therefore
+carry both an anchor and a spare socket: reachable floor beside a sealed socket
+borders a wall. That is what lets every tile declare the anchor its views frame
+while the chain still keeps the spare socket `insert-piece` hangs a tile off.
 
-- give the tiles an anchor and the annex floor becomes **reachable**;
-- a reachable area with a spare socket is a **void border** (`DW0322`) — the
-  3 x 3 opening a socket carves leads nowhere until something mates to it;
-- but `insert-piece` **requires** a spare socket to hang a tile off.
+**`rewire-socket open` is only writable where the far side is not the void.**
+The verb clears an *unmated* socket's seal — a mated one is already an open
+passage and is refused as a no-op — so the cell one step past the opening lies
+outside every placed tile. In a world with nothing outside, that is a bottomless
+column and `DW0322` refuses it, correctly: a way out onto nothing is a fall
+nobody survives. Nor can the campaign lay ground there, because every massing
+batch precedes every detailing batch (`DW0162`), so the opened socket already
+exists when the first batch's invariants are re-proved. The one unmated socket
+whose far side is *not* the void is the one a `rewire-socket sealed` just
+severed, because the partner's own plane stays walled — which is what
+`batch/annex-seal-a-way` and `batch/annex-open-a-way` do, in that order: a
+doorway bricked up on the far side and open on the near one.
 
-So the verb is writable only in an area the player cannot reach, and an area the
-player cannot reach is one whose every view binds zero targets. Capping the chain
-with the terminal tile closes the hole and removes the socket the verb needs.
+**A tile carved from one material renders as one material.** Each tile wears a
+`stone_bricks` panel around its socket openings and a `stone_bricks` floor under
+its stone walls, because a seam camera aimed down a corridor of nothing but
+`minecraft:stone` came back a rectangle of ONE distinct colour — which the render
+arm reports, correctly, as a frame that shows no scene at all. The panel also
+means a sealed socket reads as a bricked-up doorway rather than as a patch of the
+wrong wall, the seal material being the same brick.
 
-What would resolve it: a tile whose socket opening is carved **when it mates**
-rather than unconditionally, so an unmated socket is a wall. That is a change to
-what a tileset generator emits, not to this campaign — and it is why the render
-arm currently reds on the annex while the coverage gate is green about it.
+**The pool repeats a variant, and says so.** With two connector variants and two
+filler slots the draw may seat one of them twice, which makes every anchor that
+prefab declares ambiguous — `DW0498`, advisory, in the expected-warnings ledger.
+The gallery hangs nothing on those anchors, which is the branch the diagnostic
+sanctions; the alternative it names is more distinct variants, and that is a
+choice about the pool rather than about the seed.
+
+**One camera derivation is unguarded, and this tileset guards itself against it.**
+`DW0724` refuses a **player-POV** camera whose eye cell is occupied — "fix the
+camera derivation" — and nothing checks the same thing for the interior and seam
+cameras `render_plan` derives beside them. A seam eye stands four blocks along
+the seal's axis, one cell under the ceiling, on the tile's centre column; a
+lantern hung there is a camera inside a block. The generator asserts those cells
+are clear on every run (`ANNEX_SEAM_EYE_CELLS`), which is strictly weaker than the
+diagnostic would be, because it can only speak for these four tiles.
 
 ## The barrier pocket
 
@@ -225,18 +253,7 @@ The pocket sits off the critical path on purpose. Blocking geometry on the route
 makes the build's render plan and the one `delvec snapshot` derives disagree —
 see below.
 
-## Two findings still open
-
-**The annex frames nothing, and cannot be fixed by itself.** Its tiles declare no
-anchors, so seven views of it bind zero targets and the render arm says so. The
-obvious fix does not work, and the reason is two correct rules meeting: an anchor
-makes the floor reachable; a reachable area with a spare socket is a void border
-(`DW0322`), because the 3 × 3 opening a socket carves leads nowhere until
-something mates to it; and `insert-piece` REQUIRES a spare socket to hang a tile
-off. So the verb is writable only in an area the player cannot reach, and such an
-area is one whose every view binds zero. What resolves it is a tile whose socket
-opening is carved **when it mates** rather than unconditionally — a change to
-what a tileset generator emits, not to this campaign.
+## A finding still open
 
 **The build's render plan and `snapshot`'s disagree when an edit blocks the
 route.** One is computed after world-edits and the other before them, so solid
@@ -246,8 +263,10 @@ twice: first with four shards stamped across the far hall, then with a
 full-width barrier line. Both times the instance fix was to move the geometry off
 the route; the divergence itself is untouched.
 
-These two are why the gallery job is still advisory. It becomes required in the
-change that takes both the unaccounted count and the render findings to zero —
-and `tools/check-required-contexts.py` reads both numbers out of
-`gallery/baseline/header.json` and `gallery/render-plan.json` rather than
-reciting the condition, so it will say so on its own.
+## Why the job gates
+
+The gallery job is a required status check. `tools/check-required-contexts.py`
+holds the manifest and `ci.yml` in lockstep, and it reads the coverage count out
+of `gallery/baseline/header.json` and the render findings out of
+`gallery/render-plan.json` — both committed by the tools that measure them, so
+the condition is evaluated rather than recited.

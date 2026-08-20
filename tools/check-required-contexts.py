@@ -47,35 +47,7 @@ MANIFEST = REPO / ".github" / "required-status-checks.txt"
 # merge. Empty on purpose — see the module docstring. Adding an entry here is a
 # decision to let something fail without consequence, so it needs a reason a
 # future reader can weigh, not just a name.
-ADVISORY_JOBS: dict[str, str] = {
-    # spec-0039. The gallery gate is CORRECT and currently RED: it reports units
-    # that are neither written anywhere in the gallery nor proven refused, and
-    # the residue includes `Locomotion::*`, which may be unbindable by
-    # construction — `DW0454` refuses a traversal declaration that restates the
-    # derived class, so binding one needs a world with a climb rather than a
-    # field line. That contradicts a premise of an ACCEPTED spec (§3: "any legal
-    # combination is expressible by some overlay"), so it is a spec question and
-    # not something an implementation may decide.
-    #
-    # This entry exists because the alternative is worse in a specific,
-    # recorded way. Branch protection matches a context by NAME, and live
-    # protection does not carry this one; adding the name to the manifest while
-    # the job is red would block every pull request forever, INCLUDING the one
-    # that would fix it — the deadlock this whole file is a tripwire for. An
-    # honest missing gate beats a gate that bricks the repository.
-    #
-    # It is not an escape hatch and it is not open-ended: the job runs on every
-    # PR and its red is visible. It stops being advisory in the change that
-    # takes the unaccounted count to zero, which is the same change that adds
-    # the name back to `.github/required-status-checks.txt` and to branch
-    # protection. Nothing else may be added here on this precedent — an
-    # advisory gate is one nobody has to obey, which is how `tier 2` sat
-    # unenforced while it was believed to be blocking.
-    "gallery (coverage + build + baseline)": (
-        "spec-0039: the gate is red on units a spec question owns; making it "
-        "required before it is green would deadlock branch protection"
-    ),
-}
+ADVISORY_JOBS: dict[str, str] = {}
 
 # **How many advisory jobs this repository is allowed to hold.**
 #
