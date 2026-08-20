@@ -29,7 +29,7 @@ Two renderers, one 1.21.11 **fidelity gate**:
   `versions.toml [render]`.
 - **Chunky** (GPL-3.0, out-of-process, path tracer) — the **official renderer**
   for whole-scene review frames, storybook scene illustrations and the per-release
-  whole-map panorama (owner decision, 2026-08-06). **Not bundled**;
+  whole-map panorama. **Not bundled**;
   `delvec scene` / `panorama` emit Chunky scene JSON and `ChunkyLauncher.jar`
   renders them as a separate program (see "Chunky scenes" and
   [`docs/reference/tools.md` §4a](../../docs/reference/tools.md)).
@@ -166,7 +166,7 @@ optional `fov`) and a machine-generated `expect` checklist derived from the DSL.
 (one file per shot, `chunkList` covering the layout AABB).
 
 **Player-POV shots are the Chunky path, by design.** The `pov` shots
-(spec-0003 #18) are first-person cameras at eye height (1.62) standing on each
+(spec-0003) are first-person cameras at eye height (1.62) standing on each
 critical-path waypoint, looking along the walk — a **free camera at a fixed point
 inside the room**. Nucleation cannot render these: it is an orbit/turntable
 renderer that fits the camera to the model bounds (it always backs out to frame the
@@ -260,7 +260,7 @@ slopes facing the viewer are lit but the relief still casts shadows.
 `<campaign>_panorama_<bearing>.json`, so several bearings coexist in one scene
 directory.
 
-Every content release ships one of these (owner decision, 2026-08-06). It is a
+Every content release ships one of these. It is a
 separate command rather than an extra shot in `scene` because `scene` keeps a
 one-scene-per-plan-shot correspondence that `index` pairs with `expect` lines —
 the panorama is a release artifact with no review pair, its own light and sample
