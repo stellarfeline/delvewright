@@ -611,8 +611,12 @@ element of the piece's own contract the anchor lands in — `space:`, `no_body:`
 document, never by the reader.
 
 The **spatial contract** is `{entry, spaces, no_body, edges, faces,
-no_body_majority_ack?}`, every box an inclusive local `{from, to}` cell range of
-these exact bytes. An `edges` entry is `{a, b, class, rise?, via?, bar?, way?}`,
+no_body_majority_ack?}`, every box an inclusive `{from, to}` cell range in the
+coordinates of the building this document describes — the template's own cells
+where the document carries a `structure`, the assembled zone's where it carries a
+`structure_set`. A region may therefore straddle a tiling seam, and is judged
+over the reassembled zone rather than over the tile that holds part of it. An
+`edges` entry is `{a, b, class, rise?, via?, bar?, way?}`,
 and the two optional regions on it are what content addresses:
 
 - `bar` — `{region, boxes, block}` — what stands in a `barred` edge.
