@@ -2996,11 +2996,22 @@ does not itself model:
   refused (`DW0780`), naming both areas, both prefabs and both faces. That
   refusal is the one no single-piece gate can reach, because each piece is
   correct and the pair is not.
+- **A contingent edge carries `way`**: `{opens, region, boxes, role?, block}` —
+  the sign, the name content addresses, the resolved cells, the palette role the
+  author wrote and the block state that role resolved to. `block` is the full
+  state, properties included, because it is what an opening writes: a grille
+  whose connections were dropped on the way into the metadata describes a row of
+  posts. `role` is provenance and is omitted by a producer that has no palette
+  to have named one in. A `barred` edge writes `bar` and no `way` — the
+  normalisation of the two into one prover is the checker's and stops there — so
+  a piece exported before ways existed re-exports byte for byte.
 - **Every anchor carries `resolves_to`**: which element of the contract it lands
-  in (`space:<name>`, `no_body:<name>`, `via:<name>`, `bar:<name>`). A campaign
-  binds content to an anchor by name, and what says whether that place is play
-  space, a door or exterior dressing is the contract. Absent on a piece that
-  declares none.
+  in (`space:<name>`, `no_body:<name>`, `via:<name>`, `bar:<name>`,
+  `way:<name>`). A campaign binds content to an anchor by name, and what says
+  whether that place is play space, a door or exterior dressing is the contract.
+  A way region is inside its edge's transit volume, so an anchor in one names
+  the way rather than the volume that contains it — the narrower element is the
+  one that names the place. Absent on a piece that declares none.
 - **`connectors` is empty.** Jigsaw socketing of grammar prefabs waits on the
   tileset conventions; a guessed socket is worse than none. The key is present
   and empty rather than absent, because "this piece has no sockets" and "this
