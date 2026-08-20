@@ -10,6 +10,17 @@
 //!
 //! Pure (no GPU); unit tested against synthetic frames and a committed real
 //! `heavy_core` placeholder crop.
+//!
+//! **Why it lives in `delvec` rather than beside the GPU arms.** ADR-0021 §1
+//! puts the shared render surface here — the structure reader, the
+//! prefab-metadata projection and the `DW072x`/`DW079x` catalog are ONE
+//! definition and `delve-render` names them. This is the same kind of thing:
+//! "does this frame show anything" is a question about pixels, not about who
+//! rasterised them, and the CPU arms produce frames too. Leaving it in the GPU
+//! crate meant any consumer outside that workspace had to reach past a pinned
+//! `nucleation` git dependency to ask it — or, far likelier, write a second
+//! answer of its own, which is how one question comes to have two verdicts that
+//! disagree exactly when it matters.
 
 /// A missing-texture finding.
 #[derive(Debug, Clone, PartialEq)]

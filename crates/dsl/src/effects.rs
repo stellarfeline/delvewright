@@ -371,6 +371,40 @@ impl RootBinding {
             .collect()
     }
 
+    /// The ledger as a JSON object, for `<out>/validation/effect-roots.json`.
+    ///
+    /// [`Self::summary`] renders the same numbers for a human reading stderr,
+    /// and stderr is where they stayed: a build's stated binding was a *string*
+    /// nothing downstream could read, so a gate that wants to assert "this
+    /// campaign's effect walk bound to something" had to scrape prose or go
+    /// without. Every other proof in this compiler already publishes its binding
+    /// as a `validation/*.json` ledger; this is the one that did not, and
+    /// spec-0039 criterion 6 needs it machine-readable — "printed somewhere" is
+    /// explicitly not enough.
+    ///
+    /// `unbound_roots` is listed rather than left to be derived: a zero at a
+    /// root is not a failure (a campaign with no traps has no trap payloads),
+    /// but it is the reason any proof over that root binds to nothing, and the
+    /// point of a ledger is that a reader does not have to infer it.
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut sites = serde_json::Map::new();
+        for (kind, n) in &self.sites {
+            sites.insert(kind.label().to_string(), serde_json::json!(n));
+        }
+        serde_json::json!({
+            "roots_enumerated": self.roots_enumerated,
+            "roots_total": EffectRootKind::COUNT,
+            "bundles": self.sites.iter().map(|(_, n)| n).sum::<usize>(),
+            "effects": self.effects,
+            "sites": serde_json::Value::Object(sites),
+            "unbound_roots": self
+                .unbound_roots()
+                .iter()
+                .map(|k| k.label())
+                .collect::<Vec<_>>(),
+        })
+    }
+
     /// A one-line, deterministic rendering for a report or a `--json` field.
     pub fn summary(&self) -> String {
         let per: Vec<String> = self

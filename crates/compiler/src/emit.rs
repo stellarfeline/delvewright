@@ -1314,6 +1314,20 @@ pub fn build_with_warnings(
         &fixture_gate.to_json(),
     );
 
+    // ---- the effect-root walk's own binding ledger ----
+    // Every other proof in this compiler publishes its binding as a
+    // `validation/*.json`; the walk that underpins most of them published a
+    // stderr STRING, so nothing downstream could assert it bound to anything.
+    // A build whose effect walk reaches zero bundles is a build where every
+    // effect-shaped proof is vacuous, and until this file existed that was not
+    // a fact any gate could read (spec-0039 criterion 6).
+    let root_binding = crate::plan::for_each_effect_root(plan.campaign, &mut |_site, _effs| {});
+    put_json(
+        &mut out,
+        "validation/effect-roots.json",
+        &root_binding.to_json(),
+    );
+
     // ---- call-graph integrity (DW0497) ----
     // Every `function <ns>:<name>` the compiler just wrote must point at a
     // function the compiler wrote. Vanilla resolves an unknown function to
@@ -12025,7 +12039,15 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
                     entry["functions"] = json!([{
                         "function": "minecraft:set_name",
                         "target": "custom_name",
-                        "name": { "text": name },
+                        // `tr`, not a bare `{"text": …}`. An authored display
+                        // name arrives here still carrying its l10n marker, and
+                        // a raw text component ships the marker verbatim — which
+                        // `DW0185` refuses, so a drop that named itself did not
+                        // build AT ALL, at any version. The diagnostic was right
+                        // and nothing had ever reached it: no campaign and no
+                        // fixture had named a drop, which is the coverage gap
+                        // spec-0039 exists to close rather than a missing rule.
+                        "name": tr(name),
                     }]);
                 }
                 Some(entry)
@@ -17748,6 +17770,16 @@ fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id)
         ));
         b.extend(packtest_preamble(plan, qid, o, false, &sel)); // flags withheld (cleared)
+        // `with_flags: false` shuts EVERY gate the objective has, the numeric one
+        // included — which is right for a preamble and wrong for this test. This
+        // template's subject is `requires_flags`, so the flag must be the only
+        // variable: with the numeric gate also shut, the withheld assert passes
+        // because TWO gates are closed (it would pass with the flag logic
+        // deleted), and the released phase — which reopens only the flags — can
+        // never pass at all. An objective carrying both gates therefore emitted a
+        // test that could not go green, and nothing had ever written both on one
+        // objective until the gallery did.
+        b.extend(state_drive_lines(plan, o.requires_state(), true));
         driver(&mut b);
         b.push(format!("assert score {party} {} matches 0", obj_score(id)));
         for f in o.requires_flags() {
@@ -18966,6 +18998,33 @@ mod loot_emit_tests {
             out[0].contains(r#"custom_name={"italic":false,"text":"Tide Ledger"}"#),
             "{}",
             out[0]
+        );
+    }
+
+    /// A drop that names itself lowers through [`tr`], never a raw literal.
+    ///
+    /// The regression this pins: `set_name` used to build `{"text": name}`
+    /// directly, and an authored name arrives still carrying its l10n marker —
+    /// so a named drop shipped the marker verbatim and `DW0185` refused the
+    /// build. Every version, unconditionally, for as long as the surface had
+    /// existed; nothing was red because nothing had ever named a drop.
+    #[test]
+    fn a_named_drop_lowers_through_tr_not_a_raw_literal() {
+        let tagged = delvewright_dsl::l10n::tag("wave.muster.mob.0.drop.0.name", "Muster Bone");
+        let component = tr(&tagged);
+        assert_eq!(
+            component["translate"], "wave.muster.mob.0.drop.0.name",
+            "a marked string must lower to a translate key: {component}"
+        );
+        assert_eq!(component["fallback"], "Muster Bone", "{component}");
+        assert!(
+            component.get("text").is_none(),
+            "a marked string must NOT keep a literal body — that body is what \
+             carries the marker into the emitted tree: {component}"
+        );
+        assert!(
+            !component.to_string().contains(&tagged),
+            "the marker itself must not survive into the component: {component}"
         );
     }
 

@@ -1,0 +1,222 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/curator-root",
+            "options": [
+              {
+                "happening": {
+                  "subject": "npc/curator",
+                  "text": "She explains what the hall is.",
+                  "verb": "learns"
+                },
+                "label": "What is this place?",
+                "next": "dlg/curator-what",
+                "tooltip": "The short version."
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/hear-the-curator",
+                    "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/hall-open",
+                    "type": "set-flag"
+                  },
+                  {
+                    "flag": "flag/read-the-label",
+                    "type": "set-flag"
+                  },
+                  {
+                    "anchor": "anchor/hearth",
+                    "on_respawn": [
+                      {
+                        "forbids_flags": [
+                          "flag/hall-sealed"
+                        ],
+                        "requires_state": [
+                          {
+                            "op": "at-most",
+                            "state": "state/labels-read",
+                            "value": 9
+                          }
+                        ],
+                        "style": "chat",
+                        "text": "You come to at the hearth.",
+                        "type": "narrate"
+                      }
+                    ],
+                    "type": "set-checkpoint"
+                  },
+                  {
+                    "time": "noon",
+                    "type": "set-time"
+                  },
+                  {
+                    "type": "set-weather",
+                    "weather": "clear"
+                  },
+                  {
+                    "npc": "npc/marshal",
+                    "type": "spawn-npc"
+                  }
+                ],
+                "happening": {
+                  "subject": "npc/curator",
+                  "text": "She lets them past the lectern.",
+                  "verb": "opens"
+                },
+                "label": "Read the label.",
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 5
+                  }
+                ]
+              },
+              {
+                "effects": [
+                  {
+                    "objective": "obj/hear-the-curator",
+                    "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/hall-open",
+                    "type": "set-flag"
+                  },
+                  {
+                    "flag": "flag/skipped-the-label",
+                    "type": "set-flag"
+                  },
+                  {
+                    "anchor": "anchor/hearth",
+                    "on_respawn": [
+                      {
+                        "forbids_flags": [
+                          "flag/hall-sealed"
+                        ],
+                        "requires_state": [
+                          {
+                            "op": "at-most",
+                            "state": "state/labels-read",
+                            "value": 9
+                          }
+                        ],
+                        "style": "chat",
+                        "text": "You come to at the hearth.",
+                        "type": "narrate"
+                      }
+                    ],
+                    "type": "set-checkpoint"
+                  },
+                  {
+                    "time": "noon",
+                    "type": "set-time"
+                  },
+                  {
+                    "type": "set-weather",
+                    "weather": "clear"
+                  },
+                  {
+                    "npc": "npc/marshal",
+                    "type": "spawn-npc"
+                  }
+                ],
+                "happening": {
+                  "subject": "anchor/lectern",
+                  "text": "The lectern is left behind unread.",
+                  "verb": "departs"
+                },
+                "label": "Skip the label."
+              }
+            ],
+            "text": "The catalogue is open at the first page. \"You are early,\" she says. \"Nothing here is finished, which is the point of it.\""
+          },
+          {
+            "id": "dlg/curator-what",
+            "options": [
+              {
+                "forbids_flags": [
+                  "flag/skipped-the-label"
+                ],
+                "label": "Back.",
+                "next": "dlg/curator-root",
+                "requires_flags": []
+              }
+            ],
+            "text": "\"One hall. One of everything the engine can be told to build, so that when the engine learns a new word, there is already a case waiting for it.\""
+          }
+        ],
+        "npc": "npc/curator",
+        "root": "dlg/curator-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/warden-root",
+            "options": [
+              {
+                "happening": {
+                  "subject": "npc/warden",
+                  "text": "They let the Warden be.",
+                  "verb": "departs"
+                },
+                "label": "Understood."
+              }
+            ],
+            "text": "\"The wall is the exhibit,\" he says. \"Not what is behind it.\""
+          }
+        ],
+        "npc": "npc/warden",
+        "root": "dlg/warden-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/factor-root",
+            "options": [
+              {
+                "happening": {
+                  "subject": "npc/factor",
+                  "text": "They leave the counter unbought.",
+                  "verb": "departs"
+                },
+                "label": "Just looking."
+              }
+            ],
+            "text": "\"Counter's open. Everything on it is priced and nothing on it is mine.\""
+          }
+        ],
+        "npc": "npc/factor",
+        "root": "dlg/factor-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/marshal-root",
+            "options": [
+              {
+                "happening": {
+                  "subject": "npc/marshal",
+                  "text": "They step past the muster line.",
+                  "verb": "departs"
+                },
+                "label": "Stand aside, then."
+              }
+            ],
+            "text": "\"Form up or stand aside. The muster does not wait on readers.\""
+          }
+        ],
+        "npc": "npc/marshal",
+        "root": "dlg/marshal-root"
+      }
+    ]
+  },
+  "dsl_version": "0.11.0",
+  "stage": "dialogue"
+}

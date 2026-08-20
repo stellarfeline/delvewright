@@ -1766,6 +1766,30 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   this number exposes). **Emitted only for a campaign that declares a
   teleport**, so a file that exists and reports zero is a finding rather than an
   absence.
+- Every `snapshot` manifest carries a **`frame`** block: `targets_in_frame`,
+  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour count
+  when the frame shows no scene at all). The binding rule applied to a picture —
+  a render that succeeds, writes a file and is a rectangle of flat background is
+  indistinguishable from one more shot taken to a directory listing, to a contact
+  sheet and to a reviewer skimming, and the only thing that separates a camera
+  aimed at the room from one aimed at a wall is the count. Judged by the arm that
+  DREW the frame (`view::detect::is_featureless`), so a consumer never computes a
+  second verdict on the same question. `tools/check-gallery-render.py` reads these
+  back rather than re-deriving them.
+
+- `<out>/validation/effect-roots.json`: the **effect-root walk's own binding
+  ledger** (`dsl::RootBinding`, written by `emit::build_with_warnings`).
+  `roots_enumerated` / `roots_total`, the total `bundles` and `effects`, a
+  per-root `sites` count, and `unbound_roots` — the roots this campaign has no
+  bundles at, listed rather than left to be derived. Most effect-shaped proofs in
+  this compiler are only as good as the roots this walk reaches, and until this
+  file existed the number was a **string on stderr**: nothing downstream could
+  assert that a build's effect walk bound to anything. Emitted for every campaign,
+  because the walk runs for every campaign; a zero at a root is not a failure (a
+  campaign with no traps has no trap payloads) but it is the reason any proof over
+  that root is unbound, which is what a reader needs and cannot infer. For scale:
+  the gallery binds all eight roots, where the largest shipped campaign binds
+  three.
 - `<out>/validation/fixture-gate.json`: the fixture-class proof's **binding
   ledger** (`compiler::affordance`, `DW0545`, playtest-methodology.md rule 1).
   `fixtures_declared` and `borne_declared` (every engine-summoned hitbox, mark
