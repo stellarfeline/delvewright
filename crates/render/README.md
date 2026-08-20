@@ -96,7 +96,8 @@ the same jar when it renders them, and it is never redistributed.
 | `DW0792` | the review page's resources do not hold together: the vendored renderer has lost its texture-id patch, or a block-entity texture id the emitter asks for is absent from an asset source declaring itself to be the pinned game (exit 10) |
 
 (schem owns `DW0700..DW0702` + `DW0710`; render takes the `DW072x` block —
-except `DW0724`, which the compiler's visual tier holds — plus `DW079x` for the
+except `DW0724`, which the compiler's visual tier holds (every render-plan
+camera's eye cell, not just the player-POV ones) — plus `DW079x` for the
 review page's resource findings. Take the next unused number from
 `docs/reference/compiler.md`, not from the highest constant here.)
 
@@ -172,8 +173,12 @@ renderer that fits the camera to the model bounds (it always backs out to frame 
 whole model — there is no free-eye placement in `CameraConfig`). Chunky's scene
 camera is a true free camera (`position` + `orientation` + `fov`), so POV shots
 render through `scene` exactly as authored, carrying the first-person `fov` (~70°).
-The compiler already proves every POV eye cell is clear over the assembled world
-(`DW0724`), so a camera never looks out from inside a wall.
+The compiler proves every camera's eye cell clear over the assembled world
+(`DW0724`) — POV and every other kind — and stands a stand-off camera up in open
+air when its own cell holds a block, so a camera in this plan never looks out
+from inside a wall. A camera that had to move says so on its own shot
+(`camera.requested_pos`), and the plan states how many were examined and how many
+moved (`camera_eye_proof`).
 
 **Declared-dark shots get the night-vision REVIEW POLICY.** A shot stamped
 `lighting: {"profile": "dark", "mitigation": "night-vision"}` by the compiler
