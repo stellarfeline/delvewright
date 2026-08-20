@@ -63,10 +63,28 @@ PR_NUMBER = re.compile(
     r"|(?<![\w])pull(?:\s+request)?[/\s]\s*#?\d+\b"
 )
 
-# A colour literal is not a citation. Only an ALL-DIGIT run can reach PR_NUMBER
-# at all (`#1e1e1e` has no word boundary after the digits), so the collision is
-# exactly `#RRGGBB` / `#RRGGBBAA` written without a hex letter.
-COLOUR_RUN = re.compile(r"^#(?:\d{6}|\d{8})$")
+# A stylesheet's own colour literals are not citations. Only an ALL-DIGIT run
+# can reach PR_NUMBER at all (`#1e1e1e` has no word boundary after the digits),
+# so the collision is a colour written without a hex letter: `#0006`, `#313745`,
+# `#23273233`.
+#
+# The exemption is secured by a property a citation cannot supply, because the
+# obvious rule cannot be. "A digit run of a colour's length" would exempt `#510`
+# and `#0006` EVERYWHERE — pull request 510 is exactly that shape — which is how
+# a checker gets routed around by the fix for its own false positive. So the
+# rule is narrower in both directions at once: the token must be a syntactically
+# valid CSS hex colour (3, 4, 6 or 8 digits — `#18` is none of them), it must be
+# in a STYLESHEET, and it must be in stylesheet CODE. Comments and quoted
+# strings are masked out first, so `/* fixed in #510 */` and `content: "#510"`
+# stay findings. That is the whole property: outside a comment and outside a
+# string, CSS has no syntax in which `#0006` means anything but a colour or an
+# id selector, and a pull-request reference written into a stylesheet HAS to sit
+# in one of the two places the mask removes.
+CSS_SUFFIXES = {".css"}
+CSS_COMMENT_OR_STRING = re.compile(
+    r"/\*.*?\*/" r'|"(?:[^"\\\n]|\\.)*"' r"|'(?:[^'\\\n]|\\.)*'", re.S
+)
+CSS_COLOUR = re.compile(r"^#(?:\d{3}|\d{4}|\d{6}|\d{8})$")
 
 ISO_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
 
@@ -112,26 +130,27 @@ ALLOWED: dict[str, str] = {
         "fixtures that prove check-crates-io-readmes.py rejects a task id and a "
         "pull-request number on a page a stranger lands on",
     "tools/tests/test_check_unsanctioned_identifiers.py":
-        "this gate's own red demonstrations; each asserts a FINDING on the "
-        "string, so the file goes green here only while it stays red there",
+        "this gate's own demonstrations; every string in it is pinned by an "
+        "assertion about the verdict this gate gives it — a finding, or "
+        "deliberately not one — so the file goes green here only while those "
+        "verdicts hold, in both directions. A document that merely wants to "
+        "keep a citation cannot produce that",
 }
 
 # --------------------------------------------------------------------------
-# The floor. Every number here may only ever fall.
+# The floor. Every number here may only ever fall, and it is EMPTY: nothing in
+# the repository is budgeted a citation.
 #
-# `crates/render/` is the one area still carrying citations. Each entry is
-# deleted as its file is cleared, and `--tighten` is the supported way to do it.
-#
-# One of the three is a FALSE POSITIVE and is the reason the entry survives a
-# read: `page.css` holds the CSS colour `#0006`, and `COLOUR_RUN` exempts only
-# the 6- and 8-digit forms, not the 4-digit `#RGBA` one. Widening that exemption
-# is a change to this gate and belongs in its own change, not in a sweep.
+# It is empty for a reason worth keeping written down, because the shape it
+# closes is the one that survives every other check here. The floor once held
+# three files and five occurrences, and one of the five was not a violation at
+# all — `page.css`'s CSS colour `#0006`, read as pull request 6. A floor entry
+# that permanently budgets a false positive is the gate paying to hide its own
+# defect: the number stays green, the count looks like a debt being worked down,
+# and the exemption that should have been fixed never is. **The repair of a
+# false positive is the exemption, never the floor.**
 # --------------------------------------------------------------------------
-FLOOR: dict[str, int] = {
-    "crates/render/README.md": 3,
-    "crates/compiler/src/view/panorama.rs": 1,
-    "crates/compiler/src/view/viewer/page.css": 1,
-}
+FLOOR: dict[str, int] = {}
 
 
 def tracked_files() -> list[Path]:
@@ -180,18 +199,40 @@ def is_attribution(text: str, start: int, end: int) -> bool:
     return bool(ATTRIBUTION_CUE.search(before + text[start:end] + after))
 
 
-def hits(text: str, kind: str) -> list[tuple[int, str]]:
+def css_code_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of a stylesheet OUTSIDE every comment and string.
+
+    A `#0006` here is a colour; a `#0006` anywhere else in the file is prose
+    somebody wrote, and prose is where a citation lives.
+    """
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for m in CSS_COMMENT_OR_STRING.finditer(text):
+        if m.start() > cursor:
+            spans.append((cursor, m.start()))
+        cursor = m.end()
+    if cursor < len(text):
+        spans.append((cursor, len(text)))
+    return spans
+
+
+def hits(text: str, kind: str, *, css: bool = False) -> list[tuple[int, str]]:
     """(line number, matched text) for one kind.
 
     `task #41` is one citation, not two: the `#41` inside a task id is claimed
     by `task-id` and never counted again as a pull-request number.
     """
     claimed = [m.span() for m in TASK_ID.finditer(text)] if kind == "pr-number" else []
+    code = css_code_spans(text) if (css and kind == "pr-number") else []
     found: list[tuple[int, str]] = []
     for m in KINDS[kind].finditer(text):
         token = m.group(0)
         if kind == "pr-number":
-            if COLOUR_RUN.match(token):
+            if (
+                css
+                and CSS_COLOUR.match(token)
+                and any(a <= m.start() and m.end() <= b for a, b in code)
+            ):
                 continue
             if any(a <= m.start() < b for a, b in claimed):
                 continue
@@ -215,7 +256,8 @@ def scan() -> tuple[dict[str, dict[str, list[tuple[int, str]]]], int, int]:
         rel = path.relative_to(REPO).as_posix()
         if path == SELF:
             continue  # this file spells the patterns out; it is not a citation
-        found = {k: h for k in KINDS if (h := hits(text, k))}
+        css = path.suffix.lower() in CSS_SUFFIXES
+        found = {k: h for k in KINDS if (h := hits(text, k, css=css))}
         if found:
             per_file[rel] = found
     return per_file, files, size

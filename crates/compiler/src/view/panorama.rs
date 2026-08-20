@@ -1,7 +1,7 @@
 //! The whole-map release panorama (`delvec panorama`).
 //!
-//! Every content release ships one 45° oblique view of the entire delve (owner
-//! decision, 2026-08-06). The camera for it is *computed from the layout*, not
+//! Every content release ships one 45° oblique view of the entire delve. The
+//! camera for it is *computed from the layout*, not
 //! authored: `render-plan.json` states the layout AABB and the world-generator
 //! horizon, which is everything the framing needs — so the panorama is a
 //! first-class emission rather than a hand-edited scene JSON (the way the first
