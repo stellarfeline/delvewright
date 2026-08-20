@@ -39,6 +39,16 @@ jobs:
       - name: every server derives its world from the build
         run: bash validation/check-world-settings.sh
 
+      # A pin freezes an instrument on purpose; the defect is a pin nobody has
+      # looked at since the thing it names moved, which is invisible because the
+      # file reads the same on the day it is written and a year later. This half
+      # is offline: every literal that decides which version of an external thing
+      # this repo fetches is discovered by shape and must carry a registry entry
+      # naming its policy. It states its binding count, and a binding of zero is
+      # a finding rather than a pass.
+      - name: every pin is declared
+        run: python3 tools/check-pins.py
+
   rust:
     name: rust (fmt, clippy, test)
     runs-on: ubuntu-latest
@@ -785,6 +795,20 @@ jobs:
       # campaign, so the binary is named explicitly and the script never infers
       # one. Dev profile — the workspace sets `opt-level = 1` for it, which is
       # what makes a real layout solve affordable on every push.
+      # The pin's other half, judged where the pinned repository's history
+      # already is. This job checks the content repo out for its own reasons, so
+      # the drift measurement costs one deepening fetch and no new host: a
+      # required status check must not reach for something it does not already
+      # need. The checkout is shallow and AT the pin, so by itself it carries
+      # none of the commits the question is about — deepening it and fetching
+      # the default branch is what makes "what landed after this pin"
+      # answerable at all.
+      - name: deepen the content checkout so the pin has something to be behind
+        run: |
+          git -C campaigns fetch --unshallow origin || true
+          git -C campaigns fetch origin main:refs/remotes/origin/main
+      - name: the content pin is measured against what it names
+        run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: every campaign in the pinned content repo still builds
