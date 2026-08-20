@@ -2,7 +2,7 @@
 //! deliberately at the waterline, and the two proofs that keep the declaration
 //! from being an exemption with a nicer name.
 //!
-//! The load-bearing fixture is [`flood_cannot_silence_the_149_class`]: the
+//! The load-bearing fixture is [`flood_cannot_silence_the_flooded_interior_class`]: the
 //! spec-0026 tide-mill red with a `flood` declared straight over it stays red —
 //! it just changes which red. `flood` is not a suppression switch; it is a claim
 //! that the sea reaches those cells, and the sea cannot reach a sealed interior.
@@ -160,7 +160,7 @@ fn water_lines(out: &Path) -> Vec<String> {
 /// A declaration that merely suppressed `DW0364` would have turned this build
 /// green, which is exactly the hole spec-0026 closed.
 #[test]
-fn flood_cannot_silence_the_149_class() {
+fn flood_cannot_silence_the_flooded_interior_class() {
     let prefabs = prefabs_with_walk_y("flood-149-prefabs", 3);
 
     // Without any declaration: the tide-mill red.
@@ -310,7 +310,7 @@ fn flood_in_a_waterless_horizon_is_dw0394() {
 /// below 0.12.0 is a reserved-feature rejection, so a pre-0.12 script keeps
 /// emitting byte-for-byte what it emitted before this verb existed.
 #[test]
-fn flood_below_v09_is_reserved() {
+fn flood_below_v012_is_reserved() {
     let camp = campaign(
         "flood-fence",
         Some("\"ocean\""),

@@ -79,7 +79,7 @@ fn ocean_string_still_validates_at_0_6() {
 /// The object form — even for a base 0.6 already ships — is v0.12 surface:
 /// `DW0141` below it.
 #[test]
-fn object_form_is_reserved_below_0_9() {
+fn object_form_is_reserved_below_0_12() {
     let diags = diags_for("0.8.0", "{ \"base\": \"ocean\" }", true);
     assert!(
         diags.iter().any(|d| d.code == "DW0141"),
@@ -89,7 +89,7 @@ fn object_form_is_reserved_below_0_9() {
 
 /// A new shorthand name below 0.12.0 is `DW0141` too.
 #[test]
-fn flatland_string_is_reserved_below_0_9() {
+fn flatland_string_is_reserved_below_0_12() {
     let diags = diags_for("0.8.0", "\"flatland\"", true);
     assert!(
         diags.iter().any(|d| d.code == "DW0141"),
@@ -100,7 +100,7 @@ fn flatland_string_is_reserved_below_0_9() {
 /// `flatland` (with a boundary) is the landed new base: clean at 0.12.0, both
 /// as a string and as the object form with its param.
 #[test]
-fn flatland_validates_clean_at_0_9() {
+fn flatland_validates_clean_at_0_12() {
     for h in [
         "\"flatland\"",
         "{ \"base\": \"flatland\", \"blend_width\": 8 }",
@@ -124,7 +124,7 @@ fn flatland_without_boundary_is_dw0320() {
 /// `valley`/`summit`/`sky` parse at 0.12.0 but their surround generators have
 /// not landed in this slice: reserved (`DW0141`), never silently mis-emitted.
 #[test]
-fn unlanded_bases_are_reserved_at_0_9() {
+fn unlanded_bases_are_reserved_at_0_12() {
     for h in [
         "\"valley\"",
         "\"cherry-valley\"",
