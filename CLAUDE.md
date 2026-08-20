@@ -95,6 +95,9 @@ docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md,
 docs/ROADMAP.md      # milestones; M1 = hello-world delve
 crates/              # Rust workspace: dsl / compiler / grammar / orchestrator /
                      #   admit / schem / render
+gallery/             # the ENGINE's own campaign: one instance of every surface
+                     #   the DSL declares, built on every PR, never released or
+                     #   staged. Its piece is generated, never committed.
 prefabs/             # tileset GENERATORS + shared invariants. The .nbt library and
                      #   its metadata live in the CONTENT repo, reached through the
                      #   `campaigns/` dev symlink — see prefabs/README.md
@@ -387,6 +390,21 @@ validation/          # docker compose: headless server + bot, same image as CI &
   among several kinds, the effective obligation is their **disjunction** and is
   only as strong as the weakest, so the kind must be determined by the object
   rather than picked by the author.
+- **When one gate's prescription is another gate's refusal, the defect belongs to
+  the PAIR.** Each half can be correct, bound, non-vacuous and falsifiable, and
+  the union still be unsatisfiable — so the review question is never only *is this
+  check right* but ***what does its remedy oblige, and does anything refuse
+  that***. The worked example: a baseline tool's verify path refused a tree whose
+  warning ledger had moved and prescribed regenerating it; its own write path then
+  refused the regeneration as a noise commit, because that guard asked whether
+  emission and inputs had moved and not whether the warning ledger had. **No
+  green state existed**, and it was reachable by an ordinary merge — a pass that
+  stops emitting a duplicated advisory moves the warning ledger and nothing else.
+  The tell is in the guard's own comment: it carefully qualified two of the three
+  things the artifact holds, which is what a rule looks like when it was written
+  against the cases its author had met. So a gate that names a remedy owes a check
+  that the remedy is **reachable**, and where two gates guard one artifact, they
+  are read together or not at all.
 - **A command whose response nobody reads cannot fail.** A site that
   issues a command to a server and discards the reply is asserting an effect it
   has not established, and it stays green forever: `delve-admit`'s gallery

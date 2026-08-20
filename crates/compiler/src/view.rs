@@ -44,6 +44,7 @@ pub mod assets;
 pub mod blockcolor;
 pub mod cache;
 pub mod cli;
+pub mod detect;
 pub mod diag;
 pub mod font;
 pub mod index;

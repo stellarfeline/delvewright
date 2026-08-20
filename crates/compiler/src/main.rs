@@ -878,14 +878,24 @@ fn run_snapshot(
     };
 
     let started = std::time::Instant::now();
-    let blocks = match edited_assembled(&plan, &prefabs, &structures, json) {
-        Ok(a) => a.blocks,
+    let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
+        Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
+    // The occupancy view of the same assembled model the grid rasterises: the
+    // render plan's cameras are stood up and proven against it (`DW0724`), so a
+    // `--shot` here frames exactly what the built plan states.
+    let world = delvewright_compiler::nav::World::from_occupancy(
+        delvewright_compiler::assembled::occupancy_of(
+            assembled.blocks.clone(),
+            &assembled.open_gates,
+        ),
+    );
+    let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let cam = match resolve_camera(&plan, &prefabs, &structures, &grid, &args) {
+    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &args) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -929,6 +939,7 @@ fn run_snapshot(
             inside: &inside,
             outside: &outside,
         },
+        &frame.canvas,
     );
     let manifest_path = manifest_path_for(args.out);
     let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
@@ -1100,8 +1111,8 @@ fn read_structures(
 fn resolve_camera(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    structures: &BTreeMap<String, Vec<u8>>,
     grid: &delvewright_compiler::snapshot::VoxelGrid,
+    world: &delvewright_compiler::nav::World,
     args: &SnapshotArgs<'_>,
 ) -> Result<delvewright_compiler::snapshot::Camera, String> {
     use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
@@ -1158,7 +1169,7 @@ fn resolve_camera(
     }
 
     if let Some(id) = args.shot {
-        return camera_from_shot(plan, prefabs, structures, id);
+        return camera_from_shot(plan, prefabs, world, id);
     }
 
     // Default: a dollhouse overview of the whole layout from the south-east,
@@ -1182,54 +1193,22 @@ fn resolve_camera(
 }
 
 /// The farthest point on the segment `subject → eye` that stands in open air with
-/// an unobstructed line back to `subject`, sampled every [`PULL_STEP`] blocks.
+/// an unobstructed line back to `subject`, falling back to `eye` when even the
+/// subject's own cell is solid (a marker embedded in a wall — worth seeing as
+/// such).
 ///
 /// This is what makes `--at` usable on interiors: a fire pit 14 blocks inside a
 /// mountain has no exterior vantage, so the requested distance is honoured only
 /// as far as the rock allows and the camera then sits in the room with its
-/// subject. Falls back to `eye` when even the subject's own cell is solid (a
-/// marker embedded in a wall — worth seeing as such).
+/// subject. The walk itself is `camera::stand_in_open_air`, shared with the
+/// render plan's own cameras — it used to live here, private to this one flag,
+/// while every derived camera in `render-plan.json` went without it.
 fn pull_into_open_air(
     grid: &delvewright_compiler::snapshot::VoxelGrid,
     subject: [f64; 3],
     eye: [f64; 3],
 ) -> [f64; 3] {
-    /// Sampling step, in blocks, for the pull-in walk.
-    const PULL_STEP: f64 = 0.5;
-    let d = [
-        eye[0] - subject[0],
-        eye[1] - subject[1],
-        eye[2] - subject[2],
-    ];
-    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    if len < 1e-6 {
-        return eye;
-    }
-    let dir = [d[0] / len, d[1] / len, d[2] / len];
-    let cell_of = |p: [f64; 3]| {
-        [
-            p[0].floor() as i32,
-            p[1].floor() as i32,
-            p[2].floor() as i32,
-        ]
-    };
-    let mut best = eye;
-    let mut found = false;
-    let mut t = 0.0;
-    while t <= len + 1e-9 {
-        let p = [
-            subject[0] + dir[0] * t,
-            subject[1] + dir[1] * t,
-            subject[2] + dir[2] * t,
-        ];
-        if grid.solid(cell_of(p)) {
-            break; // the rock starts here; keep the last open sample
-        }
-        best = p;
-        found = true;
-        t += PULL_STEP;
-    }
-    if found { best } else { eye }
+    delvewright_compiler::camera::stand_in_open_air(|c| grid.solid(c), subject, eye).unwrap_or(eye)
 }
 
 /// Resolve an `--at` subject to a world cell. Accepts a bare anchor name
@@ -1278,20 +1257,25 @@ fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
 fn camera_from_shot(
     plan: &Plan,
     prefabs: &PrefabRegistry,
-    structures: &BTreeMap<String, Vec<u8>>,
+    world: &delvewright_compiler::nav::World,
     id: &str,
 ) -> Result<delvewright_compiler::snapshot::Camera, String> {
     use delvewright_compiler::render_plan;
     use delvewright_compiler::snapshot::{Camera, DEFAULT_FOV};
 
     let pov = if id.starts_with("pov/") {
-        let world = delvewright_compiler::nav::World::from_plan(plan, structures);
-        let routes = delvewright_compiler::nav::critical_path_routes(plan, &world);
+        let routes = delvewright_compiler::nav::critical_path_routes(plan, world);
         render_plan::pov_shots(plan, &routes)
     } else {
         Vec::new()
     };
-    let doc = render_plan::render_plan(plan, prefabs, &pov);
+    // The same world the snapshot itself rasterises (the EDITED assembled model),
+    // so the camera this returns is the camera the plan states: a shot pulled in
+    // out of the rock is pulled in by the same walk here, and a `DW0724` refusal
+    // here is one `delvec build` would raise too.
+    let doc = render_plan::render_plan(plan, prefabs, &pov, world)
+        .map_err(|e| format!("{}: {}", e.code, e.message))?
+        .0;
     let shots = doc["shots"].as_array().cloned().unwrap_or_default();
     let Some(shot) = shots.iter().find(|s| s["id"].as_str() == Some(id)) else {
         let mut ids: Vec<&str> = shots.iter().filter_map(|s| s["id"].as_str()).collect();
@@ -1840,6 +1824,7 @@ fn run_edit(
                 inside: &inside,
                 outside: &outside,
             },
+            &frame.canvas,
         );
         let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
             Ok(b) => b,
