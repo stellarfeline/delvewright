@@ -12040,7 +12040,15 @@ fn emit_drop_loot_tables(plan: &Plan) -> Vec<(String, Value)> {
                     entry["functions"] = json!([{
                         "function": "minecraft:set_name",
                         "target": "custom_name",
-                        "name": { "text": name },
+                        // `tr`, not a bare `{"text": …}`. An authored display
+                        // name arrives here still carrying its l10n marker, and
+                        // a raw text component ships the marker verbatim — which
+                        // `DW0185` refuses, so a drop that named itself did not
+                        // build AT ALL, at any version. The diagnostic was right
+                        // and nothing had ever reached it: no campaign and no
+                        // fixture had named a drop, which is the coverage gap
+                        // spec-0039 exists to close rather than a missing rule.
+                        "name": tr(name),
                     }]);
                 }
                 Some(entry)
@@ -18981,6 +18989,33 @@ mod loot_emit_tests {
             out[0].contains(r#"custom_name={"italic":false,"text":"Tide Ledger"}"#),
             "{}",
             out[0]
+        );
+    }
+
+    /// A drop that names itself lowers through [`tr`], never a raw literal.
+    ///
+    /// The regression this pins: `set_name` used to build `{"text": name}`
+    /// directly, and an authored name arrives still carrying its l10n marker —
+    /// so a named drop shipped the marker verbatim and `DW0185` refused the
+    /// build. Every version, unconditionally, for as long as the surface had
+    /// existed; nothing was red because nothing had ever named a drop.
+    #[test]
+    fn a_named_drop_lowers_through_tr_not_a_raw_literal() {
+        let tagged = delvewright_dsl::l10n::tag("wave.muster.mob.0.drop.0.name", "Muster Bone");
+        let component = tr(&tagged);
+        assert_eq!(
+            component["translate"], "wave.muster.mob.0.drop.0.name",
+            "a marked string must lower to a translate key: {component}"
+        );
+        assert_eq!(component["fallback"], "Muster Bone", "{component}");
+        assert!(
+            component.get("text").is_none(),
+            "a marked string must NOT keep a literal body — that body is what \
+             carries the marker into the emitted tree: {component}"
+        );
+        assert!(
+            !component.to_string().contains(&tagged),
+            "the marker itself must not survive into the component: {component}"
         );
     }
 

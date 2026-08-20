@@ -175,6 +175,14 @@ const ANCHORS: &[Anchor] = &[
         role: "the second volume, so a pair of region verbs never share a box",
     },
     Anchor {
+        name: "anchor/rafters",
+        pos: [21, 1, 27],
+        facing: Some("west"),
+        trigger_block: None,
+        role: "where the ambush stages, 24 blocks from the hearth because a body \
+               inside a respawn point's aggro radius is DW0478",
+    },
+    Anchor {
         name: "anchor/lane-west",
         pos: [5, 1, 26],
         facing: Some("east"),

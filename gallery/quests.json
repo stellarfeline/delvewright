@@ -3,6 +3,23 @@
   "content": {
     "actors": [
       {
+        "anchor": "anchor/east-bay",
+        "entity": "minecraft:bat",
+        "facing": "west",
+        "id": "actor/hall-moth",
+        "name": "The Hall Moth",
+        "tier": "boss",
+        "vulnerable": true
+      },
+      {
+        "anchor": "anchor/rafters",
+        "entity": "minecraft:spider",
+        "facing": "east",
+        "id": "actor/rafter-spider",
+        "name": "The Rafter Spider",
+        "vulnerable": true
+      },
+      {
         "anchor": "anchor/muster",
         "attributes": {
           "attack_damage": 3.0,
@@ -15,7 +32,8 @@
             "slot": "main_hand"
           },
           {
-            "item": "minecraft:iron_ingot"
+            "item": "minecraft:iron_ingot",
+            "name": "Muster Token"
           }
         ],
         "entity": "minecraft:zombie",
@@ -60,15 +78,31 @@
         },
         "tier": "ordinary",
         "vulnerable": false
-      },
+      }
+    ],
+    "ambushes": [
       {
-        "anchor": "anchor/east-bay",
-        "entity": "minecraft:bat",
-        "facing": "west",
-        "id": "actor/hall-moth",
-        "name": "The Hall Moth",
-        "tier": "boss",
-        "vulnerable": true
+        "actors": [
+          "actor/rafter-spider"
+        ],
+        "at": "anchor/rafters",
+        "happening": {
+          "subject": "actor/rafter-spider",
+          "text": "Something comes down out of the rafters.",
+          "verb": "arrives"
+        },
+        "id": "ambush/west-bay",
+        "telegraph": [
+          {
+            "style": "subtitle",
+            "text": "Something shifts up in the rafters.",
+            "type": "narrate"
+          }
+        ],
+        "trigger": {
+          "on": "approach",
+          "range": 4
+        }
       }
     ],
     "lethal_volumes": [
@@ -1690,7 +1724,8 @@
             "count": 2,
             "drops": [
               {
-                "item": "minecraft:bone"
+                "item": "minecraft:bone",
+                "name": "Muster Bone"
               }
             ],
             "effects": [

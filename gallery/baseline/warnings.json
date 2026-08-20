@@ -92,7 +92,7 @@
     },
     {
       "code": "DW0477",
-      "pointer": "/content/actors/0/tier",
+      "pointer": "/content/actors/2/tier",
       "stage": "quests"
     }
   ],
@@ -189,7 +189,7 @@
     },
     {
       "code": "DW0477",
-      "pointer": "/content/actors/0/tier",
+      "pointer": "/content/actors/2/tier",
       "stage": "quests"
     }
   ],
@@ -286,7 +286,7 @@
     },
     {
       "code": "DW0477",
-      "pointer": "/content/actors/0/tier",
+      "pointer": "/content/actors/2/tier",
       "stage": "quests"
     }
   ],
@@ -383,7 +383,7 @@
     },
     {
       "code": "DW0477",
-      "pointer": "/content/actors/0/tier",
+      "pointer": "/content/actors/2/tier",
       "stage": "quests"
     }
   ]
