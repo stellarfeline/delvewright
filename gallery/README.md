@@ -223,8 +223,9 @@ diagnostic would be, because it can only speak for these four tiles.
 ## The broken flight, and what a way costs to declare
 
 The far half of the hall carries a **mezzanine**: a solid dais three courses
-tall, with a stair up to it whose two tread courses are not there. It is the only floor in the piece a body cannot walk onto, and a
-campaign puts the treads back:
+tall, with a stair up to it whose two tread courses are not there. It is the
+only floor in the piece a body cannot walk onto, and a campaign puts the treads
+back:
 
 ```json
 { "type": "open-way", "piece": "prefab/gallery-hall", "way": "broken-flight" }
