@@ -19,6 +19,24 @@
 //! template, which is one atomic mcfunction, but NOT across ticks — so any
 //! template that `await`s must be the sole owner of every party score it touches
 //! (`party_state_across_ticks_is_owned`).
+//!
+//! **That last rule has a blind spot, and it is why `DW0807` exists.** The check
+//! reads each template's OWN text, so it sees a party score only where the
+//! template writes the token itself. The campaign-playthrough template contains
+//! no `#party` token at all — it calls `pt_camp_run_<n>`, which lives outside
+//! `test/` and which drives the real campaign's completion functions — so the
+//! one template that genuinely holds the whole party ledger across ticks
+//! contributes nothing to the check, and the rule is green over it while being
+//! violated by it. Read transitively the rule is also unsatisfiable: that
+//! template touches EVERY party score, so "sole owner" could never hold while
+//! any sibling used one.
+//!
+//! So the obligation is inverted rather than widened, and it moves to the party
+//! that can discharge it: a template that runs the real `tick` and asserts on a
+//! gated outcome must WRITE every `#party` term that gate reads, whoever else
+//! touches it. That is `delvewright_compiler::batchstate` (`DW0807`), bound in
+//! the emitter over the shipped bytes and asserted here by
+//! `every_template_owns_the_gate_it_asserts_on`.
 
 mod common;
 
@@ -537,4 +555,47 @@ fn packtest_templates_are_interleaving_independent() {
             );
         }
     }
+}
+
+/// **Every generated template owns the gate its own assertion depends on**
+/// (`DW0807`, `delvewright_compiler::batchstate`).
+///
+/// The batch model's third leg, and the one that was missing. The invariants
+/// above pin a template's dummy and its scratch holders; neither can see a term
+/// a template merely READS. `#party` is batch-global progression state and the
+/// campaign-playthrough template holds the whole ledger across ticks, so a
+/// template that runs the real `tick` and asserts on a gated outcome without
+/// writing that gate's terms has a verdict decided by batch order rather than by
+/// the datapack.
+///
+/// Run over every fixture suite, and the binding is asserted rather than
+/// assumed: a run that judged nothing would be vacuous, not a pass.
+#[test]
+fn every_template_owns_the_gate_it_asserts_on() {
+    let mut judged_total = 0usize;
+    for (suite, out) in suites() {
+        let ns = out
+            .keys()
+            .find_map(|p| {
+                p.strip_prefix("packtest-datapack/data/")
+                    .and_then(|r| r.split('/').next())
+            })
+            .unwrap_or_else(|| panic!("{suite}: no generated PackTest tree"))
+            .to_string();
+        match delvewright_compiler::batchstate::check_tree(&ns, &out) {
+            Ok(b) => {
+                assert!(
+                    b.templates > 0,
+                    "{suite}: the batch-state check examined zero templates"
+                );
+                judged_total += b.judged;
+            }
+            Err(e) => panic!("{suite}: {} — {}", e.code.id(), e.message),
+        }
+    }
+    assert!(
+        judged_total > 0,
+        "the batch-state ownership invariant judged zero templates across every fixture \
+         suite — a green that compared nothing is vacuous, not a pass"
+    );
 }

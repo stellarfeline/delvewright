@@ -1,15 +1,21 @@
 {
   "added": [],
   "changed": [
-    "easy.en:render-plan.json",
-    "hard.en:render-plan.json",
-    "ocean-horizon.en:render-plan.json",
-    "primary.en:render-plan.json",
-    "primary.zh-cn:render-plan.json",
-    "void-horizon.en:render-plan.json"
+    "easy.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "easy.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "hard.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "ocean-horizon.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "primary.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "primary.zh-cn:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/collect_preheld.mcfunction",
+    "void-horizon.en:packtest-datapack/data/gallery/test/v04_strike_npc.mcfunction"
   ],
   "classes": {
-    "other": 6
+    "PackTest": 12
   },
   "removed": []
 }
