@@ -1,0 +1,105 @@
+name: GPU arm probe (manual)
+
+# spec-0039 §9, first open question: **can a CI runner drive the render layer's
+# GPU arms through a software adapter?**
+#
+# It is a ONE-TIME question whose answer moves only where frames come from, never
+# what the engine can do (§7) — so it does not belong in a per-pull-request job.
+# Putting it there would buy a permanent 227 MB `nucleation` fetch on every run to
+# re-answer something that changes about as often as the runner image does. Hence
+# `workflow_dispatch`: zero cost until somebody asks, and the instrument exists
+# rather than the measurement being promised.
+#
+# This is deliberately NOT a gate and is in no required-contexts list. It reports
+# a fact; §7 already defines both outcomes:
+#
+#   * an adapter is available  -> the GPU arms join CI with the fidelity gate
+#     (`DW0720`), and `tools/check-gallery-render.py` grows a GPU half.
+#   * no adapter               -> the CPU set is the CI floor (which is what it
+#     runs today) and GPU shots are produced on a dev machine as part of visual
+#     review. Nothing about the engine changes either way.
+#
+# Read the summary, record the answer in spec-0039, and delete this workflow: an
+# instrument kept after its measurement is a job nobody runs and nobody removes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      software_adapter:
+        description: "Install Mesa lavapipe first (the software-adapter case)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: gpu arm probe (measurement, not a gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The whole question. A GitHub-hosted runner has no GPU, so an adapter can
+      # only come from a software rasteriser; `lavapipe` is Mesa's, and it is the
+      # one a runner can actually install. Without this step the probe measures
+      # "is there a GPU" — which we already know the answer to — instead of "can a
+      # software adapter stand in", which is the thing §7 branches on.
+      - name: install a software Vulkan adapter (Mesa lavapipe)
+        if: inputs.software_adapter
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools libvulkan1
+          echo "--- what Vulkan reports ---"
+          vulkaninfo --summary 2>&1 | head -40 || echo "vulkaninfo failed"
+
+      - uses: Swatinem/rust-cache@v2
+        with: { key: gpu-probe }
+
+      # Named as its own step so a network failure on the pinned git dependency
+      # reds HERE and not inside a step named for the renderer.
+      - name: fetch — the render workspace's pinned git dependency
+        run: cargo fetch --locked --manifest-path crates/render/Cargo.toml
+
+      - name: build delve-render
+        run: |
+          cargo build --locked --offline \
+            --manifest-path crates/render/Cargo.toml --bin delve-render
+
+      # `fidelity-gate` is the arm that needs an adapter and needs no campaign.
+      # It also wants the client jar for textures, which this runner does not
+      # have — and that is fine, because the two failures are DISTINGUISHABLE and
+      # distinguishing them is the whole measurement: an adapter failure says
+      # `gpu init:` and happens first, a texture failure says anything else and
+      # means the adapter came up.
+      - name: probe — does an adapter come up at all
+        id: probe
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          crates/render/target/debug/delve-render fidelity-gate -o /tmp/fid \
+            > /tmp/probe.out 2>&1
+          echo "exit=$?"
+        # The exit code is recorded by the step; the OUTPUT is the measurement.
+
+      - name: verdict
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "## GPU arm probe" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "software adapter installed: \`${{ inputs.software_adapter }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/probe.out >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || \
+            echo "(the probe produced no output)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "gpu init" /tmp/probe.out 2>/dev/null; then
+            echo "**Verdict: NO adapter.** wgpu could not open a device on this runner." >> "$GITHUB_STEP_SUMMARY"
+            echo "spec-0039 §7 branch: the CPU set is the CI floor; GPU shots are produced on a dev machine." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**Verdict: an adapter CAME UP.** Whatever this exited with, it got past device creation." >> "$GITHUB_STEP_SUMMARY"
+            echo "spec-0039 §7 branch: the GPU arms can join CI, with the fidelity gate (\`DW0720\`)." >> "$GITHUB_STEP_SUMMARY"
+          fi
