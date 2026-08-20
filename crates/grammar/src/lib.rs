@@ -138,7 +138,7 @@ pub use gates::{Gate, Report, judge};
 pub use geom::{Axis, Box3, Orientation};
 pub use ir::{
     Bar, Contract, Edge, EdgeClass, Envelope, Facing, Include, Mark, MarkAt, MarkIndex, NoBodyDecl,
-    Program, ProgramError, Side, SpaceDecl,
+    Opens, Program, ProgramError, Side, SpaceDecl, Way,
 };
 pub use model::VoxelModel;
 pub use version::{

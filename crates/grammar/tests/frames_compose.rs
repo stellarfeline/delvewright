@@ -118,7 +118,11 @@ fn hall(left_band: i64, right_band: i64, reflect_right: bool) -> Program {
         .contract(Contract::new("room").space("room", Envelope::Open).edge(
             "room",
             EXTERIOR,
-            EdgeClass::Walk { rise: 0, via: None },
+            EdgeClass::Walk {
+                rise: 0,
+                via: None,
+                way: None,
+            },
         ))
 }
 
@@ -217,7 +221,11 @@ fn rebinding_a_name_to_the_value_it_already_has_changes_neither_blocks_nor_boxes
         .contract(Contract::new("room").space("room", Envelope::Open).edge(
             "room",
             EXTERIOR,
-            EdgeClass::Walk { rise: 0, via: None },
+            EdgeClass::Walk {
+                rise: 0,
+                via: None,
+                way: None,
+            },
         ));
     for seed in [0u64, 1, 7] {
         let a = run(&framed, HALL, seed);
@@ -401,7 +409,11 @@ fn a_binding_reads_the_same_extents_under_a_reflection_as_without_one() {
             .contract(Contract::new("room").space("room", Envelope::Open).edge(
                 "room",
                 EXTERIOR,
-                EdgeClass::Walk { rise: 0, via: None },
+                EdgeClass::Walk {
+                    rise: 0,
+                    via: None,
+                    way: None,
+                },
             ))
     }
     let plain = run(&one_arm(false), HALL, 0);
@@ -549,7 +561,11 @@ fn every_fence_this_document_crosses_refuses_it_at_the_version_below() {
                 .contract(Contract::new("room").space("room", Envelope::Open).edge(
                     "room",
                     EXTERIOR,
-                    EdgeClass::Walk { rise: 0, via: None },
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
                 )),
             CONTRACT_SINCE,
             "claim",

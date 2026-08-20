@@ -104,7 +104,15 @@ pub fn spatial_contract() -> Program {
                     "the air over the west corbel: standable by construction, and where a \
                      watcher is placed rather than somewhere the player walks",
                 )
-                .edge(EXTERIOR, "near", EdgeClass::Walk { rise: 0, via: None })
+                .edge(
+                    EXTERIOR,
+                    "near",
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
+                )
                 .edge(
                     "near",
                     "far",
@@ -117,7 +125,15 @@ pub fn spatial_contract() -> Program {
                         via: None,
                     },
                 )
-                .edge("far", EXTERIOR, EdgeClass::Walk { rise: 0, via: None }),
+                .edge(
+                    "far",
+                    EXTERIOR,
+                    EdgeClass::Walk {
+                        rise: 0,
+                        via: None,
+                        way: None,
+                    },
+                ),
         )
         // The partition is one course thick and sits between two equal halves.
         .rule(
