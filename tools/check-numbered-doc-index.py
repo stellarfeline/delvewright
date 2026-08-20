@@ -33,7 +33,7 @@ The one exception is a document with no readable status: that is reported and
 **never repaired by this tool or by the reader of its output**. Writing a status
 into a document nobody ruled on invents the fact the gate exists to protect.
 
-## The five rules, over every series in `SERIES`
+## The six rules, over every series in `SERIES`
 
 1. **Every document has a row.** A spec or ADR absent from its index is
    invisible to anyone reading the index, which is the only place the set is
@@ -48,6 +48,19 @@ into a document nobody ruled on invents the fact the gate exists to protect.
    disagreement. Two different status WORDS are.
 5. **Every document's status is readable.** A `Status:` field in the document's
    header block whose value opens with a recognised word.
+6. **Every spec carries an Acceptance criteria section** (spec series only —
+   the series entry that declares a `section` pattern is the one this rule
+   binds). The obligation is stated by `docs/specs/README.md`'s own preamble
+   and by CLAUDE.md's Conventions line, and until this rule existed it was a
+   doc line, which is not an invocation: the sentence was true-by-declaration
+   while four specs carried no such section. A heading containing the phrase
+   counts, however it is numbered or dressed (`## Acceptance criteria`,
+   `## 4. Acceptance criteria — …`, `### Acceptance criteria (v0.3)`); a
+   mention in prose does not — criteria live in a section a reader lands on.
+   The rule demands the section, not its quality: whether a criterion is
+   machine-checkable stays with review, and a subject that makes a criterion
+   genuinely unwritable by machine is answered inside the section, in one
+   sentence, with what a human checks instead — never by an exemption here.
 
 ## Vocabulary, and what this gate does NOT rule on
 
@@ -67,7 +80,9 @@ its own source.
 ## Binding count
 
 Every run prints, per series, documents examined, rows examined and statuses
-compared. A series with zero documents or zero rows is a FAIL, not a pass
+compared — and, where rule 6 binds, acceptance-criteria sections found, so a
+green states how many specs it actually proved sectioned. A series with zero
+documents or zero rows is a FAIL, not a pass
 (CLAUDE.md: a green gate that binds to nothing is VACUOUS) — the directory
 moved, was renamed, or the pattern stopped matching.
 
@@ -108,8 +123,16 @@ STATUS_FIELD = re.compile(r"^\s*(?:[-*+]\s*)?\*{0,2}Status\*{0,2}\s*:\s*(.*)$")
 # part, and the header is what speaks for the whole.
 SECTION = re.compile(r"^##\s")
 
+# A heading whose text contains the phrase, however numbered or dressed. It is
+# anchored to a heading marker, so prose that merely mentions the phrase cannot
+# satisfy rule 6 — and if this pattern ever stops matching, every spec reds at
+# once rather than the rule going silently green.
+ACCEPTANCE_SECTION = re.compile(r"(?i)^#{2,6}\s.*\bacceptance criteria\b")
+
 # One entry per numbered series that carries an index with a status column.
-# A third series is one entry here, not a second script.
+# A third series is one entry here, not a second script. A series with a
+# `section` key is additionally subject to rule 6; the ADR series carries none,
+# because an ADR records a decision and owes no acceptance criteria.
 SERIES = (
     {
         "name": "spec",
@@ -118,6 +141,7 @@ SERIES = (
         "file": re.compile(r"^spec-(\d{4})-.+\.md$"),
         "row": re.compile(r"^\|\s*\[spec-(\d{4})\]\(([^)]+)\)\s*\|"),
         "label": lambda num: f"spec-{num}",
+        "section": ACCEPTANCE_SECTION,
     },
     {
         "name": "adr",
@@ -257,8 +281,30 @@ def check_series(spec: dict) -> tuple[list[str], str]:
                ", once the document states a readable status of its own.")
         )
 
+    section_re = spec.get("section")
+    sections = 0
+    if section_re is not None:
+        for _num, path in sorted(documents.items()):
+            rel = path.relative_to(ROOT).as_posix()
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if any(section_re.match(line) for line in lines):
+                sections += 1
+            else:
+                findings.append(
+                    f"{name}: {rel} has no Acceptance criteria section — every "
+                    f"spec states its acceptance criteria as machine-checkable "
+                    f"assertions ({spec['index']} preamble; CLAUDE.md "
+                    f"Conventions), and a spec without them names a feature "
+                    f"nothing can prove finished. Add the section; where the "
+                    f"subject makes a criterion genuinely unwritable by machine, "
+                    f"the section says so and names what a human checks instead. "
+                    f"Do NOT satisfy this rule with an empty heading."
+                )
+
     summary = (f"{name}: {len(documents)} document(s), {len(rows)} row(s), "
                f"{compared} status(es) compared")
+    if section_re is not None:
+        summary += f", {sections} acceptance-criteria section(s)"
     if not documents or not rows:
         findings.append(
             f"{name}: examined {len(documents)} document(s) in {spec['dir']!r} and "

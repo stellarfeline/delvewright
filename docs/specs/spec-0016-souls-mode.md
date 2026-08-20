@@ -249,17 +249,63 @@ campaign should pay homage. The compiler's obligation there is the
 proven bypass route that a player can walk without entering its aggro
 radius, or the "optional" is a lie.
 
-## Acceptance
+## Acceptance criteria
 
-1. Planner-built multi-level souls campaign using every mechanic above,
-   full ladder green, owner-played.
-2. **Skill-completeness prompt suite** (owner directive): planner-authored
-   prompts the OWNER runs through /new-delve — per genre a one-line
-   creative-freedom prompt AND a detailed fidelity brief with checkable
-   criteria. Genres: tower defense; one-map siege (attacker + defender
-   campaigns); stealth heist; horror escape; detective mystery; moving
-   escort; time-attack parkour; boss rush; puzzle dungeon; horde survival;
-   branching moral drama; negotiation adventure. The suite is Appendix A.
+Machine criteria first — each names the reading that would make it vacuous —
+then the two gates that are deliberately human.
+
+1. **Every diagnostic this spec names is asserted by its code**:
+   `DW0371`–`DW0374` (shortcut declaration; permanence — no re-seal; the long
+   route exists while sealed; opening strictly shortens the walk),
+   `DW0377`/`DW0378` (timed-gate structure, the ≥ 20%
+   window), `DW0388` (observe-before-commit), `DW0420`/`DW0421` (affordance
+   visibility and sole retirement), `DW0476` (flask), `DW0478` (bonfire safe
+   zone), `DW0489` (`boss` × `respawns_on_rest` contradiction) — each covered
+   by at least one test asserting the code (the DW-coverage gate binds the
+   set). *Vacuous if* a test asserts exit 1 without the code: any other red
+   would satisfy it.
+2. **Each geometric proof has a red fixture, not only a green one**: a
+   shortcut whose opening does not strictly shorten the walk reds `DW0374`; a
+   `close-gate` naming a shortcut gate reds `DW0372`; a timed gate whose
+   crossing window covers under 20% of the cycle reds `DW0378`; a hazard with
+   no standable, reachable, sighted watch cell reds `DW0388`. *Vacuous if*
+   only well-formed campaigns are ever compiled — a proof demonstrated only
+   on passes has never been seen to refuse.
+3. **Re-seat fidelity is driven on the pinned toolserver**: the generated
+   PackTests (`souls_shortcut`, `souls_timed_gate`, `souls_timed_gate_crush`,
+   `souls_timed_gate_disarm`, `souls_reseat_stationed`, `souls_td_lane_reseat`,
+   `souls_reseat_actor`, `souls_reseat_undefeated`) exist in the generated
+   suite of any campaign declaring the mechanic and drive the real emitted
+   functions — a chipped, branded, dragged-off-its-ground elite comes back
+   fresh; a re-seated wave returns at full count and health in its stationed
+   state. *Vacuous if* a campaign generates none of them silently — the suite
+   states its test count per mechanic declared. (`souls_timed_gate_crush`
+   asserts *scoping*, not death: PackTest fake players are `/damage`-immune,
+   so lethality is pinned by compiler unit tests plus the recorded live-client
+   measurement.)
+4. **The bonfire safe-zone gate states its binding**: `DW0478` reports how
+   many hostiles it measured against each bonfire (seated spawn cells, and
+   lane polylines widened by the measured marching drift); a campaign where it
+   examined zero enemies is a finding, not a pass — the recorded instance is a
+   combat floor gate that examined zero enemies for nineteen rounds.
+5. **Counterplay proofs refuse the unfair fixture**: an ambush with no
+   surviving informed route, and an "optional" elite with no bypass walkable
+   outside its aggro radius, are each a compile error naming the encounter.
+   *Vacuous if* the fixture's encounter is off the critical path and out of
+   every proof's scope — the fixture asserts the encounter is one the proof
+   must bind.
+
+Deliberately human, and why: the machine half above is what *admits* each to
+the owner's gate, never what replaces it.
+
+6. Planner-built multi-level souls campaign using every mechanic above — full
+   ladder green is the machine gate; whether death teaches is the owner's
+   play.
+7. **Skill-completeness prompt suite** (Appendix A): the owner runs each
+   prompt through `/new-delve` verbatim. The machine asserts full-ladder green
+   per generated campaign; genre recognition and per-criterion fidelity are
+   her judgement, recorded per genre, and a failure is a skill/toolchain
+   finding, never a prompt finding.
 
 ## Non-goals
 Difficulty settings (a delve is tuned once); PvP; procedural difficulty

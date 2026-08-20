@@ -73,16 +73,39 @@ party semantics. The island campaign is the regression canary: its
 existing behavior must be preserved for a single player, and the
 round-4-class findings ("wine to the whole party") become structural.
 
-## Acceptance
+## Acceptance criteria
 
-1. Two-dummy division-of-labor PackTests green on a fixture with an
-   AND-join (room A + room B → joint successor) and on any island
-   AND-joins.
-2. A two-player live session (owner + one more account, or two harness
-   bots) splits the island's cheese/argument beats and completes.
-3. Single-player ladder unchanged and green (honest-ladder version).
-4. No per-player progression scoreboard remains in any emitted pack
-   (mechanically asserted, like the stealth-sneak removal).
+Each names the reading that would make it vacuous.
+
+1. **Division of labor proven on a real server**: the generated n-dummy
+   PackTest for every AND-join is green on a fixture (room A + room B →
+   joint successor) and on every island AND-join — each dummy completes
+   exactly one arm, and every dummy sees the successor state. *Vacuous if*
+   one dummy completes both arms, which proves single-player completability
+   wearing a party's clothes — arm assignment is asserted per dummy. The
+   generated suite states how many AND-joins it bound; a campaign with zero
+   is stated as zero, never silently green.
+2. **No per-player progression scoreboard survives**: a mechanical assertion
+   over every emitted pack that progression state is held by the party
+   holder (same shape as the stealth-sneak removal assertion). *Vacuous if*
+   the assertion's pattern classifies nothing — it states how many emitted
+   scoreboard objectives it examined, and zero examined is a red.
+3. **A party of one is unchanged**: the single-player ladder is green, and
+   the island campaign's single-player behavior is preserved — measured
+   against the pre-spec engine's output by its pinned revision, never by
+   running the new engine twice, since two runs of one instrument agreeing
+   measures only the instrument.
+4. **The declared size binds, in both directions**: a fixture declaring
+   `min_players: 2` refuses to start below two players; the analyzer proves
+   an n-agent division exists for a mandatory-n fixture and refuses one
+   whose join has an arm no agent can reach. *Vacuous if* only the default
+   (`min_players: 1`) is ever exercised — the declared-size path would then
+   never run at all.
+
+Deliberately human: a two-player live session (the owner plus one more
+account, or two harness bots seat-filled to her session) splits the island's
+cheese/argument beats and completes. Criteria 1–4 are the machine gate that
+admits the build to that session; they never substitute for it.
 
 ## Non-goals
 
