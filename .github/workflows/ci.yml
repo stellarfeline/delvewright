@@ -456,6 +456,17 @@ jobs:
         run: python3 tools/check-capability-ownership.py
       - name: docs tree carries no duplicate rows/headings or conflict markers
         run: python3 tools/check-doc-dupes.py
+      # The same rule where the sections are code. `plan.rs` invoked the
+      # face-mating pass twice, as two verbatim copies of one labelled block —
+      # and nothing could go red, because the pass is idempotent: the second run
+      # recomputes the same answer and the second binding shadows the first. The
+      # only trace was a zero-binding advisory printed to the operator twice.
+      # Two rules were measured over the 397 `.rs` files: a repeated section
+      # header is 0 hits and fires on the defect; a repeated 3-line code run is
+      # 3930 hits across 283 correct files, and is declined in the tool's own
+      # docstring rather than shipped behind an allowlist the size of the tree.
+      - name: source tree carries no duplicated section headers
+        run: python3 tools/check-source-dupes.py
       # The sanctioned identifiers are ADR numbers, spec numbers and DW codes
       # (CLAUDE.md *Privacy in repo artifacts*). A task id, a pull-request number
       # and a dated attribution are not: a stranger cannot resolve any of them,

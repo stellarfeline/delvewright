@@ -1334,6 +1334,30 @@ pub const DW_NO_ENTRY_ANCHOR: DwCode = DwCode::every_version("DW0345");
 /// none of these names fails the build with [`DW_NO_ENTRY_ANCHOR`].
 pub const ENTRY_ANCHOR_NAMES: [&str; 2] = ["spawn", "entry"];
 
+/// Is `name` one of the entry-anchor spellings ([`ENTRY_ANCHOR_NAMES`])?
+///
+/// The membership half of the resolution, for the one consumer that sweeps every
+/// anchor asking "is this an entry?" rather than looking one up by area. It
+/// exists so that consumer cannot spell the question itself: matching a literal
+/// is how the alias list came to be bypassed three times over.
+pub fn is_entry_anchor_name(name: &str) -> bool {
+    ENTRY_ANCHOR_NAMES.contains(&name)
+}
+
+/// One area's **entry anchor**, resolved through [`ENTRY_ANCHOR_NAMES`] in order.
+///
+/// The lookup half, taken over a raw anchor map so that `Plan::build` can use the
+/// same resolution while it is still assembling one — a consumer that cannot
+/// reach [`Plan::entry_point`] yet must not be left to re-spell the question.
+pub fn entry_anchor<'a>(
+    anchors: &'a BTreeMap<(String, String), ResolvedAnchor>,
+    area: &str,
+) -> Option<&'a ResolvedAnchor> {
+    ENTRY_ANCHOR_NAMES
+        .iter()
+        .find_map(|name| anchors.get(&(area.to_string(), (*name).to_string())))
+}
+
 /// Ocean-horizon waterline invariant (DW0344). In a `horizon: ocean` world every
 /// placed piece that **declares** a waterline (`waterline_y` in its prefab metadata,
 /// local y of its top authored water block) must land with that waterline at world
@@ -1889,21 +1913,6 @@ impl<'a> Plan<'a> {
             warnings.push(finding);
         }
 
-        // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
-        //
-        // Bound here and nowhere else: every campaign build goes through
-        // `Plan::build`, so a world whose pieces contradict each other at the
-        // faces they share cannot be compiled, packaged or shipped. There is no
-        // flag and no separate command to remember.
-        let binding = crate::faces::check(&areas, prefabs).map_err(|e| {
-            let mut w = warnings.clone();
-            w.extend(e.warnings.clone());
-            PlanError::new(e.code, e.message).with_warnings(w)
-        })?;
-        if let Some(finding) = binding.finding(crate::faces::placed_pieces(&areas)) {
-            warnings.push(finding);
-        }
-
         // ---- classes ----
         let classes = campaign
             .classes
@@ -2121,6 +2130,29 @@ impl<'a> Plan<'a> {
                 .strict_ancestor_steps
                 .get(&s)
                 .is_some_and(|anc| anc.contains(&g))
+    }
+
+    /// One area's **entry point** — the cell a body arrives at when it enters
+    /// this area — resolved through [`ENTRY_ANCHOR_NAMES`].
+    ///
+    /// The single place a consumer asks "where does the party start here". Every
+    /// consumer goes through this or [`entry_anchor`]; none matches an anchor
+    /// name itself. A gate anchor is not an entry point (there is no cell to
+    /// stand on), so it resolves to `None` rather than to a plane.
+    pub fn entry_point(&self, area: &str) -> Option<[i32; 3]> {
+        match entry_anchor(&self.anchors, area) {
+            Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+            _ => None,
+        }
+    }
+
+    /// One area's entry point with the facing it was declared with — the POV
+    /// planner needs the direction as well as the cell.
+    pub fn entry_point_facing(&self, area: &str) -> Option<([i32; 3], Option<String>)> {
+        match entry_anchor(&self.anchors, area) {
+            Some(ResolvedAnchor::Point { pos, facing }) => Some((*pos, facing.clone())),
+            _ => None,
+        }
     }
 
     /// The area an NPC or quest belongs to.
@@ -3025,8 +3057,7 @@ fn build_critical_path(
         let (prev_id, prev_area, prev_idx) = &pair[0];
         let (_, next_area, _) = &pair[1];
         if prev_area != next_area
-            && let Some(ResolvedAnchor::Point { pos, .. }) =
-                anchors.get(&(next_area.clone(), "spawn".to_string()))
+            && let Some(ResolvedAnchor::Point { pos, .. }) = entry_anchor(anchors, next_area)
         {
             transport.insert(prev_id.clone(), *pos);
             transport_by_step[*prev_idx] = Some(*pos);
