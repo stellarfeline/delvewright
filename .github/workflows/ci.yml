@@ -803,10 +803,14 @@ jobs:
       # none of the commits the question is about — deepening it and fetching
       # the default branch is what makes "what landed after this pin"
       # answerable at all.
+      # One refspec, not a bare `--unshallow`: deepening every branch of the
+      # content repo costs 51 MB, deepening the one branch the question is about
+      # costs 2.6 MB. Measured, because a gate that makes every push slower for
+      # no reason is how the next person justifies removing it.
       - name: deepen the content checkout so the pin has something to be behind
         run: |
-          git -C campaigns fetch --unshallow origin || true
-          git -C campaigns fetch origin main:refs/remotes/origin/main
+          git -C campaigns fetch --unshallow origin main:refs/remotes/origin/main \
+            || git -C campaigns fetch origin main:refs/remotes/origin/main
       - name: the content pin is measured against what it names
         run: python3 tools/check-pins.py --online --checkout content-repo=campaigns
       - name: build the engine under test
