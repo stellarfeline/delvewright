@@ -293,6 +293,11 @@ def main() -> int:
             if (BASELINE / "header.json").is_file()
             else {}
         )
+        old_warnings = (
+            json.loads((BASELINE / "warnings.json").read_text())
+            if (BASELINE / "warnings.json").is_file()
+            else {}
+        )
         BASELINE.mkdir(parents=True, exist_ok=True)
         (BASELINE / "header.json").write_text(json.dumps(hdr, indent=2, sort_keys=True) + "\n")
         (BASELINE / "manifests.json").write_text(
@@ -303,25 +308,37 @@ def main() -> int:
         )
         delta = compute_delta(old, manifests)
         (BASELINE / "delta.json").write_text(json.dumps(delta, indent=2, sort_keys=True) + "\n")
-        # The noise-commit guard, and the qualifier matters. An empty delta means
+        # The noise-commit guard, and the qualifiers matter. An empty delta means
         # emission did not move; that is only a noise commit if the HEADER did not
         # move either. A change to what the header covers — a new delvec, a
         # regenerated piece, a narrowed source-hash scope — legitimately rewrites
         # the baseline while emitting the same bytes, and refusing it would leave
         # the tree with a header nothing could ever bring back into agreement.
-        if old and old_hdr == hdr and not any(
+        #
+        # The WARNING LEDGER is the third thing this baseline holds, and leaving
+        # it out of the guard made the two halves of this tool contradict each
+        # other: the verify path refused a tree whose warnings had moved and said
+        # "regenerate with --write", and --write refused the regeneration as a
+        # noise commit because emission and header had not moved. Unsatisfiable
+        # in both directions, and reachable by an ordinary merge — a pass that
+        # stopped emitting a duplicated advisory moves warnings and nothing else.
+        if old and old_hdr == hdr and old_warnings == warnings and not any(
             delta[k] for k in ("added", "removed", "changed")
         ):
             die(
-                "the baseline was rewritten with an EMPTY delta and an UNCHANGED "
-                "header — neither emission nor inputs moved, so this is a noise "
-                "commit. A baseline update is never split from the change that "
-                "caused it (§5)."
+                "the baseline was rewritten with an EMPTY delta, an UNCHANGED "
+                "header and an UNCHANGED warning ledger — nothing this baseline "
+                "records moved, so this is a noise commit. A baseline update is "
+                "never split from the change that caused it (§5)."
             )
+        moved = warning_delta(old_warnings, warnings) if old_warnings != warnings else []
         print(
             f"wrote {BASELINE}: {len(delta['added'])} added, "
-            f"{len(delta['removed'])} removed, {len(delta['changed'])} changed path(s)."
+            f"{len(delta['removed'])} removed, {len(delta['changed'])} changed path(s); "
+            f"{len(moved)} warning row(s) at a new count."
         )
+        for line in moved:
+            print(line)
         return 0
 
     for name in ("header.json", "manifests.json", "warnings.json"):
@@ -363,10 +380,56 @@ def main() -> int:
         die(
             "the emitted warning set no longer equals the committed ledger. A new "
             "or vanished warning is a red: 'still green' must never quietly "
-            "absorb 'warns differently now' (§4.3). Regenerate with `--write`."
+            "absorb 'warns differently now' (§4.3). Regenerate with `--write` "
+            "only once every row below is a consequence this change claims to "
+            "have.\n" + "\n".join(warning_delta(committed_warnings, warnings))
         )
     print("baseline: header, manifests and warning ledger all match.")
     return 0
+
+
+def warning_delta(old: dict, new: dict) -> list[str]:
+    """Every warning row whose COUNT moved, named, with both counts.
+
+    Its sibling `compute_delta` lists every differing emitted path and the
+    header branch lists every differing input; this branch used to list nothing,
+    so a red here meant rebuilding the gallery to find out what it was about.
+
+    Counted, never set-compared, and that distinction is the whole point rather
+    than a detail: the first live difference this helper met was a warning the
+    engine had been emitting TWICE and now emits once — six rows across six
+    builds, one per build. As sets the two ledgers are identical, so a
+    set-shaped delta printed "no row added or removed" beside a message saying
+    they differ. A set is a lossy reading of a list, and the loss is exactly the
+    class of change a duplicated pass produces.
+    """
+    def counted(m: dict) -> dict:
+        out: dict = {}
+        for bid, rs in m.items():
+            for r in rs:
+                key = (bid, json.dumps(r, sort_keys=True))
+                out[key] = out.get(key, 0) + 1
+        return out
+
+    before, now = counted(old), counted(new)
+    lines = []
+    for key in sorted(set(before) | set(now)):
+        was, is_ = before.get(key, 0), now.get(key, 0)
+        if was == is_:
+            continue
+        bid, row = key
+        mark = "+" if is_ > was else "-"
+        lines.append(f"  {mark} {bid}  x{was} -> x{is_}  {row}")
+    if not lines:
+        # Same rows at the same counts: what moved is the shape of the
+        # containing document — a build id gained or lost an empty list. Say so,
+        # because an empty delta beside a message asserting a difference reads as
+        # the check being wrong.
+        lines.append(
+            f"  (every row and count identical; the build id set moved: "
+            f"{sorted(set(old))} -> {sorted(set(new))})"
+        )
+    return lines
 
 
 def compute_delta(old: dict, new: dict) -> dict:
