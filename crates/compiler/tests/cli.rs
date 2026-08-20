@@ -1735,22 +1735,39 @@ fn ocean_waterline_off_sea_level_exits_3_with_dw0344() {
     );
 }
 
-/// `DW0364`: an ocean world in which the invariant above examined **nothing**.
+/// `DW0344`'s **zero binding**: an ocean world in which the invariant examined
+/// **nothing** reports under the invariant's own code, never under a second one.
 ///
-/// This is the shape of the failure `DW0344` cannot have: it is keyed off an
-/// optional metadata field, so a piece that loses that field does not fail the
-/// check, it silently leaves it. That is exactly what the admission tool did to
-/// `waterline_y` — it read prefab metadata through a type that did not model the
-/// field and wrote the document back without it — and the world it deleted the
-/// field from would have gone on building green with `DW0344` binding to zero
+/// This is the shape of the failure `DW0344` cannot have on its own: it is keyed
+/// off an optional metadata field, so a piece that loses that field does not fail
+/// the check, it silently leaves it. That is exactly what the admission tool did
+/// to `waterline_y` — it read prefab metadata through a type that did not model
+/// the field and wrote the document back without it — and the world it deleted
+/// the field from would have gone on building green with `DW0344` binding to zero
 /// pieces.
 ///
+/// There is deliberately no discharge: the only one an author could offer
+/// ("this piece needs no waterline") is the deleted declaration under another
+/// name, and the only geometric one ("no piece reaches the sea") is
+/// unsatisfiable while every ocean area sits at `OCEAN_BASE_Y` = 60 under a sea
+/// at 62.
+///
+/// **The tripwire.** That last fact is asserted here rather than assumed. A
+/// binding of zero earns a refusal, and the only reason this reports instead is
+/// that the same global datum leaves an author no lever to satisfy one — the
+/// piece really is in the water and nothing in the DSL can lift it out, so a
+/// refusal would be demanding a fiction. The day a per-area datum makes a dry
+/// ocean piece authorable, the sea-plane assertion below reds and the severity
+/// question is reopened by this test rather than by anyone remembering a
+/// comment.
+///
 /// Both directions, because a one-directional gate proves nothing: with the
-/// declaration present the advisory is silent, with it gone the advisory names
-/// the count. And a non-ocean world raises nothing either way — "does not apply"
-/// and "applies and examined nothing" are different states.
+/// declaration present the build says nothing, with it gone the build names
+/// what it examined and out of how many. And a non-ocean world raises nothing
+/// either way — "does not apply" and "applies and examined nothing" are
+/// different states.
 #[test]
-fn an_ocean_world_where_nothing_declares_a_waterline_warns_dw0364() {
+fn an_ocean_world_where_nothing_declares_a_waterline_reports_dw0344_unbound() {
     let prefabs_copy = tmp("dw0364-prefabs");
     common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
     let meta_path = prefabs_copy.join("hello-room.json");
@@ -1772,7 +1789,7 @@ fn an_ocean_world_where_nothing_declares_a_waterline_warns_dw0364() {
     )
     .unwrap();
 
-    let build = |tag: &str, camp: &std::path::Path| -> String {
+    let build = |tag: &str, camp: &std::path::Path| -> (i32, String) {
         let out = tmp(tag);
         let r = delvec(&[
             "build",
@@ -1782,46 +1799,75 @@ fn an_ocean_world_where_nothing_declares_a_waterline_warns_dw0364() {
             "--prefabs",
             prefabs_copy.to_str().unwrap(),
         ]);
-        assert_eq!(
+        // Both streams: an advisory is written to stdout beside the build, a
+        // refusal to stderr, and this test asserts across that boundary.
+        (
             code(&r),
-            0,
-            "an unbound check is advisory, never a build failure: {}",
-            String::from_utf8_lossy(&r.stderr)
-        );
-        String::from_utf8_lossy(&r.stdout).to_string()
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&r.stdout),
+                String::from_utf8_lossy(&r.stderr)
+            ),
+        )
     };
 
     // Bound: the placed piece declares the convention waterline, so the datum is
-    // really checked and there is nothing to report.
+    // really checked, the binding count is 1 of 1, and the build is green.
     meta["waterline_y"] = serde_json::json!(2);
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let bound = build("dw0364-bound-out", &ocean_camp);
+    let (bound_code, bound) = build("dw0344-bound-out", &ocean_camp);
+    assert_eq!(
+        bound_code, 0,
+        "a bound ocean datum at the convention waterline must build:\n{bound}"
+    );
     assert!(
-        !bound.contains("DW0364"),
+        !bound.contains("the ocean-datum check examined ZERO"),
         "a check that examined a piece must not report itself unbound:\n{bound}"
     );
 
     // Unbound: the declaration is gone — which is precisely what an admission
-    // step that did not model the field left behind.
+    // step that did not model the field left behind. The check now binds to
+    // zero pieces, and a check that examined nothing has proved nothing.
     meta.as_object_mut().unwrap().remove("waterline_y");
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    let unbound = build("dw0364-unbound-out", &ocean_camp);
-    assert!(
-        unbound.contains("DW0364"),
-        "an ocean world where nothing declares a waterline must say so:\n{unbound}"
+    let (unbound_code, unbound) = build("dw0344-unbound-out", &ocean_camp);
+    assert_eq!(
+        unbound_code, 0,
+        "the zero binding reports beside the build today:\n{unbound}"
     );
     assert!(
-        unbound.contains("examined ZERO pieces") && unbound.contains("places 1 piece(s)"),
-        "the advisory must state what it examined and out of how many:\n{unbound}"
+        unbound.contains("DW0344"),
+        "the zero binding answers under the invariant's own code, not a second \
+         code of its own:\n{unbound}"
+    );
+    assert!(
+        unbound.contains("the ocean-datum check examined ZERO of 1 placed piece(s)"),
+        "it must state what it examined and out of how many:\n{unbound}"
+    );
+    // The tripwire. This is the fact that makes a refusal undemandable rather
+    // than merely unchosen: the piece really is in the water, and under the
+    // single global ocean datum an author has no lever to lift it out. When a
+    // per-area datum lands and a dry ocean piece becomes authorable, this
+    // assertion reds — which is the point. Do not relax it; take it as the
+    // signal to raise this zero binding to a refusal.
+    assert!(
+        unbound.contains("1 of those piece(s) stand at or below the sea plane"),
+        "it must state how many pieces stand in the sea:\n{unbound}"
     );
 
-    // A world with no ocean horizon is not in scope at all.
-    let void_camp = tmp("dw0364-void-camp");
+    // A world with no ocean horizon is not in scope at all: "does not apply" and
+    // "applies and examined nothing" are different states, and only the second
+    // refuses.
+    let void_camp = tmp("dw0344-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
-    let void = build("dw0364-void-out", &void_camp);
-    assert!(
-        !void.contains("DW0364"),
+    let (void_code, void) = build("dw0344-void-out", &void_camp);
+    assert_eq!(
+        void_code, 0,
         "a world with no ocean horizon has no datum to bind to:\n{void}"
+    );
+    assert!(
+        !void.contains("the ocean-datum check examined ZERO"),
+        "a non-ocean world must not report an unbound ocean datum:\n{void}"
     );
 }
 
