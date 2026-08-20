@@ -281,7 +281,7 @@ why = "GitHub's Python toolchain action, held at its major tag."
 [[pin]]
 id = "action-upload-artifact"
 value = "actions/upload-artifact@v4"
-sites = [".github/workflows/engine-release.yml"]
+sites = [".github/workflows/ci.yml", ".github/workflows/engine-release.yml"]
 policy = "floating"
 why = "GitHub's artifact upload action, held at its major tag."
 
