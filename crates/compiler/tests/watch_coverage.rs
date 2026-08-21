@@ -390,3 +390,95 @@ fn the_claim_verdict_is_deterministic() {
         assert_eq!(watch::check_claims(NS, &out, &claims), want);
     }
 }
+
+/// **The interaction that belonged to neither branch.** A second mechanic
+/// emitting into the same suite must fall into exactly one of three states, and
+/// only two of them are correct: the claim covers its bodies, the claim
+/// excludes them, or the claim silently ignores them. `open-way` (dsl 0.12) is
+/// the worked case, and it is the second state — it lowers to one `fill` per
+/// box of the piece's exported way, INSIDE the beat's own effect bundle, so it
+/// writes no `<family>_<id>` function at all and there is nothing for a claim to
+/// discharge. What its gallery element brings with it is an OBJECTIVE, whose
+/// bodies land in families the suite already drives one exemplar of.
+///
+/// So the tree here is the union shape: a claimed family driven whole, a second
+/// feature's body under no per-object family (`beat_`, one member — outside the
+/// rule entirely), and an objective family the suite drives one of two members
+/// of. The claim must stay bound at exactly its own bodies and report no
+/// breach, and the sibling the claim does not reach must be named by the byte
+/// read instead of vanishing between the two gates.
+#[test]
+fn a_coexisting_mechanic_is_covered_or_excluded_but_never_ignored() {
+    let out = tree(
+        &[
+            // The claimed mechanic: every declared gate's body.
+            "tgate_open_side_door",
+            "tgate_open_mid_door",
+            "tgate_open_inner_door",
+            // `open-way`'s shape: the beat body carrying the way's `fill`. One
+            // member, so it forms no per-object family and no claim reaches it.
+            "beat_repair_the_stair",
+            // The objective its gallery element declares, beside a sibling the
+            // suite already drives.
+            "activate_o_press_the_case",
+            "activate_o_climb_the_loft",
+        ],
+        &[
+            (
+                "souls_timed_gate_side_door",
+                "function g:tgate_open_side_door\n",
+            ),
+            (
+                "souls_timed_gate_mid_door",
+                "function g:tgate_open_mid_door\n",
+            ),
+            (
+                "souls_timed_gate_inner_door",
+                "function g:tgate_open_inner_door\n",
+            ),
+            ("verb_press", "function g:activate_o_press_the_case\n"),
+        ],
+    );
+
+    // The claim's own binding does not move because a second mechanic emitted
+    // beside it: three bodies written for three declared gates, three driven.
+    let claims = [claim(
+        &["tgate_open_", "tgate_close_", "tgate_disarm_"],
+        &["side_door", "mid_door", "inner_door"],
+    )];
+    let (binding, breaches) = watch::check_claims(NS, &out, &claims);
+    assert_eq!(binding.declared_objects, 3);
+    assert_eq!(
+        binding.bodies_judged, 3,
+        "only the bodies that were written"
+    );
+    assert_eq!(binding.bodies_watched, 3);
+    assert!(
+        breaches.is_empty(),
+        "a coexisting mechanic must not manufacture a breach: {breaches:?}"
+    );
+    assert!(watch::claim_finding(&binding, &breaches).is_none());
+
+    // And what the claim does not reach, the byte read does. `beat_` is a
+    // one-member family and outside the rule; the objective sibling is not.
+    let all = ids(&[
+        "side_door",
+        "mid_door",
+        "inner_door",
+        "repair_the_stair",
+        "press_the_case",
+        "climb_the_loft",
+    ]);
+    let (wb, findings) = watch::check_tree(NS, &out, &all);
+    assert_eq!(
+        wb.multi_object_families, 2,
+        "the gate family and the objective family; the beat body is not one"
+    );
+    assert_eq!(
+        findings.iter().map(|u| &u.function).collect::<Vec<_>>(),
+        ["activate_o_climb_the_loft"],
+        "the sibling no claim reaches is named by DW0810, not lost between the two gates"
+    );
+    assert_eq!(findings[0].watched_siblings, ["press_the_case"]);
+    assert!(watch::finding(&wb, &findings).is_some());
+}
