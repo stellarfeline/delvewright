@@ -819,10 +819,10 @@ mod tests {
     /// below is over its bytes — so it must never be reformatted.
     ///
     /// That is why it lives under `tests/golden/` and not under
-    /// `tests/fixtures/`. The `delvec fmt --check` sweep in CI covers
-    /// `crates/dsl/fixtures` and `crates/compiler/tests/fixtures`, and it is
-    /// right to: those hold **authored** Delvewright JSON, which must be
-    /// canonical. This file is neither authored nor Delvewright JSON — it is
+    /// `tests/fixtures/`. The `delvec fmt --check` sweep in CI
+    /// (`tools/check-json-canonical.py`) covers every JSON file git tracks, and
+    /// `tests/golden/` is its ONE exemption. This file is neither authored nor
+    /// Delvewright JSON — it is
     /// Chunky's scene schema, in Chunky's own key order, and canonical form
     /// would sort those keys and break the byte equality this test exists to
     /// make. `delvewright_dsl::fmt`'s own `BUILD_OUTPUT_MARKER` states the same
@@ -848,11 +848,16 @@ mod tests {
     }
 
     /// `tests/golden/` sits outside the `delvec fmt --check` sweep on purpose,
-    /// which makes it the one directory in this crate where an authored JSON
-    /// file could stop being gated for canonical form without anything saying
-    /// so. A comment would not stop that — a doc line is not an invocation — so
-    /// the directory's admission rule is enforced here: every `.json` under it
-    /// is named by a golden test, and the set is closed.
+    /// and it is now the **only** directory in the repository that does — the
+    /// sweep's population is `git ls-files '*.json'`
+    /// (`tools/check-json-canonical.py`). That makes this test the sole thing
+    /// standing between an authored JSON file and no canonical-form gate at all.
+    /// A comment would not stop that — a doc line is not an invocation — so the
+    /// directory's admission rule is enforced here: every `.json` under it is
+    /// named by a golden test, and the set is closed. It is what the sweep's
+    /// exemption POINTS AT rather than asserts, which is why that exemption is
+    /// not a hatch a forgetful author can supply: getting a document in here
+    /// means making the emitter actually emit its bytes.
     ///
     /// Add a golden and this reds until you have added the test that pins its
     /// bytes to emitter output. Drop an authored fixture here and it reds

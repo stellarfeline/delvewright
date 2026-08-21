@@ -5628,9 +5628,40 @@ Symlinked directories are not followed (`campaigns/` is a symlink to the content
 repo in a dev tree; a walk that followed it would silently reach a second
 repository).
 
-**Out of scope, by decision**: `crates/compiler/data/*.json` — harvested game
-registries with their own generator contract (`tools/extract-*.py`,
-`data/PROVENANCE.md`), not content anyone authors by hand.
+### The repository-wide sweep
+
+Pointing the formatter at a path is what an author does to one document. What
+this repository *gates* is the whole of what it holds, and that set is **derived,
+never listed**: `tools/check-json-canonical.py` takes its population from
+`git ls-files -z -- '*.json'` and hands the whole of it to `fmt --check`. A
+directory of authored JSON added next month is swept the moment it is committed,
+with nothing to edit anywhere.
+
+Using git rather than a walk is what makes the exclusions properties instead of
+names. `target/`, `node_modules/` and every other build product are absent
+because they are not tracked; `campaigns/` contributes one symlink entry rather
+than a second repository's contents; `delvec build` output trees are absent for
+the same reason `BUILD_OUTPUT_MARKER` skips them. None of those is a rule that
+can go stale.
+
+There is exactly **one** exemption, and it is a pointer rather than a judgement:
+`crates/compiler/tests/golden/`, whose files are recordings of emitter output
+asserted byte-for-byte by `golden_scene_matches`, with the directory's membership
+closed by `every_golden_is_emitter_output`. Getting a document in there means
+making the emitter actually emit its bytes — which is why it is not a hatch that
+"it's generated" can open. The check refuses if that exemption matches zero
+tracked files, or if either pin has been deleted.
+
+Generated JSON is otherwise not exempt: it is made canonical **at the writer**.
+`tools/gallery-baseline.py` writes `gallery/baseline/` with `ensure_ascii=False`
+for exactly that reason. Where a foreign program owns the file — npm's
+`package.json` and `package-lock.json`, the agent harness's `.claude/settings.json`
+— it is formatted anyway and re-formatted after that program rewrites it, the
+same relationship `cargo fmt` has with hand-written Rust.
+
+Every run states files swept **against the tracked-JSON population**, plus the
+exempt count. A population of zero, a swept set of zero, and an exemption
+matching zero files are all refusals rather than passes.
 
 ### What formatting does and does not change in a build
 
@@ -5665,9 +5696,12 @@ this and now proves two things at once — serde loses no field on a round trip,
 
 ### CI
 
-A step of the `rust (fmt, clippy, test)` job (a step, not a job: every job name
-in `ci.yml` is a required status context). It runs `--check` over this repo's
-authored JSON corpus and states its binding count on every run.
+`python3 tools/check-json-canonical.py`, a step of the
+`rust (fmt, clippy, test)` job (a step, not a job: every job name in `ci.yml` is
+a required status context). It runs `--check` over every JSON document git
+tracks and states its binding count against that population on every run. A
+creator runs the same one command on a fresh clone; `--delvec <path>` skips the
+cargo build when a binary is already to hand.
 
 **Not yet covering the content repo.** `campaigns/` is pinned by
 `versions.toml [content].sha`, so a `--check` over it here could only go green

@@ -397,7 +397,9 @@ def main(argv: list[str]) -> int:
         print(json.dumps(table["stats"], indent=2, sort_keys=True))
         return 0
 
-    args.out.write_text(json.dumps(table, indent=2, sort_keys=True) + "\n")
+    args.out.write_text(
+        json.dumps(table, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    )
     print(f"wrote {args.out} — {json.dumps(table['stats'], sort_keys=True)}")
     return 0
 

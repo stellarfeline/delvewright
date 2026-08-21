@@ -23,7 +23,9 @@ Expected SHA-256 of that source (pinned in PROVENANCE.md):
 ## Transform
 
 `{tag: sorted(values)}` over every tag, then
-`json.dumps(indent=2, sort_keys=True) + "\\n"`. Values are already namespaced in
+`json.dumps(indent=2, sort_keys=True, ensure_ascii=False) + "\\n"` — `delvec fmt`
+canonical form, because the output is a tracked file inside the canonical-form
+sweep (`tools/check-json-canonical.py`). Values are already namespaced in
 the source (`minecraft:zombie`); tag KEYS are bare in the source and are
 namespaced here (`minecraft:burn_in_daylight`) so a lookup reads exactly like
 the `#minecraft:<tag>` a datapack would write. 46 tags for 1.21.11.
@@ -62,7 +64,7 @@ def main(argv: list[str]) -> int:
     tags = {
         f"minecraft:{tag}": sorted(set(body["values"])) for tag, body in data.items()
     }
-    out = json.dumps(tags, indent=2, sort_keys=True) + "\n"
+    out = json.dumps(tags, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     out_path.write_text(out, encoding="utf-8")
     sys.stderr.write(f"wrote {len(tags)} entity_type tags to {out_path}\n")
     return 0

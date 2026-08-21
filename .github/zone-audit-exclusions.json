@@ -20,9 +20,11 @@
   ],
   "exclusion": [
     {
-      "id": "library/causeway",
       "capability_gap": "A body cannot stand on water, and `nav::standable` does not know it: any non-air cell reads as floor. `causeway` floods its ward from floor to ceiling on both flanks of a 1-wide raised spine precisely so that the flanks are not walkable, and lowering the waterline — the only repair that keeps the design — would leave water with a body-height air pocket over it, which `nav` would then call a walkable surface and the ward's whole claim would go green while being false. The repair is spec-0038 §2.1's rule one layer over, in `nav`, with its own round and its own playtest gate.",
-      "expect_codes": ["DW0800"]
+      "expect_codes": [
+        "DW0800"
+      ],
+      "id": "library/causeway"
     }
   ]
 }

@@ -1,326 +1,326 @@
 {
- "name": "probe-facade-stack",
- "start": "wall",
- "params": {},
- "palette": {
-  "mass": "minecraft:stone_bricks"
- },
- "rules": {
-  "wall": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "y",
-     "sizes": [
+  "name": "probe-facade-stack",
+  "palette": {
+    "mass": "minecraft:stone_bricks"
+  },
+  "params": {},
+  "rules": {
+    "band_a": [
       {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 4
-       }
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                },
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
       }
-     ],
-     "children": [
+    ],
+    "band_b": [
       {
-       "op": "call",
-       "symbol": "band_a"
-      },
-      {
-       "op": "call",
-       "symbol": "band_b"
-      },
-      {
-       "op": "call",
-       "symbol": "band_c"
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                },
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
       }
-     ]
-    }
-   }
-  ],
-  "band_a": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
+    ],
+    "band_c": [
       {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 3
-       }
-      },
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            },
+            {
+              "axis": "y",
+              "children": [
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                },
+                {
+                  "op": "void"
+                },
+                {
+                  "material": {
+                    "role": "mass"
+                  },
+                  "op": "fill"
+                }
+              ],
+              "op": "split",
+              "sizes": [
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 1
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "blocks": {
+                    "expr": "int",
+                    "value": 2
+                  },
+                  "size": "absolute"
+                },
+                {
+                  "size": "relative",
+                  "weight": {
+                    "expr": "int",
+                    "value": 1
+                  }
+                }
+              ]
+            },
+            {
+              "material": {
+                "role": "mass"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
       }
-     ],
-     "children": [
+    ],
+    "wall": [
       {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "band_a"
+            },
+            {
+              "op": "call",
+              "symbol": "band_b"
+            },
+            {
+              "op": "call",
+              "symbol": "band_c"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 4
+              },
+              "size": "absolute"
+            }
+          ]
         },
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 2
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        },
-        {
-         "op": "void"
-        },
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        }
-       ]
-      },
-      {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
+        "weight": 1
       }
-     ]
-    }
-   }
-  ],
-  "band_b": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 3
-       }
-      },
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
-      }
-     ],
-     "children": [
-      {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 2
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        },
-        {
-         "op": "void"
-        },
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        }
-       ]
-      },
-      {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
-      }
-     ]
-    }
-   }
-  ],
-  "band_c": [
-   {
-    "weight": 1,
-    "body": {
-     "op": "split",
-     "axis": "x",
-     "sizes": [
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
-      },
-      {
-       "size": "absolute",
-       "blocks": {
-        "expr": "int",
-        "value": 3
-       }
-      },
-      {
-       "size": "relative",
-       "weight": {
-        "expr": "int",
-        "value": 1
-       }
-      }
-     ],
-     "children": [
-      {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
-      },
-      {
-       "op": "split",
-       "axis": "y",
-       "sizes": [
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 1
-         }
-        },
-        {
-         "size": "absolute",
-         "blocks": {
-          "expr": "int",
-          "value": 2
-         }
-        },
-        {
-         "size": "relative",
-         "weight": {
-          "expr": "int",
-          "value": 1
-         }
-        }
-       ],
-       "children": [
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        },
-        {
-         "op": "void"
-        },
-        {
-         "op": "fill",
-         "material": {
-          "role": "mass"
-         }
-        }
-       ]
-      },
-      {
-       "op": "fill",
-       "material": {
-        "role": "mass"
-       }
-      }
-     ]
-    }
-   }
-  ]
- }
+    ]
+  },
+  "start": "wall"
 }
