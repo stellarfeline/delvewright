@@ -715,6 +715,21 @@ jobs:
       # message. Deterministic, offline, stdlib-only python3.
       - name: every redirect writes into a directory the script guarantees exists
         run: python3 tools/check-shell-redirect-dirs.py
+      # Dev is macOS, macOS ships bash 3.2.57, and CLAUDE.md says every validation
+      # must be runnable on the creator's own machine. `mapfile` is a bash 4.0
+      # builtin: on 3.2 it prints `command not found`, LEAVES THE ARRAY EMPTY and
+      # carries on at status 0 — so `validation/packtest-all.sh`, the script whose
+      # whole job is to run every PackTest project, ran none of them and exited 0.
+      # Seven scripts carry a comment saying not to do it, which is the bottom rung
+      # of the ladder CLAUDE.md ranks; this is the rung above. The class is the
+      # version boundary rather than the one string everybody remembers, and each
+      # member was run on /bin/bash 3.2.57 and on `bash:5` — two binaries on two
+      # operating systems, sharing no calibration. Population derived, never listed:
+      # `.sh`/`.bash` UNION every shell shebang, plus workflow `run:` blocks, since
+      # `engine-release.yml` builds two darwin targets on `macos-latest`.
+      # Deterministic, offline, stdlib-only python3.
+      - name: no repo shell uses syntax the creator's bash 3.2 does not have
+        run: python3 tools/check-shell-bash32.py
       # A grammar `Program` is a long-lived on-disk document (ADR-0018 §4/§5), and
       # the two ways it grows new surface are not equally safe. A new variant of a
       # tagged enum is safe — an older engine meets an `"op"` it does not know and
