@@ -22,6 +22,15 @@ not run it).
 The repository's OWN registry is exercised too, in both directions: it must be
 complete now, and it must red when a pin is taken out of it. A checker that only
 ever passes proves nothing.
+
+The last group is about the OTHER direction — a refusal the tree cannot satisfy.
+The enumeration that keeps `FETCH_SITES` honest reads a verb in the language of
+the file it is found in, because a COMMAND (`docker run`, `git clone`) is a
+process any language can spawn while a DIRECTIVE (`uses:`, `FROM`, a Cargo
+`git =`) is a statement in one configuration language and prose everywhere else.
+Both halves are asserted, because a narrowing that cannot tell a Rust file which
+really shells out to `docker run` from one whose diagnostic wraps the words
+`FROM A SOFT-LOCK` onto a new line is not a narrowing, it is an exemption.
 """
 
 from __future__ import annotations
@@ -74,6 +83,14 @@ def repo(tmp_path: Path) -> Path:
 
 def write_registry(repo: Path, body: str) -> None:
     (repo / ".github" / "pins.toml").write_text(body, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+
+
+def add_file(repo: Path, rel: str, body: str) -> None:
+    """Track one more file, so the fetch-verb enumeration has to read it."""
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
 
 
@@ -255,6 +272,175 @@ def test_a_checkout_at_a_branch_is_a_pin_too(repo: Path) -> None:
     r = run(repo)
     assert r.returncode == 1
     assert "stellarfeline/delvewright@main" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# A verb is read in the language of the file it is found in.
+#
+# The false positives first. Each of these is a DIRECTIVE of some configuration
+# language sitting in a Rust source file, where it is prose. The first is the
+# live one: a compiler diagnostic whose all-caps emphasis wraps onto a new line,
+# read as an unregistered Dockerfile stage by a uniformly-applied pattern.
+# ---------------------------------------------------------------------------
+def test_a_dockerfile_directive_wrapped_into_rust_prose_is_not_a_fetch_site(
+    repo: Path,
+) -> None:
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "crates/compiler/src/nav.rs",
+        'pub const SOFT_LOCK: &str = "\\\n'
+        "             What this red claims is what declarations can carry: \\\n"
+        "             NOTHING THIS CAMPAIGN DECLARES SEPARATES THIS RETRY \\\n"
+        "             FROM A SOFT-LOCK — whether the loop is winnable is a \\\n"
+        '             combat question this compiler refuses to simulate.";\n',
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_workflow_directive_quoted_in_rust_is_not_a_fetch_site(repo: Path) -> None:
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "crates/compiler/src/docs.rs",
+        "/// The shape a workflow step takes:\n"
+        'pub const STEP: &str = r#"\n'
+        "    - uses: " + ACTION + "\n"
+        '"#;\n',
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_cargo_dependency_line_quoted_in_rust_is_not_a_fetch_site(
+    repo: Path,
+) -> None:
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "crates/compiler/src/manifest.rs",
+        'pub const EXAMPLE: &str = r#"\n'
+        '    delvewright-grammar = { git = "https://example.invalid/g" }\n'
+        '"#;\n',
+    )
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ---------------------------------------------------------------------------
+# The true positives, which are what make the narrowing a repair rather than an
+# exemption. A `.rs` file is not safe by being Rust: it can spawn a process.
+# ---------------------------------------------------------------------------
+def test_a_rust_file_that_really_runs_docker_is_a_finding(repo: Path) -> None:
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "crates/orchestrator/src/stage.rs",
+        "pub fn stage() {\n"
+        '    Command::new("sh").arg("-c").arg("docker run --rm base:latest");\n'
+        "}\n",
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "crates/orchestrator/src/stage.rs" in r.stderr
+    assert "no FETCH_SITES pattern covers it" in r.stderr
+
+
+def test_a_rust_file_that_clones_a_repository_is_a_finding(repo: Path) -> None:
+    write_registry(repo, COMPLETE)
+    add_file(
+        repo,
+        "crates/orchestrator/src/fetch.rs",
+        "pub fn fetch() {\n"
+        '    Command::new("sh").arg("-c").arg("git clone https://example.invalid/r");\n'
+        "}\n",
+    )
+    r = run(repo)
+    assert r.returncode == 1
+    assert "crates/orchestrator/src/fetch.rs" in r.stderr
+
+
+def test_a_dockerfile_the_site_list_does_not_name_is_a_finding(repo: Path) -> None:
+    """The directive keeps its meaning in a file that IS a Dockerfile.
+
+    `build/base.dockerfile` is a Dockerfile by name and no `FETCH_SITES` pattern
+    reaches it, which is precisely the escape the enumeration exists to close.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(repo, "build/base.dockerfile", "FROM alpine:3.20\nRUN true\n")
+    r = run(repo)
+    assert r.returncode == 1
+    assert "build/base.dockerfile" in r.stderr
+
+
+def test_a_file_of_unrecognised_kind_is_read_with_every_verb(repo: Path) -> None:
+    """Fail-closed: an unknown kind keeps the directives, so it cannot escape.
+
+    This is the property that separates keying a verb to a language from listing
+    an exception. A Dockerfile written under a name nobody anticipated still
+    reds, because the map says which kinds ARE a language and never which kinds
+    are safe.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(repo, "build/image-recipe", "FROM alpine:3.20\nRUN true\n")
+    r = run(repo)
+    assert r.returncode == 1
+    assert "build/image-recipe" in r.stderr
+
+
+def test_the_fetch_verb_enumeration_states_what_it_examined(repo: Path) -> None:
+    """The enumeration's own binding count, so a narrowing shows up as a number.
+
+    Spelled out rather than recomputed from `FETCH_VERBS`: a second copy of the
+    implementation's own arithmetic would agree with it however wrong it was.
+    Adding or re-keying a verb moves these numbers, and that is the point — the
+    change is meant to be looked at rather than absorbed.
+    """
+    write_registry(repo, COMPLETE)
+    add_file(repo, "crates/compiler/src/nav.rs", "pub fn nav() {}\n")
+    r = run(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+    line = next(
+        ln for ln in r.stdout.splitlines() if ln.startswith("-- fetch-verb enumeration")
+    )
+    applications = int(line.split()[3])
+    files = int(line.split("over ")[1].split()[0])
+    # Two files are uncovered: the registry and `nav.rs` (the workflow is a
+    # site). `pins.toml` is TOML, so it keeps both commands and the Cargo
+    # directive — three. `nav.rs` is Rust, which is none of the three directive
+    # languages, so it keeps the two commands only.
+    assert files == 2, line
+    assert applications == 5, line
+
+
+def test_an_enumeration_that_applies_no_verb_is_a_finding(tmp_path: Path) -> None:
+    """A zero here is the gate going dark, and the surrounding pins still bind.
+
+    Every tracked file is either a fetch site or prose, so nothing is left for
+    the enumeration to read — the state in which a new kind of fetch site would
+    escape unseen. The registry is held outside the tree so that it is not itself
+    the one file being examined.
+    """
+    (tmp_path / "repo" / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / "repo" / ".github" / "workflows" / "audit.yml").write_text(
+        "name: audit\njobs:\n  a:\n    steps:\n      - uses: " + ACTION + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "repo" / "README.md").write_text("prose\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path / "repo"), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path / "repo"), "add", "-A"], check=True)
+    registry = tmp_path / "pins.toml"
+    registry.write_text(
+        f'[[pin]]\nid = "fetcher"\nvalue = "{ACTION}"\n'
+        'sites = [".github/workflows/audit.yml"]\n'
+        'policy = "floating"\nwhy = "held at its major tag"\n',
+        encoding="utf-8",
+    )
+    r = run(tmp_path / "repo", "--registry", str(registry))
+    assert "binding: 1 pin(s)" in r.stdout
+    assert r.returncode == 1
+    assert "applied no verb to any file" in r.stderr
 
 
 def test_this_repos_own_registry_is_complete() -> None:
