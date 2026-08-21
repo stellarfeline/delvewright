@@ -256,6 +256,7 @@ delvec analyze  <dir>                      # + quest-graph reachability
 delvec build    <dir> -o <out>             # full deterministic build
 delvec fmt      <path>… [--check]          # canonical form for authored JSON (§9)
 delvec schema   --stage <1..7|all>         # export JSON Schema
+delvec metrics                             # export the metrics standard as JSON (§10)
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (translation input)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
@@ -4821,6 +4822,15 @@ byte-untouched; a dark-stamped shot with no structure palette available is a
 `DW0721` error (a silently-black "reviewable" scene would re-blind the review).
 Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
 
+### DW0812/DW0813 — the metrics standard (`dsl::metrics`; error + advisory)
+
+| Code | Meaning |
+|------|---------|
+| `DW0812` | **A document names a metrics entry the table does not define.** A size class, a seam opening, a stair pitch or a storey height that resolves to nothing. Validation tier (exit 1), `every_version`. Raised at `Metrics::resolve`, which is the **only** path from a name to an entry — the map behind it is private — so a name the table does not define cannot be resolved, cannot compile, and no check downstream ever has to cope with one. That is what makes the table the single authority for this vocabulary rather than a suggestion, and it is the reason a second lookup written beside it would be a defect rather than a convenience. The refusal names the bad name **and the whole defined set of that kind**, because the author's next action is choosing a real one and a refusal that only says *no* sends them to read the compiler. **Binding: references resolved.** At the current version that count is **zero documents**, stated here rather than implied: no authored surface names a metrics entry until the layout-graph and site-plan stages exist, so the code lands with its resolver and its tests and no document call site. It is not the UNRUN shape for the reason that shape is about — nothing has to *remember* to call this; the round that adds those stages has no other way to read a name. |
+| `DW0813` | **A verdict rests on a standard the metrics gym has not walked.** One warning per run (exit 0), `every_version`, naming every uncalibrated building metric some check above actually read. It asks the campaign for nothing — it reports a property of the ENGINE's own table — which is why no fence grandfathers it and no campaign can adopt its way out. The checks still ran and still refuse: a provisional number is a number, and what the line adds is that the green rests on a seed. **Bound to the READ, not to a call site.** `BuildingEntry::value` is the only way to reach a building metric's number and it takes the run's `Reads` ledger, so a check that consumes a seed has recorded that it did; `Metrics::notice` turns the ledger into the line. The residual is stated rather than implied: a caller that constructs its own ledger, reads through it and drops it has bypassed the notice — a deliberate act, not the omission the rule exists to catch, and it closes when stage-3 and stage-4 validation thread one run-scoped ledger. **Binding: building metrics read, and how many of them are provisional, stated every run whether or not the line prints.** Zero provisional reads means the line does not print, which is the calibrated end state and not a vacuity; zero reads at all is a different fact and is the one the binding count exposes. Its live binding today is `delvec metrics`'s own self-check — the table's consistency verdict is a real verdict on real seeds. |
+
+The table itself, its two halves and its export are §10.
+
 ---
 
 ## 6. Spec cross-reference
@@ -5543,3 +5553,135 @@ after a content-repo normalization merges and the pin moves — an ordering this
 repo cannot perform. The same one-line `--check` belongs in the content repo's
 own CI, which is where its files are gated; until then, the accident this tool
 exists to prevent is prevented for engine fixtures only.
+
+---
+
+## 10. The metrics standard (`delvec metrics`)
+
+One machine-readable table of the numbers a level is built to — the engine's
+own data, exported as JSON so a tool outside the engine reads the export and
+never a copy. `dsl::metrics` is the module; `delvec metrics` is the door.
+
+```
+delvec metrics                # the table on stdout, the verdicts on stderr
+delvec --json metrics         # the DW0813 notice as a JSON diagnostic object
+```
+
+The values are deliberately **not** listed here. This page fixes the table's
+shape and mechanism; the table itself is the authority for its numbers, and a
+second copy of them in prose is the drift a single authority exists to prevent.
+Run the tool.
+
+### Two halves, because two kinds of number
+
+**Player metrics** are facts of pinned Minecraft Java 1.21.11 — the collision
+box, the eye height, the step rule's walk-up and jump bounds, the jump arc
+against flat walking speed, fluid impassability, the fall-damage onset and the
+unarmoured survivable fall. They are measured, never chosen, so they carry no
+calibration flag: walking a level cannot make a player 0.7 blocks wide.
+
+Two of them are worth naming because the obvious filing is wrong. The width and
+clearance at which a body can **pass** (`passable.width`, `passable.clearance`)
+are functions of the collision box and belong here, not among the standards —
+no walk can change them. What a walk decides is the **designed** minimum
+(`corridor.min-width`, `corridor.min-clearance`), which is a comfort judgement
+and can never be chosen below the physical floor. And the jump arc
+(`jump.airborne`, `walk.ticks-per-block`) is the derivation behind the nav
+model's elevation weight, which lived in a doc comment where nothing could read
+it; it is data here, and the weight is **asserted** against it rather than
+computed from it, because the weight is a tuned figure an owner playtest
+settled and re-deriving it at run time would move every route in every campaign
+the first time somebody edited a physics fact.
+
+**Building metrics** are standards this project fixes: the kit grid's quantum
+and datum convention, corridor minimums, the standard seam opening set, the
+stair pitch standards, storey heights, the size-class ladder, the designed-drop
+policy cap, and the pacing coefficients. Every one carries `calibrated`, and
+every one is `false` — the metrics gym has not been walked. The pacing
+coefficients additionally carry **no threshold anywhere**: a threshold on a
+number this uncertain would be defending nothing.
+
+The drop cap and the survivable fall sit beside each other on purpose. The cap
+is a **policy** and is deliberately far tighter than the physics, because a drop
+edge is a topology decision and should not also be a health decision; the
+self-check refuses a cap that reaches the physical ceiling, since a cap there is
+not a policy at all.
+
+### Provenance, per entry
+
+Every entry says where its number came from, and the four values are not
+interchangeable:
+
+| Provenance | What it claims |
+|---|---|
+| `engine-constant` | The number **is** a constant `dsl::metrics` defines and the rest of the workspace imports. Nothing to drift from. |
+| `vanilla-rule` | A stated rule of the pinned game that no engine constant held before the table, and that this repository has **not** measured on a running server. The note names the rule, so the claim is checkable. |
+| `derived` | Computed from other entries, or taken from a convention the tree already carries; the note carries the arithmetic or names the source. |
+| `provisional` | A seed for the gym's calibration walk. Chosen, not established. |
+
+Provenance and `calibrated` are orthogonal, and the seam opening set is where
+that shows: the three-by-three passage is `derived`, because `cave:socket` and
+`tk:socket` are both that opening and the prefab library has been built against
+it for as long as it has existed — and it is still uncalibrated, because what
+the walk decides is whether the convention is right, not what it is.
+
+### One authority, structurally
+
+The player half is not a second table that agrees with the navigation model. It
+**is** the model's constants: `compiler::nav` imports the step rule's bounds
+from `dsl::metrics`, and `compiler::crosshair`, `compiler::render_plan`,
+`compiler::view::viewer`, `compiler::creator`, `compiler::combat` and
+`render::occupancy` import the body constants they used to declare. Rust
+enforces the property harder than a test could — a module cannot both `use` a
+name and declare it — so "one definition, not two agreeing" is a compile error
+rather than an assertion.
+
+`crates/compiler/tests/metrics_standard.rs` proves the part that is left: that
+the bounds the table **publishes** are the bounds the model **walks at**. It
+builds its geometry from the exported figure and asks the model what it
+reaches, so a step rule that stops honouring its own published number goes red.
+What it cannot see is stated on the file: moving the table alone does not red
+it, because the model imports the same constant, and a second method sharing
+the first's calibration is not a second method.
+
+### A provisional value cannot be consumed quietly
+
+A building metric's number is reachable only through an accessor that takes the
+run's read ledger. A verdict resting on an uncalibrated standard therefore
+records that it did, and `DW0813` names exactly those entries — the obligation
+is in the signature, not in a line of documentation.
+
+### What every run states
+
+Three things on stderr, each stated whether or not it found anything:
+
+1. **What the table holds** — entries per half, and how many are unwalked.
+2. **What the self-check bound to** — invariants evaluated, building entries in
+   the table, entries read, and how many of those are provisional.
+3. **`DW0813`**, when any verdict rested on a seed.
+
+The self-check is the table checked against itself and against the player half:
+every opening admits a standing body, every standard pitch presents a tread
+inside the walk-up budget (so a "standard" pitch is *walked*, never jumped),
+every size class sits on the kit grid with a clearance above the passable
+floor, every storey leaves interior between its courses, the drop cap is under
+the survivability ceiling, and the route pace is under the pure-walk one.
+
+Two failures are **internal errors** (exit ≥10), not diagnostics. A table that
+contradicts itself is a defect in `dsl::metrics` and not in anybody's campaign,
+so there is no author to address a refusal to. And a self-check that bound to
+nothing exits the same way, because a check that examined no entry is vacuous
+rather than a pass.
+
+### The version
+
+`metrics_version` is bound to the table's exported bytes by a committed digest
+(`crates/dsl/tests/metrics.rs`): change any number, note or calibration flag and
+the test reds until the version moves with it. A consumer that pins a metrics
+version is pinning values, and values that move under a fixed version are the
+drift the pin was bought to prevent.
+
+It is deliberately **not** registered with
+`tools/check-version-ledger-uniqueness.py`. That gate compares the *fence
+anchors* two branches attach to one number, and this ledger has none — nothing
+grandfathers against a metrics version and no document declares one.
