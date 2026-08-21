@@ -133,7 +133,7 @@ forbidden zone). `campaigns/` is a symlink to `../delvewright-campaigns/`.
 
 | File | What it is |
 |---|---|
-| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one; `delvec validate` covers every stage document a campaign directory holds) | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
+| six stage JSONs — plus the optional stage-7 `world-edits.json` whenever the map editor was used (the island ships one), and the optional map-pipeline documents a campaign planned as a whole map carries (`geometry-brief.json`, `layout-graph.json`, `site-plan.json`); `delvec validate` covers every stage document a campaign directory holds | **the artifact of record** — the delve must rebuild byte-identically from them with no LLM (ADR-0006/0012) |
 | `DESIGN.md` | the single authoritative design document; every round conformance-reviews against it |
 | `GENERATION.md` | prompt verbatim, date, `dsl_version`, decisions, the **posture note**, the chronicle citation table, the **findings ledger** |
 | `README.md` | the storybook — reader-facing, background only, opens with the engine-version marker |

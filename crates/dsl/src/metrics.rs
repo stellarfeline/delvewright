@@ -58,9 +58,13 @@
 //! The residual, named rather than implied: a caller that constructs its own
 //! [`Reads`], reads through it and drops it has bypassed the notice. That is a
 //! deliberate act and not the omission the rule exists to catch — nothing
-//! *forgets* to thread a ledger it had to construct. It closes completely when
-//! stage-3 and stage-4 validation thread one run-scoped ledger, which is the
-//! round that first has checks reading this half.
+//! *forgets* to thread a ledger it had to construct.
+//!
+//! On the campaign path it is closed rather than merely narrow.
+//! [`crate::validate::validate_campaign_with`] constructs **one** ledger and
+//! threads it through the stage-3 and stage-4 checks together, so every building
+//! metric either of them rests a verdict on lands in the ledger the notice
+//! reads. There is no second ledger for a read to disappear into.
 
 use std::collections::{BTreeMap, BTreeSet};
 
